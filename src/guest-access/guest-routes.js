@@ -15,6 +15,8 @@ import { createGuestMcp } from './guest-mcp.js';
 const QUERY_REFUSALS = new Set(['queries_missing', 'too_many_queries', 'query_invalid']);
 const RATE_REFUSALS = new Set(['rate_limited_short', 'rate_limited_day', 'project_rate_limited_short', 'project_rate_limited_day']);
 const MCP_MAX_SESSIONS = 16;
+// One link holds at most this many, so one leaked link cannot take every session.
+const MCP_SESSIONS_PER_LINK = 4;
 const MCP_SESSION_IDLE_MS = 15 * 60 * 1000;
 const MCP_SWEEP_MS = 30 * 1000;
 const MCP_SHUTDOWN_GRACE_MS = 2000;
@@ -22,6 +24,7 @@ const MCP_SHUTDOWN_GRACE_MS = 2000;
 export function createGuestRoutes({ visitorAccess, host }) {
   const actions = guestActions({ visitorAccess, host });
   const mcpSessions = createHttpSessionTransport({ label: 'Guest MCP', maxSessions: MCP_MAX_SESSIONS,
+    maxSessionsPerOwner: MCP_SESSIONS_PER_LINK,
     sessionIdleTtlMs: MCP_SESSION_IDLE_MS, sessionSweepIntervalMs: MCP_SWEEP_MS, now: Date.now });
 
   async function handle(request, response, { link, pathname }) {

@@ -15,7 +15,7 @@ import GuestLinksCard from './GuestLinksCard.vue'
 const TOKEN = `fgl_${'x'.repeat(43)}`
 const link = (id: string, lastUsedAt: string | null = null) => ({ id, projectId: 'project-a', label: `guest-${id}`,
   createdAt: '2026-11-01T08:00:00.000Z', expiresAt: '2026-11-08T08:00:00.000Z', lastUsedAt })
-const status = { listening: true, addresses: ['192.168.31.8:2729'], problem: null }
+const status = { listening: true, addresses: ['192.168.31.8:2729'], problem: null, refusedToday: 0 }
 
 function mountCard() {
   return mount(GuestLinksCard, { attachTo: document.body, props: { projectId: 'project-a' } })
@@ -45,6 +45,19 @@ describe('GuestLinksCard', () => {
     wrapper.unmount()
   })
 
+  it('says how many wrong-token visits were refused today, and nothing when none were', async () => {
+    getJson.mockResolvedValueOnce({ links: [link('ffffffffffff')], ...status, refusedToday: 12 })
+    const wrapper = mountCard()
+    await flushPromises()
+    expect(wrapper.get('[data-guest-links-refused]').text()).toBe('今天有 12 次用错口令的访问被拒绝。')
+    wrapper.unmount()
+    getJson.mockResolvedValueOnce({ links: [], ...status })
+    const quiet = mountCard()
+    await flushPromises()
+    expect(quiet.find('[data-guest-links-refused]').exists()).toBe(false)
+    quiet.unmount()
+  })
+
   it('creates a 7-day link in one click and offers its token only in the open dialog', async () => {
     getJson.mockResolvedValue({ links: [], ...status })
     postJson.mockResolvedValue({ link: link('cccccccccccc'), token: TOKEN, ...status })
@@ -67,8 +80,8 @@ describe('GuestLinksCard', () => {
   })
 
   it('says why a created link cannot be used yet instead of an address', async () => {
-    getJson.mockResolvedValue({ links: [], listening: false, addresses: [], problem: null })
-    postJson.mockResolvedValue({ link: link('dddddddddddd'), token: TOKEN, listening: false, addresses: [], problem: 'no_network' })
+    getJson.mockResolvedValue({ links: [], listening: false, addresses: [], problem: null, refusedToday: 0 })
+    postJson.mockResolvedValue({ link: link('dddddddddddd'), token: TOKEN, listening: false, addresses: [], problem: 'no_network', refusedToday: 0 })
     const wrapper = mountCard()
     await flushPromises()
     await wrapper.get('[data-guest-link-create]').trigger('click')

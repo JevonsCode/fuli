@@ -22,6 +22,8 @@ const statusFields = {
   listening: z.boolean(),
   addresses: z.array(z.string()),
   problem: z.enum(['no_network', 'port_unavailable', 'unavailable']).nullable(),
+  /** Requests refused today for a missing or wrong token (counted since FULI started). */
+  refusedToday: z.number(),
 }
 
 const listSchema = z.looseObject({ links: z.array(linkSchema), ...statusFields })

@@ -133,6 +133,9 @@ async function revoke(linkId: string) {
           </Button>
         </template>
       </UiNotice>
+      <p v-if="listed?.refusedToday" class="ui-meta" data-guest-links-refused>
+        {{ t('guestLinks.refusedToday', { count: listed.refusedToday }) }}
+      </p>
       <UiNotice v-if="problem" tone="warning" data-guest-links-problem>{{ t(`guestLinks.problems.${problem}`) }}</UiNotice>
       <ul v-if="links.length" class="guest-link-list">
         <li v-for="link in links" :key="link.id" class="guest-link-row" :data-guest-link="link.id">

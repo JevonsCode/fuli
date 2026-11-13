@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { request as httpRequest } from 'node:http';
+import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,14 +50,14 @@ function application(searches) {
   } } };
 }
 
-function setup(t, { sourceAllowed = (address) => address === '127.0.0.1' } = {}) {
+function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'), discoverAddresses = () => ['127.0.0.1'] } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-guest-access-'));
   const time = clock();
   const searches = [];
   const visitorAccess = createVisitorAccess({ path: join(directory, 'visitor-access.sqlite'), application: application(searches), now: time.now });
   const started = [];
   const keptLinks = [];
-  const guestAccess = createGuestAccess({ visitorAccess, host: fakeHost(), port: 0, discoverAddresses: () => ['127.0.0.1'],
+  const guestAccess = createGuestAccess({ visitorAccess, host: fakeHost(), port: 0, discoverAddresses,
     now: () => time.now().getTime(),
     createRoutes: (deps) => {
       const routes = createGuestRoutes(deps);
@@ -213,15 +213,94 @@ test('ten failed tokens from one address in ten minutes refuse even the right on
   assert.deepEqual(await call(authority, { token: 'fgl_right' }), { status: 429, body: { error: 'too_many_attempts' } });
 });
 
-test('carrier-grade NAT addresses are guest sources and bind addresses, never console LAN addresses', () => {
-  const interfaces = { vpn: [{ address: '100.101.7.9', family: 'IPv4', internal: false }],
-    en0: [{ address: '192.168.31.8', family: 'IPv4', internal: false }, { address: '100.128.0.1', family: 'IPv4', internal: false }] };
-  assert.deepEqual(discoverGuestAddresses(interfaces), ['100.101.7.9', '192.168.31.8']);
+const ipv4 = (address) => ({ address, family: 'IPv4', internal: false });
+
+test('carrier-grade NAT is bound only on a VPN-named adapter and never on the console\'s LAN addresses', () => {
+  const interfaces = { Tailscale: [ipv4('100.101.7.9')], wg0: [ipv4('100.70.0.2')], 'Corp VPN': [ipv4('100.90.1.1')],
+    en0: [ipv4('192.168.31.8'), ipv4('100.80.0.1')], Ethernet: [ipv4('100.65.3.3')] };
+  const bound = new Set(discoverGuestAddresses(interfaces));
+  for (const address of ['100.101.7.9', '100.70.0.2', '100.90.1.1', '192.168.31.8']) assert.equal(bound.has(address), true, address);
+  for (const address of ['100.80.0.1', '100.65.3.3']) assert.equal(bound.has(address), false, address);
   assert.deepEqual(discoverLanAddresses(interfaces), ['192.168.31.8']);
-  for (const address of ['100.64.0.1', '100.127.255.254', '::ffff:10.1.2.3', '172.16.0.4']) assert.equal(isGuestSourceAddress(address), true, address);
-  for (const address of ['100.63.255.255', '100.128.0.1', '8.8.8.8', '127.0.0.1', '::1', undefined]) {
-    assert.equal(isGuestSourceAddress(address), false, String(address));
+});
+
+test('a carrier-grade NAT source is accepted only when it arrives on a carrier-grade NAT (VPN) address', () => {
+  for (const [source, arrivedOn] of [['10.1.2.3', '192.168.31.8'], ['::ffff:172.16.0.4', '192.168.31.8'],
+    ['100.64.0.1', '100.101.7.9'], ['::ffff:100.127.255.254', '::ffff:100.101.7.9']]) {
+    assert.equal(isGuestSourceAddress(source, arrivedOn), true, `${source} on ${arrivedOn}`);
   }
+  for (const [source, arrivedOn] of [['100.64.0.1', '192.168.31.8'], ['100.128.0.1', '100.101.7.9'],
+    ['100.63.255.255', '100.101.7.9'], ['8.8.8.8', '192.168.31.8'], ['127.0.0.1', '127.0.0.1'], ['::1', '::1'], [undefined, undefined]]) {
+    assert.equal(isGuestSourceAddress(source, arrivedOn), false, `${source} on ${arrivedOn}`);
+  }
+});
+
+test('a physical adapter\'s address is offered before a Hyper-V, WSL or Docker one', () => {
+  const interfaces = { 'vEthernet (WSL)': [ipv4('172.20.0.1')], 'docker0': [ipv4('172.17.0.1')], 'Wi-Fi': [ipv4('192.168.31.8')],
+    Ethernet: [ipv4('10.0.0.5')] };
+  assert.deepEqual(discoverGuestAddresses(interfaces), ['10.0.0.5', '192.168.31.8', '172.17.0.1', '172.20.0.1']);
+});
+
+test('the listener follows the computer\'s addresses: rebinds when they change, retries after no network', async (t) => {
+  let addresses = ['127.0.0.1'];
+  const { guestAccess } = setup(t, { discoverAddresses: () => addresses });
+  const { token, addresses: [first] } = await guestAccess.create({ projectId: PROJECT });
+  const port = first.split(':')[1];
+  assert.equal(first, `127.0.0.1:${port}`);
+  addresses = ['127.0.0.2'];
+  await guestAccess.start();
+  assert.deepEqual(guestAccess.list({ projectId: PROJECT }).addresses, [`127.0.0.2:${port}`]);
+  assert.equal((await call(`127.0.0.2:${port}`, { token })).status, 200);
+  await assert.rejects(call(first, { token }), { code: 'ECONNREFUSED' });
+  addresses = [];
+  await guestAccess.start();
+  assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: false, problem: 'no_network' });
+  addresses = ['127.0.0.1'];
+  await guestAccess.start();
+  assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: true, problem: null });
+});
+
+test('while a link is live the addresses are looked up again about every minute, by one timer', async (t) => {
+  let addresses = ['127.0.0.1'];
+  const lookups = [];
+  const { guestAccess } = setup(t, { discoverAddresses: () => { lookups.push(addresses); return addresses; } });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await guestAccess.create({ projectId: PROJECT, days: 30 });
+  addresses = ['127.0.0.2'];
+  const before = lookups.length;
+  t.mock.timers.tick(59_000);
+  assert.equal(lookups.length, before);
+  t.mock.timers.tick(1_001);
+  for (let turn = 0; turn < 200 && !guestAccess.list({ projectId: PROJECT }).addresses[0]?.startsWith('127.0.0.2'); turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(lookups.length, before + 1);
+  assert.match(guestAccess.list({ projectId: PROJECT }).addresses[0], /^127\.0\.0\.2:/);
+});
+
+const pick = ({ listening, problem }) => ({ listening, problem });
+
+test('each guest server is configured with header, request and keep-alive timeouts and connection limits', async (t) => {
+  const servers = [];
+  const listener = await startGuestListener({ addresses: ['127.0.0.1'], port: 0, authenticate: () => ({ ok: false }),
+    route: async () => false, createServer: (handler) => { const server = createHttpServer(handler); servers.push(server); return server; } });
+  t.after(() => listener.close());
+  assert.equal(servers.length, 1);
+  const [server] = servers;
+  assert.deepEqual({ headersTimeout: server.headersTimeout, requestTimeout: server.requestTimeout,
+    keepAliveTimeout: server.keepAliveTimeout, maxConnections: server.maxConnections, maxHeadersCount: server.maxHeadersCount },
+  { headersTimeout: 10_000, requestTimeout: 30_000, keepAliveTimeout: 5_000, maxConnections: 64, maxHeadersCount: 50 });
+});
+
+test('wrong-token and blocked visits are counted for the owner, without addresses', async (t) => {
+  const { guestAccess } = setup(t);
+  const { token, addresses: [authority] } = await guestAccess.create({ projectId: PROJECT });
+  assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, 0);
+  for (let attempt = 0; attempt < 10; attempt += 1) await call(authority, { token: `fgl_${'C'.repeat(43)}` });
+  assert.equal((await call(authority, { token })).status, 429);
+  const listed = guestAccess.list({ projectId: PROJECT });
+  assert.equal(listed.refusedToday, 11);
+  assert.equal(JSON.stringify(listed).includes('127.0.0.1"'), false);
 });
 
 test('the guest entry never reaches the console\'s API router or server', () => {
@@ -323,4 +402,15 @@ test('when the listener notices a link expired, it ends that link\'s MCP session
   await guestAccess.start();
   assert.deepEqual(keptLinks.at(-1), [kept.link.id]);
   await assert.rejects(client.callTool({ name: 'guest_card', arguments: {} }));
+});
+
+test('one link holds at most 4 MCP sessions; another link still gets its own', async (t) => {
+  const { guestAccess } = setup(t);
+  const busy = await guestAccess.create({ projectId: PROJECT });
+  const other = await guestAccess.create({ projectId: PROJECT });
+  const authority = busy.addresses[0];
+  for (let session = 0; session < 4; session += 1) await connect(t, authority, busy.token);
+  await assert.rejects(connect(t, authority, busy.token), /503|limit/i);
+  const { client } = await connect(t, authority, other.token);
+  assert.equal((await client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
 });

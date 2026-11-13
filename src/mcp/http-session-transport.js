@@ -14,7 +14,9 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 // listener (src/guest-access) share it.
 const MAX_REQUEST_BYTES = 1024 * 1024;
 
-export function createHttpSessionTransport({ label, maxSessions, sessionIdleTtlMs, sessionSweepIntervalMs, now }) {
+// maxSessionsPerOwner keeps one owner from taking every session (default: no own cap).
+export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerOwner = maxSessions, sessionIdleTtlMs,
+  sessionSweepIntervalMs, now }) {
   const sessions = new Map();
   const pendingSessions = new Set();
   let closeStarted = false;
@@ -75,7 +77,8 @@ export function createHttpSessionTransport({ label, maxSessions, sessionIdleTtlM
       if (sessionId) entry = ownedSession(sessionId, owner);
       if (!entry && !sessionId && isInitializeRequest(body)) {
         evictIdleSessions(sessions, now() - sessionIdleTtlMs);
-        if (sessions.size + pendingSessions.size >= maxSessions) {
+        const owned = [...sessions.values(), ...pendingSessions].filter((open) => open.owner === owner).length;
+        if (sessions.size + pendingSessions.size >= maxSessions || owned >= maxSessionsPerOwner) {
           sendJsonRpcError(response, 503, -32000, `${label} session limit reached`);
           return;
         }

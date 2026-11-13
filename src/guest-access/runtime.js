@@ -1,18 +1,23 @@
 import { discoverGuestAddresses } from '../server/lan-access.js';
 import { createGuestRoutes } from './guest-routes.js';
 import { startGuestListener } from './listener.js';
+import { createRefusalTally } from './refusal-tally.js';
 
 // The console's guest links (rec issue 133, deliverable B): the person creates,
 // lists and revokes them, and the guest listener runs exactly while at least
-// one link is live. Every change, and each link's expiry, settles the listener
-// again, one settle at a time, and ends the MCP sessions of links no longer live.
+// one link is live. Every change, each link's expiry and, while a link is
+// live, a check every REDISCOVER_MS settle the listener again, one settle at a
+// time: it ends the MCP sessions of links no longer live, looks up this
+// computer's addresses again and rebinds when they changed, and retries after
+// no network or a busy port.
 const GUEST_PORT = 2729;
-// setTimeout cannot wait longer than about 24.8 days; a later expiry is checked again after a day.
-const MAX_WAIT_MS = 24 * 60 * 60 * 1000;
+// Addresses change when a laptop moves networks or a VPN comes up; a minute is soon enough.
+const REDISCOVER_MS = 60 * 1000;
 
 export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, discoverAddresses = discoverGuestAddresses,
   startListener = startGuestListener, createRoutes = createGuestRoutes, onError = () => {}, now = Date.now }) {
   const links = visitorAccess.guestLinks;
+  const refusals = createRefusalTally({ now });
   // The listener and its routes (with their MCP sessions), while a link is live.
   let serving = null;
   let problem = null;
@@ -34,39 +39,57 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
 
   async function settleListener() {
     const liveIds = closed ? [] : links.list().links.map(link => link.id);
-    const live = liveIds.length > 0;
-    // A revoked or expired link's MCP sessions end here, not at their idle timeout.
-    if (live && serving) await serving.routes.keepLinks(liveIds);
-    if (live && !serving) {
-      const addresses = discoverAddresses();
-      if (!addresses.length) problem = 'no_network';
-      else {
-        const routes = createRoutes({ visitorAccess, host });
-        try {
-          serving = { routes, listener: await startListener({ addresses, port, route: routes.handle,
-            authenticate: token => links.authenticate(token) }) };
-          problem = null;
-        } catch (error) {
-          await routes.close();
-          problem = 'port_unavailable';
-          onError(error);
-        }
+    if (!liveIds.length) {
+      await stopServing();
+      problem = null;
+      return;
+    }
+    const addresses = discoverAddresses();
+    if (!addresses.length) {
+      await stopServing();
+      problem = 'no_network';
+    } else if (serving) {
+      // A revoked or expired link's MCP sessions end here, not at their idle timeout.
+      await serving.routes.keepLinks(liveIds);
+      try {
+        await serving.listener.rebind(addresses);
+        problem = null;
+      } catch (error) {
+        await stopServing();
+        refused(error);
       }
-    } else if (!live && serving) {
-      const closing = serving;
-      serving = null;
-      await closing.routes.close();
-      await closing.listener.close();
+    } else {
+      const routes = createRoutes({ visitorAccess, host });
+      try {
+        serving = { routes, listener: await startListener({ addresses, port, route: routes.handle,
+          authenticate: token => links.authenticate(token), onRefused: address => refusals.record(address) }) };
+        problem = null;
+      } catch (error) {
+        await routes.close();
+        refused(error);
+      }
     }
-    if (!live) problem = null;
-    const expiry = closed ? null : links.nextExpiry();
-    if (expiry) {
-      timer = setTimeout(settle, Math.min(Math.max(Date.parse(expiry) - now(), 0) + 1, MAX_WAIT_MS));
-      timer.unref?.();
-    }
+    const expiry = Date.parse(links.nextExpiry());
+    timer = setTimeout(settle, Math.min(Math.max(expiry - now(), 0) + 1, REDISCOVER_MS));
+    timer.unref?.();
   }
 
-  const status = () => ({ listening: Boolean(serving), addresses: serving?.listener.authorities ?? [], problem });
+  async function stopServing() {
+    if (!serving) return;
+    const closing = serving;
+    serving = null;
+    await closing.routes.close();
+    await closing.listener.close();
+  }
+
+  function refused(error) {
+    problem = 'port_unavailable';
+    onError(error);
+  }
+
+  // Addresses physical adapters first (discoverGuestAddresses), so the first is the one to offer.
+  const status = () => ({ listening: Boolean(serving), addresses: serving?.listener.authorities ?? [], problem,
+    refusedToday: refusals.today() });
 
   return {
     async create({ projectId, days }) {

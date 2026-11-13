@@ -244,13 +244,21 @@ that can run commands. The token (`fgl_` and 32 random bytes)
 is shown only in that dialog; FULI stores its SHA-256 in `visitor-access.sqlite`.
 
 - **Listener.** `src/guest-access/` runs its own HTTP listener on port 2729 of this
-  computer's private and carrier-grade NAT (100.64.0.0/10, used by Tailscale and many
-  company VPNs) addresses, only while a link is live. It never reaches the console's
+  computer's private addresses, only while a link is live. It looks them up again on
+  every change and about every minute, rebinds when they changed, and the card offers a
+  physical adapter's address before a Hyper-V, WSL or Docker one. A carrier-grade NAT
+  address (100.64.0.0/10) is bound and accepted only on an adapter named like a VPN
+  (Tailscale, WireGuard, ZeroTier, utun, tun, tap, vpn), never one an ISP hands out
+  directly. Each server limits header and request time, keep-alive, connections and
+  header count. It never reaches the console's
   handlers or `/api/*`; the console's LAN access is unchanged and stays off it.
-- **Checks before any route.** A private or carrier-grade NAT source address, a Host
+- **Checks before any route.** A guest source address (as above), a Host
   naming a bound address, no Origin, and the token in `Authorization: Bearer` only.
   Missing, wrong, expired and revoked tokens get one `401`; 10 failures from one
-  address in 10 minutes give `429`. Every request reads the link again, so 撤销
+  address in 10 minutes give `429` for 10 minutes, even with a right token (a guest
+  behind the same NAT as someone guessing waits too). The 访客链接 card shows how many
+  such visits were refused today, without addresses; the count lives in memory and
+  starts from zero when FULI restarts. Every request reads the link again, so 撤销
   works on the next request, and the last link's end stops the listener.
 - **Routes.** `GET /guest/1/card` (the visiting assistant's card, cleaned and
   recorded the same way) and `POST /guest/1/search { queries: [1-4] }`, the same narrowed visitor search as a paired computer's visiting assistant
@@ -258,8 +266,9 @@ is shown only in that dialog; FULI stores its SHA-256 in `visitor-access.sqlite`
   limits. The same two are MCP tools at `/guest/1/mcp` (`guest_card`,
   `search_project_knowledge`), on the session plumbing the remote connector uses
   (`src/mcp/http-session-transport.js`); each session belongs to its link, and 撤销
-  closes that link's open sessions, as does its expiry. Every contact shows under
-  「最近被问」 as 「访客链接 guest-…」. A link only asks; running work on this computer
+  closes that link's open sessions, as does its expiry; one link holds at most 4 of the
+  16 sessions. Every contact made with a valid token shows under 「最近被问」 as
+  「访客链接 guest-…」. A link only asks; running work on this computer
   is a later step.
 - **Console.** `GET/POST /api/visitor-access/guest-links` and
   `DELETE /api/visitor-access/guest-links/:linkId` answer on loopback only. Creating
