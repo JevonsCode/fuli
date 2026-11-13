@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -50,7 +51,39 @@ function application(searches) {
   } } };
 }
 
-function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'), discoverAddresses = () => ['127.0.0.1'] } = {}) {
+// Servers that bind nothing: listen succeeds for the hosts in available and
+// fails like a missing address (EADDRNOTAVAIL) for any other, and every open
+// and close is recorded. Rebinding is asserted on these, not on real
+// sockets, since only 127.0.0.1 exists on every platform (macOS has no
+// 127.0.0.2).
+function fakeServers(available) {
+  const opened = [];
+  const closed = [];
+  const create = () => {
+    const server = new EventEmitter();
+    let bound = null;
+    server.listen = (port, host) => {
+      queueMicrotask(() => {
+        if (!available.has(host)) {
+          server.emit('error', Object.assign(new Error(`listen EADDRNOTAVAIL ${host}`), { code: 'EADDRNOTAVAIL' }));
+          return;
+        }
+        bound = { address: host, port: port || 47_000, family: 'IPv4' };
+        opened.push(host);
+        server.emit('listening');
+      });
+    };
+    server.address = () => bound;
+    server.close = (done) => { closed.push(bound.address); queueMicrotask(done); };
+    server.closeIdleConnections = () => {};
+    server.closeAllConnections = () => {};
+    return server;
+  };
+  return { create, opened, closed };
+}
+
+function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'), discoverAddresses = () => ['127.0.0.1'],
+  createServer } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-guest-access-'));
   const time = clock();
   const searches = [];
@@ -64,7 +97,7 @@ function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'),
       return { ...routes, keepLinks: (ids) => { keptLinks.push(ids); return routes.keepLinks(ids); } };
     },
     startListener: async (options) => {
-      const listener = await startGuestListener({ ...options, sourceAllowed });
+      const listener = await startGuestListener({ ...options, sourceAllowed, ...(createServer ? { createServer } : {}) });
       started.push(listener);
       return listener;
     } });
@@ -242,40 +275,57 @@ test('a physical adapter\'s address is offered before a Hyper-V, WSL or Docker o
 });
 
 test('the listener follows the computer\'s addresses: rebinds when they change, retries after no network', async (t) => {
-  let addresses = ['127.0.0.1'];
-  const { guestAccess } = setup(t, { discoverAddresses: () => addresses });
-  const { token, addresses: [first] } = await guestAccess.create({ projectId: PROJECT });
-  const port = first.split(':')[1];
-  assert.equal(first, `127.0.0.1:${port}`);
-  addresses = ['127.0.0.2'];
+  let addresses = ['192.0.2.10'];
+  const servers = fakeServers(new Set(['192.0.2.10', '192.0.2.20']));
+  const { guestAccess } = setup(t, { discoverAddresses: () => addresses, createServer: servers.create });
+  const { addresses: [first] } = await guestAccess.create({ projectId: PROJECT });
+  assert.equal(first, '192.0.2.10:47000');
+  addresses = ['192.0.2.20'];
   await guestAccess.start();
-  assert.deepEqual(guestAccess.list({ projectId: PROJECT }).addresses, [`127.0.0.2:${port}`]);
-  assert.equal((await call(`127.0.0.2:${port}`, { token })).status, 200);
-  await assert.rejects(call(first, { token }), { code: 'ECONNREFUSED' });
+  assert.deepEqual(guestAccess.list({ projectId: PROJECT }).addresses, ['192.0.2.20:47000']);
+  assert.deepEqual({ opened: servers.opened, closed: servers.closed }, { opened: ['192.0.2.10', '192.0.2.20'], closed: ['192.0.2.10'] });
   addresses = [];
   await guestAccess.start();
   assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: false, problem: 'no_network' });
-  addresses = ['127.0.0.1'];
+  addresses = ['192.0.2.10'];
+  await guestAccess.start();
+  assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: true, problem: null });
+  assert.deepEqual(servers.opened, ['192.0.2.10', '192.0.2.20', '192.0.2.10']);
+});
+
+test('one address that cannot be bound is skipped; only when none binds is the port unavailable', async (t) => {
+  let addresses = ['192.0.2.10', '192.0.2.99'];
+  const servers = fakeServers(new Set(['192.0.2.10']));
+  const { guestAccess } = setup(t, { discoverAddresses: () => addresses, createServer: servers.create });
+  await guestAccess.create({ projectId: PROJECT });
+  assert.deepEqual({ ...pick(guestAccess.list({ projectId: PROJECT })), addresses: guestAccess.list({ projectId: PROJECT }).addresses },
+    { listening: true, problem: null, addresses: ['192.0.2.10:47000'] });
+  addresses = ['192.0.2.98', '192.0.2.99'];
+  await guestAccess.start();
+  assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: false, problem: 'port_unavailable' });
+  addresses = ['192.0.2.10'];
   await guestAccess.start();
   assert.deepEqual(pick(guestAccess.list({ projectId: PROJECT })), { listening: true, problem: null });
 });
 
 test('while a link is live the addresses are looked up again about every minute, by one timer', async (t) => {
-  let addresses = ['127.0.0.1'];
+  let addresses = ['192.0.2.10'];
   const lookups = [];
-  const { guestAccess } = setup(t, { discoverAddresses: () => { lookups.push(addresses); return addresses; } });
+  const servers = fakeServers(new Set(['192.0.2.10', '192.0.2.20']));
+  const { guestAccess } = setup(t, { discoverAddresses: () => { lookups.push(addresses); return addresses; },
+    createServer: servers.create });
   t.mock.timers.enable({ apis: ['setTimeout'] });
   await guestAccess.create({ projectId: PROJECT, days: 30 });
-  addresses = ['127.0.0.2'];
+  addresses = ['192.0.2.20'];
   const before = lookups.length;
   t.mock.timers.tick(59_000);
   assert.equal(lookups.length, before);
   t.mock.timers.tick(1_001);
-  for (let turn = 0; turn < 200 && !guestAccess.list({ projectId: PROJECT }).addresses[0]?.startsWith('127.0.0.2'); turn += 1) {
+  for (let turn = 0; turn < 200 && !servers.opened.includes('192.0.2.20'); turn += 1) {
     await new Promise((resolve) => setImmediate(resolve));
   }
   assert.equal(lookups.length, before + 1);
-  assert.match(guestAccess.list({ projectId: PROJECT }).addresses[0], /^127\.0\.0\.2:/);
+  assert.deepEqual(guestAccess.list({ projectId: PROJECT }).addresses, ['192.0.2.20:47000']);
 });
 
 const pick = ({ listening, problem }) => ({ listening, problem });
