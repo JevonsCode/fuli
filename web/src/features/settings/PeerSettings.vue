@@ -36,6 +36,7 @@ const drafts = reactive<Record<string, ShareDraft>>({})
 const added = ref<Shareable[]>([])
 // 「最近被问」: read with the card, so the list never appears under content already shown.
 const reads = ref<VisitorRead[]>([])
+const readsFailed = ref(false)
 let refresh: ReturnType<typeof setInterval> | null = null
 
 const addressOptions = computed(() => (status.value?.addresses ?? []).map((value) => ({ value, label: value })))
@@ -79,21 +80,36 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    // The reads are a quiet extra: when they cannot be read the list stays hidden.
     const next = await getJson('/api/peer', peerStatusShape)
-    const recent = next.role ? await getJson(`/api/visitor-access/reads?limit=${RECENT_READS}`, visitorReadsShape)
-      .then((answer) => answer.reads, () => []) : []
+    const recent = next.role ? await readRecent() : []
     applyStatus(next)
-    reads.value = recent
+    applyReads(recent)
   }
   catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.loadError')) }
   finally { loading.value = false }
+}
+
+// 「最近被问」, read with the card so it never appears under content already shown;
+// null when it cannot be read, which the card says instead of an empty list.
+function readRecent() {
+  return getJson(`/api/visitor-access/reads?limit=${RECENT_READS}`, visitorReadsShape).then((answer) => answer.reads, () => null)
+}
+
+function applyReads(recent: VisitorRead[] | null) {
+  readsFailed.value = recent === null
+  reads.value = recent ?? []
+}
+
+// Quietly again with the card's own refresh, and when the person comes back to the page.
+async function refreshReads() {
+  if (status.value?.role && !loading.value) applyReads(await readRecent())
 }
 
 // A quiet re-read: the loaded card stays as it is while it runs.
 async function refreshNearby() {
   if (busy.value || loading.value) return
   try { applyStatus(await getJson('/api/peer', peerStatusShape)) } catch { /* the next refresh retries */ }
+  await refreshReads()
 }
 
 watch(() => Boolean(status.value?.nearby?.on || status.value?.autoSharePending), (on) => {
@@ -101,8 +117,14 @@ watch(() => Boolean(status.value?.nearby?.on || status.value?.autoSharePending),
   refresh = on ? setInterval(refreshNearby, NEARBY_REFRESH_MS) : null
 })
 
-onMounted(load)
-onUnmounted(() => { if (refresh) clearInterval(refresh) })
+onMounted(() => {
+  window.addEventListener('focus', refreshReads)
+  return load()
+})
+onUnmounted(() => {
+  if (refresh) clearInterval(refresh)
+  window.removeEventListener('focus', refreshReads)
+})
 
 async function run(kind: string, work: () => Promise<PeerStatus | void>) {
   if (busy.value) return
@@ -266,6 +288,8 @@ function shareState(projectId: string) {
             <p>{{ t('settings.peer.compare') }}</p>
           </div>
           <p v-if="joiningDevice" data-share-on-pair>{{ t('settings.peer.shareOnPair') }}</p>
+          <!-- The joining computer is always a member of the other's group. -->
+          <p v-if="joiningDevice" data-member-trust>{{ t('settings.peer.memberTrust') }}</p>
           <Button size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
             :loading="busy === 'join' || busy === 'preview'" :loading-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
             {{ t(joiningDevice ? 'settings.peer.joinAction' : 'settings.peer.previewAction') }}
@@ -361,9 +385,10 @@ function shareState(projectId: string) {
               {{ t('settings.peer.saveShares') }}
             </Button>
           </div>
-          <template v-if="reads.length">
+          <template v-if="reads.length || readsFailed">
             <h3 class="ui-group-label">{{ t('settings.peer.recentReads') }}</h3>
-            <ul class="peer-devices peer-reads" data-recent-reads>
+            <p v-if="readsFailed" data-reads-unavailable>{{ t('settings.peer.readsUnavailable') }}</p>
+            <ul v-else class="peer-devices peer-reads" data-recent-reads>
               <li v-for="read in reads" :key="read.id">
                 <div>
                   <strong>{{ readAsker(read) }}</strong>

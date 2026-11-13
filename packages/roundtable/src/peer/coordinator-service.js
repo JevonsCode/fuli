@@ -12,8 +12,11 @@ import {
 // queries, each with its own validation, per-device queue cap and answer size.
 const KINDS = Object.freeze({
   message: { validate: validateAssertion, queueCap: PEER_LIMITS.queuePerNode, replyBytes: Infinity },
-  query: { validate: validateQuery, queueCap: PEER_LIMITS.queryQueuePerNode, replyBytes: PEER_LIMITS.queryReplyBytes },
+  query: { validate: validateQuery, queueCap: PEER_LIMITS.queryQueuePerNode, senderCap: PEER_LIMITS.queryQueuePerSender,
+    replyBytes: PEER_LIMITS.queryReplyBytes },
 });
+// Queries claimed in a row while a message waits, at most; then a message goes.
+const QUERY_STREAK = 3;
 const kindOf = (message) => (JSON.parse(message.assertion_json).protocol === PEER_QUERY_PROTOCOL ? KINDS.query : KINDS.message);
 
 const ONLINE_MS = 90_000;
@@ -41,6 +44,8 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   repositoryChanges = memoryRecord() }) {
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
+  // Per receiving device: how many queries were claimed in a row (claim order only, kept in memory).
+  const queryStreaks = new Map();
   const repositories = new Map();
   let repositoryKey = null;
   rotateRepositoryKey();
@@ -180,7 +185,10 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         return statusView(existing);
       }
       chat.validateWake(assertion);
-      if (store.queuedCount(target.id, assertion.protocol) >= kind.queueCap) throw new PeerError('queue_full', 'The receiving device has too many waiting messages', 429);
+      if (store.queuedCount(target.id, assertion.protocol) >= kind.queueCap
+        || (kind.senderCap && store.queuedCount(target.id, assertion.protocol, nodeId) >= kind.senderCap)) {
+        throw new PeerError('queue_full', 'The receiving device has too many waiting messages', 429);
+      }
       store.insertMessage({ id: key, senderNode: nodeId, targetNode: target.id,
         bindingId: assertion.to.bindingId, assertionJson, signature, expiresAt: assertion.expiresAt, at: iso() });
       return statusView(store.message(key));
@@ -189,8 +197,10 @@ export function createCoordinatorService({ store, identity, authority, name, clo
 
   function claim(nodeId) {
     return store.transaction(() => {
-      const next = store.nextQueued(nodeId, iso());
+      // Queries first, but never more than QUERY_STREAK in a row while a message waits.
+      const next = store.nextQueued(nodeId, iso(), (queryStreaks.get(nodeId) ?? 0) >= QUERY_STREAK ? 'message' : 'query');
       if (!next) return null;
+      queryStreaks.set(nodeId, kindOf(next) === KINDS.query ? (queryStreaks.get(nodeId) ?? 0) + 1 : 0);
       try { chat.validateWake(JSON.parse(next.assertion_json)); }
       catch (error) {
         store.updateMessage(next.id, { status: 'failed', error: error.code ?? 'chat_wake_rejected' }, iso(), 'failed');

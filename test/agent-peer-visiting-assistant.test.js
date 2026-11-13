@@ -128,19 +128,22 @@ function fakeResponse() {
     end(text) { this.body = text ? JSON.parse(text) : null; } };
 }
 
+// The card fields as the host would load them, after the reservation.
+const showCard = (port, { card, ...input }) => port.showSharedCard({ ...input, card: async () => card });
+
 test('a card is cleaned like search results, recorded, and counted toward the same limits', async () => {
   const port = createVisitorAccess({ application: { config: { personal: { spaceId: 'space' } },
     personal: { search: async () => ({ facts: [], entities: [] }) } } });
   const requester = { key: `peer:${'a'.repeat(64)}`, label: 'Laptop\u202e', agentName: 'Visitor' };
   try {
-    const card = port.showSharedCard({ projectId: 'shared-project', requester, card: { name: 'Lead\u0007one',
+    const card = await showCard(port, { projectId: 'shared-project', requester, card: { name: 'Lead\u0007one',
       responsibility: `Runs https://user:pw@example.test/x?token=abc and ${'z'.repeat(40)} from C:\\Users\\someone\\secret`,
       projectName: 'Shared\u200bproject' } });
     assert.equal(card.ok, true);
     assert.equal(card.name, 'Lead one');
     assert.equal(card.projectName, 'Shared project');
     for (const secret of ['someone', 'pw@', 'abc', 'z'.repeat(40)]) assert.ok(!card.responsibility.includes(secret), card.responsibility);
-    const long = port.showSharedCard({ projectId: 'shared-project', requester, card: { name: '名'.repeat(300),
+    const long = await showCard(port, { projectId: 'shared-project', requester, card: { name: '名'.repeat(300),
       responsibility: '长'.repeat(400), projectName: '项'.repeat(300) } });
     assert.ok(long.responsibility.endsWith('…'));
     assert.ok(Buffer.byteLength(JSON.stringify(long)) <= 700);
@@ -148,13 +151,13 @@ test('a card is cleaned like search results, recorded, and counted toward the sa
     assert.deepEqual([row.action, row.outcome, row.requesterLabel, row.resultsCount], ['card', 'answered', 'Laptop', 1]);
 
     // Cards and searches share one budget per device: 30 contacts per 10 minutes.
-    for (let index = 2; index < 30; index += 1) assert.equal(port.showSharedCard({ projectId: 'shared-project', requester, card: {} }).ok, true);
-    assert.deepEqual(port.showSharedCard({ projectId: 'shared-project', requester, card: {} }), { ok: false, code: 'rate_limited_short' });
+    for (let index = 2; index < 30; index += 1) assert.equal((await showCard(port, { projectId: 'shared-project', requester, card: {} })).ok, true);
+    assert.deepEqual(await showCard(port, { projectId: 'shared-project', requester, card: {} }), { ok: false, code: 'rate_limited_short' });
     assert.deepEqual(await port.searchSharedProject({ projectId: 'shared-project', requester, queries: ['x'] }),
       { ok: false, code: 'rate_limited_short' });
     assert.deepEqual(port.recentReads({ limit: 2 }).reads.map((read) => [read.action, read.outcome, read.code]),
       [['search', 'refused', 'rate_limited_short'], ['card', 'refused', 'rate_limited_short']]);
-    assert.deepEqual(port.showSharedCard({ projectId: 'shared-project', requester: { ...requester, key: 'peer:not-a-fingerprint' }, card: {} }),
+    assert.deepEqual(await showCard(port, { projectId: 'shared-project', requester: { ...requester, key: 'peer:not-a-fingerprint' }, card: {} }),
       { ok: false, code: 'requester_invalid' });
   } finally { port.close(); }
 });

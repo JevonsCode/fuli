@@ -9,6 +9,8 @@ import { groupMemberContext } from './group-member-context.js';
 import { localOriginRemoteKey, ownRemotes } from './repository-remote.js';
 import { findRepositoryRoot } from './project-path-context.js';
 
+// What the host refuses on its own (the share's lead): the sender learns only QUERY_REFUSED.
+const LEAD_REFUSALS = new Set(['lead_unreadable', 'lead_changed']);
 const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
@@ -120,31 +122,36 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
     // A paired device's visiting assistant reads one shared project (its lead's
-    // card, or a search) through the visitor-access port, which records and
-    // counts both, only while the share's Agent is, as read now, the project's
-    // lead: an id missing on either side or a lead that cannot be read refuses.
-    // The requester key is the asking device's verified fingerprint
-    // (requester.node, checked by the runner against its certificate); name and
-    // agentName are display text only. A refusal here is recorded with its own
-    // code and answered with the one word every pre-port refusal gets.
+    // card, or a search) through the visitor-access port, which reserves,
+    // records and counts the attempt first; only then are the lead and the
+    // project read, so a device past its limits causes no Provider read. It
+    // answers only while the share's Agent is, as read now, the project's lead:
+    // an id missing on either side or a lead that cannot be read refuses
+    // (recorded with its code; the sender gets the one word every refusal
+    // before the search gets). The requester key is the asking device's
+    // verified fingerprint (requester.node, checked by the runner against its
+    // certificate); name and agentName are display text only.
     async searchSharedProject({ projectId, agentId, requester, query }) {
       if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
       const who = visitor(requester);
-      const lead = typeof agentId === 'string' && agentId ? await currentLead(projectId, query.action) : null;
-      if (!lead?.agentId || lead.agentId !== agentId) {
-        app.visitorAccess.recordRefusedVisit({ requester: who, action: query.action, code: lead ? 'lead_changed' : 'lead_unreadable' });
-        return { ok: false, code: QUERY_REFUSED };
-      }
-      if (query.action === 'card') {
-        const project = await app.personal.getPersonalProject(spaceId(), projectId).then(projectView, () => null);
-        return app.visitorAccess.showSharedCard({ projectId, requester: who,
-          card: { name: lead.name, responsibility: lead.responsibility, projectName: project?.name } });
-      }
-      return app.visitorAccess.searchSharedProject({ projectId, queries: query.queries, requester: who });
+      const leadRefusal = lead => (!lead ? 'lead_unreadable' : lead.agentId && lead.agentId === agentId ? null : 'lead_changed');
+      const currentShareLead = () => (typeof agentId === 'string' && agentId ? currentLead(projectId, query.action) : null);
+      const answer = query.action === 'card'
+        ? await app.visitorAccess.showSharedCard({ projectId, requester: who, card: async () => {
+          const lead = await currentShareLead();
+          const code = leadRefusal(lead);
+          if (code) return { code };
+          const project = await app.personal.getPersonalProject(spaceId(), projectId).then(projectView, () => null);
+          return { name: lead.name, responsibility: lead.responsibility, projectName: project?.name };
+        } })
+        : await app.visitorAccess.searchSharedProject({ projectId, queries: query.queries, requester: who,
+          confirm: async () => leadRefusal(await currentShareLead()) });
+      return !answer.ok && LEAD_REFUSALS.has(answer.code) ? { ok: false, code: QUERY_REFUSED } : answer;
     },
-    // A visiting query the runner refused once the asking device was proven.
-    refuseSharedQuery: ({ requester, action, code }) =>
-      app.visitorAccess?.recordRefusedVisit({ requester: visitor(requester), action, code }) ?? { ok: false, code: 'search_unavailable' },
+    // A visiting query the runner refused once the asking device was proven,
+    // with the project of the share it named when that share is known.
+    refuseSharedQuery: ({ requester, action, code, projectId = null }) =>
+      app.visitorAccess?.recordRefusedVisit({ requester: visitor(requester), action, code, projectId }) ?? { ok: false, code: 'search_unavailable' },
     // A stand-in reads what a `#FLG 一起看` session reads of one member: its
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>

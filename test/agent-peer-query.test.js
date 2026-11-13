@@ -79,11 +79,18 @@ async function coordinatorWithTarget({ shared = { bindingId: 'binding-1', agentI
   store.upsertNode({ id: sender.fingerprint, name: 'Sender', certPem: sender.certPem, at });
   service.publishDirectory(target.fingerprint, { agents: [shared] });
   const now = Date.now();
-  const submit = (changes = {}) => {
-    const assertion = queryFor(sender.fingerprint, target.fingerprint, { now, ...changes });
-    return service.submit(sender.fingerprint, { assertion, signature: sender.sign(assertion) });
+  const submitAs = (from, changes = {}) => {
+    const assertion = queryFor(from.fingerprint, target.fingerprint, { now, ...changes });
+    return service.submit(from.fingerprint, { assertion, signature: from.sign(assertion) });
   };
-  return { service, store, target, sender, submit };
+  const submit = (changes = {}) => submitAs(sender, changes);
+  // Another paired device that also asks.
+  const pairDevice = async (name) => {
+    const other = await identity();
+    store.upsertNode({ id: other.fingerprint, name, certPem: other.certPem, at });
+    return other;
+  };
+  return { service, store, target, sender, submit, submitAs, pairDevice };
 }
 
 test('the coordinator queues a query only for a binding shared for work, with its own cap', async () => {
@@ -92,8 +99,19 @@ test('the coordinator queues a query only for a binding shared for work, with it
     assert.equal(f.submit().status, 'queued');
     assert.equal(f.submit().status, 'queued', 'the same query again is the same entry, never a second one');
     assert.throws(() => f.submit({ query: { action: 'card' } }), { code: 'duplicate_message' });
-    for (let index = 2; index <= PEER_LIMITS.queryQueuePerNode; index += 1) f.submit({ messageId: `query-${index}` });
+    // One sender holds at most its share of the target's query queue; others still get in.
+    for (let index = 2; index <= PEER_LIMITS.queryQueuePerSender; index += 1) f.submit({ messageId: `query-${index}` });
     assert.throws(() => f.submit({ messageId: 'query-over' }), { code: 'queue_full' });
+    const senders = [];
+    for (let count = 0; count < PEER_LIMITS.queryQueuePerNode / PEER_LIMITS.queryQueuePerSender - 1; count += 1) {
+      senders.push(await f.pairDevice(`Other ${count}`));
+    }
+    assert.equal(f.submitAs(senders[0]).status, 'queued', 'another sender\'s query is accepted');
+    for (const [count, other] of senders.entries()) {
+      for (let index = count ? 1 : 2; index <= PEER_LIMITS.queryQueuePerSender; index += 1) f.submitAs(other, { messageId: `query-${index}` });
+    }
+    const late = await f.pairDevice('Late');
+    assert.throws(() => f.submitAs(late), { code: 'queue_full' }, 'the target\'s own cap still holds');
     assert.throws(() => f.submit({ messageId: 'query-other', to: { node: f.target.fingerprint, bindingId: 'other', agentId: 'lead-agent' } }),
       { code: 'agent_not_shared' });
     assert.throws(() => f.submit({ messageId: 'query-late', query: { action: 'progress' } }), { code: 'query_action_unsupported' });
@@ -146,6 +164,31 @@ test('a claim takes a waiting query before waiting messages, so a full message q
   } finally { f.store.close(); }
 });
 
+test('a continuous stream of queries never holds a waiting message back more than three claims', async () => {
+  const f = await coordinatorWithTarget();
+  try {
+    const now = Date.now();
+    const message = { protocol: 'peer/1', messageId: 'message-0', threadId: 'thread-1',
+      from: { node: f.sender.fingerprint, agentId: 'sender-agent', name: 'Sender' },
+      to: { node: f.target.fingerprint, bindingId: 'binding-1', agentId: 'lead-agent' },
+      body: 'Synthetic question', conversation: 'new', depth: 1, origin: { payload: 'e30', signature: 'AA' },
+      issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + 30 * 60_000).toISOString() };
+    f.service.submit(f.sender.fingerprint, { assertion: message, signature: f.sender.sign(message) });
+    const senders = [f.sender, await f.pairDevice('Other')];
+    const kinds = [];
+    for (let round = 0; round < 8; round += 1) {
+      // There is always a query waiting.
+      f.submitAs(senders[round % 2], { messageId: `stream-${round}` });
+      const claim = f.service.claim(f.target.fingerprint);
+      kinds.push(claim.assertion.protocol === PEER_QUERY_PROTOCOL ? 'query' : 'message');
+      f.service.renew(f.target.fingerprint, { messageId: claim.messageId, attemptId: claim.attemptId, state: 'accepted' });
+      f.service.result(f.target.fingerprint, { messageId: claim.messageId, attemptId: claim.attemptId,
+        outcome: 'failed', error: 'synthetic' });
+    }
+    assert.deepEqual(kinds.slice(0, 4), ['query', 'query', 'query', 'message']);
+  } finally { f.store.close(); }
+});
+
 // ---- Runner on the owning computer ----
 
 const TARGET = 'b'.repeat(64);
@@ -155,7 +198,11 @@ const hostAnswer = async ({ query }) => (query.action === 'card'
   ? { ok: true, name: 'Synthetic lead', responsibility: 'Owns the synthetic project', projectName: 'Synthetic project' }
   : { ok: true, results: [{ query: 'deploy port', items: [] }], truncated: false });
 
-async function runnerFixture({ search = hostAnswer, hostSearch = true, pairedDevices } = {}) {
+// The runner records a refusal after the answer went out: let that background write run.
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+async function runnerFixture({ search = hostAnswer, hostSearch = true, pairedDevices,
+  refuse = (input, calls) => { calls.refusals.push(input); return { ok: true }; } } = {}) {
   const sender = deviceIdentity(await createDeviceCertificate());
   const signer = signingAuthority();
   const store = createNodeStore();
@@ -170,7 +217,7 @@ async function runnerFixture({ search = hostAnswer, hostSearch = true, pairedDev
   const host = {
     issueRemoteDelegation: async () => { calls.delegations += 1; return { token: 'never' }; },
     ...(hostSearch ? { searchSharedProject: async (input) => { calls.searches.push(input); return search(input); },
-      refuseSharedQuery: (input) => { calls.refusals.push(input); return { ok: true }; } } : {}),
+      refuseSharedQuery: (input) => refuse(input, calls) } : {}),
   };
   const runner = createPeerRunner({ store, client, nodeId: TARGET, spaceId: () => 'local-space', host,
     ...(pairedDevices ? { pairedDevices: () => pairedDevices(sender) } : {}),
@@ -202,7 +249,9 @@ test('a query is answered from the share without waking anything, as the proven 
     await f.runner.handle(f.claimFor({ attemptId: 'attempt-2' }));
     assert.equal(f.calls.searches.length, 1, 'a replayed query is not searched again');
     assert.equal(f.results.at(-1).error, QUERY_REFUSED);
-    assert.deepEqual(f.calls.refusals.map((row) => [row.code, row.requester.node]), [['already_started', f.sender.fingerprint]]);
+    await settled();
+    assert.deepEqual(f.calls.refusals.map((row) => [row.code, row.requester.node, row.projectId]),
+      [['already_started', f.sender.fingerprint, 'local-project']]);
   } finally { await f.close(); }
 });
 
@@ -249,13 +298,40 @@ test('every refusal before the port is one word to the sender; once the device i
     const f = await runnerFixture();
     try {
       await f.runner.handle(claimOf(f));
+      await settled();
       assert.deepEqual([f.results[0]?.outcome, f.results[0]?.error], ['failed', QUERY_REFUSED], name);
       assert.deepEqual(f.calls.refusals.map((row) => [row.code, row.action, row.requester.node]),
         recorded[name] ? [[recorded[name], 'search', f.sender.fingerprint]] : [], name);
+      // The probed project is named when this computer has the share the query named, never otherwise.
+      assert.deepEqual(f.calls.refusals.map((row) => row.projectId), recorded[name] ? [name === 'unshared' ? undefined : 'local-project'] : [], name);
       assert.deepEqual(f.calls.searches, [], `${name}: nothing searched`);
       assert.equal(f.calls.answerRemote, 0, `${name}: nothing woken`);
     } finally { await f.close(); }
   }
+});
+
+test('a refused query replayed under new attempt or claim IDs is refused again, recorded and counted once', async () => {
+  const f = await runnerFixture();
+  try {
+    f.store.replaceShares([], () => 'unused');
+    const claim = f.claimFor();
+    await f.runner.handle(claim);
+    await f.runner.handle({ ...claim, attemptId: 'attempt-2' });
+    await f.runner.handle({ ...claim, attemptId: 'attempt-3', messageId: 'coordinator-chosen-id' });
+    await settled();
+    assert.deepEqual(f.results.map((row) => row.error), [QUERY_REFUSED, QUERY_REFUSED, QUERY_REFUSED]);
+    assert.deepEqual(f.calls.refusals.map((row) => row.code), ['agent_not_shared']);
+  } finally { await f.close(); }
+});
+
+test('the answer to a refused query does not wait for the refusal to be recorded', async () => {
+  const pending = Promise.withResolvers();
+  const f = await runnerFixture({ refuse: () => pending.promise });
+  try {
+    f.store.replaceShares([], () => 'unused');
+    await f.runner.handle(f.claimFor());
+    assert.deepEqual(f.results.map((row) => row.error), [QUERY_REFUSED], 'answered while the record is still being written');
+  } finally { pending.resolve({ ok: true }); await f.close(); }
 });
 
 test('on the coordinating computer only its own active paired devices are answered', async () => {
@@ -263,6 +339,7 @@ test('on the coordinating computer only its own active paired devices are answer
   try {
     await stranger.runner.handle(stranger.claimFor());
     assert.deepEqual([stranger.results[0].outcome, stranger.results[0].error], ['failed', QUERY_REFUSED]);
+    await settled();
     assert.deepEqual(stranger.calls.refusals.map((row) => row.code), ['device_not_paired']);
     assert.deepEqual(stranger.calls.searches, []);
   } finally { await stranger.close(); }

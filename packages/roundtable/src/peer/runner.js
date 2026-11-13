@@ -8,6 +8,10 @@ import {
 import { answerPeerQuery, QUERY_REFUSED, queryCode, requesterLabel } from './query-answer.js';
 
 const RETRY_MS = 5_000;
+// A query lives at most a minute and its proof expires with it; past that the
+// assertion is refused as expired before its device is proven, never recorded.
+const REFUSAL_SKEW_MS = 60_000;
+const REFUSALS_REMEMBERED = 2_000;
 const STARTED_STATES = new Set(['starting', 'running', 'finished']);
 // How each kind of claim is checked: a message may wake the shared lead under
 // an execution proof; a query only reads, under a query proof.
@@ -24,6 +28,8 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
   const stopping = new AbortController();
   const running = new Map();
   const handlers = new Map();
+  const refusedQueries = new Map();
+  const background = new Set();
   let loop = null;
 
   function start() {
@@ -95,11 +101,15 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       authorized = authorize(claim, kind);
     } catch (error) {
       store.setAttemptState(messageId, attemptId, 'rejected', error.code ?? 'rejected');
-      // A query's sender learns one word whatever failed; this computer keeps the
-      // real code, and records it once the sending device was proven.
-      if (kind === QUERY && error.device) await recordQueryRefusal(claim, error.device, error.code);
+      // A query's sender learns one word whatever failed, on the same path: this
+      // computer keeps the real code and records it, once the sending device was
+      // proven, only after the answer went out.
       queue(messageId, attemptId, 'failed', { error: kind === QUERY ? QUERY_REFUSED : error.code ?? 'rejected' });
-      return flush();
+      const flushed = flush();
+      if (kind === QUERY && error.device && firstRefusal(claim, error.device)) {
+        inBackground(flushed.then(() => recordQueryRefusal(claim, error.device, error.code)));
+      }
+      return flushed;
     }
     if (stopping.signal.aborted) {
       store.setAttemptState(messageId, attemptId, 'not_started', 'stopped');
@@ -162,11 +172,35 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
     return { share, origin };
   }
 
-  // Recorded and counted against the proven device, so a flood shows; best effort.
+  // Recorded and counted against the proven device, so a flood shows, with the
+  // project of the share the query named when this computer has that share.
   async function recordQueryRefusal(claim, device, code) {
     if (typeof host.refuseSharedQuery !== 'function') return;
-    await Promise.resolve(host.refuseSharedQuery({ action: claim.assertion.query.action, code: queryCode(code),
-      requester: { node: device, name: requesterLabel(claim.sender.name, device), agentName: null } })).catch(() => {});
+    const share = store.share(claim.assertion.to.bindingId);
+    await host.refuseSharedQuery({ action: claim.assertion.query.action, code: queryCode(code),
+      ...(share?.spaceId === spaceId() ? { projectId: share.projectId } : {}),
+      requester: { node: device, name: requesterLabel(claim.sender.name, device), agentName: null } });
+  }
+
+  // A refused query is remembered by its own key (the proven device and the
+  // assertion's ID) until it and its proof have expired, so replaying it under
+  // new attempt or claim IDs is refused again without being recorded or counted
+  // twice. In memory, at most REFUSALS_REMEMBERED entries (oldest out first);
+  // after a restart a replay inside that minute is recorded once more.
+  function firstRefusal(claim, device) {
+    const now = clock();
+    for (const [key, until] of refusedQueries) if (until <= now) refusedQueries.delete(key);
+    const key = peerMessageKey(device, claim.assertion.messageId);
+    if (refusedQueries.has(key)) return false;
+    refusedQueries.set(key, Date.parse(claim.assertion.expiresAt) + REFUSAL_SKEW_MS);
+    if (refusedQueries.size > REFUSALS_REMEMBERED) refusedQueries.delete(refusedQueries.keys().next().value);
+    return true;
+  }
+
+  // Work that follows an answer already sent: failures are logged like the runner's own.
+  function inBackground(work) {
+    const tracked = work.catch(onError).finally(() => background.delete(tracked));
+    background.add(tracked);
   }
 
   function pinnedAuthority(sender) {
@@ -287,6 +321,7 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
     await loop?.catch(() => {});
     await Promise.allSettled([...handlers.keys()]);
     await flush();
+    await Promise.allSettled([...background]);
   }
 
   async function reconcileShares(validBindings = null) {

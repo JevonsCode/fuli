@@ -11,6 +11,7 @@ export const PEER_LIMITS = Object.freeze({
   messageChars: 16_000,
   queuePerNode: 100,
   queryQueuePerNode: 20,
+  queryQueuePerSender: 4,
   queryTtlSeconds: 60,
   queryReplyBytes: 48 * 1024,
   queryCount: 4,

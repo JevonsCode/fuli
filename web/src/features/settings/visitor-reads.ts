@@ -36,7 +36,8 @@ export function readAsker(read: VisitorRead) {
 // shares it): the searched words, or a look at who leads it, and when it got
 // no answer, that it did not.
 export function readQuestion(read: VisitorRead, projectNames: ReadonlyMap<string, string>) {
-  const project = projectNames.get(read.projectId) ?? (read.projectId || '—')
+  // Never a raw id: a project this computer no longer shares (or none) gets a plain label.
+  const project = projectNames.get(read.projectId) ?? t('settings.peer.readUnknownProject')
   if (read.code?.includes('rate_limited')) return t('settings.peer.readLimited', { project })
   if (read.outcome === 'refused' || read.outcome === 'failed') return t('settings.peer.readRefused', { project })
   if (read.action === 'card') return t('settings.peer.readCard', { project })

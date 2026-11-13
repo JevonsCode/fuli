@@ -342,12 +342,17 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   const wrapper = mount(PeerSettings)
   await flushPromises()
   expect(wrapper.find('[data-share-on-pair]').exists()).toBe(false)
+  expect(wrapper.find('[data-member-trust]').exists()).toBe(false)
   await wrapper.get('textarea').setValue('first-invitation')
   await wrapper.get('[data-join-peer]').trigger('click')
   await flushPromises()
   expect(fetch.mock.calls[1]?.[0]).toBe('/api/peer/invitations/preview')
   expect(wrapper.get('[data-invitation-preview]').text()).toContain('ABCD 1234')
   expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，对方说它也有的项目（最多 8 个），两边负责人可以互相提问。其他项目不会共享。')
+  // The joining computer is always a member of the other's group: told so above the join control.
+  const trust = wrapper.get('[data-member-trust]')
+  expect(trust.text()).toBe('对方电脑负责转交消息，也由它决定组里还有哪些电脑。只和你信得过的电脑配对。')
+  expect(trust.element.compareDocumentPosition(wrapper.get('[data-join-peer]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(fetch.mock.calls.some(([url]) => url === '/api/peer/join')).toBe(false)
   await wrapper.get('textarea').setValue('replacement-invitation')
   expect(wrapper.find('[data-invitation-preview]').exists()).toBe(false)
@@ -377,16 +382,18 @@ it('lists 「最近被问」 under the shares: who asked, what, in which project
   expect(rows[0]!.text()).toContain('Laptop · Visitor lead')
   expect(rows[0]!.text()).toContain('Sample project：deploy port / release steps')
   expect(rows[0]!.text()).toContain('1分钟前')
-  expect(rows[1]!.text()).toContain('gone-project：old question')
+  // A project this computer no longer shares reads as such, never as its id.
+  expect(rows[1]!.text()).toContain('已不共享的项目：old question')
+  expect(rows[1]!.text()).not.toContain('gone-project')
   expect(rows[1]!.text()).not.toContain('·')
   // Every contact shows: a look at the card, and attempts that got no answer.
   expect(rows[2]!.text()).toContain('Sample project：看了谁负责')
   expect(rows[3]!.text()).toContain('Sample project：问得太频繁，没有回答')
-  expect(rows[4]!.text()).toContain('—：没有回答')
+  expect(rows[4]!.text()).toContain('已不共享的项目：没有回答')
   wrapper.unmount()
 })
 
-it('hides 「最近被问」 when nobody asked or the reads cannot be read, and never asks before pairing', async () => {
+it('hides 「最近被问」 when nobody asked, says so when it cannot be read, and never asks before pairing', async () => {
   const empty = server({ 'GET /api/peer': [paired], 'GET /api/visitor-access/reads': [{ reads: [] }] })
   const wrapper = mount(PeerSettings)
   await flushPromises()
@@ -399,6 +406,8 @@ it('hides 「最近被问」 when nobody asked or the reads cannot be read, and 
   const unreadable = mount(PeerSettings)
   await flushPromises()
   expect(unreadable.find('[data-recent-reads]').exists()).toBe(false)
+  expect(unreadable.text()).toContain('最近被问')
+  expect(unreadable.get('[data-reads-unavailable]').text()).toBe('暂时读不到最近被问的记录。')
   expect(unreadable.find('[role="alert"]').exists()).toBe(false)
   unreadable.unmount()
 
@@ -407,4 +416,20 @@ it('hides 「最近被问」 when nobody asked or the reads cannot be read, and 
   await flushPromises()
   expect(unpaired.calls('GET /api/visitor-access/reads')).toHaveLength(0)
   before.unmount()
+})
+
+it('reads 「最近被问」 again when the person comes back to the page', async () => {
+  const { calls } = server({ 'GET /api/peer': [paired],
+    'GET /api/visitor-access/reads': [{ reads: [] }, { reads: [read(1)] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.find('[data-recent-reads]').exists()).toBe(false)
+  window.dispatchEvent(new Event('focus'))
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')).toHaveLength(2)
+  expect(wrapper.findAll('[data-recent-reads] li')).toHaveLength(1)
+  wrapper.unmount()
+  window.dispatchEvent(new Event('focus'))
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')).toHaveLength(2)
 })

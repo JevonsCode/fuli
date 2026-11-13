@@ -11,17 +11,7 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // code. Rows keep the visitor's queries as they were searched (already cut),
 // how many items and bytes went back, never the items themselves. Guest links
 // and visit requests come with their own slices as later versions.
-export const VISITOR_ACCESS_FORMAT = sqliteFormat({
-  store: 'visitor-access',
-  schema: `
-    CREATE TABLE IF NOT EXISTS requesters(
-      key TEXT PRIMARY KEY,
-      kind TEXT NOT NULL CHECK(kind IN ('peer', 'guest')),
-      label TEXT NOT NULL,
-      mode TEXT NOT NULL CHECK(mode IN ('ask_only', 'plan', 'auto', 'trusted')),
-      own_device INTEGER NOT NULL CHECK(own_device IN (0, 1)),
-      mode_updated_at TEXT NOT NULL,
-      CHECK(mode <> 'trusted' OR (kind = 'peer' AND own_device = 1)));
+const READS_TABLE = `
     CREATE TABLE IF NOT EXISTS visitor_reads(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       requester_key TEXT NOT NULL,
@@ -36,7 +26,20 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       bytes INTEGER NOT NULL,
       at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
-    CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`
+    CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`;
+
+export const VISITOR_ACCESS_FORMAT = sqliteFormat({
+  store: 'visitor-access',
+  schema: `
+    CREATE TABLE IF NOT EXISTS requesters(
+      key TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK(kind IN ('peer', 'guest')),
+      label TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('ask_only', 'plan', 'auto', 'trusted')),
+      own_device INTEGER NOT NULL CHECK(own_device IN (0, 1)),
+      mode_updated_at TEXT NOT NULL,
+      CHECK(mode <> 'trusted' OR (kind = 'peer' AND own_device = 1)));
+    ${READS_TABLE}`
 });
 
 // Rows older than this are deleted on the next recorded attempt.
@@ -48,17 +51,21 @@ const RETENTION_MS = RETENTION_DAYS * DAY_MS;
 const REFUSALS_KEPT_PER_DAY = 1000;
 
 export class VisitorAccessStore {
-  constructor(path = ':memory:') {
+  constructor(path = ':memory:', { warn = line => process.stderr.write(line) } = {}) {
     this.path = path;
+    this.warn = warn;
   }
 
   // Opened on the first write; a missing file reads as empty and is never created by a read.
   get db() {
     if (!this.database) {
       const database = openFormattedDatabase(this.path, VISITOR_ACCESS_FORMAT);
-      if (!currentReadsTable(database)) {
+      try {
+        const kept = setAsidePrereleaseReads(database);
+        if (kept) this.warn(`FULI: visitor reads from a pre-release build were kept as ${kept}; a new list starts.\n`);
+      } catch (error) {
         database.close();
-        throw Object.assign(new Error('This visitor-access file was written by a pre-release build'), { code: OUTDATED });
+        throw error;
       }
       this.database = database;
     }
@@ -150,16 +157,27 @@ export class VisitorAccessStore {
   }
 }
 
-// Version 1 of this store never shipped in a release, and no release build
-// writes the file; only a pre-release build of the visiting assistant did,
-// with a visitor_reads table that has no outcome or no card action. Such a
-// file is refused whole (nothing read, nothing written) with this code, rather
-// than guessed at: removing that pre-release file is the remedy.
-export const OUTDATED = 'visitor_store_outdated';
-
-function currentReadsTable(database) {
+// PRE-RELEASE REPAIR, delete after the first release that contains this store.
+// Version 1 never shipped in a release, and no release build writes this
+// file; only development builds of the visiting assistant did, with a
+// visitor_reads table without an outcome or without the card action. The
+// format engine has no step that rebuilds a table, so such a table is set
+// aside here, whole, in one transaction (renamed visitor_reads_prerelease_<n>,
+// its indexes dropped), and the current table is created; requesters stay as
+// they are. Answers the name it was kept under, or null when nothing was needed.
+function setAsidePrereleaseReads(database) {
   const sql = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'visitor_reads'").get()?.sql ?? '';
-  return /\boutcome\b/.test(sql) && sql.includes("'card'");
+  if (/\boutcome\b/.test(sql) && sql.includes("'card'")) return null;
+  return immediateTransaction(database, () => {
+    const taken = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'visitor_reads_prerelease_%'")
+      .all().map(row => row.name));
+    let index = 1;
+    while (taken.has(`visitor_reads_prerelease_${index}`)) index += 1;
+    const kept = `visitor_reads_prerelease_${index}`;
+    database.exec(`DROP INDEX IF EXISTS visitor_reads_at; DROP INDEX IF EXISTS visitor_reads_requester_at;
+      ALTER TABLE visitor_reads RENAME TO ${kept};${READS_TABLE}`);
+    return kept;
+  });
 }
 
 function requesterView(row) {
