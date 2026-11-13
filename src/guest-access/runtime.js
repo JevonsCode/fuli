@@ -5,7 +5,7 @@ import { startGuestListener } from './listener.js';
 // The console's guest links (rec issue 133, deliverable B): the person creates,
 // lists and revokes them, and the guest listener runs exactly while at least
 // one link is live. Every change, and each link's expiry, settles the listener
-// again, one settle at a time.
+// again, one settle at a time; revoking a link also ends its MCP sessions.
 const GUEST_PORT = 2729;
 // setTimeout cannot wait longer than about 24.8 days; a later expiry is checked again after a day.
 const MAX_WAIT_MS = 24 * 60 * 60 * 1000;
@@ -13,8 +13,8 @@ const MAX_WAIT_MS = 24 * 60 * 60 * 1000;
 export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, discoverAddresses = discoverGuestAddresses,
   startListener = startGuestListener, onError = () => {}, now = Date.now }) {
   const links = visitorAccess.guestLinks;
-  const route = createGuestRoutes({ visitorAccess, host });
-  let listener = null;
+  // The listener and its routes (with their MCP sessions), while a link is live.
+  let serving = null;
   let problem = null;
   let timer = null;
   let settling = Promise.resolve();
@@ -34,22 +34,26 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
 
   async function settleListener() {
     const live = !closed && links.list().links.length > 0;
-    if (live && !listener) {
+    if (live && !serving) {
       const addresses = discoverAddresses();
       if (!addresses.length) problem = 'no_network';
       else {
+        const routes = createGuestRoutes({ visitorAccess, host });
         try {
-          listener = await startListener({ addresses, port, route, authenticate: token => links.authenticate(token) });
+          serving = { routes, listener: await startListener({ addresses, port, route: routes.handle,
+            authenticate: token => links.authenticate(token) }) };
           problem = null;
         } catch (error) {
+          await routes.close();
           problem = 'port_unavailable';
           onError(error);
         }
       }
-    } else if (!live && listener) {
-      const closing = listener;
-      listener = null;
-      await closing.close();
+    } else if (!live && serving) {
+      const closing = serving;
+      serving = null;
+      await closing.routes.close();
+      await closing.listener.close();
     }
     if (!live) problem = null;
     const expiry = closed ? null : links.nextExpiry();
@@ -59,7 +63,7 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
     }
   }
 
-  const status = () => ({ listening: Boolean(listener), addresses: listener?.authorities ?? [], problem });
+  const status = () => ({ listening: Boolean(serving), addresses: serving?.listener.authorities ?? [], problem });
 
   return {
     async create({ projectId, days }) {
@@ -74,7 +78,10 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
     },
     async revoke(id) {
       const revoked = links.revoke(id);
-      if (revoked.ok) await settle();
+      if (revoked.ok) {
+        await serving?.routes.closeLink(id);
+        await settle();
+      }
       return revoked;
     },
     // Called once the console listens: a link made before a restart serves again.

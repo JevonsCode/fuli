@@ -15,6 +15,7 @@ import { useConsoleStore } from '@/stores/console'
 import { UiNotice } from '@/ui'
 import {
   DEFAULT_GUEST_LINK_DAYS,
+  claudeMcpCommand,
   createGuestLink,
   readGuestLinks,
   revokeGuestLink,
@@ -49,9 +50,15 @@ const dayOptions = [
 const links = computed(() => listed.value?.links ?? [])
 const showInitialLoading = useMinimumLoadingDisplay(computed(() => loading.value && !listed.value && !failed.value))
 const problem = computed(() => (links.value.length && listed.value?.problem ? listed.value.problem : null))
-const sentence = computed(() => {
+// One copy per way to use the link: Claude Code's MCP line, and a sentence for any AI that can run commands.
+const ways = computed(() => {
   const address = created.value?.addresses[0]
-  return address && created.value ? shellSentence(address, created.value.token) : null
+  if (!address || !created.value) return []
+  const { token } = created.value
+  return [
+    { key: 'claude', label: t('guestLinks.copyClaude'), text: claudeMcpCommand(address, token) },
+    { key: 'shell', label: t('guestLinks.copyShell'), text: shellSentence(address, token) },
+  ]
 })
 const time = (value: string) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '-' })
 
@@ -148,17 +155,17 @@ async function revoke(linkId: string) {
           <DialogDescription>{{ t('guestLinks.createdOnce') }}</DialogDescription>
         </DialogHeader>
         <UiNotice v-if="created?.problem" tone="warning">{{ t(`guestLinks.problems.${created.problem}`) }}</UiNotice>
-        <template v-if="sentence">
-          <pre class="guest-link-copy-text" data-guest-link-sentence>{{ sentence }}</pre>
+        <section v-for="way in ways" :key="way.key" class="guest-link-way" :data-guest-link-way="way.key">
+          <pre class="guest-link-copy-text">{{ way.text }}</pre>
           <div class="guest-link-copy-row">
-            <Button type="button" size="sm" variant="outline" data-guest-link-copy-shell @click="copy('shell', sentence)">
-              {{ t('guestLinks.copyShell') }}
+            <Button type="button" size="sm" variant="outline" :data-guest-link-copy="way.key" @click="copy(way.key, way.text)">
+              {{ way.label }}
             </Button>
             <span class="ui-meta guest-link-copy-state" aria-live="polite">
-              {{ copied ? t('guestLinks.copied') : copyFailed ? t('guestLinks.copyFailed') : '' }}
+              {{ copied === way.key ? t('guestLinks.copied') : copyFailed ? t('guestLinks.copyFailed') : '' }}
             </span>
           </div>
-        </template>
+        </section>
         <p class="ui-meta">{{ t('guestLinks.network') }}</p>
       </DialogContent>
     </Dialog>
@@ -174,6 +181,7 @@ async function revoke(linkId: string) {
 .guest-link-times { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
 .guest-link-copy-text { margin: 0; padding: var(--space-3); white-space: pre-wrap; word-break: break-all; border-radius: var(--radius-md);
   background: var(--color-surface-subtle); font-size: var(--text-meta); user-select: all; }
+.guest-link-way { display: grid; gap: var(--space-2); }
 .guest-link-copy-row { display: flex; align-items: center; gap: var(--space-3); }
 .guest-link-copy-state { min-width: 12ch; }
 </style>

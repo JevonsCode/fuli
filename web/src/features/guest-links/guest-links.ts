@@ -47,6 +47,11 @@ export function revokeGuestLink(linkId: string) {
   return deleteJson(`${LINKS_PATH}/${encodeURIComponent(linkId)}`, undefined, revokedShape)
 }
 
+/** The line that adds the link to Claude Code as an HTTP MCP server. */
+export function claudeMcpCommand(address: string, token: string) {
+  return `claude mcp add --transport http fuli-guest http://${address}/guest/1/mcp --header "Authorization: Bearer ${token}"`
+}
+
 /** The sentence a person pastes into any AI client that can run commands. */
 export function shellSentence(address: string, token: string) {
   return t('guestLinks.shellSentence', { url: `http://${address}/guest/1/search`, token, card: `http://${address}/guest/1/card` })

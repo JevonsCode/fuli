@@ -7,6 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
+import { createGuestRoutes } from '../src/guest-access/guest-routes.js';
 import { startGuestListener } from '../src/guest-access/listener.js';
 import { createGuestAccess } from '../src/guest-access/runtime.js';
 import { handleGuestLinksRequest } from '../src/http/guest-links-api-router.js';
@@ -220,4 +224,59 @@ test('the console routes answer only on this computer; the token is returned onc
   assert.equal(listed.body.links.length, 1);
   assert.equal((await route({ method: 'DELETE', path: `/api/visitor-access/guest-links/${created.body.link.id}` })).status, 200);
   assert.equal((await route({ method: 'DELETE', path: `/api/visitor-access/guest-links/${created.body.link.id}` })).status, 404);
+});
+
+async function connect(t, authority, token) {
+  const client = new Client({ name: 'guest-test', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(`http://${authority}/guest/1/mcp`),
+    { requestInit: { headers: { authorization: `Bearer ${token}` } } });
+  await client.connect(transport);
+  t.after(() => client.close().catch(() => {}));
+  return { client, transport };
+}
+
+test('MCP at /guest/1/mcp offers exactly the card and the scoped search, recorded like the JSON route', async (t) => {
+  const { guestAccess, visitorAccess, searches } = setup(t);
+  const { token, link, addresses: [authority] } = await guestAccess.create({ projectId: PROJECT });
+  const { client } = await connect(t, authority, token);
+  assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), ['guest_card', 'search_project_knowledge']);
+  const card = JSON.parse((await client.callTool({ name: 'guest_card', arguments: {} })).content[0].text);
+  assert.equal(card.project.name, 'Synthetic guest project');
+  const found = await client.callTool({ name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } });
+  assert.equal(found.isError, undefined);
+  assert.equal(JSON.parse(found.content[0].text).results[0].items.length, 1);
+  assert.deepEqual(searches.map(({ personal_project_ids: ids }) => ids), [[PROJECT]]);
+  assert.equal(visitorAccess.recentReads({ requesterKey: `guest:${link.id}`, limit: 10 }).reads[0].outcome, 'answered');
+  const stranger = new Client({ name: 'guest-test', version: '1.0.0' });
+  await assert.rejects(stranger.connect(new StreamableHTTPClientTransport(new URL(`http://${authority}/guest/1/mcp`),
+    { requestInit: { headers: { authorization: `Bearer fgl_${'B'.repeat(43)}` } } })));
+});
+
+test('revoking a link ends its open MCP sessions, and a session is never usable by another link', async (t) => {
+  const { guestAccess } = setup(t);
+  const kept = await guestAccess.create({ projectId: PROJECT });
+  const revoked = await guestAccess.create({ projectId: PROJECT });
+  const authority = kept.addresses[0];
+  const keptSession = await connect(t, authority, kept.token);
+  const revokedSession = await connect(t, authority, revoked.token);
+  const borrowed = await call(authority, { method: 'POST', path: '/guest/1/mcp', token: kept.token,
+    headers: { 'mcp-session-id': revokedSession.transport.sessionId, accept: 'application/json, text/event-stream' },
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+  assert.equal(borrowed.status, 404);
+  await guestAccess.revoke(revoked.link.id);
+  await assert.rejects(revokedSession.client.callTool({ name: 'guest_card', arguments: {} }));
+  assert.equal((await keptSession.client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
+});
+
+test('closing a link\'s sessions makes its session unknown even to that link', async (t) => {
+  const link = { id: 'link-closed', projectId: PROJECT, label: 'guest-closed', expiresAt: '2026-11-08T00:00:00.000Z' };
+  const visitorAccess = createVisitorAccess({ application: application([]) });
+  const routes = createGuestRoutes({ visitorAccess, host: fakeHost() });
+  const listener = await startGuestListener({ addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
+    authenticate: () => ({ ok: true, link }), route: routes.handle });
+  t.after(async () => { await routes.close(); await listener.close(); visitorAccess.close(); });
+  const { client } = await connect(t, listener.authorities[0], 'fgl_any');
+  assert.equal((await client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
+  await routes.closeLink(link.id);
+  await assert.rejects(client.callTool({ name: 'guest_card', arguments: {} }), /404|session/i);
 });
