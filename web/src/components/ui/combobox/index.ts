@@ -11,6 +11,10 @@
 // - OptionCombobox takes `size` sm | md | lg (default md) from the control
 //   size scale (../control-size.ts): the field is exactly that height, with
 //   or without chips.
+// - OptionCombobox `searchOnServer` (single) passes reka-ui's ignoreFilter and
+//   emits `search` with the typed text, for a list the page reads per query
+//   (the LAN roundtable's 添加项目); `emptyLabel` / `loadingLabel` replace the
+//   generic empty and loading text.
 // - `cn` comes from @/lib/class-names; the chevron and check mark are FULI's
 //   (UiIcon), not lucide.
 // - ComboboxList has the FULI popover look, as Select and DropdownMenu: card

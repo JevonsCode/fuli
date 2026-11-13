@@ -143,6 +143,7 @@ async function clearAttempts() {
           <Checkbox v-model="sameDigits" :disabled="pairing.confirmedHere || Boolean(busy)" data-pairing-same />
           <span>{{ t('settings.peer.sameDigits') }}</span>
         </label>
+        <p data-share-on-pair>{{ t('settings.peer.shareOnPair') }}</p>
         <div class="peer-actions">
           <Button size="sm" data-pairing-confirm :disabled="!sameDigits || pairing.confirmedHere || pairing.state !== 'confirm'"
             :loading="busy === 'confirm'" :loading-label="t('settings.peer.confirming')" @click="confirm">

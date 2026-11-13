@@ -79,7 +79,16 @@ export type PeerStatus = {
   devices: Device[]
   openInvitations: number
   shares: Share[]
+  // Only shared projects and suggestions (the same own repository on a paired computer); the rest are found by search.
   shareable: Shareable[]
+  // This computer and the paired devices it sees; every one of them can ask a shared lead.
+  groupSize?: number
+  // What a pairing shared without a separate tick (the projects the other computer reports too),
+  // or why it shared none: other computers in the group, more than 8, or no answer.
+  autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[];
+    skipped?: 'group' | 'too_many' | 'unanswered'; matched?: number }[]
+  // A pairing still waiting for the coordinator's answer: the card keeps reading until it lands.
+  autoSharePending?: boolean
   lastPublish?: { at: string; agents: number | null; error: string | null; message?: string } | null
   nearby?: Nearby
 }
@@ -101,6 +110,42 @@ export const peerStatusShape = shapeFor<PeerStatus>(z.looseObject({
   shareable: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
   nearby: nearbyShape.optional(),
 }))
+
+// GET /api/peer/shareable?query=…: other projects to add, by name, without their teams.
+export type ShareableSearch = { projects: { projectId: string; projectName: string }[]; more: boolean }
+
+export const shareableSearchShape = shapeFor<ShareableSearch>(z.looseObject({
+  projects: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
+  more: z.boolean(),
+}))
+
+// GET /api/peer/shareable/<projectId>: the picked project as a row of the list.
+export const shareableShape = shapeFor<Shareable>(z.looseObject({
+  projectId: z.string(),
+  projectName: z.string(),
+  lead: z.looseObject({ agentId: z.string(), name: z.string() }).nullable(),
+  clients: z.array(z.enum(['codex', 'claude_code'])),
+}))
+
+// Projects a paired computer has with the same own repository that are not shared yet,
+// and that can be (they have a lead with a client): what 「共享这 N 个相同的项目」 shares.
+export function unsharedSuggestions(status: PeerStatus) {
+  const shared = new Set(status.shares.map((share) => share.projectId))
+  return status.shareable.filter((project) => project.sameProjectOn?.length && project.lead && project.clients.length
+    && !shared.has(project.projectId))
+}
+
+// The names of the projects pairing shared without a separate tick, for 「配对后已共享：…」.
+export function autoSharedNames(status: PeerStatus) {
+  return [...new Set((status.autoShared ?? []).flatMap((record) => record.projects.map((project) => project.projectName)))]
+}
+
+// The rows of the share list: the short list from status, then projects the
+// person added in this visit (kept, ticked or not, until a save or reload).
+export function shareRows(status: PeerStatus, added: readonly Shareable[]) {
+  const listed = new Set(status.shareable.map((project) => project.projectId))
+  return [...status.shareable, ...added.filter((project) => !listed.has(project.projectId))]
+}
 
 // The console's own message for a refused peer control, else the fallback.
 export function peerApiMessage(caught: unknown, fallback: string) {
