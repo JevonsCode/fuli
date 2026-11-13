@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import { UiIcon, UiIconButton } from '@/ui'
+import { memberFaceId } from '@/features/agent-profile/remote-faces'
 import type { RoundtableChatRoom, RoundtableThreadSummary } from './roundtable-api'
 import { chatRoomName, threadDelivery, type ConversationDelivery } from './roundtable-model'
 import { exampleNames } from './roundtable-prompts'
@@ -42,7 +43,8 @@ const threadRow = (item: RoundtableThreadSummary): ListRow => ({
   waiting: waitingLabel(item), delivery: threadDelivery(item), testId: 'roundtable-thread',
 })
 const roomRow = (item: RoundtableChatRoom): ListRow => ({
-  key: `chat:${item.chatId}`, to: `/roundtables/chat/${encodeURIComponent(item.chatId)}`, people: item.members, title: chatRoomName(item),
+  key: `chat:${item.chatId}`, to: `/roundtables/chat/${encodeURIComponent(item.chatId)}`,
+  people: item.members.map(member => ({ agentId: memberFaceId(member), name: member.name })), title: chatRoomName(item),
   preview: `${t(`roundtable.chat.kinds.${item.kind}`)} · ${t('roundtable.chat.memberCount', { count: item.members.length })}`,
   updatedAt: item.updatedAt, waiting: null, delivery: 'instant', testId: 'roundtable-chat-room',
 })

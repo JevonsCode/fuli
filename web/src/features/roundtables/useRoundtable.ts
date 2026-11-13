@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
+import { loadRemoteFaces } from '@/features/agent-profile/remote-faces'
 import {
   appendChatPage, listChats, listThreads, readChat, readThread,
   type RoundtableChatPage, type RoundtableChatRoom, type RoundtableThread, type RoundtableThreadSummary,
@@ -326,6 +327,8 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
   let stopChatUpdates = () => {}
   const replying = computed(() => Boolean(thread.value && deliveryInFlight(chatBubbles(thread.value))))
   onMounted(() => {
+    // Faces of FLAs on paired computers, as their own computers show them.
+    void loadRemoteFaces()
     void loadThreads()
     void loadChats()
     void loadDetail()

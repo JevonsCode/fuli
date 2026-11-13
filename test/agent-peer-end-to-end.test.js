@@ -3,6 +3,26 @@ import test from 'node:test';
 import { sign } from 'node:crypto';
 import { canonicalJson } from '../packages/roundtable/src/peer/protocol.js';
 import { device, pair, remoteAddress, signingAuthority } from './fixtures/peer-devices.js';
+import { createAgentAvatars } from '../src/agent-avatars/port.js';
+
+test('a shared lead is listed by its own agentId with the face seed its person re-rolled; a picture is not sent', { timeout: 20_000 }, async () => {
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
+  beta.app.agentAvatars = createAgentAvatars();
+  try {
+    beta.app.agentAvatars.set({ personalSpaceId: 'beta-space', agentId: 'beta-lead', look: { kind: 'generated', seed: 'seed-beta-7' } });
+    beta.app.agentAvatars.set({ personalSpaceId: 'beta-space', agentId: 'beta-member',
+      look: { kind: 'image', data: Buffer.from('89504e470d0a1a0a0000', 'hex').toString('base64') } });
+    await pair(alpha, beta);
+    await remoteAddress(alpha.app);
+    const [lead] = (await alpha.app.roundtable.findAgents({})).remoteAgents;
+    assert.match(lead.address, /^peer:[0-9a-f]{16}:/);
+    assert.equal(lead.agentId, 'beta-lead');
+    assert.deepEqual(lead.look, { kind: 'generated', seed: 'seed-beta-7' });
+    const published = JSON.stringify(await alpha.app.roundtable.findAgents({}));
+    assert.ok(!published.includes('beta-member') && !published.includes('iVBOR'), 'no picture and no unshared Agent crosses');
+  } finally { beta.app.agentAvatars.close(); await alpha.close(); await beta.close(); }
+});
+
 test('a project lead asks the shared lead on another paired device over TLS', { timeout: 20_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
   try {

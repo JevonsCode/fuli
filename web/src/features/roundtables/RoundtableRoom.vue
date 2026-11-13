@@ -2,6 +2,7 @@
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { memberFaceId } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import MarkdownText from '@/components/MarkdownText.vue'
@@ -26,11 +27,13 @@ const emit = defineEmits<{ later: [] }>()
 const byAddress = computed(() => new Map(props.room.members.map(member => [member.address, member])))
 const seats = computed(() => props.room.members.map(member => ({
   key: member.address,
-  person: { agentId: member.agentId, name: member.name, client: null },
+  person: { agentId: memberFaceId(member), name: member.name, client: null },
   spoke: props.room.messages.filter(message => message.from === member.address).length,
   awaited: false,
 })))
 const sender = (address: string) => byAddress.value.get(address)
+// A member on another computer is drawn by its address, so it shows the face it has there.
+const senderFace = (address: string) => { const member = sender(address); return member ? memberFaceId(member) : null }
 const senderName = (address: string) => sender(address)?.name ?? t('roundtable.unknownAgent')
 const initial = (address: string) => senderName(address).trim().slice(0, 1).toUpperCase()
 const marks = computed(() => chatRunMarks(props.room.messages.map(message => ({ from: message.from, at: message.createdAt }))))
@@ -85,7 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
           <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="message.createdAt">{{ time(message.createdAt) }}</time></p>
           <div class="rt-msg-row">
             <span v-if="marks[index]!.runStart" class="rt-face roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><AgentAvatar
-              v-if="sender(message.from)?.agentId" :agent-id="sender(message.from)!.agentId!" :name="senderName(message.from)" /><template v-else>{{ initial(message.from) }}</template></span>
+              v-if="senderFace(message.from)" :agent-id="senderFace(message.from)!" :name="senderName(message.from)" /><template v-else>{{ initial(message.from) }}</template></span>
             <span v-else class="rt-face-gap" aria-hidden="true" />
             <div class="rt-msg-col">
               <p v-if="marks[index]!.runStart" class="rt-byline"><strong>{{ senderName(message.from) }}</strong></p>
