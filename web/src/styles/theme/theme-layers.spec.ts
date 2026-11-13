@@ -62,6 +62,13 @@ describe('theme layers', () => {
     expect(rule).toContain('user-select: none')
   })
 
+  it('keeps the interface\u2019s own labels out of text selection', () => {
+    const start = elements.indexOf(':where(h1, [data-slot="card-title"]')
+    const rule = elements.slice(start, elements.indexOf('}', start))
+    for (const selector of ['h1', '[data-slot="card-title"]', '[data-slot="card-description"]', '.ui-group-label', 'a.workbench-row']) expect(rule, selector).toContain(selector)
+    expect(rule).toContain('user-select: none')
+  })
+
   it('styles one thin scrollbar everywhere: a transparent track and a thumb that darkens on hover', () => {
     // Chromium draws its native bar when scrollbar-width is set, so the standard properties are for other browsers only.
     expect(elements).toContain('@supports not selector(::-webkit-scrollbar) {\n  * { scrollbar-width: thin;')
