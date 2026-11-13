@@ -5,6 +5,7 @@ import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSegmented from '@/ui/UiSegmented.vue'
+import StatementRows from './StatementRows.vue'
 import { readStatement, statementDetails, statementWeek, type Statement } from './statement'
 
 // 查看详情 of the statement: every number it has, each with one line on what it
@@ -52,13 +53,7 @@ watch(() => props.open, open => { if (open) { reading++; week.value = 'current';
         </span>
       </div>
       <p v-if="!rows.length && !loading" class="statement-details-none">{{ t(`today.statement.unavailable.${week}`) }}</p>
-      <dl v-else-if="rows.length" class="statement-details-list" :aria-busy="loading" data-statement-rows>
-        <div v-for="row in rows" :key="row.key" class="statement-details-row" :data-statement-detail="row.key">
-          <dt>{{ row.label }}</dt>
-          <dd class="statement-details-value">{{ row.value }}</dd>
-          <dd class="statement-details-what">{{ row.what }} · {{ row.source }}</dd>
-        </div>
-      </dl>
+      <StatementRows v-else-if="shown && rows.length" :statement="shown" :busy="loading" />
     </div>
   </UiDialog>
 </template>
@@ -69,15 +64,5 @@ watch(() => props.open, open => { if (open) { reading++; week.value = 'current';
 .statement-details-head { display: flex; align-items: center; gap: 12px; min-height: 32px; }
 .statement-details-head > :first-child { flex: 1; min-width: 0; }
 .statement-details-reading { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; min-width: 20px; }
-/* Numbers of the week being left stay readable while the next week is read. */
-.statement-details-list[aria-busy='true'] .statement-details-value { opacity: 0.45; }
-.statement-details-value { transition: opacity 160ms ease; }
 .statement-details-none { margin: 0; color: var(--color-muted); font-size: var(--text-body); }
-.statement-details-list { margin: 0; }
-.statement-details-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 0; }
-.statement-details-row + .statement-details-row { border-top: 1px solid var(--color-border); }
-.statement-details-row dt { font-size: var(--text-body); font-weight: var(--weight-medium); }
-.statement-details-row dd { margin: 0; }
-.statement-details-value { font-size: var(--text-body); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
-.statement-details-what { grid-column: 1 / -1; color: var(--color-muted); font-size: var(--text-meta); }
 </style>

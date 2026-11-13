@@ -6,6 +6,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import PageStack from '@/components/PageStack.vue'
 import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
 import { readStatement, type Statement } from '@/features/today/statement'
+import StatementRows from '@/features/today/StatementRows.vue'
 import { t } from '@/i18n'
 import { UiIconButton, UiNotice } from '@/ui'
 import {
@@ -13,7 +14,6 @@ import {
   type Measure, type StatementDays,
 } from './calendar'
 import StatementCalendar from './StatementCalendar.vue'
-import StatementWeekRows from './StatementWeekRows.vue'
 
 // 复利账单, day by day: the last year as a calendar on top, and under it, in
 // the same column, the statement of the week picked there (this week at
@@ -116,7 +116,7 @@ void readStatementDays(new Date()).then(value => { days.value = { state: value ?
             <p v-if="daySummary" class="statement-week-day" data-statement-day>{{ daySummary }}</p>
             <GrowthLoading v-if="!shown" variant="compact" :label="t('statementCalendar.loading.week', { range: range(week) })" />
             <p v-else-if="!shown.statement" class="statement-week-none" :class="{ 'is-stale': reading }">{{ t('statementCalendar.weekFailed') }}</p>
-            <StatementWeekRows v-else :statement="shown.statement" :class="{ 'is-stale': reading }" data-statement-week-rows />
+            <StatementRows v-else :statement="shown.statement" :busy="reading !== null" data-statement-week-rows />
           </div>
         </Card>
       </template>
