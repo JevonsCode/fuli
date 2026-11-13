@@ -124,10 +124,11 @@ async function teamChanges({ app, space, projectName }) {
 }
 
 // A console change an FLA made for the person; its undo is described in AI permissions.
+// status is the HTTP status; outcome says whether the change went through.
 function delegatedChanges({ delegation }) {
   const operations = delegation?.read().operations ?? [];
   return operations
-    .filter(operation => operation.status === 'applied')
+    .filter(operation => operation.outcome === 'succeeded')
     .map(operation => notice('delegated_change', operation.id, operation.at, { reason: operation.reason ?? '' }, '/settings'));
 }
 

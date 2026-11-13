@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { DELEGATION_CATEGORIES, interfaceForRequest } from '../agent-tools/interface-catalog.js';
 import { InvalidInputError } from '../app/application-error.js';
-import { DelegatedOperationLog } from './operation-log.js';
+import { DELEGATION_LOG_FILE, DelegatedOperationLog } from './operation-log.js';
 import { createDelegationPolicyStore } from './policy-store.js';
 import { agentAccessOffRefusal, categoryOffRefusal, delegableEntry, personWordsRequiredRefusal } from './refusals.js';
 
@@ -10,7 +10,6 @@ import { agentAccessOffRefusal, categoryOffRefusal, delegableEntry, personWordsR
 // permissions, rec#11 D-81) and the record of each change an FLA made. The
 // console's loopback routes and its delegation gate are the only users.
 const DELEGATION_POLICY_FILE = 'agent-delegation-policy.json';
-const DELEGATION_LOG_FILE = 'agent-delegation.sqlite';
 const RECENT_LIMIT = 20;
 
 // dataDir: the data directory; null keeps both in memory.
