@@ -19,6 +19,7 @@ import '../../runtime/shell_cli_runtime.dart';
 import '../../runtime/windows_tray_runtime.dart';
 import '../../ui/brand.dart';
 import '../../ui/move_to_applications_page.dart';
+import '../../ui/old_version_page.dart';
 import '../fuli_link.dart';
 import '../url_opener.dart';
 import 'console_webview.dart';
@@ -53,6 +54,9 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final window = DesktopWindow();
   await window.open(title: strings.appName, show: !quiet);
   final caption = await DesktopCaption.create();
+  if (claimed?.currentPackageRoot case final current?) {
+    await _offerNewVersion(window, caption, strings, claimed!.instanceKey, claimed.instance, current);
+  }
   // Before anything could start FULI from a read-only disk image.
   if (Platform.isMacOS && kReleaseMode) await _settleInstallPlace(window, caption, strings);
   const opener = BrowserUrlOpener();
@@ -181,12 +185,43 @@ Future<void> _settleInstallPlace(DesktopWindow window, DesktopCaption caption, S
   await notNow.future;
 }
 
+// Windows: this client runs from a version an update replaced. It runs
+// nothing from there; it keeps the data's one-client lock, so an update
+// closes it and a second launch shows it, and offers to open the installed
+// version. The new client can take the lock only once this one lets it go.
+Future<Never> _offerNewVersion(DesktopWindow window, DesktopCaption caption, Strings strings, String instanceKey,
+    WindowsInstance instance, String currentPackageRoot) async {
+  WindowsInstance? held = instance;
+  void listen() => held?.listen(onOpen: () => unawaited(window.show()), onExit: () => exit(0));
+  listen();
+  await window.show();
+  runApp(OldVersionApp(
+    strings: strings,
+    brand: await FuliBrand.load(rootBundle),
+    caption: caption,
+    onOpenNew: () async {
+      held?.release();
+      try {
+        await Process.start('$currentPackageRoot\\Fuli.exe', const [],
+            workingDirectory: currentPackageRoot, mode: ProcessStartMode.detached);
+        exit(0);
+      } on ProcessException {
+        final (claim, again) = WindowsInstance.claim(instanceKey, handOver: false);
+        held = claim == InstanceClaim.owner ? again : null;
+        listen();
+        return false;
+      }
+    },
+  ));
+  return Completer<Never>().future;
+}
+
 // One client per installation's data directory. A launch leaves its link in
 // the inbox first: a second launch then signals the running client and
 // exits, the first one takes it back. Without an installation there is
-// nothing to share and no lock.
-Future<({WindowsInstance instance, LinkInbox? inbox, bool linkLeft})?> _claimInstance(WindowsTrayRuntime runtime,
-    {required bool handOver, FuliLink? link}) async {
+// nothing to share and no lock. currentPackageRoot: see _offerNewVersion.
+Future<({WindowsInstance instance, String instanceKey, LinkInbox? inbox, bool linkLeft, String? currentPackageRoot})?>
+    _claimInstance(WindowsTrayRuntime runtime, {required bool handOver, FuliLink? link}) async {
   final context = await runtime.context();
   if (context == null) return null;
   final inbox = LinkInbox.forInstance(context.instanceKey, Platform.environment);
@@ -201,7 +236,8 @@ Future<({WindowsInstance instance, LinkInbox? inbox, bool linkLeft})?> _claimIns
   }
   final (claim, instance) = WindowsInstance.claim(context.instanceKey, handOver: handOver);
   if (claim != InstanceClaim.owner) exit(0);
-  return (instance: instance!, inbox: inbox, linkLeft: linkLeft);
+  return (instance: instance!, instanceKey: context.instanceKey, inbox: inbox, linkLeft: linkLeft,
+      currentPackageRoot: context.currentPackageRoot);
 }
 
 // The package that registers itself with Windows, or null: on macOS, for a
