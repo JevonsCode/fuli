@@ -24,6 +24,17 @@ test('an approved visit request edits only its worktree, in the workspace-write 
     ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', 'cx-session-1', '-']);
 });
 
+test('with FULI\'s own MCP entry the whole mcp_servers table is replaced by it; the delegation still reaches it', () => {
+  const entry = { command: 'C:\\synthetic\\node.exe', args: ['C:\\synthetic\\mcp-server.js', '--source-application', 'codex'],
+    settings: { enabled: true, startup_timeout_sec: 30, default_tools_approval_mode: 'auto' } };
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'worktree_edit', delegated: true, mcpServer: entry }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', '-C', '/w',
+      '-c', 'mcp_servers={ fuli = { command = "C:\\\\synthetic\\\\node.exe", args = ["C:\\\\synthetic\\\\mcp-server.js","--source-application","codex"], '
+        + 'enabled = true, startup_timeout_sec = 30, default_tools_approval_mode = "auto" } }',
+      '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'answer', mcpServer: entry }), wakeArguments('codex', { cwd: '/w' }));
+});
+
 test('Codex answers are the last agent message of a completed turn', () => {
   assert.deepEqual(parseFinalAnswer('codex', { code: 0, stdout: [
     JSON.stringify({ type: 'thread.started', thread_id: 'cx-1' }),

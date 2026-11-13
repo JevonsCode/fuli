@@ -15,7 +15,7 @@ import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 // Synthetic only: no real client starts; the wake port is a fake that records its input.
 const SECRET_PATH = '/home/synthetic-person/private/notes.txt';
 
-function fixture(t, { wake, shareClients = ['codex', 'claude_code'], issueGrant = null, sessions = [{ client: 'codex', sessionId: 'synthetic-codex-session' }] } = {}) {
+function fixture(t, { wake, fuliMcp = null, shareClients = ['codex', 'claude_code'], issueGrant = null, sessions = [{ client: 'codex', sessionId: 'synthetic-codex-session' }] } = {}) {
   const folder = mkdtempSync(join(tmpdir(), 'fuli-remote-ladder-'));
   t.after(() => rmSync(folder, { recursive: true, force: true }));
   const store = createRoundtableStore();
@@ -33,6 +33,7 @@ function fixture(t, { wake, shareClients = ['codex', 'claude_code'], issueGrant 
       verifyAgentDelegation: async () => ({ redeemed: true }), revokeAgentDelegation: async () => {}, sealAgentDelegation: async () => {}
     }
   };
+  if (fuliMcp) app.fuliMcpServer = fuliMcp;
   const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), openStore: () => store, clientAvailable: () => true,
     locateCwd: () => folder, turnRunning: () => false,
     wake: async input => { woken.push(input); return wake(input, woken.length); } });
@@ -121,4 +122,14 @@ test('a remote ask wakes every client read-only, with each adapter\'s read-only 
   assert.deepEqual(codexNew.slice(codexNew.indexOf('--sandbox'), codexNew.indexOf('--sandbox') + 2), ['--sandbox', 'read-only']);
   assert.deepEqual(claude.slice(claude.indexOf('--tools'), claude.indexOf('--tools') + 4),
     ['--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell']);
+});
+
+test('an ask from another computer loads only FULI\'s own MCP server where FULI can name it', async (t) => {
+  const entry = (client) => ({ command: 'synthetic-node', args: ['synthetic-mcp-server.js', '--source-application', client] });
+  const f = fixture(t, { fuliMcp: entry, wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
+  await f.ask();
+  assert.deepEqual([f.woken[0].mode, f.woken[0].mcpServer], ['read_only', entry(f.woken[0].client)]);
+  const bare = fixture(t, { wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
+  await bare.ask();
+  assert.equal(bare.woken[0].mcpServer, null, 'without the entry a read-only wake keeps today\'s configuration');
 });

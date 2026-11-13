@@ -4,7 +4,8 @@
 // transaction. Every state change goes through move(), which writes its event
 // in the same statement group, so no state changes without its record.
 const OPEN_STATES = Object.freeze(['received', 'planning', 'awaiting_owner', 'approved', 'running']);
-const RESULT_STATES = new Set(['awaiting_review', 'kept', 'discarded']);
+// Counted toward a requester's open cap: a result still waiting for review holds a worktree too.
+const HELD_OPEN_STATES = Object.freeze([...OPEN_STATES, 'awaiting_review']);
 const EVENTS_PER_REQUEST = 200;
 
 export function createVisitRecords(store) {
@@ -80,22 +81,27 @@ export function createVisitRecords(store) {
         AND (? IS NULL OR requester_key = ?) ORDER BY created_at`).all(...states, requesterKey, requesterKey).map(requestView);
     },
 
+    // Requests this computer took (not refused) since an ISO instant, of one project or of all.
+    acceptedSince(since, { projectId = null } = {}) {
+      if (!store.readable) return 0;
+      return db().prepare(`SELECT COUNT(*) AS count FROM visit_requests WHERE state <> 'refused' AND created_at > ?
+        AND (? IS NULL OR project_id = ?)`).get(since, projectId, projectId).count;
+    },
+
     // What one requester used since an ISO instant: requests that were taken
     // (not refused), the ones still open, and the minutes of wakes they cost.
     usage(requesterKey, since) {
       if (!store.readable) return { requests: 0, open: 0, wakeMs: 0, refused: 0 };
       const row = db().prepare(`SELECT
           SUM(CASE WHEN state <> 'refused' AND created_at > ? THEN 1 ELSE 0 END) AS requests,
-          SUM(CASE WHEN state IN (${OPEN_STATES.map(() => '?').join(', ')}) THEN 1 ELSE 0 END) AS open,
+          SUM(CASE WHEN state IN (${HELD_OPEN_STATES.map(() => '?').join(', ')}) THEN 1 ELSE 0 END) AS open,
           SUM(CASE WHEN created_at > ? THEN planning_ms + run_ms ELSE 0 END) AS wake_ms,
           SUM(CASE WHEN state = 'refused' AND created_at > ? THEN 1 ELSE 0 END) AS refused
-        FROM visit_requests WHERE requester_key = ?`).get(since, ...OPEN_STATES, since, since, requesterKey);
+        FROM visit_requests WHERE requester_key = ?`).get(since, ...HELD_OPEN_STATES, since, since, requesterKey);
       return { requests: row.requests ?? 0, open: row.open ?? 0, wakeMs: row.wake_ms ?? 0, refused: row.refused ?? 0 };
     }
   };
 }
-
-export const hasResult = (state) => RESULT_STATES.has(state);
 
 const COLUMNS = Object.freeze({
   plan: 'plan_json', planError: 'plan_error', review: 'review', holdReason: 'hold_reason', modeAtDecision: 'mode_at_decision',

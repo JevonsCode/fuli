@@ -3,15 +3,16 @@ import { z } from 'zod';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
 import { parseModelJson } from '../text/model-json.js';
 import { withoutControls } from '../text/control-characters.js';
-import { branchChanges, commitVisitWorktree, createVisitWorktree, integritySnapshot, removeVisitWorktree,
-  repositoryRoot } from './worktree.js';
+import { branchChanges, commitVisitWorktree, createVisitWorktree, inspectVisitWorktree, integritySnapshot,
+  removeVisitWorktree, repositoryRoot } from './worktree.js';
 
 // The two wakes of a visit request on this computer, both through the
 // roundtable's wake port under the owner's grant (wake): a read-only planning
-// pass and the run itself, which may edit only the request's worktree. The
-// requester's text is quoted as data in both prompts. After the run FULI, not
-// the woken session, commits the worktree, reads the branch's actual changes
-// and compares the owner's working tree and refs with their state before.
+// pass in the owner's project folder, and once approved the run itself, which
+// may edit only the request's worktree. The requester's text is quoted as data
+// in both prompts. After the run FULI, not the woken session, checks the
+// worktree's content, commits it, reads the branch's actual changes and
+// compares the owner's repository with its state before.
 export const PLANNING_MS = 3 * 60 * 1000;
 export const RUN_MS = 15 * 60 * 1000;
 const SUMMARY_CHARS = 2000;
@@ -25,26 +26,33 @@ const PLAN = z.object({
   size: z.enum(['s', 'm', 'l'])
 });
 
-// wake({ agentId, projectId, subject, cwd, prompt, mode, timeoutMs, signal }) → { body }
+// wake({ agentId, projectId, subject, cwd, prompt, mode, timeoutMs, signal, clients? }) → { body }
 // projectFolder({ agentId, projectId }) → the lead's known folder of the project, or null
 // verifyFolder(folder, projectId) → whether FULI maps that folder to the project
 // root: the folder visit worktrees are made in (<dataDir>/visit-worktrees).
 export function createVisitRunner({ wake, projectFolder, verifyFolder, root, clock = Date.now }) {
-  // The worktree a request is planned and run in, from the share's folder or
-  // the lead's known one, only when FULI maps that folder to the project.
-  async function prepare(request) {
-    const folder = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
-    if (!folder || !await verifyFolder(folder, request.projectId)) throw coded('no_working_directory');
-    return { projectFolder: folder, ...await createVisitWorktree({ folder, root, id: request.id }) };
+  // The project folder a request is planned in and worked from: the share's
+  // folder or the lead's known one, only when FULI maps it to the project.
+  async function folder(request) {
+    const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
+    if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
+    return found;
   }
 
-  // The lead's own reading of the request, without changing anything; null
-  // with a code when it did not finish or did not answer as asked.
+  // The worktree, made only once the request is approved (by the owner or a rule).
+  async function prepare(request) {
+    const found = await folder(request);
+    return { projectFolder: found, ...await createVisitWorktree({ folder: found, root, id: request.id }) };
+  }
+
+  // The lead's own reading of the request in the owner's project folder,
+  // read-only, before anything is approved or copied; null with a code when it
+  // did not finish or did not answer as asked.
   async function plan(request, { signal }) {
     const started = clock();
     try {
       const answer = await wake({ agentId: request.agentId, projectId: request.projectId, subject: request.title,
-        cwd: request.worktreePath, prompt: planningPrompt(request), mode: 'read_only', timeoutMs: PLANNING_MS, signal });
+        cwd: request.projectFolder, prompt: planningPrompt(request), mode: 'read_only', timeoutMs: PLANNING_MS, signal });
       let parsed;
       try { parsed = PLAN.safeParse(parseModelJson(answer.body)); } catch { parsed = { success: false }; }
       return parsed.success ? { plan: parsed.data, error: null, ms: clock() - started }
@@ -54,25 +62,30 @@ export function createVisitRunner({ wake, projectFolder, verifyFolder, root, clo
     }
   }
 
-  // The approved run. Answers what changed and whether everything outside the
-  // branch stayed as it was; a failed wake throws with its code and how long it took.
-  async function run(request, { signal }) {
+  // The approved run. Answers what changed, whether everything outside the
+  // branch stayed as it was, and a hold reason when the worktree's content
+  // must not be staged (nothing is committed then); a failed wake throws with
+  // its code and how long it took. clients: the clients this run may use.
+  async function run(request, { signal, clients = null }) {
     const repository = await repositoryRoot({ folder: request.projectFolder, root });
-    const before = await integritySnapshot({ repository, root });
+    const before = await integritySnapshot({ repository, root, ownBranch: request.branch });
     const started = clock();
     let answer;
     try {
       answer = await wake({ agentId: request.agentId, projectId: request.projectId, subject: request.title,
-        cwd: request.worktreePath, prompt: runPrompt(request), mode: 'worktree_edit', timeoutMs: RUN_MS, signal });
+        cwd: request.worktreePath, prompt: runPrompt(request), mode: 'worktree_edit', timeoutMs: RUN_MS, signal,
+        ...(clients ? { clients } : {}) });
     } catch (error) {
       throw Object.assign(error, { ms: clock() - started });
     }
     const ms = clock() - started;
-    await commitVisitWorktree({ worktreePath: request.worktreePath, root,
-      message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
-    const after = await integritySnapshot({ repository, root });
-    const changes = await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
-    return { ms, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''), intact: before === after,
+    const place = { folder: request.projectFolder, root, id: request.id, worktreePath: request.worktreePath };
+    const hold = await inspectVisitWorktree({ ...place, baseCommit: request.baseCommit });
+    if (!hold) await commitVisitWorktree({ ...place, message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
+    const after = await integritySnapshot({ repository, root, ownBranch: request.branch });
+    const changes = hold ? { files: [], diffstat: { files: 0, added: 0, removed: 0 }, addedText: '' }
+      : await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
+    return { ms, hold, intact: before === after, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''),
       files: changes.files, diffstat: changes.diffstat, addedText: changes.addedText };
   }
 
@@ -82,14 +95,14 @@ export function createVisitRunner({ wake, projectFolder, verifyFolder, root, clo
     return { text, truncated };
   }
 
-  // The worktree goes; the branch stays only when the owner kept it.
+  // The worktree goes; the branch stays when the owner kept it or it expired unreviewed.
   async function remove(request, { keepBranch }) {
     if (!request.worktreePath && !request.branch) return;
     const repository = await repositoryRoot({ folder: request.projectFolder, root });
     await removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root }, { keepBranch });
   }
 
-  return { prepare, plan, run, patch, remove };
+  return { folder, prepare, plan, run, patch, remove };
 }
 
 // The requester's words as JSON inside a marked block: data for the lead to

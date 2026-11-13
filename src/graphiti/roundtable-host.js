@@ -160,6 +160,11 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     },
     // A paired device the person revoked: its open visit requests end too.
     peerDeviceRevoked: nodeId => app.visitorAccess?.requesterRevoked(`peer:${nodeId}`),
+    // A share removed (or handed to another lead) ends that project's open visit requests.
+    peerSharesChanged: shares => app.visitorAccess?.requests?.sharesChanged(shares),
+    // FULI's own MCP server as its installer writes it for that client; a wake on
+    // another computer's text loads only this one (roundtable deliver onlyFuliMcp).
+    fuliMcpServer: client => app.fuliMcpServer?.(client) ?? null,
     // A visiting query the runner refused once the asking device was proven,
     // with the project of the share it named when that share is known.
     refuseSharedQuery: ({ requester, action, code, projectId = null }) =>

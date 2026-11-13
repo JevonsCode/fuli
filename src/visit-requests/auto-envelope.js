@@ -10,17 +10,25 @@ export const AUTO_ENVELOPE_RULE = 'auto_envelope_v1';
 const MAX_CHANGED_LINES = 400;
 const MAX_CHANGED_FILES = 20;
 
-// Package manifests and lockfiles of the ecosystems FULI meets, CI, env files,
-// Git's own files, config folders and anything that runs as a program.
+// Package manifests and lockfiles of the ecosystems FULI meets, build and
+// tool files that run code when the owner opens, builds or tests the branch
+// (editor, container and Agent settings, build scripts and wrappers, test
+// hooks), CI, env files, Git's own files, config folders and anything that
+// runs as a program.
 const DENIED_NAMES = new Set(['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml',
   'pnpm-workspace.yaml', 'bun.lockb', 'cargo.toml', 'cargo.lock', 'go.mod', 'go.sum', 'pyproject.toml', 'poetry.lock',
   'pipfile', 'pipfile.lock', 'setup.py', 'setup.cfg', 'gemfile', 'gemfile.lock', 'composer.json', 'composer.lock',
-  'build.gradle', 'build.gradle.kts', 'pom.xml', 'packages.lock.json', 'directory.packages.props', 'podfile', 'podfile.lock',
-  '.gitlab-ci.yml', '.travis.yml', 'azure-pipelines.yml', 'jenkinsfile', 'makefile', 'dockerfile']);
-const DENIED_DIRECTORIES = new Set(['.github', '.circleci', '.gitlab', '.husky', 'config', '.git']);
-const EXECUTABLE_EXTENSIONS = /\.(?:exe|dll|so|dylib|sh|bash|zsh|bat|cmd|ps1|psm1|com|msi|app|jar|bin)$/i;
-const REQUIREMENTS = /^requirements.*\.txt$/i;
-const ENV_FILE = /(?:^|\.)env(?:\.|$)/i;
+  'pom.xml', 'packages.lock.json', 'podfile', 'podfile.lock', '.gitlab-ci.yml', '.travis.yml', 'azure-pipelines.yml',
+  'jenkinsfile', 'makefile', 'justfile', 'rakefile', 'flake.nix', '.pre-commit-config.yaml', 'lefthook.yml', '.mcp.json',
+  'claude.md', 'agents.md', 'gemini.md', '.npmrc', '.pnpmfile.cjs', '.envrc', 'conftest.py']);
+const DENIED_DIRECTORIES = new Set(['.github', '.circleci', '.gitlab', '.husky', 'config', '.git', '.vscode', '.idea',
+  '.devcontainer', '.claude', '.cursor', '.mvn']);
+const DENIED_PATTERNS = [/^requirements.*\.txt$/, /(?:^|\.)env(?:\.|$)/, /^\.yarnrc/, /\.csproj$/, /\.sln$/,
+  /^directory\.build\./, /^directory\.packages\.props$/, /^settings\.gradle/, /^build\.gradle/, /^gradlew/, /^mvnw/,
+  /\.config\.(?:js|cjs|mjs|ts)$/, /\.gemspec$/, /^dockerfile/, /^docker-compose/,
+  /\.(?:exe|dll|so|dylib|sh|bash|zsh|bat|cmd|ps1|psm1|com|msi|app|jar|bin)$/];
+// Folders denied where they start (gradle/wrapper sits inside gradle/).
+const DENIED_PREFIXES = ['gradle/wrapper/'];
 
 // Before the run: the budget is left and the lead's plan keeps to files under
 // the project, with no dependency, configuration or network change. Answers
@@ -41,16 +49,27 @@ export function preRunCheck({ plan, budgetLeft }) {
 // every path inside the worktree and outside the deny list, no executable or
 // binary file, at most MAX_CHANGED_LINES lines in MAX_CHANGED_FILES files, and
 // no secret in what was added.
-export function postRunCheck({ files, addedText }) {
+// platform: on Windows Git records no file modes, so any file without an
+// extension (a script that is executable elsewhere) is denied too.
+export function postRunCheck({ files, addedText, platform = process.platform }) {
   const lines = files.reduce((sum, file) => sum + (file.added ?? 0) + (file.removed ?? 0), 0);
   const checks = [
     { name: 'paths_inside_worktree', ok: files.every((file) => insideProject(file.path)) },
-    { name: 'no_denied_paths', ok: !files.some((file) => deniedPath(file.path)) },
+    { name: 'no_denied_paths', ok: !files.some((file) => deniedPath(file.path, platform)) },
     { name: 'no_executables', ok: !files.some((file) => file.executable || file.binary || file.symlink) },
     { name: 'within_size', ok: files.length <= MAX_CHANGED_FILES && lines <= MAX_CHANGED_LINES },
     secretCheck(addedText)
   ];
   return { ok: checks.every((check) => check.ok), checks };
+}
+
+// The lead's clients a run under the rule may use, without the owner's eye:
+// Claude Code, whose worktree_edit wake has no shell and no web tools; Codex
+// only where its workspace-write sandbox exists (macOS, Linux). Codex's
+// sandbox on native Windows is not verified, so there a run needs the owner's
+// approval and auto falls back to a card.
+export function constrainedVisitClients(clients, platform = process.platform) {
+  return clients.filter((client) => client === 'claude_code' || (client === 'codex' && platform !== 'win32'));
 }
 
 // Runs for every request whatever its mode: nothing that looks like a secret
@@ -67,9 +86,12 @@ function insideProject(path) {
   return !normalized.split('/').some((segment) => segment === '..');
 }
 
-function deniedPath(path) {
-  const segments = path.replaceAll('\\', '/').split('/');
-  const name = segments.at(-1).toLowerCase();
-  return DENIED_NAMES.has(name) || REQUIREMENTS.test(name) || ENV_FILE.test(name) || name.startsWith('.git')
-    || EXECUTABLE_EXTENSIONS.test(name) || segments.slice(0, -1).some((segment) => DENIED_DIRECTORIES.has(segment.toLowerCase()));
+function deniedPath(path, platform) {
+  const normalized = path.replaceAll('\\', '/').toLowerCase();
+  const segments = normalized.split('/');
+  const name = segments.at(-1);
+  return DENIED_NAMES.has(name) || name.startsWith('.git') || DENIED_PATTERNS.some((pattern) => pattern.test(name))
+    || DENIED_PREFIXES.some((prefix) => normalized.startsWith(prefix) || normalized.includes(`/${prefix}`))
+    || segments.slice(0, -1).some((segment) => DENIED_DIRECTORIES.has(segment))
+    || (platform === 'win32' && !name.includes('.'));
 }

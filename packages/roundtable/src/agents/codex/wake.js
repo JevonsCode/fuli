@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import { findFile, firstField, lastEntries, listDirectory } from '../session-log.js';
 
 const TURN_START = 'task_started';
+const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+// A TOML array of strings; JSON's string escapes are valid TOML basic strings.
+const tomlArray = (values) => `[${values.map((value) => JSON.stringify(value)).join(',')}]`;
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
 // Wakes Codex headlessly in a sandbox (read-only unless a visit request edits its worktree). Resuming records the exchange in
@@ -25,14 +28,20 @@ export const codexWake = Object.freeze({
   // read-only sandbox; worktree_edit (an approved visit request, woken in its
   // worktree) in the workspace-write sandbox of that folder, network off as
   // that sandbox has it by default.
-  args({ sessionId, cwd, delegated = false, mode }) {
+  // mcpServer ({ command, args }): FULI's own MCP server; a read_only or
+  // worktree_edit wake then replaces the whole mcp_servers table with it, so
+  // none of the person's other servers load.
+  args({ sessionId, cwd, delegated = false, mode, mcpServer = null }) {
     // Codex MCP children inherit a filtered environment. Pass variable names,
     // never the private capability itself in argv or persisted client config.
-    const authority = delegated ? ['-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]'] : [];
+    const authority = delegated ? ['-c', `mcp_servers.fuli.env_vars=${tomlArray(DELEGATION_VARIABLES)}`] : [];
+    const onlyFuli = mcpServer && mode !== 'answer'
+      ? ['-c', `mcp_servers={ fuli = { ${[`command = ${JSON.stringify(mcpServer.command)}`, `args = ${tomlArray(mcpServer.args)}`,
+        ...Object.entries(mcpServer.settings ?? {}).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)].join(', ')} } }`] : [];
     const sandbox = mode === 'worktree_edit' ? 'workspace-write' : 'read-only';
     return sessionId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${sandbox}"`, ...authority, sessionId, '-']
-      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', sandbox, '-C', cwd, ...authority, '-'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${sandbox}"`, ...onlyFuli, ...authority, sessionId, '-']
+      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', sandbox, '-C', cwd, ...onlyFuli, ...authority, '-'];
   },
 
   // A session resumes only from the directory it started in.

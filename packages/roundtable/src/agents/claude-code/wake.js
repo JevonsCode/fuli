@@ -6,8 +6,9 @@ import { firstField, listDirectory } from '../session-log.js';
 // A read-only wake has only the built-in tools that read. Whatever edits a file, runs a command
 // (Bash, PowerShell), fetches from the web or starts another agent is not there; the edit and
 // shell tools are denied as well, since a deny rule wins over any allow rule the person keeps.
-// Tools of MCP servers the person configured are not built in: they still follow that person's
-// own allow rules (docs/agent-roundtable.md).
+// Tools of MCP servers the person configured are not built in: when the host gives FULI's own
+// server entry (mcpServer), such a wake loads only that server (--strict-mcp-config); without it
+// they still follow that person's own allow rules (docs/agent-roundtable.md).
 const READ_ONLY_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
 const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash', 'PowerShell']);
 // A worktree edit reads and edits files; it runs no command and fetches nothing.
@@ -41,8 +42,12 @@ export const claudeCodeWake = Object.freeze({
   // worktree) may also edit files there, without asking, and still runs no
   // shell and reaches no web. (Plan mode is avoided: headless it may end with a
   // plan or an empty answer instead of the member's view.)
-  args({ sessionId, plannedSessionId = null, mode }) {
-    return ['-p', '--output-format', 'stream-json', '--verbose', ...MODE_ARGUMENTS[mode],
+  // mcpServer ({ command, args }): FULI's own MCP server; a read_only or
+  // worktree_edit wake then loads that server only, none of the person's others.
+  args({ sessionId, plannedSessionId = null, mode, mcpServer = null }) {
+    const onlyFuli = mcpServer && mode !== 'answer'
+      ? ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: { fuli: { type: 'stdio', command: mcpServer.command, args: mcpServer.args } } })] : [];
+    return ['-p', '--output-format', 'stream-json', '--verbose', ...MODE_ARGUMENTS[mode], ...onlyFuli,
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },
