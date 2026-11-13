@@ -10,6 +10,7 @@ from neo4j import AsyncGraphDatabase
 
 from fuli_graph.knowledge_search import _personal_entities
 from fuli_graph.knowledge_sensitivity import normal_only_ids
+from fuli_graph.knowledge_source_delete_copies import remove_source_copies
 from fuli_graph.models import SearchRequest
 from test_collaboration_context import confirmation_basis
 from test_project_agent_memory_neo4j import fixture_settings
@@ -103,6 +104,62 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
 
         edges = await normal_only_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
         assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == NORMAL_SAFE
+    finally:
+        # Delete only this test's unique fixture, even on assertion failure.
+        await driver.execute_query('''
+            MATCH (node) WHERE node.group_id = $group OR node.space_id = $group
+            DETACH DELETE node
+        ''', group=group)
+        await driver.close()
+
+
+# Each case: the (source kind, sensitivity) of the source FULI's source delete
+# removes, and whether the item, which keeps its other, normal source, is marked.
+DELETED_SOURCES = {
+    'deleted-private': (capture('private'), True),
+    'deleted-restricted': (capture('restricted'), True),
+    'deleted-unset': (capture(None), True),
+    'deleted-normal': (capture('normal'), False),
+    'deleted-edit': (EDIT, False),
+}
+
+
+async def test_deleting_a_non_normal_source_keeps_the_item_from_a_visitor():
+    settings = fixture_settings()
+    group = f'synthetic-source-delete-{uuid4()}'
+    driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
+    store = SimpleNamespace(runtime=SimpleNamespace(driver=driver), settings=SimpleNamespace(graph_limit=100))
+    space = {'id': group, 'group_id': group}
+    project = 'shared-project'
+    try:
+        for case, (source, _) in DELETED_SOURCES.items():
+            await _write_case(driver, group, project, case, [[source, capture('normal')]])
+        # A successor written after its predecessor loses a private source.
+        await _write_case(driver, group, project, 'successor', [[capture('private'), capture('normal')], [EDIT]])
+        deleted = [f'{group}-{case}-episode-0' for case in DELETED_SOURCES] + [f'{group}-successor-v0-episode-0']
+        await remove_source_copies(store, space, {'episodes': [{'uuid': uuid} for uuid in deleted],
+                                                  'event_ids': [], 'conversation_ids': [], 'task_tokens': []})
+
+        records, _, _ = await driver.execute_query('''
+            MATCH (item:Entity) WHERE item.group_id = $group AND item.fuli_had_restricted_source
+            RETURN item.uuid AS id
+        ''', group=group)
+        assert {record['id'].removeprefix(f'{group}-') for record in records} == {
+            case for case, (_, mark) in DELETED_SOURCES.items() if mark} | {'successor-v0'}
+
+        cases = [*DELETED_SOURCES, 'successor']
+        visible = {case for case, (_, mark) in DELETED_SOURCES.items() if not mark}
+        entities = await normal_only_ids(store, 'entity', [f'{group}-{case}' for case in cases])
+        assert {item.removeprefix(f'{group}-') for item in entities} == visible
+        edges = await normal_only_ids(store, 'relationship', [f'{group}-{case}-edge' for case in cases])
+        assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == visible
+
+        # The owner's search reads no marker.
+        scopes = {project: {'scope_distance': 0, 'scope_path': [project], 'inherited': False}}
+        owner = SearchRequest(space_ids=[group], query='Sensitivity fixture', limit=20,
+                              personal_project_ids=[project], active_personal_project_id=project)
+        owned = await _personal_entities(store, space, owner, scopes)
+        assert {item.id.removeprefix(f'{group}-') for item in owned} == set(cases)
     finally:
         # Delete only this test's unique fixture, even on assertion failure.
         await driver.execute_query('''

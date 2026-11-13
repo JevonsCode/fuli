@@ -19,17 +19,16 @@ predecessor still unread after that is left out.
 
 Deleted sources. A relationship lists its episodes by id (`episodes`); one
 whose list names an episode that no longer exists is left out, since that
-episode's sensitivity cannot be read. Nothing else in the data model shows a
-deletion, so these are known limits, not checked here:
-- An entity records no list or count of its sources: a deleted Episodic node
-  or MENTIONS edge leaves nothing on the entity.
-- The version link is stored only on the older item: a deleted predecessor
-  leaves nothing on its successor.
-- FULI's own source delete (knowledge_source_delete_copies) removes the
-  episode's id from every `episodes` list together with the node, and marks
-  only items that lost their whole basis (knowledge_source_delete_mutation):
-  an item that keeps a normal source after a person deleted its private one
-  carries no marker and is treated by its remaining sources.
+episode's sensitivity cannot be read. FULI's own source delete
+(knowledge_source_delete_copies) marks every item that outlives the deletion
+of a non-normal, non-edit source with fuli_had_restricted_source = true
+(graph format 20); a lineage with that marker on any version is left out.
+Known limits, not checked here:
+- A source deleted before graph format 20 left no marker, and none is
+  backfilled.
+- A deletion outside FULI's source delete leaves nothing on an entity (it
+  records no list of its sources) or on a successor (the version link is
+  stored only on the older item).
 """
 
 MAX_VERSION_DEPTH = 20
@@ -48,6 +47,7 @@ _ITEM = {
 }
 _SOURCES = '''
         RETURN origin, item.uuid AS id, item.group_id AS group_id, missing,
+               coalesce(item.fuli_had_restricted_source, false) AS had_restricted_source,
                [episode IN episodes | {kind: episode.fuli_source_kind,
                                        sensitivity: episode.fuli_sensitivity}] AS sources
 '''
@@ -95,7 +95,7 @@ def _merge(lineages: dict, rows) -> list[dict]:
         if row['id'] in lineage['seen']:
             continue
         lineage['seen'].add(row['id'])
-        lineage['withheld'] |= bool(row.get('missing'))
+        lineage['withheld'] |= bool(row.get('missing')) or bool(row.get('had_restricted_source'))
         for source in row['sources']:
             if source.get('kind') in EDIT_SOURCE_KINDS:
                 continue

@@ -41,7 +41,7 @@ class Graph:
     def row(self, origin, item_id):
         item = self.items[item_id]
         return {'origin': origin, 'id': item_id, 'group_id': GROUP, 'sources': item['sources'],
-                'missing': item.get('missing', 0)}
+                'missing': item.get('missing', 0), 'had_restricted_source': item.get('marked', False)}
 
     def lineage_rows(self, query, parameters):
         if 'fuli_replaced_by_item_id = row.id' in query:
@@ -120,6 +120,16 @@ async def test_a_relationship_naming_a_deleted_episode_is_left_out(where):
     items, current = chain([capture('normal')], [capture('normal')])
     items['v1' if where == 'current' else 'v0']['missing'] = 1
     assert await visible(items, current, 'relationship') is False
+
+
+@pytest.mark.parametrize('item_kind', ['entity', 'relationship'])
+async def test_an_item_that_lost_a_restricted_source_stays_out(item_kind):
+    marked = {'item': {'sources': [capture('normal')], 'marked': True}}
+    assert await visible(marked, 'item', item_kind) is False
+    # Its successor too, through the lineage.
+    successor, current = chain([capture('normal')], [EDIT])
+    successor['v0']['marked'] = True
+    assert await visible(successor, current, item_kind) is False
 
 
 async def test_twenty_predecessors_are_read_and_a_twenty_first_withholds():
@@ -219,6 +229,8 @@ ENTITIES = {
     'global': entity('Global deploy checklist', project=None, has_global_episode=True),
     'preference': entity('Deploy checklist preference', profile_aspect='taste', preference_scope='project',
                          preference_project_id=PROJECT),
+    # A person deleted one of its private sources; a normal one survives.
+    'marked': entity('Marked deploy'),
 }
 EDGES = {
     'edge-visible': ('runbook', 'deploy', 'Synthetic runbook documents the deploy checklist'),
@@ -227,6 +239,7 @@ EDGES = {
     'edge-to-elsewhere': ('runbook', 'elsewhere', 'Synthetic runbook deploy checklist feeds it'),
     'edge-to-referenced': ('runbook', 'referenced', 'Synthetic runbook deploy checklist cites it'),
     'edge-to-inherited': ('runbook', 'inherited', 'Synthetic runbook deploy checklist extends it'),
+    'edge-to-marked': ('runbook', 'marked', 'Synthetic runbook deploy checklist marks it'),
     # Matches only by the hidden endpoint's name.
     'edge-named-by-hidden': ('runbook', 'source', 'Synthetic runbook points somewhere'),
 }
@@ -241,7 +254,8 @@ BASIS = confirmation_basis()
 
 class PersonalGraph(Graph):
     def __init__(self):
-        super().__init__({**{key: {'sources': value['sources']} for key, value in ENTITIES.items()},
+        super().__init__({**{key: {'sources': value['sources'], 'marked': key == 'marked'}
+                             for key, value in ENTITIES.items()},
                           **{key: {'sources': [capture('normal')]} for key in EDGES}})
 
     async def execute_query(self, query, **parameters):
@@ -358,7 +372,8 @@ async def test_excluded_types_drop_relationships_without_max_sensitivity_and_an_
 
 async def test_the_owner_search_is_unchanged():
     facts, _, _ = await found('deploy checklist')
-    assert {'edge-to-elsewhere', 'edge-to-secret', 'edge-visible'} <= set(facts)
+    assert {'edge-to-elsewhere', 'edge-to-secret', 'edge-to-marked', 'edge-visible'} <= set(facts)
+    assert 'marked' in (await found('Marked deploy'))[1]
     hidden, _, named = await found('Hidden repository')
     assert hidden == ['edge-named-by-hidden', 'edge-to-source']
     assert 'source' in named
