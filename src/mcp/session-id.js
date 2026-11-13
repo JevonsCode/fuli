@@ -89,12 +89,15 @@ export function isFuliProcessSession(id) {
   return typeof id === 'string' && id.startsWith(FULI_PROCESS_SESSION);
 }
 
+// `hostNamesSessions`: whether the client this process was started for names
+// its sessions (native-session-env.js); false only where it names none.
 export function normalizeAgentSessionInput(
   name,
   input,
   nativeThreadId,
   hostSessionId = nativeThreadId,
-  sourceApplication = nativeThreadId ? 'codex' : 'other'
+  sourceApplication = nativeThreadId ? 'codex' : 'other',
+  { hostNamesSessions = true } = {}
 ) {
   if (PROJECT_AGENT_SOURCE_TOOLS.has(name)) {
     if (!hostSessionId) {
@@ -108,8 +111,10 @@ export function normalizeAgentSessionInput(
       source_session_id: _source_session_id,
       sourceSessionVerified: _sourceSessionVerified,
       source_session_verified: _source_session_verified,
+      sourceSessionBinding: _sourceSessionBinding,
       ...safeInput
     } = input ?? {};
+    const verified = Boolean(nativeThreadId && nativeThreadId === hostSessionId);
     return {
       ...safeInput,
       ...(SESSION_ID_TOOLS.has(name) && nativeThreadId ? { sessionId: nativeThreadId } : {}),
@@ -117,9 +122,12 @@ export function normalizeAgentSessionInput(
       sourceSessionId: hostSessionId,
       // nativeThreadId is set only from the environment of the client this
       // process was started for (agents/native-session-env.js).
-      ...(name === 'read_task_preferences' ? { sourceSessionVerified: Boolean(
-        nativeThreadId && nativeThreadId === hostSessionId) } : {}),
-      ...(name === 'call_employee_tool' ? { sourceSessionVerified: Boolean(nativeThreadId && nativeThreadId === hostSessionId) } : {}),
+      ...(name === 'read_task_preferences' ? { sourceSessionVerified: verified,
+        // A process of a client that names no session (Cursor, Claude
+        // Desktop's connector, rec#107) recovers by its token alone; one of a
+        // client that does but did not here is refused (rec#128).
+        ...(!verified && !hostNamesSessions && isFuliProcessSession(hostSessionId) ? { sourceSessionBinding: 'task_token' } : {}) } : {}),
+      ...(name === 'call_employee_tool' ? { sourceSessionVerified: verified } : {}),
     };
   }
   if (CAPTURE_SOURCE_TOOLS.has(name) && input && typeof input === 'object' && !Array.isArray(input)) {

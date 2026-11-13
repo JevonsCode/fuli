@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../../../src/mcp/preference-delivery.js';
-import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
+import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL }
+  from '../../../src/conversations/entry-inline-budget.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
 import { claudeEntrySession, hookFrame, syntheticPreferences, syntheticWorkingEntry }
@@ -157,23 +158,54 @@ test('a reduced detail comes back on its own: the conflicts stay counted while t
     assert.ok(second.frame.project_agent_context.memory.current.memory.summary.length > 0);
   }));
 
-test('a role too long to fit is never cut: the entry is the blocked frame, which keeps the receipt sentence', async () => {
-  const entry = await syntheticWorkingEntry({ items: syntheticPreferences(31), sessionId: SESSION });
+// rec#128: 39 preferences (30 global, 9 project) beside a role too long to
+// fit. The blocked frame used to list none of them.
+const items39 = () => syntheticPreferences(39).map((item, index) => ({ ...item, preference_scope: index < 30 ? 'global' : 'project' }));
+
+test('a role too long to fit is never cut: the blocked frame still lists the hard rules first and counts the rest', async () => {
+  const items = items39();
+  const entry = await syntheticWorkingEntry({ items, sessionId: SESSION });
   const role = { ...entry.project_agent_context.role, responsibility: `SYNTHETIC_ROLE: ${'Own the export service. '.repeat(400)}` };
   const text = await claudeEntry(continuity(entry, { role }));
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
-  assert.ok(text.startsWith(BLOCKED_PREFERENCE_LABEL));
+  // One instruction above and in the frame: apply the listed ones while recovering, never finish on them alone.
+  const lead = 'Fuli preference delivery is blocked: only part of the preferences is listed. '
+    + 'Apply them while you recover the rest; do not finish the task on them alone.';
+  assert.ok(text.startsWith(lead));
+  assert.equal(text.includes(BLOCKED_PREFERENCE_LABEL), false);
   assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged, once'));
   assert.doesNotMatch(text, /Own the export service/);
   const frame = hookFrame(text);
   assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'inline_budget']);
-  assert.match(frame.preference_delivery.guidance, /read_task_preferences/);
+  assert.match(frame.preference_delivery.guidance, /Recover now: call read_task_preferences/);
+  assert.match(frame.preference_delivery.guidance, /lists the hard rules and the preferences most relevant/);
   assert.equal(frame.preferences_complete, false);
+  assert.equal(frame.same_task_recovery_available, true);
   assert.equal(frame.taskContextToken, entry.taskContextToken);
   assert.equal(frame.checkpoint_required, false);
   assert.equal(frame.agent_receipt.markdown, entry.agent_receipt.markdown);
   assert.equal(frame.context.project_agent_id, 'lead');
-  assert.equal(frame.effective_preferences, undefined);
+  // Never none where some fit: every hard rule, then the same ranking as a bounded frame.
+  const listed = keys(frame.effective_preferences);
+  assert.ok(listed.length > hardRules(items).length, `${listed.length} listed`);
+  assert.deepEqual(hardRules(items).filter(key => !listed.includes(key)), [], 'every hard rule');
+  assert.ok(listed.includes('rule-20'), 'a boundary ranks first among the rest');
+  assert.deepEqual(frame.preferences_omitted, { count: 39 - listed.length,
+    read: { tool: 'read_task_preferences', arguments: { taskContextToken: entry.taskContextToken } } });
+});
+
+test('hard rules too many for the blocked frame are bounded most specific scope first', async () => {
+  const items = syntheticPreferences(39, { hardEvery: 1 }).map((item, index) => ({ ...item,
+    preference_scope: index < 30 ? 'global' : 'project' }));
+  const entry = await syntheticWorkingEntry({ items, sessionId: SESSION });
+  const role = { ...entry.project_agent_context.role, responsibility: `SYNTHETIC_ROLE: ${'Own the export service. '.repeat(400)}` };
+  const frame = hookFrame(await claudeEntry(continuity(entry, { role })));
+  const listed = keys(frame.effective_preferences);
+  assert.ok(listed.length > 0 && listed.length < 39);
+  // The nine project rules override the global ones, so they stay first.
+  assert.deepEqual(keys(items.slice(30)).filter(key => !listed.includes(key)), []);
+  assert.equal(frame.preferences_omitted.count, 39 - listed.length);
+  assert.equal(frame.preferences_omitted.includes_always_inline, true);
 });
 
 test('a context over the limit even as the blocked frame is the unavailable output', async () => {
@@ -222,4 +254,60 @@ test('a compaction restore delivers the current task within the inline limit and
   assertBoundedRecovery(text);
   assert.doesNotMatch(label(text), /full result/);
   assert.match(label(text), /restored current mandatory preferences for the same owned task, bounded/);
+});
+
+// rec#128: the restore after a compaction and the refresh a host notification
+// starts list part of 39 preferences; what they list and what they count add
+// up, and the read they name is the session's own task's (its token, as the
+// reader verifies it: task-preference-reader.test.js).
+const recovered39 = async (name, parameters) => {
+  const entry = await syntheticWorkingEntry({ items: items39(), sessionId: SESSION, token: parameters.taskContextToken });
+  return copyPreferenceScope(entry, { ...entry, checkpoint_required: true, checkpoint_guidance: undefined,
+    project_agent_context: { ...entry.project_agent_context, wake_mode: 'preference_recovery' },
+    preference_delivery: { status: 'complete' }, preferences_complete: true, same_task_recovery_available: true, truncated: false });
+};
+const NOTIFICATION = '<task-notification>\n<task-id>bsynth02x</task-id>\n<status>completed</status>\n</task-notification>';
+
+for (const [path, run] of [
+  ['compaction restore', () => claudeLifecycleOutput('SessionStart', { session_id: SESSION, source: 'compact' }, recovered39, { currentTask })],
+  ['notification refresh', () => claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: NOTIFICATION }, recovered39, { currentTask })]
+]) {
+  test(`a ${path} of 39 preferences lists and counts all 39, hard rules listed, and names the task's own read`, async () => {
+    const text = (await run()).hookSpecificOutput.additionalContext;
+    assertBoundedRecovery(text);
+    const frame = hookFrame(text);
+    const listed = keys(frame.effective_preferences);
+    assert.ok(listed.length > 0);
+    assert.equal(listed.length + frame.preferences_omitted.count, 39);
+    assert.deepEqual(hardRules(items39()).filter(key => !listed.includes(key)), [], 'every hard rule');
+    assert.deepEqual(frame.preferences_omitted.read,
+      { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-current' } });
+  });
+}
+
+test('an entry whose task the reader cannot serve counts what it leaves out without pointing at the reader', async () => {
+  // No task Agent: read_task_preferences refuses such a task.
+  const entry = await syntheticWorkingEntry({ items: items39(), sessionId: SESSION });
+  const agentless = copyPreferenceScope(entry, { ...entry, context: { ...entry.context, project_agent_id: null },
+    project_agent_context: { ...entry.project_agent_context, project_agent_id: null } });
+  const text = await claudeEntry(agentless);
+  assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
+  assert.ok(label(text).includes(OMITTED_UNREADABLE_LABEL));
+  assert.equal(label(text).includes(OMITTED_PREFERENCES_LABEL), false);
+  assert.doesNotMatch(label(text), /read_task_preferences/);
+  const frame = hookFrame(text);
+  assert.equal(frame.effective_preferences.length + frame.preferences_omitted.count, 39);
+  assert.equal(Object.hasOwn(frame.preferences_omitted, 'read'), false);
+  // Its blocked frame does not point at the reader either.
+  const role = { ...agentless.project_agent_context.role, responsibility: `SYNTHETIC_ROLE: ${'Own the export service. '.repeat(400)}` };
+  const blockedText = await claudeEntry(continuity(agentless, { role }));
+  assert.ok(blockedText.startsWith('Fuli preference delivery is blocked: only part of the preferences is listed. '
+    + 'Apply them; do not finish the task on them alone.'));
+  const blocked = hookFrame(blockedText);
+  assert.equal(blocked.preference_delivery.status, 'blocked');
+  assert.equal(blocked.same_task_recovery_available, false);
+  assert.deepEqual(blocked.preference_delivery.token_use, ['checkpoint_task_knowledge']);
+  assert.doesNotMatch(blocked.preference_delivery.guidance, /Recover now/);
+  assert.ok(blocked.effective_preferences.length > 0);
+  assert.equal(Object.hasOwn(blocked.preferences_omitted, 'read'), false);
 });

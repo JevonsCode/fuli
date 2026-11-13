@@ -10,6 +10,13 @@ export function nativeSessionFromEnv(sourceApplication, env = process.env) {
   return READERS[sourceApplication]?.(env) ?? null;
 }
 
+// Whether the host this process was started for names its sessions at all. A
+// process of such a host without its session (the variable unset, a stale
+// process) proves nothing; one of a host that names none has only its token.
+export function hostNamesSessions(sourceApplication) {
+  return Object.hasOwn(READERS, sourceApplication);
+}
+
 // The session of a shell command the client started, as its prompt hooks name
 // it: { sessionId }, { refused } when the environment cannot prove it, or null
 // when the client names none. Claude Code updates its value on /clear.
