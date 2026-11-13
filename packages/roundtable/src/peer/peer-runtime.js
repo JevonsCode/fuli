@@ -7,7 +7,7 @@ import { startCoordinatorServer } from './coordinator-http.js';
 import { cleanName, createCoordinatorService } from './coordinator-service.js';
 import { createCoordinatorStore } from './coordinator-store.js';
 import { loadDeviceIdentity } from './device-identity.js';
-import { announcedAddresses, lanAddresses, virtualAddresses } from './lan-addresses.js';
+import { announcedAddresses, discoveryAdapters, lanAddresses, virtualAddresses } from './lan-addresses.js';
 import { createAttemptLedger } from './nearby-attempts.js';
 import { createBonjourDiscovery } from './nearby-discovery.js';
 import { createNearbyPairing } from './nearby-pairing.js';
@@ -54,8 +54,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   const trustChecks = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
-  const discovery = createDiscovery({ onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: failureCode(error) })
-    .catch(onError) });
+  const discovery = createDiscovery({ adapters: () => discoveryAdapters(interfaces),
+    onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: failureCode(error) }).catch(onError) });
   const presence = createNearbyPresence({ discovery, clock });
   const attempts = createAttemptLedger({ clock, read: () => (port.configured() ? store().setting('nearbyAttempts') : null),
     update: (change) => store().updateSetting('nearbyAttempts', change) });
@@ -237,12 +237,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     catch { return []; }
   }
 
-  // Projects the owner may share: each with its current lead, the clients that
+  // Projects the owner may share (a session-only project is not one: another
+  // computer has nothing to ask it): each with its current lead, the clients that
   // lead may use and, for a project a paired device registered with the same
   // own repository, that device. A folder is offered only when this computer
   // knows one whose Git remote is that repository.
   async function shareable() {
-    const list = (await host.listProjects().catch(() => [])).filter((project) => !project.temporary).slice(0, 50);
+    const list = (await host.listProjects().catch(() => [])).filter((project) => !project.temporary && !project.sessionOnly).slice(0, 50);
     const agents = await host.listAgents().catch(() => []);
     const paired = repositoryKey ? await pairedDirectory() : [];
     return Promise.all(list.map(async (project) => {

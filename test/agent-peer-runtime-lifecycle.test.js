@@ -146,13 +146,16 @@ test('withdrawing sharing stops managed execution and reports cancellation', { t
 test('Provider project profile names are used in the local and remote directory', { timeout: 15000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta')]);
   try {
+    // A project task entry made for an unmatched session is not offered for sharing.
     beta.app.personal.listPersonalProjects = async () => [{ project_id: beta.projectId, personal_space_id: 'beta-space',
-      scope_type: 'registered', profile: { name: 'Synthetic Friendly Project' }, publication_key: 'synthetic-publication' }];
+      scope_type: 'registered', profile: { name: 'Synthetic Friendly Project' }, publication_key: 'synthetic-publication' },
+    { project_id: `conversation-${'c'.repeat(64)}`, personal_space_id: 'beta-space', scope_type: 'registered',
+      profile: { name: '会话项目 / Conversation project' } }];
     await pair(alpha, beta);
     const local = await beta.runtime.status();
     const remote = await alpha.app.peer.remoteAgents();
     assert.equal(local.role, 'member');
-    assert.equal(local.shareable[0].projectName, 'Synthetic Friendly Project');
+    assert.deepEqual(local.shareable.map((project) => project.projectName), ['Synthetic Friendly Project']);
     assert.equal(remote.agents[0].projectName, 'Synthetic Friendly Project');
   } finally { await alpha.close(); await beta.close(); }
 });

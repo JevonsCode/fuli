@@ -81,3 +81,30 @@ test('the nearby list is capped, forgets computers that stopped answering, and a
   assert.notEqual(adverts[0].name, adverts[1].name);
   assert.deepEqual([adverts[0].txt, adverts[0].addresses], [{ v: '1', fp: '1'.repeat(16), n: 'Desk' }, ['192.168.1.8']]);
 });
+
+test('nearby discovery uses one address of each physical adapter, never a VPN or virtual one', async () => {
+  const { discoveryAdapters } = await import('../packages/roundtable/src/peer/lan-addresses.js');
+  // A VPN listed first with the best metric is what the system would send from.
+  const machine = () => ({
+    Tailscale: [{ address: '100.64.0.9', family: 'IPv4', internal: false }],
+    Ethernet: [{ address: '192.168.1.8', family: 'IPv4', internal: false }, { address: '192.168.1.9', family: 'IPv4', internal: false }],
+    'Wi-Fi': [{ address: '169.254.7.2', family: 'IPv4', internal: false }],
+    en1: [{ address: 'fe80::2', family: 'IPv6', internal: false }, { address: '10.0.0.4', family: 'IPv4', internal: false }],
+    'vEthernet (WSL)': [{ address: '172.29.112.1', family: 'IPv4', internal: false }],
+    Loopback: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+  });
+  assert.deepEqual(discoveryAdapters(machine), ['192.168.1.8', '10.0.0.4']);
+  assert.deepEqual(discoveryAdapters(() => ({ Tailscale: machine().Tailscale })), [], 'no physical adapter: the system default is used');
+});
+
+test('one advertisement and one browse per adapter, stopped and refreshed together', async () => {
+  // Two endpoints on loopback ports nothing else uses: no packet leaves this computer.
+  const discovery = createBonjourDiscovery({ adapters: () => ['127.0.0.1', '127.0.0.1'] });
+  const advert = discovery.advertise({ name: 'FULI 0a0b0c0d', host: 'fuli-0a0b0c0d.local', port: 4100, txt: { v: '1' }, addresses: ['192.168.1.8'] });
+  const browser = discovery.browse({ onUp: () => {}, onDown: () => {} });
+  browser.refresh();
+  browser.stop();
+  advert.stop();
+  discovery.close();
+  discovery.close();
+});

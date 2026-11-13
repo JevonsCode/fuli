@@ -243,7 +243,8 @@ function shareState(projectId: string) {
             <dt>{{ t('settings.peer.fingerprint') }}</dt>
             <dd>{{ status.device?.shortFingerprint }}</dd>
           </div>
-          <div>
+          <!-- The computer that coordinates is this one when it hosts: its own fingerprint is not shown twice. -->
+          <div v-if="!coordinator" data-other-fingerprint>
             <dt>{{ t('settings.peer.coordinatorFingerprint') }}</dt>
             <dd>{{ status.coordinator?.shortFingerprint }}</dd>
           </div>
