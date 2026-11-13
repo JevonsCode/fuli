@@ -30,7 +30,7 @@ void main() {
 
   testWidgets('says in plain words that this window is the old version, with one button', (tester) async {
     await show(tester, zh);
-    expect(find.text('这个窗口是旧版本的 FULI。'), findsOneWidget);
+    expect(find.text('这是旧版本的 FULI。'), findsOneWidget);
     expect(find.text('打开新版本'), findsOneWidget);
     expect(find.byType(FilledButton), findsOneWidget);
     expect(find.byType(TextButton), findsNothing);
