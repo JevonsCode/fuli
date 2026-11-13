@@ -23,6 +23,7 @@ from .search_projection import (
     source_uris_from_references,
 )
 from .knowledge_semantic import cosine_parts, fused_ranking, standing_out, usable_cosine, vector_norm
+from .knowledge_sensitivity import normal_safe_ids
 from .knowledge_weight import knowledge_weight, ranking_weight
 from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
@@ -88,7 +89,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     if not request.include_historical:
         edges = [edge for edge in edges if edge.invalid_at is None]
     if request.max_sensitivity == 'normal':
-        normal_ids = await _edges_with_a_normal_source(store, [edge.uuid for edge in edges])
+        normal_ids = await normal_safe_ids(store, 'relationship', [edge.uuid for edge in edges])
         edges = [edge for edge in edges if edge.uuid in normal_ids]
     project_scopes = {}
     if personal_space:
@@ -175,32 +176,6 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         ],
         entities=entities,
     )
-
-
-# What an episode without a stored sensitivity counts as: the capture default.
-_NORMAL_EPISODE = "coalesce(episode.fuli_sensitivity, 'normal') = 'normal'"
-
-
-async def _edges_with_a_normal_source(store, edge_ids: list[str]) -> set[str]:
-    """The relationships at least one of whose source episodes is normal.
-    Sensitivity is stored only on episodes; a relationship whose episodes are
-    all private or restricted, or that names no episode, is not normal."""
-    if not edge_ids:
-        return set()
-    records, _, _ = await store.runtime.driver.execute_query(
-        '''
-        MATCH ()-[edge:RELATES_TO]->()
-        WHERE edge.uuid IN $edge_ids
-          AND EXISTS {
-            MATCH (episode:Episodic {group_id: edge.group_id})
-            WHERE episode.uuid IN coalesce(edge.episodes, []) AND ''' + _NORMAL_EPISODE + '''
-          }
-        RETURN DISTINCT edge.uuid AS id
-        ''',
-        edge_ids=edge_ids,
-        routing_='r',
-    )
-    return {record['id'] for record in records}
 
 
 async def personal_edge_scopes(
@@ -428,7 +403,6 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         WITH node, episodes, assignment, collect(DISTINCT reference) AS references
         WHERE ($include_historical OR node.fuli_invalid_at IS NULL)
           AND size(coalesce(node.fuli_unresolved_bases, [])) = 0
-          AND ($max_sensitivity IS NULL OR any(episode IN episodes WHERE ''' + _NORMAL_EPISODE + '''))
           AND (
             $include_pending
             OR coalesce(node.fuli_confirmation_status, 'pending')
@@ -521,7 +495,6 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         project_ids=list(project_scopes),
         include_historical=request.include_historical,
         include_pending=request.include_pending,
-        max_sensitivity=request.max_sensitivity,
         semantic_model=semantic_model,
         **({'query_vector': request.semantic.vector, 'length': len(request.semantic.vector)} if semantic_model else {}),
         candidate_limit=SEMANTIC_CANDIDATE_LIMIT if semantic_model else store.settings.graph_limit,
@@ -550,6 +523,9 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         )
         if scope is not None:
             scoped_records.append({**record, **scope})
+    if request.max_sensitivity == 'normal':
+        normal_ids = await normal_safe_ids(store, 'entity', [record['id'] for record in scoped_records])
+        scoped_records = [record for record in scoped_records if record['id'] in normal_ids]
     return scoped_records
 
 

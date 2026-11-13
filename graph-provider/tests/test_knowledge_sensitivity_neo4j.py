@@ -5,20 +5,61 @@ from uuid import uuid4
 
 from neo4j import AsyncGraphDatabase
 
-from fuli_graph.knowledge_search import _edges_with_a_normal_source, _personal_entities
+from fuli_graph.knowledge_search import _personal_entities
+from fuli_graph.knowledge_sensitivity import normal_safe_ids
 from fuli_graph.models import SearchRequest
 from test_project_agent_memory_neo4j import fixture_settings
 
-# Each case: the sensitivities of the item's source episodes (None: stored without one).
+EDIT = ('human_knowledge_edit', 'private')
+
+
+def capture(sensitivity):
+    return ('conversation', sensitivity)
+
+
+# Each case: its versions oldest first, each the (source kind, sensitivity) of
+# its source episodes (sensitivity None: stored without one). The last is current.
 CASES = {
-    'private': ['private'],
-    'restricted-and-private': ['restricted', 'private'],
-    'normal': ['normal'],
-    'mixed': ['private', 'normal'],
-    'unset': [None],
-    'no-episode': [],
+    'private': [[capture('private')]],
+    'restricted-and-private': [[capture('restricted'), capture('private')]],
+    'normal': [[capture('normal')]],
+    'mixed': [[capture('private'), capture('normal')]],
+    'unset': [[capture(None)]],
+    'no-episode': [[]],
+    'normal-then-edit': [[capture('normal')], [EDIT]],
+    'private-then-edit': [[capture('private')], [EDIT]],
+    'normal-edit-edit': [[capture('normal')], [EDIT], [EDIT]],
+    'edits-only': [[EDIT], [EDIT]],
 }
-NORMAL_SAFE = {'normal', 'mixed', 'unset'}
+NORMAL_SAFE = {'normal', 'mixed', 'unset', 'normal-then-edit', 'normal-edit-edit'}
+
+
+async def _write_case(driver, group, project, case, versions):
+    newer = None
+    for index in reversed(range(len(versions))):
+        item_id = f'{group}-{case}' if index == len(versions) - 1 else f'{group}-{case}-v{index}'
+        await driver.execute_query('''
+            MERGE (target:SensitivityTestTarget {group_id: $group})
+            CREATE (node:Entity {uuid: $item_id, group_id: $group, name: $name,
+                summary: 'Synthetic sensitivity evidence', fuli_replaced_by_item_id: $newer,
+                fuli_replaced_by_item_kind: CASE WHEN $newer IS NULL THEN NULL ELSE 'entity' END})
+            CREATE (node)-[edge:RELATES_TO {uuid: $item_id + '-edge', group_id: $group, episodes: [],
+                fuli_replaced_by_item_id: CASE WHEN $newer IS NULL THEN NULL ELSE $newer + '-edge' END,
+                fuli_replaced_by_item_kind: CASE WHEN $newer IS NULL THEN NULL ELSE 'relationship' END}]->(target)
+            FOREACH (_ IN CASE WHEN $current THEN [1] ELSE [] END |
+                CREATE (:FuliKnowledgeAssignment {space_id: $group, item_kind: 'entity', item_id: $item_id,
+                    project_id: $project}))
+            WITH node, edge
+            UNWIND range(0, size($sources) - 1) AS index
+            CREATE (episode:Episodic {uuid: $item_id + '-episode-' + toString(index), group_id: $group,
+                fuli_personal_project_id: $project, fuli_source_kind: $sources[index][0]})
+            SET episode.fuli_sensitivity = $sources[index][1]
+            CREATE (episode)-[:MENTIONS]->(node)
+            SET edge.episodes = edge.episodes + episode.uuid
+        ''', group=group, project=project, item_id=item_id, newer=newer, current=newer is None,
+            name=f'Sensitivity fixture {case}' if newer is None else f'Old version {case} {index}',
+            sources=[list(source) for source in versions[index]])
+        newer = item_id
 
 
 async def test_only_items_with_a_normal_source_reach_a_visitor():
@@ -29,25 +70,8 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
     space = {'id': group, 'group_id': group}
     project = 'shared-project'
     try:
-        await driver.execute_query('''
-            CREATE (target:SensitivityTestTarget {group_id: $group})
-            WITH target
-            UNWIND $cases AS item
-            CREATE (node:Entity {uuid: $group + '-' + item.kind, group_id: $group,
-                name: 'Sensitivity fixture ' + item.kind, summary: 'Synthetic sensitivity evidence'})
-            CREATE (node)-[edge:RELATES_TO {uuid: $group + '-edge-' + item.kind, group_id: $group,
-                episodes: []}]->(target)
-            CREATE (:FuliKnowledgeAssignment {space_id: $group, item_kind: 'entity', item_id: node.uuid,
-                project_id: $project})
-            WITH node, edge, item
-            UNWIND range(0, size(item.sensitivities) - 1) AS index
-            CREATE (episode:Episodic {uuid: $group + '-' + item.kind + '-' + toString(index),
-                group_id: $group, fuli_personal_project_id: $project})
-            SET episode.fuli_sensitivity = item.sensitivities[index]
-            CREATE (episode)-[:MENTIONS]->(node)
-            SET edge.episodes = edge.episodes + episode.uuid
-        ''', group=group, project=project,
-            cases=[{'kind': kind, 'sensitivities': values} for kind, values in CASES.items()])
+        for case, versions in CASES.items():
+            await _write_case(driver, group, project, case, versions)
 
         scopes = {project: {'scope_distance': 0, 'scope_path': [project], 'inherited': False}}
         found = {}
@@ -60,8 +84,8 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
         assert found[None] == set(CASES)
         assert found['normal'] == NORMAL_SAFE
 
-        edges = await _edges_with_a_normal_source(store, [f'{group}-edge-{kind}' for kind in CASES])
-        assert {item.removeprefix(f'{group}-edge-') for item in edges} == NORMAL_SAFE
+        edges = await normal_safe_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
+        assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == NORMAL_SAFE
     finally:
         # Delete only this test's unique fixture, even on assertion failure.
         await driver.execute_query('''
