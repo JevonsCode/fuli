@@ -128,9 +128,11 @@ longer than the budget: the role is never cut) is the blocked frame
 (`inline_budget`). It used to list no preference at all (rec#128). It now
 lists the largest prefix of the same ranking that fits beside the token,
 closing fields and identity (hard rules first, most specific scope first,
-then the ranked rest), with `preferences_omitted` counting the rest; its
-guidance says the list is not the complete set. A blocked frame is never a
-delta base.
+then the ranked rest), with `preferences_omitted` counting the rest. Its
+lead, above the frame and in its guidance, says to apply them while
+recovering the rest and not to finish the task on them alone. Every blocked
+frame counts the active conflicts it leaves out as `active_conflicts_omitted`.
+A blocked frame is never a delta base.
 
 Every read an entry names is one the reader can serve (rec#128).
 `read_task_preferences` replays the task Agent, so an entry without a task
@@ -201,11 +203,18 @@ relying on it. No body and no source marker.
 for the original owned task. The session it reads for is never the caller's:
 a host that names a session (Codex's thread, Claude Code's
 `CLAUDE_CODE_SESSION_ID`, a sealed worker) binds it, and a token of another
-session is refused. A process that names no session of its own (a
-`fuli-host-` identity, such as Claude Desktop's connector serving its Code
-tab, rec#107) reads the session of the task the token names while that is
-its client's current, unfinished task, the same binding that process already
-uses for every other call with that token (rec#128). Small results retain the existing `complete`
+session is refused; a process started before `/clear` or an in-app resume
+still names the earlier session, and the reader refuses it as such (tell the
+person, checkpoint as incomplete). A process of a client that names no
+sessions at all (Cursor and the other clients without a session reader in
+`agents/native-session-env.js`, and Claude Desktop's connector, `claude`,
+also when it serves its Code tab, rec#107) reads the session of the task the
+token names while that is its client's current, unfinished task (rec#128).
+So two windows of such a client can read each other's current task
+preferences given the token, as they can already checkpoint with it. A
+process of Codex or Claude Code that does not prove its session (the variable
+unset, as in `fuli mcp --call read_task_preferences --source-application
+claude_code`) is refused: its token alone never binds. Small results retain the existing `complete`
 response. Larger results use `preference_delivery.status = paginated`, a full
 projection `revision`, zero-based `page_index`, `page_count`, collection `totals`
 and opaque `next_cursor`. Only the final page has `preferences_complete=true`.

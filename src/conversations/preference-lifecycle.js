@@ -6,7 +6,6 @@ import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from
 import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL,
   OMITTED_UNREADABLE_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
-import { BLOCKED_PREFERENCE_LABEL } from '../mcp/preference-delivery.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
 import { skeletonFrameLabel } from './entry-skeleton.js';
 
@@ -81,7 +80,7 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
   const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
     label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
-    blockedLabel: `${BLOCKED_PREFERENCE_LABEL} ${taskReceiptInstruction(value)}`.trim() });
+    blockedNote: taskReceiptInstruction(value) });
   const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,

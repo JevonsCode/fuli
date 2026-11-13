@@ -1,5 +1,5 @@
 import { ApplicationError, isControlledError } from '../app/application-error.js';
-import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, blockedPreferenceRecovery, completeBlockedPreferenceDelivery,
+import { blockedPreferenceDelivery, blockedPreferenceLabel, blockedPreferenceRecovery, completeBlockedPreferenceDelivery,
   preferenceDeliveryReason, entryFieldOrder, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
@@ -112,7 +112,8 @@ export function hookAdditionalContextToolResult(
   {
     hookEventName,
     label,
-    blockedLabel = BLOCKED_PREFERENCE_LABEL,
+    // Added after a blocked frame's own lead (blockedPreferenceLabel).
+    blockedNote = '',
     limitBytes = RESULT_LIMIT_BYTES,
     itemLimit = RESULT_ITEM_LIMIT
   }
@@ -122,7 +123,8 @@ export function hookAdditionalContextToolResult(
   const warning = !blocked && result.structuredContent.truncated
     ? '\nContext delivery is incomplete. Do not claim full employee recovery or merge truncated memory. Read get_project_agent_memory for the exact role and project before continuing its work.'
     : '';
-  const additionalContext = `${blocked ? blockedLabel : label}${warning}\n${JSON.stringify(result.structuredContent)}`;
+  const lead = blocked ? `${blockedPreferenceLabel(result.structuredContent)} ${blockedNote}`.trim() : label;
+  const additionalContext = `${lead}${warning}\n${JSON.stringify(result.structuredContent)}`;
   return {
     ...result,
     content: [{

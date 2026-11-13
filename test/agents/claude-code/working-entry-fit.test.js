@@ -168,13 +168,17 @@ test('a role too long to fit is never cut: the blocked frame still lists the har
   const role = { ...entry.project_agent_context.role, responsibility: `SYNTHETIC_ROLE: ${'Own the export service. '.repeat(400)}` };
   const text = await claudeEntry(continuity(entry, { role }));
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
-  assert.ok(text.startsWith(BLOCKED_PREFERENCE_LABEL));
+  // One instruction above and in the frame: apply the listed ones while recovering, never finish on them alone.
+  const lead = 'Fuli preference delivery is blocked: only part of the preferences is listed. '
+    + 'Apply them while you recover the rest; do not finish the task on them alone.';
+  assert.ok(text.startsWith(lead));
+  assert.equal(text.includes(BLOCKED_PREFERENCE_LABEL), false);
   assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged, once'));
   assert.doesNotMatch(text, /Own the export service/);
   const frame = hookFrame(text);
   assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'inline_budget']);
   assert.match(frame.preference_delivery.guidance, /Recover now: call read_task_preferences/);
-  assert.match(frame.preference_delivery.guidance, /lists only the hard rules and the preferences most relevant/);
+  assert.match(frame.preference_delivery.guidance, /lists the hard rules and the preferences most relevant/);
   assert.equal(frame.preferences_complete, false);
   assert.equal(frame.same_task_recovery_available, true);
   assert.equal(frame.taskContextToken, entry.taskContextToken);
@@ -296,7 +300,10 @@ test('an entry whose task the reader cannot serve counts what it leaves out with
   assert.equal(Object.hasOwn(frame.preferences_omitted, 'read'), false);
   // Its blocked frame does not point at the reader either.
   const role = { ...agentless.project_agent_context.role, responsibility: `SYNTHETIC_ROLE: ${'Own the export service. '.repeat(400)}` };
-  const blocked = hookFrame(await claudeEntry(continuity(agentless, { role })));
+  const blockedText = await claudeEntry(continuity(agentless, { role }));
+  assert.ok(blockedText.startsWith('Fuli preference delivery is blocked: only part of the preferences is listed. '
+    + 'Apply them; do not finish the task on them alone.'));
+  const blocked = hookFrame(blockedText);
   assert.equal(blocked.preference_delivery.status, 'blocked');
   assert.equal(blocked.same_task_recovery_available, false);
   assert.deepEqual(blocked.preference_delivery.token_use, ['checkpoint_task_knowledge']);
