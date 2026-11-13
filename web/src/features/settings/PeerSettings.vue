@@ -243,7 +243,8 @@ function shareState(projectId: string) {
             <dt>{{ t('settings.peer.fingerprint') }}</dt>
             <dd>{{ status.device?.shortFingerprint }}</dd>
           </div>
-          <div>
+          <!-- The computer that coordinates is this one when it hosts: its own fingerprint is not shown twice. -->
+          <div v-if="!coordinator" data-other-fingerprint>
             <dt>{{ t('settings.peer.coordinatorFingerprint') }}</dt>
             <dd>{{ status.coordinator?.shortFingerprint }}</dd>
           </div>
@@ -350,7 +351,7 @@ function shareState(projectId: string) {
 .peer-identity div { min-width: 0; flex: 1 1 160px; }
 .peer-identity dt { color: var(--color-muted); font-size: 12px; }
 .peer-identity dd, .peer-identity code, .peer-identity strong, .peer-identity p { overflow-wrap: anywhere; }
-.peer-identity dd { font-family: var(--font-mono); font-size: 13px; }
+.peer-identity dd { margin: 0; font-family: var(--font-mono); font-size: 13px; }
 .peer-settings label { display: grid; gap: 6px; min-width: 0; color: var(--color-muted); font-size: 12px; }
 .peer-settings input[type='text'], .peer-settings textarea {
   box-sizing: border-box; width: 100%; min-width: 0; overflow-wrap: anywhere;

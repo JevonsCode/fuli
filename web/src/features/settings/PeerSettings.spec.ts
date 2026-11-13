@@ -89,6 +89,20 @@ it('copies a pairing invitation and revokes another device from this computer', 
   wrapper.unmount()
 })
 
+it('shows the fingerprint of the other computer only on a computer that joined one', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(paired)))
+  const host = mount(PeerSettings)
+  await flushPromises()
+  expect(host.find('[data-other-fingerprint]').exists()).toBe(false)
+  host.unmount()
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, role: 'member', devices: [],
+    coordinator: { ...paired.coordinator, shortFingerprint: 'BBBB CCCC DDDD EEEE FFFF 0000' } })))
+  const member = mount(PeerSettings)
+  await flushPromises()
+  expect(member.get('[data-other-fingerprint]').text()).toContain('BBBB CCCC DDDD EEEE FFFF 0000')
+  member.unmount()
+})
+
 it('suggests a project a paired computer has too, shares nothing until the person ticks it, then offers the known checkout', async () => {
   const matched = { ...paired, shareable: [{ ...paired.shareable[0], sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }],
     knownFolder: '/synthetic/checkout' }], lastPublish: { at: '2030-01-01T00:00:00.000Z', agents: null, error: 'coordinator_unreachable' } }

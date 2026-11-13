@@ -16,6 +16,17 @@ export function announcedAddresses(interfaces) {
   return (physical.length ? physical : all).map((entry) => entry.address);
 }
 
+// One address per physical adapter, where nearby discovery sends and listens:
+// an adapter joins the multicast group once however many addresses it has.
+export function discoveryAdapters(interfaces) {
+  return Object.entries(interfaces()).flatMap(([name, list]) => {
+    if (VIRTUAL_ADAPTER.test(name)) return [];
+    // 169.254/16 is what an adapter gives itself when it has no network.
+    const first = (list ?? []).find((entry) => lanIPv4(entry) && !entry.address.startsWith('169.254.'));
+    return first ? [first.address] : [];
+  });
+}
+
 // Addresses of virtual and VPN adapters, where nearby pairing does not answer.
 export function virtualAddresses(interfaces) {
   return classified(interfaces).filter((entry) => entry.virtual).map((entry) => entry.address);
@@ -23,6 +34,10 @@ export function virtualAddresses(interfaces) {
 
 function classified(interfaces) {
   return Object.entries(interfaces()).flatMap(([name, list]) => (list ?? [])
-    .filter((entry) => entry && !entry.internal && (entry.family === 'IPv4' || entry.family === 4))
+    .filter(lanIPv4)
     .map((entry) => ({ address: entry.address, virtual: VIRTUAL_ADAPTER.test(name) })));
+}
+
+function lanIPv4(entry) {
+  return Boolean(entry) && !entry.internal && (entry.family === 'IPv4' || entry.family === 4);
 }
