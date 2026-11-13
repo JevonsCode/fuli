@@ -1,5 +1,5 @@
 import { ApplicationError, isControlledError } from '../app/application-error.js';
-import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, completeBlockedPreferenceDelivery,
+import { BLOCKED_PREFERENCE_LABEL, blockedPreferenceDelivery, blockedPreferenceRecovery, completeBlockedPreferenceDelivery,
   preferenceDeliveryReason, entryFieldOrder, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from './preference-delivery.js';
 
 const OMITTED_KEYS = new Set([
@@ -46,13 +46,13 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
   const unsafe = (item, depth = 0) => depth > 64 || (item && typeof item === 'object' &&
     Object.entries(item).some(([key, nested]) => OMITTED_KEYS.has(key.replace(/[_-]/g, '').toLowerCase()) || unsafe(nested, depth + 1)));
   let candidate = value;
-  if (value?.context?.source_truncated === true) candidate = blockedPreferenceDelivery(value, 'source_window');
+  if (value?.context?.source_truncated === true) candidate = blockedPreferenceRecovery(value, 'source_window');
   else if (Object.keys(value ?? {}).some(key => !allowed.has(key)) || unsafe(value)) {
-    candidate = blockedPreferenceDelivery(value, 'unsafe_projection');
+    candidate = blockedPreferenceRecovery(value, 'unsafe_projection');
   }
   let result = envelope(entryFieldOrder(candidate));
   if (jsonBytes(result) > limitBytes) {
-    result = envelope(blockedPreferenceDelivery(value, 'delivery_budget'));
+    result = envelope(blockedPreferenceRecovery(value, 'delivery_budget'));
     if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');
   }
   if (unsafe(result.structuredContent)) throw new ApplicationError('validation', 'Preference recovery cannot expose private fields');

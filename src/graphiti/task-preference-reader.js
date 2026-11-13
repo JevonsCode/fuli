@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { isFuliProcessSession } from '../mcp/session-id.js';
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
@@ -25,12 +26,10 @@ export async function readTaskPreferences(application, {
   taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified = false,
   workerRun = null, cursor
 }) {
-  if (!sourceSessionVerified || !sourceSessionId || sourceSessionId.startsWith('fuli-host-')) {
-    throw blocked('This host has no verified native or sealed worker session; do not supply or guess a session to recover preferences.');
-  }
+  const sessionId = await readerSession(application, { taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified });
   const { task, preferences } = await application.taskContextRegistry.preferences(taskContextToken,
-    { sourceApplication, sessionId: sourceSessionId });
-  if (task.token !== taskContextToken || task.sessionId !== sourceSessionId ||
+    { sourceApplication, sessionId });
+  if (task.token !== taskContextToken || task.sessionId !== sessionId ||
       task.sourceApplication !== sourceApplication || task.checkpoint?.phase === 'complete') {
     throw blocked('Task preferences do not belong to this active host session.');
   }
@@ -118,6 +117,23 @@ export async function readTaskPreferences(application, {
   // A final page is only a suffix, never a complete native delta baseline.
   return page.preference_delivery.status === 'complete'
     ? withPreferenceScope(page, taskPreferenceMetadata(task, spaceId)) : page;
+}
+
+// The session whose task this read may recover. A host that names a session
+// (native or sealed worker) binds it, and a task of another session is
+// refused below. A process FULI gave a fuli-host- identity has no session of
+// its own to name, such as Claude Desktop's connector serving its Code tab
+// (rec#107, rec#128): there the token's current, unfinished task in this
+// client names its own session, recorded when the task began. The caller never
+// supplies or chooses a session either way (session-id.js strips it).
+async function readerSession(application, { taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified }) {
+  if (sourceSessionVerified && sourceSessionId && !isFuliProcessSession(sourceSessionId)) return sourceSessionId;
+  if (!sourceSessionVerified && isFuliProcessSession(sourceSessionId)) {
+    const sessionId = await application.taskContextRegistry.currentTaskSession(taskContextToken, sourceApplication);
+    if (typeof sessionId === 'string' && sessionId && !isFuliProcessSession(sessionId)) return sessionId;
+    throw blocked('This taskContextToken names no current task of a host session in this client; recover with the latest entry\'s token.');
+  }
+  throw blocked('This host has no verified native or sealed worker session; do not supply or guess a session to recover preferences.');
 }
 
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
