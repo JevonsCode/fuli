@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
@@ -20,7 +20,7 @@ const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFrom
 </script>
 
 <template>
-  <PageColumns>
+  <PageStack>
     <Card as="section" class="settings-card" aria-labelledby="settings-access-title">
       <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}<AiHelpButton term="task.access" /></CardTitle></CardHeader>
       <div class="setting-list">
@@ -39,7 +39,7 @@ const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFrom
         </label>
       </div>
     </Card>
-    <Card as="section" class="settings-card" :aria-label="t('settings.elsewhere')" data-settings-elsewhere data-span="wide">
+    <Card as="section" class="settings-card" :aria-label="t('settings.elsewhere')" data-settings-elsewhere>
       <div class="setting-list">
         <RouterLink class="setting-row" to="/employees/tonborg?view=standards" data-open-judgment-standards>
           <span><strong>{{ t('judgment.settings.link') }}</strong></span>
@@ -51,5 +51,5 @@ const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFrom
         </RouterLink>
       </div>
     </Card>
-  </PageColumns>
+  </PageStack>
 </template>

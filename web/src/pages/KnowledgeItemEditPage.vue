@@ -4,7 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -199,8 +199,8 @@ watch([spaceId, kind, itemId], () => {
           <RouterLink :to="currentVersionPath">{{ t('knowledgeQuickEdit.viewCurrent') }}</RouterLink>
         </Button>
       </div>
-      <!-- The page's full width: the item's sections sit in two columns on a wide window. -->
-      <PageColumns>
+      <!-- The item's sections, one under another. -->
+      <PageStack>
         <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
         <template v-if="active">
           <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
@@ -224,7 +224,7 @@ watch([spaceId, kind, itemId], () => {
         <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
         <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" @source-deleted="sourceRemoved" />
         <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
-      </PageColumns>
+      </PageStack>
     </template>
   </div>
   <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">

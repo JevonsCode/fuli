@@ -75,8 +75,7 @@ describe('HowtoPage', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     const wrapper = mount(HowtoPage)
     const moves = howtoContent('zh-CN').moves
-    // PageColumns deals the cards into two columns, so the DOM order is not the list order.
-    expect(wrapper.findAll('[data-howto-move]').map(card => card.attributes('data-howto-move')).sort()).toEqual(moves.map(move => move.id).sort())
+    expect(wrapper.findAll('[data-howto-move]').map(card => card.attributes('data-howto-move'))).toEqual(moves.map(move => move.id))
     for (const move of moves) {
       const card = wrapper.get(`[data-howto-move="${move.id}"]`)
       expect(card.get('h3').text()).toBe(move.title)

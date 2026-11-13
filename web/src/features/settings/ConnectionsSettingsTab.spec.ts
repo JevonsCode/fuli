@@ -29,7 +29,6 @@ describe('ConnectionsSettingsTab', () => {
     expect(local.text()).toContain('本地 Graphiti')
     expect(local.text()).toContain('已连接')
     expect(local.get('dl').text()).toContain('Neo4j')
-    expect(local.attributes('data-span')).toBe('wide')
     expect(local.classes()).toContain('settings-card')
     expect(wrapper.find('external-knowledge-settings-stub').exists()).toBe(true)
     // Without a project there is nothing to set a conflict policy for.

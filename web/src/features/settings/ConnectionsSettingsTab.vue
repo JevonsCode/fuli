@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
@@ -37,8 +37,8 @@ const activePort = (key: keyof RuntimePorts) => props.active.ports[key] ?? '—'
 </script>
 
 <template>
-  <PageColumns>
-    <article class="settings-card service-connection-card" data-span="wide" :data-status="personalReady ? 'ready' : 'error'"
+  <PageStack>
+    <article class="settings-card service-connection-card" :data-status="personalReady ? 'ready' : 'error'"
       :aria-label="t('pages.connections.statusAria')" data-local-graph>
       <header>
         <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
@@ -50,7 +50,7 @@ const activePort = (key: keyof RuntimePorts) => props.active.ports[key] ?? '—'
         <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div>
       </dl>
     </article>
-    <ExternalKnowledgeSettings data-span="wide" />
+    <ExternalKnowledgeSettings />
     <ConflictPolicyCard v-if="hasProjects" class="settings-card" />
     <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
       <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}<AiHelpButton term="task.lan" /></CardTitle></CardHeader>
@@ -83,7 +83,7 @@ const activePort = (key: keyof RuntimePorts) => props.active.ports[key] ?? '—'
       </div>
     </Card>
     <PeerSettings />
-  </PageColumns>
+  </PageStack>
 </template>
 
 <style scoped>
