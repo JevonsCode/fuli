@@ -225,7 +225,10 @@ const BASELINE = Object.freeze({
   // comes only from the console): 189,551 -> 189,543 B (-8 B), measured. Chat is unchanged.
   // rec#129: group_discussion gains round, remove, read and reply (a member that joined by code from any
   // client) with to, questions, member and model: 189,543 -> 190,051 B (+508 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 190051,
+  // 复利账单: one full-profile read, read_compounding_statement, answers the person's statement for a
+  // window with a provenance line per number (chat reaches it through list_agent_interfaces/fuli_call):
+  // 190,051 -> 190,729 B (+678 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 190729,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

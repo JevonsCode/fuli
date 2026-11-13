@@ -11,6 +11,7 @@ const READ_TOOLS = new Set([
   'list_work_surfaces',
   'read_diagnostic_events',
   'read_old_data',
+  'read_compounding_statement',
   'list_tonborg_questions',
   'list_reply_echoes',
   'read_occupation_kit',

@@ -32,7 +32,7 @@ test('the strongest recorded state wins; evidence without a record never counts'
 test('a learned experience is verified only by the person keeping it or a judged task that applied it', async () => {
   const store = new JudgmentStore();
   const impressions = new RecallImpressionsStore();
-  const shown = token => impressions.recordShown({ taskContextToken: token, personalSpaceId: SPACE, personalProjectId: 'app',
+  const shown = token => impressions.recordDelivered({ taskContextToken: token, personalSpaceId: SPACE, personalProjectId: 'app',
     facts: [], entities: [{ id: 'tested' }, { id: 'disputed' }, { id: 'unjudged' }] });
   for (const token of ['task-a', 'task-b', 'task-c']) shown(token);
   impressions.markUsed({ taskContextToken: 'task-a', items: [{ itemKind: 'entity', itemId: 'tested', useKind: 'applied' }] });

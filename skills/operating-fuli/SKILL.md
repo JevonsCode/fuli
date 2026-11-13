@@ -81,6 +81,14 @@ Before FULI changes data it keeps a copy: a store's format backup, a graph expor
 - A graph export (`restoreCommand`) is restored by the person at a terminal while FULI is stopped; the other kinds have no restore.
 - Deleting old data now cannot be undone and is the person's, in 设置 › 系统 › 存储 (Settings › System › Storage); never delete backup files yourself.
 
+## The statement (复利账单)
+
+When the person asks what FULI did for them this week, read `read_compounding_statement` (through `fuli_call`; `from`/`to` default to this computer's current week, Monday to Monday, `weeks` to 8). It is the console's `GET /api/statement` plus `provenance`, one line per number:
+
+- Observed by FULI: `total.confirmed` and `series` (confirmed, current items at each week end), `carried` (tasks, clients and distinct items FULI delivered at task entry), `learned` (new items, the person's and Tonborg's confirmations, promotions by the usage rule, retired items), `decided` (Tonborg's applied decisions and the person's undos), `changed` (console changes FLAs made for them that succeeded), `answered` (Agent questions they answered).
+- Reported by Agents: `used` (`knowledge_used` events: Agents' own claims that knowledge mattered, cited or applied) and `done` (the status Agents gave their tasks). Say they are the Agents' claims; never present any number as a measured outcome, quality or time saved, and never add one FULI did not return.
+- A section named in `unavailable` could not be read now (for example the Graph Provider is down): say it is unavailable, never show it as zero or estimate it. Older tasks have no client or delivered preferences on record, so `carried` counts them by their recall alone.
+
 ## Selecting tools
 
 Start from `list_agent_interfaces`; names and schemas can evolve. With a chat-profile connection, read one tool's schema with `list_agent_interfaces(toolName)` and run it with `fuli_call(toolName, input)`; the listed tools never change during a session, so do not wait for a discovered tool to appear in your tool list. Common workflows and verification pairs are summarized in [workflow-recipes.md](references/workflow-recipes.md). Load that reference only when choosing or sequencing tools is not obvious from the catalog.

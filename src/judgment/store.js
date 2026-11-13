@@ -214,6 +214,15 @@ export class JudgmentStore {
       AND json_extract(value,'$.mode') IN ('shared','autonomous')) OR (key=? AND json_extract(value,'$.enabled')=1))
       LIMIT 1`).get(space, DELEGATION_KEY)?.enabled === 1;
   }
+  // How many judgments Tonborg applied in [from, to), and how many the person
+  // undid there (the undo is its own receipt). Counts only, like pins:
+  // readable while text recovery waits.
+  executionCounts(space, from, to) {
+    return this.db.prepare(`SELECT COUNT(DISTINCT CASE WHEN e.status='applied' THEN e.decision END) AS applied,
+      COUNT(DISTINCT CASE WHEN e.status='undone' THEN e.decision END) AS undone
+      FROM judgment_execution e JOIN judgment_records r ON r.id = e.decision
+      WHERE r.space=? AND e.status IN ('applied','undone') AND e.created_at >= ? AND e.created_at < ?`).get(space, from, to);
+  }
   // relay: the FLA that relayed the person's vote and their words (rec#80), or null.
   feedback(space, id, vote, reason, expectedRevision, relay = null) {
     return this.transaction(() => {

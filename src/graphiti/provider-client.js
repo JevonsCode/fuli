@@ -626,6 +626,10 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId }
     });
   }
+  // The graph's counts for the person's compounding statement (src/statement); counts only.
+  readKnowledgeStatement(input) {
+    return this.#request('/v1/knowledge/statement', { method: 'POST', body: input });
+  }
   // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
   // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {
