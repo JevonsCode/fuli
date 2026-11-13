@@ -2,6 +2,7 @@
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import MeLink from '@/components/MeLink.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import MeAvatar from '@/features/person-home/MeAvatar.vue'
 import { t } from '@/i18n'
 import { isPerson, type RoundtableSeat } from './roundtable-model'
@@ -16,7 +17,7 @@ const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice
 <template>
   <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length })">
     <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited, 'is-me': isPerson(seat.person) }"
-      :style="isPerson(seat.person) ? undefined : agentIdentityStyle(seat.person.agentId)" data-roundtable-seat :data-roundtable-seat-me="isPerson(seat.person) || undefined">
+      :style="isPerson(seat.person) ? undefined : agentIdentityStyle(identityKeyOf(seat.person.agentId))" data-roundtable-seat :data-roundtable-seat-me="isPerson(seat.person) || undefined">
       <MeAvatar v-if="isPerson(seat.person)" class="roundtable-seat-face" :size="20" />
       <span v-else class="roundtable-seat-face" aria-hidden="true"><AgentAvatar v-if="seat.person.agentId" :agent-id="seat.person.agentId" :name="seat.person.name" /><template v-else>{{ initial(seat) }}</template></span>
       <MeLink v-if="isPerson(seat.person)" class="roundtable-seat-name" />

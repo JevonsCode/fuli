@@ -40,6 +40,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
   return assertRoundtableHost({
     spaceId,
     listAgents: () => app.listProjectAgents({ personalSpaceId: spaceId() }),
+    agentLooks: () => app.agentAvatars?.list(spaceId()).avatars ?? [],
     async recentSessions({ agentId, projectId = null, limit = 5 }) {
       const sessions = await app.personal.recentAgentSessions({ personalSpaceId: spaceId(), agentId,
         personalProjectId: projectId, limit });

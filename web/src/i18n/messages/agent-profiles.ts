@@ -115,6 +115,7 @@ export const agentProfileMessages = {
       unreadable: "这张图片读不出来，换一张试试",
       tooLarge: "这张图片缩小后还是太大，换一张试试",
     },
+    remoteFace: "{name}（另一台电脑）",
   },
   "en-US": {
     title: "Agents",
@@ -233,5 +234,6 @@ export const agentProfileMessages = {
       unreadable: "This picture can’t be read; try another one",
       tooLarge: "This picture is still too large when scaled down; try another one",
     },
+    remoteFace: "{name} (another computer)",
   },
 };

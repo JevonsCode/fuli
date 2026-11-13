@@ -7,7 +7,7 @@ import { loadDeviceIdentity } from './device-identity.js';
 import { createNodeStore } from './node-store.js';
 import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
-import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
+import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, peerLook, TERMINAL_STATUSES } from './protocol.js';
 import { createPeerChatPort } from './chat-port.js';
 import { matchesAgentDiscovery } from '../roundtable/discovery.js';
 
@@ -77,7 +77,7 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
       address: `peer:${device.nodeId.slice(0, 16)}:${agent.bindingId}`, name: agent.name,
       role: agent.communicationOnly ? 'shared_agent' : 'shared_project_lead', agentId: agent.agentId,
       occupation: agent.occupation ?? null, capabilities: agent.capabilities ?? [], projectId: agent.projectId ?? null,
-      communicationOnly: agent.communicationOnly === true,
+      communicationOnly: agent.communicationOnly === true, ...(peerLook(agent.look) ? { look: peerLook(agent.look) } : {}),
       employeeNumber: agent.employeeNumber, responsibility: agent.responsibility, projectName: agent.projectName,
       device: { name: device.name, online: device.online } })))
       .filter((agent) => matchesAgentDiscovery(agent, { occupation, capability }) && (!projectId || agent.projectId === projectId)
