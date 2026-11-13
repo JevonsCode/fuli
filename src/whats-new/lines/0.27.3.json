@@ -1,0 +1,13 @@
+{
+  "version": "0.27.3",
+  "zh": [
+    "另一台电脑上的助手，两边现在是同一张脸；不在本机的多一圈虚线边框。",
+    "问另一台电脑的助手失败时会换个方式再试，最多三次，并留下原因。",
+    "配对的电脑可以只读地查你共享的项目；谁问过，设置里看得到。"
+  ],
+  "en": [
+    "An assistant on another computer has one face on both; a dashed ring marks it as remote.",
+    "A failed ask to another computer retries another way, up to three times, and keeps the reason.",
+    "A paired computer can read a project you shared, read-only; Settings shows who asked."
+  ]
+}
