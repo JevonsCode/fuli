@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
-import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
+import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-event.js';
 import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
 import { STATIC_APPLICATION_GUIDANCE } from '../src/graphiti/collaboration-preference-workflow.js';

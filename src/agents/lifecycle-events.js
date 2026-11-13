@@ -1,4 +1,5 @@
 import { CLAUDE_HOOK_ENV } from './claude-code/hook-contract.js';
+import { CODEX_HOOK_ENV } from './codex/hook-contract.js';
 
 // One installed lifecycle hook call, run either in the hook's own process
 // (lifecycle-forwarder.js falls back to it) or by the console for a thin hook
@@ -15,6 +16,13 @@ const CLIENTS = Object.freeze({
     load: async () => {
       const { runClaudeLifecycleEvent, claudeLifecycleEventLost } = await import('./claude-code/lifecycle-event.js');
       return { run: runClaudeLifecycleEvent, lost: claudeLifecycleEventLost };
+    }
+  }),
+  codex: Object.freeze({
+    envNames: CODEX_HOOK_ENV,
+    load: async () => {
+      const { runCodexLifecycleEvent, codexLifecycleEventLost } = await import('./codex/lifecycle-event.js');
+      return { run: runCodexLifecycleEvent, lost: codexLifecycleEventLost };
     }
   })
 });

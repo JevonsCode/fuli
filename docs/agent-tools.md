@@ -21,9 +21,9 @@ they must not duplicate supplied preferences. Installing configuration never app
 Preference content remains in local Fuli as the single source of truth and is not copied into agent
 configuration.
 
-The Claude Code hook command (`src/agents/claude-code/lifecycle-hook.js`) loads only Node built-ins
-and hands each call to the running console of its data directory
-(`POST /api/lifecycle-hooks/claude-code`, loopback and this computer's own hook processes only,
+The Claude Code and Codex hook commands (`src/agents/<client>/lifecycle-hook.js`) load only Node
+built-ins and hand each call to the running console of their data directory
+(`POST /api/lifecycle-hooks/<client>`, loopback and this computer's own hook processes only,
 never an Agent interface), which runs it and answers what the hook prints. Without a running
 console of the same FULI version, or when the console refuses the call before running it, the hook
 runs it in its own process as before; once the console may have run it, the hook never runs it

@@ -1,6 +1,6 @@
-// The installed Claude Code hook as a thin forwarder (rec#132 step 1): the
-// forwarded answer equals the in-process one, the entry loads no project
-// module before it decides, and each fallback rule. Synthetic data only: a
+// The installed Claude Code and Codex hooks as thin forwarders (rec#132 step
+// 1): the forwarded answer equals the in-process one, the entry loads nothing
+// heavy before it decides, and each fallback rule. Synthetic data only: a
 // Provider double, a temporary data directory and a throwaway console.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -16,13 +16,22 @@ import { reachableModules } from '../test-support/module-graph.js';
 import { forgetConsole, recordConsole, startSyntheticHookProvider, syntheticHookDataDirectory }
   from '../test-support/synthetic-hook-provider.js';
 
-const ENTRY = resolve('src/agents/claude-code/lifecycle-hook.js');
 const ROUTE = '/api/lifecycle-hooks/claude-code';
 const VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version;
+// Each client's installed command line (pack-manifest.js).
+const CLIENTS = {
+  'claude-code': { entry: resolve('src/agents/claude-code/lifecycle-hook.js'),
+    args: (config, event, timeoutMs = 28000) => ['--fuli-claude-lifecycle', '--runtime-config', config, '--event', event,
+      '--timeout-ms', String(timeoutMs)] },
+  codex: { entry: resolve('src/agents/codex/lifecycle-hook.js'),
+    args: (config, event, timeoutMs) => ['--fuli-lifecycle', '--runtime-config', config, '--event', event,
+      ...(timeoutMs ? ['--timeout-ms', String(timeoutMs)] : [])] }
+};
 
-function runHook(fixture, event, stdin, { timeoutMs = 28000, env = {} } = {}) {
-  const child = spawn(process.execPath, [ENTRY, '--fuli-claude-lifecycle', '--runtime-config', fixture.runtimeConfigPath,
-    '--event', event, '--timeout-ms', String(timeoutMs)], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+function runHook(fixture, event, stdin, { client = 'claude-code', timeoutMs } = {}) {
+  const { entry, args } = CLIENTS[client];
+  const child = spawn(process.execPath, [entry, ...args(fixture.runtimeConfigPath, event, timeoutMs)],
+    { stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
@@ -45,7 +54,7 @@ async function throwawayConsole(t) {
   const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
   const started = await createServer({ port: 0, runtimeConfigPath: fixture.runtimeConfigPath, peer: false });
   let forwarded = 0;
-  started.server.on('request', request => { if (request.url === ROUTE) forwarded += 1; });
+  started.server.on('request', request => { if (request.url.startsWith('/api/lifecycle-hooks/')) forwarded += 1; });
   t.after(async () => {
     await started.close();
     await provider.close();
@@ -65,39 +74,42 @@ const SCENARIOS = [
   ['oversize input', f => [['UserPromptSubmit', { cwd: f.projectPath, prompt: 'x'.repeat(300 * 1024) }]]]
 ];
 
-test('the forwarded hook answers exactly as the hook run in its own process', { timeout: 120_000 }, async t => {
-  const service = await throwawayConsole(t);
-  const { fixture } = service;
-  for (const [name, calls] of SCENARIOS) {
-    const results = {};
-    for (const mode of ['here', 'there']) {
-      if (mode === 'there') recordConsole(fixture.dataDir, { url: service.url });
-      else forgetConsole(fixture.dataDir);
-      const session = `synthetic-${name.replaceAll(' ', '-')}-${mode}`;
-      const before = service.forwarded();
-      let result;
-      for (const [event, payload] of calls(fixture)) {
-        const stdin = typeof payload === 'string' ? payload
-          : JSON.stringify({ session_id: session, hook_event_name: event, transcript_path: join(fixture.root, `${session}.jsonl`), ...payload });
-        result = await runHook(fixture, event, stdin);
+for (const client of Object.keys(CLIENTS)) {
+  test(`the forwarded ${client} hook answers exactly as the hook run in its own process`, { timeout: 120_000 }, async t => {
+    const service = await throwawayConsole(t);
+    const { fixture } = service;
+    for (const [name, calls] of SCENARIOS) {
+      const results = {};
+      for (const mode of ['here', 'there']) {
+        if (mode === 'there') recordConsole(fixture.dataDir, { url: service.url });
+        else forgetConsole(fixture.dataDir);
+        const session = `synthetic-${client}-${name.replaceAll(' ', '-')}-${mode}`;
+        const before = service.forwarded();
+        let result;
+        for (const [event, payload] of calls(fixture)) {
+          const stdin = typeof payload === 'string' ? payload : JSON.stringify({ session_id: session, hook_event_name: event,
+            transcript_path: join(fixture.root, `${session}.jsonl`), ...payload });
+          result = await runHook(fixture, event, stdin, { client });
+        }
+        assert.equal(service.forwarded() - before, mode === 'there' ? calls(fixture).length : 0, `${name}: ${mode}`);
+        results[mode] = comparable(result, session);
       }
-      assert.equal(service.forwarded() - before, mode === 'there' ? calls(fixture).length : 0, `${name}: ${mode}`);
-      results[mode] = comparable(result, session);
+      assert.ok(results.here.stdout.trim(), name);
+      assert.deepEqual(results.there, results.here, name);
     }
-    assert.ok(results.here.stdout.trim(), name);
-    assert.deepEqual(results.there, results.here, name);
-  }
-});
+  });
 
-test('before it decides, the thin entry loads only modules that import nothing but Node built-ins', () => {
-  const graph = [...reachableModules(ENTRY, { dynamicImports: false })].map(path => resolve(path));
-  assert.deepEqual(graph.sort(), [ENTRY, resolve('src/agents/claude-code/hook-contract.js'),
-    resolve('src/agents/lifecycle-forwarder.js'), resolve('src/local-runtime/processes.js')].sort());
-  for (const path of graph) {
-    const specifiers = [...readFileSync(path, 'utf8').matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gm)].map(match => match[1]);
-    assert.ok(specifiers.every(specifier => specifier.startsWith('node:') || specifier.startsWith('.')), path);
-  }
-});
+  test(`before it decides, the ${client} entry loads only modules that import nothing but Node built-ins`, () => {
+    const { entry } = CLIENTS[client];
+    const graph = [...reachableModules(entry, { dynamicImports: false })].map(path => resolve(path));
+    assert.deepEqual(graph.sort(), [entry, resolve(entry, '..', 'hook-contract.js'),
+      resolve('src/agents/lifecycle-forwarder.js'), resolve('src/local-runtime/processes.js')].sort());
+    for (const path of graph) {
+      const specifiers = [...readFileSync(path, 'utf8').matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gm)].map(match => match[1]);
+      assert.ok(specifiers.every(specifier => specifier.startsWith('node:') || specifier.startsWith('.')), path);
+    }
+  });
+}
 
 // A console double: answers each hook call with `answer(request, response)`.
 async function consoleDouble(t, answer) {
@@ -160,14 +172,14 @@ test('a call the console may have run is never run again', async t => {
   assert.equal((await forwardCall(fixture)).run, 'lost');
 });
 
-test('the installed hook answers a lost call as unavailable and does not run it itself', async t => {
+for (const client of Object.keys(CLIENTS)) test(`the installed ${client} hook answers a lost call as unavailable and does not run it itself`, async t => {
   const provider = await startSyntheticHookProvider();
   const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
   t.after(async () => { await provider.close(); fixture.remove(); });
   const silent = await consoleDouble(t, () => {});
   recordConsole(fixture.dataDir, { url: silent.url });
   const result = await runHook(fixture, 'UserPromptSubmit', JSON.stringify({ session_id: 'synthetic-lost-session',
-    cwd: fixture.projectPath, prompt: 'Synthetic prompt' }), { timeoutMs: 300 });
+    cwd: fixture.projectPath, prompt: 'Synthetic prompt' }), { client, timeoutMs: 300 });
   assert.equal(result.exitCode, 0);
   assert.equal(silent.calls(), 1);
   assert.match(JSON.parse(result.stdout).systemMessage, /not verified/);

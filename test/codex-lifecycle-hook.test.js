@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { codexLifecycleOutput, runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { codexLifecycleOutput, runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-event.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { transcriptDigest } from '../src/conversations/transcript-guard.js';
 

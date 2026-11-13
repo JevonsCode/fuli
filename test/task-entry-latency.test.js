@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { claudeEntryDeadlineOutput } from '../src/agents/claude-code/lifecycle-event.js';
-import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { runCodexLifecycleCommand, runCodexLifecycleHook } from '../src/agents/codex/lifecycle-event.js';
 import { entryBudget, noteEntryNotice, noteEntryTask, partialEntryText, runWithEntryBudget } from '../src/conversations/entry-budget.js';
 import { openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';

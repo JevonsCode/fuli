@@ -281,7 +281,7 @@ test('a budget too small for the complete blocked envelope returns no preference
 });
 
 test('both native adapters share blocked delivery and preserve the original task token', async () => {
-  const { codexLifecycleOutput } = await import('../src/agents/codex/lifecycle-hook.js');
+  const { codexLifecycleOutput } = await import('../src/agents/codex/lifecycle-event.js');
   const { claudeLifecycleOutput } = await import('../src/agents/claude-code/lifecycle-event.js');
   for (const lifecycle of [codexLifecycleOutput, claudeLifecycleOutput]) {
     for (const sourceTruncated of [false, true]) {

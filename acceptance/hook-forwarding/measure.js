@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// How long the installed Claude Code hook takes per prompt, end to end: the
-// real command line (node <entry> --fuli-claude-lifecycle --runtime-config …
-// --event UserPromptSubmit --timeout-ms 28000) with a synthetic prompt on
-// stdin, from spawn to exit, against a throwaway console on a free port with a
-// temporary data directory and a synthetic Provider double (rec#132 step 1).
-// Synthetic data only; nothing of an installed FULI is read or started.
+// How long an installed client hook takes per prompt, end to end: the real
+// command line (Claude Code: node <entry> --fuli-claude-lifecycle
+// --runtime-config … --event UserPromptSubmit --timeout-ms 28000; Codex:
+// --fuli-lifecycle without a timeout) with a synthetic prompt on stdin, from
+// spawn to exit, against a throwaway console on a free port with a temporary
+// data directory and a synthetic Provider double (rec#132 step 1). Synthetic
+// data only; nothing of an installed FULI is read or started.
 //
-//   node acceptance/hook-forwarding/measure.js [--before <checkout of the earlier commit>] [--runs 20] [--warmup 3]
+//   node acceptance/hook-forwarding/measure.js [--client claude-code|codex]
+//     [--before <checkout of the earlier commit>] [--runs 20] [--warmup 3]
 //
 // Rows: before (the earlier checkout's entry, console running), after (this
 // checkout's entry, console running: forwarded), fallback (this entry, no
@@ -22,14 +24,21 @@ import { forgetConsole, recordConsole, startSyntheticHookProvider, syntheticHook
   from '../../test-support/synthetic-hook-provider.js';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const ENTRY = join('src', 'agents', 'claude-code', 'lifecycle-hook.js');
-const ROUTE = '/api/lifecycle-hooks/claude-code';
+// Each client's installed command line (pack-manifest.js).
+const CLIENTS = {
+  'claude-code': { flags: ['--fuli-claude-lifecycle'], timeout: ['--timeout-ms', '28000'] },
+  codex: { flags: ['--fuli-lifecycle'], timeout: [] }
+};
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
 const runs = Number(option('--runs', '20'));
 const warmup = Number(option('--warmup', '3'));
 const before = option('--before', null);
+const client = option('--client', 'claude-code');
+if (!CLIENTS[client]) throw new TypeError('--client is claude-code or codex');
+const ENTRY = join('src', 'agents', client, 'lifecycle-hook.js');
+const ROUTE = `/api/lifecycle-hooks/${client}`;
 
 const provider = await startSyntheticHookProvider();
 const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
@@ -48,8 +57,8 @@ function runHook(entry) {
     cwd: fixture.projectPath, prompt: 'Synthetic prompt: list the steps to rename a function safely.',
     transcript_path: join(fixture.root, `synthetic-${session}.jsonl`) });
   const at = performance.now();
-  const child = spawn(process.execPath, [entry, '--fuli-claude-lifecycle', '--runtime-config', fixture.runtimeConfigPath,
-    '--event', 'UserPromptSubmit', '--timeout-ms', '28000'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, [entry, ...CLIENTS[client].flags, '--runtime-config', fixture.runtimeConfigPath,
+    '--event', 'UserPromptSubmit', ...CLIENTS[client].timeout], { stdio: ['pipe', 'pipe', 'ignore'] });
   let stdout = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
   child.stdin.end(stdin);
@@ -92,4 +101,4 @@ try {
   fixture.remove();
 }
 console.table(rows);
-console.log(JSON.stringify({ node: process.version, platform: process.platform, runs, warmup, rows }));
+console.log(JSON.stringify({ client, node: process.version, platform: process.platform, runs, warmup, rows }));
