@@ -23,11 +23,11 @@ export function clientMarks(
   manifest: ClientLinksManifest | null | undefined,
 ): ClientMark[] {
   return sessions.flatMap(({ client: reported, sessionId }): ClientMark[] => {
-    const evidence = { source_application: reported, session_id: sessionId }
+    const evidence = { source_application: reported, session_id: sessionId ?? undefined }
     const client = sourceApplication(evidence)
     if (client === 'other') return []
     const name = sourceApplicationName(client)
-    const href = sourceLinkForEvidence(evidence, launchers)
+    const href = sessionId ? sourceLinkForEvidence(evidence, launchers) : null
     if (href) return [{ client, name, way: 'session', href }]
     const links = manifest?.clients.find(item => item.id === client)?.sessionLinks.length ?? 0
     return [{ client, name, way: links ? 'app' : 'none' }]

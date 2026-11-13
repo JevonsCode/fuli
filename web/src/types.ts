@@ -446,7 +446,8 @@ export interface ProjectAgentTaskRecord {
 
 export interface ProjectAgentTaskSession {
   client: ConversationSourceApplication
-  sessionId: string
+  /** null: the client is known, the conversation to open is not. */
+  sessionId: string | null
 }
 
 export interface ProjectAgentActivityTask {

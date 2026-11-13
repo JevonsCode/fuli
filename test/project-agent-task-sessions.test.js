@@ -46,12 +46,16 @@ test('the session a task came from counts when no progress named one', async () 
   assert.deepEqual(body[0].sessions, [{ client: 'claude_code', sessionId: 'session-origin' }]);
 });
 
-test('nothing is guessed: no session, a session without its client, FULI\'s own process session or a finished task name none', async () => {
+test('nothing is guessed: no client or a finished task names none; a client known only by FULI\'s own process session is listed without a session', async () => {
   const { body } = await listed([
     task('old', 'running'),
     task('no-client', 'running', { events: [event('e1', null, 'session-x', '2026-11-01T08:00:00Z')] }),
     task('process', 'running', { events: [event('e1', 'cursor', 'fuli-host-00000000-0000-4000-8000-000000000002', '2026-11-01T08:00:00Z')] }),
     task('done', 'completed', { sourceApplication: 'codex', sourceSessionId: 'session-done' }),
+    // The real session of a client wins over its process session, whichever was reported later.
+    task('both', 'running', { sourceApplication: 'codex', sourceSessionId: 'session-real',
+      events: [event('e1', 'codex', 'fuli-host-00000000-0000-4000-8000-000000000003', '2026-11-01T09:00:00Z')] }),
   ]);
-  assert.deepEqual(body.map(row => row.sessions), [[], [], [], []]);
+  assert.deepEqual(body.map(row => row.sessions), [[], [], [{ client: 'cursor', sessionId: null }], [],
+    [{ client: 'codex', sessionId: 'session-real' }]]);
 });
