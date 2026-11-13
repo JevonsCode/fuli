@@ -97,14 +97,70 @@ test('nearby discovery uses one address of each physical adapter, never a VPN or
   assert.deepEqual(discoveryAdapters(() => ({ Tailscale: machine().Tailscale })), [], 'no physical adapter: the system default is used');
 });
 
-test('one advertisement and one browse per adapter, stopped and refreshed together', async () => {
-  // Two endpoints on loopback ports nothing else uses: no packet leaves this computer.
-  const discovery = createBonjourDiscovery({ adapters: () => ['127.0.0.1', '127.0.0.1'] });
+// A stand-in for the mDNS library: it records what each endpoint was asked to do.
+function fakeEndpoints() {
+  const made = [];
+  const create = (target) => {
+    const handlers = {};
+    const endpoint = { target, published: [], finds: 0, stopped: 0, destroyed: false, fail: (error) => handlers.error?.(error),
+      server: { mdns: { on: (event, handler) => { handlers[event] = handler; } } },
+      publish: (config) => { const service = { config, records: () => [{ type: 'A', data: '192.168.1.8' }, { type: 'A', data: '100.64.0.9' }],
+        stop: () => { service.stopped = true; }, on() {} }; endpoint.published.push(service); return service; },
+      find: () => { endpoint.finds += 1; return { on() {}, stop: () => { endpoint.stopped += 1; } }; },
+      destroy: () => { endpoint.destroyed = true; } };
+    made.push(endpoint);
+    return endpoint;
+  };
+  return { made, create };
+}
+
+test('review: each adapter gets its own endpoint that binds every address, with its own name and only the announced addresses', () => {
+  const { made, create } = fakeEndpoints();
+  const discovery = createBonjourDiscovery({ adapters: () => ['192.168.1.8', '10.0.0.4'], create });
   const advert = discovery.advertise({ name: 'FULI 0a0b0c0d', host: 'fuli-0a0b0c0d.local', port: 4100, txt: { v: '1' }, addresses: ['192.168.1.8'] });
-  const browser = discovery.browse({ onUp: () => {}, onDown: () => {} });
-  browser.refresh();
-  browser.stop();
+  // macOS and Linux deliver multicast only to a socket bound to every address.
+  assert.deepEqual(made.map((endpoint) => endpoint.target), [{ interface: '192.168.1.8', bind: '0.0.0.0' }, { interface: '10.0.0.4', bind: '0.0.0.0' }]);
+  assert.deepEqual(made.map((endpoint) => endpoint.published[0].config.name), ['FULI 0a0b0c0d', 'FULI 0a0b0c0d-2']);
+  assert.deepEqual(made.map((endpoint) => endpoint.published[0].config.host), ['fuli-0a0b0c0d.local', 'fuli-0a0b0c0d-2.local']);
+  assert.deepEqual(made[1].published[0].records().map((record) => record.data), ['192.168.1.8']);
   advert.stop();
+  assert.ok(made.every((endpoint) => endpoint.published[0].stopped));
   discovery.close();
+  assert.ok(made.every((endpoint) => endpoint.destroyed));
+  // No physical adapter: one endpoint on the system default, as before.
+  const fallback = fakeEndpoints();
+  createBonjourDiscovery({ adapters: () => [], create: fallback.create }).browse({ onUp() {}, onDown() {} });
+  assert.deepEqual(fallback.made.map((endpoint) => endpoint.target), [undefined]);
+});
+
+test('review: a refresh on a changed network starts over and announces again; an unchanged one only asks again', () => {
+  const { made, create } = fakeEndpoints();
+  let addresses = ['192.168.1.8'];
+  const discovery = createBonjourDiscovery({ adapters: () => addresses, create });
+  discovery.advertise({ name: 'FULI 0a0b0c0d', host: 'fuli-0a0b0c0d.local', port: 4100, txt: { v: '1' } });
+  const browser = discovery.browse({ onUp() {}, onDown() {} });
+  browser.refresh();
+  assert.equal(made.length, 1);
+  assert.deepEqual([made[0].finds, made[0].stopped, made[0].published.length], [2, 1, 1]);
+  addresses = ['192.168.7.20'];
+  browser.refresh();
+  assert.equal(made[0].destroyed, true);
+  assert.deepEqual(made[1].target, { interface: '192.168.7.20', bind: '0.0.0.0' });
+  assert.deepEqual([made[1].finds, made[1].published.length], [1, 1]);
+  discovery.close();
+});
+
+test('review: one adapter failing leaves the others working; the failure is reported once, when none is left', () => {
+  const { made, create } = fakeEndpoints();
+  const failures = [];
+  const discovery = createBonjourDiscovery({ adapters: () => ['192.168.1.8', '10.0.0.4'], create, onFailure: (error) => failures.push(error.code) });
+  const browser = discovery.browse({ onUp() {}, onDown() {} });
+  made[0].fail(Object.assign(new Error('gone'), { code: 'EADDRNOTAVAIL' }));
+  assert.deepEqual([made[0].destroyed, made[1].destroyed, failures.length], [true, false, 0]);
+  browser.refresh();
+  assert.equal(made[1].finds, 2, 'the adapter that still works keeps asking');
+  made[1].fail(Object.assign(new Error('taken'), { code: 'EADDRINUSE' }));
+  made[1].fail(Object.assign(new Error('again'), { code: 'EADDRINUSE' }));
+  assert.deepEqual(failures, ['EADDRINUSE']);
   discovery.close();
 });

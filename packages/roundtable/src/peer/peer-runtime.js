@@ -238,12 +238,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   // Projects the owner may share (a session-only project is not one: another
-  // computer has nothing to ask it): each with its current lead, the clients that
+  // computer has nothing to ask it; one already shared stays listed so it can
+  // be taken back): each with its current lead, the clients that
   // lead may use and, for a project a paired device registered with the same
   // own repository, that device. A folder is offered only when this computer
   // knows one whose Git remote is that repository.
   async function shareable() {
-    const list = (await host.listProjects().catch(() => [])).filter((project) => !project.temporary && !project.sessionOnly).slice(0, 50);
+    const shared = new Set(store().shares().filter((share) => share.spaceId === spaceId()).map((share) => share.projectId));
+    const list = (await host.listProjects().catch(() => []))
+      .filter((project) => !project.temporary && (!project.sessionOnly || shared.has(project.projectId))).slice(0, 50);
     const agents = await host.listAgents().catch(() => []);
     const paired = repositoryKey ? await pairedDirectory() : [];
     return Promise.all(list.map(async (project) => {
