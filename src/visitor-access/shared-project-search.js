@@ -10,6 +10,9 @@ import { utf8Preview } from '../text/utf8-preview.js';
 // historical item, no FLA memory, no query vector (it would send the query to
 // a model), no title index on a miss and no related-project names; the
 // Provider also leaves out relationships to any entity a visitor may not see.
+// The provider's personal project id: 1 to 128 characters; here also no
+// surrounding space or control character.
+const PROJECT_ID = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,126}[^\s\p{Cc}])?$/u;
 const MAX_QUERIES = 4;
 const MAX_QUERY_CHARS = 200;
 // Longer text is refused before it is read as code points.
@@ -35,11 +38,17 @@ export function searchableQueries(asked) {
   return queries.every(Boolean) ? { queries } : { code: 'query_invalid' };
 }
 
-// projectId: checked by the caller; queries: as searchableQueries answered
-// them (checked again here, so nothing wider reaches the Provider). Answers the
-// exact object the port returns and its serialized size.
+export function searchableProject(projectId) {
+  return typeof projectId === 'string' && PROJECT_ID.test(projectId);
+}
+
+// projectId and queries as searchableProject and searchableQueries accept
+// them, checked again here: this module is the boundary, so nothing wider
+// reaches the Provider whoever calls it. Answers the exact object the port
+// returns and its serialized size.
 export async function searchSharedProject(application, { projectId, queries }) {
-  if (searchableQueries(queries).queries?.join('\n') !== queries.join('\n')) {
+  if (!searchableProject(projectId)) throw new TypeError('A visitor search needs one valid project id');
+  if (!Array.isArray(queries) || searchableQueries(queries).queries?.join('\n') !== queries.join('\n')) {
     throw new TypeError('Visitor queries must come from searchableQueries');
   }
   const personalSpaceId = application.config.personal.spaceId;

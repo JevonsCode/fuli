@@ -787,9 +787,22 @@ class SearchRequest(StrictModel):
             )
         if self.project_agent_id and not self.active_personal_project_id:
             raise ValueError('project Agent search requires active_personal_project_id')
-        # A relationship's endpoints are checked against one project's scope.
-        if self.max_sensitivity and not self.active_personal_project_id:
-            raise ValueError('a max_sensitivity search requires active_personal_project_id')
+        # A visitor's search reads one project's own current, confirmed items
+        # only; the search enforces that scope anyway, and a request that asks
+        # for anything wider is a caller's mistake worth refusing.
+        if self.max_sensitivity:
+            widened = [name for name, wide in (
+                ('include_project_references', self.include_project_references),
+                ('inherit_project_knowledge', self.inherit_project_knowledge),
+                ('include_personal_global', self.include_personal_global),
+                ('include_pending', self.include_pending),
+                ('include_historical', self.include_historical),
+                ('project_agent_id', self.project_agent_id is not None),
+            ) if wide]
+            if not self.active_personal_project_id:
+                raise ValueError('a max_sensitivity search requires active_personal_project_id')
+            if widened:
+                raise ValueError(f'a max_sensitivity search requires {", ".join(widened)} to be off')
         return self
 
 

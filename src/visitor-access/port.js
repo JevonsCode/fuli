@@ -1,6 +1,6 @@
 import { withoutControls } from '../text/control-characters.js';
 import { rateLimitRefusal } from './rate-limit.js';
-import { searchableQueries, searchSharedProject } from './shared-project-search.js';
+import { searchableProject, searchableQueries, searchSharedProject } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
 
 // The one port the visiting assistant reaches this computer's shared project
@@ -18,9 +18,6 @@ import { VisitorAccessStore } from './store.js';
 const MODES = new Set(['ask_only', 'plan', 'auto', 'trusted']);
 const DEFAULT_MODE = 'plan';
 const REQUESTER_KEY = /^(?:peer:[0-9a-f]{64}|guest:[A-Za-z0-9_-]{8,64})$/;
-// The provider's personal project id: 1 to 128 characters; here also no
-// surrounding space or control character.
-const PROJECT_ID = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,126}[^\s\p{Cc}])?$/u;
 // Display text longer than this is refused before it is cleaned.
 const MAX_LABEL_UNITS = 1000;
 const LABEL_CHARS = 120;
@@ -34,7 +31,7 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
       const who = requesterOf(requester);
       if (!who) return refused('requester_invalid');
       const at = now();
-      const project = validProject(projectId) ? projectId : '';
+      const project = searchableProject(projectId) ? projectId : '';
       const reservation = store.transaction(() => {
         const code = rateLimitRefusal(store, who.requesterKey, at)
           ?? (project ? null : 'project_invalid') ?? searchableQueries(queries).code ?? null;
@@ -60,7 +57,7 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
     recentReads({ requesterKey = null, projectId = null, limit } = {}) {
       if (requesterKey !== null && !validKey(requesterKey)) return refused('requester_invalid');
-      if (projectId !== null && !validProject(projectId)) return refused('project_invalid');
+      if (projectId !== null && !searchableProject(projectId)) return refused('project_invalid');
       return { ok: true, reads: store.recentReads({ requesterKey, projectId,
         limit: Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), READS_LIMIT) : READS_LIMIT }) };
     },
@@ -87,7 +84,6 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
 const refused = code => ({ ok: false, code });
 const validKey = key => typeof key === 'string' && REQUESTER_KEY.test(key);
-const validProject = projectId => typeof projectId === 'string' && PROJECT_ID.test(projectId);
 
 // Display text without control or bidirectional characters, cut to
 // LABEL_CHARS code points; null when there is none or it is far too long.

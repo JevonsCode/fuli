@@ -2,31 +2,47 @@
 // computer's own process (a diagnostic event, a visitor's search answer)
 // names no such path; when unsure, more is replaced rather than less.
 //
-// A Windows or home path may hold spaces inside a folder name: a segment
-// followed by another separator is part of the path whatever it contains
-// (C:\Users\First Last\file.txt), only the last segment ends at a space.
+// A folder name may hold spaces: a segment followed by another separator is
+// part of the path whatever it contains (C:\Users\First Last\file.txt).
+//
+// mode 'strict' (the default, a visitor's answer) also follows spaces in the
+// last segment, preferring to replace too much:
+// - every absolute POSIX path counts, under any root;
+// - a drive or UNC path runs to the end of its line or quoted string
+//   (C:\Users\Alice\Private Repo);
+// - a POSIX, home or relative path takes the following words on its line up
+//   to the last one, within eight, that holds a separator or ends in a dot
+//   extension (/home/alice/my folder/file.txt); words after it that do neither
+//   stay (see /opt/app for details).
+// mode 'keep-routes' (a diagnostic event) treats only home, mount and system
+// roots as POSIX paths and follows no spaces after the path: its operations
+// name the console's own routes (POST /api/tasks) and the prose after them.
 const SEGMENTS = String.raw`(?:[^\\/\r\n"'<>|*?]*[\\/])*[^\s\\/"'<>|*?]*`;
-const NOT_INSIDE = String.raw`(?<![\w.:/\\~-])`;
-const pattern = (posixRoot) => new RegExp([
-  // file: URLs, whole.
-  String.raw`\bfile:[^\s"'<>]*`,
-  // Drive paths (C:\ or C:/) and UNC shares (\\server\share).
-  String.raw`\b[A-Za-z]:[\\/]${SEGMENTS}`,
-  String.raw`\\\\${SEGMENTS}`,
-  // Home and relative paths that name a folder: ~/…, ./…, ../…
-  String.raw`(?<![\w.~])(?:~|\.{1,2})[\\/]${SEGMENTS}`,
-  // POSIX absolute paths, not inside a word, URL or other path.
-  String.raw`${NOT_INSIDE}\/${posixRoot}[^\s"'<>]*`
-].join('|'), 'gi');
-// Any root: what a visitor reads names no path at all.
-const ANY_ROOT = pattern(String.raw`[^\s/"'<>]+`);
-// Home, mount and system roots only: a diagnostic's operation names the
-// console's own routes (POST /api/…), which are no path of this computer.
-const SYSTEM_ROOT = pattern('(?:home|Users|mnt|root|tmp|var|private|etc|opt|Volumes|usr|srv|media|run)(?:/|\\b)');
+const WORD = String.raw`[^\s"'<>]`;
+const PATH_WORDS = String.raw`(?:(?:[ \t]${WORD}+){0,7}?[ \t]${WORD}*?(?:[\\/]|\.[A-Za-z0-9]{1,8}(?!\w))${WORD}*)*`;
+const TO_LINE_END = String.raw`[^\r\n"'<>|]*`;
+const FILE_URL = String.raw`\bfile:[^\s"'<>]*`;
+const HOME_OR_RELATIVE = String.raw`(?<![\w.~])(?:~|\.{1,2})[\\/]${SEGMENTS}`;
+const POSIX = String.raw`(?<![\w.:/\\~-])\/`;
+const SYSTEM_ROOTS = '(?:home|Users|mnt|root|tmp|var|private|etc|opt|Volumes|usr|srv|media|run)(?:/|\\b)';
 
-const PATTERNS = Object.freeze({ any: ANY_ROOT, system: SYSTEM_ROOT });
+const PATTERNS = Object.freeze({
+  strict: new RegExp([
+    FILE_URL,
+    String.raw`\b[A-Za-z]:[\\/]${TO_LINE_END}`,
+    String.raw`\\\\${TO_LINE_END}`,
+    `${HOME_OR_RELATIVE}${PATH_WORDS}`,
+    String.raw`${POSIX}[^\s/"'<>]+[^\s"'<>]*${PATH_WORDS}`
+  ].join('|'), 'gi'),
+  'keep-routes': new RegExp([
+    FILE_URL,
+    String.raw`\b[A-Za-z]:[\\/]${SEGMENTS}`,
+    String.raw`\\\\${SEGMENTS}`,
+    HOME_OR_RELATIVE,
+    String.raw`${POSIX}${SYSTEM_ROOTS}[^\s"'<>]*`
+  ].join('|'), 'gi')
+});
 
-// posixRoots: 'any' (default) or 'system'.
-export function withoutLocalPaths(text, { posixRoots = 'any' } = {}) {
-  return text.replace(PATTERNS[posixRoots], '[path]');
+export function withoutLocalPaths(text, { mode = 'strict' } = {}) {
+  return text.replace(PATTERNS[mode], '[path]');
 }

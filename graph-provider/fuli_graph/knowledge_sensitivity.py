@@ -12,8 +12,24 @@ An edit episode (knowledge_versions._write_edit_episodes) says nothing about
 how sensitive the knowledge is, so it counts neither way. An episode without
 a stored sensitivity is not normal: every FULI writer has set it since the
 graph's first release, so a missing value is not FULI's capture and is not
-trusted. A lineage longer than MAX_VERSION_DEPTH steps is not read to its
-end, so it is left out too.
+trusted.
+
+The walk reads MAX_VERSION_DEPTH levels of predecessors; a lineage with a
+predecessor still unread after that is left out.
+
+Deleted sources. A relationship lists its episodes by id (`episodes`); one
+whose list names an episode that no longer exists is left out, since that
+episode's sensitivity cannot be read. Nothing else in the data model shows a
+deletion, so these are known limits, not checked here:
+- An entity records no list or count of its sources: a deleted Episodic node
+  or MENTIONS edge leaves nothing on the entity.
+- The version link is stored only on the older item: a deleted predecessor
+  leaves nothing on its successor.
+- FULI's own source delete (knowledge_source_delete_copies) removes the
+  episode's id from every `episodes` list together with the node, and marks
+  only items that lost their whole basis (knowledge_source_delete_mutation):
+  an item that keeps a normal source after a person deleted its private one
+  carries no marker and is treated by its remaining sources.
 """
 
 MAX_VERSION_DEPTH = 20
@@ -21,14 +37,17 @@ EDIT_SOURCE_KINDS = ('human_knowledge_edit', 'agent_knowledge_edit')
 
 _ITEM = {
     'entity': ('(item:Entity)', '''
-        OPTIONAL MATCH (episode:Episodic {group_id: item.group_id})-[:MENTIONS]->(item)'''),
+        OPTIONAL MATCH (episode:Episodic {group_id: item.group_id})-[:MENTIONS]->(item)
+        WITH origin, item, collect(DISTINCT episode) AS episodes, 0 AS missing'''),
     'relationship': ('()-[item:RELATES_TO]->()', '''
         OPTIONAL MATCH (episode:Episodic {group_id: item.group_id})
-        WHERE episode.uuid IN coalesce(item.episodes, [])'''),
+        WHERE episode.uuid IN coalesce(item.episodes, [])
+        WITH origin, item, collect(DISTINCT episode) AS episodes
+        WITH origin, item, episodes,
+             size([id IN coalesce(item.episodes, []) WHERE NOT id IN [found IN episodes | found.uuid]]) AS missing'''),
 }
 _SOURCES = '''
-        WITH origin, item, collect(DISTINCT episode) AS episodes
-        RETURN origin, item.uuid AS id, item.group_id AS group_id,
+        RETURN origin, item.uuid AS id, item.group_id AS group_id, missing,
                [episode IN episodes | {kind: episode.fuli_source_kind,
                                        sensitivity: episode.fuli_sensitivity}] AS sources
 '''
@@ -39,6 +58,12 @@ async def normal_only_ids(store, item_kind: str, item_ids: list[str]) -> set[str
     if not item_ids:
         return set()
     pattern, episodes = _ITEM[item_kind]
+    predecessors = f'''
+        UNWIND $frontier AS row
+        MATCH {pattern}
+        WHERE item.group_id = row.group_id AND item.fuli_replaced_by_item_id = row.id
+          AND coalesce(item.fuli_replaced_by_item_kind, $item_kind) = $item_kind
+        WITH row.origin AS origin, item{episodes}{_SOURCES}'''
     lineages = {}
     frontier = _merge(lineages, await _read(store, f'''
         MATCH {pattern} WHERE item.uuid IN $item_ids
@@ -46,15 +71,12 @@ async def normal_only_ids(store, item_kind: str, item_ids: list[str]) -> set[str
     for _ in range(MAX_VERSION_DEPTH):
         if not frontier:
             break
-        frontier = _merge(lineages, await _read(store, f'''
-            UNWIND $frontier AS row
-            MATCH {pattern}
-            WHERE item.group_id = row.group_id AND item.fuli_replaced_by_item_id = row.id
-              AND coalesce(item.fuli_replaced_by_item_kind, $item_kind) = $item_kind
-            WITH row.origin AS origin, item{episodes}{_SOURCES}''', frontier=frontier, item_kind=item_kind))
-    unread = {row['origin'] for row in frontier}
-    return {origin for origin, lineage in lineages.items()
-            if origin not in unread and lineage['sources'] and not lineage['withheld']}
+        frontier = _merge(lineages, await _read(store, predecessors, frontier=frontier, item_kind=item_kind))
+    if frontier:
+        # Read, not merged: only whether anything is left past the last level.
+        for row in await _read(store, predecessors, frontier=frontier, item_kind=item_kind):
+            lineages[row['origin']]['withheld'] = True
+    return {origin for origin, lineage in lineages.items() if lineage['sources'] and not lineage['withheld']}
 
 
 async def _read(store, query, **parameters) -> list[dict]:
@@ -65,18 +87,19 @@ async def _read(store, query, **parameters) -> list[dict]:
 def _merge(lineages: dict, rows) -> list[dict]:
     """Adds each version's sources to its origin's lineage; answers the
     versions whose predecessors are still to read. A version already seen
-    (a cycle) and a lineage already withheld are not followed further."""
-    frontier = []
+    (a cycle) is not read again, and a lineage withheld at this level is not
+    followed further, whichever of its versions withheld it."""
+    found = []
     for row in rows:
         lineage = lineages.setdefault(row['origin'], {'seen': set(), 'sources': 0, 'withheld': False})
         if row['id'] in lineage['seen']:
             continue
         lineage['seen'].add(row['id'])
+        lineage['withheld'] |= bool(row.get('missing'))
         for source in row['sources']:
             if source.get('kind') in EDIT_SOURCE_KINDS:
                 continue
             lineage['sources'] += 1
             lineage['withheld'] |= source.get('sensitivity') != 'normal'
-        if not lineage['withheld']:
-            frontier.append({'origin': row['origin'], 'id': row['id'], 'group_id': row['group_id']})
-    return frontier
+        found.append({'origin': row['origin'], 'id': row['id'], 'group_id': row['group_id']})
+    return [version for version in found if not lineages[version['origin']]['withheld']]

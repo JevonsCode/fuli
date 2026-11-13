@@ -88,7 +88,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     edges = [*edges, *(edge for edge in meaning_edges if edge.uuid not in lexical_ids)]
     if not request.include_historical:
         edges = [edge for edge in edges if edge.invalid_at is None]
-    if request.max_sensitivity == 'normal':
+    if _visitor(request):
         normal_ids = await normal_only_ids(store, 'relationship', [edge.uuid for edge in edges])
         edges = [edge for edge in edges if edge.uuid in normal_ids]
     project_scopes = {}
@@ -103,15 +103,17 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
             personal_space,
             request,
             project_scopes,
-            request.include_personal_global,
+            _personal_global(request),
             [edge.uuid for edge in edges],
         )
         edges = [edge for edge in edges if edge.uuid in allowed]
-        if request.max_sensitivity == 'normal':
+        if _visitor(request):
             # Before names are read: a hidden endpoint's name takes no part in scoring.
             visible = await _visible_endpoints(store, personal_space, request, project_scopes, edges)
             edges = [edge for edge in edges
                      if edge.source_node_uuid in visible and edge.target_node_uuid in visible]
+    if request.excluded_entity_types:
+        edges = await _without_excluded_endpoints(store, request, edges)
     epistemic = await read_edge_epistemic_metadata(store, [edge.uuid for edge in edges])
     if personal_space:
         epistemic = {
@@ -183,22 +185,57 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     )
 
 
+def _visitor(request: SearchRequest) -> bool:
+    """A visitor's search (max_sensitivity='normal'). It implies the strict
+    visitor scope whatever the request's other switches say: only items
+    defined in the active project (not inherited, referenced or global), no
+    preferences and no FLA memory. The request model also refuses a visitor
+    search whose switches say otherwise."""
+    return request.max_sensitivity == 'normal'
+
+
+def _personal_global(request: SearchRequest) -> bool:
+    return request.include_personal_global and not _visitor(request)
+
+
+def _visitor_scope_allows(record, scope, request: SearchRequest) -> bool:
+    return (scope.get('defined_project_id') == request.active_personal_project_id
+            and not scope.get('inherited') and not scope.get('project_agent_id')
+            and not record.get('profile_aspect'))
+
+
 async def _visible_endpoints(store, space, request: SearchRequest, project_scopes, edges) -> set[str]:
-    """The endpoints a max_sensitivity search may show as entities itself:
-    defined in the active project (not inherited, referenced or global), not a
-    preference, of no excluded type, current, confirmed unless pending is
-    asked for, and with only normal sources. A relationship reaching any
-    other entity says something about it, so it is left out with it."""
+    """The endpoints a visitor search may show as entities itself (the
+    visitor scope, of no excluded type, current, confirmed, only normal
+    sources). A relationship reaching any other entity says something about
+    it, so it is left out with it."""
     endpoint_ids = list(dict.fromkeys(
         uuid for edge in edges for uuid in (edge.source_node_uuid, edge.target_node_uuid)))
     if not endpoint_ids:
         return set()
     records = await _scoped_entity_records(store, space, request, project_scopes, entity_ids=endpoint_ids)
-    return {
-        record['id'] for record in records
-        if record.get('defined_project_id') == request.active_personal_project_id
-        and not record.get('inherited') and not record.get('profile_aspect')
-    }
+    return {record['id'] for record in records}
+
+
+async def _without_excluded_endpoints(store, request: SearchRequest, edges):
+    """The relationships none of whose endpoints is of an excluded type."""
+    endpoint_ids = list(dict.fromkeys(
+        uuid for edge in edges for uuid in (edge.source_node_uuid, edge.target_node_uuid)))
+    if not endpoint_ids:
+        return edges
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (node:Entity) WHERE node.uuid IN $uuids
+          AND coalesce(node.fuli_type, 'Entity') IN $excluded_entity_types
+        RETURN node.uuid AS uuid
+        ''',
+        uuids=endpoint_ids,
+        excluded_entity_types=list(request.excluded_entity_types),
+        routing_='r',
+    )
+    excluded = {record['uuid'] for record in records}
+    return [edge for edge in edges
+            if edge.source_node_uuid not in excluded and edge.target_node_uuid not in excluded]
 
 
 async def personal_edge_scopes(
@@ -272,6 +309,7 @@ async def personal_edge_scopes(
                 include_personal_global,
             )
         ) is not None
+        and (not _visitor(request) or _visitor_scope_allows(record, scope, request))
     }
 
 
@@ -292,6 +330,7 @@ async def personal_project_scopes(
     if (
         not active_id
         or not request.inherit_project_knowledge
+        or _visitor(request)
     ):
         return scopes
     records, _, _ = await store.runtime.driver.execute_query(
@@ -380,7 +419,7 @@ async def _personal_entities(
     tag_ranking=None,
     tag_explanations=None,
 ) -> list[EntitySearchResult]:
-    if not project_scopes and not request.include_personal_global:
+    if not project_scopes and not _personal_global(request):
         return []
     scoped_records = await _scoped_entity_records(store, space, request, project_scopes)
     term_weights = _term_weights(request.query, scoped_records)
@@ -547,11 +586,11 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
             record,
             request,
             project_scopes,
-            request.include_personal_global,
+            _personal_global(request),
         )
-        if scope is not None:
+        if scope is not None and (not _visitor(request) or _visitor_scope_allows(record, scope, request)):
             scoped_records.append({**record, **scope})
-    if request.max_sensitivity == 'normal':
+    if _visitor(request):
         normal_ids = await normal_only_ids(store, 'entity', [record['id'] for record in scoped_records])
         scoped_records = [record for record in scoped_records if record['id'] in normal_ids]
     return scoped_records
@@ -707,7 +746,7 @@ def _item_scope_metadata(
     # A reference shows another project's item here; a search that asks for
     # only this project's own items leaves it out.
     reference_project_ids = (list(record.get('reference_project_ids') or [])
-                             if request.include_project_references else [])
+                             if request.include_project_references and not _visitor(request) else [])
     project_ids = (
         [assignment_project_id]
         if assignment_project_id else episode_project_ids

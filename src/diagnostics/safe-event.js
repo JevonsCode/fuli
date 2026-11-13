@@ -39,8 +39,8 @@ export function failureReason(error, fallback) {
 // Text kept for an Agent to read: one line, URL credentials dropped and query
 // values masked, local paths, secrets and long opaque values replaced.
 function safeText(value, limit = REASON_BYTES) {
-  // An operation names the console's own routes (POST /api/…): only system roots are paths here.
-  return utf8Preview(shareableText(singleLine(value), { posixRoots: 'system' }), limit);
+  // An operation names the console's own routes (POST /api/…), which are no local paths.
+  return utf8Preview(shareableText(singleLine(value), { mode: 'keep-routes' }), limit);
 }
 
 // One event as it is stored. component, outcome and operation are required;

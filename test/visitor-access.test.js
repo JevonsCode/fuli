@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { createVisitorAccess } from '../src/visitor-access/port.js';
+import { searchSharedProject } from '../src/visitor-access/shared-project-search.js';
 
 // Synthetic data only: a stubbed provider search, invented ids and texts.
 const SPACE = 'space-synthetic';
@@ -183,6 +184,10 @@ test('local paths, credentials and secrets in titles and texts are replaced', as
   const pem = '-----BEGIN CERTIFICATE-----\nMIIBsyntheticAAAA\n-----END CERTIFICATE-----';
   const leaks = {
     'https://user:secret@host/repo': ['secret', 'user:'],
+    'https://user:p@ss@host.invalid/x': ['p@ss', 'ss@host', 'user'],
+    'https://user:pa:ss@host.invalid/x': ['pa:ss', 'user'],
+    'C:\\Users\\Alice\\Private Repo': ['Alice', 'Private', 'Repo'],
+    '/home/alice/my folder/file.txt': ['alice', 'folder', 'file.txt'],
     'https://host/path?token=xyz': ['xyz'],
     'see ?token=xyz here': ['xyz'],
     'key sk-abcdefghijklmnopqrst': ['sk-abcdefghijklmnopqrst'],
@@ -211,6 +216,23 @@ test('local paths, credentials and secrets in titles and texts are replaced', as
       }
     }
   }
+});
+
+test('prose after a path stays in a visitor\'s answer', async (t) => {
+  const texts = ['see /opt/app for details.', 'clone into ~/code then run it'];
+  const port = access(t, { app: application(() => ({ facts: texts.map((text, index) => fact({ id: `p${index}`, fact: text })),
+    entities: [] })) });
+  const { results: [{ items }] } = await search(port);
+  assert.deepEqual(items.map(item => item.text), ['see [path] for details.', 'clone into [path] then run it']);
+});
+
+test('the search module refuses a project id it was not meant to get, whoever calls it', async () => {
+  const app = application();
+  for (const projectId of [undefined, 42, ['p'], '', ' padded ', 'p'.repeat(129)]) {
+    await assert.rejects(searchSharedProject(app, { projectId, queries: ['q'] }), TypeError);
+  }
+  await assert.rejects(searchSharedProject(app, { projectId: PROJECT, queries: 'q' }), TypeError);
+  assert.equal(app.requests.length, 0);
 });
 
 test('the whole returned answer, ok included, stays within 16 KB and its size is recorded', async (t) => {

@@ -11,6 +11,7 @@ from neo4j import AsyncGraphDatabase
 from fuli_graph.knowledge_search import _personal_entities
 from fuli_graph.knowledge_sensitivity import normal_only_ids
 from fuli_graph.models import SearchRequest
+from test_collaboration_context import confirmation_basis
 from test_project_agent_memory_neo4j import fixture_settings
 
 EDIT = ('human_knowledge_edit', 'private')
@@ -36,8 +37,12 @@ CASES = {
     # A private item absorbed into a normal one (a merge or supersede), then edited.
     'private-then-normal': [[capture('private')], [capture('normal')]],
     'private-normal-edit': [[capture('private')], [capture('normal')], [EDIT]],
+    # Its relationship's episode list will name an episode that no longer exists.
+    'deleted-source': [[capture('normal')]],
 }
 NORMAL_SAFE = {'normal', 'normal-then-edit', 'normal-edit-edit'}
+# An entity keeps no list of its sources, so a deleted one cannot be seen there.
+NORMAL_SAFE_ENTITIES = NORMAL_SAFE | {'deleted-source'}
 
 
 async def _write_case(driver, group, project, case, versions):
@@ -48,6 +53,7 @@ async def _write_case(driver, group, project, case, versions):
             MERGE (target:SensitivityTestTarget {group_id: $group})
             CREATE (node:Entity {uuid: $item_id, group_id: $group, name: $name,
                 summary: 'Synthetic sensitivity evidence', fuli_replaced_by_item_id: $newer,
+                fuli_confirmation_status: 'confirmed', fuli_confirmation_basis_json: $basis,
                 fuli_replaced_by_item_kind: CASE WHEN $newer IS NULL THEN NULL ELSE 'entity' END})
             CREATE (node)-[edge:RELATES_TO {uuid: $item_id + '-edge', group_id: $group, episodes: [],
                 fuli_replaced_by_item_id: CASE WHEN $newer IS NULL THEN NULL ELSE $newer + '-edge' END,
@@ -63,6 +69,7 @@ async def _write_case(driver, group, project, case, versions):
             CREATE (episode)-[:MENTIONS]->(node)
             SET edge.episodes = edge.episodes + episode.uuid
         ''', group=group, project=project, item_id=item_id, newer=newer, current=newer is None,
+            basis=confirmation_basis(),
             name=f'Sensitivity fixture {case}' if newer is None else f'Old version {case} {index}',
             sources=[list(source) for source in versions[index]])
         newer = item_id
@@ -78,17 +85,21 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
     try:
         for case, versions in CASES.items():
             await _write_case(driver, group, project, case, versions)
+        await driver.execute_query('''
+            MATCH ()-[edge:RELATES_TO {uuid: $edge_id}]->() SET edge.episodes = edge.episodes + 'deleted-episode'
+        ''', edge_id=f'{group}-deleted-source-edge')
 
         scopes = {project: {'scope_distance': 0, 'scope_path': [project], 'inherited': False}}
         found = {}
         for max_sensitivity in (None, 'normal'):
             request = SearchRequest(space_ids=[group], query='Sensitivity fixture', limit=20,
                                     personal_project_ids=[project], active_personal_project_id=project,
-                                    include_pending=True, max_sensitivity=max_sensitivity)
+                                    inherit_project_knowledge=False, include_project_references=False,
+                                    max_sensitivity=max_sensitivity)
             entities = await _personal_entities(store, space, request, scopes)
             found[max_sensitivity] = {item.id.removeprefix(f'{group}-') for item in entities}
         assert found[None] == set(CASES)
-        assert found['normal'] == NORMAL_SAFE
+        assert found['normal'] == NORMAL_SAFE_ENTITIES
 
         edges = await normal_only_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
         assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == NORMAL_SAFE
