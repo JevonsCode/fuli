@@ -10,7 +10,7 @@ import { withTranscriptGuard, transcriptDigest } from '../src/conversations/tran
 import { syncConversationTranscript, claimTranscriptBoundary, recordTranscriptTaskEntry } from '../src/conversations/sync-transcript.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { writeWhileReaderHoldsOpen } from '../test-support/open-file-reader.js';
 import { assertFileMode, refusesRenameOverOpenFile } from '../test-support/platform-capabilities.js';
 import { CHILD_HANG_GUARD_MS } from '../test-support/child-process-guard.js';

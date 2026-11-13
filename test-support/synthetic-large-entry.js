@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';

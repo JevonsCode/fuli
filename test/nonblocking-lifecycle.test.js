@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { codexHookTimeoutMs, codexStopLifecycleOutput, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { cursorLifecycleOutput } from '../src/agents/cursor/lifecycle-hook.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { CHILD_HANG_GUARD_MS } from '../test-support/child-process-guard.js';

@@ -18,6 +18,12 @@ Skills。`/flreview` 知识回顾已停用（11-11）：它的四个工具不再
 写后用对应读取工具验证；浏览器自动化只用于可选的视觉检查，不作为数据写入手段。详见
 [Agent 接口架构](agent-interface-architecture.md)。
 
+Claude Code 的 Hook 命令（`src/agents/claude-code/lifecycle-hook.js`）只加载 Node 内置模块，把每次调用交给
+同一数据目录正在运行的控制台（`POST /api/lifecycle-hooks/claude-code`，只接受本机回环地址上的本机 Hook
+进程，不是 Agent 接口），由控制台执行并返回 Hook 要输出的内容。控制台没在运行、版本不同，或在执行前拒绝
+这次调用时，Hook 照旧在自己的进程里执行；控制台可能已经执行过时，Hook 不再重复执行，只回答“不可用”。
+规则和测量见 `src/agents/lifecycle-forwarder.js` 与 `acceptance/hook-forwarding/measure.js`（rec#132）。
+
 FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
 支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，
 不会因为选择而自动扩大到其他项目或 `RELATED_TO` 项目。

@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { agentHostRequestContext } from '../src/app/agent-request-context.js';

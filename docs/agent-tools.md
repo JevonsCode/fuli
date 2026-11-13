@@ -21,6 +21,15 @@ they must not duplicate supplied preferences. Installing configuration never app
 Preference content remains in local Fuli as the single source of truth and is not copied into agent
 configuration.
 
+The Claude Code hook command (`src/agents/claude-code/lifecycle-hook.js`) loads only Node built-ins
+and hands each call to the running console of its data directory
+(`POST /api/lifecycle-hooks/claude-code`, loopback and this computer's own hook processes only,
+never an Agent interface), which runs it and answers what the hook prints. Without a running
+console of the same FULI version, or when the console refuses the call before running it, the hook
+runs it in its own process as before; once the console may have run it, the hook never runs it
+again and answers as unavailable. The rules and the measurement are in
+`src/agents/lifecycle-forwarder.js` and `acceptance/hook-forwarding/measure.js` (rec#132).
+
 FULI also exposes read-only `fuli://` resources for each local personal project and for global taste.
 Agents with MCP mention support can select them from the `@` picker; a project resource selects one
 exact project and never expands the search to other projects or `RELATED_TO` projects.

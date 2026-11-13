@@ -13,7 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { CLAUDE_REPLAYED_SOURCES, claudeLifecycleOutput } from '../../src/agents/claude-code/lifecycle-hook.js';
+import { CLAUDE_REPLAYED_SOURCES, claudeLifecycleOutput } from '../../src/agents/claude-code/lifecycle-event.js';
 import { codexLifecycleOutput } from '../../src/agents/codex/lifecycle-hook.js';
 import { codexPreferenceEvidence } from '../../src/agents/codex/preference-evidence.js';
 import { claudePreferenceEvidence } from '../../src/agents/claude-code/preference-evidence.js';

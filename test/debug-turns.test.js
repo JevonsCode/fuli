@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { DEBUG_MARK_NOTICE, isDebugPrompt, withDebugMarkNotice, withoutDebugMark } from '../src/debug-turns/trigger.js';
 import { buildDebugRecord, DEBUG_RECORD_MAX_BYTES } from '../src/debug-turns/record.js';

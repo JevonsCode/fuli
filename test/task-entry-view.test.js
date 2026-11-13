@@ -6,7 +6,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
 import { openCodeLifecycleOutput } from '../src/agents/opencode/lifecycle-hook.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';

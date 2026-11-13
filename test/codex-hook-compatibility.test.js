@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { runCursorLifecycleHook } from '../src/agents/cursor/lifecycle-hook.js';
 import { withTranscriptGuard, transcriptDigest } from '../src/conversations/transcript-guard.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';

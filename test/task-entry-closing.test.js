@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
 import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';

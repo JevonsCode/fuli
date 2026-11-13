@@ -21,7 +21,7 @@ import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
 import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,

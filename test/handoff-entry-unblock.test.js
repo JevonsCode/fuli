@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, writeFile, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { runCodexLifecycleHook, runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
 import { withTranscriptGuard, transcriptDigest, TRANSCRIPT_SCAN_PAGE_LIMIT } from '../src/conversations/transcript-guard.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';
