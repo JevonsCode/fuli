@@ -13,8 +13,8 @@ class Strings {
   String _things(int count) => count == 1 ? '1 thing' : '$count things';
 
   // Status sentence
-  // The desktop client is a Beta feature for now: its window and tray say so.
-  String get appName => 'FULI Beta';
+  // The desktop client is the main way to install FULI: its window and tray carry the plain name.
+  String get appName => 'FULI';
   String get checking => _t('正在检查 FULI…', 'Checking FULI…');
   // The console answers; its page is loading in the window.
   String get openingConsole => _t('正在打开控制台…', 'Opening the console…');
