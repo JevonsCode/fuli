@@ -13,7 +13,7 @@ import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
 import { injectClientConnectionStatus } from './client-connection-status'
 
-import { STATUS_MARKS, canConnect, changedExplanation, connectActionKey, connectionSummary, offersRestart, shownClients,
+import { STATUS_ICONS, canConnect, changedExplanation, connectActionKey, connectionSummary, offersRestart, shownClients,
   type ClientObservation, type ConnectionResult, restartResultShape, type RestartStatus } from './client-connection-model'
 
 // Settings › 客户端's first card: whether each client on this machine has
@@ -155,7 +155,7 @@ function restartOutcome(client: ClientObservation) {
         <ul v-if="observation && observation.available !== false" class="client-grid">
           <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
             :class="`client-row client-row--${client.status}`">
-            <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="client.status === 'connected'" name="check" :size="14" /><template v-else>{{ STATUS_MARKS[client.status] }}</template></span>
+            <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="STATUS_ICONS[client.status]" :name="STATUS_ICONS[client.status]!" :size="client.status === 'connected' ? 14 : 12" /></span>
             <div class="client-row__body">
               <div class="client-row__head">
                 <strong :title="client.label">{{ client.label }}</strong>

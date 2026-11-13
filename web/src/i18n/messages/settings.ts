@@ -287,6 +287,7 @@ export const settingsMessages = {
     notifications: {
       title: '通知',
       needsPersonUrl: '需要你时通知',
+      dingdong: '推荐：叮咚 DingDong',
       needsPersonUrlMeta: 'Agent 举手等你决定时，FULI 把事件发到这个本机地址（例如 DingDong）。只接受 127.0.0.1、localhost 或 [::1]；留空就关闭。',
     },
     flaSlashMenu: {
@@ -299,6 +300,7 @@ export const settingsMessages = {
     },
     conversationLaunchers: {
       title: '会话打开方式',
+      description: 'FULI 里出现某个会话时，点一下怎么在它的客户端里打开。开着的客户端才会显示成可点的链接。',
       enabled: '启用',
       sourceId: '来源 ID · {id}',
       idFormat: '可打开的 ID',
@@ -710,6 +712,7 @@ export const settingsMessages = {
     notifications: {
       title: 'Notifications',
       needsPersonUrl: 'Notify when you are needed',
+      dingdong: 'Recommended: DingDong',
       needsPersonUrlMeta: 'When an Agent raises a hand for your decision, FULI posts the event to this address on this machine (for example DingDong). Only 127.0.0.1, localhost or [::1]; leave empty to turn it off.',
     },
     flaSlashMenu: {
@@ -722,6 +725,7 @@ export const settingsMessages = {
     },
     conversationLaunchers: {
       title: 'Conversation openers',
+      description: 'How a session shown in FULI opens in its own client when you click it. Only clients switched on get a link.',
       enabled: 'Enabled',
       sourceId: 'Source ID · {id}',
       idFormat: 'Allowed IDs',

@@ -35,8 +35,10 @@ export const CUSTOM_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'code
 export type CustomClientFormat = typeof CUSTOM_CLIENT_FORMATS[number]
 
 // A client tile's mark: a connected client gets the shared check icon; the other states keep these plain marks.
-export const STATUS_MARKS: Readonly<Record<Exclude<ClientStatus, 'connected'>, string>> = { changed: '!', skills_left: '!', removed: '×',
-  not_connected: '○', not_detected: '○', unknown: '?' }
+// The mark inside a client's status circle: an icon, so it sits in the centre at any font;
+// a client FULI is simply not in shows the empty circle.
+export const STATUS_ICONS: Readonly<Record<ClientStatus, 'check' | 'close' | 'warning' | 'help' | null>> = { connected: 'check',
+  changed: 'warning', skills_left: 'warning', removed: 'close', not_connected: null, not_detected: null, unknown: 'help' }
 
 // The connect button says what it does for this status; it runs the same install every time.
 export function connectActionKey(status: ClientStatus): 'connect' | 'reconnect' | 'update' {

@@ -22,7 +22,7 @@
 .client-row__action { align-self: flex-start; margin-top: auto; }
 .client-row__head .client-row__action { margin: 0 0 0 auto; align-self: center; }
 .client-row__icon {
-  display: inline-grid; width: 22px; height: 22px; margin-top: 4px; place-items: center; border: 1px solid currentColor; border-radius: 50%;
+  display: inline-grid; flex: none; width: 22px; height: 22px; margin-top: 4px; place-items: center; border: 1px solid currentColor; border-radius: 50%; line-height: 0;
   color: var(--color-muted); font-size: 12px; font-weight: var(--weight-strong);
 }
 .client-row--connected .client-row__icon { color: var(--color-success); }

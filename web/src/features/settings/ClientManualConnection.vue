@@ -10,7 +10,7 @@ import { t } from '@/i18n'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import { injectClientConnectionStatus } from './client-connection-status'
-import { CUSTOM_CLIENT_FORMATS, STATUS_MARKS, type CustomClient, type CustomClientFormat, type Format } from './client-connection-model'
+import { CUSTOM_CLIENT_FORMATS, STATUS_ICONS, type CustomClient, type CustomClientFormat, type Format } from './client-connection-model'
 
 // Settings › 客户端's manual card: a client FULI does not know, described by
 // hand, and the MCP configuration to paste into any other client. Its writes
@@ -123,7 +123,7 @@ async function copy() {
         <ul v-if="customClients.length" class="client-grid">
           <li v-for="client in customClients" :key="client.id" :data-custom-client="client.id" :data-client-status="client.status"
             :class="`client-row client-row--${client.status}`">
-            <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="client.status === 'connected'" name="check" :size="14" /><template v-else>{{ STATUS_MARKS[client.status] }}</template></span>
+            <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="STATUS_ICONS[client.status]" :name="STATUS_ICONS[client.status]!" :size="client.status === 'connected' ? 14 : 12" /></span>
             <div class="client-row__body">
               <div class="client-row__head">
                 <strong>{{ client.label }}</strong>
