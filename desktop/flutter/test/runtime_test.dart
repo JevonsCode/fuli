@@ -85,6 +85,19 @@ void main() {
       // A key that is not the controller's hex digest never names a lock.
       expect(parseControllerContext(jsonEncode({'ok': true, 'dataDir': r'D:\FuliData', 'instanceKey': r'x\..\y'})), isNull);
       expect(parseControllerContext(jsonEncode({'ok': true, 'dataDir': r'D:\FuliData'})), isNull);
+      expect(context?.currentPackageRoot, isNull);
+    });
+
+    test('a client of a replaced version still names its lock, and the version to open instead', () {
+      final key = 'b' * 32;
+      final current = r'C:\Users\someone\AppData\Local\Programs\Fuli\versions\next';
+      final context = parseControllerContext(jsonEncode({'ok': false, 'status': 'superseded', 'error': 'old',
+          'dataDir': r'D:\FuliData', 'instanceKey': key, 'currentPackageRoot': current}));
+      expect(context?.instanceKey, key);
+      expect(context?.currentPackageRoot, current);
+      // Without the copy to open it is an ordinary failure.
+      expect(parseControllerContext(jsonEncode({'ok': false, 'status': 'superseded', 'dataDir': r'D:\FuliData',
+          'instanceKey': key})), isNull);
     });
 
     test('a port change says what changed; a start on a reserved port says the port change fixes it', () {

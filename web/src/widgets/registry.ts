@@ -20,6 +20,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamCardsWidget.vue')),
     slots: ['fla.overview'],
   },
+  'fla-blocked': {
+    component: defineAsyncComponent(() => import('@/features/fla-page/FlaBlockedTasks.vue')),
+    slots: ['fla.overview'],
+  },
   'fla-sheets': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaTaskSheets.vue')),
     slots: ['fla.overview'],

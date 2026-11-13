@@ -1,6 +1,10 @@
 // An FLA's own page (重写, direction A).
 export const flaPageMessages = {
   'zh-CN': {
+    blocked: {
+      title: '被阻塞的任务',
+      cleared: '已解除「{title}」的阻塞',
+    },
     sheets: {
       title: '任务单',
       loading: '正在读取 {name} 的任务单',
@@ -40,6 +44,10 @@ export const flaPageMessages = {
     },
   },
   'en-US': {
+    blocked: {
+      title: 'Blocked tasks',
+      cleared: 'Unblocked “{title}”',
+    },
     sheets: {
       title: 'Task sheets',
       loading: 'Reading {name}’s task sheets',

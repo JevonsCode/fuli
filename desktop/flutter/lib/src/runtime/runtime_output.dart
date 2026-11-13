@@ -26,21 +26,26 @@ RuntimeReport parseControllerReply(String stdout) {
 }
 
 /// The installation's data directory and the key of its one-client lock.
+/// [currentPackageRoot] is set when this client runs from a version the
+/// installation replaced (`status: superseded`): the version to open instead.
 class ControllerContext {
-  const ControllerContext({required this.dataDir, required this.instanceKey});
+  const ControllerContext({required this.dataDir, required this.instanceKey, this.currentPackageRoot});
 
   final String dataDir;
   final String instanceKey;
+  final String? currentPackageRoot;
 }
 
 ControllerContext? parseControllerContext(String stdout) {
   final reply = _lastJsonLine(stdout);
   final dataDir = reply?['dataDir'];
   final instanceKey = reply?['instanceKey'];
-  if (reply?['ok'] != true || dataDir is! String || dataDir.isEmpty) return null;
+  final current = reply?['currentPackageRoot'];
+  final superseded = reply?['status'] == 'superseded' && current is String && current.isNotEmpty;
+  if ((reply?['ok'] != true && !superseded) || dataDir is! String || dataDir.isEmpty) return null;
   // windows-controller.js: the first 32 hex digits of the data directory's SHA-256.
   if (instanceKey is! String || !RegExp(r'^[0-9a-f]{32}$').hasMatch(instanceKey)) return null;
-  return ControllerContext(dataDir: dataDir, instanceKey: instanceKey);
+  return ControllerContext(dataDir: dataDir, instanceKey: instanceKey, currentPackageRoot: superseded ? current : null);
 }
 
 RuntimeReport parseCliStatus(String stdout) {
