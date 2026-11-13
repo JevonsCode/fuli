@@ -8,12 +8,12 @@ export function peerUsage(command) {
   nearby [on [--name NAME] | off | clear-attempts] list nearby FULI; on: be seen and listen for pairing
   pair FINGERPRINT                                pair with a nearby FULI (first 4+ characters from the list)
   confirm CODE                                    the 6 digits the person reads on the OTHER computer;
-                                                  pairing shares the leads of projects both computers have, nothing else
+                                                  pairing shares the leads of up to 8 projects both computers have (a group of two only)
   cancel                                          cancel the pairing waiting here
   host --address IP [--port PORT] [--name NAME]   turn this computer into the coordinator
   invite                                          print a one-use pairing invitation (10 minutes)
   join (--invitation TEXT | --invitation-file FILE) [--name NAME]
-                                                  also shares the leads of projects both computers have, nothing else
+                                                  also shares the leads of up to 8 projects both computers have (a group of two only)
   share --project ID --clients codex[,claude_code] [--folder DIR]   (repeat --project for more; replaces the list)
   revoke --device FINGERPRINT                     coordinator only
   off                                             leave: stop listening, sharing and trusting devices`;
@@ -76,6 +76,8 @@ export async function runPeerControlCommand(args, { baseUrl, command, notRunning
       const file = option(rest, '--invitation-file');
       const invitation = option(rest, '--invitation') ?? (file ? readFileSync(file, 'utf8').trim() : null);
       if (!invitation) throw new Error('Pass --invitation or --invitation-file.');
+      // Joining is the consent to share the common projects' leads: said first, as the console does.
+      write(SHARE_ON_PAIRING);
       return printStatus(await call('POST', '/api/peer/join', { invitation, name: option(rest, '--name') }), write);
     }
     case 'share': {
@@ -122,11 +124,17 @@ function printStatus(status, write) {
   else if (status.lastPublish) write(`Shared list sent to the coordinator: ${status.lastPublish.agents} Agent(s) at ${status.lastPublish.at}`);
 }
 
-// What pairing shared without a separate tick: the leads of the projects both computers have.
+// What pairing shared without a separate tick (the leads of the projects the other computer reports too), or why nothing.
+const NOT_AUTO_SHARED = {
+  group: (record) => `Not shared after pairing: ${record.matched} same project(s), but other computers in this group could ask them too. Share them yourself if you want.`,
+  too_many: (record) => `Not shared after pairing: ${record.matched} same projects is more than 8. Share the ones you want yourself.`,
+  unanswered: () => 'Not shared after pairing: the coordinator did not answer which projects both computers have.',
+};
 function printAutoShared(status, write) {
   for (const record of status.autoShared ?? []) {
-    write(record.projects.length
-      ? `Shared after pairing (projects both computers have): ${record.projects.map((project) => project.projectName).join(', ')}`
+    if (record.skipped) write(NOT_AUTO_SHARED[record.skipped]?.(record) ?? `Not shared after pairing (${record.skipped}).`);
+    else write(record.projects.length
+      ? `Shared after pairing (projects the other computer has too): ${record.projects.map((project) => project.projectName).join(', ')}`
       : 'Shared after pairing: none (no project both computers have that could be shared).');
   }
 }
@@ -160,7 +168,7 @@ function printNearby(status, write, command) {
 }
 
 // Said before the person confirms a pairing or joins with an invitation.
-const SHARE_ON_PAIRING = 'Once you confirm, leads of projects both computers have can ask each other. Nothing else is shared.';
+const SHARE_ON_PAIRING = 'Once confirmed, leads of up to 8 projects the other computer says it has too can talk. Nothing else.';
 
 // Why nearby pairing turned itself off, or what it last did.
 const NEARBY_ENDED = {

@@ -111,16 +111,20 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   }
 
   // Another device's digests never leave the coordinator: each device learns
-  // only which of its own digests another paired device also has.
+  // only which of its own digests another paired device also has, and whether
+  // the coordinator holds a set under its current key (for itself and each other
+  // device), so an empty match can be told from digests not sent yet.
   function directory(nodeId) {
     const now = clock();
     const mine = new Set(repositories.get(nodeId) ?? []);
-    return { devices: store.nodes().filter((node) => node.status === 'active' && node.id !== nodeId).map((node) => ({
-      nodeId: node.id, name: node.name,
-      online: seenWithin(node, now, ONLINE_MS),
-      agents: JSON.parse(node.directory_json),
-      sameRepositories: (repositories.get(node.id) ?? []).filter((digest) => mine.has(digest)),
-    })) };
+    return { ownRepositoriesKnown: repositories.has(nodeId),
+      devices: store.nodes().filter((node) => node.status === 'active' && node.id !== nodeId).map((node) => ({
+        nodeId: node.id, name: node.name,
+        online: seenWithin(node, now, ONLINE_MS),
+        agents: JSON.parse(node.directory_json),
+        sameRepositories: (repositories.get(node.id) ?? []).filter((digest) => mine.has(digest)),
+        repositoriesKnown: repositories.has(node.id),
+      })) };
   }
 
   // The same set again is free; a new set counts, and past the daily limit the earlier set stays.

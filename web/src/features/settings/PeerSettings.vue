@@ -5,12 +5,12 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import { OptionSelect } from '@/components/ui/select'
 import UiNotice from '@/ui/UiNotice.vue'
 import PeerNearby from './PeerNearby.vue'
 import PeerSharePicker from './PeerSharePicker.vue'
-import { peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
+import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -37,6 +37,8 @@ const addressOptions = computed(() => (status.value?.addresses ?? []).map((value
 const rows = computed(() => (status.value ? shareRows(status.value, added.value) : []))
 const rowIds = computed(() => rows.value.map((project) => project.projectId))
 const suggestions = computed(() => (status.value ? unsharedSuggestions(status.value) : []))
+const sharedAtPairing = computed(() => (status.value
+  ? new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(autoSharedNames(status.value)) : ''))
 const paired = computed(() => Boolean(status.value?.role))
 const coordinator = computed(() => status.value?.role === 'coordinator')
 const otherDevices = computed(() => (status.value?.devices ?? []).filter((device) => !device.self))
@@ -291,12 +293,16 @@ function shareState(projectId: string) {
         <section class="peer-block">
           <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
           <p>{{ t('settings.peer.sharesHint') }}</p>
+          <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared>
+            {{ t('settings.peer.autoShared', { projects: sharedAtPairing }) }}
+          </UiNotice>
           <p v-if="!rows.length" data-shares-empty>{{ t('settings.peer.noProjects') }}</p>
           <div v-if="suggestions.length" class="peer-actions">
             <Button size="sm" variant="outline" data-share-suggestions :disabled="Boolean(busy) && busy !== 'suggestions'"
               :loading="busy === 'suggestions'" :loading-label="t('settings.peer.savingShares')" @click="shareSuggestions">
               {{ t('settings.peer.shareCommon', { count: suggestions.length }) }}
             </Button>
+            <p v-if="(status.groupSize ?? 0) > 2" data-group-shares>{{ t('settings.peer.groupShares') }}</p>
           </div>
           <ul v-if="rows.length" class="peer-shares">
             <li v-for="project in rows" :key="project.projectId" :data-share-row="project.projectId">

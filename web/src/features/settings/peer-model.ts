@@ -81,8 +81,12 @@ export type PeerStatus = {
   shares: Share[]
   // Only shared projects and suggestions (the same own repository on a paired computer); the rest are found by search.
   shareable: Shareable[]
-  // What a pairing shared without a separate tick: the projects both computers have.
-  autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[] }[]
+  // This computer and the paired devices it sees; every one of them can ask a shared lead.
+  groupSize?: number
+  // What a pairing shared without a separate tick (the projects the other computer reports too),
+  // or why it shared none: other computers in the group, more than 8, or no answer.
+  autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[];
+    skipped?: 'group' | 'too_many' | 'unanswered'; matched?: number }[]
   lastPublish?: { at: string; agents: number | null; error: string | null; message?: string } | null
   nearby?: Nearby
 }
@@ -127,6 +131,11 @@ export function unsharedSuggestions(status: PeerStatus) {
   const shared = new Set(status.shares.map((share) => share.projectId))
   return status.shareable.filter((project) => project.sameProjectOn?.length && project.lead && project.clients.length
     && !shared.has(project.projectId))
+}
+
+// The names of the projects pairing shared without a separate tick, for 「配对后已共享：…」.
+export function autoSharedNames(status: PeerStatus) {
+  return [...new Set((status.autoShared ?? []).flatMap((record) => record.projects.map((project) => project.projectName)))]
 }
 
 // The rows of the share list: the short list from status, then projects the

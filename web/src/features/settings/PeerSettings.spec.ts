@@ -217,6 +217,32 @@ it('shows the fingerprint of the other computer only on a computer that joined o
   member.unmount()
 })
 
+it('names what pairing shared, and each stays a row the person can untick', async () => {
+  const status = { ...paired, shares: [sharedSample], groupSize: 2, autoShared: [
+    { nodeId: 'b'.repeat(64), at: '2030-01-01T00:00:00.000Z', projects: [{ projectId: 'sample-project', projectName: 'Sample project' },
+      { projectId: 'other-project', projectName: 'Other project' }] }] }
+  server({ 'GET /api/peer': [status] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-auto-shared]').text()).toBe('配对后已共享：Sample project和Other project')
+  const row = wrapper.get('[data-share-row="sample-project"] .peer-share-title input')
+  expect([(row.element as HTMLInputElement).checked, (row.element as HTMLInputElement).disabled]).toEqual([true, false])
+  expect(wrapper.find('[data-group-shares]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('says beside the one-click button that the other computers of a larger group can ask too', async () => {
+  const laptop = [{ nodeId: 'b'.repeat(64), name: 'Laptop' }]
+  server({ 'GET /api/peer': [{ ...paired, groupSize: 3, shareable: [{ ...paired.shareable[0], sameProjectOn: laptop }],
+    autoShared: [{ nodeId: 'b'.repeat(64), at: '2030-01-01T00:00:00.000Z', projects: [], skipped: 'group', matched: 1 }] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-share-suggestions]').text()).toBe('共享这 1 个相同的项目')
+  expect(wrapper.get('[data-group-shares]').text()).toBe('这个组里还有别的电脑，它们也能向这些负责人提问。')
+  expect(wrapper.find('[data-auto-shared]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
 it('suggests a project a paired computer has too, shares nothing until the person ticks it, then offers the known checkout', async () => {
   const matched = { ...paired, shareable: [{ ...paired.shareable[0], sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }],
     knownFolder: '/synthetic/checkout' }], lastPublish: { at: '2030-01-01T00:00:00.000Z', agents: null, error: 'coordinator_unreachable' } }
@@ -287,7 +313,7 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   await flushPromises()
   expect(fetch.mock.calls[1]?.[0]).toBe('/api/peer/invitations/preview')
   expect(wrapper.get('[data-invitation-preview]').text()).toContain('ABCD 1234')
-  expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，两台电脑上相同的项目的负责人可以直接互相提问。其他项目不会共享。')
+  expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，对方说它也有的项目（最多 8 个），两边负责人可以互相提问。其他项目不会共享。')
   expect(fetch.mock.calls.some(([url]) => url === '/api/peer/join')).toBe(false)
   await wrapper.get('textarea').setValue('replacement-invitation')
   expect(wrapper.find('[data-invitation-preview]').exists()).toBe(false)

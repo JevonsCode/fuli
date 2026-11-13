@@ -12,6 +12,7 @@ import { createAttemptLedger } from './nearby-attempts.js';
 import { createBonjourDiscovery } from './nearby-discovery.js';
 import { createNearbyPairing } from './nearby-pairing.js';
 import { createNearbyPresence } from './nearby-presence.js';
+import { createPairingShare } from './pairing-share.js';
 import { answersAs, connectNearby, createPeerClient, pairWithCoordinator } from './peer-transport.js';
 import { coordinatorUrl, decodeInvitation, PeerError, shortFingerprint } from './protocol.js';
 import { createPeerRunner } from './runner.js';
@@ -34,9 +35,6 @@ const LOOPBACK = /^(127\.|::1$)/;
 // The search for projects to add answers with this many by default, at most SEARCH_MAX.
 const SEARCH_LIMIT = 20;
 const SEARCH_MAX = 50;
-// After a pairing the other computer publishes its repository digests shortly
-// after; an empty first match is tried once more after this long.
-const AUTO_SHARE_RETRY_MS = 10_000;
 const teamPeople = team => team?.people ?? [];
 // A project another computer can ask: never an archived, temporary or session-only one.
 const pickable = project => !project.temporary && !project.sessionOnly && !project.archived;
@@ -45,8 +43,8 @@ const pickable = project => !project.temporary && !project.sessionOnly && !proje
 // Nothing here starts unless the owner turned it on; console LAN access does not.
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
   claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
-  nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs = AUTO_SHARE_RETRY_MS,
-  onError = () => {} }) {
+  nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs, autoShareAttempts,
+  publishMs = PUBLISH_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -61,8 +59,6 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   let nearbyTimer = null;
   let listenFailure = null;
   const trustChecks = new Set();
-  const autoSharing = new Set();
-  const autoShareTimers = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
   const discovery = createDiscovery({ adapters: () => discoveryAdapters(interfaces),
@@ -101,6 +97,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (settings) await startCoordinator(settings).catch((error) => { onError(error); });
     if (store().setting('membership') && (coordinator || !settings)) await startRunner();
     checkPendingTrust();
+    pairingShare.resume();
     const nearby = store().setting('nearby');
     if (!nearby) return;
     if (!(nearby.until > clock())) await endNearby({ kind: 'timeout' });
@@ -149,7 +146,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     publisher = setInterval(() => {
       publish().catch(onError);
       narrowListener().catch(onError);
-    }, PUBLISH_MS);
+    }, publishMs);
     publisher.unref();
   }
 
@@ -240,14 +237,19 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return [...new Set(projects.filter(pickable).flatMap((project) => projectDigests(project, key)))];
   }
 
-  async function pairedDirectory() {
-    if (!runnerClient) return [];
+  // The coordinator's directory as this device sees it: the other devices and
+  // whether it holds this device's own digests under its current key.
+  async function readDirectory() {
+    if (!runnerClient) return { devices: [] };
     try {
-      const { devices } = await runnerClient.post('/peer/1/directory', {}, { timeoutMs: DIRECTORY_READ_MS });
-      return (Array.isArray(devices) ? devices : []).map((entry) => ({ ...entry, name: cleanName(entry?.name) || 'FULI' }));
+      const { devices, ownRepositoriesKnown } = await runnerClient.post('/peer/1/directory', {}, { timeoutMs: DIRECTORY_READ_MS });
+      return { ownRepositoriesKnown,
+        devices: (Array.isArray(devices) ? devices : []).map((entry) => ({ ...entry, name: cleanName(entry?.name) || 'FULI' })) };
     }
-    catch { return []; }
+    catch { return { devices: [] }; }
   }
+
+  const pairedDirectory = async () => (await readDirectory()).devices;
 
   // One read per project team within one answer, however many parts of it ask.
   function teamReader() {
@@ -271,10 +273,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // already-shared one stays listed so it can be taken back, whatever it has
   // become since) and the suggestions, projects a paired device registered
   // with the same own repository. Every other project is found by searchShareable.
-  async function shareable({ projects, team = teamReader() }) {
+  async function shareable({ projects, paired, team = teamReader() }) {
     const shared = sharedProjectIds();
     const agents = await host.listAgents().catch(() => []);
-    const paired = repositoryKey ? await pairedDirectory() : [];
     const listed = projects.flatMap((project) => {
       const same = sameProjectOn(project, paired);
       return shared.has(project.projectId) || (pickable(project) && same.length) ? [{ project, same }] : [];
@@ -327,66 +328,51 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return shareEntry(project, sameProjectOn(project, paired), { agents: await host.listAgents().catch(() => []), team: teamReader() });
   }
 
-  // ---- Sharing the projects both computers have, once per pairing ----
+  // ---- Sharing the projects both computers have, once per pairing (pairing-share.js) ----
 
-  // Confirming a pairing (the 6 digits on each computer, or joining with a
-  // previewed invitation) is the person's consent, said before they confirm,
-  // to share the leads of the projects both computers registered with the same
-  // own repository. Lead only, its first allowed wake client, the folder only
-  // when this computer knows a checkout of that repository. An existing share
-  // is never changed and none is removed. It runs once per paired device: the
-  // record stays, so a project the person unticks later stays unticked.
-  // The other device's digests reach the coordinator only once it publishes,
-  // so an empty first read is tried once more, never again.
-  async function shareCommonProjects(fingerprint, { retry = true } = {}) {
-    const records = store().setting('autoShared') ?? {};
-    if (records[fingerprint] || autoSharing.has(fingerprint)) return;
-    autoSharing.add(fingerprint);
-    try {
-      if (!repositoryKey) await publish().catch(onError);
-      const other = (await pairedDirectory()).filter((entry) => entry.nodeId === fingerprint);
-      const projects = await host.listProjects().catch(() => []);
-      const common = projects.filter((project) => pickable(project) && sameProjectOn(project, other).length);
-      if (!common.length && retry) {
-        const timer = setTimeout(() => {
-          autoShareTimers.delete(timer);
-          shareCommonProjects(fingerprint, { retry: false }).catch(onError);
-        }, autoShareRetryMs);
-        timer.unref?.();
-        autoShareTimers.add(timer);
-        return;
-      }
-      const shared = sharedProjectIds();
-      const agents = await host.listAgents().catch(() => []);
-      const added = [];
-      for (const project of common.filter((entry) => !shared.has(entry.projectId))) {
-        const lead = (await host.projectTeam(project.projectId).catch(() => null))?.lead;
-        const [client] = wakeClients(agents, lead?.agentId);
-        if (!client) continue;
-        added.push({ spaceId: spaceId(), projectId: project.projectId, projectName: project.name ?? project.projectId,
-          agentId: lead.agentId, clients: [client], workingDirectory: await repositoryFolder(project, lead.agentId) });
-      }
-      if (!store().setting('membership')) return;
-      if (added.length) {
-        store().replaceShares([...store().shares(), ...added.map(({ projectName: _name, ...share }) => share)], port.idFactory);
-        await runner?.reconcileShares();
-        await publish().catch(onError);
-      }
-      store().setSetting('autoShared', { ...(store().setting('autoShared') ?? {}), [fingerprint]: { at: new Date(clock()).toISOString(),
-        projects: added.map(({ projectId, projectName }) => ({ projectId, projectName })) } });
-    } finally { autoSharing.delete(fingerprint); }
+  // What the coordinator answers about one paired device: whether both
+  // computers' digests under its current key are there (settled), how many
+  // other devices the group has, and the projects here the device reports too.
+  // Publishing first sends this computer's digests under the current key.
+  async function pairingMatch(fingerprint) {
+    await publish().catch(onError);
+    const answer = await readDirectory();
+    const other = answer.devices.find((entry) => entry.nodeId === fingerprint);
+    const projects = await host.listProjects().catch(() => []);
+    const common = other ? projects.filter((project) => pickable(project) && sameProjectOn(project, [other]).length) : [];
+    // A coordinator from before these flags settles only on a match.
+    const known = answer.ownRepositoriesKnown === undefined ? common.length > 0
+      : answer.ownRepositoriesKnown === true && other?.repositoriesKnown === true;
+    return { settled: Boolean(other) && known, others: answer.devices.filter((entry) => entry.nodeId !== fingerprint).length, common };
   }
 
-  // What pairing shared without a separate tick, for the card and `fuli peer`.
-  const autoSharedView = () => Object.entries(store().setting('autoShared') ?? {})
-    .map(([nodeId, record]) => ({ nodeId, at: record.at, projects: record.projects }));
-
-  function forgetAutoShare(fingerprint) {
-    const records = store().setting('autoShared');
-    if (!records?.[fingerprint]) return;
-    const { [fingerprint]: _gone, ...rest } = records;
-    store().setSetting('autoShared', Object.keys(rest).length ? rest : null);
+  // Each project's share as a manual save makes it: the current lead, its first
+  // allowed wake client, and the folder only when the host maps it to this project.
+  async function pairingShares(projects) {
+    const agents = await host.listAgents().catch(() => []);
+    const shares = [];
+    for (const project of projects) {
+      const lead = (await host.projectTeam(project.projectId).catch(() => null))?.lead;
+      const [client] = wakeClients(agents, lead?.agentId);
+      if (!client) continue;
+      const folder = await repositoryFolder(project, lead.agentId);
+      shares.push({ projectName: project.name ?? project.projectId, share: { spaceId: spaceId(), projectId: project.projectId,
+        agentId: lead.agentId, clients: [client],
+        workingDirectory: folder ? await confirmedFolder(folder, project.projectId).catch(() => null) : null } });
+    }
+    return shares;
   }
+
+  // The projects whose share the person changed (added or removed) in a save, and when.
+  const touchedSince = (projectId, since) => (store().setting('shareTouches')?.[projectId] ?? 0) >= since;
+
+  const pairingShare = createPairingShare({ clock, attemptMs: autoShareRetryMs, attempts: autoShareAttempts, onError, port: {
+    setting: (key) => store().setting(key), setSetting: (key, value) => store().setSetting(key, value),
+    paired: () => Boolean(port.configured() && store().setting('membership')),
+    match: pairingMatch, prepare: pairingShares, sharedProjectIds, touchedSince,
+    writeShares: (shares) => store().replaceShares([...store().shares(), ...shares], port.idFactory),
+    afterWrite: async () => { await runner?.reconcileShares(); await publish().catch(onError); },
+  } });
 
   async function repositoryFolder(project, agentId) {
     const folder = await roundtable.knownProjectFolder({ agentId, projectId: project.projectId }).catch(() => null);
@@ -398,12 +384,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function status() {
     if (!port.configured()) {
       return { beta: true, role: null, device: null, coordinator: null, addresses: localAddresses(), devices: [],
-        openInvitations: 0, shares: [], shareable: [], autoShared: [], lastPublish: null, nearby: await nearbyView() };
+        openInvitations: 0, shares: [], shareable: [], groupSize: 0, autoShared: [], lastPublish: null, nearby: await nearbyView() };
     }
     const membership = store().setting('membership');
     const device = membership ? await identity() : null;
     const devices = membership?.role === 'coordinator' ? storedDevices() : [];
     const projects = membership ? await host.listProjects().catch(() => []) : [];
+    const paired = membership ? await pairedDirectory() : [];
     const team = teamReader();
     return {
       beta: true,
@@ -417,8 +404,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       devices: devices.map((entry) => ({ ...entry, shortFingerprint: shortFingerprint(entry.nodeId) })),
       openInvitations: coordinator ? coordinator.service.openInvitations() : 0,
       shares: membership ? (await shareStates({ projects, team })).map(({ lead: _lead, ...share }) => share) : [],
-      shareable: membership ? await shareable({ projects, team }) : [],
-      autoShared: membership ? autoSharedView() : [],
+      shareable: membership ? await shareable({ projects, paired, team }) : [],
+      // This computer and the paired devices it sees: a share reaches every one of them.
+      groupSize: membership ? paired.length + 1 : 0,
+      autoShared: membership ? pairingShare.view() : [],
       lastPublish: membership ? lastPublish : null,
       nearby: await nearbyView(),
     };
@@ -469,8 +458,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (result.coordinatorNodeId !== invitation.fingerprint) throw new PeerError('invalid_pairing', 'The coordinator answered with another identity', 502);
     await adoptCoordinator({ url: invitation.url, certPem: invitation.certificatePem, fingerprint: invitation.fingerprint,
       name: invitation.name, authority: invitation.authority });
-    // Joining with an invitation whose fingerprint the person compared is the consent, as the 6 digits are nearby.
-    await shareCommonProjects(invitation.fingerprint).catch(onError);
+    // Joining is the consent, as the 6 digits are nearby: the console says so
+    // under the previewed invitation, `fuli peer join` prints it before it joins.
+    await pairingShare.start(invitation.fingerprint)?.catch(onError);
     return status();
   }
 
@@ -520,6 +510,14 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
         ...(communicationOnly ? { communicationOnly: true } : {}),
         workingDirectory: entry.workingDirectory ? await confirmedFolder(entry.workingDirectory, projectId) : null });
     }
+    // A project the person shared or took back here keeps that choice: sharing at pairing never overrides it.
+    const before = sharedProjectIds();
+    const after = new Set(shares.map((share) => share.projectId));
+    const changed = [...before, ...after].filter((projectId) => before.has(projectId) !== after.has(projectId));
+    if (changed.length) {
+      store().setSetting('shareTouches', { ...(store().setting('shareTouches') ?? {}),
+        ...Object.fromEntries(changed.map((projectId) => [projectId, clock()])) });
+    }
     store().replaceShares(shares, port.idFactory);
     await runner?.reconcileShares();
     // A list the coordinator did not get is said here, not only in the log.
@@ -543,8 +541,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function revokeDevice(nodeId) {
     if (!coordinator) throw new PeerError('not_coordinator', 'Only the coordinator device revokes devices', 409);
-    coordinator.service.revoke(nodeId);
-    store().forgetAuthority(nodeId);
+    revokeStored(nodeId);
     return status();
   }
 
@@ -563,6 +560,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     store().setSetting('reachedAddresses', null);
     store().setSetting('pendingTrust', null);
     store().setSetting('autoShared', null);
+    store().setSetting('shareTouches', null);
     listenFailure = null;
     if (membership?.role === 'member') store().setSetting('pendingLeave', membership.coordinator);
     await finishLeaving();
@@ -593,7 +591,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       try { coordinatorStore.revokeNode(nodeId, new Date(clock()).toISOString()); } finally { coordinatorStore.close(); }
     }
     store().forgetAuthority(nodeId);
-    forgetAutoShare(nodeId);
+    pairingShare.forget(nodeId);
   }
 
   // ---- Nearby pairing (rec issue 127) ----
@@ -721,7 +719,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   function afterPairing(peer) {
     nearbyNotice = { kind: 'paired', name: peer.name, fingerprint: peer.fingerprint, at: new Date(clock()).toISOString() };
-    shareCommonProjects(peer.fingerprint).catch(onError);
+    pairingShare.start(peer.fingerprint)?.catch(onError);
     const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name, fingerprint: peer.fingerprint }).catch(onError), pairedGraceMs);
     timer.unref?.();
   }
@@ -858,9 +856,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function close() {
     clearTimeout(nearbyTimer);
-    for (const timer of [...trustChecks, ...autoShareTimers]) clearTimeout(timer);
+    for (const timer of trustChecks) clearTimeout(timer);
     trustChecks.clear();
-    autoShareTimers.clear();
+    pairingShare.close();
     pairing.close();
     presence.stop();
     await stopAll();
