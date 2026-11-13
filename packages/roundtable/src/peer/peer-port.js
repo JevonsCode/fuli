@@ -7,13 +7,18 @@ import { loadDeviceIdentity } from './device-identity.js';
 import { createNodeStore } from './node-store.js';
 import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
-import { PEER_LIMITS, PEER_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
+import { PEER_LIMITS, PEER_PROTOCOL, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, TERMINAL_STATUSES } from './protocol.js';
 import { createPeerChatPort } from './chat-port.js';
+import { parseQueryAnswer, queryCode } from './query-answer.js';
 import { matchesAgentDiscovery } from '../roundtable/discovery.js';
 
 const ADDRESS = /^peer:([0-9a-f]{16}):([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
 const STATUS_POLL_MS = 2_000;
 const PROOF_MARGIN_MS = 60_000;
+// A query is answered within a claim tick and one search: poll briefly, give up soon.
+const QUERY_POLL_MS = 300;
+const QUERY_WAIT_MS = 20_000;
+const refused = (code) => ({ ok: false, code: queryCode(code) });
 
 // The coordinator's answer is untrusted here: only a bounded cleanup report passes.
 function boundedState(state) {
@@ -30,7 +35,7 @@ export function peerDirectory(dataDir) {
 // What Agents on this device use to reach shared project leads on other paired
 // devices. It never pairs, shares or listens: those stay with the local owner.
 export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = randomUUID,
-  statusPollMs = STATUS_POLL_MS }) {
+  statusPollMs = STATUS_POLL_MS, createClient = createPeerClient }) {
   const directory = peerDirectory(dataDir);
   let store = null;
   let session = null;
@@ -48,7 +53,7 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
     session?.client.close();
     const identity = await loadDeviceIdentity(directory);
     session = { fingerprint: current.coordinator.fingerprint, url: current.coordinator.url, identity,
-      client: createPeerClient({ identity, coordinator: current.coordinator }) };
+      client: createClient({ identity, coordinator: current.coordinator }) };
     return session;
   }
 
@@ -116,6 +121,39 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
     return post('/peer/1/messages', { assertion, signature: identity.sign(assertion) });
   }
 
+  // A visitor's read-only question to a shared lead's project on another
+  // device, for one verified local task: answered there from its shared
+  // knowledge without waking anything. Returns { ok: true, remote } with the
+  // reply's validated fields only, or { ok: false, code } with a plain code.
+  async function query(target, question, { taskContextToken, sourceApplication, from, signal }) {
+    const { identity } = await connection();
+    const now = clock();
+    const assertion = { protocol: PEER_QUERY_PROTOCOL, messageId: idFactory(),
+      from: { node: identity.fingerprint, agentId: from.agentId, name: from.name },
+      to: { node: target.node, bindingId: target.bindingId, agentId: target.agentId }, query: question,
+      issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + PEER_LIMITS.queryTtlSeconds * 1000).toISOString() };
+    const issued = await host.issueRemoteOrigin({ taskContextToken, client: sourceApplication, messageId: assertion.messageId,
+      digest: assertionDigest(assertion), targetNode: target.node, bindingId: target.bindingId, expiresAt: assertion.expiresAt,
+      purpose: 'query' });
+    if (issued.agent_id !== from.agentId) throw new PeerError('origin_mismatch', 'The local authority attributed this task to another Agent', 409);
+    assertion.origin = issued.proof;
+    let state;
+    try {
+      await post('/peer/1/messages', { assertion, signature: identity.sign(assertion) }, { signal });
+      state = await waitFor(assertion.messageId, QUERY_WAIT_MS, { signal, pollMs: QUERY_POLL_MS });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return refused(error.code);
+    }
+    if (!TERMINAL_STATUSES.has(state.status)) {
+      await cancel(assertion.messageId).catch(() => {});
+      return refused('query_timeout');
+    }
+    if (state.status !== 'answered') return refused(state.error ?? state.status);
+    const remote = parseQueryAnswer(state.reply, question.action);
+    return remote ? { ok: true, remote } : refused('invalid_answer');
+  }
+
   async function status(messageId, options) {
     return boundedState(await post('/peer/1/status', { messageId }, options));
   }
@@ -124,14 +162,14 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
     return boundedState(await post('/peer/1/cancel', { messageId }));
   }
 
-  async function waitFor(messageId, timeoutMs, { signal } = {}) {
+  async function waitFor(messageId, timeoutMs, { signal, pollMs = statusPollMs } = {}) {
     const deadline = clock() + timeoutMs;
     let last = null;
     for (;;) {
       signal?.throwIfAborted();
       try { last = await status(messageId, { signal }); } catch (error) { if (!last) last = { status: 'queued', error: error.code }; }
       if (TERMINAL_STATUSES.has(last.status) || clock() >= deadline) return last;
-      await delay(Math.min(statusPollMs, Math.max(0, deadline - clock())), undefined, { signal });
+      await delay(Math.min(pollMs, Math.max(0, deadline - clock())), undefined, { signal });
     }
   }
 
@@ -151,6 +189,6 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
   }
 
   return { ...createPeerChatPort({ connection, post, nodeStore, host, clock }),
-    configured, isRemoteAddress, remoteAgents, resolveRemote, send, status, cancel, waitFor, hasSent, localAuthority,
+    configured, isRemoteAddress, remoteAgents, resolveRemote, send, query, status, cancel, waitFor, hasSent, localAuthority,
     nodeStore, directory, idFactory, close };
 }

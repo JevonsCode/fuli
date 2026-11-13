@@ -144,6 +144,8 @@ async function clearAttempts() {
           <span>{{ t('settings.peer.sameDigits') }}</span>
         </label>
         <p data-share-on-pair>{{ t('settings.peer.shareOnPair') }}</p>
+        <!-- This computer joins the other's group: said when consenting, part of the block from its first render. -->
+        <p v-if="pairing.coordinator === 'other'" data-member-trust>{{ t('settings.peer.memberTrust') }}</p>
         <div class="peer-actions">
           <Button size="sm" data-pairing-confirm :disabled="!sameDigits || pairing.confirmedHere || pairing.state !== 'confirm'"
             :loading="busy === 'confirm'" :loading-label="t('settings.peer.confirming')" @click="confirm">

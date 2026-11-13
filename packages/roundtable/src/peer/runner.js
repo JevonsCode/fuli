@@ -2,21 +2,36 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { certificateFingerprint, verifyDeviceSignature } from './device-identity.js';
 import { isAuthorityKey, verifyOriginProof } from './origin-proof.js';
-import { PEER_LIMITS, PeerError, peerCleanup, validateAssertion } from './protocol.js';
+import {
+  PEER_LIMITS, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerMessageKey, validateAssertion, validateQuery,
+} from './protocol.js';
+import { answerPeerQuery, QUERY_REFUSED, queryCode, requesterLabel } from './query-answer.js';
 import { outwardFailure } from '../roundtable/wake-failure.js';
 import { REMOTE_WAKE_ATTEMPTS } from '../roundtable/wake-ladder.js';
 
 const RETRY_MS = 5_000;
+// A query lives at most a minute and its proof expires with it; past that the
+// assertion is refused as expired before its device is proven, never recorded.
+const REFUSAL_SKEW_MS = 60_000;
+const REFUSALS_REMEMBERED = 2_000;
 const STARTED_STATES = new Set(['starting', 'running', 'finished']);
+// How each kind of claim is checked: a message may wake the shared lead under
+// an execution proof; a query only reads, under a query proof.
+const MESSAGE = Object.freeze({ validate: validateAssertion, purpose: 'execution', visitor: false });
+const QUERY = Object.freeze({ validate: validateQuery, purpose: 'query', visitor: true });
 
 // Receives asks for this device's shared project leads. Every claim is written
 // down before it is accepted, nothing runs before the coordinator confirmed the
 // acceptance, and an attempt that may have run is never reported as not started.
-export function createPeerRunner({ store, client, roundtable, host, nodeId, spaceId,
+// pairedDevices(): on the coordinating computer, the fingerprints of its own
+// active paired devices; null on a member, which cannot know the group.
+export function createPeerRunner({ store, client, roundtable, host, nodeId, spaceId, pairedDevices = () => null,
   clock = Date.now, retryMs = RETRY_MS, renewMs = PEER_LIMITS.renewSeconds * 1000, onError = () => {} }) {
   const stopping = new AbortController();
   const running = new Map();
   const handlers = new Map();
+  const refusedQueries = new Map();
+  const background = new Set();
   let loop = null;
 
   function start() {
@@ -81,13 +96,22 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       queue(messageId, attemptId, 'cancelled', { error: 'cancelled' });
       return flush();
     }
+    // A visitor's query is answered here from shared knowledge; it never reaches a wake.
+    const kind = claim.assertion?.protocol === PEER_QUERY_PROTOCOL ? QUERY : MESSAGE;
     let authorized;
     try {
-      authorized = authorize(claim);
+      authorized = authorize(claim, kind);
     } catch (error) {
       store.setAttemptState(messageId, attemptId, 'rejected', error.code ?? 'rejected');
-      queue(messageId, attemptId, 'failed', { error: error.code ?? 'rejected' });
-      return flush();
+      // A query's sender learns one word whatever failed, on the same path: this
+      // computer keeps the real code and records it, once the sending device was
+      // proven, only after the answer went out.
+      queue(messageId, attemptId, 'failed', { error: kind === QUERY ? QUERY_REFUSED : error.code ?? 'rejected' });
+      const flushed = flush();
+      if (kind === QUERY && error.device && firstRefusal(claim, error.device)) {
+        inBackground(flushed.then(() => recordQueryRefusal(claim, error.device, error.code)));
+      }
+      return flushed;
     }
     if (stopping.signal.aborted) {
       store.setAttemptState(messageId, attemptId, 'not_started', 'stopped');
@@ -95,31 +119,90 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       return flush();
     }
     store.setAttemptState(messageId, attemptId, 'starting');
-    const outcome = await supervise(claim, authorized, acceptedAt);
+    const outcome = kind === QUERY
+      ? await answerPeerQuery({ host, share: authorized.share, assertion: claim.assertion, device: authorized.device,
+        deviceName: claim.sender.name })
+      : await supervise(claim, authorized, acceptedAt);
     store.setAttemptState(messageId, attemptId, 'finished', outcome.outcome);
     queue(messageId, attemptId, outcome.outcome, outcome);
     return flush();
   }
 
   // Every check that decides whether this device may act, before any authority is issued.
-  function authorize(claim) {
-    const { assertion, signature, sender } = claim;
-    validateAssertion(assertion, { now: clock() });
-    if (!sender || certificateFingerprint(sender.certPem) !== sender.nodeId || assertion.from.node !== sender.nodeId) {
+  // A query is also tied to the coordinator's key for its assertion, so a claim
+  // cannot run one assertion under another ID, and needs a host that answers queries.
+  // device: the sending device's fingerprint, computed here from the certificate the
+  // coordinator holds from pairing; that certificate signed the assertion and the
+  // device's pinned origin authority signed its proof. Nothing the assertion says names it.
+  // A refusal after this proof carries the proven device (error.device).
+  function authorize(claim, kind) {
+    const device = provenSender(claim, kind);
+    try { return { ...permitted(claim, kind, device), device }; }
+    catch (error) { error.device = device; throw error; }
+  }
+
+  // The sending device, proven: its certificate signed this assertion.
+  function provenSender({ assertion, signature, sender }, { validate }) {
+    validate(assertion, { now: clock() });
+    const device = sender ? certificateFingerprint(sender.certPem) : null;
+    if (!device || device !== sender.nodeId || assertion.from.node !== device) {
       throw new PeerError('sender_mismatch', 'The message sender does not match its device', 403);
     }
     if (!verifyDeviceSignature(sender.certPem, assertion, signature)) throw new PeerError('invalid_signature', 'Invalid device signature', 403);
+    return device;
+  }
+
+  function permitted(claim, { purpose, visitor }, device) {
+    const { assertion, sender } = claim;
     if (assertion.to.node !== nodeId) throw new PeerError('wrong_device', 'The message is for another device', 403);
+    if (visitor && claim.messageId !== peerMessageKey(sender.nodeId, assertion.messageId)) {
+      throw new PeerError('message_mismatch', 'The claim does not belong to this query', 403);
+    }
+    if (visitor && typeof host.searchSharedProject !== 'function') throw new PeerError('query_unsupported', 'This device does not answer queries', 403);
+    // The coordinating computer knows its group: only its own active paired devices ask.
+    const paired = visitor ? pairedDevices() : null;
+    if (paired && !paired.has(device)) throw new PeerError('device_not_paired', 'The sending device is not paired with this computer', 403);
     const share = store.share(assertion.to.bindingId);
     if (!share || share.communicationOnly || share.agentId !== assertion.to.agentId || share.spaceId !== spaceId()) {
       throw new PeerError('agent_not_shared', 'That Agent is not shared on this device', 403);
     }
     const authority = pinnedAuthority(sender);
-    const origin = verifyOriginProof(assertion, authority, { now: clock() });
+    const origin = verifyOriginProof(assertion, authority, { now: clock(), purpose });
     const earlier = store.attemptsFor(claim.messageId)
       .filter((attempt) => attempt.attempt_id !== claim.attemptId && STARTED_STATES.has(attempt.state));
     if (earlier.length) throw new PeerError('already_started', 'This message already started on this device', 409);
     return { share, origin };
+  }
+
+  // Recorded and counted against the proven device, so a flood shows, with the
+  // project of the share the query named when this computer has that share.
+  async function recordQueryRefusal(claim, device, code) {
+    if (typeof host.refuseSharedQuery !== 'function') return;
+    const share = store.share(claim.assertion.to.bindingId);
+    await host.refuseSharedQuery({ action: claim.assertion.query.action, code: queryCode(code),
+      ...(share?.spaceId === spaceId() ? { projectId: share.projectId } : {}),
+      requester: { node: device, name: requesterLabel(claim.sender.name, device), agentName: null } });
+  }
+
+  // A refused query is remembered by its own key (the proven device and the
+  // assertion's ID) until it and its proof have expired, so replaying it under
+  // new attempt or claim IDs is refused again without being recorded or counted
+  // twice. In memory, at most REFUSALS_REMEMBERED entries (oldest out first);
+  // after a restart a replay inside that minute is recorded once more.
+  function firstRefusal(claim, device) {
+    const now = clock();
+    for (const [key, until] of refusedQueries) if (until <= now) refusedQueries.delete(key);
+    const key = peerMessageKey(device, claim.assertion.messageId);
+    if (refusedQueries.has(key)) return false;
+    refusedQueries.set(key, Date.parse(claim.assertion.expiresAt) + REFUSAL_SKEW_MS);
+    if (refusedQueries.size > REFUSALS_REMEMBERED) refusedQueries.delete(refusedQueries.keys().next().value);
+    return true;
+  }
+
+  // Work that follows an answer already sent: failures are logged like the runner's own.
+  function inBackground(work) {
+    const tracked = work.catch(onError).finally(() => background.delete(tracked));
+    background.add(tracked);
   }
 
   function pinnedAuthority(sender) {
@@ -248,6 +331,7 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
     await loop?.catch(() => {});
     await Promise.allSettled([...handlers.keys()]);
     await flush();
+    await Promise.allSettled([...background]);
   }
 
   async function reconcileShares(validBindings = null) {

@@ -142,7 +142,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const device = await identity();
     runnerClient = createPeerClient({ identity: device, coordinator: membership.coordinator });
     runner = createPeerRunner({ store: store(), client: runnerClient, roundtable, host,
-      nodeId: device.fingerprint, spaceId, onError });
+      nodeId: device.fingerprint, spaceId, onError,
+      // Coordinating, this computer knows which devices are paired; a member does not.
+      pairedDevices: () => (coordinator ? new Set(coordinator.service.devices()
+        .filter((entry) => entry.status === 'active' && !entry.self).map((entry) => entry.nodeId)) : null) });
     runner.start().catch(onError);
     await publish().catch(onError);
     publisher = setInterval(() => {
