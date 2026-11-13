@@ -7,11 +7,13 @@ export function peerUsage(command) {
   status
   nearby [on [--name NAME] | off | clear-attempts] list nearby FULI; on: be seen and listen for pairing
   pair FINGERPRINT                                pair with a nearby FULI (first 4+ characters from the list)
-  confirm CODE                                    the 6 digits the person reads on the OTHER computer
+  confirm CODE                                    the 6 digits the person reads on the OTHER computer;
+                                                  pairing shares the leads of up to 8 projects both computers have (a group of two only)
   cancel                                          cancel the pairing waiting here
   host --address IP [--port PORT] [--name NAME]   turn this computer into the coordinator
   invite                                          print a one-use pairing invitation (10 minutes)
   join (--invitation TEXT | --invitation-file FILE) [--name NAME]
+                                                  also shares the leads of up to 8 projects both computers have (a group of two only)
   share --project ID --clients codex[,claude_code] [--folder DIR]   (repeat --project for more; replaces the list)
   revoke --device FINGERPRINT                     coordinator only
   off                                             leave: stop listening, sharing and trusting devices`;
@@ -74,6 +76,8 @@ export async function runPeerControlCommand(args, { baseUrl, command, notRunning
       const file = option(rest, '--invitation-file');
       const invitation = option(rest, '--invitation') ?? (file ? readFileSync(file, 'utf8').trim() : null);
       if (!invitation) throw new Error('Pass --invitation or --invitation-file.');
+      // Joining is the consent to share the common projects' leads: said first, as the console does.
+      write(SHARE_ON_PAIRING);
       return printStatus(await call('POST', '/api/peer/join', { invitation, name: option(rest, '--name') }), write);
     }
     case 'share': {
@@ -115,14 +119,35 @@ function printStatus(status, write) {
   for (const project of status.shareable.filter((entry) => entry.sameProjectOn?.length)) {
     write(`  same project on ${project.sameProjectOn.map((device) => device.name).join(', ')}: ${project.projectName} (${project.projectId})${project.knownFolder ? '' : ' · no known folder here, pass --folder'}`);
   }
+  printAutoShared(status, write);
   if (status.lastPublish?.error) write(`The coordinator did not get this device's shared list: ${status.lastPublish.error}.`);
   else if (status.lastPublish) write(`Shared list sent to the coordinator: ${status.lastPublish.agents} Agent(s) at ${status.lastPublish.at}`);
+}
+
+// What pairing shared without a separate tick (the leads of the projects the other computer reports too), or why nothing.
+const NOT_AUTO_SHARED = {
+  group: (record) => `Not shared after pairing: ${record.matched} same project(s), but other computers in this group could ask them too. Share them yourself if you want.`,
+  too_many: (record) => `Not shared after pairing: ${record.matched} same projects is more than 8. Share the ones you want yourself.`,
+  unanswered: () => 'Not shared after pairing: the coordinator did not answer which projects both computers have.',
+};
+function printAutoShared(status, write) {
+  for (const record of status.autoShared ?? []) {
+    if (record.skipped) write(NOT_AUTO_SHARED[record.skipped]?.(record) ?? `Not shared after pairing (${record.skipped}).`);
+    else write(record.projects.length
+      ? `Shared after pairing (projects the other computer has too): ${record.projects.map((project) => project.projectName).join(', ')}`
+      : 'Shared after pairing: none (no project both computers have that could be shared).');
+  }
+  // A member cannot check the group itself: the coordinating computer says who else is in it.
+  if (status.role === 'member' && (status.autoShared ?? []).some((record) => record.projects.length)) {
+    write('The other computer decides who else is in the group; untick any you are unsure of.');
+  }
 }
 
 function printNearby(status, write, command) {
   const { nearby } = status;
   const ended = NEARBY_ENDED[nearby.ended?.kind];
   if (ended) write(ended(nearby.ended));
+  printAutoShared(status, write);
   if (!nearby.on) {
     write(`Nearby pairing: off. \`${command} peer nearby on [--name NAME]\` lets computers on this network see that this one runs FULI (for 30 minutes).`);
     return;
@@ -141,10 +166,13 @@ function printNearby(status, write, command) {
   } else if (pairing.state === 'confirm' || pairing.state === 'finishing') {
     write(`Pairing with ${device}: code ${pairing.code}. ${pairing.coordinator === 'this' ? 'This computer' : 'The other computer'} will coordinate.`);
     write(pairing.confirmedHere
-      ? `Confirmed here; waiting for the person on the other computer${pairing.confirmedThere ? ' (confirmed there too, finishing)' : ''}.`
-      : `Compare it with the code on the other computer; if they match, run \`${command} peer confirm <the code shown there>\` before ${pairing.expiresAt}.`);
+      ? `Confirmed here; waiting for the person on the other computer${pairing.confirmedThere ? ' (confirmed there too, finishing)' : ''}. \`${command} peer status\` then lists what was shared.`
+      : `Compare it with the code on the other computer; if they match, run \`${command} peer confirm <the code shown there>\` before ${pairing.expiresAt}.\n${SHARE_ON_PAIRING}`);
   } else write(`Pairing with ${device}: ${pairing.state}${pairing.reason ? ` (${pairing.reason})` : ''}`);
 }
+
+// Said before the person confirms a pairing or joins with an invitation.
+const SHARE_ON_PAIRING = 'Once confirmed, leads of up to 8 projects the other computer says it has too can talk. Nothing else.';
 
 // Why nearby pairing turned itself off, or what it last did.
 const NEARBY_ENDED = {

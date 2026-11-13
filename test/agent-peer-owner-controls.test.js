@@ -120,3 +120,18 @@ test('the nearby controls answer only on the loopback console too', async () => 
   assert.equal((await call(peer, { method: 'POST', path: '/api/peer/nearby', body: { on: false } })).status, 200);
   assert.deepEqual(calls, [['on', { name: 'Desk' }], ['off']]);
 });
+
+test('the share search and the picked project read answer only on the loopback console, with the typed text', async () => {
+  const calls = [];
+  const peer = { searchShareable: async (input) => { calls.push(['search', input]); return { projects: [], more: false }; },
+    shareableProject: async (projectId) => { calls.push(['project', projectId]); return { projectId }; } };
+  const remote = await call(peer, { path: '/api/peer/shareable?query=app', remoteAddress: '192.168.1.20' });
+  assert.deepEqual([remote.status, remote.body.error], [403, 'local_owner_only']);
+  assert.equal((await call(peer, { path: '/api/peer/shareable/sample', host: '192.168.1.5:4100' })).status, 403);
+  assert.deepEqual(calls, []);
+  assert.deepEqual((await call(peer, { path: '/api/peer/shareable?query=Sample%20app&limit=5' })).body, { projects: [], more: false });
+  await call(peer, { path: '/api/peer/shareable' });
+  assert.deepEqual((await call(peer, { path: '/api/peer/shareable/sample%20project' })).body, { projectId: 'sample project' });
+  assert.equal((await call(peer, { path: '/api/peer/shareable/%E0%A4%A' })).status, 404);
+  assert.deepEqual(calls, [['search', { query: 'Sample app', limit: 5 }], ['search', { query: '' }], ['project', 'sample project']]);
+});
