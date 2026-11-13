@@ -62,7 +62,8 @@ export function createCoordinatorStore(path = ':memory:') {
     upsertNode({ id, name, certPem, authority = null, at }) {
       database.prepare(`INSERT INTO nodes(id, name, cert_pem, status, paired_at, authority_json) VALUES(?,?,?,'active',?,?)
         ON CONFLICT(id) DO UPDATE SET name = excluded.name, cert_pem = excluded.cert_pem, status = 'active',
-        revoked_at = NULL, directory_json = '[]', paired_at = excluded.paired_at, authority_json = excluded.authority_json`)
+        revoked_at = NULL, directory_json = '[]', paired_at = excluded.paired_at, authority_json = excluded.authority_json,
+        last_seen_at = NULL`)
         .run(id, name, certPem, at, authority ? JSON.stringify(authority) : null);
       event(at, { nodeId: id, kind: 'paired' });
     },

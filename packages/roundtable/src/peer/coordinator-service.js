@@ -5,7 +5,7 @@ import { isAuthorityKey } from './origin-proof.js';
 import { createCoordinatorChat } from './chat-coordinator.js';
 import {
   canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
-  RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion,
+  graphemePrefix, RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, withoutControls,
 } from './protocol.js';
 
 const ONLINE_MS = 90_000;
@@ -19,13 +19,23 @@ const ONLINE_MS = 90_000;
 const LAST_SEEN_WRITE_MS = 15_000;
 const PAIRING_FAILURE_WINDOW_MS = 10 * 60_000;
 const PAIRING_FAILURE_LIMIT = 10;
+const REPOSITORY_DIGEST = /^[0-9a-f]{32}$/;
+// A paired device could publish guessed addresses to learn what others have:
+// at most this many digests per device, and its set may change this often a day.
+const REPOSITORY_LIMIT = 50;
+const REPOSITORY_CHANGES_PER_DAY = 3;
+const DAY_MS = 24 * 60 * 60_000;
 
 // Routes messages between paired devices. It never executes anything: each
 // receiving device re-checks its own shares and identity authority.
 export function createCoordinatorService({ store, identity, authority, name, clock = Date.now,
-  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {} }) {
+  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {},
+  repositoryChanges = memoryRecord() }) {
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
+  const repositories = new Map();
+  let repositoryKey = null;
+  rotateRepositoryKey();
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
   store.upsertNode({ id: identity.fingerprint, name, certPem: identity.certPem, authority, at: iso() });
   const chat = createCoordinatorChat({ store, identity, clock });
@@ -51,13 +61,28 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       pairingFailures.push(now);
       throw new PeerError('invalid_pairing_code', 'This invitation is invalid, expired or already used', 403);
     }
+    return trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority }, () => {
+      if (!store.useInvitation(codeHash, fingerprint, iso())) throw new PeerError('invalid_pairing_code', 'This invitation was already used', 403);
+    });
+  }
+
+  // Nearby pairing (nearby-pairing.js) writes the same trust record an
+  // invitation does, after the person on each computer confirmed the same code.
+  function trustNearbyDevice({ certPem, name: deviceName, authority: deviceAuthority }) {
+    const fingerprint = certificateFingerprint(certPem);
+    if (fingerprint === identity.fingerprint) throw new PeerError('invalid_pairing', 'A device cannot pair with itself', 400);
+    return trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority });
+  }
+
+  function trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority }, claimInvitation = () => {}) {
     if (!isAuthorityKey(deviceAuthority)) throw new PeerError('invalid_pairing', 'The device did not present its origin authority', 400);
     const label = cleanName(deviceName) || `FULI device ${fingerprint.slice(0, 8)}`;
     store.transaction(() => {
-      if (!store.useInvitation(codeHash, fingerprint, iso())) throw new PeerError('invalid_pairing_code', 'This invitation was already used', 403);
+      claimInvitation();
       store.upsertNode({ id: fingerprint, name: label, certPem,
         authority: { keyId: deviceAuthority.keyId, publicKey: deviceAuthority.publicKey }, at: iso() });
     });
+    repositories.delete(fingerprint);
     onTrustChange();
     return { nodeId: fingerprint, coordinatorNodeId: identity.fingerprint, coordinatorName: name };
   }
@@ -70,20 +95,55 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     return node;
   }
 
-  function publishDirectory(nodeId, { agents }) {
+  function publishDirectory(nodeId, { agents, repositories: projectRepositories }) {
     if (!Array.isArray(agents) || agents.length > PEER_LIMITS.directoryAgents) throw new PeerError('invalid_directory', 'Invalid shared Agent list');
-    const entries = agents.map(publicDirectoryEntry);
+    const entries = agents.map((agent, index) => {
+      try { return publicDirectoryEntry(agent); }
+      catch (error) { throw new PeerError(error.code, `${error.message} (entry ${index + 1})`, error.status); }
+    });
     store.setDirectory(nodeId, entries);
-    return { published: entries.length };
+    // Each device's own repository addresses, keyed with a secret only the
+    // paired group gets (repositoryKey, from this answer). Like online state
+    // they are kept only in memory and published again within a minute; a
+    // digest made with an older key is dropped.
+    if (projectRepositories?.keyId === repositoryKey.id) acceptRepositories(nodeId, repositoryDigests(projectRepositories.digests));
+    return { published: entries.length, repositoryKey };
   }
 
+  // Another device's digests never leave the coordinator: each device learns
+  // only which of its own digests another paired device also has.
   function directory(nodeId) {
     const now = clock();
+    const mine = new Set(repositories.get(nodeId) ?? []);
     return { devices: store.nodes().filter((node) => node.status === 'active' && node.id !== nodeId).map((node) => ({
       nodeId: node.id, name: node.name,
       online: seenWithin(node, now, ONLINE_MS),
       agents: JSON.parse(node.directory_json),
+      sameRepositories: (repositories.get(node.id) ?? []).filter((digest) => mine.has(digest)),
     })) };
+  }
+
+  // The same set again is free; a new set counts, and past the daily limit the earlier set stays.
+  // The count is kept in the host's store (repositoryChanges), so a restart
+  // does not reset it. The first set a device sends under a new key (after a
+  // restart or a revoke) is free, so a revoke never locks out the others.
+  function acceptRepositories(nodeId, digests) {
+    const current = repositories.get(nodeId);
+    if (current && current.length === digests.length && digests.every((digest) => current.includes(digest))) return;
+    const now = clock();
+    const all = repositoryChanges.read() ?? {};
+    const record = all[nodeId] ?? {};
+    const changes = (Array.isArray(record.at) ? record.at : []).filter((at) => Number.isFinite(at) && at > now - DAY_MS);
+    const firstUnderKey = record.keyId !== repositoryKey.id;
+    if (!firstUnderKey && changes.length >= REPOSITORY_CHANGES_PER_DAY) return;
+    repositoryChanges.write({ ...all, [nodeId]: { keyId: repositoryKey.id, at: firstUnderKey ? changes : [...changes, now] } });
+    repositories.set(nodeId, digests);
+  }
+
+  // A revoked device keeps the old key, so the group gets a new one.
+  function rotateRepositoryKey() {
+    repositoryKey = { id: randomUUID(), key: randomBytes(32).toString('base64url') };
+    repositories.clear();
   }
 
   function submit(nodeId, { assertion, signature }) {
@@ -229,6 +289,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         else store.updateMessage(message.id, { cancel_requested: 1 }, iso(), 'cancel_requested', 'device_revoked');
       }
     });
+    rotateRepositoryKey();
     onTrustChange();
     return { revoked: true };
   }
@@ -258,12 +319,12 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   function devices() {
     const now = clock();
     return store.nodes().map((node) => ({ nodeId: node.id, name: node.name, status: node.status,
-      self: node.id === identity.fingerprint, pairedAt: node.paired_at, revokedAt: node.revoked_at,
+      self: node.id === identity.fingerprint, pairedAt: node.paired_at, revokedAt: node.revoked_at, lastSeenAt: node.last_seen_at ?? null,
       online: node.id === identity.fingerprint || seenWithin(node, now, ONLINE_MS),
       sharedAgents: JSON.parse(node.directory_json).length }));
   }
 
-  return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
+  return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, trustNearbyDevice, authenticate, publishDirectory, directory, submit, claim, renew, result,
     status, cancel, revoke, sweep, devices, trustedCertificates: () => store.activeCertificates(),
     openInvitations: () => store.openInvitations(iso()).length };
 }
@@ -287,6 +348,17 @@ function statusView(message) {
     ...(message.cleanup_status ? { cleanup: { status: message.cleanup_status, code: message.cleanup_code ?? null } } : {}) };
 }
 
+// Only 32-hex digests pass (peer-runtime.js makes them); anything else is dropped, never echoed.
+function repositoryDigests(value) {
+  return Array.isArray(value) ? [...new Set(value.filter((digest) => typeof digest === 'string' && REPOSITORY_DIGEST.test(digest)))]
+    .slice(0, REPOSITORY_LIMIT) : [];
+}
+
+function memoryRecord() {
+  let value = {};
+  return { read: () => value, write: (next) => { value = next; } };
+}
+
 export function cleanName(value) {
-  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) : '';
+  return typeof value === 'string' ? graphemePrefix(withoutControls(value).trim(), 60).trim() : '';
 }

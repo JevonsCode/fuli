@@ -5,6 +5,8 @@ import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agen
 import { termsOverlap } from '../standing-assignments/term-match.js';
 import { identityKey } from '../text/name-identity.js';
 import { groupMemberContext } from './group-member-context.js';
+import { localOriginRemoteKey, ownRemotes } from './repository-remote.js';
+import { findRepositoryRoot } from './project-path-context.js';
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
@@ -12,7 +14,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
   const spaceId = () => app.config.personal.spaceId;
   const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
     name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
-    archived: project.profile?.lifecycle === 'archived' });
+    archived: project.profile?.lifecycle === 'archived', repositories: ownRemotes(project) });
   const projects = async () => {
     const value = await app.personal.listPersonalProjects(spaceId());
     return Array.isArray(value) ? value : value?.projects ?? [];
@@ -67,6 +69,12 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         && !standing.some(match => match.projectId === projectId) && termsOverlap(key, identityKey(name)))
         .map(async ([projectId, project]) => ({ agentId: await projectLeadId(projectId).catch(() => null), projectId, project })));
       return [...standing, ...named.filter(match => match.agentId)];
+    },
+    // The origin of the Git repository holding a folder, so a folder is
+    // offered for a project only when it is a checkout of that project's own repository.
+    folderRepository(folder) {
+      const root = findRepositoryRoot(folder);
+      return root ? localOriginRemoteKey(root) : null;
     },
     async projectForPath(path) {
       if (!path || !app.projectPathResolver) return null;

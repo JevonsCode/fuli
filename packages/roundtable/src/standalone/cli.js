@@ -18,7 +18,7 @@ const USAGE = `fuli-roundtable <command> [--home DIR]
   setup --client claude_code|codex [--yes]   connect a client (prints the command; --yes runs it)
   mcp --client claude_code|codex             stdio MCP server, started by the client
   serve [--port ${DEFAULT_SERVE_PORT}]                       keep the LAN roundtable running (other computers)
-  peer status|host|invite|join|share|revoke|off   LAN roundtable controls; needs serve
+  peer status|nearby|pair|confirm|cancel|host|invite|join|share|revoke|off   LAN roundtable controls; needs serve
     share --agent NAME --clients claude_code   shares one registered Agent (its folder by default)`;
 
 export function parseArgs(argv) {

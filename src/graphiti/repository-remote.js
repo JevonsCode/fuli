@@ -50,6 +50,11 @@ export function originRemoteSource(repositoryRoot) {
   return { key: 'origin-remote', kind: 'repository', role: 'own', title, uri, sensitivity: 'normal' };
 }
 
+// The normalised origin URL of a repository on this computer, or null.
+export function localOriginRemoteKey(repositoryRoot) {
+  return originRemoteKey(repositoryRoot, { pathApi: path, readText: readTextOrEmpty });
+}
+
 function readTextOrEmpty(filePath) {
   try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
 }
@@ -63,7 +68,9 @@ function ownRepositorySources(project) {
     .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference');
 }
 
-function ownRemotes(project) {
+// The normalised addresses of a project's own repositories; the LAN roundtable
+// matches projects across paired computers by them (rec issue 127).
+export function ownRemotes(project) {
   return ownRepositorySources(project)
     .filter(source => typeof source.uri === 'string')
     .map(source => remoteKey(source.uri)).filter(Boolean);

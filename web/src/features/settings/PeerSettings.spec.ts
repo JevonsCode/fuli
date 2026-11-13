@@ -89,6 +89,47 @@ it('copies a pairing invitation and revokes another device from this computer', 
   wrapper.unmount()
 })
 
+it('suggests a project a paired computer has too, shares nothing until the person ticks it, then offers the known checkout', async () => {
+  const matched = { ...paired, shareable: [{ ...paired.shareable[0], sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }],
+    knownFolder: '/synthetic/checkout' }], lastPublish: { at: '2030-01-01T00:00:00.000Z', agents: null, error: 'coordinator_unreachable' } }
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(json(matched))
+    .mockResolvedValueOnce(json(paired))
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect((wrapper.get('.peer-share-title input').element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper.get('[data-same-project]').text()).toContain('Laptop 上也有这个项目')
+  expect(wrapper.get('[data-publish-error]').text()).toContain('coordinator_unreachable')
+  await wrapper.get('.peer-share-title input').setValue(true)
+  expect((wrapper.get('.peer-shares input[type="text"]').element as HTMLInputElement).value).toBe('/synthetic/checkout')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+    shares: [{ projectId: 'sample-project', clients: ['codex'], workingDirectory: '/synthetic/checkout' }],
+  })
+  wrapper.unmount()
+})
+
+it('says when the coordinator is not listening and why', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '10.255.255.1', port: 4101, code: 'EADDRNOTAVAIL', at: '2030-01-01T00:00:00.000Z' } } })))
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-listen-failure]').text()).toContain('没能在 10.255.255.1 上监听（EADDRNOTAVAIL）')
+  wrapper.unmount()
+})
+
+it('says when no checkout of the project is known here', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, shareable: [{ ...paired.shareable[0],
+    sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }], knownFolder: null }] })))
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  await wrapper.get('.peer-share-title input').setValue(true)
+  expect(wrapper.find('[data-folder-unknown]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
 it('previews the device fingerprint before pairing and invalidates it when the invitation changes', async () => {
   const fetch = vi.fn()
     .mockResolvedValueOnce(json(off))

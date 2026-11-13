@@ -1,54 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ApiError, getJson, postJson, putJson } from '@/api/client'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { t } from '@/i18n'
 import { OptionSelect } from '@/components/ui/select'
-
-type ClientId = 'codex' | 'claude_code'
-
-type Shareable = {
-  projectId: string
-  projectName: string
-  lead: { agentId: string; name: string } | null
-  clients: ClientId[]
-}
-
-type Share = {
-  projectId: string
-  projectName: string
-  agentId: string
-  clients: ClientId[]
-  workingDirectory?: string | null
-  state: 'shared' | 'lead_changed' | 'lead_unavailable'
-}
-
-type Device = {
-  nodeId: string
-  name: string
-  shortFingerprint: string
-  self?: boolean
-  status: string
-  online?: boolean
-}
-
-type PeerStatus = {
-  beta: boolean
-  remoteRemovalPending?: boolean
-  role: 'coordinator' | 'member' | null
-  device: { fingerprint: string; shortFingerprint: string } | null
-  coordinator: { name: string; url: string; shortFingerprint: string; listening: boolean } | null
-  addresses: string[]
-  devices: Device[]
-  openInvitations: number
-  shares: Share[]
-  shareable: Shareable[]
-}
+import UiNotice from '@/ui/UiNotice.vue'
+import PeerNearby from './PeerNearby.vue'
+import { peerApiMessage, peerStatusShape, type ClientId, type PeerStatus, type Shareable } from './peer-model'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
+
+// While nearby pairing is on, the list and a pairing's state come from the other computer.
+const NEARBY_REFRESH_MS = 2_000
 
 const status = ref<PeerStatus | null>(null)
 const loading = ref(false)
@@ -62,6 +28,7 @@ const invitation = ref<{ invitation: string; fingerprint?: string; expiresAt?: s
 const inviteFeedback = ref<'copied' | 'manual' | ''>('')
 const joiningDevice = ref<{ name: string; url: string; shortFingerprint: string } | null>(null)
 const drafts = reactive<Record<string, ShareDraft>>({})
+let refresh: ReturnType<typeof setInterval> | null = null
 
 const addressOptions = computed(() => (status.value?.addresses ?? []).map((value) => ({ value, label: value })))
 const paired = computed(() => Boolean(status.value?.role))
@@ -69,18 +36,12 @@ const coordinator = computed(() => status.value?.role === 'coordinator')
 const otherDevices = computed(() => (status.value?.devices ?? []).filter((device) => !device.self))
 watch(joinInvitation, () => { joiningDevice.value = null })
 
-function apiMessage(caught: unknown, fallback: string) {
-  if (caught instanceof ApiError && caught.detail) {
-    try {
-      const body = JSON.parse(caught.detail) as { message?: string }
-      if (typeof body.message === 'string' && body.message.trim()) return body.message
-    } catch { /* use fallback */ }
-  }
-  return fallback
-}
-
 function clientLabel(client: ClientId) {
   return client === 'claude_code' ? t('settings.peer.clientsClaude') : t('settings.peer.clientsCodex')
+}
+
+function sameProjectNames(project: Shareable) {
+  return (project.sameProjectOn ?? []).map((device) => device.name).join(', ')
 }
 
 function applyStatus(next: PeerStatus) {
@@ -90,6 +51,7 @@ function applyStatus(next: PeerStatus) {
   for (const key of Object.keys(drafts)) if (!known.has(key)) delete drafts[key]
   for (const project of next.shareable) {
     const existing = next.shares.find((share) => share.projectId === project.projectId)
+    // A refresh never changes a draft: what is saved is only what the person ticked.
     drafts[project.projectId] ??= {
       selected: Boolean(existing),
       clients: existing?.clients?.length ? existing.clients : project.clients.slice(0, 1),
@@ -102,12 +64,24 @@ async function load() {
   if (loading.value) return
   loading.value = true
   error.value = ''
-  try { applyStatus(await getJson<PeerStatus>('/api/peer')) }
-  catch (caught) { error.value = apiMessage(caught, t('settings.peer.loadError')) }
+  try { applyStatus(await getJson('/api/peer', peerStatusShape)) }
+  catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.loadError')) }
   finally { loading.value = false }
 }
 
+// A quiet re-read: the loaded card stays as it is while it runs.
+async function refreshNearby() {
+  if (busy.value || loading.value) return
+  try { applyStatus(await getJson('/api/peer', peerStatusShape)) } catch { /* the next refresh retries */ }
+}
+
+watch(() => Boolean(status.value?.nearby?.on), (on) => {
+  if (refresh) clearInterval(refresh)
+  refresh = on ? setInterval(refreshNearby, NEARBY_REFRESH_MS) : null
+})
+
 onMounted(load)
+onUnmounted(() => { if (refresh) clearInterval(refresh) })
 
 async function run(kind: string, work: () => Promise<PeerStatus | void>) {
   if (busy.value) return
@@ -116,14 +90,14 @@ async function run(kind: string, work: () => Promise<PeerStatus | void>) {
   try {
     const next = await work()
     if (next) applyStatus(next)
-  } catch (caught) { error.value = apiMessage(caught, t('settings.peer.loadError')) }
+  } catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.loadError')) }
   finally { busy.value = '' }
 }
 
 function host() {
-  return run('host', () => postJson<PeerStatus>('/api/peer/coordinator', {
+  return run('host', () => postJson('/api/peer/coordinator', {
     host: hostAddress.value, port: 0, name: hostName.value.trim() || undefined,
-  }))
+  }, peerStatusShape))
 }
 
 function join() {
@@ -132,9 +106,9 @@ function join() {
     const preview = await postJson<{ name: string; url: string; shortFingerprint: string }>('/api/peer/invitations/preview', { invitation: text })
     if (joinInvitation.value.trim() === text) joiningDevice.value = preview
   })
-  return run('join', () => postJson<PeerStatus>('/api/peer/join', {
+  return run('join', () => postJson('/api/peer/join', {
     invitation: joinInvitation.value.trim(), name: joinName.value.trim() || undefined,
-  }))
+  }, peerStatusShape))
 }
 
 async function invite() {
@@ -159,6 +133,8 @@ function toggleProject(project: Shareable, selected: boolean) {
   if (!draft) return
   draft.selected = selected
   if (selected && !draft.clients.length) draft.clients = project.clients.slice(0, 1)
+  // A folder FULI knows is a checkout of this project's own repository (the server checks its origin).
+  if (selected && !draft.folder && project.knownFolder) draft.folder = project.knownFolder
 }
 
 function toggleClient(projectId: string, client: ClientId, selected: boolean) {
@@ -177,16 +153,16 @@ function saveShares() {
       ...(draft.folder.trim() ? { workingDirectory: draft.folder.trim() } : {}),
     }]
   })
-  return run('shares', () => putJson<PeerStatus>('/api/peer/shares', { shares }))
+  return run('shares', () => putJson('/api/peer/shares', { shares }, peerStatusShape))
 }
 
 function revoke(nodeId: string) {
-  return run(`revoke:${nodeId}`, () => postJson<PeerStatus>(`/api/peer/devices/${nodeId}/revoke`, {}))
+  return run(`revoke:${nodeId}`, () => postJson(`/api/peer/devices/${nodeId}/revoke`, {}, peerStatusShape))
 }
 
 function disable() {
   return run('disable', async () => {
-    const next = await postJson<PeerStatus>('/api/peer/disable', {})
+    const next = await postJson('/api/peer/disable', {}, peerStatusShape)
     invitation.value = null
     joinInvitation.value = ''
     return next
@@ -212,6 +188,9 @@ function shareState(projectId: string) {
           {{ t('settings.peer.retry') }}
         </Button>
       </div>
+
+      <PeerNearby v-if="status?.nearby" :nearby="status.nearby" :coordinator-name="status.coordinator?.name ?? null"
+        @status="applyStatus" />
 
       <template v-if="status && !paired">
         <p>{{ t('settings.peer.off') }}</p>
@@ -256,6 +235,9 @@ function shareState(projectId: string) {
       </template>
 
       <template v-if="status && paired">
+        <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure>
+          {{ t('settings.peer.listenFailure', { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
+        </UiNotice>
         <dl class="peer-identity">
           <div>
             <dt>{{ t('settings.peer.fingerprint') }}</dt>
@@ -294,8 +276,12 @@ function shareState(projectId: string) {
                 <strong>{{ project.projectName }}</strong>
               </label>
               <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
+              <p v-if="project.sameProjectOn?.length && project.lead" data-same-project>
+                {{ t('settings.peer.sameProject', { devices: sameProjectNames(project) }) }}
+              </p>
               <p v-if="shareState(project.projectId) === 'lead_changed'" class="peer-note">{{ t('settings.peer.leadChanged') }}</p>
               <p v-if="shareState(project.projectId) === 'lead_unavailable'" class="peer-note">{{ t('settings.peer.leadUnavailable') }}</p>
+              <p v-if="shareState(project.projectId) === 'team_unreadable'" class="peer-note">{{ t('settings.peer.teamUnreadable') }}</p>
               <fieldset v-if="drafts[project.projectId]?.selected && project.lead" :disabled="Boolean(busy)">
                 <legend>{{ t('settings.peer.clients') }}</legend>
                 <label v-for="client in project.clients" :key="client">
@@ -307,10 +293,15 @@ function shareState(projectId: string) {
               <label v-if="drafts[project.projectId]?.selected && project.lead">
                 <span>{{ t('settings.peer.folder') }}</span>
                 <input v-model="drafts[project.projectId].folder" type="text" :disabled="Boolean(busy)" />
-                <small>{{ t('settings.peer.folderHint') }}</small>
+                <small v-if="project.sameProjectOn?.length && !project.knownFolder && !drafts[project.projectId].folder" class="peer-note"
+                  data-folder-unknown>{{ t('settings.peer.folderUnknown') }}</small>
+                <small v-else>{{ t('settings.peer.folderHint') }}</small>
               </label>
             </li>
           </ul>
+          <UiNotice v-if="status.lastPublish?.error" tone="warning" data-publish-error>
+            {{ t('settings.peer.publishFailed', { reason: status.lastPublish.error }) }}
+          </UiNotice>
           <Button v-if="status.shareable.length" size="sm" data-save-shares
             :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares">
             {{ t('settings.peer.saveShares') }}

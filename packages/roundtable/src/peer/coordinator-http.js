@@ -8,8 +8,11 @@ const SWEEP_MS = 5_000;
 
 // The only network listener of the LAN roundtable. Every route requires a
 // TLS-verified, currently paired device, except one-use pairing, which accepts
-// a not-yet-trusted client certificate and authorizes it by invitation code.
-export async function startCoordinatorServer({ service, identity, host, port = 0, claimWaitMs = PEER_LIMITS.claimWaitMs }) {
+// a not-yet-trusted client certificate and authorizes it by invitation code,
+// and nearby pairing (nearby-pairing.js), which trusts nothing until the person
+// on each computer confirmed the same code.
+export async function startCoordinatorServer({ service, identity, host, port = 0, claimWaitMs = PEER_LIMITS.claimWaitMs,
+  nearby = null, onReached = () => {} }) {
   const secureContext = () => ({ ...identity.tlsOptions, ca: service.trustedCertificates() });
   const server = createServer({
     ...secureContext(), requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3',
@@ -19,6 +22,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       { error: error instanceof PeerError ? error.code : 'internal_error', message: error instanceof PeerError ? error.message : 'Request failed' }));
   });
   server.keepAliveTimeout = 5_000;
+  // The local address each paired device last reached this listener on.
+  const reached = new Map();
 
   async function handle(request, response) {
     const { pathname } = new URL(request.url, 'https://peer.invalid');
@@ -31,8 +36,20 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       sendJson(response, service.pair({ code: body.code, name: body.name, authority: body.authority, certPem: derToPem(certificate.raw) }));
       return;
     }
+    // While nearby pairing is off, or on an adapter it does not answer on, these paths answer exactly as any unknown path.
+    if (pathname.startsWith('/peer/1/nearby/') && nearby?.listening(plainAddress(request.socket.localAddress))) {
+      const { value, after } = await nearby.handle(pathname, body, { certPem: derToPem(certificate.raw),
+        fingerprint: sha256Hex(certificate.raw), address: plainAddress(request.socket.remoteAddress),
+        localAddress: plainAddress(request.socket.localAddress) });
+      // A step that closes this listener (joining the other computer) runs once the answer is out.
+      if (after) response.once('finish', after);
+      sendJson(response, value);
+      return;
+    }
     if (!request.socket.authorized) throw new PeerError('device_not_trusted', 'This device is not paired', 403);
     const nodeId = service.authenticate(sha256Hex(certificate.raw)).id;
+    const reachedAt = plainAddress(request.socket.localAddress);
+    if (reached.get(nodeId) !== reachedAt) { reached.set(nodeId, reachedAt); onReached(nodeId, reachedAt); }
     switch (pathname) {
       case '/peer/1/directory/publish': return sendJson(response, service.publishDirectory(nodeId, body));
       case '/peer/1/directory': return sendJson(response, service.directory(nodeId));
@@ -116,6 +133,10 @@ function readBody(request) {
     });
     request.on('error', reject);
   });
+}
+
+function plainAddress(address) {
+  return typeof address === 'string' ? address.replace(/^::ffff:/, '') : null;
 }
 
 function send(response, status, value) {

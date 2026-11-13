@@ -6,7 +6,8 @@
 //   Agent    { agentId, employeeNumber?, occupation?, assignments?, personalProjectId?,
 //              profile: { name, displayName?, responsibility?, capabilities?, allowedClients, status } }
 //   Session  { client, sessionId, projectId, lastActive }
-//   Project  { projectId, name, temporary, archived }
+//   Project  { projectId, name, temporary, archived, repositories? }  repositories: the normalised
+//            addresses of the project's own repositories (host/path), which paired devices compare as digests
 //   Team     { lead: { agentId, name, employeeNumber?, responsibility? } | null, people: [same shape] }
 //
 // Methods (async unless marked sync)
@@ -36,6 +37,8 @@
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
 //   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
+//   folderRepository(path)                      optional: the normalised origin address of the Git
+//                                               repository holding path, or null (LAN share folder check)
 //   matchWork(query)                            optional: leads the person's own names for work point to, in
 //                                               this space: [{ agentId, projectId, project, responsibility?,
 //                                               matchedTerms? }] (a project name, or an active standing assignment);

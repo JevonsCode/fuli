@@ -161,9 +161,51 @@ profile allows.
 
 Devices on the same trusted local network can share project leads. Each computer
 needs FULI 0.12.1 or later. Open **Settings → LAN roundtable (Beta)** on the computer
-itself. Choose one computer to host, copy its one-use invitation to the other
-computer, compare the displayed fingerprints, and join. Select the project leads
-and local clients you want to share. Sharing is off until you choose it.
+itself. Turn on **附近的 FULI** on both computers (`fuli peer nearby on`): for up to 30
+minutes each advertises over mDNS a random instance id, the name you chose (default
+`FULI` plus four fingerprint characters, never the computer's name), its port, a short
+fingerprint and the protocol version, only on physical LAN addresses, and lists the
+others. Click 配对 on one computer; the other shows who asks at once. Both then show
+the same 6-digit code, derived from both certificate fingerprints and a fresh nonce
+from each side. Compare the two screens, tick that they match and click 确认 on each
+computer (`fuli peer confirm <code shown on the other computer>`); no Agent can confirm.
+Only then are the devices paired, with the same mutual-TLS trust records an invitation
+writes. A request nobody confirms ends after 2 minutes. Every handshake is counted in the
+computer's own store before any nonce leaves it: at most 3 per device and address and 5
+in all per 10 minutes, and 10 per rolling 24 hours. Turning nearby off and on, an Agent or
+a restart does not clear the count; only time does, or the person on that computer (清零,
+`fuli peer nearby clear-attempts`, a deliberate second step, since many attempts can mean
+someone is trying to pair uninvited). So a device in the middle wins with a chance of at
+most 10 in a million per computer per 24 hours, and each try shows on the screens. The
+bound assumes the count is measured in real time: while FULI runs it follows the
+process's monotonic clock, so setting the system clock back or forward changes nothing;
+across restarts it starts no earlier than the latest stored attempt; only a system clock
+moved forward while FULI is stopped ages the count, once. The nearby list is keyed by an
+unauthenticated fingerprint prefix, so a device can pose as another in the list; that can
+only block or misdirect a pairing, never grant one, because the code binds both full
+fingerprints. Pairing requests arriving on a virtual or VPN adapter are not answered. A
+pairing shows as waiting until the other computer first connects, and only then as paired. Trust a side
+wrote for a pairing the other side never used, or that its person cancelled, is taken back
+(the one-minute deadline survives a restart). Nearby pairing turns itself off after a
+pairing or 30 minutes (turning it on again while on keeps that end); if the mDNS port
+cannot be opened it turns off with the reason and the console keeps running. While it is
+off, its routes answer like any unknown path. Afterwards a listener returns to the
+address the person chose, or narrows to the address its paired devices reached (kept
+across restarts). When that address is gone, nothing listens and the card says so;
+turning the LAN roundtable off revokes every paired device even then. The computer that already coordinates
+other devices keeps coordinating; otherwise the computer that was picked from the list
+does. Without nearby pairing, choose one computer to host, copy its one-use invitation
+to the other computer, compare the displayed fingerprints, and join. Select the project
+leads and local clients you want to share; nothing is shared until you tick it. A
+project another paired computer registered with the same own repository is suggested:
+devices send keyed digests of their own repository addresses only to the coordinator,
+which tells each device which of its own digests another paired device also has. The
+coordinator (a paired device holding the key) could test guessed addresses. Another
+paired device could too, but only 50 digests per set and 3 new sets a day (kept across
+coordinator restarts; the first set under a new group key is free); it learns
+only matches with its own (or guessed) addresses, never another device's other projects.
+A match cannot depend on who published first, because two devices registering the same
+project legitimately publish in either order.
 
 `find_agents` includes shared leads with their device and project names. Use the
 returned `peer:` address with `message_agent`. Remote asks support `auto` or `new`
