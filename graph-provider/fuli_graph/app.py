@@ -126,6 +126,7 @@ from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_hard_delete_routes import register_knowledge_hard_delete_routes
 from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_route
 from .knowledge_statement import register_knowledge_statement_route
+from .knowledge_statement_days import register_knowledge_statement_days_route
 from .builtin_embedding_routes import register_builtin_embedding_routes
 from .knowledge_semantic_index import register_knowledge_semantic_routes
 from .knowledge_duplicates import register_knowledge_duplicate_routes
@@ -330,6 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
     register_knowledge_statement_route(application, store, Actor)
+    register_knowledge_statement_days_route(application, store, Actor)
     register_knowledge_semantic_routes(application, store, Actor)
     register_builtin_embedding_routes(application, resolved_settings, Actor)
     register_knowledge_duplicate_routes(application, store, Actor)

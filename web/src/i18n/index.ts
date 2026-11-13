@@ -59,6 +59,7 @@ import { taskReasonMessages } from './messages/task-reason'
 import { doctorMessages } from './messages/doctor'
 import { contextMenuMessages } from './messages/context-menu'
 import { todayMessages } from './messages/today'
+import { statementCalendarMessages } from './messages/statement-calendar'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -111,6 +112,7 @@ export const messages = {
     ui: uiMessages['zh-CN'],
     overview: overviewMessages['zh-CN'],
     today: todayMessages['zh-CN'],
+    statementCalendar: statementCalendarMessages['zh-CN'],
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
@@ -174,6 +176,7 @@ export const messages = {
     ui: uiMessages['en-US'],
     overview: overviewMessages['en-US'],
     today: todayMessages['en-US'],
+    statementCalendar: statementCalendarMessages['en-US'],
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],

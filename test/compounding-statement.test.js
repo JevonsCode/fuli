@@ -52,12 +52,12 @@ function syntheticApp({ provider = async () => GRAPH, local = true } = {}) {
   return { app, calls };
 }
 
-async function call(app, search, remoteAddress = '127.0.0.1') {
+async function call(app, search, remoteAddress = '127.0.0.1', path = '/api/statement') {
   let status; let body;
   const response = { setHeader() {}, writeHead(code) { status = code; }, end(text) { body = JSON.parse(text); } };
   const request = { method: 'GET', socket: { remoteAddress }, headers: { host: '127.0.0.1' } };
   const handled = await handleStatementRequest({ request, response, app,
-    url: new URL(`http://127.0.0.1/api/statement?${new URLSearchParams(search)}`) });
+    url: new URL(`http://127.0.0.1${path}?${new URLSearchParams(search)}`) });
   return { handled, status, body };
 }
 
@@ -120,6 +120,73 @@ test('read_compounding_statement answers this week by default, with one provenan
   assert.equal(full.series.length, 2);
   assert.ok(full.provenance.includes('used.times, used.tasks, used.cited, used.applied: reported, Agents\' own claims that knowledge mattered'));
   await assert.rejects(callAgentTool(app, 'read_compounding_statement', { from: FROM }), /from and to together/);
+});
+
+// The calendar's days: synthetic Provider days, local entries on both sides of a +08:00 midnight.
+const DAYS_FROM = '2026-11-09T00:00:00+08:00';
+const DAYS_TO = '2026-11-16T00:00:00+08:00';
+function daysApp({ provider = async () => ({ days: [{ day: '2026-11-10', learned: 2, confirmed: 0, used: 1 },
+  { day: '2026-11-12', learned: 0, confirmed: 1, used: 0 }] }) } = {}) {
+  const calls = [];
+  let clock = new Date('2026-11-10T15:30:00Z');
+  const app = { config: { personal: { spaceId: SPACE } },
+    personal: { readKnowledgeStatementDays: async input => { calls.push(input); return provider(input); } },
+    recallImpressions: new RecallImpressionsStore(':memory:', () => clock) };
+  const enter = (token, at) => {
+    clock = new Date(at);
+    app.recallImpressions.recordDelivered({ taskContextToken: token, personalSpaceId: SPACE, sourceApplication: 'codex',
+      preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  };
+  enter('fuli-task-synthetic-late', '2026-11-10T15:30:00Z'); // 23:30 on the 10th, local
+  enter('fuli-task-synthetic-early', '2026-11-10T16:30:00Z'); // 00:30 on the 11th, local
+  enter('fuli-task-synthetic-morning', '2026-11-11T01:00:00Z');
+  enter('fuli-task-synthetic-after', '2026-11-16T00:30:00Z'); // after the range
+  return { app, calls };
+}
+
+test('the statement by day cuts at the local midnight of the offset the caller sends', async () => {
+  const { app, calls } = daysApp();
+  const { status, body } = await call(app, { from: DAYS_FROM, to: DAYS_TO }, '127.0.0.1', '/api/statement/days');
+  assert.equal(status, 200);
+  assert.deepEqual(calls, [{ personal_space_id: SPACE, since: DAYS_FROM, until: DAYS_TO }]);
+  assert.deepEqual(body, {
+    window: { from: '2026-11-08T16:00:00.000Z', to: '2026-11-15T16:00:00.000Z' },
+    days: [
+      { day: '2026-11-10', learned: 2, confirmed: 0, used: 1, carried: 1 },
+      { day: '2026-11-11', learned: 0, confirmed: 0, used: 0, carried: 2 },
+      { day: '2026-11-12', learned: 0, confirmed: 1, used: 0, carried: 0 }
+    ],
+    unavailable: []
+  });
+  // In UTC the same entries fall on one day.
+  const utc = await call(daysApp().app, { from: '2026-11-09T00:00:00Z', to: '2026-11-16T00:00:00Z' }, '127.0.0.1', '/api/statement/days');
+  assert.deepEqual(utc.body.days.map(({ day, carried }) => [day, carried]), [['2026-11-10', 2], ['2026-11-11', 1], ['2026-11-12', 0]]);
+});
+
+test('the statement by day names a source it cannot read and leaves its measures out of every day', async () => {
+  const { app } = daysApp({ provider: async () => { throw new Error('synthetic provider down'); } });
+  const { body } = await call(app, { from: DAYS_FROM, to: DAYS_TO }, '127.0.0.1', '/api/statement/days');
+  assert.deepEqual(body.unavailable, ['learned', 'confirmed', 'used']);
+  assert.deepEqual(body.days, [{ day: '2026-11-10', carried: 1 }, { day: '2026-11-11', carried: 2 }]);
+  const local = daysApp();
+  delete local.app.recallImpressions;
+  const graphOnly = await call(local.app, { from: DAYS_FROM, to: DAYS_TO }, '127.0.0.1', '/api/statement/days');
+  assert.deepEqual(graphOnly.body.unavailable, ['carried']);
+  assert.deepEqual(graphOnly.body.days.map(entry => Object.keys(entry)), [['day', 'learned', 'confirmed', 'used'], ['day', 'learned', 'confirmed', 'used']]);
+});
+
+test('the statement by day reads at most 371 days, one offset, only on this computer', async () => {
+  const { app, calls } = daysApp();
+  const days = (count) => new Date(Date.parse(DAYS_TO) - count * 24 * HOUR).toISOString().replace('Z', '+00:00');
+  const year = await call(app, { from: days(371), to: '2026-11-15T16:00:00+00:00' }, '127.0.0.1', '/api/statement/days');
+  assert.equal(year.status, 200);
+  assert.equal((await call(app, { from: DAYS_FROM, to: DAYS_TO }, '192.0.2.10', '/api/statement/days')).status, 403);
+  calls.length = 0;
+  for (const search of [{ from: days(372), to: '2026-11-15T16:00:00+00:00' }, { from: DAYS_FROM, to: '2026-11-15T16:00:00Z' },
+    { from: DAYS_TO, to: DAYS_FROM }, { from: '2026-11-09T00:00:00', to: DAYS_TO }, { to: DAYS_TO }]) {
+    await assert.rejects(call(app, search, '127.0.0.1', '/api/statement/days'), TypeError, JSON.stringify(search));
+  }
+  assert.deepEqual(calls, []);
 });
 
 test('the current local week runs Monday to Monday on this machine', () => {

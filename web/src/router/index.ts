@@ -12,6 +12,8 @@ export const router = createRouter({
     { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
     // 今天: what waits for the person's call, what was done today, the week's statement, who is working.
     { path: '/', name: 'today', component: () => import('@/pages/TodayPage.vue'), meta: { title: 'routes.today.title' } },
+    // 复利账单 day by day, from 今天's statement card; the picked week is ?week=<its Monday>.
+    { path: '/statement', name: 'statement', component: () => import('@/features/statement-calendar/StatementCalendarPage.vue'), meta: { title: 'statementCalendar.title', detail: true } },
     // The old 工作台 page is gone; 今天 took its place, so an old link lands there.
     { path: '/workbench', redirect: '/' },
     // The lists 今天 links to, each on its own page with search and filters in the query (Jevons 11-06).

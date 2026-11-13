@@ -7,8 +7,11 @@ import { positiveInteger } from '../validation/values.js';
 // are left out, never zeroed or estimated. The graph's part is one Provider
 // call (five aggregate reads); the rest are local SQLite counts. Nothing here
 // runs at task entry.
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_WINDOW_MS = 366 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const MAX_WINDOW_MS = 366 * DAY_MS;
+// The calendar's 53 weeks and a few days to spare; the Provider holds the same cap.
+const MAX_DAYS = 371;
 export const DEFAULT_WEEKS = 8;
 export const MAX_WEEKS = 26;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
@@ -67,6 +70,52 @@ export async function compoundingStatement(app, { from, to, weeks }) {
     })),
     unavailable
   };
+}
+
+// The statement day by day (the console's calendar): from/to carry the
+// person's UTC offset, one and the same, and a day is a local day of it.
+export function statementDaysWindow({ from, to }) {
+  const start = instant(from, 'from');
+  const end = instant(to, 'to');
+  if (start >= end) throw new InvalidInputError('from must be before to');
+  if (end - start > MAX_DAYS * DAY_MS) throw new InvalidInputError(`from and to may be at most ${MAX_DAYS} days apart`);
+  const offsetMinutes = offsetOf(from);
+  if (offsetMinutes !== offsetOf(to)) throw new InvalidInputError('from and to must carry the same UTC offset');
+  return { from, to, start, end, offsetMinutes };
+}
+
+// Per local day, the weekly statement's own measures where they are cheap to
+// cut by day: learned (learned.captured), confirmed (learned.confirmedByYou +
+// confirmedByTonborg + promotedByUse), used (used.times) from one Provider
+// call, carried (carried.tasks) from one grouped local read. Days with
+// nothing are left out; a source that cannot be read is named in
+// `unavailable` and its measures are left out of every day.
+export async function statementDays(app, { from, to, start, end, offsetMinutes }) {
+  const space = app.config.personal.spaceId;
+  const [graph, carried] = await Promise.all([
+    settle(() => app.personal.readKnowledgeStatementDays({ personal_space_id: space, since: from, until: to })),
+    settle(() => app.recallImpressions.deliveredTasksByDay({ personalSpaceId: space, from: start.toISOString(),
+      to: end.toISOString(), offsetMinutes }))
+  ]);
+  const days = new Map();
+  const add = (day, counts) => days.set(day, { ...days.get(day), ...counts });
+  for (const { day, learned, confirmed, used } of graph?.value.days ?? []) add(day, { learned, confirmed, used });
+  for (const { day, tasks } of carried?.value ?? []) add(day, { carried: tasks });
+  const blank = { ...(graph ? { learned: 0, confirmed: 0, used: 0 } : {}), ...(carried ? { carried: 0 } : {}) };
+  return {
+    window: { from: start.toISOString(), to: end.toISOString() },
+    days: [...days].sort(([left], [right]) => left.localeCompare(right))
+      .map(([day, counts]) => ({ day, ...blank, ...counts }))
+      .filter(entry => Object.values(entry).some(value => typeof value === 'number' && value > 0)),
+    unavailable: [...(graph ? [] : ['learned', 'confirmed', 'used']), ...(carried ? [] : ['carried'])]
+  };
+}
+
+function offsetOf(value) {
+  const zone = value.match(/(Z|[+-]\d{2}:\d{2})$/)[1];
+  if (zone === 'Z') return 0;
+  const minutes = Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4));
+  return zone[0] === '-' ? -minutes : minutes;
 }
 
 function instant(value, label) {

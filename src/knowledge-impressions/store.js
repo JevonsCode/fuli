@@ -50,6 +50,10 @@ export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
 // Rows older than this are deleted on the next write.
 const RETENTION_DAYS = 180;
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+// What the statement counts as carried in [from, to): recall rows and task
+// entries of one space; bound with (personalSpaceId, from, to).
+const RECALL_IN_WINDOW = 'FROM recall_impressions WHERE personal_space_id = ? AND shown_at >= ? AND shown_at < ?';
+const ENTRIES_IN_WINDOW = 'FROM task_deliveries WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?';
 // A task entry's preference list is bounded by the Provider; this caps what one row keeps.
 const MAX_DELIVERED_PREFERENCES = 100;
 
@@ -112,17 +116,29 @@ export class RecallImpressionsStore {
   // names no client. ISO instants as toISOString() writes them.
   deliveredBetween({ personalSpaceId, from, to }) {
     if (!this.readable) return { tasks: 0, clients: 0, items: 0 };
-    const recall = 'FROM recall_impressions WHERE personal_space_id = ? AND shown_at >= ? AND shown_at < ?';
-    const entries = 'FROM task_deliveries WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?';
     const window = [personalSpaceId, from, to];
     const count = sql => this.db.prepare(sql).get(...window, ...window).count;
     return {
-      tasks: count(`SELECT COUNT(*) AS count FROM (SELECT task_key ${recall} UNION SELECT task_key ${entries})`),
-      clients: this.db.prepare(`SELECT COUNT(DISTINCT source_application) AS count ${entries}`).get(...window).count,
-      items: count(`SELECT COUNT(*) AS count FROM (SELECT item_kind || ':' || item_id ${recall}
+      tasks: count(`SELECT COUNT(*) AS count FROM (SELECT task_key ${RECALL_IN_WINDOW} UNION SELECT task_key ${ENTRIES_IN_WINDOW})`),
+      clients: this.db.prepare(`SELECT COUNT(DISTINCT source_application) AS count ${ENTRIES_IN_WINDOW}`).get(...window).count,
+      items: count(`SELECT COUNT(*) AS count FROM (SELECT item_kind || ':' || item_id ${RECALL_IN_WINDOW}
         UNION SELECT key.value FROM task_deliveries, json_each(task_deliveries.preference_keys) AS key
         WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?)`)
     };
+  }
+
+  // deliveredBetween's tasks per local day: the day is the stored UTC instant
+  // moved by offsetMinutes (the caller's UTC offset), as YYYY-MM-DD. One
+  // grouped read; days without a task are not listed.
+  deliveredTasksByDay({ personalSpaceId, from, to, offsetMinutes }) {
+    if (!this.readable) return [];
+    const shift = `${offsetMinutes >= 0 ? '+' : '-'}${Math.abs(offsetMinutes)} minutes`;
+    const window = [personalSpaceId, from, to];
+    return this.db.prepare(`SELECT day, COUNT(*) AS tasks FROM (
+        SELECT task_key, date(shown_at, ?) AS day ${RECALL_IN_WINDOW}
+        UNION SELECT task_key, date(delivered_at, ?) AS day ${ENTRIES_IN_WINDOW})
+      GROUP BY day ORDER BY day`).all(shift, ...window, shift, ...window)
+      .map(({ day, tasks }) => ({ day, tasks }));
   }
 
   // Only updates rows that exist: an item used but never shown is ignored, and a
