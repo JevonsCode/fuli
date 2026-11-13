@@ -7,8 +7,9 @@ import { createGuestMcp } from './guest-mcp.js';
 // and the bearer token: the card and the scoped search of the link's one
 // project, as plain JSON routes and as MCP tools at /guest/1/mcp (the same two
 // actions). Both go through the visitor-access port (showSharedCard,
-// searchSharedProject), which cleans them and records every attempt (refused ones too) under 'guest:<link id>' and applies that
-// requester's limits. A refusal names its reason in one plain word and never
+// searchSharedProject), which cleans them, records every attempt (refused
+// ones too) under 'guest:<link id>' and applies that requester's and that
+// project's limits. A refusal names its reason in one plain word and never
 // what exists on this computer. Each MCP session belongs to the link that
 // opened it; keepLinks ends the sessions of every link no longer live.
 const QUERY_REFUSALS = new Set(['queries_missing', 'too_many_queries', 'query_invalid']);
