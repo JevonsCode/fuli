@@ -38,7 +38,7 @@ class AgentRemoteOriginIssue(StrictModel):
     target_node: str = Field(pattern=DIGEST)
     binding_id: str = Field(min_length=1, max_length=128, pattern=OPAQUE)
     expires_at: str = Field(pattern=CANONICAL_TIME)
-    purpose: Literal['execution', 'chat'] = 'execution'
+    purpose: Literal['execution', 'chat', 'query', 'request'] = 'execution'
 
 
 def _encode(value):

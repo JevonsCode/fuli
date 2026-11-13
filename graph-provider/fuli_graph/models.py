@@ -756,6 +756,9 @@ class SearchRequest(StrictModel):
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
     semantic: SemanticQuery | None = None
+    # 'normal': leave out every item none of whose source episodes is normal
+    # (a visitor's search). None: no sensitivity filter.
+    max_sensitivity: Literal['normal'] | None = None
 
     @field_validator('personal_project_ids')
     @classmethod

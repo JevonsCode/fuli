@@ -87,6 +87,9 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     edges = [*edges, *(edge for edge in meaning_edges if edge.uuid not in lexical_ids)]
     if not request.include_historical:
         edges = [edge for edge in edges if edge.invalid_at is None]
+    if request.max_sensitivity == 'normal':
+        normal_ids = await _edges_with_a_normal_source(store, [edge.uuid for edge in edges])
+        edges = [edge for edge in edges if edge.uuid in normal_ids]
     project_scopes = {}
     if personal_space:
         project_scopes = await personal_project_scopes(
@@ -172,6 +175,32 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         ],
         entities=entities,
     )
+
+
+# What an episode without a stored sensitivity counts as: the capture default.
+_NORMAL_EPISODE = "coalesce(episode.fuli_sensitivity, 'normal') = 'normal'"
+
+
+async def _edges_with_a_normal_source(store, edge_ids: list[str]) -> set[str]:
+    """The relationships at least one of whose source episodes is normal.
+    Sensitivity is stored only on episodes; a relationship whose episodes are
+    all private or restricted, or that names no episode, is not normal."""
+    if not edge_ids:
+        return set()
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH ()-[edge:RELATES_TO]->()
+        WHERE edge.uuid IN $edge_ids
+          AND EXISTS {
+            MATCH (episode:Episodic {group_id: edge.group_id})
+            WHERE episode.uuid IN coalesce(edge.episodes, []) AND ''' + _NORMAL_EPISODE + '''
+          }
+        RETURN DISTINCT edge.uuid AS id
+        ''',
+        edge_ids=edge_ids,
+        routing_='r',
+    )
+    return {record['id'] for record in records}
 
 
 async def personal_edge_scopes(
@@ -399,6 +428,7 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         WITH node, episodes, assignment, collect(DISTINCT reference) AS references
         WHERE ($include_historical OR node.fuli_invalid_at IS NULL)
           AND size(coalesce(node.fuli_unresolved_bases, [])) = 0
+          AND ($max_sensitivity IS NULL OR any(episode IN episodes WHERE ''' + _NORMAL_EPISODE + '''))
           AND (
             $include_pending
             OR coalesce(node.fuli_confirmation_status, 'pending')
@@ -491,6 +521,7 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         project_ids=list(project_scopes),
         include_historical=request.include_historical,
         include_pending=request.include_pending,
+        max_sensitivity=request.max_sensitivity,
         semantic_model=semantic_model,
         **({'query_vector': request.semantic.vector, 'length': len(request.semantic.vector)} if semantic_model else {}),
         candidate_limit=SEMANTIC_CANDIDATE_LIMIT if semantic_model else store.settings.graph_limit,

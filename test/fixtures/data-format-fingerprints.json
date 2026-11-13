@@ -87,6 +87,10 @@
     "agent-delegation": {
       "version": 2,
       "fingerprint": "e2cf344349f0a3f6f23614f42f2fef04c43516dfb9ef23ed999becff2ea549bc"
+    },
+    "visitor-access": {
+      "version": 1,
+      "fingerprint": "a0d56ab55bf8569c082e9db8e4a99c9689893a646af87da9aff75a30c8861f5b"
     }
   }
 }
