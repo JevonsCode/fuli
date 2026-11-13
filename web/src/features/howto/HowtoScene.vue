@@ -12,7 +12,7 @@ const props = defineProps<{ move: HowtoMoveId }>()
 // motionReduced reads the in-app switch, so turning it on stops the loop at once.
 const animated = computed(() => !motionReduced())
 // The token the bubble types for moves that start with one.
-const TOKENS: Partial<Record<HowtoMoveId, string>> = { continue: '#FLA', discuss: '#FLG', relay: '#FLA', delegate: '#FLA', recruit: '#FLA' }
+const TOKENS: Partial<Record<HowtoMoveId, string>> = { continue: '#FLA', discuss: '#FLG', relay: '#FLA', delegate: '#FLA', quotaRanOut: '#FLA', recruit: '#FLA' }
 const token = computed(() => TOKENS[props.move] ?? null)
 </script>
 
@@ -63,6 +63,18 @@ const token = computed(() => TOKENS[props.move] ?? null)
       <circle class="howto-actor is-lit" cx="104" cy="14" r="10" />
       <path v-for="(x, i) in [76, 104, 132]" :key="`l${x}`" class="howto-link" :style="{ '--i': i }" :d="`M104 24 L ${x} 50`" />
       <circle v-for="(x, i) in [76, 104, 132]" :key="x" class="howto-actor is-small" :style="{ '--i': i }" :cx="x" cy="58" r="8" />
+    </template>
+
+    <template v-else-if="move === 'otherClients'">
+      <circle class="howto-actor is-lit" cx="40" cy="35" r="12" />
+      <path v-for="(y, i) in [16, 54]" :key="`l${y}`" class="howto-link" :style="{ '--i': i }" :d="`M54 35 C 80 35, 90 ${y}, 112 ${y}`" />
+      <circle v-for="(y, i) in [16, 54]" :key="y" class="howto-actor is-small" :style="{ '--i': i }" cx="124" :cy="y" r="9" />
+    </template>
+
+    <template v-else-if="move === 'quotaRanOut'">
+      <circle class="howto-slot" cx="80" cy="35" r="10" />
+      <path class="howto-link" d="M92 35 H 112" />
+      <circle class="howto-actor is-lit howto-arrive" cx="134" cy="35" r="11" />
     </template>
 
     <template v-else-if="move === 'recruit'">

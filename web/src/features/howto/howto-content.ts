@@ -14,7 +14,7 @@
 // This module imports nothing at run time so that Node test can load it.
 import type { AppLocale } from '@/i18n'
 
-export type HowtoMoveId = 'anyClient' | 'continue' | 'discuss' | 'relay' | 'delegate' | 'recruit' | 'project' | 'review'
+export type HowtoMoveId = 'anyClient' | 'continue' | 'discuss' | 'relay' | 'delegate' | 'otherClients' | 'quotaRanOut' | 'recruit' | 'project' | 'review'
 // `term`: the glossary term (features/glossary/terms.ts) the move's note explains.
 export interface HowtoMove { id: HowtoMoveId; title: string; when: string; phrases: readonly string[]; note: string; term?: string }
 export interface HowtoCaseStep { actor: string; client?: string; did: string; fuli?: string }
@@ -52,6 +52,18 @@ const ZH: HowtoContent = {
       when: '活大、能拆成互不冲突的几块时，交给项目负责人分派。',
       phrases: ['#FLA ‹负责人› 把这个任务拆开，派给团队里合适的 FLA 分头做，做完你来验收'],
       note: '负责人按职业分派，下属可以在不同客户端里干活；回执表格只列真正干了活的人。',
+    },
+    {
+      id: 'otherClients', title: '用上其他客户端剩下的额度',
+      when: '你有好几个 AI 客户端，其中有的额度还没用完。',
+      phrases: ['这件机械的活派给 OpenCode 的 DeepSeek 去做，做完你来验收', '让 Antigravity 的 Gemini 只读代码，列出 ‹要查的内容›'],
+      note: '负责人写好任务说明、启动那个客户端，每处改动读过才留下；FULI 自己唤醒 Claude Code 和 Codex，其他由负责人启动。',
+    },
+    {
+      id: 'quotaRanOut', title: '客户端额度用完，换一个接着干',
+      when: '正在用的客户端停了，任务才做到一半。',
+      phrases: ['#FLA ‹姓名› 在这里继续'],
+      note: '助手做过的事和学到的都在 FULI 里，换个客户端就能接着干；选一个还有额度的。',
     },
     {
       id: 'recruit', title: '让伯乐给项目招人',
@@ -129,6 +141,18 @@ const EN: HowtoContent = {
       when: 'The job is big and splits into parts that do not collide; let the project lead hand them out.',
       phrases: ['#FLA ‹lead› split this task, hand the parts to the right FLAs on the team, and review their work'],
       note: 'The lead assigns by occupation, and members may work in different clients; the receipt table lists only who actually worked.',
+    },
+    {
+      id: 'otherClients', title: 'Use the quota of your other clients',
+      when: 'You have several AI clients and some still have quota.',
+      phrases: ['Hand this mechanical job to DeepSeek in OpenCode, and review it when it is done', 'Have Gemini in Antigravity read the code only and list ‹what to find›'],
+      note: 'The lead writes the brief, starts that client and reads every change before keeping it; FULI wakes Claude Code and Codex itself, the lead starts the others.',
+    },
+    {
+      id: 'quotaRanOut', title: 'A client ran out of quota mid-task',
+      when: 'The client you were working in has stopped.',
+      phrases: ['#FLA ‹name› continue here'],
+      note: 'The FLA\'s work and what it learned are kept in FULI, so it carries on in the new client; pick one with quota left.',
     },
     {
       id: 'recruit', title: 'Have Bole staff a project',
