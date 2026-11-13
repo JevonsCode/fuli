@@ -67,7 +67,7 @@ test('stderr is kept only as its last 4 KB, with the stdout tail when no answer 
 
 test('the kept summary is redacted by the host and bounded; without a redactor only codes remain', async () => {
   const error = await failure(wakeWith(`process.stderr.write(${JSON.stringify(
-    `failed reading ${SECRET_PATH}\nand ${POSIX_PATH}\nwith ${TOKEN}\ncalling ${CREDENTIAL_URL}\n${'filler '.repeat(400)}`)}); process.exit(1)`));
+    `EARLY-LINE ${'filler '.repeat(400)}\nfailed reading ${SECRET_PATH}\nand ${POSIX_PATH}\nwith ${TOKEN}\ncalling ${CREDENTIAL_URL}\n`)}); process.exit(1)`));
   const host = createFuliRoundtableHost({ config: { personal: { spaceId: 'synthetic-space' } } });
   const kept = wakeAttemptRecord({ client: 'codex', sessionId: null, error, durationMs: 12, redact: host.redactDiagnostic });
   assert.deepEqual([kept.code, kept.detail, kept.exitCode, kept.sessionMode], ['wake_failed', 'client_exit_nonzero', 1, 'new']);
@@ -75,7 +75,9 @@ test('the kept summary is redacted by the host and bounded; without a redactor o
   for (const secret of ['synthetic-person', 'Private Repo', 'secret.env', TOKEN, 'synthetic-pass', 'synthetic-user', 'synthetic-value']) {
     assert.ok(!kept.outputSummary.includes(secret), secret);
   }
+  // The end is kept: a client's own error is its last lines.
   assert.match(kept.outputSummary, /failed reading \[path\]/);
+  assert.ok(!kept.outputSummary.includes('EARLY-LINE'));
   const bare = wakeAttemptRecord({ client: 'codex', sessionId: 'synthetic-session-1', error, durationMs: 12 });
   assert.deepEqual([bare.outputSummary, bare.detail, bare.exitCode, bare.sessionMode], [null, 'client_exit_nonzero', 1, 'resumed']);
 });

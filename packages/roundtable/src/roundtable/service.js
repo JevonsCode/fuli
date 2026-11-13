@@ -292,13 +292,16 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // Each wake is kept where it ran, its output only as the host redacts it
   // (wake-failure.js); a failure also reaches the host's diagnostics, without that output.
+  // The record is diagnostics: failing to keep it never changes what the ask answers.
   function recordWake(ask, delivery, { startedAt, remote, error = null }) {
-    const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error,
-      durationMs: now() - startedAt, redact: host.redactDiagnostic });
-    store.wakeAttempts.record(ask.id, record);
-    if (!error || record.code === 'cancelled') return;
-    const { client, sessionMode, code, detail, exitCode, signal, durationMs } = record;
-    host.recordWakeFailure?.({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote: Boolean(remote) });
+    try {
+      const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error,
+        durationMs: now() - startedAt, redact: host.redactDiagnostic });
+      store.wakeAttempts.record(ask.id, record);
+      if (!error || record.code === 'cancelled') return;
+      const { client, sessionMode, code, detail, exitCode, signal, durationMs } = record;
+      host.recordWakeFailure?.({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote: Boolean(remote) });
+    } catch { /* the wake's own outcome stands */ }
   }
 
   // While an earlier wake of this Agent may still be running, no new one starts.

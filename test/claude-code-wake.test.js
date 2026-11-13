@@ -14,10 +14,10 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk']);
 });
 
-test('a read-only (group discussion) wake keeps the non-interactive mode and denies file edits and the shell', () => {
+test('a read-only wake keeps the non-interactive mode with the reading tools only, and denies file edits and both shells', () => {
   assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash', '--session-id', 'planned-1']);
+      '--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell', '--session-id', 'planned-1']);
   assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
 });
 

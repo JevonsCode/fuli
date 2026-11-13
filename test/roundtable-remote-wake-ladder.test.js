@@ -52,6 +52,12 @@ function fixture(t, { wake, shareClients = ['codex', 'claude_code'], issueGrant 
 const crash = () => { throw wakeFailure('wake_failed', 'client_exit_nonzero', 'synthetic', { exitCode: 1,
   output: { stderr: `cannot open ${SECRET_PATH}` } }); };
 
+test('an answer stands when its wake record cannot be kept', async (t) => {
+  const f = fixture(t, { wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
+  f.store.wakeAttempts.record = () => { throw new Error('synthetic disk full'); };
+  assert.equal((await f.ask()).body, 'Synthetic answer');
+});
+
 test('a remote ask tries a new session in its client, then the share\'s other client, each with its own grant', async (t) => {
   const f = fixture(t, { wake: (input, n) => n < 3 ? crash() : { body: 'Synthetic answer', sessionId: 'synthetic-claude-session' } });
   const answer = await f.ask();
@@ -113,6 +119,6 @@ test('a remote ask wakes every client read-only, with each adapter\'s read-only 
   const claude = wakeArguments('claude_code', f.woken[2]);
   assert.ok(codexResume.includes('sandbox_mode="read-only"'));
   assert.deepEqual(codexNew.slice(codexNew.indexOf('--sandbox'), codexNew.indexOf('--sandbox') + 2), ['--sandbox', 'read-only']);
-  assert.deepEqual(claude.slice(claude.indexOf('--disallowedTools'), claude.indexOf('--disallowedTools') + 2),
-    ['--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash']);
+  assert.deepEqual(claude.slice(claude.indexOf('--tools'), claude.indexOf('--tools') + 4),
+    ['--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell']);
 });
