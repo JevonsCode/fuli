@@ -53,12 +53,12 @@
       "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"
     },
     "roundtable": {
-      "version": 9,
-      "fingerprint": "934f13ec96c21e7c4ebc03ae1de13ab3728cc29e480637e90b55008b82b135f8"
+      "version": 10,
+      "fingerprint": "88fbe923c9e653ff70088a03303941d39333a11b828ed03b2e31d1ff369d79ee"
     },
     "recall-impressions": {
-      "version": 2,
-      "fingerprint": "9f1b30e9d868c4b7c4b6fbe113c719913ce455aa527eabd31eae80c60cb6eda4"
+      "version": 3,
+      "fingerprint": "5bca508842e4f0764c0a77e81eb8fef90a65bde162c031f7e52446ba61ddba27"
     },
     "standalone": {
       "version": 1,

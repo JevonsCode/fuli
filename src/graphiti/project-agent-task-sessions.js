@@ -1,4 +1,5 @@
 import { isFuliProcessSession } from '../mcp/session-id.js';
+import { normalisedClient } from '../agents/source-applications.js';
 
 // Which client sessions an open task runs in, for 今天's 正在干活: only what the
 // task's own records name. Each progress event keeps the client and session
@@ -10,14 +11,6 @@ import { isFuliProcessSession } from '../mcp/session-id.js';
 // the task as already listed, so it costs no further read.
 const TASK_SESSION_LIMIT = 3;
 const FINISHED = new Set(['completed', 'failed', 'cancelled']);
-
-// The console writes a client lower-case with spaces and dashes as underscores,
-// so `claude-code`, `Claude Code` and `claude_code` are one client there too.
-function normalisedClient(value) {
-  return typeof value === 'string'
-    ? value.trim().toLocaleLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
-    : '';
-}
 
 /** At most three `{ client, sessionId | null }`, one per client: the latest reporters first, then the session the task came from. */
 export function taskSessions(task) {

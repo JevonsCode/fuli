@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { firstField, listDirectory } from '../session-log.js';
+import { reportedWakeUsage } from '../wake-usage.js';
 
 // The tools a read-only wake may not use: every file edit and the shell.
 const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
@@ -42,13 +43,18 @@ export const claudeCodeWake = Object.freeze({
   },
 
   // stream-json ends with one `result` event carrying the final answer. Its
-  // `system` `init` event names the model the session runs (rec#129).
-  initialState: () => ({ body: '', completed: true, failed: false, model: null }),
+  // `system` `init` event names the model the session runs (rec#129); the
+  // `result` event's usage counts the run's tokens, input apart from the
+  // cache reads and writes, so the whole input is the three together.
+  initialState: () => ({ body: '', completed: true, failed: false, model: null, usage: null }),
   nativeSessionId: event => event.type === 'system' && event.subtype === 'init' ? event.session_id : null,
   readEvent(event, state) {
     if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') state.model = event.model;
     if (event.type !== 'result') return;
     state.body = event.result ?? '';
+    const usage = event.usage ?? {};
+    state.usage = reportedWakeUsage({ output: usage.output_tokens,
+      inputParts: [usage.input_tokens, usage.cache_read_input_tokens, usage.cache_creation_input_tokens] });
     state.failed ||= Boolean(event.is_error);
   },
 });

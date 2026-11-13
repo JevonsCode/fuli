@@ -1,5 +1,6 @@
 import { InvalidInputError } from '../app/application-error.js';
 import { positiveInteger } from '../validation/values.js';
+import { normalisedClient } from '../agents/source-applications.js';
 
 // The person's compounding statement (复利账单): for one window, only the
 // numbers FULI really has. Each section comes from one source read once; a
@@ -14,6 +15,11 @@ const MAX_WINDOW_MS = 366 * DAY_MS;
 const MAX_DAYS = 371;
 export const DEFAULT_WEEKS = 8;
 export const MAX_WEEKS = 26;
+// Usage by client and model: the rows a reader gets, and the days the executor judgment looks back.
+const USAGE_ROWS = 20;
+const USAGE_DAYS = 30;
+const RECENT_USAGE_NOTE = 'taskEntries: task entries FULI recorded; wakes: answers clients FULI woke gave; '
+  + 'model null: not reported. A task entry records no outcome; a wake counts only once answered.';
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 // from/to: ISO instants with a zone (the person's local week bounds, as the
@@ -109,6 +115,53 @@ export async function statementDays(app, { from, to, start, end, offsetMinutes }
       .filter(entry => Object.values(entry).some(value => typeof value === 'number' && value > 0)),
     unavailable: [...(graph ? [] : ['learned', 'confirmed', 'used']), ...(carried ? [] : ['carried'])]
   };
+}
+
+// Which clients and models the person's assistants worked with in a window:
+// task entries FULI recorded (client as recorded, model as the client's hook
+// reported it) and answers of clients FULI woke (model and tokens as the woken
+// client reported them). A model nobody reported stays null, its own row;
+// tokens appear only where a client reported them. Two grouped local reads;
+// the most active rows first, at most USAGE_ROWS of them.
+export async function clientModelUsage(app, { from, to }) {
+  const window = { from: from.toISOString(), to: to.toISOString() };
+  const [entries, wakes] = await Promise.all([
+    settle(() => app.recallImpressions.entriesByClientModel({ personalSpaceId: app.config.personal.spaceId, ...window })),
+    settle(() => app.roundtable.wakeUsage(window))
+  ]);
+  const rows = new Map();
+  const row = (reported, model) => {
+    const client = normalisedClient(reported) || 'other';
+    const key = JSON.stringify([client, model]);
+    if (!rows.has(key)) rows.set(key, { client, model, taskEntries: 0, wakes: 0, tokens: null });
+    return rows.get(key);
+  };
+  for (const { client, model, entries: count } of entries?.value ?? []) row(client, model).taskEntries += count;
+  for (const { client, model, wakes: count, inputTokens, outputTokens, tokenWakes } of wakes?.value ?? []) {
+    const target = row(client, model);
+    target.wakes += count;
+    if (tokenWakes) target.tokens = addTokens(target.tokens, { input: inputTokens, output: outputTokens, answers: tokenWakes });
+  }
+  const ranked = [...rows.values()].sort((left, right) => (right.taskEntries + right.wakes) - (left.taskEntries + left.wakes)
+    || left.client.localeCompare(right.client) || String(left.model ?? '').localeCompare(String(right.model ?? '')));
+  return { window, rows: ranked.slice(0, USAGE_ROWS), more: ranked.length > USAGE_ROWS,
+    unavailable: [...(entries ? [] : ['taskEntries']), ...(wakes ? [] : ['wakes'])] };
+}
+
+// What Tonborg's executor judgment reads beside its other evidence: the last
+// USAGE_DAYS days of clientModelUsage, compact. Null when nothing was read.
+export async function recentClientModelUsage(app, now = new Date()) {
+  const usage = await clientModelUsage(app, { from: new Date(now.getTime() - USAGE_DAYS * DAY_MS), to: now });
+  if (!usage.rows.length) return null;
+  return { days: USAGE_DAYS, note: RECENT_USAGE_NOTE,
+    rows: usage.rows.map(({ client, model, taskEntries, wakes }) => ({ client, model, taskEntries, wakes })),
+    ...(usage.more ? { more: true } : {}) };
+}
+
+function addTokens(sum, { input, output, answers }) {
+  const add = (left, right) => (left === null || right === null ? left ?? right : left + right);
+  return { input: add(sum?.input ?? null, input), output: add(sum?.output ?? null, output),
+    answers: (sum?.answers ?? 0) + answers, source: 'client_reported' };
 }
 
 function offsetOf(value) {

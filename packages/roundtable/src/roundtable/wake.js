@@ -91,8 +91,9 @@ export function parseFinalAnswer(client, { code, stdout }) {
   if (code !== 0 || state.failed || !state.completed || !state.body.trim()) {
     throw Object.assign(new Error(`${client} did not return an answer`), { code: 'wake_failed' });
   }
-  // model: as the client reported it, only where its adapter reads one.
-  return { body: state.body.trim(), sessionId, ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}) };
+  // model and usage: as the client reported them, only where its adapter reads them.
+  return { body: state.body.trim(), sessionId, ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}),
+    ...(state.usage ? { usage: state.usage } : {}) };
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.

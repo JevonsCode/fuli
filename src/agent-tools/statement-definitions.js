@@ -12,7 +12,9 @@ export const STATEMENT_DEFINITIONS = [
     inputSchema: objectSchema({
       from: { ...boundedString(40), description: 'ISO 8601 instant with zone' },
       to: { ...boundedString(40), description: 'ISO 8601 instant with zone' },
-      weeks: integerSchema({ minimum: 1, maximum: MAX_WEEKS })
+      weeks: integerSchema({ minimum: 1, maximum: MAX_WEEKS }),
+      usage: { type: 'boolean', description: 'Also return usage: task entries and woken answers by client and model, '
+        + 'model null when not reported' }
     })
   }
 ];

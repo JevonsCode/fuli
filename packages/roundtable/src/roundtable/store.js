@@ -66,6 +66,12 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/9-group-discussion-joins', to: 9, kind: 'add-table', table: 'group_discussion_joins',
     summary: 'members who joined a group discussion by code, and the client and model of each message',
     create: GROUP_DISCUSSION_JOIN_TABLES
+  }, {
+    // A woken client's answer: the model and tokens that client reported for
+    // the run, each null when it reports none. Older replies carry none.
+    id: 'roundtable/10-wake-model-usage', to: 10, kind: 'add-columns', table: 'messages',
+    summary: 'the model and tokens a woken client reported for the answer it gave',
+    columns: { from_model: 'TEXT', from_input_tokens: 'INTEGER', from_output_tokens: 'INTEGER' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -117,13 +123,15 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         const seq = (database.prepare('SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ?').get(threadId).seq) + 1;
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
-          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status,
+          from_model, from_input_tokens, from_output_tokens)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
           message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
-          message.delivery ?? null);
+          message.delivery ?? null, message.from?.model ?? null, message.from?.usage?.inputTokens ?? null,
+          message.from?.usage?.outputTokens ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
@@ -257,6 +265,20 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     markReplyDelivery(id, from, to, via) {
       return database.prepare(`UPDATE messages SET delivery_status = ?, delivered_via = ?, delivered_at = ?
         WHERE id = ? AND delivery_status IN (${from.map(() => '?').join(',')})`).run(to, via, now(), id, ...from).changes === 1;
+    },
+    // Answers woken clients gave in [from, to), per client and the model it
+    // reported (null: none), most first: a wake's reply is the one whose via
+    // is `<client>:new` or `<client>:resume`. Tokens add up only what clients
+    // reported; tokenWakes says how many answers reported any.
+    wakeUsageBetween(spaceId, from, to) {
+      return database.prepare(`SELECT m.from_client AS client, m.from_model AS model, count(*) AS wakes,
+          sum(m.from_input_tokens) AS inputTokens, sum(m.from_output_tokens) AS outputTokens,
+          count(coalesce(m.from_input_tokens, m.from_output_tokens)) AS tokenWakes
+        FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'reply' AND (m.via LIKE '%:new' OR m.via LIKE '%:resume')
+          AND m.created_at >= ? AND m.created_at < ?
+        GROUP BY m.from_client, m.from_model ORDER BY wakes DESC, client, model`).all(spaceId, from, to)
+        .map(row => ({ ...row }));
     },
     close() { chat.close(); database.close(); }
   };

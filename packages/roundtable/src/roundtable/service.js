@@ -384,7 +384,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
-          session: answer.sessionId }, to: replyTo, delivery: replyInbox.pendingFor(replyTo) });
+          session: answer.sessionId, model: answer.model ?? null, usage: answer.usage ?? null }, to: replyTo, delivery: replyInbox.pendingFor(replyTo) });
       return { status: 'answered', reply, via, tier: delivery.sessionId ? 'resume' : 'new_session',
         ...(answer.model ? { model: answer.model } : {}) };
     } catch (error) {
@@ -834,6 +834,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     messageStatus, cancelMessage, answerRemote,
     // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
+    // Woken clients' answers in [from, to) by client and reported model (statement usage).
+    wakeUsage: ({ from, to }) => store.wakeUsageBetween(spaceId(), from, to),
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,

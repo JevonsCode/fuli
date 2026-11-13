@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { withoutControls } from '../text/control-characters.js';
 
 // rec#63 direction A: which knowledge items the automatic task-entry recall
 // showed an Agent, and which of them the Agent later reported using. Step 2
@@ -13,7 +14,9 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // task_deliveries (version 2): per task, the client it entered from and which
 // of the person's effective preferences FULI delivered with its entry, as
 // "kind:id" keys, so the compounding statement can count what was carried
-// into tasks. Tasks before version 2 have recall rows only.
+// into tasks. Tasks before version 2 have recall rows only. Version 3 adds
+// the model the client's own hook reported for that entry (Codex names it;
+// the others do not), null when none was reported: never guessed.
 const TASK_DELIVERIES = `
   CREATE TABLE IF NOT EXISTS task_deliveries(
     task_key TEXT PRIMARY KEY,
@@ -44,6 +47,10 @@ export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
     id: 'recall-impressions/2-task-deliveries', to: 2, kind: 'add-table', table: 'task_deliveries',
     summary: 'per task, its client and the preferences its entry delivered, and a time index for the retention cut',
     create: TASK_DELIVERIES
+  }, {
+    id: 'recall-impressions/3-task-delivery-model', to: 3, kind: 'add-columns', table: 'task_deliveries',
+    summary: 'the model each task entry\'s client reported, when it reports one',
+    columns: { model: 'TEXT' }
   }]
 });
 
@@ -56,6 +63,8 @@ const RECALL_IN_WINDOW = 'FROM recall_impressions WHERE personal_space_id = ? AN
 const ENTRIES_IN_WINDOW = 'FROM task_deliveries WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?';
 // A task entry's preference list is bounded by the Provider; this caps what one row keeps.
 const MAX_DELIVERED_PREFERENCES = 100;
+// A reported model name is kept as one bounded line, like a wake's (roundtable wake.js).
+const MODEL_LIMIT = 120;
 
 export class RecallImpressionsStore {
   constructor(path = ':memory:', now = () => new Date()) {
@@ -81,8 +90,9 @@ export class RecallImpressionsStore {
   // entities, rank being the 1-based position within each kind, and the
   // effective preferences ({ id, item_kind }). One transaction; a second call
   // for the same task does not duplicate rows. An entry that delivered
-  // nothing records nothing and never opens the store.
-  recordDelivered({ taskContextToken, personalSpaceId, personalProjectId, sourceApplication, facts, entities, preferences }) {
+  // nothing records nothing and never opens the store. model: what the
+  // client's hook reported for this entry, or nothing.
+  recordDelivered({ taskContextToken, personalSpaceId, personalProjectId, sourceApplication, model, facts, entities, preferences }) {
     const rows = [
       ...(facts ?? []).map((item, index) => ({ kind: 'relationship', item, rank: index + 1 })),
       ...(entities ?? []).map((item, index) => ({ kind: 'entity', item, rank: index + 1 }))
@@ -104,9 +114,10 @@ export class RecallImpressionsStore {
         insert.run(taskKey, personalSpaceId, personalProjectId ?? null, kind, item.id, rank,
           item.score ?? null, item.confirmation_status ?? null, deliveredAt);
       }
-      this.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at, preference_keys)
-        VALUES (?, ?, ?, ?, ?) ON CONFLICT(task_key) DO NOTHING`)
-        .run(taskKey, personalSpaceId, sourceApplication ?? 'other', deliveredAt, JSON.stringify(preferenceKeys));
+      this.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at, preference_keys, model)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(task_key) DO NOTHING`)
+        .run(taskKey, personalSpaceId, sourceApplication ?? 'other', deliveredAt, JSON.stringify(preferenceKeys),
+          reportedModel(model));
     });
   }
 
@@ -139,6 +150,15 @@ export class RecallImpressionsStore {
         UNION SELECT task_key, date(delivered_at, ?) AS day ${ENTRIES_IN_WINDOW})
       GROUP BY day ORDER BY day`).all(shift, ...window, shift, ...window)
       .map(({ day, tasks }) => ({ day, tasks }));
+  }
+
+  // Task entries in [from, to) per client and reported model (null: none
+  // reported), most first. One grouped read; the caller bounds what it shows.
+  entriesByClientModel({ personalSpaceId, from, to }) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT source_application AS client, model, COUNT(*) AS entries ${ENTRIES_IN_WINDOW}
+      GROUP BY source_application, model ORDER BY entries DESC, client, model`).all(personalSpaceId, from, to)
+      .map(({ client, model, entries }) => ({ client, model, entries }));
   }
 
   // Only updates rows that exist: an item used but never shown is ignored, and a
@@ -216,6 +236,10 @@ export class RecallImpressionsStore {
     this.database?.close();
     this.database = null;
   }
+}
+
+function reportedModel(model) {
+  return withoutControls(model).slice(0, MODEL_LIMIT) || null;
 }
 
 // What a judged acceptance records too, so a verification state joins its

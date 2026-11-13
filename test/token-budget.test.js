@@ -228,7 +228,9 @@ const BASELINE = Object.freeze({
   // 复利账单: one full-profile read, read_compounding_statement, answers the person's statement for a
   // window with a provenance line per number (chat reaches it through list_agent_interfaces/fuli_call):
   // 190,051 -> 190,729 B (+678 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 190729,
+  // read_compounding_statement gains usage (task entries and woken answers by client and model), no new
+  // tool: 190,729 -> 190,872 B (+143 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 190872,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

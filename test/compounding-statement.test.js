@@ -7,6 +7,7 @@ import { handleStatementRequest } from '../src/http/statement-api-router.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { RecallImpressionsStore } from '../src/knowledge-impressions/store.js';
 import { currentLocalWeek } from '../src/statement/compounding-statement.js';
+import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 
 // The compounding statement over real local stores and a synthetic Provider.
 // Synthetic spaces, ids and texts only; no FULI data directory is read.
@@ -196,4 +197,71 @@ test('the current local week runs Monday to Monday on this machine', () => {
   assert.deepEqual([new Date(to).getDate(), new Date(to).getDay()], [16, 1]);
   // A Sunday belongs to the week that began six days before.
   assert.equal(new Date(currentLocalWeek(new Date(2026, 10, 15, 23, 0)).from).getDate(), 9);
+});
+
+// Usage by client and model: task entries in the impressions store, answers of
+// woken clients in a real roundtable store. Synthetic models and sessions only.
+function usageApp({ wakes = true } = {}) {
+  const at = new Date(NOW - HOUR);
+  const app = { config: { personal: { spaceId: SPACE } }, recallImpressions: new RecallImpressionsStore(':memory:', () => at) };
+  const enter = (token, sourceApplication, model) => app.recallImpressions.recordDelivered({ taskContextToken: token,
+    personalSpaceId: SPACE, sourceApplication, model, preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  enter('fuli-task-usage-1', 'codex', 'synthetic-model-a');
+  enter('fuli-task-usage-2', 'codex', 'synthetic-model-a');
+  enter('fuli-task-usage-3', 'claude-code', null);
+  if (!wakes) return app;
+  const store = createRoundtableStore(':memory:', { clock: () => at });
+  store.createThread({ id: 'thread-1', spaceId: SPACE, subject: 'Synthetic ask' });
+  const reply = (id, via, client, model, usage) => store.appendMessage('thread-1', { id, kind: 'reply', body: 'ok', status: 'sent',
+    via, from: { agentId: 'synthetic-fla', name: 'Synthetic', client, session: 'synthetic-session', model, usage } });
+  reply('wake-1', 'claude_code:new', 'claude_code', 'synthetic-model-b', { inputTokens: 300, outputTokens: 20 });
+  reply('wake-2', 'claude_code:resume', 'claude_code', null, null);
+  reply('inbox-1', 'codex:inbox', 'codex', null, null);
+  app.roundtable = { wakeUsage: ({ from, to }) => store.wakeUsageBetween(SPACE, from, to) };
+  return app;
+}
+
+test('usage counts task entries and woken answers by client and model; unknown stays its own row, tokens only as reported', async () => {
+  const { status, body } = await call(usageApp(), { from: FROM, to: TO }, '127.0.0.1', '/api/statement/usage');
+  assert.equal(status, 200);
+  assert.deepEqual(body, {
+    window: { from: FROM, to: TO },
+    rows: [
+      { client: 'claude_code', model: null, taskEntries: 1, wakes: 1, tokens: null },
+      { client: 'codex', model: 'synthetic-model-a', taskEntries: 2, wakes: 0, tokens: null },
+      { client: 'claude_code', model: 'synthetic-model-b', taskEntries: 0, wakes: 1,
+        tokens: { input: 300, output: 20, answers: 1, source: 'client_reported' } }
+    ],
+    more: false,
+    unavailable: []
+  });
+  // Without a roundtable the wakes are named unavailable, never zeroed into the rows.
+  const partial = await call(usageApp({ wakes: false }), { from: FROM, to: TO }, '127.0.0.1', '/api/statement/usage');
+  assert.deepEqual(partial.body.unavailable, ['wakes']);
+  assert.equal(partial.body.rows.length, 2);
+  assert.equal((await call(usageApp(), { from: FROM, to: TO }, '192.0.2.10', '/api/statement/usage')).status, 403);
+  await assert.rejects(call(usageApp(), { from: TO, to: FROM }, '127.0.0.1', '/api/statement/usage'), TypeError);
+});
+
+test('usage shows at most 20 rows and says there are more', async () => {
+  const app = { config: { personal: { spaceId: SPACE } }, recallImpressions: new RecallImpressionsStore(':memory:', () => new Date(NOW - HOUR)) };
+  for (let index = 0; index < 22; index += 1) {
+    app.recallImpressions.recordDelivered({ taskContextToken: `fuli-task-many-${index}`, personalSpaceId: SPACE, sourceApplication: 'codex',
+      model: `synthetic-model-${index}`, preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  }
+  const { body } = await call(app, { from: FROM, to: TO }, '127.0.0.1', '/api/statement/usage');
+  assert.equal(body.rows.length, 20);
+  assert.equal(body.more, true);
+});
+
+test('read_compounding_statement adds usage with its provenance only when asked', async () => {
+  const app = usageApp();
+  app.personal = { readKnowledgeStatement: async () => GRAPH };
+  const plain = await callAgentTool(app, 'read_compounding_statement', { from: FROM, to: TO });
+  assert.equal('usage' in plain, false);
+  assert.ok(!plain.provenance.some(line => line.startsWith('usage.')));
+  const answer = await callAgentTool(app, 'read_compounding_statement', { from: FROM, to: TO, usage: true });
+  assert.equal(answer.usage.rows.length, 3);
+  assert.deepEqual(answer.provenance.filter(line => line.startsWith('usage.')).map(line => line.split(':')[0]),
+    ['usage.rows[].taskEntries', 'usage.rows[].wakes', 'usage.rows[].model', 'usage.rows[].tokens']);
 });
