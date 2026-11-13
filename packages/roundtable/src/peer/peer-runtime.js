@@ -812,8 +812,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return status();
   }
 
-  async function confirmPairing({ requestId, code }) {
-    pairing.confirm({ requestId, code });
+  async function confirmPairing({ requestId, code, fingerprint }) {
+    pairing.confirm({ requestId, code, fingerprint });
     return status();
   }
 
