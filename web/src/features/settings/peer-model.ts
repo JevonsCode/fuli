@@ -79,7 +79,10 @@ export type PeerStatus = {
   devices: Device[]
   openInvitations: number
   shares: Share[]
+  // Only shared projects and suggestions (the same own repository on a paired computer); the rest are found by search.
   shareable: Shareable[]
+  // What a pairing shared without a separate tick: the projects both computers have.
+  autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[] }[]
   lastPublish?: { at: string; agents: number | null; error: string | null; message?: string } | null
   nearby?: Nearby
 }
@@ -101,6 +104,37 @@ export const peerStatusShape = shapeFor<PeerStatus>(z.looseObject({
   shareable: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
   nearby: nearbyShape.optional(),
 }))
+
+// GET /api/peer/shareable?query=…: other projects to add, by name, without their teams.
+export type ShareableSearch = { projects: { projectId: string; projectName: string }[]; more: boolean }
+
+export const shareableSearchShape = shapeFor<ShareableSearch>(z.looseObject({
+  projects: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
+  more: z.boolean(),
+}))
+
+// GET /api/peer/shareable/<projectId>: the picked project as a row of the list.
+export const shareableShape = shapeFor<Shareable>(z.looseObject({
+  projectId: z.string(),
+  projectName: z.string(),
+  lead: z.looseObject({ agentId: z.string(), name: z.string() }).nullable(),
+  clients: z.array(z.enum(['codex', 'claude_code'])),
+}))
+
+// Projects a paired computer has with the same own repository that are not shared yet,
+// and that can be (they have a lead with a client): what 「共享这 N 个相同的项目」 shares.
+export function unsharedSuggestions(status: PeerStatus) {
+  const shared = new Set(status.shares.map((share) => share.projectId))
+  return status.shareable.filter((project) => project.sameProjectOn?.length && project.lead && project.clients.length
+    && !shared.has(project.projectId))
+}
+
+// The rows of the share list: the short list from status, then projects the
+// person added in this visit (kept, ticked or not, until a save or reload).
+export function shareRows(status: PeerStatus, added: readonly Shareable[]) {
+  const listed = new Set(status.shareable.map((project) => project.projectId))
+  return [...status.shareable, ...added.filter((project) => !listed.has(project.projectId))]
+}
 
 // The console's own message for a refused peer control, else the fallback.
 export function peerApiMessage(caught: unknown, fallback: string) {

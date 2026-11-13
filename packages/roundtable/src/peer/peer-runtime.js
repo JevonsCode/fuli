@@ -31,13 +31,22 @@ const PAIRED_GRACE_MS = 5_000;
 // within this time did not finish its side: the trust is taken back.
 const TRUST_USE_MS = 60_000;
 const LOOPBACK = /^(127\.|::1$)/;
+// The search for projects to add answers with this many by default, at most SEARCH_MAX.
+const SEARCH_LIMIT = 20;
+const SEARCH_MAX = 50;
+// After a pairing the other computer publishes its repository digests shortly
+// after; an empty first match is tried once more after this long.
+const AUTO_SHARE_RETRY_MS = 10_000;
 const teamPeople = team => team?.people ?? [];
+// A project another computer can ask: never an archived, temporary or session-only one.
+const pickable = project => !project.temporary && !project.sessionOnly && !project.archived;
 
 // The local owner's LAN roundtable controls, run only by the console process.
 // Nothing here starts unless the owner turned it on; console LAN access does not.
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
   claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
-  nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, onError = () => {} }) {
+  nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs = AUTO_SHARE_RETRY_MS,
+  onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -52,6 +61,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   let nearbyTimer = null;
   let listenFailure = null;
   const trustChecks = new Set();
+  const autoSharing = new Set();
+  const autoShareTimers = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
   const discovery = createDiscovery({ adapters: () => discoveryAdapters(interfaces),
@@ -167,13 +178,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // Each share names the lead it was made for; after a handoff the old share
   // is withheld until the owner shares the project's new lead. A team that
   // cannot be read right now is no handoff: its share stays as last published.
-  async function shareStates() {
-    const projects = await host.listProjects().catch(() => []);
-    const names = new Map(projects.map((project) => [project.projectId, project.name]));
+  async function shareStates({ projects = null, team: readTeam = teamReader() } = {}) {
+    const listed = projects ?? await host.listProjects().catch(() => []);
+    const names = new Map(listed.map((project) => [project.projectId, project.name]));
     return Promise.all(store().shares().filter((share) => share.spaceId === spaceId()).map(async (share) => {
       const projectName = names.get(share.projectId) ?? share.projectId;
       let team;
-      try { team = await host.projectTeam(share.projectId); }
+      try { team = await readTeam(share.projectId); }
       catch (error) { return { ...share, projectName, lead: null, state: 'team_unreadable', reason: error.code ?? 'team_unreadable' }; }
       const person = share.communicationOnly ? teamPeople(team).find(a => a.agentId === share.agentId) : team?.lead;
       const current = person?.agentId === share.agentId;
@@ -222,10 +233,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // This device's own repository addresses, keyed with the paired group's
   // secret (from the coordinator, only after pairing): the coordinator matches
-  // them between devices, and no device sees another device's digests.
+  // them between devices, and no device sees another device's digests. Only
+  // projects another computer can ask count: never archived, temporary or session-only ones.
   async function repositoryDigests(key) {
     const projects = await host.listProjects().catch(() => []);
-    return [...new Set(projects.filter((project) => !project.temporary).flatMap((project) => projectDigests(project, key)))];
+    return [...new Set(projects.filter(pickable).flatMap((project) => projectDigests(project, key)))];
   }
 
   async function pairedDirectory() {
@@ -237,32 +249,143 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     catch { return []; }
   }
 
-  // Projects the owner may share (a session-only project is not one: another
-  // computer has nothing to ask it; one already shared stays listed so it can
-  // be taken back): each with its current lead, the clients that
-  // lead may use and, for a project a paired device registered with the same
-  // own repository, that device. A folder is offered only when this computer
-  // knows one whose Git remote is that repository.
-  async function shareable() {
-    const shared = new Set(store().shares().filter((share) => share.spaceId === spaceId()).map((share) => share.projectId));
-    const list = (await host.listProjects().catch(() => []))
-      .filter((project) => !project.temporary && (!project.sessionOnly || shared.has(project.projectId))).slice(0, 50);
+  // One read per project team within one answer, however many parts of it ask.
+  function teamReader() {
+    const teams = new Map();
+    return (projectId) => {
+      if (!teams.has(projectId)) teams.set(projectId, host.projectTeam(projectId));
+      return teams.get(projectId);
+    };
+  }
+
+  const sharedProjectIds = () => new Set(store().shares().filter((share) => share.spaceId === spaceId()).map((share) => share.projectId));
+
+  // The paired devices that registered this project with the same own repository.
+  function sameProjectOn(project, paired) {
+    const digests = new Set(repositoryKey ? projectDigests(project, repositoryKey) : []);
+    return paired.filter((device) => (device.sameRepositories ?? []).some((digest) => digests.has(digest)))
+      .map(({ nodeId, name }) => ({ nodeId, name }));
+  }
+
+  // The short list the card and `fuli peer` show: projects shared now (an
+  // already-shared one stays listed so it can be taken back, whatever it has
+  // become since) and the suggestions, projects a paired device registered
+  // with the same own repository. Every other project is found by searchShareable.
+  async function shareable({ projects, team = teamReader() }) {
+    const shared = sharedProjectIds();
     const agents = await host.listAgents().catch(() => []);
     const paired = repositoryKey ? await pairedDirectory() : [];
-    return Promise.all(list.map(async (project) => {
-      const projectId = project.projectId;
-      const team = await host.projectTeam(projectId).catch(() => null);
-      const allowed = (agents.find((agent) => agent.agentId === team?.lead?.agentId)?.profile.allowedClients ?? [])
-        .filter((client) => WAKE_CLIENTS.has(client));
-      const digests = new Set(repositoryKey ? projectDigests(project, repositoryKey) : []);
-      const sameProjectOn = paired.filter((device) => (device.sameRepositories ?? []).some((digest) => digests.has(digest)))
-        .map(({ nodeId, name }) => ({ nodeId, name }));
-      return { projectId, projectName: project.name ?? projectId,
-        lead: team?.lead ? { agentId: team.lead.agentId, name: team.lead.name } : null, clients: allowed,
-        communicationAgents: teamPeople(team).map(person => ({ agentId: person.agentId, name: person.name,
-          occupation: agents.find(a => a.agentId === person.agentId)?.occupation?.role ?? null })),
-        sameProjectOn, knownFolder: sameProjectOn.length && team?.lead ? await repositoryFolder(project, team.lead.agentId) : null };
-    }));
+    const listed = projects.flatMap((project) => {
+      const same = sameProjectOn(project, paired);
+      return shared.has(project.projectId) || (pickable(project) && same.length) ? [{ project, same }] : [];
+    });
+    return Promise.all(listed.map(({ project, same }) => shareEntry(project, same, { agents, team })));
+  }
+
+  // One project as the card shows it: its current lead, the clients that lead
+  // may use and the paired devices with the same own repository. A folder is
+  // offered only when this computer knows one whose Git remote is that repository.
+  async function shareEntry(project, same, { agents, team }) {
+    const projectId = project.projectId;
+    const projectTeam = await team(projectId).catch(() => null);
+    const lead = projectTeam?.lead ?? null;
+    return { projectId, projectName: project.name ?? projectId,
+      lead: lead ? { agentId: lead.agentId, name: lead.name } : null, clients: wakeClients(agents, lead?.agentId),
+      communicationAgents: teamPeople(projectTeam).map(person => ({ agentId: person.agentId, name: person.name,
+        occupation: agents.find(a => a.agentId === person.agentId)?.occupation?.role ?? null })),
+      sameProjectOn: same, knownFolder: same.length && lead ? await repositoryFolder(project, lead.agentId) : null };
+  }
+
+  const wakeClients = (agents, agentId) => (agents.find((agent) => agent.agentId === agentId)?.profile.allowedClients ?? [])
+    .filter((client) => WAKE_CLIENTS.has(client));
+
+  // The other projects the person may add, found by name (no team reads): never
+  // archived, temporary or session-only ones (another computer has nothing to
+  // ask them), and none the short list already shows. An empty query lists the
+  // host's order, most recently changed first.
+  async function searchShareable({ query = '', limit = SEARCH_LIMIT } = {}) {
+    if (!store().setting('membership')) throw new PeerError('peer_not_paired', 'Pair this computer before sharing a project', 409);
+    const size = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), SEARCH_MAX) : SEARCH_LIMIT;
+    const needle = String(query ?? '').trim().toLowerCase();
+    const projects = await host.listProjects().catch(() => []);
+    const shared = sharedProjectIds();
+    const paired = repositoryKey ? await pairedDirectory() : [];
+    const found = projects.filter((project) => pickable(project) && !shared.has(project.projectId)
+      && !sameProjectOn(project, paired).length && (project.name ?? project.projectId).toLowerCase().includes(needle));
+    return { projects: found.slice(0, size).map((project) => ({ projectId: project.projectId, projectName: project.name ?? project.projectId })),
+      more: found.length > size };
+  }
+
+  // The full entry of one project the person just picked from the search.
+  async function shareableProject(projectId) {
+    if (!store().setting('membership')) throw new PeerError('peer_not_paired', 'Pair this computer before sharing a project', 409);
+    const project = (await host.listProjects().catch(() => [])).find((entry) => entry.projectId === projectId);
+    if (!project || !(pickable(project) || sharedProjectIds().has(projectId))) {
+      throw new PeerError('project_not_found', 'No project of this computer can be shared under that id', 404);
+    }
+    const paired = repositoryKey ? await pairedDirectory() : [];
+    return shareEntry(project, sameProjectOn(project, paired), { agents: await host.listAgents().catch(() => []), team: teamReader() });
+  }
+
+  // ---- Sharing the projects both computers have, once per pairing ----
+
+  // Confirming a pairing (the 6 digits on each computer, or joining with a
+  // previewed invitation) is the person's consent, said before they confirm,
+  // to share the leads of the projects both computers registered with the same
+  // own repository. Lead only, its first allowed wake client, the folder only
+  // when this computer knows a checkout of that repository. An existing share
+  // is never changed and none is removed. It runs once per paired device: the
+  // record stays, so a project the person unticks later stays unticked.
+  // The other device's digests reach the coordinator only once it publishes,
+  // so an empty first read is tried once more, never again.
+  async function shareCommonProjects(fingerprint, { retry = true } = {}) {
+    const records = store().setting('autoShared') ?? {};
+    if (records[fingerprint] || autoSharing.has(fingerprint)) return;
+    autoSharing.add(fingerprint);
+    try {
+      if (!repositoryKey) await publish().catch(onError);
+      const other = (await pairedDirectory()).filter((entry) => entry.nodeId === fingerprint);
+      const projects = await host.listProjects().catch(() => []);
+      const common = projects.filter((project) => pickable(project) && sameProjectOn(project, other).length);
+      if (!common.length && retry) {
+        const timer = setTimeout(() => {
+          autoShareTimers.delete(timer);
+          shareCommonProjects(fingerprint, { retry: false }).catch(onError);
+        }, autoShareRetryMs);
+        timer.unref?.();
+        autoShareTimers.add(timer);
+        return;
+      }
+      const shared = sharedProjectIds();
+      const agents = await host.listAgents().catch(() => []);
+      const added = [];
+      for (const project of common.filter((entry) => !shared.has(entry.projectId))) {
+        const lead = (await host.projectTeam(project.projectId).catch(() => null))?.lead;
+        const [client] = wakeClients(agents, lead?.agentId);
+        if (!client) continue;
+        added.push({ spaceId: spaceId(), projectId: project.projectId, projectName: project.name ?? project.projectId,
+          agentId: lead.agentId, clients: [client], workingDirectory: await repositoryFolder(project, lead.agentId) });
+      }
+      if (!store().setting('membership')) return;
+      if (added.length) {
+        store().replaceShares([...store().shares(), ...added.map(({ projectName: _name, ...share }) => share)], port.idFactory);
+        await runner?.reconcileShares();
+        await publish().catch(onError);
+      }
+      store().setSetting('autoShared', { ...(store().setting('autoShared') ?? {}), [fingerprint]: { at: new Date(clock()).toISOString(),
+        projects: added.map(({ projectId, projectName }) => ({ projectId, projectName })) } });
+    } finally { autoSharing.delete(fingerprint); }
+  }
+
+  // What pairing shared without a separate tick, for the card and `fuli peer`.
+  const autoSharedView = () => Object.entries(store().setting('autoShared') ?? {})
+    .map(([nodeId, record]) => ({ nodeId, at: record.at, projects: record.projects }));
+
+  function forgetAutoShare(fingerprint) {
+    const records = store().setting('autoShared');
+    if (!records?.[fingerprint]) return;
+    const { [fingerprint]: _gone, ...rest } = records;
+    store().setSetting('autoShared', Object.keys(rest).length ? rest : null);
   }
 
   async function repositoryFolder(project, agentId) {
@@ -275,11 +398,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function status() {
     if (!port.configured()) {
       return { beta: true, role: null, device: null, coordinator: null, addresses: localAddresses(), devices: [],
-        openInvitations: 0, shares: [], shareable: [], lastPublish: null, nearby: await nearbyView() };
+        openInvitations: 0, shares: [], shareable: [], autoShared: [], lastPublish: null, nearby: await nearbyView() };
     }
     const membership = store().setting('membership');
     const device = membership ? await identity() : null;
     const devices = membership?.role === 'coordinator' ? storedDevices() : [];
+    const projects = membership ? await host.listProjects().catch(() => []) : [];
+    const team = teamReader();
     return {
       beta: true,
       remoteRemovalPending: Boolean(store().setting('pendingLeave')),
@@ -291,8 +416,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       addresses: localAddresses(),
       devices: devices.map((entry) => ({ ...entry, shortFingerprint: shortFingerprint(entry.nodeId) })),
       openInvitations: coordinator ? coordinator.service.openInvitations() : 0,
-      shares: membership ? (await shareStates()).map(({ lead: _lead, ...share }) => share) : [],
-      shareable: membership ? await shareable() : [],
+      shares: membership ? (await shareStates({ projects, team })).map(({ lead: _lead, ...share }) => share) : [],
+      shareable: membership ? await shareable({ projects, team }) : [],
+      autoShared: membership ? autoSharedView() : [],
       lastPublish: membership ? lastPublish : null,
       nearby: await nearbyView(),
     };
@@ -343,6 +469,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (result.coordinatorNodeId !== invitation.fingerprint) throw new PeerError('invalid_pairing', 'The coordinator answered with another identity', 502);
     await adoptCoordinator({ url: invitation.url, certPem: invitation.certificatePem, fingerprint: invitation.fingerprint,
       name: invitation.name, authority: invitation.authority });
+    // Joining with an invitation whose fingerprint the person compared is the consent, as the 6 digits are nearby.
+    await shareCommonProjects(invitation.fingerprint).catch(onError);
     return status();
   }
 
@@ -434,6 +562,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     store().setSetting('coordinator', null);
     store().setSetting('reachedAddresses', null);
     store().setSetting('pendingTrust', null);
+    store().setSetting('autoShared', null);
     listenFailure = null;
     if (membership?.role === 'member') store().setSetting('pendingLeave', membership.coordinator);
     await finishLeaving();
@@ -464,6 +593,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       try { coordinatorStore.revokeNode(nodeId, new Date(clock()).toISOString()); } finally { coordinatorStore.close(); }
     }
     store().forgetAuthority(nodeId);
+    forgetAutoShare(nodeId);
   }
 
   // ---- Nearby pairing (rec issue 127) ----
@@ -591,6 +721,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   function afterPairing(peer) {
     nearbyNotice = { kind: 'paired', name: peer.name, fingerprint: peer.fingerprint, at: new Date(clock()).toISOString() };
+    shareCommonProjects(peer.fingerprint).catch(onError);
     const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name, fingerprint: peer.fingerprint }).catch(onError), pairedGraceMs);
     timer.unref?.();
   }
@@ -727,14 +858,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function close() {
     clearTimeout(nearbyTimer);
-    for (const timer of trustChecks) clearTimeout(timer);
+    for (const timer of [...trustChecks, ...autoShareTimers]) clearTimeout(timer);
     trustChecks.clear();
+    autoShareTimers.clear();
     pairing.close();
     presence.stop();
     await stopAll();
   }
 
-  return { resume, status, enableCoordinator, createInvitation, previewInvitation, join, setShares, revokeDevice, disable,
+  return { resume, status, searchShareable, shareableProject, enableCoordinator, createInvitation, previewInvitation, join, setShares, revokeDevice, disable,
     nearbyOn, nearbyOff, pairNearby, confirmPairing, cancelPairing, clearPairingAttempts, publish, close, runnerActive: () => Boolean(runner) };
 }
 

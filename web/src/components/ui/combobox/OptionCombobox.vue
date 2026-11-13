@@ -8,6 +8,9 @@
 // `loading` shows an inline indicator above the options it already has.
 // `freeText` (single): what is typed is the value too, so a value outside the
 // options stays (a model name the list does not have); the options are suggestions.
+// `searchOnServer` (single): the page reads the options for the typed text it
+// gets from `search`, so the list is not filtered again here; `emptyLabel` and
+// `loadingLabel` then say what was searched and what is being read.
 import type { HTMLAttributes } from "vue"
 import { ComboboxInput } from "reka-ui"
 import { computed, ref, useId, watch } from "vue"
@@ -48,6 +51,9 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   loading?: boolean
   freeText?: boolean
+  searchOnServer?: boolean
+  emptyLabel?: string
+  loadingLabel?: string
   required?: boolean
   name?: string
   controlId?: string
@@ -55,10 +61,10 @@ const props = withDefaults(defineProps<{
   class?: HTMLAttributes["class"]
 }>(), {
   multiple: false, searchable: true, field: false, placeholder: undefined, allLabel: undefined, summary: undefined, maxChips: 2, hint: undefined,
-  disabled: false, loading: false, freeText: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
+  disabled: false, loading: false, freeText: false, searchOnServer: false, emptyLabel: undefined, loadingLabel: undefined, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
 })
 
-const emit = defineEmits<{ "update:modelValue": [value: V] }>()
+const emit = defineEmits<{ "update:modelValue": [value: V]; search: [text: string] }>()
 defineSlots<{ actions?: () => unknown }>()
 
 // TagsInput adds typed text as a chip on its delimiter; chips here only come from the list.
@@ -98,6 +104,7 @@ watch(chosenLabel, (label) => { if (!open.value) fieldText.value = label })
 
 // Free text: the typed text, or the option whose label it is (picking one shows its label).
 function typed(text: string) {
+  if (props.searchOnServer) emit("search", text)
   if (!props.freeText || props.multiple) return
   emit("update:modelValue", (props.options.find(option => option.label === text)?.value ?? text) as V)
 }
@@ -133,6 +140,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
       :required="required"
       open-on-click
       :reset-search-term-on-blur="!freeText"
+      :ignore-filter="searchOnServer"
       @update:open="open = $event"
       @update:model-value="choose"
     >
@@ -175,8 +183,8 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
       </ComboboxAnchor>
       <ComboboxList class="w-(--reka-popper-anchor-width) min-w-56">
         <ComboboxViewport :aria-busy="loading || undefined">
-          <GrowthLoading v-if="loading" variant="inline" class="px-2 py-1.5" :label="t('ui.select.loading')" />
-          <ComboboxEmpty v-else>{{ options.length ? t('ui.select.noMatches') : t('ui.select.noOptions') }}</ComboboxEmpty>
+          <GrowthLoading v-if="loading" variant="inline" class="px-2 py-1.5" :label="loadingLabel ?? t('ui.select.loading')" />
+          <ComboboxEmpty v-else>{{ emptyLabel ?? (options.length ? t('ui.select.noMatches') : t('ui.select.noOptions')) }}</ComboboxEmpty>
           <ComboboxGroup v-for="group in groups" :key="group.heading ?? ''" :heading="group.heading">
             <ComboboxItem
               v-for="option in group.options"

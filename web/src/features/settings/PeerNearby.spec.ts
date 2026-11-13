@@ -44,6 +44,8 @@ it('confirms only after the person ticked that both screens show the same digits
   await wrapper.setProps({ nearby: { ...listed, pairing: waiting } })
   expect(wrapper.get('[data-pairing-code]').text()).toContain('042 917')
   expect(wrapper.text()).toContain('配对后由 Laptop 负责协调')
+  // Said before the confirm control: confirming shares the leads of the projects both computers have.
+  expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，两台电脑上相同的项目的负责人可以直接互相提问。其他项目不会共享。')
   expect(wrapper.get('[data-pairing-confirm]').attributes('disabled')).toBeDefined()
   await wrapper.get('[data-pairing-confirm]').trigger('click')
   expect(fetch).toHaveBeenCalledTimes(1)

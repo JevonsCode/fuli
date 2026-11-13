@@ -14,7 +14,7 @@ export async function handlePeerControlRequest({ request, response, url, peer, r
     return true;
   }
   try {
-    const result = await route(request, url.pathname, peer, readJson);
+    const result = await route(request, url, peer, readJson);
     if (result === undefined) return false;
     sendJson(response, 200, result);
   } catch (error) {
@@ -26,9 +26,16 @@ export async function handlePeerControlRequest({ request, response, url, peer, r
   return true;
 }
 
-async function route(request, pathname, peer, readJson) {
+async function route(request, url, peer, readJson) {
   const { method } = request;
+  const { pathname } = url;
   if (pathname === '/api/peer' && method === 'GET') return peer.status();
+  if (pathname === '/api/peer/shareable' && method === 'GET') {
+    const limit = url.searchParams.get('limit');
+    return peer.searchShareable({ query: url.searchParams.get('query') ?? '', ...(limit ? { limit: Number(limit) } : {}) });
+  }
+  const shareable = /^\/api\/peer\/shareable\/([^/]+)$/.exec(pathname);
+  if (shareable && method === 'GET') return peer.shareableProject(projectIdOf(shareable[1]));
   if (pathname === '/api/peer/coordinator' && method === 'POST') {
     const body = await readJson(request);
     return peer.enableCoordinator({ host: body.host, port: body.port ?? 0, name: body.name });
@@ -58,4 +65,9 @@ async function route(request, pathname, peer, readJson) {
   if (pathname === '/api/peer/nearby/cancel' && method === 'POST') { await readJson(request); return peer.cancelPairing(); }
   if (pathname === '/api/peer/nearby/attempts/clear' && method === 'POST') { await readJson(request); return peer.clearPairingAttempts(); }
   return undefined;
+}
+
+function projectIdOf(segment) {
+  try { return decodeURIComponent(segment); }
+  catch { throw new PeerError('project_not_found', 'No project of this computer can be shared under that id', 404); }
 }

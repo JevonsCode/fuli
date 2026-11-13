@@ -9,7 +9,8 @@ import { t } from '@/i18n'
 import { OptionSelect } from '@/components/ui/select'
 import UiNotice from '@/ui/UiNotice.vue'
 import PeerNearby from './PeerNearby.vue'
-import { peerApiMessage, peerStatusShape, type ClientId, type PeerStatus, type Shareable } from './peer-model'
+import PeerSharePicker from './PeerSharePicker.vue'
+import { peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -28,9 +29,14 @@ const invitation = ref<{ invitation: string; fingerprint?: string; expiresAt?: s
 const inviteFeedback = ref<'copied' | 'manual' | ''>('')
 const joiningDevice = ref<{ name: string; url: string; shortFingerprint: string } | null>(null)
 const drafts = reactive<Record<string, ShareDraft>>({})
+// Projects picked from 「添加项目」 in this visit; they stay, ticked or not, until a save or reload.
+const added = ref<Shareable[]>([])
 let refresh: ReturnType<typeof setInterval> | null = null
 
 const addressOptions = computed(() => (status.value?.addresses ?? []).map((value) => ({ value, label: value })))
+const rows = computed(() => (status.value ? shareRows(status.value, added.value) : []))
+const rowIds = computed(() => rows.value.map((project) => project.projectId))
+const suggestions = computed(() => (status.value ? unsharedSuggestions(status.value) : []))
 const paired = computed(() => Boolean(status.value?.role))
 const coordinator = computed(() => status.value?.role === 'coordinator')
 const otherDevices = computed(() => (status.value?.devices ?? []).filter((device) => !device.self))
@@ -47,7 +53,7 @@ function sameProjectNames(project: Shareable) {
 function applyStatus(next: PeerStatus) {
   status.value = next
   if (!hostAddress.value && next.addresses[0]) hostAddress.value = next.addresses[0]
-  const known = new Set(next.shareable.map((project) => project.projectId))
+  const known = new Set(shareRows(next, added.value).map((project) => project.projectId))
   for (const key of Object.keys(drafts)) if (!known.has(key)) delete drafts[key]
   for (const project of next.shareable) {
     const existing = next.shares.find((share) => share.projectId === project.projectId)
@@ -143,8 +149,15 @@ function toggleClient(projectId: string, client: ClientId, selected: boolean) {
   draft.clients = selected ? [...new Set([...draft.clients, client])] : draft.clients.filter((item) => item !== client)
 }
 
-function saveShares() {
-  const shares = (status.value?.shareable ?? []).flatMap((project) => {
+// A project picked from 「添加项目」 becomes a ticked row, exactly as ticking it in the list.
+function addProject(project: Shareable) {
+  if (!rowIds.value.includes(project.projectId)) added.value = [...added.value, project]
+  drafts[project.projectId] ??= { selected: false, clients: [], folder: '' }
+  toggleProject(project, true)
+}
+
+function saveShares(kind = 'shares') {
+  const shares = rows.value.flatMap((project) => {
     const draft = drafts[project.projectId]
     if (!draft?.selected || !project.lead) return []
     return [{
@@ -153,7 +166,17 @@ function saveShares() {
       ...(draft.folder.trim() ? { workingDirectory: draft.folder.trim() } : {}),
     }]
   })
-  return run('shares', () => putJson('/api/peer/shares', { shares }, peerStatusShape))
+  return run(kind, async () => {
+    const next = await putJson('/api/peer/shares', { shares }, peerStatusShape)
+    added.value = []
+    return next
+  })
+}
+
+// 「共享这 N 个相同的项目」: the person's one click ticks every suggestion and saves.
+function shareSuggestions() {
+  for (const project of suggestions.value) toggleProject(project, true)
+  return saveShares('suggestions')
 }
 
 function revoke(nodeId: string) {
@@ -227,6 +250,7 @@ function shareState(projectId: string) {
             <div><p>{{ t('settings.peer.coordinatorFingerprint') }}</p><code>{{ joiningDevice.shortFingerprint }}</code></div>
             <p>{{ t('settings.peer.compare') }}</p>
           </div>
+          <p v-if="joiningDevice" data-share-on-pair>{{ t('settings.peer.shareOnPair') }}</p>
           <Button size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
             :loading="busy === 'join' || busy === 'preview'" :loading-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
             {{ t(joiningDevice ? 'settings.peer.joinAction' : 'settings.peer.previewAction') }}
@@ -267,16 +291,22 @@ function shareState(projectId: string) {
         <section class="peer-block">
           <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
           <p>{{ t('settings.peer.sharesHint') }}</p>
-          <p v-if="!status.shareable.length">{{ t('settings.peer.noProjects') }}</p>
-          <ul v-else class="peer-shares">
-            <li v-for="project in status.shareable" :key="project.projectId">
-              <label class="peer-share-title">
+          <p v-if="!rows.length" data-shares-empty>{{ t('settings.peer.noProjects') }}</p>
+          <div v-if="suggestions.length" class="peer-actions">
+            <Button size="sm" variant="outline" data-share-suggestions :disabled="Boolean(busy) && busy !== 'suggestions'"
+              :loading="busy === 'suggestions'" :loading-label="t('settings.peer.savingShares')" @click="shareSuggestions">
+              {{ t('settings.peer.shareCommon', { count: suggestions.length }) }}
+            </Button>
+          </div>
+          <ul v-if="rows.length" class="peer-shares">
+            <li v-for="project in rows" :key="project.projectId" :data-share-row="project.projectId">
+              <label class="peer-share-title" :title="project.lead ? `${project.projectName} · ${t('settings.peer.lead', { name: project.lead.name })}` : project.projectName">
                 <input type="checkbox" :checked="drafts[project.projectId]?.selected"
                   :disabled="!project.lead || Boolean(busy)"
                   @change="toggleProject(project, ($event.target as HTMLInputElement).checked)" />
                 <strong>{{ project.projectName }}</strong>
+                <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
               </label>
-              <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
               <p v-if="project.sameProjectOn?.length && project.lead" data-same-project>
                 {{ t('settings.peer.sameProject', { devices: sameProjectNames(project) }) }}
               </p>
@@ -300,13 +330,16 @@ function shareState(projectId: string) {
               </label>
             </li>
           </ul>
+          <PeerSharePicker :listed="rowIds" :disabled="Boolean(busy)" @pick="addProject" />
           <UiNotice v-if="status.lastPublish?.error" tone="warning" data-publish-error>
             {{ t('settings.peer.publishFailed', { reason: status.lastPublish.error }) }}
           </UiNotice>
-          <Button v-if="status.shareable.length" size="sm" data-save-shares
-            :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares">
-            {{ t('settings.peer.saveShares') }}
-          </Button>
+          <div v-if="rows.length" class="peer-actions">
+            <Button size="sm" data-save-shares
+              :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares()">
+              {{ t('settings.peer.saveShares') }}
+            </Button>
+          </div>
         </section>
 
         <section v-if="coordinator && otherDevices.length" class="peer-block">
@@ -358,13 +391,22 @@ function shareState(projectId: string) {
 }
 .peer-settings textarea { resize: vertical; font: 12px/1.65 var(--font-mono); }
 .peer-shares, .peer-devices { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.peer-shares { gap: 0; }
 .peer-shares li, .peer-devices li {
   min-width: 0; padding: 12px 0; border-top: 1px solid var(--color-border);
 }
-.peer-share-title { display: flex; align-items: flex-start; gap: 8px; }
-.peer-share-title strong { overflow-wrap: anywhere; color: var(--color-ink); font-size: 14px; }
-.peer-shares fieldset { display: flex; flex-wrap: wrap; gap: 12px 16px; border: 0; padding: 0; }
-.peer-shares fieldset label { display: flex; align-items: center; gap: 6px; }
+.peer-shares li { display: grid; gap: 8px; padding: 8px 0; }
+.peer-shares li p { margin: 0; }
+/* One line per project: checkbox, name, then its lead, muted; both cut with … (the full text is the title). */
+.peer-settings .peer-share-title {
+  display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; cursor: pointer; user-select: none;
+}
+.peer-share-title strong, .peer-share-title small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-share-title strong { flex: 0 1 auto; color: var(--color-ink); font-size: 14px; font-weight: 500; }
+.peer-share-title small { flex: 1 1 0; }
+.peer-shares fieldset { display: flex; flex-wrap: wrap; gap: 12px 16px; border: 0; padding: 0 0 0 24px; }
+.peer-shares li > label:not(.peer-share-title), .peer-shares li > p { padding-left: 24px; }
+.peer-shares fieldset label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
 .peer-devices li { justify-content: space-between; }
 .peer-devices strong, .peer-devices small { display: block; overflow-wrap: anywhere; }
 .peer-note { color: var(--color-warning); }
