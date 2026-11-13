@@ -24,7 +24,6 @@
 @source "../../components/ui";
 @source "../../ui/UiIconButton.vue";
 /* The representative pages rebuilt on the D-03 canvas (rec#11). */
-@source "../../pages/WorkbenchPage.vue";
 @source "../../pages/AgentsDirectoryPage.vue";
 @source "../../features/agent-profile/AgentPeek.vue";
 @source "../../pages/AgentProfilePage.vue";

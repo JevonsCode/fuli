@@ -132,7 +132,7 @@ describe('AppShell', () => {
     const { wrapper, router } = await setup('/')
     const dock = wrapper.get('.app-dock')
     expect(dock.findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
-    expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['工作台', 'FLAs', '圆桌', '沉淀', '项目'])
+    expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['今天', 'FLAs', '圆桌', '沉淀', '项目'])
     expect(wrapper.get('.app-topbar [data-destination="settings"]').attributes('href')).toBe('/settings')
     // One ink pill sits behind the current destination and moves with it.
     expect(dock.findAll('.app-dock-active')).toHaveLength(1)

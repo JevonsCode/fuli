@@ -3,7 +3,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import ServiceLog from '@/features/agent-services/ServiceLog.vue'
-import WorkbenchTimeline from '@/features/overview/WorkbenchTimeline.vue'
 import { findTerm } from '@/features/glossary/terms'
 import { setLocale } from '@/i18n'
 import MeLink from './MeLink.vue'
@@ -51,9 +50,5 @@ describe('MeLink', () => {
     expect(fuli!.findComponent(MeLink).exists()).toBe(false)
     expect(fuli!.text()).toContain('FULI')
 
-    const timeline = mount(WorkbenchTimeline, { props: { taskKey: 'task', agentName: () => 'Ada', entries: [
-      { id: 'a', at: '2026-10-27T08:00:00Z', actorKind: 'human', agentId: null, crew: [], tone: 'plain', reason: { text: 'Synthetic step', unknownCode: null, raw: null } },
-    ] } })
-    expect(timeline.get('.timeline-actor').findComponent(MeLink).exists()).toBe(true)
   })
 })
