@@ -18,6 +18,12 @@ export const todayMessages = {
       more: '还有 {count} 件',
     },
     working: { meta: '{name} · {project}' },
+    clients: {
+      open: '在 {app} 里打开这次会话',
+      app: '这里打不开 {app} 的这次会话，请到 {app} 里找它',
+      none: '在 {app} 里，这里打不开它',
+      more: '还有 {count} 个客户端',
+    },
     statement: {
       headline: '你一共攒下 {count} 条习惯和经验',
       totalCaption: '条习惯和经验，是你一共攒下的',
@@ -82,6 +88,12 @@ export const todayMessages = {
       more: '{count} more',
     },
     working: { meta: '{name} · {project}' },
+    clients: {
+      open: 'Open this session in {app}',
+      app: "{app} can't open this session from here; find it in {app}",
+      none: 'In {app}; nothing here can open it',
+      more: '{count} more clients',
+    },
     statement: {
       headline: 'You have saved {count} habits and lessons',
       totalCaption: 'habits and lessons saved so far',

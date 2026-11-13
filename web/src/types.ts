@@ -440,6 +440,13 @@ export interface ProjectAgentTaskRecord {
   /** Set only while the task is blocked. */
   blocker?: ProjectAgentTaskBlocker | null
   events?: ProjectAgentTaskEvent[]
+  /** The client sessions an open task runs in, latest first (at most three); only the task list sends them. */
+  sessions?: ProjectAgentTaskSession[]
+}
+
+export interface ProjectAgentTaskSession {
+  client: ConversationSourceApplication
+  sessionId: string
 }
 
 export interface ProjectAgentActivityTask {

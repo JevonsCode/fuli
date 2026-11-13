@@ -136,6 +136,12 @@ describe('今天', () => {
     expect(unowned!.attributes('href')).toBeUndefined()
   })
 
+  it('shows the client a working task runs in, from the task list', async () => {
+    const session = '00000000-0000-4000-8000-000000000001'
+    const { wrapper } = await setup({ tasks: [{ ...task('t1', 'running'), sessions: [{ client: 'codex', sessionId: session }] }] })
+    expect(wrapper.get('[data-working-client="codex"]').attributes('href')).toBe(`codex://threads/${session}`)
+  })
+
   it('shows five things at most: requests first, then the habits to confirm, then how many more wait', async () => {
     const few = await setup({ requests: [request('r1'), request('r2')], reviewTotal: 3 })
     expect(few.wrapper.findAll('[data-today-decision]').map(row => row.attributes('data-today-decision'))).toEqual(['request', 'request', 'review'])

@@ -13,6 +13,7 @@ import type {
   ProjectAgentTaskEvent,
   ProjectAgentTaskExecutionSummary,
   ProjectAgentTaskRecord,
+  ProjectAgentTaskSession,
   ProjectAgentTaskStatus,
   ProjectAgentTokenUsage,
 } from '@/types'
@@ -333,7 +334,15 @@ export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
     executionSummary: normalizeExecutionSummary(valueOf(record, 'executionSummary', 'execution_summary')),
     routingDecision, blocker: normalizeBlocker(record.blocker),
     events: arrayOf(record.events).map(normalizeEvent).filter(Boolean) as ProjectAgentTaskEvent[],
+    sessions: arrayOf(record.sessions).flatMap(normalizeTaskSession),
   }
+}
+
+// One client session an open task runs in, as the task list names it (src/graphiti/project-agent-task-sessions.js).
+function normalizeTaskSession(value: unknown): ProjectAgentTaskSession[] {
+  const record = unknownRecord(value)
+  const client = stringOf(record, 'client', 'client'); const sessionId = stringOf(record, 'sessionId', 'session_id')
+  return client && sessionId ? [{ client: client as ConversationSourceApplication, sessionId }] : []
 }
 
 export function workerEventEvidence(task: ProjectAgentTaskRecord) {
