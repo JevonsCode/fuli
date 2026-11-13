@@ -56,6 +56,17 @@ const marks = (wrapper: Awaited<ReturnType<typeof setup>>['wrapper']) =>
   wrapper.findAll('[data-working-client]').map(mark => [mark.attributes('data-working-client'), mark.attributes('data-way'), mark.element.tagName])
 
 describe('the clients a piece of work runs in', () => {
+  it('reads the client links when a row gets its sessions after it is shown', async () => {
+    const { wrapper } = await setup([])
+    expect(getJson.mock.calls.some(([url]) => String(url) === '/api/client-links')).toBe(false)
+    await wrapper.setProps({ rows: [{ key: 'task-a', agentId: 'agent-a', projectId: 'project-a', title: 'Synthetic work',
+      team: false, sessions: [{ client: 'claude_code', sessionId: 'session-b' }] }] })
+    await flushPromises()
+    expect(getJson.mock.calls.filter(([url]) => String(url) === '/api/client-links')).toHaveLength(1)
+    // Claude Code's launcher is off, but its own links can still open the session: 'app', not 'none'.
+    expect(marks(wrapper)).toEqual([['claude_code', 'app', 'SPAN']])
+  })
+
   it('opens a session where the person turned its launcher on, and the row link stays put', async () => {
     const { wrapper, router } = await setup([{ client: 'codex', sessionId: CODEX_SESSION }])
     const mark = wrapper.get('[data-working-client="codex"]')

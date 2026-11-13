@@ -3,11 +3,13 @@ import { existsSync } from 'node:fs';
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // Who may visit this computer's shared project knowledge from another one, in
-// which mode, and every read a visitor made (the visiting assistant). A
-// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A read row
-// keeps the visitor's queries as they were searched (already cut), how many
-// items and bytes went back, never the items themselves. Guest links and
-// visit requests come with their own slices as later versions.
+// which mode, and every attempt a visitor made (the visiting assistant). A
+// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A read row is
+// written before its search runs (outcome 'pending') and settled afterwards
+// as 'answered' or 'failed'; a refused attempt is a 'refused' row with its
+// code. Rows keep the visitor's queries as they were searched (already cut),
+// how many items and bytes went back, never the items themselves. Guest links
+// and visit requests come with their own slices as later versions.
 export const VISITOR_ACCESS_FORMAT = sqliteFormat({
   store: 'visitor-access',
   schema: `
@@ -26,6 +28,8 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       agent_name TEXT,
       project_id TEXT NOT NULL,
       action TEXT NOT NULL CHECK(action IN ('search')),
+      outcome TEXT NOT NULL CHECK(outcome IN ('pending', 'answered', 'failed', 'refused')),
+      code TEXT,
       queries_json TEXT NOT NULL,
       results_count INTEGER NOT NULL,
       bytes INTEGER NOT NULL,
@@ -34,9 +38,13 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
     CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`
 });
 
-// Read rows older than this are deleted on the next recorded read.
+// Rows older than this are deleted on the next recorded attempt.
 const RETENTION_DAYS = 90;
-const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RETENTION_MS = RETENTION_DAYS * DAY_MS;
+// A flood is visible long before this; past it, one requester's refusals in a
+// day are no longer written, so the file stays bounded.
+const REFUSALS_KEPT_PER_DAY = 1000;
 
 export class VisitorAccessStore {
   constructor(path = ':memory:') {
@@ -53,6 +61,12 @@ export class VisitorAccessStore {
     return Boolean(this.database) || this.path === ':memory:' || existsSync(this.path);
   }
 
+  // One immediate transaction: what is counted in it and what is written in it
+  // cannot interleave with another process's attempt.
+  transaction(work) {
+    return immediateTransaction(this.db, work);
+  }
+
   requester(key) {
     if (!this.readable) return null;
     const row = this.db.prepare('SELECT * FROM requesters WHERE key = ?').get(key);
@@ -67,20 +81,35 @@ export class VisitorAccessStore {
     return this.requester(key);
   }
 
-  // One read, and the retention cut, in one transaction. at is a Date.
-  recordRead({ requesterKey, requesterLabel, agentName, projectId, action, queries, resultsCount, bytes, at }) {
-    const cutoff = new Date(at.getTime() - RETENTION_MS).toISOString();
-    immediateTransaction(this.db, () => {
-      this.db.prepare('DELETE FROM visitor_reads WHERE at < ?').run(cutoff);
-      this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id, action,
-        queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(requesterKey, requesterLabel, agentName ?? null, projectId, action, JSON.stringify(queries),
-          resultsCount, bytes, at.toISOString());
-    });
+  // A search about to run, as 'pending'; answers its row id. at is a Date.
+  reserveRead({ requesterKey, requesterLabel, agentName, projectId, queries, at }) {
+    this.#retain(at);
+    return Number(this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id,
+      action, outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'pending', NULL, ?, 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, JSON.stringify(queries), at.toISOString())
+      .lastInsertRowid);
   }
 
-  // How many reads one requester made after since (an ISO instant).
-  readsSince(requesterKey, since) {
+  settleRead(id, { outcome, code = null, resultsCount = 0, bytes = 0 }) {
+    this.db.prepare(`UPDATE visitor_reads SET outcome = ?, code = ?, results_count = ?, bytes = ?
+      WHERE id = ? AND outcome = 'pending'`).run(outcome, code, resultsCount, bytes, id);
+  }
+
+  // A refused attempt, without its queries; not written past
+  // REFUSALS_KEPT_PER_DAY of one requester's refusals in a day.
+  recordRefusal({ requesterKey, requesterLabel, agentName, projectId, code, at }) {
+    const today = new Date(at.getTime() - DAY_MS).toISOString();
+    const refused = this.db.prepare(`SELECT COUNT(*) AS count FROM visitor_reads
+      WHERE requester_key = ? AND outcome = 'refused' AND at > ?`).get(requesterKey, today).count;
+    if (refused >= REFUSALS_KEPT_PER_DAY) return;
+    this.#retain(at);
+    this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id, action,
+      outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'refused', ?, '[]', 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, code, at.toISOString());
+  }
+
+  // How many attempts, of any outcome, one requester made after since (an ISO instant).
+  attemptsSince(requesterKey, since) {
     if (!this.readable) return 0;
     return this.db.prepare('SELECT COUNT(*) AS count FROM visitor_reads WHERE requester_key = ? AND at > ?')
       .get(requesterKey, since).count;
@@ -99,6 +128,10 @@ export class VisitorAccessStore {
     this.database?.close();
     this.database = null;
   }
+
+  #retain(at) {
+    this.db.prepare('DELETE FROM visitor_reads WHERE at < ?').run(new Date(at.getTime() - RETENTION_MS).toISOString());
+  }
 }
 
 function requesterView(row) {
@@ -108,6 +141,6 @@ function requesterView(row) {
 
 function readView(row) {
   return { id: row.id, requesterKey: row.requester_key, requesterLabel: row.requester_label, agentName: row.agent_name,
-    projectId: row.project_id, action: row.action, queries: JSON.parse(row.queries_json),
-    resultsCount: row.results_count, bytes: row.bytes, at: row.at };
+    projectId: row.project_id, action: row.action, outcome: row.outcome, code: row.code,
+    queries: JSON.parse(row.queries_json), resultsCount: row.results_count, bytes: row.bytes, at: row.at };
 }

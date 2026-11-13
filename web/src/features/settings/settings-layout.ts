@@ -1,5 +1,5 @@
 import { useMediaQuery } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 // How the settings page lays out its topics, to compare two layouts in a real
 // build: the tabs on top (A, the default) or the topics in a fixed column on
@@ -17,9 +17,10 @@ function stored(): SettingsLayout {
   try { return layoutFrom(globalThis.localStorage?.getItem(STORAGE_KEY)) ?? 'tabs' } catch { return 'tabs' }
 }
 
-/** The chosen layout, the one shown (a narrow window always shows the tabs) and whether the choice applies here. */
-export function useSettingsLayout(visit: unknown) {
-  const chosen = ref<SettingsLayout>(layoutFrom(visit) ?? stored())
+/** The chosen layout, the one shown (a narrow window always shows the tabs) and whether the choice applies here. `visit` follows a `?layout=` in the address, so a link or Back changes the layout while the page stays open. */
+export function useSettingsLayout(visit: MaybeRefOrGetter<unknown>) {
+  const chosen = ref<SettingsLayout>(layoutFrom(toValue(visit)) ?? stored())
+  watch(() => toValue(visit), value => { chosen.value = layoutFrom(value) ?? stored() })
   const wide = useMediaQuery(SIDE_MIN_WIDTH)
   const shown = computed<SettingsLayout>(() => chosen.value === 'side' && wide.value ? 'side' : 'tabs')
 

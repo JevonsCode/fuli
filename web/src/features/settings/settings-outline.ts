@@ -41,10 +41,17 @@ export function useSettingsOutline(scroller: Ref<HTMLElement | null>, tab: Ref<S
   watch([scroller, tab, searching], read, { immediate: true, flush: 'post' })
   useMutationObserver(scroller, read, { childList: true, subtree: true, characterData: true })
 
-  // Another topic starts at its top.
+  // Another topic starts at its top. While searching every topic's panels share
+  // this scrolling side, so go to the clicked topic's own panel instead.
   watch(tab, () => {
     current.value = 0
-    if (scroller.value) scroller.value.scrollTop = 0
+    if (!scroller.value) return
+    if (searching()) {
+      scroller.value.querySelector<HTMLElement>(`[data-settings-tab="${tab.value}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: motionReduced() ? 'auto' : 'smooth' })
+    } else {
+      scroller.value.scrollTop = 0
+    }
   }, { flush: 'post' })
 
   let observer: IntersectionObserver | null = null

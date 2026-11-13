@@ -46,6 +46,49 @@ test('the session a task came from counts when no progress named one', async () 
   assert.deepEqual(body[0].sessions, [{ client: 'claude_code', sessionId: 'session-origin' }]);
 });
 
+test('an event that is not a record is skipped instead of failing the whole list', async () => {
+  const { handled, status, body } = await listed([task('task-a', 'running', {
+    events: [null, undefined, 'not an event', event('e1', 'codex', '00000000-0000-4000-8000-000000000009', '2026-11-01T08:00:00Z')],
+  })]);
+  assert.deepEqual([handled, status], [true, 200]);
+  assert.deepEqual(body[0].sessions, [{ client: 'codex', sessionId: '00000000-0000-4000-8000-000000000009' }]);
+});
+
+test('one client however its name is written, and other takes no place', async () => {
+  const { body } = await listed([task('task-a', 'running', {
+    sourceApplication: 'Codex',
+    events: [
+      event('e1', 'other', 'session-other', '2026-11-01T08:00:00Z'),
+      event('e2', 'claude-code', 'session-older', '2026-11-02T08:00:00Z'),
+      event('e3', 'Claude Code', 'session-newer', '2026-11-03T08:00:00Z'),
+    ],
+  })]);
+  // `claude-code` and `Claude Code` are one client, whose newest session stands;
+  // `other` would show nothing in the console, and the task's own `Codex` is the same client.
+  assert.deepEqual(body[0].sessions, [
+    { client: 'claude_code', sessionId: 'session-newer' },
+    { client: 'codex', sessionId: null },
+  ]);
+});
+
+test('stops reading older events once three clients each have a session', async () => {
+  let olderReads = 0;
+  const older = event('e0', 'kiro', 'session-kiro', '2026-10-31T08:00:00Z');
+  // Non-enumerable, so only the walk itself reads it (the response's JSON does not).
+  Object.defineProperty(older, 'sourceApplication', { enumerable: false, get() { olderReads += 1; return 'kiro'; } });
+  const { status, body } = await listed([task('task-a', 'running', {
+    events: [
+      older,
+      event('e1', 'codex', '00000000-0000-4000-8000-000000000001', '2026-11-01T08:00:00Z'),
+      event('e2', 'cursor', 'session-cursor', '2026-11-02T08:00:00Z'),
+      event('e3', 'claude_code', 'session-claude', '2026-11-03T08:00:00Z'),
+    ],
+  })]);
+  assert.equal(status, 200);
+  assert.deepEqual(body[0].sessions.map(session => session.client), ['claude_code', 'cursor', 'codex']);
+  assert.equal(olderReads, 0);
+});
+
 test('nothing is guessed: no client or a finished task names none; a client known only by FULI\'s own process session is listed without a session', async () => {
   const { body } = await listed([
     task('old', 'running'),
