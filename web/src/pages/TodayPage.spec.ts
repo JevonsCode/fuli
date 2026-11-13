@@ -106,13 +106,23 @@ describe('今天', () => {
     expect(wrapper.get('[data-today-try]').text()).toBe('说一条试试')
   })
 
-  it('stacks the sections in their order and leaves out each one with nothing to show', async () => {
+  it('puts the statement on the left and the lists, in their order, in the right half that scrolls', async () => {
     const { wrapper } = await setup({ requests: [request('r1')], notices: [notice('n1', new Date())], tasks: [task('t1', 'running')], statement: statement() })
-    expect(sections(wrapper)).toEqual(['decisions', 'done', 'statement', 'working'])
+    expect(sections(wrapper)).toEqual(['statement', 'decisions', 'done', 'working'])
+    expect(wrapper.find('.today-board').classes()).toContain('has-statement')
+    // The statement is not inside the half that scrolls; every list is.
+    const feed = wrapper.get('[data-today-feed]')
+    expect(feed.findAll('[data-today-section]').map(item => item.attributes('data-today-section'))).toEqual(['decisions', 'done', 'working'])
     expect(wrapper.find('[data-today-empty]').exists()).toBe(false)
+
+    // A statement with no list beside it: the right half offers the one thing to do.
+    const alone = await setup({ statement: statement() })
+    expect(sections(alone.wrapper)).toEqual(['statement'])
+    expect(alone.wrapper.get('[data-today-feed]').find('[data-today-empty]').exists()).toBe(true)
 
     const without = await setup({ tasks: [task('t1', 'running')] })
     expect(sections(without.wrapper)).toEqual(['working'])
+    expect(without.wrapper.find('.today-board').classes()).not.toContain('has-statement')
     expect(without.wrapper.get('[data-today-action="working"]').attributes('href')).toBe('/workbench')
   })
 
@@ -141,7 +151,8 @@ describe('今天', () => {
 
   it('shows the statement headline and its non-zero tiles, and leaves it out on 404 or when everything is zero', async () => {
     const { wrapper } = await setup({ statement: statement({ used: { times: 0, tasks: 0, cited: 0, applied: 0 } }) })
-    expect(wrapper.get('[data-statement-total]').text()).toBe('你一共攒下 42 条习惯和经验')
+    expect(wrapper.get('[data-statement-total]').attributes('aria-label')).toBe('你一共攒下 42 条习惯和经验')
+    expect(wrapper.get('[data-statement-total] strong').text()).toBe('42')
     expect(wrapper.findAll('[data-statement-tile]').map(tile => tile.attributes('data-statement-tile'))).toEqual(['carried', 'learned', 'decided'])
     expect(wrapper.get('[data-statement-tile="carried"]').text()).toContain('跨 3 个客户端')
     // 0 taken back: no sub-line.
@@ -163,18 +174,18 @@ describe('今天', () => {
     expect(wrapper.get('[data-statement-detail="carriedTasks"]').text()).toContain('FULI 亲眼看到的')
   })
 
-  it('never puts a late section above one already shown', async () => {
+  it('reads the statement first, so the page has its shape before any list shows', async () => {
     let answer: (value: unknown) => void = () => {}
     const { wrapper } = await setup({
       requests: [request('r1')], tasks: [task('t1', 'running')],
       statementRead: () => new Promise(resolve => { answer = resolve }),
     })
-    // The statement is still being read: what is below it waits, so it can only append.
-    expect(sections(wrapper)).toEqual(['decisions'])
+    // The statement is still being read: nothing shows yet, so no list changes width when it arrives.
+    expect(sections(wrapper)).toEqual([])
     expect(wrapper.text()).toContain('正在读取这周的复利账单')
     answer(statement())
     await flushPromises()
-    expect(sections(wrapper)).toEqual(['decisions', 'statement', 'working'])
+    expect(sections(wrapper)).toEqual(['statement', 'decisions', 'working'])
   })
 })
 

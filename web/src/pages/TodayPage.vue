@@ -20,11 +20,13 @@ import { t } from '@/i18n'
 import { usePageRefresh } from '@/layouts/page-refresh'
 import { useConsoleStore } from '@/stores/console'
 
-// 今天, the home page: one column of plain cards answering what needs the
-// person's call, what their assistants did today, whether it is adding up,
-// and who is working now. A section with nothing to show is not there. A
-// section appears only once every section above it has been read, so a later
-// answer only adds below and nothing already on screen moves.
+// 今天, the home page, in two halves like the workbench: on the left the
+// compounding statement, the one thing to look at, which never scrolls; on the
+// right the lists (what needs the person's call, what their assistants did
+// today, who is working now), which scroll. A section with nothing to show is
+// not there, and with no statement the lists take the whole width. The
+// statement is read first and a list appears only once every list above it
+// has been read, so a later answer only adds below and nothing on screen moves.
 const store = useConsoleStore()
 const attentionCache = useAgentAttention()
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? store.state?.activePersonalSpaceId ?? '')
@@ -39,6 +41,8 @@ const people = useTeamPeople(activeSpaceId, today.team.sheets)
 const shows = (section: TodaySectionId) => today.shown.value.includes(section)
 const pendingLabel = computed(() => today.pending.value ? t(`today.loading.${today.pending.value}`) : '')
 const empty = computed(() => !today.pending.value && !today.shown.value.length)
+const hasStatement = computed(() => shows('statement') && Boolean(today.statement.value.value))
+const hasLists = computed(() => today.shown.value.some(section => section !== 'statement'))
 function workerName(row: WorkingRow) {
   if (!row.agentId) return t('overview.missing.owner')
   return row.team ? people.nameOf(row.agentId) : overview.agentName(row.agentId)
@@ -58,7 +62,9 @@ usePageRefresh(today.reload)
       :error="scope.error.value" :retrying="scope.retrying.value" :retrying-label="t('overview.read.scope')" @retry="scope.retry" />
     <GrowthLoading v-else-if="!today.shown.value.length && today.pending.value" :label="pendingLabel" />
     <TodayEmpty v-else-if="empty" />
-    <div v-else class="today-stack">
+    <div v-else class="today-board" :class="{ 'has-statement': hasStatement }">
+      <TodayStatement v-if="hasStatement" :statement="today.statement.value.value!" :total="today.total.value" :tiles="today.tiles.value" />
+      <div class="today-feed" data-today-feed>
       <TodayDecisions v-if="shows('decisions')" :rows="today.decisions.value.rows" :more="today.decisions.value.more" :agent-name="overview.agentName" />
       <TodaySection v-if="shows('done')" :title="t('today.sections.done')" data-today-section="done">
         <template #action>
@@ -68,16 +74,29 @@ usePageRefresh(today.reload)
           <li v-for="item in today.done.value" :key="item.id"><NoticeRow :item="item" /></li>
         </ul>
       </TodaySection>
-      <TodayStatement v-if="shows('statement') && today.statement.value.value" :statement="today.statement.value.value"
-        :total="today.total.value" :tiles="today.tiles.value" />
       <TodayWorking v-if="shows('working')" :rows="today.working.value" :name="workerName" :project="projectName" />
       <!-- One indicator for the next section still being read, always below what is shown. -->
       <GrowthLoading v-if="today.pending.value" variant="compact" :label="pendingLabel" />
+      <!-- A statement with no list beside it: the right half says the one thing there is to do. -->
+      <TodayEmpty v-else-if="!hasLists" />
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.today-view { overflow-wrap: anywhere; }
-.today-stack { display: grid; align-content: start; gap: 16px; min-width: 0; }
+/* The page fills the window and never scrolls; the right half does. The left
+   card stops above the dock; the lists scroll under it. */
+.today-view { display: flex; overflow: hidden; padding-bottom: 20px !important; overflow-wrap: anywhere; }
+.today-board { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); gap: 18px; width: 100%; min-height: 0; }
+.today-board.has-statement { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.today-board.has-statement > :first-child { margin-bottom: 76px; }
+.today-feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 0 6px 112px 0; overflow: auto; overscroll-behavior: contain; }
+/* Small windows and phones: one column, the statement first, the page scrolls. */
+@media (max-width: 860px) {
+  .today-view { display: block; overflow: auto; padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important; }
+  .today-board, .today-board.has-statement { display: flex; flex-direction: column; }
+  .today-board.has-statement > :first-child { margin-bottom: 0; }
+  .today-feed { padding: 0; overflow: visible; }
+}
 </style>
