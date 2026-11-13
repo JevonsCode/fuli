@@ -11,6 +11,8 @@ import UiNotice from '@/ui/UiNotice.vue'
 import PeerNearby from './PeerNearby.vue'
 import PeerSharePicker from './PeerSharePicker.vue'
 import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
+import { RECENT_READS, readAsker, readQuestion, visitorReadsShape, type VisitorRead } from './visitor-reads'
+import { formatRelativeTime } from '@/lib/relative-time'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -32,6 +34,8 @@ const joiningDevice = ref<{ name: string; url: string; shortFingerprint: string 
 const drafts = reactive<Record<string, ShareDraft>>({})
 // Projects picked from 「添加项目」 in this visit; they stay, ticked or not, until a save or reload.
 const added = ref<Shareable[]>([])
+// 「最近被问」: read with the card, so the list never appears under content already shown.
+const reads = ref<VisitorRead[]>([])
 let refresh: ReturnType<typeof setInterval> | null = null
 
 const addressOptions = computed(() => (status.value?.addresses ?? []).map((value) => ({ value, label: value })))
@@ -43,6 +47,7 @@ const sharedAtPairing = computed(() => (status.value
 const paired = computed(() => Boolean(status.value?.role))
 const coordinator = computed(() => status.value?.role === 'coordinator')
 const otherDevices = computed(() => (status.value?.devices ?? []).filter((device) => !device.self))
+const projectNames = computed(() => new Map((status.value?.shares ?? []).map((share) => [share.projectId, share.projectName])))
 watch(joinInvitation, () => { joiningDevice.value = null })
 
 function clientLabel(client: ClientId) {
@@ -73,7 +78,14 @@ async function load() {
   if (loading.value) return
   loading.value = true
   error.value = ''
-  try { applyStatus(await getJson('/api/peer', peerStatusShape)) }
+  try {
+    // The reads are a quiet extra: when they cannot be read the list stays hidden.
+    const next = await getJson('/api/peer', peerStatusShape)
+    const recent = next.role ? await getJson(`/api/visitor-access/reads?limit=${RECENT_READS}`, visitorReadsShape)
+      .then((answer) => answer.reads, () => []) : []
+    applyStatus(next)
+    reads.value = recent
+  }
   catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.loadError')) }
   finally { loading.value = false }
 }
@@ -349,6 +361,18 @@ function shareState(projectId: string) {
               {{ t('settings.peer.saveShares') }}
             </Button>
           </div>
+          <template v-if="reads.length">
+            <h3 class="ui-group-label">{{ t('settings.peer.recentReads') }}</h3>
+            <ul class="peer-devices peer-reads" data-recent-reads>
+              <li v-for="read in reads" :key="read.id">
+                <div>
+                  <strong>{{ readAsker(read) }}</strong>
+                  <small :title="readQuestion(read, projectNames)">{{ readQuestion(read, projectNames) }}</small>
+                </div>
+                <small>{{ formatRelativeTime(read.at, currentLocale()) }}</small>
+              </li>
+            </ul>
+          </template>
         </section>
 
         <section v-if="coordinator && otherDevices.length" class="peer-block">
@@ -418,6 +442,12 @@ function shareState(projectId: string) {
 .peer-shares fieldset label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
 .peer-devices li { justify-content: space-between; }
 .peer-devices strong, .peer-devices small { display: block; overflow-wrap: anywhere; }
+/* One line per read: who asked, then what, cut with … (the full text is the title); the time stays whole. */
+.peer-reads { gap: 0; }
+.peer-reads li { flex-wrap: nowrap; padding: 8px 0; }
+.peer-reads div { min-width: 0; flex: 1 1 auto; }
+.peer-reads div small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-reads > li > small { flex: none; }
 .peer-note { color: var(--color-warning); }
 .peer-notice-line { display: block; }
 </style>

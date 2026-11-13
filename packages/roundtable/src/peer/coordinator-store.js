@@ -91,8 +91,10 @@ export function createCoordinatorStore(path = ':memory:') {
       event(row.at, { messageId: row.id, nodeId: row.senderNode, kind: 'queued' });
     },
     message: (id) => database.prepare('SELECT * FROM messages WHERE id = ?').get(id) ?? null,
-    queuedCount: (targetNode) => database.prepare(
-      "SELECT count(*) AS count FROM messages WHERE target_node = ? AND status IN ('queued','claimed','running')").get(targetNode).count,
+    // Open messages of one protocol for one device: messages and queries have separate caps.
+    queuedCount: (targetNode, protocol) => database.prepare(
+      `SELECT count(*) AS count FROM messages WHERE target_node = ? AND status IN ('queued','claimed','running')
+        AND json_extract(assertion_json, '$.protocol') = ?`).get(targetNode, protocol).count,
     nextQueued: (targetNode, at) => database.prepare(`SELECT q.* FROM messages q WHERE q.target_node = ? AND q.status = 'queued'
       AND q.expires_at > ? AND q.cancel_requested = 0 AND (json_type(q.assertion_json,'$.chatWake') IS NULL OR NOT EXISTS (SELECT 1 FROM messages a
         WHERE a.target_node=q.target_node AND json_extract(a.assertion_json,'$.to.agentId')=json_extract(q.assertion_json,'$.to.agentId')

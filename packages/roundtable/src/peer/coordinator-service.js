@@ -4,9 +4,17 @@ import { certificateFingerprint, verifyDeviceSignature } from './device-identity
 import { isAuthorityKey } from './origin-proof.js';
 import { createCoordinatorChat } from './chat-coordinator.js';
 import {
-  canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
-  graphemePrefix, RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, withoutControls,
+  canonicalJson, encodeInvitation, PEER_LIMITS, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerMessageKey, pemToDer, publicDirectoryEntry,
+  graphemePrefix, RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, validateQuery, withoutControls,
 } from './protocol.js';
+
+// What the queue holds: messages that may wake a lead, and visitors' read-only
+// queries, each with its own validation, per-device queue cap and answer size.
+const KINDS = Object.freeze({
+  message: { validate: validateAssertion, queueCap: PEER_LIMITS.queuePerNode, replyBytes: Infinity },
+  query: { validate: validateQuery, queueCap: PEER_LIMITS.queryQueuePerNode, replyBytes: PEER_LIMITS.queryReplyBytes },
+});
+const kindOf = (message) => (JSON.parse(message.assertion_json).protocol === PEER_QUERY_PROTOCOL ? KINDS.query : KINDS.message);
 
 const ONLINE_MS = 90_000;
 // last_seen_at only feeds the "online" flag of directory() and devices(); no trust,
@@ -151,7 +159,8 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   }
 
   function submit(nodeId, { assertion, signature }) {
-    validateAssertion(assertion, { now: clock() });
+    const kind = assertion?.protocol === PEER_QUERY_PROTOCOL ? KINDS.query : KINDS.message;
+    kind.validate(assertion, { now: clock() });
     if (assertion.from.node !== nodeId) throw new PeerError('sender_mismatch', 'The message sender is not this device', 403);
     const sender = store.node(nodeId);
     if (!verifyDeviceSignature(sender.cert_pem, assertion, signature)) throw new PeerError('invalid_signature', 'The message signature is invalid', 403);
@@ -162,7 +171,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     if (!shared) throw new PeerError('agent_not_shared', 'That Agent is not shared by the receiving device', 404);
     const assertionJson = canonicalJson(assertion);
     return store.transaction(() => {
-      const key = messageKey(nodeId, assertion.messageId);
+      const key = peerMessageKey(nodeId, assertion.messageId);
       const existing = store.message(key);
       if (existing) {
         if (existing.assertion_json !== assertionJson) {
@@ -171,7 +180,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         return statusView(existing);
       }
       chat.validateWake(assertion);
-      if (store.queuedCount(target.id) >= PEER_LIMITS.queuePerNode) throw new PeerError('queue_full', 'The receiving device has too many waiting messages', 429);
+      if (store.queuedCount(target.id, assertion.protocol) >= kind.queueCap) throw new PeerError('queue_full', 'The receiving device has too many waiting messages', 429);
       store.insertMessage({ id: key, senderNode: nodeId, targetNode: target.id,
         bindingId: assertion.to.bindingId, assertionJson, signature, expiresAt: assertion.expiresAt, at: iso() });
       return statusView(store.message(key));
@@ -232,6 +241,9 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     }
     return store.transaction(() => {
       const message = currentAttempt(nodeId, messageId, attemptId);
+      if (outcome === 'answered' && Buffer.byteLength(reply) > kindOf(message).replyBytes) {
+        throw new PeerError('invalid_result', 'The answer is larger than this kind of ask allows');
+      }
       if (TERMINAL_STATUSES.has(message.status) && message.status !== 'unknown') return statusView(message);
       const detail = typeof error === 'string' ? error.slice(0, 120) : null;
       if (outcome === 'never_started') {
@@ -260,7 +272,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
 
   function addressed(nodeId, messageId) {
     if (typeof messageId !== 'string' || messageId.length > 128) return null;
-    const sent = store.message(messageKey(nodeId, messageId));
+    const sent = store.message(peerMessageKey(nodeId, messageId));
     if (sent) return sent;
     const received = store.message(messageId);
     return received?.target_node === nodeId ? received : null;
@@ -276,7 +288,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
 
   function cancel(nodeId, { messageId }) {
     return store.transaction(() => {
-      const message = typeof messageId === 'string' ? store.message(messageKey(nodeId, messageId)) : null;
+      const message = typeof messageId === 'string' ? store.message(peerMessageKey(nodeId, messageId)) : null;
       if (!message) throw new PeerError('message_not_found', 'No such message sent by this device', 404);
       if (message.status === 'queued') store.updateMessage(message.id, { status: 'cancelled', error: 'cancelled' }, iso(), 'cancelled');
       else if (['claimed', 'running'].includes(message.status)) store.updateMessage(message.id, { cancel_requested: 1 }, iso(), 'cancel_requested');
@@ -341,11 +353,6 @@ function seenWithin(node, now, windowMs) {
   if (!node.last_seen_at) return false;
   const age = now - Date.parse(node.last_seen_at);
   return age >= 0 && age < windowMs;
-}
-
-// Message IDs are chosen by senders, so the coordinator keys them per sending device.
-function messageKey(senderNode, messageId) {
-  return sha256Hex(`${senderNode}:${messageId}`);
 }
 
 function statusView(message) {

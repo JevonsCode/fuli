@@ -112,6 +112,15 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         source_application: client, message_id: messageId, digest, target_node: targetNode,
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
+    // A paired device's visiting assistant reads one shared project through the
+    // visitor-access port, as that device (its full fingerprint), while the
+    // share's Agent is still the project's lead.
+    async searchSharedProject({ projectId, agentId, requester, query }) {
+      if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
+      if (await projectLeadId(projectId).catch(() => null) !== agentId) return { ok: false, code: 'agent_not_shared' };
+      return app.visitorAccess.searchSharedProject({ projectId, queries: query.queries,
+        requester: { key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName } });
+    },
     // A stand-in reads what a `#FLG 一起看` session reads of one member: its
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>

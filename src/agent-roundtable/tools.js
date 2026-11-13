@@ -48,6 +48,13 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
     }, ['to', 'body'])
   },
   {
+    name: 'visit_shared_lead',
+    title: 'ROUNDTABLE · Visit a paired device\'s project',
+    description: 'Read-only, with your own model: card says who leads a paired device\'s shared project (address peer:<device>:<binding> from find_agents); search runs 1-4 focused queries over its shared knowledge. Nothing wakes there; message_agent asks its lead to work.',
+    inputSchema: objectSchema({ taskContextToken: text(160), address: text(160), action: enumSchema(['card', 'search']),
+      queries: arraySchema(text(200), { minItems: 1, maxItems: 4 }) }, ['address', 'action'])
+  },
+  {
     name: 'read_agent_messages',
     title: 'ROUNDTABLE · Read messages for me',
     description: 'The current task Agent\'s unanswered asks, replies to its own asks (once each) and the person\'s new answers to its attention asks.',
@@ -94,6 +101,7 @@ export function callRoundtableTool(roundtable, name, input) {
     });
     case 'find_agents': return roundtable.findAgents(input);
     case 'message_agent': return roundtable.messageAgent(input);
+    case 'visit_shared_lead': return roundtable.visitSharedLead(input);
     case 'read_agent_messages': return roundtable.readMessages(input);
     case 'reply_agent_message': return roundtable.replyMessage(input);
     case 'read_agent_thread': return roundtable.thread(input);

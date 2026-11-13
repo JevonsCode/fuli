@@ -2,10 +2,17 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { certificateFingerprint, verifyDeviceSignature } from './device-identity.js';
 import { isAuthorityKey, verifyOriginProof } from './origin-proof.js';
-import { PEER_LIMITS, PeerError, peerCleanup, validateAssertion } from './protocol.js';
+import {
+  PEER_LIMITS, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerMessageKey, validateAssertion, validateQuery,
+} from './protocol.js';
+import { answerPeerQuery } from './query-answer.js';
 
 const RETRY_MS = 5_000;
 const STARTED_STATES = new Set(['starting', 'running', 'finished']);
+// How each kind of claim is checked: a message may wake the shared lead under
+// an execution proof; a query only reads, under a query proof.
+const MESSAGE = Object.freeze({ validate: validateAssertion, purpose: 'execution', visitor: false });
+const QUERY = Object.freeze({ validate: validateQuery, purpose: 'query', visitor: true });
 
 // Receives asks for this device's shared project leads. Every claim is written
 // down before it is accepted, nothing runs before the coordinator confirmed the
@@ -79,9 +86,11 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       queue(messageId, attemptId, 'cancelled', { error: 'cancelled' });
       return flush();
     }
+    // A visitor's query is answered here from shared knowledge; it never reaches a wake.
+    const kind = claim.assertion?.protocol === PEER_QUERY_PROTOCOL ? QUERY : MESSAGE;
     let authorized;
     try {
-      authorized = authorize(claim);
+      authorized = authorize(claim, kind);
     } catch (error) {
       store.setAttemptState(messageId, attemptId, 'rejected', error.code ?? 'rejected');
       queue(messageId, attemptId, 'failed', { error: error.code ?? 'rejected' });
@@ -93,27 +102,35 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       return flush();
     }
     store.setAttemptState(messageId, attemptId, 'starting');
-    const outcome = await supervise(claim, authorized, acceptedAt);
+    const outcome = kind === QUERY
+      ? await answerPeerQuery({ host, share: authorized.share, assertion: claim.assertion, sender: claim.sender })
+      : await supervise(claim, authorized, acceptedAt);
     store.setAttemptState(messageId, attemptId, 'finished', outcome.outcome);
     queue(messageId, attemptId, outcome.outcome, outcome);
     return flush();
   }
 
   // Every check that decides whether this device may act, before any authority is issued.
-  function authorize(claim) {
+  // A query is also tied to the coordinator's key for its assertion, so a claim
+  // cannot run one assertion under another ID, and needs a host that answers queries.
+  function authorize(claim, { validate, purpose, visitor }) {
     const { assertion, signature, sender } = claim;
-    validateAssertion(assertion, { now: clock() });
+    validate(assertion, { now: clock() });
     if (!sender || certificateFingerprint(sender.certPem) !== sender.nodeId || assertion.from.node !== sender.nodeId) {
       throw new PeerError('sender_mismatch', 'The message sender does not match its device', 403);
     }
     if (!verifyDeviceSignature(sender.certPem, assertion, signature)) throw new PeerError('invalid_signature', 'Invalid device signature', 403);
     if (assertion.to.node !== nodeId) throw new PeerError('wrong_device', 'The message is for another device', 403);
+    if (visitor && claim.messageId !== peerMessageKey(sender.nodeId, assertion.messageId)) {
+      throw new PeerError('message_mismatch', 'The claim does not belong to this query', 403);
+    }
+    if (visitor && typeof host.searchSharedProject !== 'function') throw new PeerError('query_unsupported', 'This device does not answer queries', 403);
     const share = store.share(assertion.to.bindingId);
     if (!share || share.communicationOnly || share.agentId !== assertion.to.agentId || share.spaceId !== spaceId()) {
       throw new PeerError('agent_not_shared', 'That Agent is not shared on this device', 403);
     }
     const authority = pinnedAuthority(sender);
-    const origin = verifyOriginProof(assertion, authority, { now: clock() });
+    const origin = verifyOriginProof(assertion, authority, { now: clock(), purpose });
     const earlier = store.attemptsFor(claim.messageId)
       .filter((attempt) => attempt.attempt_id !== claim.attemptId && STARTED_STATES.has(attempt.state));
     if (earlier.length) throw new PeerError('already_started', 'This message already started on this device', 409);

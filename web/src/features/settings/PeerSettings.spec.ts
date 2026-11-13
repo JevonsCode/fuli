@@ -359,3 +359,46 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   expect(JSON.parse(String(fetch.mock.calls[3]?.[1]?.body))).toEqual({ invitation: 'replacement-invitation' })
   wrapper.unmount()
 })
+
+const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', agentName: 'Visitor lead', projectId: 'sample-project',
+  queries: ['deploy port', 'release steps'], resultsCount: 2, at: new Date(Date.now() - id * 60_000).toISOString(), ...changes })
+
+it('lists 「最近被问」 under the shares: who asked, what, in which project, and when', async () => {
+  const { calls } = server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample] }],
+    'GET /api/visitor-access/reads': [{ reads: [read(1), read(2, { agentName: null, projectId: 'gone-project', queries: ['old question'] })] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')[0]?.[0]).toBe('/api/visitor-access/reads?limit=5')
+  const rows = wrapper.findAll('[data-recent-reads] li')
+  expect(wrapper.text()).toContain('最近被问')
+  expect(rows).toHaveLength(2)
+  expect(rows[0]!.text()).toContain('Laptop · Visitor lead')
+  expect(rows[0]!.text()).toContain('Sample project：deploy port / release steps')
+  expect(rows[0]!.text()).toContain('1分钟前')
+  expect(rows[1]!.text()).toContain('gone-project：old question')
+  expect(rows[1]!.text()).not.toContain('·')
+  wrapper.unmount()
+})
+
+it('hides 「最近被问」 when nobody asked or the reads cannot be read, and never asks before pairing', async () => {
+  const empty = server({ 'GET /api/peer': [paired], 'GET /api/visitor-access/reads': [{ reads: [] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.find('[data-recent-reads]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('最近被问')
+  expect(empty.calls('GET /api/visitor-access/reads')).toHaveLength(1)
+  wrapper.unmount()
+
+  server({ 'GET /api/peer': [paired] })
+  const unreadable = mount(PeerSettings)
+  await flushPromises()
+  expect(unreadable.find('[data-recent-reads]').exists()).toBe(false)
+  expect(unreadable.find('[role="alert"]').exists()).toBe(false)
+  unreadable.unmount()
+
+  const unpaired = server({ 'GET /api/peer': [off] })
+  const before = mount(PeerSettings)
+  await flushPromises()
+  expect(unpaired.calls('GET /api/visitor-access/reads')).toHaveLength(0)
+  before.unmount()
+})

@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
+import { originProofVersion } from '../../packages/roundtable/src/peer/origin-proof.js';
 import { createPeerPort, peerDirectory } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createPeerRuntime } from '../../packages/roundtable/src/peer/peer-runtime.js';
 import { canonicalJson, sha256Hex } from '../../packages/roundtable/src/peer/protocol.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../../src/graphiti/roundtable-host.js';
+import { createVisitorAccess } from '../../src/visitor-access/port.js';
 
 // Signs exactly like the FULI Provider does: the private key stays in here.
 export function signingAuthority() {
@@ -70,7 +72,10 @@ export function discoveryBus() {
   };
 }
 
-export async function device(label, { tamper = null, wake = null, discovery = null, repository = null, sessionFolder = null, runtimeOptions = {} } = {}) {
+// search: the Provider search a visitor's query reaches; with it the device
+// answers visiting assistants through a real visitor-access port (in memory).
+export async function device(label, { tamper = null, wake = null, discovery = null, repository = null, sessionFolder = null, search = null,
+  runtimeOptions = {} } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
@@ -84,10 +89,11 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
     getRemoteOriginAuthority: async () => ({ algorithm: 'Ed25519', key_id: authority.keyId, public_key: authority.publicKey }),
     issueRemoteAgentOrigin: async (input) => {
       calls.origins.push(input);
-      const claims = { version: input.purpose === 'chat' ? 'fuli-chat-origin/1' : 'fuli-remote-origin/1', key_id: authority.keyId, space_id: spaceId, project_id: projectId,
+      const purpose = input.purpose ?? 'execution';
+      const claims = { version: originProofVersion(purpose), key_id: authority.keyId, space_id: spaceId, project_id: projectId,
         agent_id: actorId(input.task_context_token), task_hash: sha256Hex(input.task_context_token), message_id: input.message_id, digest: input.digest,
         target_node: input.target_node, binding_id: input.binding_id, issued_at: new Date().toISOString(),
-        expires_at: input.expires_at, ...(input.purpose === 'chat' ? { purpose: 'chat' } : {}) };
+        expires_at: input.expires_at, ...(purpose !== 'execution' ? { purpose } : {}) };
       const payload = Buffer.from(canonicalJson(claims));
       let proof = { payload: payload.toString('base64url'), signature: sign(null, payload, authority.privateKey).toString('base64url') };
       if (tamper) proof = tamper(proof, claims, authority);
@@ -103,6 +109,7 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
       assignments: [{ personal_project_id: projectId, status: 'active' }] },
       { agent_id: memberId, occupation: { role: 'tester' }, profile: { status: 'active', name: `${label} tester`, capabilities: ['testing'] },
         assignments: [{ personal_project_id: projectId, status: 'active' }] }],
+    getPersonalProject: async () => ({ project_id: projectId, name: `${label} project` }),
     listPersonalProjects: async () => [{ project_id: projectId, name: `${label} project`,
       ...(repository ? { profile: { name: `${label} project`, sources: [{ kind: 'repository', role: 'own', uri: repository }] } } : {}) }],
   };
@@ -118,6 +125,10 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
     taskContextRegistry: { context: async token => ({ projectAgentId: actorId(token), personalProjectId: projectId,
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
+  if (search) {
+    personal.search = search;
+    app.visitorAccess = createVisitorAccess({ application: app });
+  }
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
   const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });
   app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
@@ -131,7 +142,8 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
     claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', ...(discovery ? { createDiscovery: discovery } : {}),
     ...runtimeOptions });
   return { app, runtime, calls, until, projectId, folder, close: async () => {
-    await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
+    await runtime.close(); await app.roundtable.close(); app.peer.close(); app.visitorAccess?.close();
+    await rm(dataDir, { recursive: true, force: true });
   } };
 }
 
