@@ -13,7 +13,8 @@ import { readStatement, statementTiles, statementTotal, statementWeek, type Stat
 import { decisionRows, todayNotices, workingRows } from './today-model'
 
 /** The sections of 今天, top to bottom. */
-export const TODAY_SECTIONS = ['decisions', 'done', 'statement', 'working'] as const
+// The statement is read first: it is the fixed left half of the page, so the page knows its shape before anything shows.
+export const TODAY_SECTIONS = ['statement', 'decisions', 'done', 'working'] as const
 export type TodaySection = typeof TODAY_SECTIONS[number]
 
 // Notices of the last day, enough that today's five survive the kinds this console cannot word.

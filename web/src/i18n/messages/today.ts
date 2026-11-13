@@ -20,6 +20,7 @@ export const todayMessages = {
     working: { meta: '{name} · {project}' },
     statement: {
       headline: '你一共攒下 {count} 条习惯和经验',
+      totalCaption: '条习惯和经验，是你一共攒下的',
       trend: '最近 {weeks} 周从 {first} 条到 {last} 条',
       tiles: {
         carried: '次对话带上了你的习惯',
@@ -83,6 +84,7 @@ export const todayMessages = {
     working: { meta: '{name} · {project}' },
     statement: {
       headline: 'You have saved {count} habits and lessons',
+      totalCaption: 'habits and lessons saved so far',
       trend: 'From {first} to {last} over the last {weeks} weeks',
       tiles: {
         carried: 'conversations carried your habits',
