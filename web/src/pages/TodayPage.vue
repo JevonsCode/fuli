@@ -87,6 +87,8 @@ usePageRefresh(today.reload)
 <style scoped>
 /* The page fills the window and never scrolls; the right half does. The left
    card stops above the dock; the lists scroll under it. */
+/* 今天 is all frame: counts, labels and rows that lead elsewhere. Nothing here is text to copy. */
+.today-view { -webkit-user-select: none; user-select: none; }
 .today-view { display: flex; overflow: hidden; padding-bottom: 20px !important; overflow-wrap: anywhere; }
 .today-board { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); gap: 18px; width: 100%; min-height: 0; }
 .today-board.has-statement { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
