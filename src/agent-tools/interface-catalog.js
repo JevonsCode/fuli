@@ -34,13 +34,14 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('lan_roundtable', 'PUT /api/peer/shares', 'Save the earlier shares again.'),
   delegable('lan_roundtable', 'POST /api/peer/devices/:nodeId/revoke', 'Pair the device again with a new invitation.'),
   delegable('lan_roundtable', 'POST /api/peer/disable', 'Open the listener and pair again.'),
-  // Nearby pairing (rec issue 127): an FLA may turn discovery on and start a request; the code is
-  // compared by the person on each computer, so only they confirm it there.
+  // Nearby pairing (rec issue 127): an FLA may turn discovery on, start a request and, while FULI is
+  // in its test phase (Jevons 11-14, rec issue 135), confirm it for the person. Before the formal
+  // launch the confirm goes back to the person on each computer.
   delegable('lan_roundtable', 'POST /api/peer/nearby', 'Send it again with the opposite on.'),
   delegable('lan_roundtable', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel; an unconfirmed request ends by itself after 2 minutes.'),
   delegable('lan_roundtable', 'POST /api/peer/nearby/cancel', 'Start the pairing again with POST /api/peer/nearby/pair.'),
   local('POST /api/peer/nearby/attempts/clear', 'Pairing attempts are counted so a device in the middle cannot keep trying codes; only the person on this computer clears the count (the card or fuli peer nearby clear-attempts), never an Agent.'),
-  local('POST /api/peer/nearby/confirm', 'Confirming a nearby pairing says the person saw the same 6 digits on both computers, so only the person confirms it, on each computer: 确认 on the card or fuli peer confirm with the code shown on the other computer.'),
+  delegable('lan_roundtable', 'POST /api/peer/nearby/confirm', 'On the coordinating computer POST /api/peer/devices/:nodeId/revoke for the device it paired; on the one that joined POST /api/peer/disable.'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role', 'Save the earlier settings again; GET /api/model-backends/history shows them.'),
   local('PUT /api/model-backends/keys/:reference', 'A built-in Agent\'s model API key is stored on this computer, never shown again, and no Agent tool can read or set it: the person enters it on the model settings page (loopback only), or the Agent the person asked pipes it into fuli models set-key --endpoint on stdin without printing it. A key is sent only to the endpoint origin it was saved for.'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role/trust', 'Switch it back.'),
