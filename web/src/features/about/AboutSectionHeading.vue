@@ -8,7 +8,7 @@ defineProps<{ titleId: string; title: string; description: string }>()
       <h2 :id="titleId">{{ title }}</h2>
       <slot name="action" />
     </div>
-    <p>{{ description }}</p>
+    <p class="ui-prose">{{ description }}</p>
   </header>
 </template>
 
@@ -37,7 +37,6 @@ defineProps<{ titleId: string; title: string; description: string }>()
 }
 
 .about-section-heading p {
-  max-width: 680px;
   margin-top: 8px;
   color: var(--color-muted);
   font-size: 14px;

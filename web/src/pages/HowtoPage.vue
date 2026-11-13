@@ -42,6 +42,10 @@ const content = computed(() => howtoContent(currentLocale()))
 
 <style scoped>
 .howto-view { padding-top: clamp(16px, 3vw, 32px); padding-bottom: 96px; color: var(--color-ink); }
+/* Its sentences keep --measure (.ui-prose) when the page fills the window. A
+   Chinese character is about two Latin ones wide (1ch is Inter's 0, ~0.62em),
+   so 62ch holds about 38 characters a line where 72ch would hold 44. */
+.howto-view:lang(zh) { --measure: 62ch; }
 .howto-content { display: grid; gap: 56px; }
 .howto-section { display: grid; gap: 24px; }
 </style>
