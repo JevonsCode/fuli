@@ -3,6 +3,7 @@
 An item reaches a visitor only when every non-edit source of every version
 is explicitly normal (mixed, unset and absorbed private versions stay out)."""
 
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -16,6 +17,8 @@ from test_collaboration_context import confirmation_basis
 from test_project_agent_memory_neo4j import fixture_settings
 
 EDIT = ('human_knowledge_edit', 'private')
+# A replaced version's id in these fixtures.
+REPLACED = re.compile(r'-v\d+$')
 
 
 def capture(sensitivity):
@@ -47,16 +50,24 @@ NORMAL_SAFE_ENTITIES = NORMAL_SAFE | {'deleted-source'}
 
 
 async def _write_case(driver, group, project, case, versions):
+    """One item's versions, oldest first. A replaced version carries what
+    every FULI writer sets when it replaces one (knowledge_versions.write_version,
+    knowledge_versions.py:190-195): its validity ends (fuli_invalid_at on an
+    entity, invalid_at on a relationship), expired_at, and the link to the
+    newer version."""
     newer = None
     for index in reversed(range(len(versions))):
         item_id = f'{group}-{case}' if index == len(versions) - 1 else f'{group}-{case}-v{index}'
         await driver.execute_query('''
             MERGE (target:SensitivityTestTarget {group_id: $group})
+            WITH target, CASE WHEN $newer IS NULL THEN NULL ELSE datetime() END AS ended_at
             CREATE (node:Entity {uuid: $item_id, group_id: $group, name: $name,
                 summary: 'Synthetic sensitivity evidence', fuli_replaced_by_item_id: $newer,
                 fuli_confirmation_status: 'confirmed', fuli_confirmation_basis_json: $basis,
+                fuli_invalid_at: ended_at, expired_at: ended_at,
                 fuli_replaced_by_item_kind: CASE WHEN $newer IS NULL THEN NULL ELSE 'entity' END})
             CREATE (node)-[edge:RELATES_TO {uuid: $item_id + '-edge', group_id: $group, episodes: [],
+                invalid_at: ended_at, expired_at: ended_at,
                 fuli_replaced_by_item_id: CASE WHEN $newer IS NULL THEN NULL ELSE $newer + '-edge' END,
                 fuli_replaced_by_item_kind: CASE WHEN $newer IS NULL THEN NULL ELSE 'relationship' END}]->(target)
             FOREACH (_ IN CASE WHEN $current THEN [1] ELSE [] END |
@@ -101,6 +112,8 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
             found[max_sensitivity] = {item.id.removeprefix(f'{group}-') for item in entities}
         assert found[None] == set(CASES)
         assert found['normal'] == NORMAL_SAFE_ENTITIES
+        # Every lineage above has replaced versions; none reaches anyone, a visitor least of all.
+        assert not any(REPLACED.search(item) for item in found[None] | found['normal'])
 
         edges = await normal_only_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
         assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == NORMAL_SAFE
