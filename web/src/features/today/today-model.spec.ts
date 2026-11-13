@@ -55,6 +55,12 @@ describe('复利账单', () => {
     expect(statementTiles(statement).map(tile => tile.key)).toEqual(['carried'])
   })
 
+  it('leaves out a second line that would count nothing', () => {
+    // Tasks from before clients were recorded: 「跨 0 个客户端」 says nothing.
+    const statement = { carried: { tasks: 115, clients: 0, items: 43 }, learned: { captured: 46, confirmedByYou: 0 } } as Statement
+    expect(statementTiles(statement).map(tile => [tile.key, tile.sub])).toEqual([['carried', null], ['learned', null]])
+  })
+
   it('draws a trend only for two or more points that are not all zero', () => {
     expect(sparklinePoints([], 96, 28)).toBeNull()
     expect(sparklinePoints([7], 96, 28)).toBeNull()
