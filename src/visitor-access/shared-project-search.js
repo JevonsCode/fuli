@@ -86,20 +86,23 @@ function sharedItems(result, projectId) {
 const visibleText = value => shareableText(withoutControls(value));
 
 // Who answers for a shared project, as a visitor may see it: the lead's name
-// and responsibility and the project's name, cleaned like search results, the
-// names cut to CARD_NAME_CHARS code points and the responsibility to what
-// keeps the whole object, ok included, within MAX_CARD_BYTES. Answers the
-// exact object the port returns and its serialized size.
-// With the action and the visiting guidance added, the reply stays within 1 KB.
+// and responsibility and the project's name, cleaned like search results. Each
+// name is cut to CARD_NAME_CHARS code points and CARD_NAME_BYTES serialized
+// bytes first, then the responsibility to what keeps the whole object, ok
+// included, within MAX_CARD_BYTES, which is never passed. With the action
+// added the reply stays well within the 1 KB a card may cross devices with.
+// Answers the exact object the port returns and its serialized size.
 const MAX_CARD_BYTES = 700;
 const CARD_NAME_CHARS = 80;
+const CARD_NAME_BYTES = 200;
 
 export function sharedCard({ name, responsibility, projectName }) {
-  const short = value => [...visibleText(value)].slice(0, CARD_NAME_CHARS).join('');
+  const serialized = text => Buffer.byteLength(JSON.stringify(text)) - 2;
+  const short = value => utf8Preview([...visibleText(value)].slice(0, CARD_NAME_CHARS).join(''), CARD_NAME_BYTES, serialized, CUT_MARK);
   const card = { ok: true, name: short(name), responsibility: '', projectName: short(projectName) };
   const room = MAX_CARD_BYTES - Buffer.byteLength(JSON.stringify(card));
-  card.responsibility = room > Buffer.byteLength(CUT_MARK) ? utf8Preview(visibleText(responsibility), room,
-    text => Buffer.byteLength(JSON.stringify(text)) - 2, CUT_MARK) : '';
+  card.responsibility = utf8Preview(visibleText(responsibility), room, serialized, CUT_MARK);
+  if (Buffer.byteLength(JSON.stringify(card)) > MAX_CARD_BYTES) card.responsibility = '';
   return { card, bytes: Buffer.byteLength(JSON.stringify(card)) };
 }
 

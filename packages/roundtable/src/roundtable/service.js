@@ -13,6 +13,7 @@ import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
+import { visitView } from '../peer/query-answer.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
@@ -509,13 +510,17 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // its shared knowledge and wakes nothing; message_agent is the path that wakes its lead.
   async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, signal }) {
     if (!peer?.isRemoteAddress(address)) throw validation('Visit a paired device\'s lead by its peer:<device>:<binding> address from find_agents');
-    if (action === 'search' && !queries?.length) throw validation('search needs 1-4 focused queries');
+    if (!VISIT_ACTIONS.has(action)) throw validation('action is card or search');
+    if (action === 'search' && (!Array.isArray(queries) || !queries.length || queries.length > 4
+      || !queries.every((query) => typeof query === 'string' && query.trim() && query.length <= 200))) {
+      throw validation('search needs 1-4 focused queries of at most 200 characters');
+    }
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
     const target = await peer.resolveRemote(address);
     const answer = await peer.query(target, action === 'search' ? { action, queries } : { action }, { taskContextToken,
       sourceApplication: from.client, from: { agentId: from.agent.agentId, name: label(from.agent) }, signal });
-    return { address: target.address, device: target.deviceName, ...answer };
+    return visitView({ address: target.address, device: target.deviceName, action, answer });
   }
 
   function applyRemote(messageId, state) {
@@ -928,6 +933,8 @@ function wakePrompt({ thread, target, senderName, senderClient, ask, targetProje
 function inboxGreeting(target) {
   return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
 }
+
+const VISIT_ACTIONS = new Set(['card', 'search']);
 
 function label(agent) {
   return agent.profile.displayName || agent.profile.name || agent.agentId;

@@ -54,7 +54,14 @@ export class VisitorAccessStore {
 
   // Opened on the first write; a missing file reads as empty and is never created by a read.
   get db() {
-    this.database ??= openFormattedDatabase(this.path, VISITOR_ACCESS_FORMAT);
+    if (!this.database) {
+      const database = openFormattedDatabase(this.path, VISITOR_ACCESS_FORMAT);
+      if (!currentReadsTable(database)) {
+        database.close();
+        throw Object.assign(new Error('This visitor-access file was written by a pre-release build'), { code: OUTDATED });
+      }
+      this.database = database;
+    }
     return this.database;
   }
 
@@ -109,6 +116,14 @@ export class VisitorAccessStore {
       .run(requesterKey, requesterLabel, agentName, projectId, action, code, at.toISOString());
   }
 
+  // How many reads of one project, by every requester, ran or are running after
+  // since (an ISO instant); refused attempts are not reads.
+  projectReadsSince(projectId, since) {
+    if (!this.readable) return 0;
+    return this.db.prepare("SELECT COUNT(*) AS count FROM visitor_reads WHERE project_id = ? AND outcome <> 'refused' AND at > ?")
+      .get(projectId, since).count;
+  }
+
   // How many attempts, of any outcome, one requester made after since (an ISO instant).
   attemptsSince(requesterKey, since) {
     if (!this.readable) return 0;
@@ -133,6 +148,18 @@ export class VisitorAccessStore {
   #retain(at) {
     this.db.prepare('DELETE FROM visitor_reads WHERE at < ?').run(new Date(at.getTime() - RETENTION_MS).toISOString());
   }
+}
+
+// Version 1 of this store never shipped in a release, and no release build
+// writes the file; only a pre-release build of the visiting assistant did,
+// with a visitor_reads table that has no outcome or no card action. Such a
+// file is refused whole (nothing read, nothing written) with this code, rather
+// than guessed at: removing that pre-release file is the remedy.
+export const OUTDATED = 'visitor_store_outdated';
+
+function currentReadsTable(database) {
+  const sql = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'visitor_reads'").get()?.sql ?? '';
+  return /\boutcome\b/.test(sql) && sql.includes("'card'");
 }
 
 function requesterView(row) {

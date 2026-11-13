@@ -37,7 +37,7 @@ export function readAsker(read: VisitorRead) {
 // no answer, that it did not.
 export function readQuestion(read: VisitorRead, projectNames: ReadonlyMap<string, string>) {
   const project = projectNames.get(read.projectId) ?? (read.projectId || '—')
-  if (read.code?.startsWith('rate_limited')) return t('settings.peer.readLimited', { project })
+  if (read.code?.includes('rate_limited')) return t('settings.peer.readLimited', { project })
   if (read.outcome === 'refused' || read.outcome === 'failed') return t('settings.peer.readRefused', { project })
   if (read.action === 'card') return t('settings.peer.readCard', { project })
   return t('settings.peer.readAsked', { project, queries: read.queries.join(' / ') })

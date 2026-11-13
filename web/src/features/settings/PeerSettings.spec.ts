@@ -366,7 +366,7 @@ const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', agentName
 it('lists 「最近被问」 under the shares: who asked, what, in which project, and when', async () => {
   const { calls } = server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample] }],
     'GET /api/visitor-access/reads': [{ reads: [read(1), read(2, { agentName: null, projectId: 'gone-project', queries: ['old question'] }),
-      read(3, { action: 'card', queries: [] }), read(4, { outcome: 'refused', code: 'rate_limited_short', queries: [] }),
+      read(3, { action: 'card', queries: [] }), read(4, { outcome: 'refused', code: 'project_rate_limited_short', queries: [] }),
       read(5, { outcome: 'refused', code: 'project_invalid', projectId: '', queries: [] })] }] })
   const wrapper = mount(PeerSettings)
   await flushPromises()

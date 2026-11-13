@@ -95,11 +95,12 @@ export function createCoordinatorStore(path = ':memory:') {
     queuedCount: (targetNode, protocol) => database.prepare(
       `SELECT count(*) AS count FROM messages WHERE target_node = ? AND status IN ('queued','claimed','running')
         AND json_extract(assertion_json, '$.protocol') = ?`).get(targetNode, protocol).count,
+    // A visitor's query (cheap, a minute at most) is claimed before waiting messages.
     nextQueued: (targetNode, at) => database.prepare(`SELECT q.* FROM messages q WHERE q.target_node = ? AND q.status = 'queued'
       AND q.expires_at > ? AND q.cancel_requested = 0 AND (json_type(q.assertion_json,'$.chatWake') IS NULL OR NOT EXISTS (SELECT 1 FROM messages a
         WHERE a.target_node=q.target_node AND json_extract(a.assertion_json,'$.to.agentId')=json_extract(q.assertion_json,'$.to.agentId')
           AND (a.status IN ('claimed','running','unknown') OR a.cleanup_status='unconfirmed')))
-      ORDER BY q.created_at LIMIT 1`).get(targetNode, at) ?? null,
+      ORDER BY json_extract(q.assertion_json, '$.protocol') = 'peer-query/1' DESC, q.created_at LIMIT 1`).get(targetNode, at) ?? null,
     updateMessage(id, changes, at, kind, detail = null) {
       const columns = Object.keys(changes);
       database.prepare(`UPDATE messages SET ${columns.map((column) => `${column} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)

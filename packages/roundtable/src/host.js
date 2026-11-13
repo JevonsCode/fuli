@@ -56,6 +56,10 @@
 //                                               projectName }, search { ok: true, results, truncated }, or
 //                                               { ok: false, code }; without it this device refuses every
 //                                               visitor query (query_unsupported)
+//   refuseSharedQuery({ requester: { node, name, agentName }, action, code })
+//                                               optional: records a visitor query this device refused before
+//                                               searchSharedProject (not shared, a wrong proof, a replay) once
+//                                               the asking device was proven, counted toward its limits
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([

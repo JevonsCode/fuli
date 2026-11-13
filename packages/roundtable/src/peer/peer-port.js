@@ -123,8 +123,8 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
 
   // A visitor's read-only question to a shared lead's project on another
   // device, for one verified local task: answered there from its shared
-  // knowledge without waking anything. Returns { ok: true, ...answer } or
-  // { ok: false, code } with a plain code.
+  // knowledge without waking anything. Returns { ok: true, remote } with the
+  // reply's validated fields only, or { ok: false, code } with a plain code.
   async function query(target, question, { taskContextToken, sourceApplication, from, signal }) {
     const { identity } = await connection();
     const now = clock();
@@ -150,8 +150,8 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
       return refused('query_timeout');
     }
     if (state.status !== 'answered') return refused(state.error ?? state.status);
-    const answer = parseQueryAnswer(state.reply, question.action);
-    return answer ? { ok: true, ...answer } : refused('invalid_answer');
+    const remote = parseQueryAnswer(state.reply, question.action);
+    return remote ? { ok: true, remote } : refused('invalid_answer');
   }
 
   async function status(messageId, options) {

@@ -1,4 +1,5 @@
 import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
+import { QUERY_REFUSED } from '../../packages/roundtable/src/peer/query-answer.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
 import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
@@ -23,6 +24,12 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     const value = await app.personal.listPersonalProjects(spaceId());
     return Array.isArray(value) ? value : value?.projects ?? [];
   };
+  const visitor = requester => ({ key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName });
+  // The lead a visit is checked against, as read now; null when it cannot be read.
+  // A card needs the lead's name and responsibility; a search only its id.
+  const currentLead = (projectId, action) => (action === 'card'
+    ? loadProjectTeam(app, spaceId(), projectId).then(team => team?.lead ?? null, () => null)
+    : projectLeadId(projectId).then(agentId => (agentId ? { agentId } : null), () => null));
   const projectLeadId = async projectId =>
     (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null;
   // A standing-assignments store this run cannot read (a newer format, a
@@ -114,22 +121,30 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
     // A paired device's visiting assistant reads one shared project (its lead's
     // card, or a search) through the visitor-access port, which records and
-    // counts both, while the share's Agent is still the project's lead. The
-    // requester key is the asking device's verified fingerprint (requester.node,
-    // checked by the runner against its certificate); name and agentName are display text only.
+    // counts both, only while the share's Agent is, as read now, the project's
+    // lead: an id missing on either side or a lead that cannot be read refuses.
+    // The requester key is the asking device's verified fingerprint
+    // (requester.node, checked by the runner against its certificate); name and
+    // agentName are display text only. A refusal here is recorded with its own
+    // code and answered with the one word every pre-port refusal gets.
     async searchSharedProject({ projectId, agentId, requester, query }) {
       if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
-      const who = { key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName };
+      const who = visitor(requester);
+      const lead = typeof agentId === 'string' && agentId ? await currentLead(projectId, query.action) : null;
+      if (!lead?.agentId || lead.agentId !== agentId) {
+        app.visitorAccess.recordRefusedVisit({ requester: who, action: query.action, code: lead ? 'lead_changed' : 'lead_unreadable' });
+        return { ok: false, code: QUERY_REFUSED };
+      }
       if (query.action === 'card') {
-        const lead = (await loadProjectTeam(app, spaceId(), projectId).catch(() => null))?.lead;
-        if (lead?.agentId !== agentId) return { ok: false, code: 'agent_not_shared' };
         const project = await app.personal.getPersonalProject(spaceId(), projectId).then(projectView, () => null);
         return app.visitorAccess.showSharedCard({ projectId, requester: who,
           card: { name: lead.name, responsibility: lead.responsibility, projectName: project?.name } });
       }
-      if (await projectLeadId(projectId).catch(() => null) !== agentId) return { ok: false, code: 'agent_not_shared' };
       return app.visitorAccess.searchSharedProject({ projectId, queries: query.queries, requester: who });
     },
+    // A visiting query the runner refused once the asking device was proven.
+    refuseSharedQuery: ({ requester, action, code }) =>
+      app.visitorAccess?.recordRefusedVisit({ requester: visitor(requester), action, code }) ?? { ok: false, code: 'search_unavailable' },
     // A stand-in reads what a `#FLG 一起看` session reads of one member: its
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>

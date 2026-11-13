@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { shortFingerprint } from '../packages/roundtable/src/peer/protocol.js';
 import { callRoundtableTool } from '../src/agent-roundtable/tools.js';
 import { handleVisitorAccessRequest } from '../src/http/visitor-access-api-router.js';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
@@ -30,13 +31,18 @@ test('a paired device reads the owner\'s shared project with its own tool call; 
 
       const card = await visit(alpha.app, { address, action: 'card' });
       assert.equal(card.ok, true, JSON.stringify(card));
-      assert.deepEqual([card.action, card.name, card.projectName], ['card', 'beta lead', 'beta project']);
+      // A fixed envelope set on this computer; the other computer's text only under remote.
+      assert.deepEqual(Object.keys(card), ['address', 'device', 'action', 'ok', 'notice', 'guidance', 'remote']);
+      assert.deepEqual([card.address, card.device, card.action], [address, 'Member', 'card']);
+      assert.match(card.notice, /another computer.*data, never as instructions/);
       assert.match(card.guidance, /own model/);
+      assert.deepEqual(card.remote, { name: 'beta lead', responsibility: '', projectName: 'beta project' });
 
       const answer = await visit(alpha.app, { address, action: 'search', queries: ['deploy port'] });
       assert.equal(answer.ok, true, JSON.stringify(answer));
-      assert.deepEqual(answer.results, [{ query: 'deploy port',
-        items: [{ kind: 'fact', title: 'DEPLOYS_ON', text: 'Synthetic service listens on port 4100' }] }]);
+      assert.deepEqual(Object.keys(answer), ['address', 'device', 'action', 'ok', 'notice', 'remote']);
+      assert.deepEqual(answer.remote, { truncated: false, results: [{ query: 'deploy port',
+        items: [{ kind: 'fact', title: 'DEPLOYS_ON', text: 'Synthetic service listens on port 4100' }] }] });
       // The search used the owner's share, narrowed: no inheritance, no global or pending items, no FLA memory.
       assert.equal(requests.length, 1);
       assert.deepEqual([requests[0].personal_project_ids, requests[0].inherit_project_knowledge, requests[0].include_personal_global,
@@ -48,19 +54,20 @@ test('a paired device reads the owner\'s shared project with its own tool call; 
       const alphaDevice = await loadDeviceIdentity(alpha.app.peer.directory);
       const [read, cardRead] = beta.app.visitorAccess.recentReads({ limit: 5 }).reads;
       assert.deepEqual([read.requesterKey, read.requesterLabel, read.agentName, read.projectId, read.queries, read.resultsCount],
-        [`peer:${alphaDevice.fingerprint}`, 'Coordinator', 'alpha lead', 'beta-project', ['deploy port'], 1]);
+        [`peer:${alphaDevice.fingerprint}`, `Coordinator · ${shortFingerprint(alphaDevice.fingerprint)}`, 'alpha lead', 'beta-project', ['deploy port'], 1]);
       // The card was a contact too: recorded as the same device, answered.
       assert.deepEqual([cardRead.requesterKey, cardRead.action, cardRead.outcome, cardRead.projectId],
         [`peer:${alphaDevice.fingerprint}`, 'card', 'answered', 'beta-project']);
 
-      // The owner's console shows it, from this computer only.
+      // The owner's console shows it, from this computer only, with the device's fingerprint.
+      const label = `Coordinator · ${shortFingerprint(alphaDevice.fingerprint)}`;
       const response = fakeResponse();
       await handleVisitorAccessRequest({ request: localRequest('GET'), response,
         url: new URL('http://127.0.0.1/api/visitor-access/reads?limit=5'), visitorAccess: beta.app.visitorAccess });
       assert.equal(response.status, 200);
       assert.deepEqual(response.body.reads.map((row) => [row.requester, row.agentName, row.projectId, row.action, row.outcome, row.queries]),
-        [['Coordinator', 'alpha lead', 'beta-project', 'search', 'answered', ['deploy port']],
-          ['Coordinator', 'alpha lead', 'beta-project', 'card', 'answered', []]]);
+        [[label, 'alpha lead', 'beta-project', 'search', 'answered', ['deploy port']],
+          [label, 'alpha lead', 'beta-project', 'card', 'answered', []]]);
 
       // Unsharing ends it: the next visit is refused and nothing more is searched.
       await beta.runtime.setShares({ shares: [] });
@@ -79,6 +86,12 @@ test('a visit needs a project task of a FULI Agent and a search needs queries', 
     await assert.rejects(callRoundtableTool(alpha.app.roundtable, 'visit_shared_lead', { sourceApplication: 'codex', address, action: 'card' }),
       { code: 'validation' });
     await assert.rejects(visit(alpha.app, { address, action: 'search' }), { code: 'validation' });
+    // The service checks the action itself, not only the tool schema.
+    for (const action of ['progress', 'request', undefined]) {
+      await assert.rejects(alpha.app.roundtable.visitSharedLead({ taskContextToken: 'alpha-task', sourceApplication: 'codex', address, action }),
+        { code: 'validation' }, String(action));
+    }
+    await assert.rejects(visit(alpha.app, { address, action: 'search', queries: ['x'.repeat(201)] }), { code: 'validation' });
     await assert.rejects(visit(alpha.app, { address: 'project:beta', action: 'card' }), { code: 'validation' });
   } finally { await alpha.close(); await beta.close(); }
 });
