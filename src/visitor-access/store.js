@@ -4,7 +4,8 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 
 // Who may visit this computer's shared project knowledge from another one, in
 // which mode, and every attempt a visitor made (the visiting assistant). A
-// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A read row is
+// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A row is one
+// contact: a search, or a look at the shared lead's card. A read row is
 // written before its search runs (outcome 'pending') and settled afterwards
 // as 'answered' or 'failed'; a refused attempt is a 'refused' row with its
 // code. Rows keep the visitor's queries as they were searched (already cut),
@@ -27,7 +28,7 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       requester_label TEXT NOT NULL,
       agent_name TEXT,
       project_id TEXT NOT NULL,
-      action TEXT NOT NULL CHECK(action IN ('search')),
+      action TEXT NOT NULL CHECK(action IN ('search', 'card')),
       outcome TEXT NOT NULL CHECK(outcome IN ('pending', 'answered', 'failed', 'refused')),
       code TEXT,
       queries_json TEXT NOT NULL,
@@ -81,12 +82,12 @@ export class VisitorAccessStore {
     return this.requester(key);
   }
 
-  // A search about to run, as 'pending'; answers its row id. at is a Date.
-  reserveRead({ requesterKey, requesterLabel, agentName, projectId, queries, at }) {
+  // A search or card about to be answered, as 'pending'; answers its row id. at is a Date.
+  reserveRead({ requesterKey, requesterLabel, agentName, projectId, action, queries, at }) {
     this.#retain(at);
     return Number(this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id,
-      action, outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'pending', NULL, ?, 0, 0, ?)`)
-      .run(requesterKey, requesterLabel, agentName, projectId, JSON.stringify(queries), at.toISOString())
+      action, outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, action, JSON.stringify(queries), at.toISOString())
       .lastInsertRowid);
   }
 
@@ -97,15 +98,15 @@ export class VisitorAccessStore {
 
   // A refused attempt, without its queries; not written past
   // REFUSALS_KEPT_PER_DAY of one requester's refusals in a day.
-  recordRefusal({ requesterKey, requesterLabel, agentName, projectId, code, at }) {
+  recordRefusal({ requesterKey, requesterLabel, agentName, projectId, action, code, at }) {
     const today = new Date(at.getTime() - DAY_MS).toISOString();
     const refused = this.db.prepare(`SELECT COUNT(*) AS count FROM visitor_reads
       WHERE requester_key = ? AND outcome = 'refused' AND at > ?`).get(requesterKey, today).count;
     if (refused >= REFUSALS_KEPT_PER_DAY) return;
     this.#retain(at);
     this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id, action,
-      outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'refused', ?, '[]', 0, 0, ?)`)
-      .run(requesterKey, requesterLabel, agentName, projectId, code, at.toISOString());
+      outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, ?, 'refused', ?, '[]', 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, action, code, at.toISOString());
   }
 
   // How many attempts, of any outcome, one requester made after since (an ISO instant).

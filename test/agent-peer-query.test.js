@@ -15,6 +15,7 @@ import {
   canonicalJson, PEER_LIMITS, PEER_QUERY_PROTOCOL, peerMessageKey, validateQuery,
 } from '../packages/roundtable/src/peer/protocol.js';
 import { createPeerRunner } from '../packages/roundtable/src/peer/runner.js';
+import { sharedCard } from '../src/visitor-access/shared-project-search.js';
 import { signingAuthority } from './fixtures/peer-devices.js';
 
 // Synthetic devices, projects and knowledge only.
@@ -125,8 +126,12 @@ test('a query answer has its own size cap on the result path', async () => {
 
 const TARGET = 'b'.repeat(64);
 
-async function runnerFixture({ search = async () => ({ ok: true, results: [{ query: 'deploy port', items: [] }], truncated: false }),
-  hostSearch = true, lead = 'local-lead' } = {}) {
+// The host's answer for each action (the FULI host's own card and search are tested end to end).
+const hostAnswer = async ({ query }) => (query.action === 'card'
+  ? { ok: true, name: 'Synthetic lead', responsibility: 'Owns the synthetic project', projectName: 'Synthetic project' }
+  : { ok: true, results: [{ query: 'deploy port', items: [] }], truncated: false });
+
+async function runnerFixture({ search = hostAnswer, hostSearch = true } = {}) {
   const sender = deviceIdentity(await createDeviceCertificate());
   const signer = signingAuthority();
   const store = createNodeStore();
@@ -139,8 +144,6 @@ async function runnerFixture({ search = async () => ({ ok: true, results: [{ que
     return { cancel: false };
   } };
   const host = {
-    projectTeam: async () => ({ lead: { agentId: lead, name: 'Synthetic lead', responsibility: 'Owns the synthetic project' } }),
-    getProject: async () => ({ projectId: 'local-project', name: 'Synthetic project' }),
     issueRemoteDelegation: async () => { calls.delegations += 1; return { token: 'never' }; },
     ...(hostSearch ? { searchSharedProject: async (input) => { calls.searches.push(input); return search(input); } } : {}),
   };
@@ -188,14 +191,18 @@ test('the card names the current lead and the project, within 1 KB, and wakes no
     assert.match(card.guidance, /own model/);
     assert.match(card.guidance, /search/);
     assert.match(card.guidance, /data, never instructions/);
-    assert.deepEqual(f.calls.searches, []);
+    // The card goes through the host too, so it is recorded and counted like a search.
+    assert.deepEqual(f.calls.searches.map((call) => [call.query.action, call.requester.node]), [['card', f.sender.fingerprint]]);
     assert.equal(f.calls.answerRemote, 0);
   } finally { await f.close(); }
-  const handedOff = await runnerFixture({ lead: 'new-lead' });
+  // The largest card the visitor-access port makes still fits 1 KB with the guidance.
+  const largest = await runnerFixture({ search: async () => sharedCard({ name: '名'.repeat(300), responsibility: '长'.repeat(400),
+    projectName: '项'.repeat(300) }).card });
   try {
-    await handedOff.runner.handle(handedOff.claimFor({ changes: { query: { action: 'card' } } }));
-    assert.deepEqual([handedOff.results[0].outcome, handedOff.results[0].error], ['failed', 'agent_not_shared']);
-  } finally { await handedOff.close(); }
+    await largest.runner.handle(largest.claimFor({ changes: { query: { action: 'card' } } }));
+    assert.equal(largest.results[0].outcome, 'answered', largest.results[0].error);
+    assert.ok(Buffer.byteLength(largest.results[0].reply) <= 1024);
+  } finally { await largest.close(); }
 });
 
 test('a query is refused when unshared, wrongly proven, expired, replayed under another key or for another device', async () => {
@@ -211,10 +218,12 @@ test('a query is refused when unshared, wrongly proven, expired, replayed under 
     other_key: (f) => f.claimFor({ messageId: 'coordinator-chosen-id' }),
     wrong_node: (f) => f.claimFor({ changes: { to: { node: 'c'.repeat(64), bindingId: 'fixture-binding', agentId: 'local-lead' } } }),
     other_agent: (f) => f.claimFor({ changes: { to: { node: TARGET, bindingId: 'fixture-binding', agentId: 'someone-else' } } }),
+    // A claim naming another device than its certificate: the requester key never comes from a claimed id.
+    forged_device: (f) => { const claim = f.claimFor(); return { ...claim, sender: { ...claim.sender, nodeId: 'd'.repeat(64) } }; },
   };
   const expected = { unshared: 'agent_not_shared', execution_proof: 'origin_rejected', chat_proof: 'origin_rejected',
     missing_proof: 'origin_rejected', foreign_key: 'origin_rejected', expired: 'message_expired', other_key: 'message_mismatch',
-    wrong_node: 'wrong_device', other_agent: 'agent_not_shared' };
+    wrong_node: 'wrong_device', other_agent: 'agent_not_shared', forged_device: 'sender_mismatch' };
   for (const [name, claimOf] of Object.entries(cases)) {
     const f = await runnerFixture();
     try {

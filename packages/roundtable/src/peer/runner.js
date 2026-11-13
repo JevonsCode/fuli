@@ -103,7 +103,8 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
     }
     store.setAttemptState(messageId, attemptId, 'starting');
     const outcome = kind === QUERY
-      ? await answerPeerQuery({ host, share: authorized.share, assertion: claim.assertion, sender: claim.sender })
+      ? await answerPeerQuery({ host, share: authorized.share, assertion: claim.assertion, device: authorized.device,
+        deviceName: claim.sender.name })
       : await supervise(claim, authorized, acceptedAt);
     store.setAttemptState(messageId, attemptId, 'finished', outcome.outcome);
     queue(messageId, attemptId, outcome.outcome, outcome);
@@ -113,10 +114,14 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
   // Every check that decides whether this device may act, before any authority is issued.
   // A query is also tied to the coordinator's key for its assertion, so a claim
   // cannot run one assertion under another ID, and needs a host that answers queries.
+  // device: the sending device's fingerprint, computed here from the certificate the
+  // coordinator holds from pairing; that certificate signed the assertion and the
+  // device's pinned origin authority signed its proof. Nothing the assertion says names it.
   function authorize(claim, { validate, purpose, visitor }) {
     const { assertion, signature, sender } = claim;
     validate(assertion, { now: clock() });
-    if (!sender || certificateFingerprint(sender.certPem) !== sender.nodeId || assertion.from.node !== sender.nodeId) {
+    const device = sender ? certificateFingerprint(sender.certPem) : null;
+    if (!device || device !== sender.nodeId || assertion.from.node !== device) {
       throw new PeerError('sender_mismatch', 'The message sender does not match its device', 403);
     }
     if (!verifyDeviceSignature(sender.certPem, assertion, signature)) throw new PeerError('invalid_signature', 'Invalid device signature', 403);
@@ -134,7 +139,7 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
     const earlier = store.attemptsFor(claim.messageId)
       .filter((attempt) => attempt.attempt_id !== claim.attemptId && STARTED_STATES.has(attempt.state));
     if (earlier.length) throw new PeerError('already_started', 'This message already started on this device', 409);
-    return { share, origin };
+    return { share, origin, device };
   }
 
   function pinnedAuthority(sender) {

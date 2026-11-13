@@ -112,14 +112,23 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         source_application: client, message_id: messageId, digest, target_node: targetNode,
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
-    // A paired device's visiting assistant reads one shared project through the
-    // visitor-access port, as that device (its full fingerprint), while the
-    // share's Agent is still the project's lead.
+    // A paired device's visiting assistant reads one shared project (its lead's
+    // card, or a search) through the visitor-access port, which records and
+    // counts both, while the share's Agent is still the project's lead. The
+    // requester key is the asking device's verified fingerprint (requester.node,
+    // checked by the runner against its certificate); name and agentName are display text only.
     async searchSharedProject({ projectId, agentId, requester, query }) {
       if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
+      const who = { key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName };
+      if (query.action === 'card') {
+        const lead = (await loadProjectTeam(app, spaceId(), projectId).catch(() => null))?.lead;
+        if (lead?.agentId !== agentId) return { ok: false, code: 'agent_not_shared' };
+        const project = await app.personal.getPersonalProject(spaceId(), projectId).then(projectView, () => null);
+        return app.visitorAccess.showSharedCard({ projectId, requester: who,
+          card: { name: lead.name, responsibility: lead.responsibility, projectName: project?.name } });
+      }
       if (await projectLeadId(projectId).catch(() => null) !== agentId) return { ok: false, code: 'agent_not_shared' };
-      return app.visitorAccess.searchSharedProject({ projectId, queries: query.queries,
-        requester: { key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName } });
+      return app.visitorAccess.searchSharedProject({ projectId, queries: query.queries, requester: who });
     },
     // A stand-in reads what a `#FLG 一起看` session reads of one member: its
     // shareable index, never its working memory (group-member-context.js).

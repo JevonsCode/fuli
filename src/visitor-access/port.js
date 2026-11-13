@@ -1,11 +1,12 @@
 import { withoutControls } from '../text/control-characters.js';
 import { rateLimitRefusal } from './rate-limit.js';
-import { searchableProject, searchableQueries, searchSharedProject } from './shared-project-search.js';
+import { searchableProject, searchableQueries, searchSharedProject, sharedCard } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
 
 // The one port the visiting assistant reaches this computer's shared project
-// knowledge through: a requester from another computer searches one project,
-// read-only, rate limited and recorded; and the per-requester mode. Every
+// knowledge through: a requester from another computer searches one project
+// or looks at who leads it, read-only, rate limited and recorded alike; and the
+// per-requester mode. Every
 // entry answers { ok: true, … } or { ok: false, code } and never throws for
 // what a caller passed; nothing a visitor sends reaches the search but the
 // project id and the queries.
@@ -28,24 +29,11 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
   return {
     async searchSharedProject({ projectId, requester, queries } = {}) {
-      const who = requesterOf(requester);
-      if (!who) return refused('requester_invalid');
-      const at = now();
-      const project = searchableProject(projectId) ? projectId : '';
-      const reservation = store.transaction(() => {
-        const code = rateLimitRefusal(store, who.requesterKey, at)
-          ?? (project ? null : 'project_invalid') ?? searchableQueries(queries).code ?? null;
-        if (code) {
-          store.recordRefusal({ ...who, projectId: project, code, at });
-          return { code };
-        }
-        const { queries: searched } = searchableQueries(queries);
-        return { id: store.reserveRead({ ...who, projectId: project, queries: searched, at }), queries: searched };
-      });
+      const reservation = reserve({ projectId, requester, action: 'search', asked: () => searchableQueries(queries) });
       if (reservation.code) return refused(reservation.code);
       let searched;
       try {
-        searched = await searchSharedProject(application, { projectId: project, queries: reservation.queries });
+        searched = await searchSharedProject(application, { projectId: reservation.projectId, queries: reservation.queries });
       } catch {
         store.settleRead(reservation.id, { outcome: 'failed', code: 'search_unavailable' });
         return refused('search_unavailable');
@@ -53,6 +41,17 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
       store.settleRead(reservation.id, { outcome: 'answered', bytes: searched.bytes,
         resultsCount: searched.answer.results.reduce((count, result) => count + result.items.length, 0) });
       return searched.answer;
+    },
+
+    // A look at who answers for a shared project: the host passes its lead's
+    // name and responsibility and the project's name as this computer knows
+    // them; recorded and counted like a search, and cleaned like its results.
+    showSharedCard({ projectId, requester, card } = {}) {
+      const reservation = reserve({ projectId, requester, action: 'card', asked: () => ({ queries: [] }) });
+      if (reservation.code) return refused(reservation.code);
+      const shown = sharedCard(card ?? {});
+      store.settleRead(reservation.id, { outcome: 'answered', bytes: shown.bytes, resultsCount: 1 });
+      return shown.card;
     },
 
     recentReads({ requesterKey = null, projectId = null, limit } = {}) {
@@ -80,6 +79,26 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
     close: () => store.close()
   };
+
+  // One attempt, checked and written in one transaction: past the requester's
+  // limits, with an invalid project or with what asked() refuses, a 'refused'
+  // row with its code; otherwise a 'pending' row the caller settles.
+  function reserve({ projectId, requester, action, asked }) {
+    const who = requesterOf(requester);
+    if (!who) return { code: 'requester_invalid' };
+    const at = now();
+    const project = searchableProject(projectId) ? projectId : '';
+    return store.transaction(() => {
+      const question = asked();
+      const code = rateLimitRefusal(store, who.requesterKey, at) ?? (project ? null : 'project_invalid') ?? question.code ?? null;
+      if (code) {
+        store.recordRefusal({ ...who, projectId: project, action, code, at });
+        return { code };
+      }
+      return { id: store.reserveRead({ ...who, projectId: project, action, queries: question.queries, at }),
+        projectId: project, queries: question.queries };
+    });
+  }
 }
 
 const refused = code => ({ ok: false, code });

@@ -361,22 +361,28 @@ it('previews the device fingerprint before pairing, says what joining shares, an
 })
 
 const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', agentName: 'Visitor lead', projectId: 'sample-project',
-  queries: ['deploy port', 'release steps'], resultsCount: 2, at: new Date(Date.now() - id * 60_000).toISOString(), ...changes })
+  action: 'search', outcome: 'answered', code: null, queries: ['deploy port', 'release steps'], resultsCount: 2, at: new Date(Date.now() - id * 60_000).toISOString(), ...changes })
 
 it('lists 「最近被问」 under the shares: who asked, what, in which project, and when', async () => {
   const { calls } = server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample] }],
-    'GET /api/visitor-access/reads': [{ reads: [read(1), read(2, { agentName: null, projectId: 'gone-project', queries: ['old question'] })] }] })
+    'GET /api/visitor-access/reads': [{ reads: [read(1), read(2, { agentName: null, projectId: 'gone-project', queries: ['old question'] }),
+      read(3, { action: 'card', queries: [] }), read(4, { outcome: 'refused', code: 'rate_limited_short', queries: [] }),
+      read(5, { outcome: 'refused', code: 'project_invalid', projectId: '', queries: [] })] }] })
   const wrapper = mount(PeerSettings)
   await flushPromises()
   expect(calls('GET /api/visitor-access/reads')[0]?.[0]).toBe('/api/visitor-access/reads?limit=5')
   const rows = wrapper.findAll('[data-recent-reads] li')
   expect(wrapper.text()).toContain('最近被问')
-  expect(rows).toHaveLength(2)
+  expect(rows).toHaveLength(5)
   expect(rows[0]!.text()).toContain('Laptop · Visitor lead')
   expect(rows[0]!.text()).toContain('Sample project：deploy port / release steps')
   expect(rows[0]!.text()).toContain('1分钟前')
   expect(rows[1]!.text()).toContain('gone-project：old question')
   expect(rows[1]!.text()).not.toContain('·')
+  // Every contact shows: a look at the card, and attempts that got no answer.
+  expect(rows[2]!.text()).toContain('Sample project：看了谁负责')
+  expect(rows[3]!.text()).toContain('Sample project：问得太频繁，没有回答')
+  expect(rows[4]!.text()).toContain('—：没有回答')
   wrapper.unmount()
 })
 

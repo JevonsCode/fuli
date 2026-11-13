@@ -85,6 +85,24 @@ function sharedItems(result, projectId) {
 
 const visibleText = value => shareableText(withoutControls(value));
 
+// Who answers for a shared project, as a visitor may see it: the lead's name
+// and responsibility and the project's name, cleaned like search results, the
+// names cut to CARD_NAME_CHARS code points and the responsibility to what
+// keeps the whole object, ok included, within MAX_CARD_BYTES. Answers the
+// exact object the port returns and its serialized size.
+// With the action and the visiting guidance added, the reply stays within 1 KB.
+const MAX_CARD_BYTES = 700;
+const CARD_NAME_CHARS = 80;
+
+export function sharedCard({ name, responsibility, projectName }) {
+  const short = value => [...visibleText(value)].slice(0, CARD_NAME_CHARS).join('');
+  const card = { ok: true, name: short(name), responsibility: '', projectName: short(projectName) };
+  const room = MAX_CARD_BYTES - Buffer.byteLength(JSON.stringify(card));
+  card.responsibility = room > Buffer.byteLength(CUT_MARK) ? utf8Preview(visibleText(responsibility), room,
+    text => Buffer.byteLength(JSON.stringify(text)) - 2, CUT_MARK) : '';
+  return { card, bytes: Buffer.byteLength(JSON.stringify(card)) };
+}
+
 // Items in order until the serialized answer would pass MAX_ANSWER_BYTES; the
 // item that does not fit is cut to what does, and the rest is left out.
 // Measured with truncated false, the longer of its two values.
