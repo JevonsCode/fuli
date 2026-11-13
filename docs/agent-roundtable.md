@@ -168,7 +168,9 @@ fingerprint and the protocol version, only on physical LAN addresses, and lists 
 others. Click 配对 on one computer; the other shows who asks at once. Both then show
 the same 6-digit code, derived from both certificate fingerprints and a fresh nonce
 from each side. Compare the two screens, tick that they match and click 确认 on each
-computer (`fuli peer confirm <code shown on the other computer>`); no Agent can confirm.
+computer (`fuli peer confirm <code shown on the other computer>`). While FULI is in its
+test phase an Agent you asked to pair the two computers may confirm for you, with the LAN
+roundtable permission on; it tells you which device and digits it confirmed.
 Only then are the devices paired, with the same mutual-TLS trust records an invitation
 writes. A request nobody confirms ends after 2 minutes. Every handshake is counted in the
 computer's own store before any nonce leaves it: at most 3 per device and address and 5
