@@ -84,28 +84,44 @@ function guestActions({ visitorAccess, host }) {
   };
 }
 
-// The answer of one MCP POST (an event stream opened at once) keeps its head
-// until its first event or its end, the moment of answering: it goes out only
-// while live(); otherwise the request gets refuse() and the rest is dropped,
-// also when a revoked link's session closes the stream with no result. A
-// keep-alive comment while the head is held is dropped.
+// The answer of one MCP POST (an event stream opened at once; a batch has
+// several events) keeps its head until its first event or its end, and every
+// event and the end go out only while live(). When the link ended before the
+// head went out, the request gets refuse() (401); after, refuse() records it
+// and the response is destroyed. Either way, also when a revoked link's
+// session closes the stream, what follows is swallowed. A keep-alive comment
+// while the head is held is dropped.
 function answerWhileLive(response, live, refuse) {
   const { writeHead, write, end, flushHeaders } = response;
   let head = null;
-  const goesOut = () => {
-    Object.assign(response, { writeHead, write, end, flushHeaders });
-    if (live()) {
-      if (head) writeHead.apply(response, head);
-      return true;
-    }
+  let state = 'held';
+  const swallowed = () => true;
+  const refused = () => {
+    const held = state === 'held';
+    state = 'refused';
+    if (held) Object.assign(response, { writeHead, end, flushHeaders });
     refuse();
-    Object.assign(response, { write: () => true, end: () => response });
-    return false;
+    Object.assign(response, { write: swallowed, end: () => response });
+    if (!held) response.destroy();
+  };
+  // Whether what comes next may go out; sends the held head first.
+  const goesOut = () => {
+    if (state === 'refused') return false;
+    if (!live()) {
+      refused();
+      return false;
+    }
+    if (state === 'held') {
+      state = 'open';
+      Object.assign(response, { writeHead, flushHeaders });
+      if (head) writeHead.apply(response, head);
+    }
+    return true;
   };
   Object.assign(response, {
     writeHead: (...held) => { head = held; return response; },
     flushHeaders: () => {},
-    write: (chunk, ...rest) => isComment(chunk) || (goesOut() ? write.call(response, chunk, ...rest) : true),
+    write: (chunk, ...rest) => (state === 'held' && isComment(chunk)) || !goesOut() || write.call(response, chunk, ...rest),
     end: (...rest) => (goesOut() ? end.apply(response, rest) : response)
   });
 }

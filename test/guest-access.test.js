@@ -370,6 +370,47 @@ for (const [ending, end] of Object.entries(LINK_ENDS)) {
     });
   }
 
+  test(`in an MCP batch, a search whose link is ${ending} after the card was sent never reaches the client`, async (t) => {
+    const held = gate();
+    const context = setup(t, { searchGate: held.wait });
+    const { guestAccess, searches } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const authority = kept.addresses[0];
+    const transport = await rawSession(authority, ended.token);
+    const [hostname, port] = authority.split(':');
+    let received = '';
+    let firstEvent;
+    const sent = new Promise((resolve) => { firstEvent = resolve; });
+    const finished = new Promise((resolve) => {
+      const request = httpRequest({ hostname, port: Number(port), method: 'POST', path: '/guest/1/mcp', agent: false,
+        headers: { host: authority, authorization: `Bearer ${ended.token}`, 'content-type': 'application/json', ...mcpHeaders(transport) } },
+      (response) => {
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { received += chunk; firstEvent(); });
+        response.on('end', resolve);
+        response.on('error', resolve);
+        response.on('aborted', resolve);
+        response.on('close', resolve);
+      });
+      request.on('error', resolve);
+      request.end(JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'guest_card', arguments: {} } },
+        { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } } }
+      ]));
+    });
+    await sent;
+    await until(() => searches.length === 1);
+    assert.match(received, /Synthetic guest project/);
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
+    const ending = end({ ...context, link: ended.link });
+    held.release();
+    await ending;
+    await finished;
+    assert.equal(received.includes('Deploys'), false, received);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
+  });
+
   test(`a card whose link is ${ending} while it is read is refused like that link`, async (t) => {
     const held = gate();
     const host = fakeHost();
