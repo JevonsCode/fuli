@@ -7,10 +7,10 @@ import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
 // 今天 with nothing in it: one sentence and one way to start. 说一条试试 hands
-// one of the person's AI clients the opening of a habit for Astro to keep; the
-// person finishes the sentence there. It is a prompt to the AI, so it stays as
-// written in every language, like the other #FLA sentences.
-const HABIT_SENTENCE = '#FLA Astro 我想告诉你一个我的习惯：'
+// one of the person's AI clients the opening of a habit; the person finishes the
+// sentence there. It names no assistant (none may be ready on a new installation)
+// and says 记住 / 我的一个习惯 (remember / one of my habits), the words FULI's
+// entry reads as a request to keep something, so the AI is asked to record it.
 const store = useConsoleStore()
 const open = ref(false)
 const openedNotice = (client: string) => t('today.empty.opened', { client })
@@ -28,7 +28,7 @@ function done(notice: string) {
         <Button data-today-try>{{ t('today.empty.try') }}</Button>
       </PopoverTrigger>
       <PopoverContent align="center" :side-offset="8" :collision-padding="12" class="new-session-popover" data-today-try-panel>
-        <NewSessionPanel :title="t('today.empty.title')" :lead="t('today.empty.lead')" :ask="HABIT_SENTENCE"
+        <NewSessionPanel :title="t('today.empty.title')" :lead="t('today.empty.lead')" :ask="t('today.empty.opener')"
           :opened-notice="openedNotice" :copied-notice="t('today.empty.copied')" @done="done" />
       </PopoverContent>
     </Popover>
