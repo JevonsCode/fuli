@@ -118,6 +118,14 @@ export const router = createRouter({
       meta: { title: 'routes.sessionMigration.title', detail: true },
     },
     {
+      // The habits FULI handed to the assistant when a conversation started:
+      // the first reply's 「FULI 习惯」 receipt line links here by its task key.
+      path: '/habits/:taskKey',
+      name: 'habit-delivery',
+      component: () => import('@/features/habit-delivery/HabitDeliveryPage.vue'),
+      meta: { title: 'habitDelivery.title', detail: true },
+    },
+    {
       // rec#11 D-07 part 2: the tag vocabulary, its review queue and the
       // person's governance. An Agent's link opens one tag's change:
       // ?tag=<id>&change=<approve|merge|split|retire|undo>[&into=<id>].

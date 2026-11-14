@@ -434,6 +434,40 @@ reaches. The revision covers the frame's fields, its label and its own
 uses the same evidence rules for preferences and recovery instead of a forced
 full frame.
 
+## First-reply habits line
+
+The receipt of the first task of a new conversation ends with one more line:
+
+    FULI 习惯：这个新对话带上了你的 N 条习惯 · [看看是哪几条](<console>/habits/<16 hex>)
+
+It says 带上 (handed over), never 用了 (applied): FULI sees the hand-over; only
+the reply shows whether the assistant followed them. N is the number of
+preference keys the entry's delivery record keeps for the task (the delivered
+`effective_preferences` with an id, deduplicated, at most 100): the same list
+the linked page shows. The Claude Code inline budget may show fewer inline;
+the rest are one `read_task_preferences` call away and still count. The link
+names the task by the first 16 hex characters of its delivery key; the page
+reads the local row (`GET /api/habit-deliveries/:taskKey`, owner reads only,
+404 once the row is past the 180-day retention).
+
+A conversation is new when the entry's `beginConversation` saved it and
+recovered none (`status: saved`, `recovered_from: null`). The delivery-cache
+counters are not used: they reset on compaction. The line appears only when N
+is at least 1; a resumed task, capture off, no assigned Agent, an unsaved or
+deferred conversation and a failed delivery write give none. The delivery
+record (`recall-impressions` version 4, `opens_conversation`) remembers that
+the entry opened the conversation, so a checkpoint, roundtable or pause receipt
+that replaces the entry's says it again; a later task's receipt never gains it.
+The entry adds nothing to its path for this beyond one value in the record
+insert it already makes and the line itself. The AI never counts or writes the
+line; it copies `agent_receipt.markdown` unchanged.
+
+Cursor shows no such line. Its prompt hook begins the task and opens the
+conversation; the AI's own `get_collaboration_preferences` call in the same
+turn begins another task, whose conversation entry finds the session already
+bound and so recovers it (`recovered_from` set). The hook's own receipt never
+reaches the reply (Cursor's prompt output has no context field).
+
 ## Verification
 
 Protocol, lifecycle and ownership tests use explicit synthetic records.

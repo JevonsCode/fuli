@@ -16,7 +16,10 @@ import { withoutControls } from '../text/control-characters.js';
 // "kind:id" keys, so the compounding statement can count what was carried
 // into tasks. Tasks before version 2 have recall rows only. Version 3 adds
 // the model the client's own hook reported for that entry (Codex names it;
-// the others do not), null when none was reported: never guessed.
+// the others do not), null when none was reported: never guessed. Version 4
+// adds whether that entry opened a new conversation, so the receipt of its
+// first reply, and a checkpoint that replaces it, can say how many of the
+// person's habits FULI handed over (docs/session-preference-delivery.md).
 const TASK_DELIVERIES = `
   CREATE TABLE IF NOT EXISTS task_deliveries(
     task_key TEXT PRIMARY KEY,
@@ -51,6 +54,10 @@ export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
     id: 'recall-impressions/3-task-delivery-model', to: 3, kind: 'add-columns', table: 'task_deliveries',
     summary: 'the model each task entry\'s client reported, when it reports one',
     columns: { model: 'TEXT' }
+  }, {
+    id: 'recall-impressions/4-task-delivery-opens-conversation', to: 4, kind: 'add-columns', table: 'task_deliveries',
+    summary: 'whether a task entry opened a new conversation, so its first reply can say how many habits it carried',
+    columns: { opens_conversation: 'INTEGER NOT NULL DEFAULT 0' }
   }]
 });
 
@@ -65,6 +72,9 @@ const ENTRIES_IN_WINDOW = 'FROM task_deliveries WHERE personal_space_id = ? AND 
 const MAX_DELIVERED_PREFERENCES = 100;
 // A reported model name is kept as one bounded line, like a wake's (roundtable wake.js).
 const MODEL_LIMIT = 120;
+// A receipt link names its task by this many hex characters of its task key.
+export const TASK_KEY_PREFIX_LENGTH = 16;
+const TASK_KEY_PREFIX = new RegExp(`^[0-9a-f]{${TASK_KEY_PREFIX_LENGTH}}$`);
 
 export class RecallImpressionsStore {
   constructor(path = ':memory:', now = () => new Date()) {
@@ -91,20 +101,23 @@ export class RecallImpressionsStore {
   // effective preferences ({ id, item_kind }). One transaction; a second call
   // for the same task does not duplicate rows. An entry that delivered
   // nothing records nothing and never opens the store. model: what the
-  // client's hook reported for this entry, or nothing.
-  recordDelivered({ taskContextToken, personalSpaceId, personalProjectId, sourceApplication, model, facts, entities, preferences }) {
+  // client's hook reported for this entry, or nothing. opensConversation:
+  // this entry opened a new conversation. Returns the task key and how many
+  // preference keys its row stores, or null when no row was written.
+  recordDelivered({ taskContextToken, personalSpaceId, personalProjectId, sourceApplication, model, facts, entities, preferences,
+    opensConversation = false }) {
     const rows = [
       ...(facts ?? []).map((item, index) => ({ kind: 'relationship', item, rank: index + 1 })),
       ...(entities ?? []).map((item, index) => ({ kind: 'entity', item, rank: index + 1 }))
     ];
     const preferenceKeys = [...new Set((preferences ?? []).filter(item => item?.id)
       .map(item => `${item.item_kind ?? 'entity'}:${item.id}`))].slice(0, MAX_DELIVERED_PREFERENCES);
-    if (!rows.length && !preferenceKeys.length) return;
+    if (!rows.length && !preferenceKeys.length) return null;
     const taskKey = taskKeyFor(taskContextToken);
     const now = this.now();
     const deliveredAt = now.toISOString();
     const cutoff = new Date(now.getTime() - RETENTION_MS).toISOString();
-    this.transaction(() => {
+    const written = this.transaction(() => {
       this.db.prepare('DELETE FROM recall_impressions WHERE shown_at < ?').run(cutoff);
       this.db.prepare('DELETE FROM task_deliveries WHERE delivered_at < ?').run(cutoff);
       const insert = this.db.prepare(`INSERT INTO recall_impressions
@@ -114,11 +127,27 @@ export class RecallImpressionsStore {
         insert.run(taskKey, personalSpaceId, personalProjectId ?? null, kind, item.id, rank,
           item.score ?? null, item.confirmation_status ?? null, deliveredAt);
       }
-      this.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at, preference_keys, model)
-        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(task_key) DO NOTHING`)
+      return this.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at,
+        preference_keys, model, opens_conversation) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(task_key) DO NOTHING`)
         .run(taskKey, personalSpaceId, sourceApplication ?? 'other', deliveredAt, JSON.stringify(preferenceKeys),
-          reportedModel(model));
+          reportedModel(model), opensConversation ? 1 : 0).changes > 0;
     });
+    return written ? { taskKey, count: preferenceKeys.length } : null;
+  }
+
+  // One task entry's row by the first TASK_KEY_PREFIX_LENGTH hex characters of its task key, as a
+  // receipt link names it: null when no row or more than one matches, or the
+  // row is past retention. A local primary-key range read; never creates the store.
+  delivery(taskKeyPrefix) {
+    if (!TASK_KEY_PREFIX.test(taskKeyPrefix ?? '') || !this.readable) return null;
+    const cutoff = new Date(this.now().getTime() - RETENTION_MS).toISOString();
+    const rows = this.db.prepare(`SELECT task_key, source_application, model, delivered_at, preference_keys, opens_conversation
+      FROM task_deliveries WHERE task_key >= ? AND task_key < ? AND delivered_at >= ? LIMIT 2`)
+      .all(taskKeyPrefix, `${taskKeyPrefix}g`, cutoff);
+    if (rows.length !== 1) return null;
+    const [row] = rows;
+    return { taskKey: row.task_key, at: row.delivered_at, client: row.source_application, model: row.model,
+      opensConversation: row.opens_conversation === 1, preferenceKeys: JSON.parse(row.preference_keys) };
   }
 
   // What task entries carried in [from, to): distinct tasks that received

@@ -4,10 +4,12 @@ import { readSessionMigration, readSessionMigrationDelivery } from '../graphiti/
 import { assertJsonObject } from '../validation/values.js';
 
 const ITEM_PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)$/;
+const HABIT_DELIVERY_PATH = /^\/api\/habit-deliveries\/([^/]+)$/;
 
 // The console's reads behind a turn receipt's links (rec#20): one knowledge
 // item, a turn's full receipt, what a session holds for a batch migration and
-// whether that session was told of a confirmed one.
+// whether that session was told of a confirmed one, and which habits a new
+// conversation's first entry handed over.
 // Content edits and deactivation use the existing item PATCH with the version
 // the page read; tags use the tag vocabulary routes; scope writes are the
 // person's own (knowledge-scope-api-router.js).
@@ -48,6 +50,16 @@ export async function handleKnowledgeItemRequest({ request, response, url, app, 
       migrationId: url.searchParams.get('migrationId') }));
     return true;
   }
+  // The 「FULI 习惯」 receipt line's list: one local row, ids only; the page reads each item itself.
+  const habits = url.pathname.match(HABIT_DELIVERY_PATH);
+  if (habits) {
+    if (!ownerReads) return ownerReadsUnavailable(response);
+    response.setHeader('Cache-Control', 'no-store');
+    const row = app.recallImpressions?.delivery(habits[1]) ?? null;
+    if (!row) sendJson(response, 404, { error: 'This habit record has expired or does not exist' });
+    else sendJson(response, 200, { at: row.at, client: row.client, model: row.model, items: row.preferenceKeys.map(habitItem) });
+    return true;
+  }
   const match = url.pathname.match(ITEM_PATH);
   if (!match) return false;
   if (!ownerReads) return ownerReadsUnavailable(response);
@@ -60,6 +72,12 @@ export async function handleKnowledgeItemRequest({ request, response, url, app, 
 
 // Without a local installation's human-review channel there is no full read;
 // the console's knowledge pages answer this instead of a partial view.
+// A stored "kind:id" preference key as the item it names.
+function habitItem(key) {
+  const split = key.indexOf(':');
+  return { kind: key.slice(0, split), id: key.slice(split + 1) };
+}
+
 export function ownerReadsUnavailable(response) {
   sendJson(response, 503, { error: 'Reading knowledge in full needs a local FULI installation' });
   return true;
