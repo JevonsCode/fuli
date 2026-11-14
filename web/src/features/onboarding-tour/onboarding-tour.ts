@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 
+import { shown, type AdvancedArea } from '@/features/advanced-areas/advanced-areas'
 import { knowledgePath, personalProjectsPath } from '@/router/paths'
 import type { ConsoleState } from '@/types'
 import type { IconName } from '@/ui'
@@ -14,7 +15,8 @@ export const TOUR_VERSION = 1
 
 export type TourStepId = 'what' | 'clients' | 'reply' | 'memory' | 'projects' | 'roundtable'
 // brand: the FULI mark; otherwise the icon of the place the step is about.
-interface TourStep { id: TourStepId; icon: IconName | 'brand' }
+// area: an advanced area (features/advanced-areas) the step waits for.
+interface TourStep { id: TourStepId; icon: IconName | 'brand'; area?: AdvancedArea }
 
 export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'what', icon: 'brand' },
@@ -22,8 +24,11 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'reply', icon: 'agents' },
   { id: 'memory', icon: 'memory' },
   { id: 'projects', icon: 'project' },
-  { id: 'roundtable', icon: 'roundtable' },
+  { id: 'roundtable', icon: 'roundtable', area: 'roundtable' },
 ]
+
+/** The steps this installation sees: one about an area not shown yet is left out. */
+export const tourSteps = () => TOUR_STEPS.filter(step => !step.area || shown(step.area))
 
 // open: the dialog is on screen. paused: the person followed a step's 「去…」
 // and can continue from that step. offered: this console open already chose

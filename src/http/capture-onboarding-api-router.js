@@ -34,3 +34,12 @@ export async function handleFirstRunGuideRequest({ request, response, url, app }
   }
   return false;
 }
+
+// The console's advanced areas (advanced-areas/advanced-areas.js): which are
+// shown comes with /api/state; the person's Show or a link that led to one
+// reveals it for good. Nothing hides an area again.
+export async function handleAdvancedAreasRequest({ request, response, url, app }) {
+  if (request.method !== 'POST' || url.pathname !== '/api/advanced-areas/reveal' || !app.advancedAreas) return false;
+  sendJson(response, 200, app.advancedAreas.reveal(await readJson(request)));
+  return true;
+}

@@ -51,6 +51,7 @@ import { clientLinksMessages } from './messages/client-links'
 import { npmCopiesMessages } from './messages/npm-copies'
 import { whatsNewMessages } from './messages/whats-new'
 import { onboardingTourMessages } from './messages/onboarding-tour'
+import { advancedAreasMessages } from './messages/advanced-areas'
 import { openInAppMessages } from './messages/open-in-app'
 import { cliPathMessages } from './messages/cli-path'
 import { guestLinksMessages } from './messages/guest-links'
@@ -149,6 +150,7 @@ export const messages = {
     npmCopies: npmCopiesMessages['zh-CN'],
     whatsNew: whatsNewMessages['zh-CN'],
     onboardingTour: onboardingTourMessages['zh-CN'],
+    advancedAreas: advancedAreasMessages['zh-CN'],
     openInApp: openInAppMessages['zh-CN'],
     cliPath: cliPathMessages['zh-CN'],
     guestLinks: guestLinksMessages['zh-CN'],
@@ -216,6 +218,7 @@ export const messages = {
     npmCopies: npmCopiesMessages['en-US'],
     whatsNew: whatsNewMessages['en-US'],
     onboardingTour: onboardingTourMessages['en-US'],
+    advancedAreas: advancedAreasMessages['en-US'],
     openInApp: openInAppMessages['en-US'],
     cliPath: cliPathMessages['en-US'],
     guestLinks: guestLinksMessages['en-US'],

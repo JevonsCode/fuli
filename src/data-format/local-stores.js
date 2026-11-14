@@ -27,6 +27,7 @@ import { AGENT_ACCESS_POLICY_FORMAT } from '../graphiti/agent-access-policy.js';
 import { CAPTURE_CHANGE_PREVIEW_FORMAT } from '../graphiti/capture-change-confirmation.js';
 import { CAPTURE_ONBOARDING_FORMAT } from '../graphiti/capture-onboarding.js';
 import { FIRST_RUN_GUIDE_FORMAT } from '../graphiti/first-run-guide.js';
+import { ADVANCED_AREAS_FORMAT } from '../advanced-areas/advanced-areas.js';
 import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
 import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';
 import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
@@ -127,6 +128,8 @@ const jsonStores = () => [
   ['capture-onboarding.json', CAPTURE_ONBOARDING_FORMAT],
   // Whether the console's first-run guide is still open (clients, start at login, capture).
   ['first-run-guide.json', FIRST_RUN_GUIDE_FORMAT],
+  // Which advanced console areas this installation has used; an id is only ever added.
+  ['advanced-areas.json', ADVANCED_AREAS_FORMAT],
   ['external-knowledge/bindings.json', EXTERNAL_KNOWLEDGE_FORMAT],
   ['external-knowledge/conflict-policies.json', CONFLICT_POLICY_FORMAT],
   // The built-in Agents' model settings, saved from the console (rec#8); keys are only named here.

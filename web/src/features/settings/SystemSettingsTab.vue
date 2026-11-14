@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import HiddenAreasCard from '@/features/advanced-areas/HiddenAreasCard.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { startTour } from '@/features/onboarding-tour/onboarding-tour'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
@@ -274,6 +275,8 @@ function formatTime(value: string | undefined) {
         </div>
       </template>
     </Card>
+    <!-- Last, so nothing above moves when it goes. -->
+    <HiddenAreasCard />
   </PageStack>
 </template>
 

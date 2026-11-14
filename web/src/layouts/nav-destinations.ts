@@ -1,3 +1,4 @@
+import type { AdvancedArea } from '@/features/advanced-areas/advanced-areas'
 import type { IconName } from '@/ui'
 import { knowledgePath, personalProjectsPath } from '@/router/paths'
 
@@ -5,13 +6,20 @@ import { knowledgePath, personalProjectsPath } from '@/router/paths'
 // floating dock in sketch order: 工作台, FLAs, 圆桌, 沉淀, 项目; settings sits in
 // the top bar. Each owns the routes under it; its sections become tabs in the
 // top bar, so every page stays reachable without a long text sidebar.
-export interface NavSection { key: string; to: string; owns: readonly string[] }
+// area: an advanced area (features/advanced-areas) the entry waits for; until
+// it is shown the entry is left out, and its pages stay reachable by link.
+export interface NavSection { key: string; to: string; owns: readonly string[]; area?: AdvancedArea }
 export type NavPlacement = 'dock' | 'top'
-export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; placement: NavPlacement; sections: readonly NavSection[] }
+export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; placement: NavPlacement; sections: readonly NavSection[]; area?: AdvancedArea }
 
-export interface NavContext { spaceId: string }
+export interface NavContext { spaceId: string; shown: (area: AdvancedArea) => boolean }
 
-export function navDestinations({ spaceId }: NavContext): NavDestination[] {
+export function navDestinations({ spaceId, shown }: NavContext): NavDestination[] {
+  const offered = (entry: { area?: AdvancedArea }) => !entry.area || shown(entry.area)
+  return allDestinations(spaceId).filter(offered).map(item => ({ ...item, sections: item.sections.filter(offered) }))
+}
+
+function allDestinations(spaceId: string): NavDestination[] {
   const projects = personalProjectsPath(spaceId, 'graph')
   const knowledge = knowledgePath('personal', spaceId, 'directory')
   return [
@@ -26,14 +34,15 @@ export function navDestinations({ spaceId }: NavContext): NavDestination[] {
       // 应用: the apps FLAs built, approved and removed by the person (docs/agent-apps.md).
       { key: 'apps', to: '/project-agents/apps', owns: ['/project-agents/apps'] },
     ] },
-    { key: 'chat', icon: 'roundtable', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', sections: [
+    // 待决策 (/inbox) also opens from the top bar, so it stays reachable while 圆桌 waits.
+    { key: 'chat', icon: 'roundtable', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', area: 'roundtable', sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
       { key: 'askedYou', to: '/inbox', owns: ['/inbox'] },
     ] },
     { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], placement: 'dock', sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
-      { key: 'organize', to: '/organize', owns: ['/organize'] },
+      { key: 'organize', to: '/organize', owns: ['/organize'], area: 'tidy' },
       { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
     { key: 'projects', icon: 'project', to: projects, owns: ['/personal/'], placement: 'dock', sections: [

@@ -12,7 +12,7 @@ import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleReplyEchoRequest } from './reply-echo-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
-import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
+import { handleAdvancedAreasRequest, handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
 import { taskSessions } from '../graphiti/project-agent-task-sessions.js';
 
@@ -41,6 +41,7 @@ export async function handleGraphApiRequest({
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
   if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
   if (await handleFirstRunGuideRequest({ request, response, url, app })) return true;
+  if (await handleAdvancedAreasRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;

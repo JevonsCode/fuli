@@ -190,6 +190,9 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
     // Guest links (deliverable B): created, listed and revoked by the person, opened by a bearer token.
     guestLinks: createGuestLinks({ store, now }),
 
+    // Whether any visitor, guest link or visit request was ever recorded (the console's LAN area).
+    used: () => store.used(),
+
     // With requests, after their running work stopped (a promise).
     close: () => (requests ? requests.close().then(() => store.close()) : store.close())
   };

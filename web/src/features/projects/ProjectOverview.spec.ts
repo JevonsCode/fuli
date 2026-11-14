@@ -1,5 +1,5 @@
-import { mount, RouterLinkStub } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount, RouterLinkStub } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./ProjectTeamSummary.vue', () => ({
   default: {
@@ -49,10 +49,13 @@ vi.mock('@/features/judgment/ProjectJudgmentPolicy.vue', () => ({
   },
 }))
 
+import { adoptShownAreas } from '@/features/advanced-areas/advanced-areas'
 import { setLocale } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import type { FrequentProjectSummary } from '@/features/knowledge/project-relation-weights'
 import ProjectOverview from './ProjectOverview.vue'
+
+const EVERY_AREA = ['roundtable', 'tonborg', 'tidy', 'lan'] as const
 
 function makeProject(): PersonalProject {
   return {
@@ -64,6 +67,10 @@ function makeProject(): PersonalProject {
     },
   }
 }
+
+// An installation that has used every advanced area, unless a test says otherwise.
+beforeEach(() => adoptShownAreas([...EVERY_AREA]))
+enableAutoUnmount(afterEach)
 
 describe('ProjectOverview project history', () => {
   beforeEach(() => setLocale('zh-CN'))
@@ -77,6 +84,18 @@ describe('ProjectOverview project history', () => {
     expect(log.attributes('data-project')).toBe('fuli')
     expect(log.attributes('data-updated')).toBe('2026-11-01T00:00:00.000Z')
     expect(wrapper.get('[data-guest-links-stub]').attributes('data-project')).toBe('fuli')
+  })
+
+  it('leaves out the judgment, 整理 and guest link cards until their areas are shown', () => {
+    adoptShownAreas([])
+    const wrapper = mount(ProjectOverview, { props: { spaceId: 'space-1', project: makeProject() },
+      global: { stubs: { RouterLink: RouterLinkStub } } })
+    expect(wrapper.find('[data-project-judgment-stub]').exists()).toBe(false)
+    expect(wrapper.find('[data-project-organizing]').exists()).toBe(false)
+    expect(wrapper.find('[data-guest-links-stub]').exists()).toBe(false)
+    // The cards that are always there stay, in their order.
+    expect(wrapper.find('[data-project-capture-stub]').exists()).toBe(true)
+    expect(wrapper.find('[data-project-change-log-stub]').exists()).toBe(true)
   })
 
   it('shows no creation line without a recorded time', () => {

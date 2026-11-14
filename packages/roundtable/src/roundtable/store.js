@@ -125,6 +125,12 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         FROM threads t WHERE t.space_id = ? AND (? IS NULL OR t.project_id = ?)
         ORDER BY t.updated_at DESC LIMIT ?`).all(spaceId, projectId, projectId, limit);
     },
+    // Whether this space ever had a thread, an Agent chat or a group discussion.
+    used(spaceId) {
+      return database.prepare(`SELECT EXISTS(SELECT 1 FROM threads WHERE space_id = ?1)
+        OR EXISTS(SELECT 1 FROM agent_chats WHERE scope = ?1)
+        OR EXISTS(SELECT 1 FROM group_discussions WHERE scope = ?1) AS used`).get(spaceId).used === 1;
+    },
     appendMessage(threadId, message) {
       return transaction(() => {
         const at = now();

@@ -15,6 +15,7 @@ import {
 import { createCaptureChanges } from './capture-change-confirmation.js';
 import { createCaptureOnboarding } from './capture-onboarding.js';
 import { createFirstRunGuide, firstRunGuidePathForRuntime } from './first-run-guide.js';
+import { advancedAreasPathForRuntime, createAdvancedAreas } from '../advanced-areas/advanced-areas.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
 import { readOwnSessionRecords, recentSessionUserMessages } from './session-records.js';
@@ -124,6 +125,7 @@ export function openFederatedGraphApplication({
     ),
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
+    advancedAreas: createAdvancedAreas(advancedAreasPathForRuntime(runtimeConfigPath)),
     tokenUsageResolver: tokenUsageResolver ?? environmentTokenUsageResolver(env),
     // Read per use (briefly cached): an MCP process that starts while the console is restarting
     // (an update reconnects every client) must not keep the default port for its whole life.
@@ -180,6 +182,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     recallPolicyStore = new RecallPolicyStore(),
     // The console's first-run guide (first-run-guide.js); in memory unless opened on a data directory.
     firstRunGuide = createFirstRunGuide(null),
+    // Which advanced console areas this installation has used (advanced-areas.js); in memory likewise.
+    advancedAreas = createAdvancedAreas(null),
     consoleUrl = sourceConsoleUrl(null),
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
@@ -200,6 +204,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);
     this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);
     this.firstRunGuide = firstRunGuide;
+    this.advancedAreas = advancedAreas;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
     // A confirmed session migration waiting for that session's next task entry (rec#82).
@@ -550,6 +555,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       capturePolicy: this.getCapturePolicy(),
       captureOnboarding: this.captureOnboarding.state(),
       firstRunGuide: this.firstRunGuide.state(),
+      // Observed on every read: an area with a trace joins the shown ones and stays.
+      advancedAreas: this.advancedAreas.observe(this),
       agentAccessPolicy: this.getAgentAccessPolicy(),
       recallPolicy: this.getRecallPolicy()
     };

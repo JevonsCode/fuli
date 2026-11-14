@@ -7,6 +7,7 @@ import AttentionWorkspace from '@/features/project-agents/AttentionWorkspace.vue
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import ReviewList from '@/features/review-list/ReviewList.vue'
 import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import { useReviewList } from '@/features/review-list/review-store'
 import { decisionPageTools } from '@/features/review-list/decision-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
@@ -55,7 +56,9 @@ usePageTools(() => decisionPageTools(review))
     <div ref="pageRoot" class="@container flex w-full flex-col gap-4">
       <header class="inbox-head">
         <h1 class="inbox-head__title" data-inbox-total>{{ total ? t('reviewList.headline', { count: total }) : '' }}</h1>
-        <TonborgDelegationSwitch v-if="space" :personal-space-id="space" settings-link @changed="review.refresh()" />
+        <AdvancedOnly area="tonborg">
+          <TonborgDelegationSwitch v-if="space" :personal-space-id="space" settings-link @changed="review.refresh()" />
+        </AdvancedOnly>
       </header>
       <ReviewList v-if="space" :personal-space-id="space" :projects="projects">
         <AttentionWorkspace :personal-space-id="space" :projects="projects" :open-request-id="openRequestId"

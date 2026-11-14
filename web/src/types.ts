@@ -689,6 +689,8 @@ export interface ConsoleState {
   // The console's first-run guide: open once for a new installation until finished or skipped;
   // tourSeen: the newest beginner's guide version the console has shown (null: none yet).
   firstRunGuide?: { open: boolean; tourSeen?: number | null }
+  // The advanced areas this installation has used or opened (features/advanced-areas).
+  advancedAreas?: { shown: string[] }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   providers?: {

@@ -26,6 +26,7 @@ import { useVisitAwaiting } from '@/features/visit-requests/useVisitAwaiting'
 import { useReviewList } from '@/features/review-list/review-store'
 import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
+import { shown } from '@/features/advanced-areas/advanced-areas'
 import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
@@ -53,7 +54,7 @@ import { measureScrollbarSize } from './scrollbar-size'
 const store = useConsoleStore()
 const route = useRoute()
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const destinations = computed(() => navDestinations({ spaceId: activeSpaceId.value || 'current' }))
+const destinations = computed(() => navDestinations({ spaceId: activeSpaceId.value || 'current', shown }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
@@ -82,7 +83,8 @@ const settingsLabel = computed(() => t(clientsNeedUpdate.value ? 'shell.settings
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
 // The 圆桌 icon animates while an Agent is replying in one of its conversations.
-const roundtableLive = useRoundtableLive(activeSpaceId)
+// While 圆桌 is not shown, nothing reads its list and its icon stays still.
+const roundtableLive = useRoundtableLive(activeSpaceId, computed(() => shown('roundtable')))
 const liveDockKey = computed(() => roundtableLive.value ? 'chat' : null)
 const dockFolded = computed(() => destination.value?.placement === 'dock' && destination.value.key !== 'constellation')
 const runtimeReady = computed(() => store.runtimeStatus === 'ready')
