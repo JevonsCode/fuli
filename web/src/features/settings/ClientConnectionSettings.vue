@@ -4,17 +4,19 @@ import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
+import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import { injectClientConnectionStatus } from './client-connection-status'
+import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
 
 import { STATUS_ICONS, canConnect, changedExplanation, connectActionKey, connectionSummary, offersRestart, shownClients,
-  type ClientObservation, type ConnectionResult, restartResultShape, type RestartStatus } from './client-connection-model'
+  type ClientObservation, type ConnectionResult } from './client-connection-model'
 
 // Settings › 客户端's first card: whether each client on this machine has
 // FULI, with 接入, 一键接入 and 重启并更新. Clients described by hand and the
@@ -25,7 +27,7 @@ const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'comp
 // 「重启并更新」 (rec issue 106): the client being confirmed, the one restarting, and each one's last outcome.
 const confirming = ref<ClientObservation | null>(null)
 const restarting = ref('')
-const restartFeedback = ref<Record<string, RestartStatus | 'connect_failed_closed' | 'error'>>({})
+const restartFeedback = ref<Record<string, RestartOutcome>>({})
 // 查看详情: a client's id, or 'installs' for the 「本机有两份 FULI」 notice.
 const details = ref<string | null>(null)
 let unmounted = false
@@ -59,22 +61,16 @@ async function connect(client: ClientObservation) {
   if (busy.value || !canConnect(client)) return
   await connectOne(client)
 }
-// Quits the client, updates its entry while it is closed, reopens it (the console's loopback route only).
-async function restart() {
-  const client = confirming.value
-  confirming.value = null
-  if (!client || busy.value) return
+// Quits the client, updates its entry while it is closed, reopens it (client-restart.ts).
+async function restart(client: ClientObservation) {
+  if (busy.value) return
   restarting.value = client.id
   delete restartFeedback.value[client.id]
   delete connectionFeedback.value[client.id]
   await writing(async () => {
     try {
-      const result = await postJson('/api/system/client-connection/restart', { clientId: client.id }, restartResultShape)
-      // A failed write says whether the app FULI closed was reopened; without that it was never closed.
-      if (!unmounted) restartFeedback.value[client.id] = result.status !== 'connect_failed' ? result.status
-        : result.reopened === false ? 'connect_failed_closed' : result.reopened === true ? 'connect_failed' : 'error'
-    } catch {
-      if (!unmounted) restartFeedback.value[client.id] = 'error'
+      const outcome = await restartClient(client.id)
+      if (!unmounted) restartFeedback.value[client.id] = outcome
     } finally { restarting.value = '' }
   })
 }
@@ -112,11 +108,7 @@ function lastChange(client: ClientObservation) {
   return change ? t('settings.connection.clients.lastChange', { from: t(`settings.connection.clients.status.${change.from}`),
     to: t(`settings.connection.clients.status.${change.to}`), time: formatTime(change.detectedAt) }) : t('settings.connection.clients.details')
 }
-function restartOutcome(client: ClientObservation) {
-  const outcome = restartFeedback.value[client.id]
-  return outcome === 'error' ? t('settings.connection.clients.connectError')
-    : t(`settings.connection.clients.restartResult.${outcome}`, { client: client.label })
-}
+const restartOutcome = (client: ClientObservation) => restartOutcomeText(restartFeedback.value[client.id]!, client.label)
 </script>
 
 <template>
@@ -201,18 +193,7 @@ function restartOutcome(client: ClientObservation) {
         </p>
       </section>
     </div>
-    <Dialog :open="Boolean(confirming)" @update:open="(open: boolean) => { if (!open) confirming = null }">
-      <DialogContent v-if="confirming" size="sm" data-restart-confirm>
-        <DialogHeader>
-          <DialogTitle>{{ t('settings.connection.clients.restartConfirm.title', { client: confirming.label }) }}</DialogTitle>
-          <DialogDescription>{{ t('settings.connection.clients.restartConfirm.body', { client: confirming.label }) }}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" @click="confirming = null">{{ t('settings.connection.clients.restartConfirm.cancel') }}</Button>
-          <Button data-restart-confirmed @click="restart">{{ t('settings.connection.clients.restartConfirm.confirm') }}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
     <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
       <DialogContent v-if="details" size="md" data-connection-details>
         <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />
