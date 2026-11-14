@@ -61,7 +61,10 @@ const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded
 const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only'])
 const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
   'integrity_unknown'])
-const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported' }
+const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported',
+  no_repository: 'noRepository' }
+// A failed Git step's reason: Git's own last line (paths removed on the server), or git_unavailable when Git could not start.
+const GIT_UNAVAILABLE = 'git_unavailable'
 const known = (values: Set<string>, value: string | null) => (value && values.has(value) ? value : 'other')
 
 /** A finished run nobody reviewed for 14 days: its copy is gone, its result and branch stay. */
@@ -76,8 +79,21 @@ export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'err
   if (request.state === 'cancelled' && request.reason) return t(`visitRequests.card.cancelledBecause.${known(CANCELLED, request.reason)}`)
   if (request.state === 'expired') return t(reviewExpired(request) ? 'visitRequests.card.reviewExpired' : 'visitRequests.card.ownerExpired')
   if (request.state === 'unknown') return t('visitRequests.card.restarted')
-  if (request.state === 'failed') return t(`visitRequests.card.${FAILED[request.error ?? ''] ?? 'failed'}`)
+  if (request.state === 'failed') return failedText(request)
   return null
+}
+
+function failedText(request: Pick<VisitRequest, 'reason' | 'error'>) {
+  if (request.error === 'git_failed' && request.reason) {
+    return request.reason === GIT_UNAVAILABLE ? t('visitRequests.card.gitUnavailable')
+      : t('visitRequests.card.gitFailed', { reason: shownText(request.reason) })
+  }
+  return t(`visitRequests.card.${FAILED[request.error ?? ''] ?? 'failed'}`)
+}
+
+/** Why a request did not work, for its row in the list; null for any other state. */
+export function failedLine(request: Pick<VisitRequest, 'state' | 'reason' | 'error'>) {
+  return request.state === 'failed' ? failedText(request) : null
 }
 
 // process_unconfirmed / process_ended: the copy stays while the run's program may still be running, and goes once it stopped; cleanup_done: a failed removal went through later.

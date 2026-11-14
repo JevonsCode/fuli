@@ -13,14 +13,15 @@ import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import VisitRequestDialog from './VisitRequestDialog.vue'
 import { readVisitRequests } from './visit-request-api'
-import { askerLine, visitStateLabel } from './visit-request-model'
+import { askerLine, failedLine, visitStateLabel } from './visit-request-model'
 import type { VisitRequest } from './visit-request-shape'
 import { useVisitPeek, visitRequestLocation } from './useVisitPeek'
 import '@/features/overview/workbench-card.css'
 import './visit-card.css'
 
 // Every request other computers sent, newest first, not only the waiting ones:
-// one compact row each (state in plain words, who asked, the title, when), the
+// one compact row each (state in plain words, who asked and, for one that did
+// not work, why; the title, when), the
 // same card as 等你拍板 from its link (?item=visit/<id>). One read of the
 // newest 200; older ones stay on the server, and a full read says so.
 const LIST_READ = 200
@@ -56,7 +57,9 @@ const cut = computed(() => rows.value.length >= LIST_READ)
             <span class="visit-mark" aria-hidden="true"><UiIcon name="roundtable" :size="16" /></span>
             <span class="workbench-row-text">
               <span class="workbench-row-title">{{ item.title }}</span>
-              <span class="workbench-meta visit-list-meta">{{ askerLine(item.requester) }}</span>
+              <span class="workbench-meta visit-list-meta" :title="failedLine(item) ?? undefined" data-visit-list-meta>
+                {{ askerLine(item.requester) }}<template v-if="failedLine(item)"> · {{ failedLine(item) }}</template>
+              </span>
             </span>
             <span class="visit-list-end">
               <Badge :variant="WAITING.has(item.state) ? 'default' : 'secondary'">{{ visitStateLabel(item) }}</Badge>

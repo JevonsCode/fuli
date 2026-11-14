@@ -180,6 +180,9 @@ merged or pushed. Read it with `action: "request_status"` and the `requestId`: i
 the owner kept the branch (or at once, when that owner marked your computer fully trusted), a
 summary, the branch name, the changed files and counts, never the patch. Approval is always
 the owner's: a refusal (`ask_only`, `budget_exceeded`) is final; never send the work another way.
+A request that ends `failed` with reason `no_repository` cannot be done there: the folder that
+computer shares for the project is not a Git repository. Stop waiting and tell your person so; only
+that owner can share the repository's folder instead.
 
 ## Report Actual Worker Execution
 

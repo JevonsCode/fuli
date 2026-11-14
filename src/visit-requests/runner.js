@@ -1,8 +1,10 @@
+import { lstat } from 'node:fs/promises';
+
 import { z } from 'zod';
 
 import { parseModelJson } from '../text/model-json.js';
 import { withoutControls } from '../text/control-characters.js';
-import { branchChanges, commitVisitWorktree, createVisitWorktree, inspectVisitWorktree, integritySnapshot,
+import { branchChanges, commitVisitWorktree, createVisitWorktree, GIT_UNAVAILABLE, inspectVisitWorktree, integritySnapshot,
   plannedVisitWorktree, removeVisitWorktree, repositoryRoot } from './worktree.js';
 
 // The two runs of a visit request on this computer, both plain constrained
@@ -33,10 +35,15 @@ const PLAN = z.object({
 // root: the folder visit worktrees are made in (<dataDir>/visit-worktrees).
 export function createVisitRunner({ runClient, projectFolder, verifyFolder, root, clock = Date.now }) {
   // The project folder a request is planned in and worked from: the share's
-  // folder or the lead's known one, only when FULI maps it to the project.
+  // folder or the lead's known one, only when FULI maps it to the project, and
+  // only inside a Git repository (no_repository), since the work is done in a
+  // worktree of it. FULI never looks for a repository below it.
   async function folder(request) {
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
+    await repositoryRoot({ folder: found, root }).catch((error) => {
+      throw error.summary === GIT_UNAVAILABLE ? error : coded('no_repository');
+    });
     return found;
   }
 
@@ -105,16 +112,27 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   }
 
   // The worktree goes; the branch stays when the owner kept it or it expired
-  // unreviewed. Answers { entryKept, branchKept } (worktree.js).
+  // unreviewed. Answers { entryKept, branchKept } (worktree.js). A request
+  // whose worktree was never made (no root identity recorded, no folder at its
+  // path) and whose folder is no repository (any more) has nothing to remove.
   async function remove(request, { keepBranch }) {
-    if (!request.worktreePath && !request.branch) return { entryKept: false, branchKept: false };
-    const repository = await repositoryRoot({ folder: request.projectFolder, root });
+    if (!request.worktreePath && !request.branch) return NOTHING_LEFT;
+    const repository = await repositoryRoot({ folder: request.projectFolder, root }).catch(async (error) => {
+      if (await neverMade(request)) return null;
+      throw error;
+    });
+    if (repository === null) return NOTHING_LEFT;
     return removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root,
       rootIdentity: request.rootIdentity }, { keepBranch });
   }
 
   return { folder, planned, prepare, plan, run, patch, remove };
 }
+
+const NOTHING_LEFT = Object.freeze({ entryKept: false, branchKept: false });
+
+const neverMade = async (request) => !request.rootIdentity
+  && (!request.worktreePath || !await lstat(request.worktreePath).then(() => true, () => false));
 
 // JSON inside a marked block, with < and > escaped, so no text inside can close the block early.
 const dataBlock = (tag, value) => `<${tag}>\n${JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}\n</${tag}>`;

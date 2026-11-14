@@ -31,6 +31,15 @@ describe('every request another computer sent', () => {
     expect(wrapper.find('[data-visit-list-cut]').exists()).toBe(false)
   })
 
+  it('says on the row why a request did not work', async () => {
+    stubServer({ 'GET /api/visit-requests': { requests: [visitRequest({ state: 'failed', error: 'no_repository', reason: 'no_repository' })],
+      awaiting: { count: 0, newest: [] } } })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-visit-list-meta]').text())
+      .toBe('Synthetic laptop 的 Sample lead · 这个项目共享的文件夹不是 Git 仓库，没法在副本里做。把共享的文件夹改成仓库所在的目录。')
+  })
+
   it('says so when the read was cut at the newest 200', async () => {
     const requests = Array.from({ length: 200 }, (_, index) => visitRequest({ id: `visit-${index}`, state: 'kept' }))
     stubServer({ 'GET /api/visit-requests': { requests, awaiting: { count: 0, newest: [] } } })
