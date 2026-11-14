@@ -31,8 +31,11 @@ const REVIEW_EXPIRY_MS = 14 * DAY_MS;
 // its owner marked fully trusted is the owner's own (Jevons 11-15): it is
 // held to no count of requests or wake minutes a day, and its requests are
 // not part of the project's or the computer's counts. What still holds for
-// it is the open count: with ten unfinished or unlooked-at, the next waits
-// until the owner has looked, so a requester stuck in a loop stops there.
+// it is one stop of ten, for a requester stuck in a loop: its requests that
+// are unfinished or not looked at yet, together with those of the last 24
+// hours that failed after costing a wake. At ten the next is refused, until
+// the owner has looked at some or the failures are a day old. Two planning
+// wakes at once and one run of a lead at a time hold for everyone.
 // A request that failed here before its run started (a folder that is no
 // repository, a Git step) is not one of the requester's requests of the
 // day: nothing the requester did made it fail.
@@ -105,7 +108,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
       const mode = source === 'guest' ? 'ask_only' : modeOf(requester.key);
       const usage = records.usage(requester.key, since);
       const trusted = mode === 'trusted';
-      const over = trusted ? usage.open >= VISIT_BUDGET.open : overBudget(usage, source);
+      const over = trusted ? usage.open + usage.spent >= VISIT_BUDGET.open : overBudget(usage, source);
       const code = mode === 'ask_only' ? 'ask_only' : over ? 'budget_exceeded'
         : !trusted && records.acceptedSince(since, { projectId }) >= VISIT_BUDGET.projectPerDay ? 'project_budget_exceeded'
           : !trusted && records.acceptedSince(since) >= VISIT_BUDGET.computerPerDay ? 'computer_budget_exceeded'

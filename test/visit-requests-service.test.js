@@ -372,6 +372,33 @@ test('a request that failed here before its run started is not one of the reques
   assert.deepEqual(f.submit(BETA, DRAFT, 'other-project'), { ok: false, code: 'budget_exceeded' });
 });
 
+test('a fully trusted computer whose runs keep failing is stopped at ten of them in a day', async (t) => {
+  // A requester stuck in a loop of work that cannot finish: every run fails, so nothing ever waits for the owner.
+  const f = fixture(t, { failWith: Object.assign(new Error('client'), { code: 'client_exit_nonzero', ms: 60 * 1000 }) });
+  f.setMode('trusted');
+  for (let index = 1; index <= 10; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'ten failed runs of the day');
+  assert.equal(f.runner.calls.ran.length, 10, 'the eleventh ran nothing');
+  // Another computer is not held back by them.
+  assert.equal(f.submit(BETA).ok, true);
+});
+
+test('a trusted computer\u2019s requests that failed here without any wake are not part of its stop', async (t) => {
+  const f = fixture(t);
+  const folder = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+  f.setMode('trusted');
+  for (let index = 1; index <= 12; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  f.runner.folder = folder;
+  assert.equal(f.submit().ok, true, 'the folder is put right and work goes on');
+});
+
 test('a Git step that fails after the run is counted, and so are its wake minutes', async (t) => {
   // The commit or the reading of the changes failing after the client ran: the requester's edit can cause it.
   const f = fixture(t, { failWith: Object.assign(new Error('git'), { code: 'git_failed', summary: 'synthetic', ms: 60 * 1000 }) });
