@@ -121,14 +121,14 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     catch (error) { throw Object.assign(error, { ms }); }
 
     async function concluded() {
-    const place = { folder: request.projectFolder, root, id: request.id, worktreePath: request.worktreePath };
-    const hold = await inspectVisitWorktree({ ...place, baseCommit: request.baseCommit });
-    if (!hold) await commitVisitWorktree({ ...place, message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
-    const after = await snapshot();
-    const changes = hold ? { files: [], diffstat: { files: 0, added: 0, removed: 0 }, addedText: '' }
-      : await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
-    return { ms, hold, intact: before === null || after === null ? null : before === after, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''),
-      files: changes.files, diffstat: changes.diffstat, addedText: changes.addedText };
+      const place = { folder: request.projectFolder, root, id: request.id, worktreePath: request.worktreePath };
+      const hold = await inspectVisitWorktree({ ...place, baseCommit: request.baseCommit });
+      if (!hold) await commitVisitWorktree({ ...place, message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
+      const after = await snapshot();
+      const changes = hold ? { files: [], diffstat: { files: 0, added: 0, removed: 0 }, addedText: '' }
+        : await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
+      return { ms, hold, intact: before === null || after === null ? null : before === after, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''),
+        files: changes.files, diffstat: changes.diffstat, addedText: changes.addedText };
     }
   }
 
