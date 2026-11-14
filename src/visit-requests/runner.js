@@ -1,4 +1,5 @@
 import { lstat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 import { z } from 'zod';
 
@@ -37,15 +38,33 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   // The project folder a request is planned in and worked from: the share's
   // folder or the lead's known one, only when FULI maps it to the project, and
   // only inside a Git repository (no_repository), since the work is done in a
-  // worktree of it. FULI never looks for a repository below it.
+  // worktree of it. A folder in the project's own repository is used as it is.
+  // Otherwise a workspace folder that holds the project's checkout under the
+  // project's own name (which is how FULI maps such a folder to the project)
+  // stands for that checkout, whether the workspace is in no repository or in
+  // one that is not the project's; FULI looks nowhere else below it. Without
+  // such a checkout a folder inside any repository is used, as before.
   async function folder(request) {
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
-    await repositoryRoot({ folder: found, root }).catch((error) => {
-      throw error.summary === GIT_UNAVAILABLE ? error : coded('no_repository');
-    });
-    return found;
+    const mapped = (candidate) => Promise.resolve().then(() => verifyFolder(candidate, request.projectId)).catch(() => false);
+    const top = await repositoryTop(found);
+    if (top && await mapped(top)) return found;
+    const checkout = join(found, request.projectId);
+    if (dirname(checkout) === resolve(found) && await mapped(checkout)) {
+      // The checkout's repository must be the project's too, not one further up that merely contains it.
+      const own = await repositoryTop(checkout);
+      if (own && await mapped(own)) return checkout;
+    }
+    if (top) return found;
+    throw coded('no_repository');
   }
+
+  // The top folder of the repository a folder is in, or null in none; Git that cannot run at all is its own failure.
+  const repositoryTop = (candidate) => repositoryRoot({ folder: candidate, root }).catch((error) => {
+    if (error.summary === GIT_UNAVAILABLE) throw error;
+    return null;
+  });
 
   // Where the worktree and branch will be, recorded before they are made.
   const planned = (request) => plannedVisitWorktree({ root, id: request.id });

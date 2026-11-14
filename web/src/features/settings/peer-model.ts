@@ -148,6 +148,16 @@ export function shareRows(status: PeerStatus, added: readonly Shareable[]) {
   return [...status.shareable, ...added.filter((project) => !listed.has(project.projectId))]
 }
 
+// Why a save of the share list was refused: the server's code when the console words it, else 'other'.
+const SHARE_SAVE_REFUSALS = ['invalid_folder', 'lead_unavailable', 'invalid_clients', 'share_not_published'] as const
+export function shareSaveRefusal(caught: unknown): typeof SHARE_SAVE_REFUSALS[number] | 'other' {
+  if (!(caught instanceof ApiError) || !caught.detail) return 'other'
+  try {
+    const code = (JSON.parse(caught.detail) as { error?: unknown }).error
+    return SHARE_SAVE_REFUSALS.find((known) => known === code) ?? 'other'
+  } catch { return 'other' }
+}
+
 // The console's own message for a refused peer control, else the fallback.
 export function peerApiMessage(caught: unknown, fallback: string) {
   if (caught instanceof ApiError && caught.detail) {
