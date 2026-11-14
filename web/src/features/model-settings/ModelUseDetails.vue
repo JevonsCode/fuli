@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import { useConsoleStore } from '@/stores/console'
 import { UiDialog } from '@/ui'
 import ModelRoleCheck from './ModelRoleCheck.vue'
@@ -47,8 +48,10 @@ watch([() => props.view?.role, () => props.linkedPart, delegation], async ([, pa
           <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
         </div>
       </dl>
-      <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" ref="delegation" class="model-details-delegation" :personal-space-id="spaceId"
-        :data-model-details-linked="linkedPart === 'delegation' ? '' : undefined" @changed="emit('changed')" />
+      <AdvancedOnly area="tonborg">
+        <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" ref="delegation" class="model-details-delegation" :personal-space-id="spaceId"
+          :data-model-details-linked="linkedPart === 'delegation' ? '' : undefined" @changed="emit('changed')" />
+      </AdvancedOnly>
       <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
         :model="view.connection?.model ?? null" @saved="next => emit('trustSaved', next)" @changed="emit('changed')" />
       <ModelRoleHistory :role="view.role" :version="historyVersion" />

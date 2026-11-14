@@ -81,7 +81,10 @@ export function createProjectOrganizing({ path, now = () => new Date() }) {
     return projectView(saved.projects[key(personalSpaceId, personalProjectId)]);
   }
 
-  return Object.freeze({ view, update });
+  // Whether any project was ever organised here; a missing file reads as none.
+  const started = () => Object.keys(stored()).length > 0;
+
+  return Object.freeze({ view, update, started });
 }
 
 function areaState(id, value) {

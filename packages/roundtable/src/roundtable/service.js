@@ -923,6 +923,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
     // Woken clients' answers in [from, to) by client and reported model (statement usage).
     wakeUsage: ({ from, to }) => store.wakeAttempts.usageBetween(spaceId(), from, to),
+    // Whether this space ever had a thread, an Agent chat or a group discussion (the console's 圆桌).
+    used: () => store.used(spaceId()),
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,

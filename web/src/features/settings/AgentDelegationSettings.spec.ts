@@ -1,6 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { adoptShownAreas } from '@/features/advanced-areas/advanced-areas'
 import AgentDelegationSettings from './AgentDelegationSettings.vue'
+
+const EVERY_AREA = ['roundtable', 'tonborg', 'tidy', 'lan'] as const
 
 // rec#11 D-81, synthetic data only.
 const IDS = ['settings', 'organisation', 'projects', 'services_apps', 'roundtable', 'decisions', 'lan_roundtable', 'model_settings', 'public_projects']
@@ -12,6 +15,8 @@ const policy = (changes: Record<string, boolean> = {}, operations: unknown[] = [
 })
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 
+// An installation that has used every advanced area, unless a test says otherwise.
+beforeEach(() => adoptShownAreas([...EVERY_AREA]))
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = '' })
 
 function server(routes: Record<string, unknown>) {
@@ -19,6 +24,18 @@ function server(routes: Record<string, unknown>) {
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
+
+it('leaves out the 圆桌 and LAN categories until those areas are shown', async () => {
+  adoptShownAreas(['tidy'])
+  server({ 'GET /api/agent-delegation': policy() })
+  const wrapper = mount(AgentDelegationSettings, { attachTo: document.body })
+  await flushPromises()
+  expect(wrapper.findAll('[data-delegation-category]').map(row => row.attributes('data-delegation-category')))
+    .toEqual(IDS.filter(id => id !== 'roundtable' && id !== 'lan_roundtable'))
+  adoptShownAreas(['roundtable', 'lan'])
+  await flushPromises()
+  expect(wrapper.findAll('[data-delegation-category]').map(row => row.attributes('data-delegation-category'))).toEqual(IDS)
+})
 
 it('shows one switch per category as a plain card and saves a switch at once', async () => {
   const fetch = server({

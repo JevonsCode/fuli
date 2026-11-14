@@ -14,6 +14,7 @@ import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import ModelUseDetails from '@/features/model-settings/ModelUseDetails.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import RetrievalTermsCard from '@/features/model-settings/RetrievalTermsCard.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
@@ -207,7 +208,7 @@ onBeforeUnmount(() => {
               @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" @builtin="builtinOpen = true" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
               @edit="edit('assistant')" @details="details = 'assistant'" @checked="load()" />
-            <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
+            <AdvancedOnly area="tidy"><DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" /></AdvancedOnly>
             <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
             <ModelRoleCard v-for="role in (['jefa', 'tonborg', 'bole'] as const)" :key="role" :view="view(role)" :locked="locked"
               :editing="editing === role" @edit="edit(role)" @details="details = role" @checked="load()" />

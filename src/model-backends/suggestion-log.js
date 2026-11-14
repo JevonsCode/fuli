@@ -128,6 +128,13 @@ export class RoleSuggestionLog {
     return this.path === ':memory:' ? write([]) : hardDeleteLedger(dirname(this.path)).withReadLock(write);
   }
 
+  // Whether any row of this operation is kept. Metadata only, like the
+  // delete record: no words, so readable while recovery waits. Never creates the file.
+  hasOperation(operation) {
+    if (!this.database && this.path !== ':memory:' && !existsSync(this.path)) return false;
+    return this.db.prepare('SELECT EXISTS(SELECT 1 FROM role_suggestions WHERE operation = ?) AS found').get(operation).found === 1;
+  }
+
   // The last 90 days, newest first, at most RETENTION.rows. A suggestion
   // followed by a newer suggestion for the same subject reads stale: 'newer';
   // its status stays as recorded. Reading never creates the file or deletes.

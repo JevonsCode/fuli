@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { apiErrorReason, getJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { delegationCategoryShown } from '@/features/advanced-areas/advanced-areas'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
@@ -19,6 +20,8 @@ const loadError = ref('')
 const saveError = ref('')
 const saving = ref<string | null>(null)
 const detailsOpen = ref(false)
+// A category about an advanced area not shown yet waits with that area.
+const categories = computed(() => policy.value?.categories.filter(category => delegationCategoryShown(category.id)) ?? [])
 const time = (value: string) => formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '-' })
 
 onMounted(async () => {
@@ -55,7 +58,7 @@ async function setCategory(id: string, enabled: boolean) {
       <GrowthLoading v-if="!policy && !loadError" variant="compact" :label="t('agentDelegation.loading')" />
       <p v-if="loadError" role="alert">{{ loadError }}</p>
       <template v-if="policy">
-        <div v-for="category in policy.categories" :key="category.id" class="agent-delegation-row" :data-delegation-category="category.id">
+        <div v-for="category in categories" :key="category.id" class="agent-delegation-row" :data-delegation-category="category.id">
           <span>
             <strong>{{ t(`agentDelegation.categories.${category.id}.label`) }}</strong>
             <small>{{ t(`agentDelegation.categories.${category.id}.summary`) }}<template v-if="!category.defaultEnabled"> · {{ t('agentDelegation.defaultOff') }}</template></small>

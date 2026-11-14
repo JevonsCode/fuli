@@ -39,6 +39,17 @@ describe('ConnectionsSettingsTab', () => {
     expect(wrapper.find('[data-settings-restart-notice]').exists()).toBe(false)
   })
 
+  it('keeps console LAN access and the ports, and leaves out LAN pairing until it is shown', () => {
+    const hidden = mountTab({ advancedAreas: { shown: [] } })
+    expect(hidden.text()).toContain('局域网访问')
+    expect(hidden.findAll('.port-grid input')).toHaveLength(4)
+    expect(hidden.find('peer-settings-stub').exists()).toBe(false)
+    hidden.unmount()
+    const shownLan = mountTab({ advancedAreas: { shown: ['lan'] } })
+    expect(shownLan.find('peer-settings-stub').exists()).toBe(true)
+    shownLan.unmount()
+  })
+
   it('offers the conflict policy once there are projects, and says when the graph service is down', () => {
     const wrapper = mountTab({ personalProjects: [{ project_id: 'project-a', personal_space_id: 'personal-1', profile: { name: 'A' } }] } as never)
     expect(wrapper.find('conflict-policy-card-stub').exists()).toBe(true)
