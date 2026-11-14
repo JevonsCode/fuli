@@ -40,7 +40,8 @@ if (!CLIENTS[client]) throw new TypeError('--client is claude-code or codex');
 const ENTRY = join('src', 'agents', client, 'lifecycle-hook.js');
 const ROUTE = `/api/lifecycle-hooks/${client}`;
 
-const provider = await startSyntheticHookProvider();
+// An assigned entry with habits and a new conversation per run: the path people have.
+const provider = await startSyntheticHookProvider({ assignedEntry: true });
 const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
 const started = await createServer({ port: 0, runtimeConfigPath: fixture.runtimeConfigPath, peer: false });
 const consoleTimes = [];

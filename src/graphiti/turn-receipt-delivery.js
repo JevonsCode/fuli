@@ -1,6 +1,8 @@
 import { deferredTurnReceipt, MAX_LIST_EPISODES, readEpisodeReceipts, readTurnReceipt, renderTurnReceipt, savedEpisodeIds }
   from '../agents/turn-receipt.js';
-import { withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
+import { receiptConsoleUrl, withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
+import { TASK_KEY_PREFIX_LENGTH, taskKeyFor } from '../knowledge-impressions/store.js';
+import { markdownLink } from '../text/markdown-link.js';
 import { taskKnowledgeReader } from './knowledge-reader.js';
 import { formalTask, sessionMigrationLine, sessionMigrationNotice, sessionMigrationOffer } from './session-knowledge-migration.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
@@ -24,8 +26,32 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
   const receipt = await savedTurnReceipt(application, task, results, { memory, agentName });
   const migration = receipt && heldInFormalProject(task, results) ? sessionMigrationLine(application, task)
     : await sessionMigrationOffer(application, task);
-  if (!migration) return receipt;
-  return receipt ? { ...receipt, lines: [...receipt.lines, migration] } : { lines: [migration] };
+  const lines = [migration, storedHabitsLine(application, task)].filter(Boolean);
+  if (!lines.length) return receipt;
+  return receipt ? { ...receipt, lines: [...receipt.lines, ...lines] } : { lines };
+}
+
+// The first reply of a new conversation says how many of the person's habits
+// FULI handed to the assistant with that entry, and links the list. 带上
+// (handed over), never 用了: FULI sees the hand-over, not what the AI applied.
+// delivery: { taskKey, count } of an entry that opened a conversation.
+function habitsLine(application, delivery) {
+  if (!(delivery?.count >= 1)) return null;
+  return `FULI 习惯：这个新对话带上了你的 ${delivery.count} 条习惯 · `
+    + markdownLink('看看是哪几条', `${receiptConsoleUrl(application)}/habits/${delivery.taskKey.slice(0, TASK_KEY_PREFIX_LENGTH)}`);
+}
+
+// A checkpoint, roundtable or pause receipt replaces the entry's, so a task
+// whose entry opened the conversation says it again from its stored row: one
+// local primary-key read, off the entry path. Any other task, or a failing
+// read, says nothing.
+export function storedHabitsLine(application, task) {
+  try {
+    const row = application.recallImpressions?.delivery(taskKeyFor(task.token).slice(0, TASK_KEY_PREFIX_LENGTH));
+    return row?.opensConversation ? habitsLine(application, { taskKey: row.taskKey, count: row.preferenceKeys.length }) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function savedTurnReceipt(application, task, results, { memory, agentName }) {
@@ -44,14 +70,17 @@ async function savedTurnReceipt(application, task, results, { memory, agentName 
 // A task entry's receipt: the identity line, then what earlier turns saved but
 // never showed, then the offer to migrate what the session's temporary project
 // holds once the session linked to a formal project (rec#20 part 2), and
-// what a person confirmed moving for this session since its last entry (rec#82).
-export async function entryAgentReceipt(application, task, receipt) {
+// what a person confirmed moving for this session since its last entry (rec#82),
+// and, when this entry opened a new conversation, the habits it handed over
+// (habits: { taskKey, count } from the delivery record, or null).
+export async function entryAgentReceipt(application, task, receipt, habits = null) {
   const format = await receiptFormatNotices(application, { taskId: task.token, includePending: false });
   if (format.length) receipt = { ...receipt, markdown: [receipt.markdown, ...format].join(' · ') };
   const late = await unreadTurnReceipt(application, task);
   const confirmed = sessionMigrationNotice(application, task);
   const migration = await sessionMigrationOffer(application, task);
-  return withReceiptLines(withTurnReceipt(receipt, late), [confirmed, migration].filter(Boolean));
+  return withReceiptLines(withTurnReceipt(receipt, late),
+    [confirmed, migration, habitsLine(application, habits)].filter(Boolean));
 }
 
 // What earlier turns of this session saved but never showed. Each receipt is

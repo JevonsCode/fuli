@@ -1,4 +1,5 @@
-import { taskAgentReceipt } from '../agents/identity-receipt.js';
+import { taskAgentReceipt, withReceiptLines } from '../agents/identity-receipt.js';
+import { storedHabitsLine } from '../graphiti/turn-receipt-delivery.js';
 
 // A turn that used the roundtable says so where the reply is signed (Jevons
 // 11-11): 「FULI Agents：A & B」 with a link to the conversation. A task is one
@@ -58,7 +59,9 @@ export async function withRoundtableReceipt(app, name, input, result) {
     const receipt = taskAgentReceipt(app, { projectId: task.personalProjectId, agentId: task.projectAgentId,
       name: owner?.profile?.display_name ?? null, role: owner?.profile?.name ?? null,
       sourceApplication: task.sourceApplication, roundtable: roundtableTurn(token) });
-    return { ...result, agent_receipt: { required: true, markdown: receipt.markdown, guidance: RECEIPT_NOTE } };
+    // It replaces the entry receipt, so the first task of a new conversation keeps its habits line.
+    const { markdown } = withReceiptLines(receipt, [storedHabitsLine(app, task)].filter(Boolean));
+    return { ...result, agent_receipt: { required: true, markdown, guidance: RECEIPT_NOTE } };
   } catch {
     return result;
   }

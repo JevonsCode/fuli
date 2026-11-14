@@ -11,11 +11,48 @@ import { join } from 'node:path';
 
 export const SYNTHETIC_PROJECT_ID = 'synthetic-hook-project';
 
-export async function startSyntheticHookProvider() {
+// The project's lead and the person's habits an assigned entry carries.
+const SYNTHETIC_LEAD = { agent_id: 'synthetic-lead', personal_space_id: 'synthetic-space', personal_project_id: SYNTHETIC_PROJECT_ID,
+  profile: { name: 'Synthetic lead', responsibility: 'Synthetic project lead', capabilities: ['project_context'],
+    status: 'active', allowed_clients: ['claude_code', 'codex'] },
+  created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z' };
+const SYNTHETIC_HABITS = [1, 2, 3].map(index => ({ id: `synthetic-habit-${index}`, item_kind: 'entity',
+  preference_key: `synthetic.habit.${index}`, instruction: `Synthetic habit ${index}.`, preference_scope: 'global',
+  confirmation_status: 'confirmed' }));
+
+// assignedEntry: answer as a project whose lead takes the task, with three
+// habits, and open a new conversation for each native session (its later
+// tasks recover it), so a measurement runs the entry path people have, the
+// first-reply habits line included. Without it the entry has no Agent and no
+// complete preferences.
+export async function startSyntheticHookProvider({ assignedEntry = false } = {}) {
   const contexts = new Map();
   const current = new Map();
+  const conversations = new Map();
   let requests = 0;
+  const assigned = (path, query, body) => {
+    if (path === '/v1/project-agent-context/resolve') {
+      return [200, { status: 'ready', reason: 'project_lead', agent: SYNTHETIC_LEAD, match_basis: ['project_lead'] }];
+    }
+    if (path === '/v1/project-agents') return [200, [SYNTHETIC_LEAD]];
+    if (path === '/v1/collaboration-preferences') {
+      return [200, { personal_space_id: query.personal_space_id, personal_project_id: query.personal_project_id ?? null,
+        project_agent_id: query.project_agent_id ?? null, effective_preferences: SYNTHETIC_HABITS,
+        global_preferences: SYNTHETIC_HABITS, project_preferences: [], agent_preferences: [], conflicts: [], truncated: false,
+        source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } }];
+    }
+    if (path === '/v1/agent-conversations/begin') {
+      const session = `${body.agent_id}:${body.source_application}:${body.session_id}`;
+      const recovered = conversations.get(session) ?? null;
+      if (!recovered) conversations.set(session, `synthetic-conversation-${conversations.size + 1}`);
+      return [200, { status: 'saved', conversation_id: conversations.get(session), revision: 0, recovered_from: recovered,
+        previous: null, recent: null }];
+    }
+    return null;
+  };
   const answer = (method, path, query, body) => {
+    const entry = assignedEntry ? assigned(path, query, body) : null;
+    if (entry) return entry;
     if (path === '/v1/task-context-sessions/current') {
       const record = current.get(query.session_id);
       return record ? [200, record] : [404, { detail: 'not found' }];
