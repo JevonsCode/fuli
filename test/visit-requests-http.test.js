@@ -102,7 +102,7 @@ test('the list, the card and each decision answer this computer only, with the s
   assert.equal((await call(port, 'GET', '/api/visit-requests-other')).handled, false);
 });
 
-test('a requester\'s mode is set here: trusted marks the computer, a guest link never goes past plan', async (t) => {
+test('a requester\'s mode is set here: trusted marks the computer, a guest link stays ask_only', async (t) => {
   const port = access(t);
   const path = `/api/visitor-access/requesters/${encodeURIComponent(PEER)}/mode`;
   const trusted = await call(port, 'PUT', path, { body: { mode: 'trusted', label: 'My other laptop' } });
@@ -111,8 +111,14 @@ test('a requester\'s mode is set here: trusted marks the computer, a guest link 
   const lowered = await call(port, 'PUT', path, { body: { mode: 'plan' } });
   assert.deepEqual([lowered.body.requester.mode, lowered.body.requester.ownDevice, lowered.body.requester.label],
     ['plan', false, 'My other laptop']);
-  const guest = await call(port, 'PUT', '/api/visitor-access/requesters/guest%3Asynthetic-link/mode', { body: { mode: 'auto', label: 'Guest' } });
-  assert.deepEqual([guest.status, guest.body.code], [400, 'mode_not_allowed']);
+  const guestPath = '/api/visitor-access/requesters/guest%3Asynthetic-link/mode';
+  for (const mode of ['plan', 'auto', 'trusted']) {
+    const guest = await call(port, 'PUT', guestPath, { body: { mode, label: 'Guest' } });
+    assert.deepEqual([guest.status, guest.body.code], [400, 'mode_not_allowed'], mode);
+  }
+  const asks = await call(port, 'PUT', guestPath, { body: { mode: 'ask_only', label: 'Guest' } });
+  assert.deepEqual([asks.status, asks.body.requester.mode], [200, 'ask_only']);
+  assert.deepEqual(port.requesterMode('guest:another-link'), { ok: true, mode: 'ask_only' }, 'a guest link is ask_only by default');
   const unknown = await call(port, 'PUT', path, { body: { mode: 'everything' } });
   assert.deepEqual([unknown.status, unknown.body.code], [400, 'mode_unknown']);
 });

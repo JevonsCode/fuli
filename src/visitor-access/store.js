@@ -9,8 +9,10 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // written before its search runs (outcome 'pending') and settled afterwards
 // as 'answered' or 'failed'; a refused attempt is a 'refused' row with its
 // code. Rows keep the visitor's queries as they were searched (already cut),
-// how many items and bytes went back, never the items themselves. Guest links
-// and visit requests come with their own slices as later versions.
+// how many items and bytes went back, never the items themselves. A guest
+// link (version 2) lets a person without FULI ask one project from the same
+// network; only the SHA-256 of its token is kept. Visit requests come with
+// their own slice as a later version.
 const READS_TABLE = `
     CREATE TABLE IF NOT EXISTS visitor_reads(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,9 +29,6 @@ const READS_TABLE = `
       at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
     CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`;
-
-// Version 2 (guest links, src/guest-access): declared here exactly as that
-// change declares it, so version 3 follows it in every build.
 const GUEST_LINK_TABLES = `
     CREATE TABLE IF NOT EXISTS guest_links(
       id TEXT PRIMARY KEY,
@@ -224,6 +223,33 @@ export class VisitorAccessStore {
       .all(requesterKey, requesterKey, projectId, projectId, limit).map(readView);
   }
 
+  // A new guest link and its requester row (mode ask_only), in one transaction.
+  insertGuestLink({ id, projectId, tokenHash, label, createdAt, expiresAt }) {
+    this.transaction(() => {
+      this.db.prepare(`INSERT INTO guest_links(id, project_id, token_hash, label, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(id, projectId, tokenHash, label, createdAt, expiresAt);
+      this.setRequester({ key: `guest:${id}`, kind: 'guest', label, mode: 'ask_only', ownDevice: false, at: createdAt });
+    });
+  }
+
+  // Links neither revoked nor expired at at (an ISO instant), newest first;
+  // optionally of one project.
+  liveGuestLinks(at, projectId = null) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT * FROM guest_links WHERE revoked_at IS NULL AND expires_at > ?
+      AND (? IS NULL OR project_id = ?) ORDER BY created_at DESC, id`).all(at, projectId, projectId).map(guestLinkView);
+  }
+
+  // Answers whether a live link was revoked now.
+  revokeGuestLink(id, at) {
+    if (!this.readable) return false;
+    return this.db.prepare('UPDATE guest_links SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(at, id).changes > 0;
+  }
+
+  touchGuestLink(id, at) {
+    this.db.prepare('UPDATE guest_links SET last_used_at = ? WHERE id = ?').run(at, id);
+  }
+
   close() {
     this.database?.close();
     this.database = null;
@@ -260,6 +286,12 @@ function setAsidePrereleaseReads(database) {
 function requesterView(row) {
   return { key: row.key, kind: row.kind, label: row.label, mode: row.mode, ownDevice: row.own_device === 1,
     modeUpdatedAt: row.mode_updated_at };
+}
+
+// The token hash stays in the row object only for the caller's constant-time compare.
+function guestLinkView(row) {
+  return { id: row.id, projectId: row.project_id, tokenHash: row.token_hash, label: row.label, createdAt: row.created_at,
+    expiresAt: row.expires_at, lastUsedAt: row.last_used_at };
 }
 
 function readView(row) {

@@ -185,6 +185,9 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/employee-templates/:templateId/call', 'call_employee_tool'),
   relayed('PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status', 'Move the task back to its earlier status.'),
   delegable('public_projects', 'PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'Set the project back to private.'),
+  // Guest links (rec issue 133): a person without FULI asks one project from the same network.
+  local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; only the person creates one, on this computer, and sees its token once.'),
+  delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
   local('POST /api/data-format/apply', 'Applying a data format migration rewrites real local data; a person confirms the previewed plan in the local console or at a terminal (fuli migrate apply). Agents may run fuli migrate status or preview, which only read.'),
   relayed('POST /api/data-format/dismiss-notices', 'Not undone; the reminders were about migrations already finished.'),
   local('POST /api/data-format/rollback', 'Undoing a data format migration changes real local data and is confirmed by a person in the local console or with fuli migrate rollback.'),

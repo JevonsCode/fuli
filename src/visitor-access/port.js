@@ -2,6 +2,7 @@ import { withoutControls } from '../text/control-characters.js';
 import { createStatusReadLimiter, rateLimitRefusal } from './rate-limit.js';
 import { searchableProject, searchableQueries, searchSharedProject, sharedCard } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
+import { createGuestLinks } from './guest-links.js';
 
 // The one port the visiting assistant reaches this computer's shared project
 // knowledge through: a requester from another computer searches one project
@@ -24,6 +25,8 @@ import { VisitorAccessStore } from './store.js';
 // attempt is reserved, so a requester past its limits causes no Provider read.
 const MODES = new Set(['ask_only', 'plan', 'auto', 'trusted']);
 const DEFAULT_MODE = 'plan';
+// A guest link only asks: it is ask_only by default and can be set to nothing else.
+const defaultMode = (key) => (key.startsWith('guest:') ? 'ask_only' : DEFAULT_MODE);
 const REQUESTER_KEY = /^(?:peer:[0-9a-f]{64}|guest:[A-Za-z0-9_-]{8,64})$/;
 // Display text is cut to this many UTF-16 units before it is cleaned.
 const MAX_LABEL_UNITS = 1000;
@@ -35,7 +38,7 @@ const READS_LIMIT = 200;
 // request is refused as requests_unavailable.
 export function createVisitorAccess({ path = ':memory:', application, now = () => new Date(), warn, requests: createRequests = null }) {
   const store = new VisitorAccessStore(path, { warn });
-  const modeOf = (key) => store.requester(key)?.mode ?? DEFAULT_MODE;
+  const modeOf = (key) => store.requester(key)?.mode ?? defaultMode(key);
   const requests = createRequests ? createRequests({ store, modeOf }) : null;
   const statusReads = createStatusReadLimiter();
 
@@ -107,7 +110,7 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
     requesterMode(key) {
       if (!validKey(key)) return refused('requester_invalid');
-      try { return { ok: true, mode: store.requester(key)?.mode ?? DEFAULT_MODE }; }
+      try { return { ok: true, mode: store.requester(key)?.mode ?? defaultMode(key) }; }
       catch { return refused(UNAVAILABLE); }
     },
 
@@ -178,6 +181,9 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
     // The owner's console (src/visit-requests/http.js): list, card and decisions; null without the service.
     requests,
 
+    // Guest links (deliverable B): created, listed and revoked by the person, opened by a bearer token.
+    guestLinks: createGuestLinks({ store, now }),
+
     // With requests, after their running work stopped (a promise).
     close: () => (requests ? requests.close().then(() => store.close()) : store.close())
   };
@@ -228,8 +234,8 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 }
 
 const ACTIONS = new Set(['search', 'card']);
-// A guest link never runs work on this computer by a rule (owner decision 2026-11-14).
-const GUEST_MODES = new Set(['ask_only', 'plan']);
+// A guest link only asks (src/guest-access): no request of it is ever taken.
+const GUEST_MODES = new Set(['ask_only']);
 const PLAIN_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 // One word for a store that cannot be used now.
 const UNAVAILABLE = 'visitor_access_unavailable';

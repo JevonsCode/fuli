@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { createGuestAccess } from './guest-access/runtime.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
 import { createLifecycleHookCalls } from './agents/lifecycle-hook-calls.js';
@@ -185,10 +186,11 @@ export async function createServer(options = {}) {
   let stopEmbeddingModelUpdates = () => {};
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
+  let guestAccess = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => guestAccess?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -349,6 +351,13 @@ export async function createServer(options = {}) {
     // Visit requests arrive through that runtime and run in this process only.
     try { application.visitorAccess?.requests?.resume(); }
     catch (error) { console.error(`Visit requests could not resume: ${error.code ?? error.message}`); }
+  }
+  // Guest links (rec issue 133): their own listener on port 2729 while a link is live, never the console's.
+  if (application.visitorAccess && application.roundtableHost) {
+    guestAccess = createGuestAccess({ visitorAccess: application.visitorAccess, host: application.roundtableHost,
+      onError: (error) => console.error(`Guest links: ${error.code ?? error.message}`) });
+    application.guestAccess = guestAccess;
+    void guestAccess.start();
   }
 
   let closing = null;
