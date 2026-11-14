@@ -26,13 +26,21 @@ describe('等你拍板 rows', () => {
     expect(more).toBe(2 + 2)
   })
 
-  it('puts other computers\' requests after the assistants\' own: waiting ones, then finished runs to look at', () => {
+  it('puts other computers\' waiting requests first, then the assistants\' own, then finished runs to look at', () => {
     const visits = { awaiting: [visit('w1'), visit('w2')], awaitingTotal: 7, reviews: [visit('r1', 'awaiting_review')] }
     const { rows, more, visits: waiting } = decisionRows({ requests: [request('a')], requestTotal: 1, visits, reviewTotal: 2, conflicts: 0 })
-    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['request', 'w1', 'w2', 'r1', 'review'])
+    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['w1', 'w2', 'request', 'r1', 'review'])
     // Five more wait for the call than the newest two shown.
     expect(more).toBe(5)
     expect(waiting).toBe(7 + 1)
+  })
+
+  it('shows another computer\'s waiting request even when five assistants\' requests wait', () => {
+    const visits = { awaiting: [visit('w1')], awaitingTotal: 1, reviews: [] }
+    const five = ['a', 'b', 'c', 'd', 'e'].map(request)
+    const { rows, more } = decisionRows({ requests: five, requestTotal: 5, visits, reviewTotal: 0, conflicts: 0 })
+    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['w1', 'request', 'request', 'request', 'request'])
+    expect(more).toBe(1)
   })
 })
 
