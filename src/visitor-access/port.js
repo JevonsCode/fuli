@@ -1,5 +1,5 @@
 import { withoutControls } from '../text/control-characters.js';
-import { rateLimitRefusal } from './rate-limit.js';
+import { createStatusReadLimiter, rateLimitRefusal } from './rate-limit.js';
 import { searchableProject, searchableQueries, searchSharedProject, sharedCard } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
 
@@ -37,6 +37,7 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
   const store = new VisitorAccessStore(path, { warn });
   const modeOf = (key) => store.requester(key)?.mode ?? DEFAULT_MODE;
   const requests = createRequests ? createRequests({ store, modeOf }) : null;
+  const statusReads = createStatusReadLimiter();
 
   return {
     // confirm(): optional; resolves null to go on, or a refusal code.
@@ -167,7 +168,8 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
       if (!who) return refused('requester_invalid');
       if (!requests) return refused('requests_unavailable');
       try {
-        const limited = rateLimitRefusal(store, who.requesterKey, '', now());
+        const at = now();
+        const limited = rateLimitRefusal(store, who.requesterKey, '', at) ?? statusReads.refusal(who.requesterKey, at);
         return limited ? refused(limited) : requests.requesterStatus({ requesterKey: who.requesterKey, requestId });
       }
       catch { return refused(UNAVAILABLE); }

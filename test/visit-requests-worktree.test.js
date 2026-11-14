@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,6 +9,7 @@ import test from 'node:test';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
 import { createVisitRequests } from '../src/visit-requests/service.js';
 import { createVisitRunner } from '../src/visit-requests/runner.js';
+import { createVisitWorktree, removeVisitWorktree } from '../src/visit-requests/worktree.js';
 
 // A temporary Git repository made by the test, a fake wake that edits files
 // the way a client would, and nothing else: no client, no data directory.
@@ -44,16 +45,17 @@ function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trus
   const wakes = [];
   const runner = createVisitRunner({ root: join(root, 'visit-worktrees'), projectFolder: async () => repository,
     verifyFolder: async (folder) => folder === repository,
-    wake: async (input) => {
-      wakes.push({ mode: input.mode, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt });
-      if (input.mode === 'read_only') return { body: `\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` };
+    runClient: async (input) => {
+      wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
+      if (input.step === 'plan') return { body: `\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` };
       edit(input.cwd, repository);
       return { body: 'Moved the port into settings.' };
     } });
   let sequence = 0;
   const port = createVisitorAccess({ application: {},
     requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, platform: 'linux',
-      leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'] }, idFactory: () => `visitreq-${++sequence}` }) });
+      leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'],
+        describe: async () => ({ name: 'Synthetic lead', responsibility: 'Owns the server' }) }, idFactory: () => `visitreq-${++sequence}` }) });
   t.after(() => port.close());
   port.setRequesterMode({ key: PEER, kind: 'peer', label: 'Synthetic laptop', mode, ownDevice: mode === 'trusted' });
   const submit = () => port.submitRequest({ requester: { key: PEER, label: 'Synthetic laptop' }, projectId: 'synthetic-project',
@@ -92,8 +94,11 @@ test('a run edits only its worktree on its branch; the owner\'s working tree and
     assert.equal(author, 'FULI visit <visit@fuli.invalid>');
     // The planning pass was read-only in the owner's folder, capped at 3 minutes; the run edited its own worktree in 15.
     assert.deepEqual(f.wakes.map((wake) => [wake.mode, wake.cwd, wake.timeoutMs]),
-      [['read_only', owner.repository, 180_000], ['worktree_edit', request.worktreePath, 900_000]]);
+      [['plan', owner.repository, 180_000], ['edit', request.worktreePath, 900_000]]);
     assert.match(f.wakes[0].prompt, /<visit-request>\n\{"title":"Port from settings"/);
+    // A plain constrained run: the lead's name and role come as data, no Agent address to restore.
+    assert.match(f.wakes[1].prompt, /<project-lead>\n\{"name":"Synthetic lead","responsibility":"Owns the server"\}/);
+    assert.ok(!f.wakes.some((wake) => wake.prompt.includes('#FLA')));
 
     const card = await f.port.requests.card(requestId);
     assert.match(card.diff.text, /\+const port = settings\.port;/);
@@ -178,12 +183,14 @@ test('a nested repository with an fsmonitor in its config runs nothing and holds
   assert.equal(existsSync(marker), true, 'the nested repository would have run it');
 });
 
-test('a .gitmodules added by the run holds the result, nothing staged', { timeout: 60_000 }, async (t) => {
-  const owner = ownerRepository(t);
-  const f = service(t, owner, (worktree) => writeFileSync(join(worktree, '.gitmodules'), '[submodule "x"]\n\tpath = x\n\turl = ../x\n'));
-  const { requestId } = f.submit();
-  const request = await reviewed(f.port, requestId);
-  assert.deepEqual([request.holdReason, request.files], ['unsafe_content', []]);
+test('a .gitmodules added by the run, in any case, holds the result, nothing staged', { timeout: 60_000 }, async (t) => {
+  for (const name of ['.gitmodules', '.GITMODULES']) {
+    const owner = ownerRepository(t);
+    const f = service(t, owner, (worktree) => writeFileSync(join(worktree, name), '[submodule "x"]\n\tpath = x\n\turl = ../x\n'));
+    const { requestId } = f.submit();
+    const request = await reviewed(f.port, requestId);
+    assert.deepEqual([request.holdReason, request.files], ['unsafe_content', []], name);
+  }
 });
 
 test('a run changing more than 2,000 files is held as too large before anything is staged', { timeout: 120_000 }, async (t) => {
@@ -215,4 +222,64 @@ test('the integrity check covers the repository config, its hooks and other visi
     const request = await reviewed(f.port, requestId);
     assert.equal(request.holdReason, 'integrity_violation', name);
   }
+});
+
+// ---- Links that would carry a removal outside the worktree (second security review 1) ----
+
+// A folder outside the worktree the run wants emptied, and the links that point at it.
+function victim(owner) {
+  const folder = join(owner.root, 'victim');
+  mkdirSync(folder);
+  writeFileSync(join(folder, 'keep-me.txt'), 'precious\n');
+  return folder;
+}
+
+// Plants every kind of link this platform allows: a junction (Windows), a folder symlink, a file symlink.
+function plantLinks(worktree, target) {
+  const planted = [];
+  if (process.platform === 'win32') {
+    execFileSync('cmd.exe', ['/c', 'mklink', '/J', join(worktree, 'junction'), target], { stdio: 'ignore' });
+    planted.push('junction');
+  }
+  for (const [name, kind, to] of [['folder-link', 'dir', target], ['file-link', 'file', join(target, 'keep-me.txt')]]) {
+    try { symlinkSync(to, join(worktree, name), kind); planted.push(name); } catch { /* not allowed for this user on Windows */ }
+  }
+  return planted;
+}
+
+test('a link or junction in the worktree holds the result, and every removal unlinks it without touching its target',
+  { timeout: 120_000 }, async (t) => {
+    for (const exit of ['discard', 'keep']) {
+      const owner = ownerRepository(t);
+      const target = victim(owner);
+      let planted = [];
+      const f = service(t, owner, (worktree) => {
+        writeFileSync(join(worktree, 'src', 'server.js'), 'const port = 4500;\n');
+        planted = plantLinks(worktree, target);
+      });
+      const { requestId } = f.submit();
+      const request = await reviewed(f.port, requestId);
+      assert.ok(planted.length > 0, 'at least one link could be planted here');
+      assert.deepEqual([request.review, request.holdReason], ['held', 'unsafe_content'], exit);
+      await f.port.requests[exit](requestId);
+      assert.equal(existsSync(request.worktreePath), false, `${exit} removed the worktree`);
+      assert.equal(readFileSync(join(target, 'keep-me.txt'), 'utf8'), 'precious\n', `${exit} left the link's target alone`);
+    }
+  });
+
+test('the removal itself never follows a junction or symlink and never leaves FULI\'s worktree folder', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const target = victim(owner);
+  const root = join(owner.root, 'visit-worktrees');
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'direct-1' });
+  const planted = plantLinks(made.worktreePath, target);
+  assert.ok(planted.length > 0);
+  await removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch, root },
+    { keepBranch: false });
+  assert.equal(existsSync(made.worktreePath), false);
+  assert.equal(readFileSync(join(target, 'keep-me.txt'), 'utf8'), 'precious\n', planted.join(', '));
+  // A path outside <dataDir>/visit-worktrees is refused, whatever a record says.
+  await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: target, branch: null, root },
+    { keepBranch: true }), { code: 'worktree_outside_root' });
+  assert.equal(existsSync(join(target, 'keep-me.txt')), true);
 });

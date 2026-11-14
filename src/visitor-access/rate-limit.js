@@ -24,3 +24,26 @@ export function rateLimitRefusal(store, requesterKey, projectId, now) {
   if (store.projectReadsSince(projectId, since(DAY_MS)) >= PROJECT_DAY_READS) return 'project_rate_limited_day';
   return null;
 }
+
+// Reads that write no row (a visit request's status) are counted here, in
+// memory: at most STATUS_READS per requester in SHORT_WINDOW_MS, for at most
+// STATUS_REQUESTERS requesters (the oldest forgotten first). A restart resets
+// it; the recorded limits above still bound every requester.
+const STATUS_READS = 60;
+const STATUS_REQUESTERS = 1000;
+
+export function createStatusReadLimiter() {
+  const reads = new Map();
+  return {
+    // null when this read may run (and counts it), otherwise the refusal code.
+    refusal(requesterKey, now) {
+      const since = now.getTime() - SHORT_WINDOW_MS;
+      const recent = (reads.get(requesterKey) ?? []).filter((at) => at > since);
+      if (recent.length >= STATUS_READS) return 'rate_limited_short';
+      reads.delete(requesterKey);
+      reads.set(requesterKey, [...recent, now.getTime()]);
+      if (reads.size > STATUS_REQUESTERS) reads.delete(reads.keys().next().value);
+      return null;
+    }
+  };
+}

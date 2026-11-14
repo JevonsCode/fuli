@@ -20,12 +20,14 @@ const DENIED_NAMES = new Set(['package.json', 'package-lock.json', 'npm-shrinkwr
   'pipfile', 'pipfile.lock', 'setup.py', 'setup.cfg', 'gemfile', 'gemfile.lock', 'composer.json', 'composer.lock',
   'pom.xml', 'packages.lock.json', 'podfile', 'podfile.lock', '.gitlab-ci.yml', '.travis.yml', 'azure-pipelines.yml',
   'jenkinsfile', 'makefile', 'justfile', 'rakefile', 'flake.nix', '.pre-commit-config.yaml', 'lefthook.yml', '.mcp.json',
-  'claude.md', 'agents.md', 'gemini.md', '.npmrc', '.pnpmfile.cjs', '.envrc', 'conftest.py']);
+  'claude.md', 'agents.md', 'gemini.md', '.npmrc', '.pnpmfile.cjs', '.envrc', 'conftest.py', 'build.rs', 'cmakelists.txt',
+  'pytest.ini', 'tox.ini', 'noxfile.py', 'sitecustomize.py', 'usercustomize.py']);
 const DENIED_DIRECTORIES = new Set(['.github', '.circleci', '.gitlab', '.husky', 'config', '.git', '.vscode', '.idea',
-  '.devcontainer', '.claude', '.cursor', '.mvn']);
+  '.devcontainer', '.claude', '.cursor', '.mvn', '.cargo']);
 const DENIED_PATTERNS = [/^requirements.*\.txt$/, /(?:^|\.)env(?:\.|$)/, /^\.yarnrc/, /\.csproj$/, /\.sln$/,
   /^directory\.build\./, /^directory\.packages\.props$/, /^settings\.gradle/, /^build\.gradle/, /^gradlew/, /^mvnw/,
-  /\.config\.(?:js|cjs|mjs|ts)$/, /\.gemspec$/, /^dockerfile/, /^docker-compose/,
+  /\.config\.(?:js|cjs|mjs|ts|mts|cts)$/, /\.gemspec$/, /^dockerfile/, /^docker-compose/, /^\.eslintrc\.c?js$/, /^\.babelrc\.js$/,
+  /^\.prettierrc\.c?js$/, /\.targets$/, /\.props$/, /^gulpfile\./, /^gruntfile\./, /\.cmake$/, /\.pth$/,
   /\.(?:exe|dll|so|dylib|sh|bash|zsh|bat|cmd|ps1|psm1|com|msi|app|jar|bin)$/];
 // Folders denied where they start (gradle/wrapper sits inside gradle/).
 const DENIED_PREFIXES = ['gradle/wrapper/'];
@@ -61,15 +63,6 @@ export function postRunCheck({ files, addedText, platform = process.platform }) 
     secretCheck(addedText)
   ];
   return { ok: checks.every((check) => check.ok), checks };
-}
-
-// The lead's clients a run under the rule may use, without the owner's eye:
-// Claude Code, whose worktree_edit wake has no shell and no web tools; Codex
-// only where its workspace-write sandbox exists (macOS, Linux). Codex's
-// sandbox on native Windows is not verified, so there a run needs the owner's
-// approval and auto falls back to a card.
-export function constrainedVisitClients(clients, platform = process.platform) {
-  return clients.filter((client) => client === 'claude_code' || (client === 'codex' && platform !== 'win32'));
 }
 
 // Runs for every request whatever its mode: nothing that looks like a secret

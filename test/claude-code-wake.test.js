@@ -21,24 +21,20 @@ test('a read-only wake keeps the non-interactive mode with the reading tools onl
   assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('plan'));
 });
 
-test('a worktree edit accepts file edits without asking, with no shell and no web, and an unknown mode is refused', () => {
-  assert.deepEqual(wakeArguments('claude_code', { mode: 'worktree_edit', cwd: '/data/visit-worktrees/request-1' }),
-    ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-      '--tools', 'Read,Grep,Glob,Edit,Write,MultiEdit', '--disallowedTools', 'Bash,PowerShell,WebFetch,WebSearch,NotebookEdit']);
+test('a wake mode outside answer and read_only is refused: work for another computer is a constrained run, not a wake', () => {
   assert.deepEqual(wakeArguments('claude_code', { mode: 'answer' }), wakeArguments('claude_code', {}));
-  assert.throws(() => wakeArguments('claude_code', { mode: 'write_anywhere' }), /Invalid wake mode/);
+  for (const mode of ['worktree_edit', 'write_anywhere']) assert.throws(() => wakeArguments('claude_code', { mode }), /Invalid wake mode/);
 });
 
-test('with FULI\'s own MCP entry a read-only or worktree wake loads only that server; an answer wake never changes', () => {
-  const entry = { command: 'C:\\synthetic\\node.exe', args: ['C:\\synthetic\\mcp-server.js', '--source-application', 'claude_code'],
+test('an ask from another computer loads exactly the given MCP servers: FULI\'s own, or none at all', () => {
+  const entry = { command: 'C:/synthetic/node.exe', args: ['C:/synthetic/mcp-server.js', '--source-application', 'claude_code'],
     settings: {} };
-  const only = ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: { fuli: { type: 'stdio', command: entry.command,
-    args: entry.args } } })];
-  for (const mode of ['read_only', 'worktree_edit']) {
-    const args = wakeArguments('claude_code', { mode, mcpServer: entry });
-    assert.deepEqual(args.slice(args.indexOf('--strict-mcp-config'), args.indexOf('--strict-mcp-config') + 3), only, mode);
-  }
-  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer', mcpServer: entry }), wakeArguments('claude_code', {}));
+  const strict = (servers) => ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })];
+  const tail = (args) => args.slice(args.indexOf('--strict-mcp-config'), args.indexOf('--strict-mcp-config') + 3);
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry } })),
+    strict({ fuli: { type: 'stdio', command: entry.command, args: entry.args } }));
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: {} })), strict({}));
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('claude_code', {}));
   assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('--strict-mcp-config'));
 });
 

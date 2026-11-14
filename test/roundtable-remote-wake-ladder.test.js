@@ -128,8 +128,8 @@ test('an ask from another computer loads only FULI\'s own MCP server where FULI 
   const entry = (client) => ({ command: 'synthetic-node', args: ['synthetic-mcp-server.js', '--source-application', client] });
   const f = fixture(t, { fuliMcp: entry, wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
   await f.ask();
-  assert.deepEqual([f.woken[0].mode, f.woken[0].mcpServer], ['read_only', entry(f.woken[0].client)]);
+  assert.deepEqual([f.woken[0].mode, f.woken[0].mcpServers], ['read_only', { fuli: entry(f.woken[0].client) }]);
   const bare = fixture(t, { wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
   await bare.ask();
-  assert.equal(bare.woken[0].mcpServer, null, 'without the entry a read-only wake keeps today\'s configuration');
+  assert.deepEqual(bare.woken[0].mcpServers, {}, 'without the entry no MCP server at all, never the person\'s');
 });

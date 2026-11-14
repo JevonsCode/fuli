@@ -20,6 +20,7 @@ function access(t) {
   let sequence = 0;
   const runner = {
     folder: async () => '/synthetic',
+    planned: (request) => ({ worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}` }),
     prepare: async (request) => ({ projectFolder: '/synthetic', worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}`,
       baseCommit: 'f'.repeat(40) }),
     plan: async () => ({ plan: PLAN, error: null, ms: 10 }),
@@ -29,7 +30,7 @@ function access(t) {
     remove: async () => {}
   };
   const port = createVisitorAccess({ application: {},
-    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'] }, idFactory: () => `http-request-${++sequence}` }) });
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null }, idFactory: () => `http-request-${++sequence}` }) });
   t.after(() => port.close());
   return port;
 }

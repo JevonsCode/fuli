@@ -14,7 +14,8 @@ const WAKE_FAILURE_DETAILS = Object.freeze([
   'no_final_answer', // it exited 0 without a complete final answer
   'output_too_large', // it wrote more than a wake may read
   'timed_out', // it did not answer within the wake's time
-  'cancelled' // the asker or the owner stopped it
+  'cancelled', // the asker or the owner stopped it
+  'restricted_mode_unsupported' // a constrained run's client is too old for restricted mode (never run without it)
 ]);
 
 // The summary of a client's output that may be kept: already redacted, then bounded.

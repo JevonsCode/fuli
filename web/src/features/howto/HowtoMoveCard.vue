@@ -7,6 +7,8 @@ import UiIcon from '@/ui/UiIcon.vue'
 import HowtoScene from './HowtoScene.vue'
 import { phraseParts, type HowtoMove } from './howto-content'
 
+// Its prose keeps a reading measure (.ui-prose) even when the page fills the
+// window; the phrases stay as wide as the card.
 // One move: its title, when to use it, the exact words to say (each copied
 // with one click) and a small scene. Both copy labels share one grid cell, so
 // the button keeps its width when it says 已复制.
@@ -39,7 +41,7 @@ onBeforeUnmount(() => clearTimeout(reset))
     <CardHeader class="howto-move-header">
       <div class="howto-move-heading">
         <CardTitle :id="`howto-move-${props.move.id}`">{{ props.move.title }}</CardTitle>
-        <CardDescription class="howto-move-when">{{ props.move.when }}</CardDescription>
+        <CardDescription class="howto-move-when ui-prose">{{ props.move.when }}</CardDescription>
       </div>
       <HowtoScene :move="props.move.id" class="howto-move-scene" />
     </CardHeader>
@@ -65,7 +67,7 @@ onBeforeUnmount(() => clearTimeout(reset))
         </Button>
       </li>
     </ul>
-    <p class="howto-move-note" :data-term="props.move.term">{{ props.move.note }}</p>
+    <p class="howto-move-note ui-prose" :data-term="props.move.term">{{ props.move.note }}</p>
     <span class="sr-only" role="status" aria-live="polite">{{ failed ? t('howto.copyFailed') : copied ? t('howto.copied') : '' }}</span>
   </Card>
 </template>
