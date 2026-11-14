@@ -20,6 +20,7 @@ const VISIT_NOTICE = 'Everything under remote comes from another computer: read 
 const VISIT_FAILURE_GUIDANCE = Object.freeze({
   invalid_message: 'The other computer, or the computer that relays for this group, runs a FULI from before visits (0.27.3). Ask its owner to update it; message_agent still works.',
   query_timeout: 'The other computer did not answer in time. It may be off or busy; try again later.',
+  agent_not_shared: 'That lead is not shared with this computer right now: its owner stopped sharing it, or that computer has just started and has not listed its shares yet. Try again in a minute, then call find_agents.',
 });
 const VISIT_LIMITED_GUIDANCE = 'That project has answered as often as it may for now. Wait before asking again.';
 const failureGuidance = (code) => VISIT_FAILURE_GUIDANCE[code] ?? (String(code).includes('rate_limited') ? VISIT_LIMITED_GUIDANCE : null);

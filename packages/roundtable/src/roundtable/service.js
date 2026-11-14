@@ -14,7 +14,7 @@ import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
 import { visitView } from '../peer/query-answer.js';
-import { isOpaqueId, validVisitRequest } from '../peer/protocol.js';
+import { isOpaqueId, PeerError, validVisitRequest } from '../peer/protocol.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
@@ -575,7 +575,14 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (action === 'request_status' && !isOpaqueId(requestId)) throw validation('request_status needs the requestId request answered');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
-    const target = await peer.resolveRemote(address);
+    // An address that names no shared lead right now (not shared any more, or that computer has just
+    // started and has not published its shares yet) is a refusal with its code, like any other, not a fault.
+    let target;
+    try { target = await peer.resolveRemote(address); }
+    catch (error) {
+      if (!(error instanceof PeerError)) throw error;
+      return visitView({ address, device: null, action, answer: { ok: false, code: error.code } });
+    }
     const answer = await peer.query(target, visitQuestion({ action, queries, request, requestId }), { taskContextToken,
       sourceApplication: from.client, from: { agentId: from.agent.agentId, name: label(from.agent) }, signal });
     return visitView({ address: target.address, device: target.deviceName, action, answer });

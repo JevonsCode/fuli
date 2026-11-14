@@ -72,9 +72,11 @@ test('a paired device reads the owner\'s shared project with its own tool call; 
 
       // Unsharing ends it: the next visit is refused and nothing more is searched.
       await beta.runtime.setShares({ shares: [] });
-      const after = await visit(alpha.app, { address, action: 'search', queries: ['deploy port'] })
-        .catch((error) => ({ ok: false, code: error.code }));
-      assert.deepEqual(after, { ...after, ok: false, code: 'agent_not_shared' });
+      // It is answered as a refusal with its code and what to do, never thrown (a throw reads as an internal error to the Agent).
+      const after = await visit(alpha.app, { address, action: 'search', queries: ['deploy port'] });
+      assert.deepEqual([after.ok, after.code, after.device, after.address], [false, 'agent_not_shared', null, address]);
+      assert.match(after.guidance, /find_agents/);
+      assert.equal(Object.hasOwn(after, 'remote'), false);
       assert.equal(requests.length, 1);
     } finally { await alpha.close(); await beta.close(); }
   });
