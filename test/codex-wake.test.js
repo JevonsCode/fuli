@@ -17,22 +17,19 @@ test('Codex runs read-only, resuming a session or starting in the project direct
     wakeArguments('codex', { cwd: '/work/app' }));
 });
 
-test('an approved visit request edits only its worktree, in the workspace-write sandbox with the network off', () => {
-  assert.deepEqual(wakeArguments('codex', { cwd: '/data/visit-worktrees/request-1', mode: 'worktree_edit' }),
-    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', '-C', '/data/visit-worktrees/request-1', '-']);
-  assert.deepEqual(wakeArguments('codex', { sessionId: 'cx-session-1', mode: 'worktree_edit' }),
-    ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', 'cx-session-1', '-']);
-});
-
-test('with FULI\'s own MCP entry the whole mcp_servers table is replaced by it; the delegation still reaches it', () => {
+test('an ask from another computer replaces the mcp_servers table with FULI\'s own server, or with none at all', () => {
   const entry = { command: 'C:\\synthetic\\node.exe', args: ['C:\\synthetic\\mcp-server.js', '--source-application', 'codex'],
     settings: { enabled: true, startup_timeout_sec: 30, default_tools_approval_mode: 'auto' } };
-  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'worktree_edit', delegated: true, mcpServer: entry }),
-    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', '-C', '/w',
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: { fuli: entry } }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w',
       '-c', 'mcp_servers={ fuli = { command = "C:\\\\synthetic\\\\node.exe", args = ["C:\\\\synthetic\\\\mcp-server.js","--source-application","codex"], '
         + 'enabled = true, startup_timeout_sec = 30, default_tools_approval_mode = "auto" } }',
       '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
-  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'answer', mcpServer: entry }), wakeArguments('codex', { cwd: '/w' }));
+  // Without FULI's entry: an empty table, and no delegation variables for a server that is not there.
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: {} }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w', '-c', 'mcp_servers={  }', '-']);
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('codex', { cwd: '/w' }));
+  assert.throws(() => wakeArguments('codex', { cwd: '/w', mode: 'worktree_edit' }), /Invalid wake mode/);
 });
 
 test('Codex answers are the last agent message of a completed turn', () => {

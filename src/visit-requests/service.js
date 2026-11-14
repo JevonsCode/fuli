@@ -40,11 +40,14 @@ const AWAITING_SHOWN = 5;
 // What a requester may learn of a result's files.
 const SHOWN_FILES = 50;
 const SHOWN_PATH_CHARS = 200;
-const TERMINAL_WITHOUT_RESULT = new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
+// The lead has no client FULI can run constrained here (only Codex, for now): nothing could run the request.
+const NO_CLIENT = 'no_constrained_client';
+const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
 // leads.confirm({ projectId, agentId }) → whether that Agent still leads the shared project, as read now.
-// leads.constrainedClients({ agentId }) → the lead's clients a run under the auto rule may use.
+// leads.constrainedClients({ agentId }) → the lead's clients FULI can run constrained here, in order (planning and run use the first).
+// leads.describe({ projectId, agentId }) → { name, responsibility } of the lead, which the runs are given as data.
 export function createVisitRequests({ store, runner, modeOf, leads, platform = process.platform, now = () => new Date(),
   idFactory = randomUUID }) {
   const records = createVisitRecords(store);
@@ -87,42 +90,52 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   }
 
   // The read-only planning pass in the owner's project folder, then the
-  // decision the requester's mode makes. Nothing is copied before approval.
+  // decision the requester's mode makes. Nothing is copied before approval. A
+  // lead with no client FULI can run constrained here ends the request
+  // (failed, no_constrained_client), since nothing could run it.
   async function planRequest(id) {
     const { signal, finish } = track(id);
     let planned;
-    let constrained = [];
+    let unrunnable = false;
     try {
       const request = records.get(id);
-      records.update(id, { projectFolder: await runner.folder(request) }, at());
-      planned = await runner.plan(records.get(id), { signal });
-      constrained = await leads.constrainedClients({ agentId: request.agentId }).catch(() => []);
+      const [client] = await leads.constrainedClients({ agentId: request.agentId }).catch(() => []);
+      if (!client) unrunnable = true;
+      else {
+        records.update(id, { projectFolder: await runner.folder(request) }, at());
+        planned = await runner.plan(records.get(id), { signal, client, lead: await leadOf(request) });
+      }
     } catch (error) {
       planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
     } finally { finish(); }
     const decided = store.transaction(() => {
       const current = records.get(id);
       if (current?.state !== 'planning') return current;
+      if (unrunnable) {
+        return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: { error: NO_CLIENT, reason: NO_CLIENT },
+          note: NO_CLIENT, at: at() });
+      }
       records.update(id, { plan: planned.plan, planError: planned.error, planningMs: planned.ms }, at());
-      return decide(records.get(id), constrained);
+      return decide(records.get(id));
     });
     if (decided?.state === 'approved') scheduleRun(id);
   }
 
+  const leadOf = (request) => leads.describe({ projectId: request.projectId, agentId: request.agentId }).catch(() => null);
+
   // A planned request, by the requester's mode as it is now. trusted skips the
   // owner's approval; auto needs its pre-run check (the plan can only keep a
-  // request back) and a client that is constrained without the owner's eye;
-  // anything else waits for the owner. A request without a verified project
-  // folder always waits.
-  function decide(request, constrained) {
+  // request back); anything else waits for the owner. A request without a
+  // verified project folder always waits.
+  function decide(request) {
     const mode = modeOf(request.requesterKey);
     const folder = request.planError !== 'no_working_directory';
     if (mode === 'trusted' && folder) return approveByRule(request, mode, { rule: 'trusted' });
     if (mode === 'auto') {
       const check = preRunCheck({ plan: request.plan, budgetLeft: wakeBudgetLeft(request.requesterKey) });
-      const checks = [...check.checks, { name: 'constrained_client', ok: constrained.length > 0 }];
-      if (check.ok && constrained.length && folder) return approveByRule(request, mode, { rule: AUTO_ENVELOPE_RULE, checks });
-      return records.move(request.id, { from: 'planning', to: 'awaiting_owner', by: 'rule', rule: AUTO_ENVELOPE_RULE, checks, at: at() });
+      if (check.ok && folder) return approveByRule(request, mode, { rule: AUTO_ENVELOPE_RULE, checks: check.checks });
+      return records.move(request.id, { from: 'planning', to: 'awaiting_owner', by: 'rule', rule: AUTO_ENVELOPE_RULE,
+        checks: check.checks, at: at() });
     }
     return records.move(request.id, { from: 'planning', to: 'awaiting_owner', by: 'system', at: at() });
   }
@@ -155,17 +168,25 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
         note: 'lead_changed', at: at() }));
       return;
     }
-    const auto = approved.decidedBy === 'rule' && approved.modeAtDecision === 'auto';
-    const clients = auto ? await leads.constrainedClients({ agentId: approved.agentId }).catch(() => []) : null;
+    const [client] = await leads.constrainedClients({ agentId: approved.agentId }).catch(() => []);
+    if (!client) {
+      store.transaction(() => records.move(id, { from: 'approved', to: 'failed', by: 'system', fields: { error: NO_CLIENT, reason: NO_CLIENT },
+        note: NO_CLIENT, at: at() }));
+      return;
+    }
+    const lead = await leadOf(approved);
     const { signal, finish } = track(id);
-    let request = store.transaction(() => records.move(id, { from: 'approved', to: 'running', by: 'system', at: at() }));
+    // Where the worktree and branch will be is recorded with the move, so a
+    // restart before they exist still tidies both.
+    let request = store.transaction(() => records.move(id, { from: 'approved', to: 'running', by: 'system',
+      fields: runner.planned(approved), at: at() }));
     if (!request) { finish(); return; }
     let result;
     try {
       // The worktree is made only now, after the approval.
       records.update(id, await runner.prepare(request), at());
       request = records.get(id);
-      result = await runner.run(request, { signal, ...(clients ? { clients } : {}) });
+      result = await runner.run(request, { signal, client, lead });
     } catch (error) {
       const failed = store.transaction(() => records.move(id, { from: 'running', to: signal.aborted ? 'cancelled' : 'failed',
         by: 'system', fields: { error: error.code ?? 'run_failed', runMs: error.ms ?? 0 }, at: at() }));
@@ -330,10 +351,12 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     const request = typeof requestId === 'string' ? records.get(requestId) : null;
     if (!request || request.requesterKey !== requesterKey) return refused('request_not_found');
     const held = request.review === 'held';
+    const trustedReady = request.state === 'awaiting_review' && !held && request.modeAtDecision === 'trusted'
+      && request.decidedBy === 'rule';
+    // A result waiting for the owner, held or not, reads like any request waiting for the owner.
     const shown = { ok: true, requestId: request.id,
-      state: held && request.state === 'awaiting_review' ? 'awaiting_owner' : request.state, title: request.title,
+      state: request.state === 'awaiting_review' && !trustedReady ? 'awaiting_owner' : request.state, title: request.title,
       ...(request.reason ? { reason: request.reason } : {}) };
-    const trustedReady = request.state === 'awaiting_review' && request.modeAtDecision === 'trusted' && request.decidedBy === 'rule';
     if (held || !(request.state === 'kept' || trustedReady)) return shown;
     return { ...shown, ...(request.summary ? { summary: request.summary } : {}), ...(request.branch ? { branch: request.branch } : {}),
       files: (request.files ?? []).slice(0, SHOWN_FILES).map((file) => [...withoutControls(file.path)].slice(0, SHOWN_PATH_CHARS).join('')),

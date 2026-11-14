@@ -15,6 +15,7 @@ const DRAFT = { title: 'Read the port from settings', what: 'The server should r
 function ownerRequests(calls) {
   const runner = {
     folder: async () => '/synthetic/beta',
+    planned: (request) => ({ worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}` }),
     prepare: async (request) => {
       calls.prepared.push({ id: request.id, projectFolder: request.projectFolder, projectId: request.projectId, agentId: request.agentId });
       return { projectFolder: '/synthetic/beta', worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}`,
@@ -27,7 +28,7 @@ function ownerRequests(calls) {
     patch: async () => ({ text: 'diff --git a/src/server.js b/src/server.js\n+SECRET-PATCH-LINE', truncated: false }),
     remove: async () => {}
   };
-  return ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'] } });
+  return ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null } });
 }
 
 const visit = (app, input) => callRoundtableTool(app.roundtable, 'visit_shared_lead',
@@ -76,7 +77,7 @@ test('a paired device\'s lead requests work; the owner decides; the requester re
       await until(async () => (await owner.card(requestId)).request.state === 'awaiting_review');
       // In plan mode the requester learns of the result only once the owner kept it.
       const unseen = await visit(alpha.app, { address, action: 'request_status', requestId });
-      assert.deepEqual(unseen.remote, { requestId, state: 'awaiting_review', title: DRAFT.title });
+      assert.deepEqual(unseen.remote, { requestId, state: 'awaiting_owner', title: DRAFT.title });
       await owner.keep(requestId);
       const done = await visit(alpha.app, { address, action: 'request_status', requestId });
       assert.deepEqual(done.remote, { requestId, state: 'kept', title: DRAFT.title, summary: 'Reads the port from settings now.',

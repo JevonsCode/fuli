@@ -69,9 +69,8 @@
 //                                               agentId }]); the host ends what was open for others
 //   fuliMcpServer(client)                       optional, sync: the host's own MCP server entry for a wake
 //                                               client ({ command, args, settings? }) as its installer writes
-//                                               it, or null; a read_only or worktree_edit wake of an ask from
-//                                               another computer or a visit request then loads only that server,
-//                                               and a worktree_edit wake without it is not started
+//                                               it, or null; the read_only wake of an ask from another computer
+//                                               then loads only that server, and without it no MCP server at all
 //   refuseSharedQuery({ requester: { node, name, agentName }, action, code })
 //                                               optional: records a visitor query this device refused before
 //                                               searchSharedProject (not shared, a wrong proof, a replay) once

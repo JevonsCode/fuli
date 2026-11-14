@@ -25,10 +25,11 @@ function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort 
       return { projectFolder: '/synthetic/project', worktreePath: `/synthetic/worktrees/${request.id}`,
         branch: `fuli/visit/${request.id}`, baseCommit: 'c'.repeat(40) };
     },
-    async plan(request) { calls.planned.push({ id: request.id, cwd: request.projectFolder, worktree: request.worktreePath });
+    planned: (request) => ({ worktreePath: `/synthetic/worktrees/${request.id}`, branch: `fuli/visit/${request.id}` }),
+    async plan(request, { client }) { calls.planned.push({ id: request.id, cwd: request.projectFolder, worktree: request.worktreePath, client });
       return { plan, error: plan ? null : 'plan_unreadable', ms: 1000 }; },
-    async run(request, { signal, clients }) {
-      calls.ran.push({ id: request.id, decidedBy: request.decidedBy, mode: request.modeAtDecision, clients: clients ?? null });
+    async run(request, { signal, client, lead }) {
+      calls.ran.push({ id: request.id, decidedBy: request.decidedBy, mode: request.modeAtDecision, client, lead });
       if (holdRun) {
         await Promise.race([holdRun, new Promise((_, reject) => signal.addEventListener('abort', async () => {
           // A commit step still finishing after the abort.
@@ -48,7 +49,8 @@ function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort 
 function fixture(t, runnerOptions = {}, { now = () => new Date('2026-11-14T08:00:00.000Z'), lead = LEAD, clients = ['claude_code'],
   platform = 'linux' } = {}) {
   const runner = fakeRunner(runnerOptions);
-  const leads = { current: lead, confirm: async ({ agentId }) => agentId === leads.current, constrainedClients: async () => clients };
+  const leads = { current: lead, confirm: async ({ agentId }) => agentId === leads.current, constrainedClients: async () => clients,
+    describe: async () => ({ name: 'Synthetic lead', responsibility: 'Owns the server' }) };
   let sequence = 0;
   const port = createVisitorAccess({ application: {}, now,
     requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads, platform, now,
@@ -77,7 +79,7 @@ test('plan mode: planned read-only in the project folder, no worktree before app
   const submitted = f.submit();
   assert.deepEqual(submitted, { ok: true, requestId: 'request-1', state: 'planning' });
   await settled(async () => await f.state('request-1') === 'awaiting_owner');
-  assert.deepEqual(f.runner.calls.planned, [{ id: 'request-1', cwd: '/synthetic/project', worktree: null }]);
+  assert.deepEqual(f.runner.calls.planned, [{ id: 'request-1', cwd: '/synthetic/project', worktree: null, client: 'claude_code' }]);
   assert.deepEqual([f.runner.calls.prepared, f.runner.calls.ran], [[], []], 'no worktree and no run before the owner approves');
   const listed = f.port.requests.list();
   assert.equal(listed.awaiting.count, 1);
@@ -137,12 +139,14 @@ test('a result left unreviewed for 14 days expires: its worktree goes, its branc
   assert.equal((await f.port.requests.card('request-1')).events.at(-1).note, 'review_expired');
 });
 
-test('trusted skips only the approval; auto approves inside its envelope with a constrained client only', async (t) => {
+test('trusted skips only the approval; auto approves inside its envelope; both run constrained as the lead', async (t) => {
   const trusted = fixture(t);
   trusted.setMode('trusted');
   trusted.submit();
   await settled(async () => await trusted.state('request-1') === 'awaiting_review');
-  assert.deepEqual(trusted.runner.calls.ran, [{ id: 'request-1', decidedBy: 'rule', mode: 'trusted', clients: null }]);
+  assert.deepEqual(trusted.runner.calls.ran, [{ id: 'request-1', decidedBy: 'rule', mode: 'trusted', client: 'claude_code',
+    lead: { name: 'Synthetic lead', responsibility: 'Owns the server' } }]);
+  assert.deepEqual(trusted.runner.calls.planned[0].client, 'claude_code');
 
   const auto = fixture(t);
   auto.setMode('auto');
@@ -150,15 +154,15 @@ test('trusted skips only the approval; auto approves inside its envelope with a 
   await settled(async () => await auto.state('request-1') === 'awaiting_review');
   const approved = (await auto.port.requests.card('request-1')).events.find((event) => event.to === 'approved');
   assert.deepEqual([approved.by, approved.rule, approved.checks.every((check) => check.ok)], ['rule', 'auto_envelope_v1', true]);
-  assert.deepEqual(auto.runner.calls.ran[0].clients, ['claude_code'], 'the run may use only the constrained clients');
 
-  // Codex on native Windows (no verified sandbox) leaves no constrained client: the owner decides.
-  const windows = fixture(t, {}, { clients: [] });
-  windows.setMode('auto');
-  windows.submit();
-  await settled(async () => await windows.state('request-1') === 'awaiting_owner');
-  const card = (await windows.port.requests.card('request-1')).events.at(-1);
-  assert.equal(card.checks.find((check) => check.name === 'constrained_client').ok, false);
+  // A lead whose clients FULI cannot run constrained (only Codex, for now): nothing could run it, said plainly.
+  const codexOnly = fixture(t, {}, { clients: [] });
+  codexOnly.setMode('trusted');
+  codexOnly.submit();
+  await settled(async () => await codexOnly.state('request-1') === 'failed');
+  const failed = (await codexOnly.port.requests.card('request-1')).request;
+  assert.deepEqual([failed.error, failed.reason], ['no_constrained_client', 'no_constrained_client']);
+  assert.deepEqual([codexOnly.runner.calls.planned, codexOnly.runner.calls.folders], [[], []], 'no wake, no folder read');
 
   const risky = fixture(t, { plan: { ...SAFE_PLAN, dependencyChanges: true } });
   risky.setMode('auto');
@@ -351,7 +355,7 @@ test('a requester sees a plan-mode result only once the owner kept it, and a tru
   f.port.requests.approve('request-1');
   await settled(async () => await f.state('request-1') === 'awaiting_review');
   assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
-    { ok: true, requestId: 'request-1', state: 'awaiting_review', title: DRAFT.title }, 'nothing before the owner kept it');
+    { ok: true, requestId: 'request-1', state: 'awaiting_owner', title: DRAFT.title }, 'reads like any request waiting for the owner');
   await f.port.requests.keep('request-1');
   const kept = f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' });
   assert.deepEqual(Object.keys(kept), ['ok', 'requestId', 'state', 'title', 'summary', 'branch', 'files', 'diffstat']);
@@ -380,7 +384,7 @@ test('a status read is rate limited and writes nothing', async (t) => {
 test('after a restart a run that was going is unknown and its worktree goes; approved work runs', async (t) => {
   const runner = fakeRunner({ holdRun: new Promise(() => {}) });
   const now = () => new Date('2026-11-14T08:00:00.000Z');
-  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'] };
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
   let sequence = 0;
   const shared = { store: null };
   const port = createVisitorAccess({ application: {}, now, requests: ({ store, modeOf }) => {
@@ -399,4 +403,39 @@ test('after a restart a run that was going is unknown and its worktree goes; app
   await settled(async () => fresh.calls.removed.length === 1);
   assert.deepEqual(fresh.calls.removed, [{ id: 'request-1', keepBranch: false }]);
   await restarted.close();
+});
+
+test('a restart between making the worktree and recording it still tidies both: the paths are recorded first', async (t) => {
+  const runner = fakeRunner();
+  // The worktree step is still going when the restart happens.
+  runner.prepare = () => new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('late'), { code: 'git_failed' })), 300));
+  const now = () => new Date('2026-11-14T08:00:00.000Z');
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now, idFactory: () => 'request-1' });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'running');
+  const fresh = fakeRunner();
+  const removed = [];
+  fresh.remove = async (request) => { removed.push([request.worktreePath, request.branch]); };
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'plan', runner: fresh, leads, now });
+  restarted.resume();
+  await settled(async () => removed.length === 1);
+  assert.deepEqual(removed, [['/synthetic/worktrees/request-1', 'fuli/visit/request-1']]);
+  await restarted.close();
+});
+
+test('status reads are counted without writing: past 60 in ten minutes a requester is refused', async (t) => {
+  const f = fixture(t);
+  f.submit(ALPHA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  for (let index = 0; index < 60; index += 1) assert.equal(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }).ok, true);
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }), { ok: false, code: 'rate_limited_short' });
+  assert.equal(f.port.requestStatus({ requester: { key: BETA }, requestId: 'request-1' }).code, 'request_not_found', 'others are not affected');
+  assert.deepEqual(f.port.recentReads().reads, []);
 });

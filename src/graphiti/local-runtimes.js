@@ -33,7 +33,7 @@ import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { createVisitorAccess } from '../visitor-access/port.js';
 import { createVisitRequests } from '../visit-requests/service.js';
 import { createVisitRunner } from '../visit-requests/runner.js';
-import { constrainedVisitClients } from '../visit-requests/auto-envelope.js';
+import { CONSTRAINED_RUN_CLIENTS, runConstrained } from '../../packages/roundtable/src/roundtable/constrained-run.js';
 import { fuliMcpServerEntry } from '../agent-kits/fuli-mcp-entry.js';
 import { createOldDataShelf } from '../old-data/port.js';
 import { createOccupationPlugins } from '../occupation-plugins/port.js';
@@ -110,15 +110,20 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });
   // What visitors from other computers read of a shared project, and each requester's mode; created by the first one.
   app.visitorAccess = createVisitorAccess({ path: join(dataDir, 'visitor-access.sqlite'), application: app,
-    // Work a paired computer asks to have done here, planned and run by the shared lead in its own worktree (seconding C).
+    // Work a paired computer asks to have done here (seconding C): plain constrained client runs, as the shared lead, in its own worktree.
     requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner: createVisitRunner({
-      wake: (input) => app.roundtable.wakeForVisit(input),
+      runClient: (input) => runConstrained({ ...input, env }),
       projectFolder: (input) => app.roundtable.knownProjectFolder(input),
       verifyFolder: async (folder, projectId) => await app.roundtableHost.projectForPath(folder) === projectId,
       root: join(dataDir, 'visit-worktrees') }),
     leads: {
       confirm: async ({ projectId, agentId }) => await app.roundtableHost.projectLeadId(projectId) === agentId,
-      constrainedClients: async ({ agentId }) => constrainedVisitClients(await app.roundtable.visitClients({ agentId }))
+      constrainedClients: async ({ agentId }) => (await app.roundtable.visitClients({ agentId }))
+        .filter((client) => CONSTRAINED_RUN_CLIENTS.includes(client)),
+      describe: async ({ projectId, agentId }) => {
+        const { lead } = await app.roundtableHost.projectTeam(projectId);
+        return lead?.agentId === agentId ? { name: lead.name, responsibility: lead.responsibility ?? null } : null;
+      }
     } }) });
   // FULI's own MCP server as the installer writes it for a client: a session woken on another
   // computer's text loads only this one (packages/roundtable deliver).

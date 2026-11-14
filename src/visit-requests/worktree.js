@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
-import { closeSync, existsSync, ftruncateSync, lstatSync, openSync, readdirSync, readFileSync, writeSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { closeSync, existsSync, ftruncateSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync,
+  unlinkSync, writeSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { sha256Bytes, sha256File } from '../security/digest.js';
+import { gitDirectoryName, gitModulesName } from './git-names.js';
 
 // The isolated copy a visit request is worked on: a Git worktree of the
 // project's repository on its own branch, cut from a commit (so the owner's
@@ -33,11 +35,14 @@ const GITLINK_MODE = '160000';
 // folder, and no file a run could plant under FULI's data directory instead.
 const NO_FILE = '/dev/null';
 
+// Where a request's worktree and branch will be, recorded before they are made
+// so a restart in between still finds and tidies both.
+export const plannedVisitWorktree = ({ root, id }) => ({ worktreePath: join(root, id), branch: `${VISIT_BRANCH_PREFIX}${id}` });
+
 export async function createVisitWorktree({ folder, root, id }) {
   const repository = await repositoryRoot({ folder, root });
   const baseCommit = (await git(repository, ['rev-parse', 'HEAD'], root)).trim();
-  const branch = `${VISIT_BRANCH_PREFIX}${id}`;
-  const worktreePath = join(root, id);
+  const { worktreePath, branch } = plannedVisitWorktree({ root, id });
   await git(repository, ['worktree', 'add', '-b', branch, worktreePath, baseCommit], root);
   const { gitDir } = await location({ repository, root, id });
   // Git named the worktree's administrative folder by its last path segment;
@@ -47,10 +52,13 @@ export async function createVisitWorktree({ folder, root, id }) {
   return { worktreePath, branch, baseCommit };
 }
 
-// What would let the run's content act through Git, or fill the owner's
-// object store: the worktree's own .git pointer changed, another .git (file
-// or folder) anywhere, a .gitmodules added or changed, a file inside a
-// submodule path, or more than MAX_CHANGED_FILES / MAX_CHANGED_BYTES changed.
+// What would let the run's content act through Git or through FULI's own
+// clean-up, or fill the owner's object store: the worktree's own .git pointer
+// changed, any symbolic link, junction or other link (removing a worktree
+// must never reach past it), another .git (file or folder, under any name Git
+// or the file system treats as .git) anywhere, a .gitmodules added or changed,
+// a file inside a submodule path, or more than MAX_CHANGED_FILES /
+// MAX_CHANGED_BYTES changed.
 // Answers the hold reason (unsafe_content, too_large) or null. Nothing is
 // staged here; status runs only once the content checks passed.
 export async function inspectVisitWorktree({ folder, root, id, worktreePath, baseCommit }) {
@@ -60,11 +68,12 @@ export async function inspectVisitWorktree({ folder, root, id, worktreePath, bas
   if (!existsSync(pointer) || !lstatSync(pointer).isFile() || readFileSync(pointer, 'utf8') !== pointerText(gitDir)) return 'unsafe_content';
   const gitlinks = (await git(repository, ['ls-tree', '-r', '-z', '--full-tree', baseCommit], root)).split('\0').filter(Boolean)
     .filter((entry) => entry.startsWith(`${GITLINK_MODE} `)).map((entry) => entry.split('\t')[1]);
-  for (const path of walk(worktreePath)) {
+  for (const { path, link } of walk(worktreePath)) {
     const name = path.split('/').at(-1);
-    if (path !== '.git' && name === '.git') return 'unsafe_content';
-    if (gitlinks.some((link) => path.startsWith(`${link}/`))) return 'unsafe_content';
-    if (name === '.gitmodules') {
+    if (link) return 'unsafe_content';
+    if (path !== '.git' && gitDirectoryName(name)) return 'unsafe_content';
+    if (gitlinks.some((gitlink) => path.toLowerCase().startsWith(`${gitlink.toLowerCase()}/`))) return 'unsafe_content';
+    if (gitModulesName(name)) {
       const before = await git(repository, ['cat-file', 'blob', `${baseCommit}:${path}`], root).catch(() => null);
       if (before === null || readFileSync(join(worktreePath, path), 'utf8') !== before) return 'unsafe_content';
     }
@@ -124,15 +133,19 @@ export async function branchChanges({ repository, baseCommit, branch, root }) {
 
 // A digest of what a run must not change outside its own branch: the owner's
 // checkout (its status, the content of every tracked change against HEAD and
-// of every untracked file Git does not ignore), the repository's config, its
-// hooks folder (names and contents) and every ref except this request's own
-// branch (other visit branches included). Taken before and after a run, a
-// difference is detected and the result held; nothing is restored. Read
-// without taking Git's optional locks, so the owner's own Git commands are
-// never blocked by it.
-export async function integritySnapshot({ repository, root, ownBranch }) {
+// of every untracked file Git does not ignore, and the names Git ignores, so a
+// new self-ignoring folder shows), the repository's config, config.worktree,
+// info/exclude, info/attributes, objects/info/alternates, its hooks folder
+// (names and contents), the other worktrees Git knows (names; this request's
+// own excepted) and every ref except this request's own branch (other visit
+// branches included). Taken before and after a run, a difference is detected
+// and the result held; nothing is restored. Read without taking Git's
+// optional locks, so the owner's own Git commands are never blocked by it.
+export async function integritySnapshot({ repository, root, ownBranch, id }) {
   const read = (args) => git(repository, ['--no-optional-locks', ...args], root);
   const status = await read(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all']);
+  const ignored = (await read(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=normal', '--ignore-submodules=all']))
+    .split('\0').filter((entry) => entry.startsWith('!! '));
   const tracked = sha256Bytes(await read(['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--binary', '--ignore-submodules=all', 'HEAD']));
   const untracked = await Promise.all((await read(['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
     .map(async (path) => [path, await sha256File(join(repository, path)).catch(() => null)]));
@@ -140,18 +153,47 @@ export async function integritySnapshot({ repository, root, ownBranch }) {
     .filter((line) => line && !line.startsWith(`refs/heads/${ownBranch} `));
   const head = (await read(['rev-parse', 'HEAD'])).trim();
   const common = (await read(['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
-  const config = await sha256File(join(common, 'config')).catch(() => null);
+  const files = await Promise.all(['config', 'config.worktree', join('info', 'exclude'), join('info', 'attributes'),
+    join('objects', 'info', 'alternates')].map(async (name) => [name, await sha256File(join(common, name)).catch(() => null)]));
   const hooksFolder = join(common, 'hooks');
   const hooks = existsSync(hooksFolder) ? await Promise.all(readdirSync(hooksFolder).sort()
     .map(async (name) => [name, await sha256File(join(hooksFolder, name)).catch(() => 'folder')])) : [];
-  return sha256Bytes(JSON.stringify({ status, tracked, untracked, refs, head, config, hooks }));
+  const worktreesFolder = join(common, 'worktrees');
+  const worktrees = existsSync(worktreesFolder) ? readdirSync(worktreesFolder).filter((name) => name !== id).sort() : [];
+  return sha256Bytes(JSON.stringify({ status, ignored, tracked, untracked, refs, head, files, hooks, worktrees }));
 }
 
-// keepBranch: the owner kept the result (or it expired unreviewed); only the worktree goes.
+// keepBranch: the owner kept the result (or it expired unreviewed); only the
+// worktree goes. Never `git worktree remove --force`, which follows a junction
+// planted inside: links, junctions and other reparse points are unlinked
+// themselves, never followed, then the plain tree is deleted by Node, then Git
+// forgets the worktree. Nothing outside root (<dataDir>/visit-worktrees) is
+// ever removed.
 export async function removeVisitWorktree({ repository, worktreePath, branch, root }, { keepBranch }) {
-  if (worktreePath && existsSync(worktreePath)) await git(repository, ['worktree', 'remove', '--force', worktreePath], root);
-  else await git(repository, ['worktree', 'prune'], root);
+  if (worktreePath) removeTreeUnder(worktreePath, root);
+  await git(repository, ['worktree', 'prune'], root);
   if (!keepBranch && branch) await git(repository, ['branch', '-D', branch], root).catch(() => null);
+}
+
+function removeTreeUnder(path, root) {
+  if (!existsSync(path) && !isLink(path)) return;
+  const parent = realpathSync(dirname(resolve(path)));
+  if (parent !== realpathSync(resolve(root))) throw coded('worktree_outside_root');
+  if (isLink(path)) { unlinkLink(path); return; }
+  for (const { path: inner, link } of walk(path)) if (link) unlinkLink(join(path, inner));
+  // Only plain folders and files are left; rmSync does not follow links (and none is left to follow).
+  rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+}
+
+// A symbolic link, junction or other reparse point as lstat sees it.
+function isLink(path) {
+  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
+}
+
+// Removes the link itself: a file link with unlink, a folder link or junction
+// with rmdir on the link (Windows), neither ever touching its target.
+function unlinkLink(path) {
+  try { unlinkSync(path); } catch { rmdirSync(path); }
 }
 
 export async function repositoryRoot({ folder, root }) {
@@ -176,13 +218,16 @@ function writePointer(path, text) {
   } finally { closeSync(descriptor); }
 }
 
-// Every file and folder under the worktree, relative with forward slashes,
-// without following links.
+// Every file and folder under the worktree, relative with forward slashes, by
+// lstat: a link, junction or other reparse point is reported (link: true) and
+// never descended into.
 function* walk(top, folder = top) {
-  for (const entry of readdirSync(folder, { withFileTypes: true })) {
-    const path = join(folder, entry.name);
-    yield relative(top, path).split(sep).join('/');
-    if (entry.isDirectory()) yield* walk(top, path);
+  for (const name of readdirSync(folder)) {
+    const path = join(folder, name);
+    const stats = lstatSync(path);
+    const link = stats.isSymbolicLink() || !(stats.isFile() || stats.isDirectory());
+    yield { path: relative(top, path).split(sep).join('/'), link };
+    if (!link && stats.isDirectory()) yield* walk(top, path);
   }
 }
 

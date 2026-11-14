@@ -10,7 +10,7 @@ const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_
 const tomlArray = (values) => `[${values.map((value) => JSON.stringify(value)).join(',')}]`;
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
-// Wakes Codex headlessly in a sandbox (read-only unless a visit request edits its worktree). Resuming records the exchange in
+// Wakes Codex headlessly with a read-only sandbox. Resuming records the exchange in
 // that conversation; Codex refuses while the conversation is open in the app.
 export const codexWake = Object.freeze({
   id: 'codex',
@@ -24,24 +24,23 @@ export const codexWake = Object.freeze({
     return bundled && fileExists(bundled) ? bundled : null;
   },
 
-  // mode (roundtable/wake.js WAKE_MODES): answer and read_only run in the
-  // read-only sandbox; worktree_edit (an approved visit request, woken in its
-  // worktree) in the workspace-write sandbox of that folder, network off as
-  // that sandbox has it by default.
-  // mcpServer ({ command, args }): FULI's own MCP server; a read_only or
-  // worktree_edit wake then replaces the whole mcp_servers table with it, so
-  // none of the person's other servers load.
-  args({ sessionId, cwd, delegated = false, mode, mcpServer = null }) {
+  // Every mode (roundtable/wake.js WAKE_MODES) runs in the read-only sandbox.
+  // mcpServers ({ name: { command, args, settings? } }, possibly empty): a
+  // read_only wake then replaces the whole mcp_servers table with exactly
+  // these (not verified that Codex replaces rather than merges the table).
+  args({ sessionId, cwd, delegated = false, mode, mcpServers = null }) {
+    const replaced = mcpServers && mode === 'read_only';
+    const only = replaced ? ['-c', `mcp_servers={ ${Object.entries(mcpServers).map(([name, entry]) => `${name} = { ${[
+      `command = ${JSON.stringify(entry.command)}`, `args = ${tomlArray(entry.args)}`,
+      ...Object.entries(entry.settings ?? {}).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)].join(', ')} }`).join(', ')} }`] : [];
     // Codex MCP children inherit a filtered environment. Pass variable names,
-    // never the private capability itself in argv or persisted client config.
-    const authority = delegated ? ['-c', `mcp_servers.fuli.env_vars=${tomlArray(DELEGATION_VARIABLES)}`] : [];
-    const onlyFuli = mcpServer && mode !== 'answer'
-      ? ['-c', `mcp_servers={ fuli = { ${[`command = ${JSON.stringify(mcpServer.command)}`, `args = ${tomlArray(mcpServer.args)}`,
-        ...Object.entries(mcpServer.settings ?? {}).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)].join(', ')} } }`] : [];
-    const sandbox = mode === 'worktree_edit' ? 'workspace-write' : 'read-only';
+    // never the private capability itself in argv or persisted client config;
+    // only to FULI's server, when there is one.
+    const authority = delegated && (!replaced || mcpServers.fuli)
+      ? ['-c', `mcp_servers.fuli.env_vars=${tomlArray(DELEGATION_VARIABLES)}`] : [];
     return sessionId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${sandbox}"`, ...onlyFuli, ...authority, sessionId, '-']
-      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', sandbox, '-C', cwd, ...onlyFuli, ...authority, '-'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...only, ...authority, sessionId, '-']
+      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, ...only, ...authority, '-'];
   },
 
   // A session resumes only from the directory it started in.
