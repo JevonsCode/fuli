@@ -163,6 +163,8 @@ export async function integritySnapshot({ repository, root, ownBranch, id }) {
   const hooks = existsSync(hooksFolder) ? await Promise.all(readdirSync(hooksFolder).sort()
     .map(async (name) => [name, await sha256File(join(hooksFolder, name)).catch(() => 'folder')])) : [];
   const worktreesFolder = join(common, 'worktrees');
+  // Entry names are folder names Git made, ours being exactly the request id (the last
+  // segment of the path FULI gave it), so a name compares as text.
   const worktrees = existsSync(worktreesFolder) ? readdirSync(worktreesFolder).filter((name) => name !== id).sort() : [];
   return sha256Bytes(JSON.stringify({ status, ignored, tracked, untracked, refs, head, files, hooks, worktrees }));
 }
@@ -175,31 +177,59 @@ export async function integritySnapshot({ repository, root, ownBranch, id }) {
 // never followed, then the plain tree is deleted by Node, then only this
 // request's own entry in Git's worktrees folder goes, once its gitdir file
 // names this worktree. Nothing outside root (<dataDir>/visit-worktrees) or
-// that folder is ever removed.
+// that folder is ever removed. Answers what could not be done, so the owner
+// sees it: entryKept (Git's entry for the worktree did not name it, so it and
+// the branch stay) and branchKept (Git refused to delete the branch).
 export async function removeVisitWorktree({ repository, worktreePath, branch, root }, { keepBranch }) {
+  let entryKept = false;
   if (worktreePath) {
+    // Matched before the folder goes: the folder's identity is part of the match.
+    const entry = await ownAdminEntry({ repository, worktreePath, root });
     await removeTreeUnder(worktreePath, root);
-    await removeOwnAdminEntry({ repository, worktreePath, root });
+    if (entry.matched) await removeTreeUnder(entry.path, entry.entries);
+    entryKept = entry.exists && !entry.matched;
   }
-  if (!keepBranch && branch) await git(repository, ['branch', '-D', branch], root).catch(() => null);
+  let branchKept = false;
+  if (!keepBranch && branch) {
+    // While Git still lists the worktree, it would refuse anyway: the branch stays, said once.
+    branchKept = entryKept || await git(repository, ['branch', '-D', branch], root).then(() => false, () => true);
+  }
+  return { entryKept, branchKept };
 }
 
-async function removeOwnAdminEntry({ repository, worktreePath, root }) {
+// Git's administrative entry for this worktree, and whether it is ours: the
+// folder its gitdir file names is the same place as this request's worktree,
+// compared by real location (the platform's own real path, so 8.3 short
+// names, letter case, slash direction and symlinked temp folders such as
+// /var -> /private/var all agree), never by the text of the two paths.
+async function ownAdminEntry({ repository, worktreePath, root }) {
   const common = (await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root)).trim();
   const entries = join(common, 'worktrees');
-  const entry = join(entries, basename(worktreePath));
-  const named = await readFile(join(entry, 'gitdir'), 'utf8').catch(() => null);
-  if (named === null || !samePath(dirname(named.trim()), worktreePath)) return;
-  await removeTreeUnder(entry, entries);
+  const path = join(entries, basename(worktreePath));
+  const named = await readFile(join(path, 'gitdir'), 'utf8').catch(() => null);
+  if (named === null) return { exists: existsSync(path), matched: false, path, entries };
+  return { exists: true, matched: await sameLocation(dirname(named.trim()), worktreePath), path, entries };
 }
 
-const samePath = (left, right) => (process.platform === 'win32'
-  ? resolve(left).toLowerCase() === resolve(right).toLowerCase() : resolve(left) === resolve(right));
+// Two paths name the same place: their parents resolve to the same real
+// folder and their last names match (ignoring case where the file system
+// does, Windows and macOS). The parent is resolved, not the folder itself,
+// so the comparison still holds once the folder is gone.
+async function sameLocation(left, right) {
+  const parents = await Promise.all([left, right].map((path) => realLocation(dirname(resolve(path)))));
+  if (!parents[0] || parents[0] !== parents[1]) return false;
+  const [one, two] = [basename(resolve(left)), basename(resolve(right))];
+  return CASE_INSENSITIVE ? one.toLowerCase() === two.toLowerCase() : one === two;
+}
+const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+const realLocation = (path) => realpath(path).then((real) => (CASE_INSENSITIVE ? real.toLowerCase() : real), () => null);
 
 async function removeTreeUnder(path, root) {
   const stats = await lstat(path).catch(() => null);
   if (!stats) return;
-  if ((await realpath(dirname(resolve(path)))) !== (await realpath(resolve(root)))) throw coded('worktree_outside_root');
+  // By real location on both sides (fs.promises.realpath is the platform's own).
+  const [parent, folder] = await Promise.all([realLocation(dirname(resolve(path))), realLocation(resolve(root))]);
+  if (!parent || parent !== folder) throw coded('worktree_outside_root');
   if (isLinkStats(stats)) { await unlinkLink(path); return; }
   const links = [];
   for await (const { path: inner, link } of walk(path)) if (link) links.push(join(path, inner));
@@ -228,6 +258,9 @@ async function location({ repository, root, id }) {
 }
 
 // The pointer FULI writes into the worktree; anything else there is the run's doing.
+// Compared as text on purpose: FULI writes it and later rebuilds it from the same
+// source (Git's common directory, read the same way), so any other spelling of the
+// same place was written by someone else.
 const pointerText = (gitDir) => `gitdir: ${gitDir.split(sep).join('/')}\n`;
 
 // Rewritten in place: Git for Windows marks the file hidden, which a plain write refuses.

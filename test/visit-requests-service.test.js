@@ -126,6 +126,22 @@ test('decline, cancel and the 7-day expiry end a waiting request; discard remove
   assert.deepEqual(f.runner.calls.removed.at(-1), { id: 'request-4', keepBranch: false }, 'discard deletes the branch');
 });
 
+test('a discard that could not remove Git\'s entry or the branch says so to the owner and on the request', async (t) => {
+  const f = fixture(t);
+  f.runner.remove = async () => ({ entryKept: true, branchKept: true });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  const discarded = await f.port.requests.discard('request-1');
+  assert.deepEqual([discarded.request.state, discarded.warning], ['discarded', 'worktree_entry_kept']);
+  const last = (await f.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([last.from, last.to, last.note], ['discarded', 'discarded', 'worktree_entry_kept']);
+  f.runner.remove = async () => { throw new Error('locked'); };
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await f.port.requests.keep('request-2')).warning, 'cleanup_failed');
+});
+
 test('a result left unreviewed for 14 days expires: its worktree goes, its branch stays, and it counted as open meanwhile', async (t) => {
   let clock = new Date('2026-11-01T08:00:00.000Z');
   const f = fixture(t, {}, { now: () => clock });
