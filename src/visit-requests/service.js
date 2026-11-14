@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { withoutControls } from '../text/control-characters.js';
-import { AUTO_ENVELOPE_RULE, postRunCheck, preRunCheck, secretCheck } from './auto-envelope.js';
+import { AUTO_ENVELOPE_RULE, postRunCheck, preRunCheck, runsOnOpenPaths, secretCheck } from './auto-envelope.js';
 import { createVisitRecords } from './records.js';
 
 // Requests a visitor sends to be done on this computer (seconding, 外派 C):
@@ -199,18 +199,24 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   }
 
   // ready, or held with the first reason: content that must not be staged,
-  // something outside the branch changed, something that looks like a secret,
-  // or (auto) the diff left the envelope.
+  // something outside the branch changed (or could not be compared in time),
+  // something that looks like a secret, files that can run code when the
+  // branch is opened (in every mode; listed for the owner), or (auto) the diff
+  // left the envelope.
   function review(request, result) {
     const secrets = secretCheck(`${result.summary}\n${result.addedText}`);
     const auto = request.decidedBy === 'rule' && request.modeAtDecision === 'auto';
     const envelope = auto && !result.hold ? postRunCheck({ files: result.files, addedText: result.addedText, platform }) : null;
-    const holdReason = result.hold ?? (!result.intact ? 'integrity_violation' : !secrets.ok ? 'secret_found'
+    // In every mode: files that can run code when the branch is opened, checked out or built.
+    const runsOnOpen = result.hold ? [] : runsOnOpenPaths(result.files, platform);
+    const integrity = result.intact === null ? 'integrity_unknown' : result.intact ? null : 'integrity_violation';
+    const holdReason = result.hold ?? integrity ?? (!secrets.ok ? 'secret_found' : runsOnOpen.length ? 'runs_on_open'
       : envelope && !envelope.ok ? 'outside_envelope' : null);
     return { by: 'rule', rule: auto ? AUTO_ENVELOPE_RULE : null,
-      checks: [{ name: 'content_safe', ok: !result.hold }, { name: 'integrity', ok: result.intact },
-        ...(envelope ? envelope.checks : [secrets])],
-      fields: { review: holdReason ? 'held' : 'ready', holdReason, summary: holdReason === 'secret_found' ? null : result.summary,
+      checks: [{ name: 'content_safe', ok: !result.hold }, { name: 'integrity', ok: result.intact === true },
+        { name: 'nothing_runs_on_open', ok: runsOnOpen.length === 0 }, ...(envelope ? envelope.checks : [secrets])],
+      fields: { review: holdReason ? 'held' : 'ready', holdReason, heldPaths: runsOnOpen.length ? runsOnOpen : null,
+        summary: holdReason === 'secret_found' ? null : result.summary,
         files: result.files.map(({ path, added, removed }) => ({ path, added, removed })), diffstat: result.diffstat, runMs: result.ms } };
   }
 

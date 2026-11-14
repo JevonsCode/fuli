@@ -5,8 +5,8 @@ import { packManifestClient } from './pack-manifest.js';
 // FULI's own MCP server entry for one client, exactly as agent-installer
 // writes it into that client's configuration: the active descriptor pack's
 // arguments (pack-manifest.js) with this installation's variables filled in
-// (integration-context.js). A woken session that may load only FULI's server
-// (roundtable wake modes read_only and worktree_edit) is given this entry.
+// (integration-context.js). The read-only wake of an ask from another computer
+// loads only this entry (packages/roundtable deliver).
 // Roundtable names clients by wake id; packs by client id.
 const PACK_IDS = Object.freeze({ claude_code: 'claude-code', codex: 'codex' });
 

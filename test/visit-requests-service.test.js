@@ -180,7 +180,8 @@ test('trusted skips only the approval; auto approves inside its envelope; both r
 });
 
 test('auto: a run whose diff leaves the envelope is held, and the requester only hears it waits for the owner', async (t) => {
-  const f = fixture(t, { result: { files: [{ path: '.vscode/tasks.json', added: 2, removed: 0 }] } });
+  // A binary file runs nothing on open, but auto takes only text it can read.
+  const f = fixture(t, { result: { files: [{ path: 'assets/logo.png', added: 0, removed: 0, binary: true }] } });
   f.setMode('auto');
   f.submit();
   await settled(async () => await f.state('request-1') === 'awaiting_review');
@@ -192,7 +193,8 @@ test('auto: a run whose diff leaves the envelope is held, and the requester only
 
 test('unsafe content, a too large run, a secret or a broken integrity snapshot hold the result in every mode', async (t) => {
   for (const [result, reason] of [[{ hold: 'unsafe_content', files: [] }, 'unsafe_content'], [{ hold: 'too_large', files: [] }, 'too_large'],
-    [{ addedText: `+const key = "sk-synthetic${'Q'.repeat(24)}";` }, 'secret_found'], [{ intact: false }, 'integrity_violation']]) {
+    [{ addedText: `+const key = "sk-synthetic${'Q'.repeat(24)}";` }, 'secret_found'], [{ intact: false }, 'integrity_violation'],
+    [{ intact: null }, 'integrity_unknown']]) {
     const f = fixture(t, { result });
     f.setMode('trusted');
     f.submit();
@@ -203,6 +205,26 @@ test('unsafe content, a too large run, a secret or a broken integrity snapshot h
     await f.port.requests.keep('request-1');
     assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
       { ok: true, requestId: 'request-1', state: 'kept', title: DRAFT.title }, reason);
+  }
+});
+
+test('in every mode, files that run code when the branch is opened hold the result and are listed for the owner', async (t) => {
+  const touched = ['.claude/settings.json', '.vscode/tasks.json', 'package.json', '.envrc', 'tests/conftest.py']
+    .map((path) => ({ path, added: 1, removed: 0, binary: false, executable: false, symlink: false }));
+  for (const mode of ['plan', 'trusted']) {
+    const f = fixture(t, { result: { files: [...touched, { path: 'src/server.js', added: 1, removed: 0 }] } });
+    f.setMode(mode);
+    f.submit();
+    if (mode === 'plan') {
+      await settled(async () => await f.state('request-1') === 'awaiting_owner');
+      f.port.requests.approve('request-1');
+    }
+    await settled(async () => await f.state('request-1') === 'awaiting_review');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.review, request.holdReason, request.heldPaths], ['held', 'runs_on_open', touched.map((file) => file.path)], mode);
+    assert.equal(events.at(-1).checks.find((check) => check.name === 'nothing_runs_on_open').ok, false);
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'awaiting_owner', title: DRAFT.title }, 'nothing of it reaches the requester');
   }
 });
 

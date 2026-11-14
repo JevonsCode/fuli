@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { findFile, firstField, lastEntries, listDirectory } from '../session-log.js';
+import { reportedWakeUsage } from '../wake-usage.js';
 
 const TURN_START = 'task_started';
 const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
@@ -67,11 +68,15 @@ export const codexWake = Object.freeze({
 
   // `codex exec --json` streams items; the last agent message before turn.completed is the answer.
   // No event names the model, so a Codex wake's model stays unknown (rec#129).
-  initialState: () => ({ body: '', completed: false, failed: false }),
+  // turn.completed's usage counts the turn's tokens; its input already holds the cached part.
+  initialState: () => ({ body: '', completed: false, failed: false, usage: null }),
   nativeSessionId: event => event.type === 'thread.started' ? event.thread_id : null,
   readEvent(event, state) {
     if (event.type === 'item.completed' && event.item?.type === 'agent_message') state.body = event.item.text ?? '';
-    if (event.type === 'turn.completed') state.completed = true;
+    if (event.type === 'turn.completed') {
+      state.completed = true;
+      state.usage = reportedWakeUsage({ inputParts: [event.usage?.input_tokens], output: event.usage?.output_tokens });
+    }
     if (event.type === 'turn.failed' || event.type === 'error') state.failed = true;
   },
 });

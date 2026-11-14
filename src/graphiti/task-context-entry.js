@@ -80,7 +80,7 @@ export async function beginTaskContext(application, {
   }
   return beginTaskFromPreferences(application, preferences, {
     sessionId, turnId: existingTask?.turnId ?? turnId, sourceApplication, sourceSessionId, taskPrompt,
-    workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow
+    workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow, clientModel
   }, { existingTask: resumed ?? (scopeRetry?.projectScope?.type === 'temporary' ? scopeRetry : null), resumed: Boolean(resumed),
     entryVia: 'hook' });
 }
@@ -89,7 +89,9 @@ export async function beginTaskContext(application, {
 // task is not evidence that its context reached this model turn.
 export async function beginTaskFromPreferences(application, preferences, {
   sessionId, turnId = null, sourceApplication = 'other', sourceSessionId = null,
-  workKind = null, workflow = null, taskPrompt = null
+  workKind = null, workflow = null, taskPrompt = null,
+  // The model the client's hook reported (beginTaskContext); the tool fallback has none.
+  clientModel = null
 }, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
@@ -109,7 +111,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   // rec#63: record which recalled items the Agent was shown, so ranking can
   // later learn "shown but not used" from "shown and used", and which
   // preferences the entry delivered from which client, for the compounding
-  // statement. One local write; it never fails task entry and is skipped for
+  // statement, with the model the client reported. One local write; it never fails task entry and is skipped for
   // a resumed task.
   if (!resumed) {
     try {
@@ -118,6 +120,7 @@ export async function beginTaskFromPreferences(application, preferences, {
         personalSpaceId: preferences.context?.personal_space_id,
         personalProjectId: preferences.context?.personal_project_id ?? null,
         sourceApplication: task.sourceApplication ?? sourceApplication,
+        model: clientModel,
         facts: preferences.task_knowledge_recall?.facts,
         entities: preferences.task_knowledge_recall?.entities,
         preferences: preferences.effective_preferences

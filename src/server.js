@@ -4,8 +4,10 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { createGuestAccess } from './guest-access/runtime.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
+import { createLifecycleHookCalls } from './agents/lifecycle-hook-calls.js';
 import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { recordHttpFailure } from './diagnostics/failure-records.js';
@@ -163,6 +165,9 @@ export async function createServer(options = {}) {
   // What the person lets FLAs change for them, and each change made (rec#11 D-81).
   const agentDelegation = options.agentDelegation ?? (localOptions.runtimeConfigPath
     ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
+  // Installed hooks of this data directory hand their calls to this console (lifecycle-hooks-api-router.js).
+  const lifecycleHooks = options.lifecycleHooks ?? (localOptions.runtimeConfigPath
+    ? createLifecycleHookCalls({ runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env }) : null);
   knowledgeHardDelete?.reconcile().catch((error) => {
     console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
   });
@@ -181,10 +186,11 @@ export async function createServer(options = {}) {
   let stopEmbeddingModelUpdates = () => {};
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
+  let guestAccess = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => guestAccess?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -265,6 +271,7 @@ export async function createServer(options = {}) {
       judgmentUndo,
       clientLinks,
       agentDelegation,
+      lifecycleHooks,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -345,6 +352,13 @@ export async function createServer(options = {}) {
     try { application.visitorAccess?.requests?.resume(); }
     catch (error) { console.error(`Visit requests could not resume: ${error.code ?? error.message}`); }
   }
+  // Guest links (rec issue 133): their own listener on port 2729 while a link is live, never the console's.
+  if (application.visitorAccess && application.roundtableHost) {
+    guestAccess = createGuestAccess({ visitorAccess: application.visitorAccess, host: application.roundtableHost,
+      onError: (error) => console.error(`Guest links: ${error.code ?? error.message}`) });
+    application.guestAccess = guestAccess;
+    void guestAccess.start();
+  }
 
   let closing = null;
   const close = () => {
@@ -405,6 +419,7 @@ async function handleRequest({
   judgmentUndo,
   clientLinks,
   agentDelegation,
+  lifecycleHooks,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -449,7 +464,8 @@ async function handleRequest({
       readModelEvaluation,
       judgmentUndo,
       clientLinks,
-      agentDelegation
+      agentDelegation,
+      lifecycleHooks
     }) })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

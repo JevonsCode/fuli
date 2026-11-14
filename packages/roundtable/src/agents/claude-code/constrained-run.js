@@ -19,6 +19,7 @@ const STEPS = Object.freeze({
   // Reads and edits, in the request's worktree.
   edit: ['--permission-mode', 'acceptEdits', '--tools', EDIT_TOOLS.join(','), '--disallowedTools', DENIED_TOOLS.join(',')],
 });
+const STEP_TOOLS = Object.freeze({ plan: READ_TOOLS, edit: EDIT_TOOLS });
 // What an older CLI says about the flag it does not know.
 const UNKNOWN_RESTRICTED = /unknown option[^\n]*--restricted/i;
 
@@ -45,4 +46,13 @@ export const claudeCodeConstrainedRun = Object.freeze({
 
   // A CLI without restricted mode never runs the step unrestricted: the wake fails with its own detail.
   restrictedUnsupported: (stderr) => UNKNOWN_RESTRICTED.test(stderr),
+
+  // stream-json's system init event names the tools and MCP servers the run has.
+  startedWith: (event) => (event?.type === 'system' && event.subtype === 'init'
+    ? { tools: Array.isArray(event.tools) ? event.tools : null, mcpServers: Array.isArray(event.mcp_servers) ? event.mcp_servers : [] }
+    : null),
+
+  // Only the step's own tools and no MCP server at all.
+  restrictedAs: (step, { tools, mcpServers }) => Array.isArray(tools)
+    && tools.every((tool) => STEP_TOOLS[step].includes(tool)) && mcpServers.length === 0,
 });

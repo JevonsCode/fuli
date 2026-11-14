@@ -84,7 +84,7 @@ const shown = (text) => (typeof text === 'string' ? withoutControls(text) : text
 // One request as the console lists it: who asked, what (title), the lead's
 // assessment and the risk it implies, how it was decided and what came of it.
 function listItem(request) {
-  return { id: request.id, state: request.state, review: request.review, holdReason: request.holdReason,
+  return { id: request.id, state: request.state, review: request.review, holdReason: request.holdReason, heldPaths: request.heldPaths,
     requester: { key: request.requesterKey, label: request.requesterLabel, agentName: request.agentName, source: request.source },
     projectId: request.projectId, agentId: request.agentId, title: shown(request.title), plan: request.plan,
     planError: request.planError, risk: riskOf(request.plan), modeAtReceipt: request.modeAtReceipt,

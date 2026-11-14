@@ -26,6 +26,7 @@ import { handleTaskCloseRequest } from './task-close-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleClientLinksRequest } from './client-links-api-router.js';
+import { handleGuestLinksRequest } from './guest-links-api-router.js';
 import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleAgentWorkflowsRequest } from './agent-workflows-api-router.js';
 import { handleAgentAvatarsRequest } from './agent-avatars-api-router.js';
@@ -35,6 +36,7 @@ import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleVisitorAccessRequest } from './visitor-access-api-router.js';
 import { handleVisitRequestsApiRequest } from '../visit-requests/http.js';
+import { handleLifecycleHookRequest } from './lifecycle-hooks-api-router.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { KNOWLEDGE_EMBEDDING_OPERATION } from '../model-backends/config.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
@@ -78,15 +80,18 @@ export async function handleApiRequest({
   readModelEvaluation = null,
   judgmentUndo = null,
   clientLinks = null,
-  agentDelegation = null
+  agentDelegation = null,
+  lifecycleHooks = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (await handleLifecycleHookRequest({ request, response, url, lifecycleHooks })) return true;
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleVisitorAccessRequest({ request, response, url, visitorAccess: app.visitorAccess ?? null })) return true;
   if (await handleVisitRequestsApiRequest({ request, response, url, visitorAccess: app.visitorAccess ?? null })) return true;
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleModelListRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
+  if (await handleGuestLinksRequest({ request, response, url, guestAccess: app.guestAccess ?? null })) return true;
   if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;

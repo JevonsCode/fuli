@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { closeSync, existsSync, ftruncateSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync, rmdirSync, rmSync,
-  unlinkSync, writeSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { closeSync, existsSync, ftruncateSync, lstatSync, openSync, readdirSync, readFileSync, writeSync } from 'node:fs';
+import { lstat, readdir, readFile, realpath, rm, rmdir, unlink } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { sha256Bytes, sha256File } from '../security/digest.js';
 import { gitDirectoryName, gitModulesName } from './git-names.js';
@@ -34,6 +34,8 @@ const GITLINK_MODE = '160000';
 // Node's '\\.\nul' is refused there): no global configuration and no hooks
 // folder, and no file a run could plant under FULI's data directory instead.
 const NO_FILE = '/dev/null';
+// A step of the integrity snapshot (a status of a large checkout) waits no longer than this.
+const SNAPSHOT_STEP_MS = 60_000;
 
 // Where a request's worktree and branch will be, recorded before they are made
 // so a restart in between still finds and tidies both.
@@ -68,7 +70,7 @@ export async function inspectVisitWorktree({ folder, root, id, worktreePath, bas
   if (!existsSync(pointer) || !lstatSync(pointer).isFile() || readFileSync(pointer, 'utf8') !== pointerText(gitDir)) return 'unsafe_content';
   const gitlinks = (await git(repository, ['ls-tree', '-r', '-z', '--full-tree', baseCommit], root)).split('\0').filter(Boolean)
     .filter((entry) => entry.startsWith(`${GITLINK_MODE} `)).map((entry) => entry.split('\t')[1]);
-  for (const { path, link } of walk(worktreePath)) {
+  for await (const { path, link } of walk(worktreePath)) {
     const name = path.split('/').at(-1);
     if (link) return 'unsafe_content';
     if (path !== '.git' && gitDirectoryName(name)) return 'unsafe_content';
@@ -141,8 +143,10 @@ export async function branchChanges({ repository, baseCommit, branch, root }) {
 // branches included). Taken before and after a run, a difference is detected
 // and the result held; nothing is restored. Read without taking Git's
 // optional locks, so the owner's own Git commands are never blocked by it.
+// Each Git step of it has SNAPSHOT_STEP_MS; past that it throws and the
+// caller holds the result as integrity_unknown instead of waiting.
 export async function integritySnapshot({ repository, root, ownBranch, id }) {
-  const read = (args) => git(repository, ['--no-optional-locks', ...args], root);
+  const read = (args) => gitCall(['-C', repository, '--no-optional-locks', ...args], { cwd: repository, root, timeoutMs: SNAPSHOT_STEP_MS });
   const status = await read(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all']);
   const ignored = (await read(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=normal', '--ignore-submodules=all']))
     .split('\0').filter((entry) => entry.startsWith('!! '));
@@ -165,35 +169,52 @@ export async function integritySnapshot({ repository, root, ownBranch, id }) {
 
 // keepBranch: the owner kept the result (or it expired unreviewed); only the
 // worktree goes. Never `git worktree remove --force`, which follows a junction
-// planted inside: links, junctions and other reparse points are unlinked
-// themselves, never followed, then the plain tree is deleted by Node, then Git
-// forgets the worktree. Nothing outside root (<dataDir>/visit-worktrees) is
-// ever removed.
+// planted inside, and never `git worktree prune`, which would also drop the
+// owner's other worktrees whose folders are missing (one on an unplugged
+// drive): links, junctions and other reparse points are unlinked themselves,
+// never followed, then the plain tree is deleted by Node, then only this
+// request's own entry in Git's worktrees folder goes, once its gitdir file
+// names this worktree. Nothing outside root (<dataDir>/visit-worktrees) or
+// that folder is ever removed.
 export async function removeVisitWorktree({ repository, worktreePath, branch, root }, { keepBranch }) {
-  if (worktreePath) removeTreeUnder(worktreePath, root);
-  await git(repository, ['worktree', 'prune'], root);
+  if (worktreePath) {
+    await removeTreeUnder(worktreePath, root);
+    await removeOwnAdminEntry({ repository, worktreePath, root });
+  }
   if (!keepBranch && branch) await git(repository, ['branch', '-D', branch], root).catch(() => null);
 }
 
-function removeTreeUnder(path, root) {
-  if (!existsSync(path) && !isLink(path)) return;
-  const parent = realpathSync(dirname(resolve(path)));
-  if (parent !== realpathSync(resolve(root))) throw coded('worktree_outside_root');
-  if (isLink(path)) { unlinkLink(path); return; }
-  for (const { path: inner, link } of walk(path)) if (link) unlinkLink(join(path, inner));
-  // Only plain folders and files are left; rmSync does not follow links (and none is left to follow).
-  rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+async function removeOwnAdminEntry({ repository, worktreePath, root }) {
+  const common = (await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root)).trim();
+  const entries = join(common, 'worktrees');
+  const entry = join(entries, basename(worktreePath));
+  const named = await readFile(join(entry, 'gitdir'), 'utf8').catch(() => null);
+  if (named === null || !samePath(dirname(named.trim()), worktreePath)) return;
+  await removeTreeUnder(entry, entries);
+}
+
+const samePath = (left, right) => (process.platform === 'win32'
+  ? resolve(left).toLowerCase() === resolve(right).toLowerCase() : resolve(left) === resolve(right));
+
+async function removeTreeUnder(path, root) {
+  const stats = await lstat(path).catch(() => null);
+  if (!stats) return;
+  if ((await realpath(dirname(resolve(path)))) !== (await realpath(resolve(root)))) throw coded('worktree_outside_root');
+  if (isLinkStats(stats)) { await unlinkLink(path); return; }
+  const links = [];
+  for await (const { path: inner, link } of walk(path)) if (link) links.push(join(path, inner));
+  for (const link of links) await unlinkLink(link);
+  // Only plain folders and files are left; rm does not follow links (and none is left to follow).
+  await rm(path, { recursive: true, force: true, maxRetries: 3 });
 }
 
 // A symbolic link, junction or other reparse point as lstat sees it.
-function isLink(path) {
-  try { return lstatSync(path).isSymbolicLink(); } catch { return false; }
-}
+const isLinkStats = (stats) => stats.isSymbolicLink() || !(stats.isFile() || stats.isDirectory());
 
 // Removes the link itself: a file link with unlink, a folder link or junction
 // with rmdir on the link (Windows), neither ever touching its target.
-function unlinkLink(path) {
-  try { unlinkSync(path); } catch { rmdirSync(path); }
+async function unlinkLink(path) {
+  try { await unlink(path); } catch { await rmdir(path); }
 }
 
 export async function repositoryRoot({ folder, root }) {
@@ -220,12 +241,13 @@ function writePointer(path, text) {
 
 // Every file and folder under the worktree, relative with forward slashes, by
 // lstat: a link, junction or other reparse point is reported (link: true) and
-// never descended into.
-function* walk(top, folder = top) {
-  for (const name of readdirSync(folder)) {
+// never descended into. Asynchronous, so a large tree never blocks the
+// console's event loop.
+async function* walk(top, folder = top) {
+  for (const name of await readdir(folder)) {
     const path = join(folder, name);
-    const stats = lstatSync(path);
-    const link = stats.isSymbolicLink() || !(stats.isFile() || stats.isDirectory());
+    const stats = await lstat(path);
+    const link = isLinkStats(stats);
     yield { path: relative(top, path).split(sep).join('/'), link };
     if (!link && stats.isDirectory()) yield* walk(top, path);
   }
@@ -245,14 +267,15 @@ function git(cwd, args, root) {
 // (a folder that does not exist), file-protocol transport, external diff,
 // pager or editor; no system or global configuration; none of the caller's
 // GIT_ variables; never a prompt.
-function gitCall(args, { cwd, root }) {
+// timeoutMs: optional; past it the call is stopped and throws.
+function gitCall(args, { cwd, root, timeoutMs = 0 }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const hardened = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'submodule.recurse=false',
     '-c', `core.hooksPath=${NO_FILE}`, '-c', 'protocol.file.allow=never', '-c', 'diff.external=',
     '-c', 'core.editor=false', '-c', 'safe.directory=*'];
   return new Promise((done, reject) => execFile('git', [...hardened, ...args],
     { cwd: existsSync(cwd) ? cwd : root, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: NO_FILE,
-      GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8' },
+      GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
     (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
       { code: 'git_failed', stderr: String(stderr).slice(-2000) })) : done(stdout))));
 }

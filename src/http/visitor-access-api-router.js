@@ -1,12 +1,13 @@
 import { isLocalOwnerRequest } from '../../packages/roundtable/src/peer/control.js';
 import { sendJson } from './response.js';
 
-// What Settings › 局域网圆桌 reads about visitors from paired computers:
-// 「最近被问」 (every contact they made with this computer's shared projects:
-// who, their Agent, the project, a card or what they searched, the outcome,
-// when) and the mode each requester was given (只能问, 计划, 自动, 完全信任). Both
-// name the visitors, so they answer under the LAN roundtable controls' own
-// guard: this computer's loopback address and a loopback Host.
+// What Settings › 局域网圆桌 reads about visitors from paired computers and
+// guest links: 「最近被问」 (every contact they made with this computer's shared
+// projects: who, whether a paired computer or a guest link, their Agent, the
+// project, a card or what they searched, the outcome, when) and the mode each
+// requester was given (只能问, 计划, 自动, 完全信任). Both name the visitors, so
+// they answer under the LAN roundtable controls' own guard: this computer's
+// loopback address and a loopback Host.
 const READS_PATH = '/api/visitor-access/reads';
 const REQUESTERS_PATH = '/api/visitor-access/requesters';
 const DEFAULT_LIMIT = 20;
@@ -38,6 +39,7 @@ function recentReads(visitorAccess, url) {
   const recent = visitorAccess.recentReads({ limit: Number.isSafeInteger(limit) ? limit : DEFAULT_LIMIT });
   if (!recent.ok) return recent;
   return { ok: true, body: { reads: recent.reads.map(read => ({ id: read.id, requester: read.requesterLabel,
+    requesterKind: read.requesterKey.startsWith('guest:') ? 'guest' : 'peer',
     agentName: read.agentName, projectId: read.projectId, action: read.action, outcome: read.outcome, code: read.code,
     queries: read.queries, resultsCount: read.resultsCount, at: read.at })) } };
 }

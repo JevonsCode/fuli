@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
-import { runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
+import { runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-event.js';
 import { runOpenCodeLifecycleCommand } from '../src/agents/opencode/lifecycle-hook.js';
 import { formatDiagnostics, runDiagnosticsCommand } from '../src/cli/diagnostics-command.js';
 import { inspectLocalStores } from '../src/data-format/local-stores.js';

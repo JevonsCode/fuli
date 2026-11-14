@@ -313,7 +313,9 @@ test('the store round-trips across reopening the file', async (t) => {
 test('a requester\'s mode defaults to plan, and only the person\'s own peer device can be trusted', (t) => {
   const port = access(t);
   assert.deepEqual(port.requesterMode(PEER), { ok: true, mode: 'plan' });
-  assert.deepEqual(port.requesterMode(GUEST), { ok: true, mode: 'plan' });
+  assert.deepEqual(port.requesterMode(GUEST), { ok: true, mode: 'ask_only' }, 'a guest link only asks');
+  assert.deepEqual(port.setRequesterMode({ key: GUEST, kind: 'guest', label: 'Guest', mode: 'plan', ownDevice: false }),
+    { ok: false, code: 'mode_not_allowed' });
   assert.deepEqual(port.setRequesterMode({ key: GUEST, kind: 'guest', label: 'Guest', mode: 'trusted', ownDevice: true }),
     { ok: false, code: 'mode_not_allowed' });
   assert.deepEqual(port.setRequesterMode({ key: PEER, kind: 'peer', label: 'Colleague', mode: 'trusted', ownDevice: false }),

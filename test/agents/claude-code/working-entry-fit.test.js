@@ -4,7 +4,7 @@
 // transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../../../src/mcp/preference-delivery.js';
 import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL }
   from '../../../src/conversations/entry-inline-budget.js';

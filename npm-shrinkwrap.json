@@ -1,12 +1,12 @@
 {
   "name": "fuli-context",
-  "version": "0.27.2",
+  "version": "0.27.3",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "fuli-context",
-      "version": "0.27.2",
+      "version": "0.27.3",
       "license": "Apache-2.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.5.0",

@@ -390,7 +390,7 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   wrapper.unmount()
 })
 
-const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', agentName: 'Visitor lead', projectId: 'sample-project',
+const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', requesterKind: 'peer', agentName: 'Visitor lead', projectId: 'sample-project',
   action: 'search', outcome: 'answered', code: null, queries: ['deploy port', 'release steps'], resultsCount: 2, at: new Date(Date.now() - id * 60_000).toISOString(), ...changes })
 
 it('lists 「最近被问」 under the shares: who asked, what, in which project, and when', async () => {
@@ -415,6 +415,21 @@ it('lists 「最近被问」 under the shares: who asked, what, in which project
   expect(rows[2]!.text()).toContain('Sample project：看了谁负责')
   expect(rows[3]!.text()).toContain('Sample project：问得太频繁，没有回答')
   expect(rows[4]!.text()).toContain('已不共享的项目：没有回答')
+  wrapper.unmount()
+})
+
+it('names a guest link\'s reads as the guest link, never by its raw key', async () => {
+  server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample] }],
+    'GET /api/visitor-access/reads': [{ reads: [
+      read(1, { requester: 'guest-abc123', requesterKind: 'guest', agentName: null, projectId: 'guest-only-project' }),
+      read(2, { requester: 'guest-abc123', requesterKind: 'guest', agentName: null, action: 'card', queries: [] })] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  const rows = wrapper.findAll('[data-recent-reads] li')
+  expect(rows[0]!.text()).toContain('访客链接 guest-abc123')
+  expect(rows[0]!.text()).toContain('访客链接的项目：deploy port / release steps')
+  expect(rows[0]!.text()).not.toContain('guest:')
+  expect(rows[1]!.text()).toContain('Sample project：看了谁负责')
   wrapper.unmount()
 })
 
