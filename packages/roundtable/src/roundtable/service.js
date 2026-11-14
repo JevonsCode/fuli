@@ -225,13 +225,20 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // onlyFuliMcp: the woken session loads only FULI's own MCP server where the
   // host can name it (host.fuliMcpServer), else no MCP server at all; an ask
   // from another computer runs on text from elsewhere, so it never gets the
-  // person's others.
+  // person's others. preferFuliMcp: a group discussion turn, whose text is
+  // the person's own Agents', loads only FULI's server where the host can
+  // name it and stays as it was (the client's own servers) where it cannot,
+  // so a discussion never fails for the lack of that entry.
   const fuliOnly = (client) => {
     const entry = host.fuliMcpServer?.(client) ?? null;
     return entry ? { fuli: entry } : {};
   };
+  const wakeServers = (client, { onlyFuliMcp, preferFuliMcp }) => {
+    const servers = onlyFuliMcp || preferFuliMcp ? fuliOnly(client) : null;
+    return servers && (onlyFuliMcp || servers.fuli) ? { mcpServers: servers } : {};
+  };
   async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, remote = null,
-    wakeMode = 'answer', ladder = null, onlyFuliMcp = false }) {
+    wakeMode = 'answer', ladder = null, onlyFuliMcp = false, preferFuliMcp = false }) {
     const unusable = new Set();
     let failure = 'wake_failed';
     let detail = null;
@@ -258,8 +265,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         woken += 1;
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
           timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, mode: wakeMode,
-          // FULI's own server when the host names it, else none at all; never the person's others.
-          ...(onlyFuliMcp ? { mcpServers: fuliOnly(delivery.client) } : {}),
+          ...wakeServers(delivery.client, { onlyFuliMcp, preferFuliMcp }),
           onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
@@ -427,7 +433,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const app = wakeMode === 'read_only' ? null : desktopApp(attempts[0].client);
     if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder });
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder });
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder,
+        preferFuliMcp: wakeMode === 'read_only' });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',

@@ -77,6 +77,17 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.deepEqual([summary.mode, summary.replying], [null, false]);
 });
 
+test('an ordinary ask keeps the person’s own MCP servers even when FULI can name its entry', async () => {
+  const { app, roundtable, woken } = fixture({ sessions: { 'reviewer-1': [
+    { source_application: 'codex', session_id: 'cx-9', personal_project_id: 'app', last_active: '2026-10-10T00:00:00Z' }] } });
+  app.fuliMcpServer = () => ({ command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] });
+  const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+    to: 'reviewer-1', body: 'Synthetic question' });
+  assert.equal(result.status, 'answered');
+  assert.equal(woken.length, 1);
+  assert.equal('mcpServers' in woken[0], false);
+});
+
 test('a woken answer keeps the model and tokens its client reported; wake usage counts answers by client and model', async () => {
   const answers = [{ body: 'a', sessionId: 'fork-1', model: 'synthetic-model-a', usage: { inputTokens: 120, outputTokens: 30 } },
     { body: 'b', sessionId: 'fork-2', model: 'synthetic-model-a', usage: { inputTokens: null, outputTokens: 5 } },

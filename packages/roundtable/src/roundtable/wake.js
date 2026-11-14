@@ -31,7 +31,8 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
 // What a woken session may do, each adapter mapping it to its client's own
 // switches: answer (the person's own rules), read_only (read and answer only).
 // mcpServers ({ name: entry }, possibly empty): a read_only wake loads exactly
-// these MCP servers and none of the person's (an ask from another computer).
+// these MCP servers and none of the person's (an ask from another computer,
+// and a group discussion turn where FULI can name its own entry).
 // Work done for another computer is not a wake: see constrained-run.js.
 export const WAKE_MODES = Object.freeze(['answer', 'read_only']);
 

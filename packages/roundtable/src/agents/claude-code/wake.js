@@ -8,8 +8,9 @@ import { reportedWakeUsage } from '../wake-usage.js';
 // (Bash, PowerShell), fetches from the web or starts another agent is not there; the edit and
 // shell tools are denied as well, since a deny rule wins over any allow rule the person keeps.
 // Tools of MCP servers the person configured are not built in: a wake given mcpServers (an ask
-// from another computer) loads exactly those (--strict-mcp-config), FULI's own or none; other
-// read-only wakes still follow that person's own allow rules (docs/agent-roundtable.md).
+// from another computer, or a discussion turn where FULI can name its own entry) loads exactly
+// those (--strict-mcp-config), FULI's own or none; a read-only wake given none still follows
+// that person's own allow rules (docs/agent-roundtable.md).
 const READ_ONLY_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
 const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash', 'PowerShell']);
 const MODE_ARGUMENTS = Object.freeze({
