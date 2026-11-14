@@ -1,0 +1,13 @@
+{
+  "version": "0.27.4",
+  "zh": [
+    "没装 FULI 的人，凭一条访客链接就能只读地问你的一个项目。",
+    "配对的电脑可以把活交给你这边的助手，在单独的副本里做，由你拍板。",
+    "每条消息前 FULI 的钩子快了约半秒；更新失败不会再让 FULI 起不来。"
+  ],
+  "en": [
+    "Someone without FULI can ask one of your projects, read-only, through a guest link.",
+    "A paired computer can hand work to your assistant; it is done in a separate copy and you decide.",
+    "The hook is about half a second faster per message; a failed update no longer stops FULI starting."
+  ]
+}
