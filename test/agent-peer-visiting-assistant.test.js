@@ -79,7 +79,7 @@ test('a paired device reads the owner\'s shared project with its own tool call; 
     } finally { await alpha.close(); await beta.close(); }
   });
 
-test('a failed visit says what to do in this device's own words, by its code', () => {
+test('a failed visit says what to do, in words the asking computer chose by the code', () => {
   const failed = (code) => visitView({ address: 'peer:0000000000000000:binding', device: 'Synthetic desk', action: 'card', answer: { ok: false, code } });
   // A coordinator from before visits refuses the query as a message it cannot read.
   assert.match(failed('invalid_message').guidance, /update/);
