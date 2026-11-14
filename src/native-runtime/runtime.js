@@ -277,6 +277,7 @@ export function createNativeGraphServices({
       python: descriptor.providerPython,
       sourcePath: descriptor.providerSource ?? null,
       port: spec.providerPort,
+      workingDirectory: spec.instanceDir,
       logPath: nativeInstanceLogPaths(spec.instanceDir).provider,
       environment: {
         ...process.env,
@@ -311,6 +312,7 @@ export function createNativeGraphServices({
       args: ['console'],
       memory: spec.memory,
       pidPath: join(spec.instanceDir, 'run', 'neo4j.pid'),
+      workingDirectory: spec.instanceDir,
       logPath: nativeInstanceLogPaths(spec.instanceDir).database,
       environment: neo4jEnvironment(spec)
     };
@@ -767,6 +769,12 @@ async function secureMarker(path) {
   await writeFile(path, '', { mode: 0o600 });
 }
 
+// Neo4j and the Provider run in their instance directory under the data
+// directory: it exists before they start (prepareInstance writes its conf) and
+// no app update moves it. A child that inherited the console's directory
+// (inside FULI.app) cannot start once an update replaced that bundle: a JVM
+// in a deleted directory dies with "Could not determine current working
+// directory". Their arguments and environment name only absolute paths.
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
@@ -778,6 +786,7 @@ function spawnNativeDatabase(spec) {
   const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.command, spec.args, {
+      cwd: spec.workingDirectory,
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],
@@ -794,6 +803,7 @@ function spawnNativeProvider(spec) {
   const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.python, providerServerArguments(spec.port), {
+      cwd: spec.workingDirectory,
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],
@@ -864,6 +874,19 @@ function withoutStarted(entries, started) {
 // boundary as text, and the desktop client reads them from it
 // (desktop/flutter/lib/src/runtime/provider_conflict.dart).
 export const PROVIDER_DOWNGRADE_REFUSED = 'provider_downgrade_refused';
+
+// The refusal this package's Provider would meet on the native runtime the
+// manifest records, or null. Read without starting anything, so an app update
+// knows whether the previous version can still run on this data.
+export function installedProviderRefusal(manifestPath, readManifest = path => readJsonFile(path, null)) {
+  try {
+    assertProviderUpgrade(readManifest(manifestPath)?.providerVersion, `${FULI_VERSION}+native.${PROVIDER_RUNTIME_REVISION}`);
+    return null;
+  } catch (error) {
+    if (error?.code === PROVIDER_DOWNGRADE_REFUSED) return error;
+    throw error;
+  }
+}
 
 function assertProviderUpgrade(installed, requested, allowDowngrade = false) {
   if (allowDowngrade) return;

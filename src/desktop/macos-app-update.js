@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { dataNewerThanThisPackage } from '../data-format/data-newer-than-package.js';
+import { acquireConsoleStartLock } from '../local-runtime/console-autostart-record.js';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
+import { singleLine } from '../text/single-line.js';
 import { downloadVerifiedReleaseAsset, failure } from './release-asset.js';
 
 // The console's one-click update of FULI.app, the macOS twin of the Windows
@@ -12,14 +15,18 @@ import { downloadVerifiedReleaseAsset, failure } from './release-asset.js';
 // .dmg, copy the new FULI.app next to the installed one, stop FULI and close
 // its window, swap the two bundles, start FULI from the new one, refresh the
 // Agent clients that were already connected (setup --connected-only, as the
-// Windows switch does) and open its window again. A new version that does not start is swapped back and the
-// previous one started again. The data directory is never touched. Runs in
+// Windows switch does) and open its window again. A new version that does not
+// start is swapped back only when it stopped and the previous one can run on
+// the data (recover below). The data directory is never touched. Runs in
 // the console's detached update worker, on the old bundle's Node, which keeps
 // running after its bundle moves.
 //
 // Failures carry .code for the page's Chinese message: not_installed,
-// no_permission, download_failed, checksum_mismatch, start_failed (rolled back),
-// rollback_failed.
+// no_permission, download_failed, checksum_mismatch, start_failed (rolled back
+// and the previous version runs), rollback_failed (switching back did not
+// finish), kept_new_version (the new version stays installed: it would not stop,
+// or the data is already too new for the previous one). The message names the
+// new version's first start error and what was done after it, on one line.
 
 const HDIUTIL = '/usr/bin/hdiutil';
 const DITTO = '/usr/bin/ditto';
@@ -28,6 +35,8 @@ const OPEN = '/usr/bin/open';
 const PS = '/bin/ps';
 const CONTROLLER_TIMEOUT_MS = 10 * 60_000;
 const CLIENT_EXIT_TIMEOUT_MS = 15_000;
+// How long a rollback waits for a start under way to finish (a start's own wait, lifecycle.js).
+const START_SETTLE_MS = 5 * 60_000;
 
 export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
 
@@ -35,13 +44,15 @@ export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dm
 // Returns { status: 'updated', version, clients: 'reconnected' | 'not_reconnected' }.
 export async function updateMacosAppFromRelease({ packageRoot, dataDir, version, progress = () => {} }, {
   download = downloadVerifiedReleaseAsset, runCommand = run, controller = runController, cli = runCli,
-  client = macosDesktopClient, readBundle = readMacosNativeBundle, tempRoot = tmpdir(), env = process.env
+  client = macosDesktopClient, readBundle = readMacosNativeBundle, tempRoot = tmpdir(), env = process.env,
+  dataNewer = dataNewerThanThisPackage, holdStarts = dataDir => acquireConsoleStartLock(dataDir, { waitMs: START_SETTLE_MS })
 } = {}) {
   const app = installedApp(packageRoot);
   const { arch } = readBundle(packageRoot);
   const parent = dirname(app);
   const staged = join(parent, `.${basename(app)}.update`);
   const previous = join(parent, `.${basename(app)}.previous`);
+  const failed = join(parent, `.${basename(app)}.failed`);
   const directory = mkdtempSync(join(tempRoot, 'fuli-app-update-'));
   try {
     const dmg = await download({ version, name: macosDmgName(version, arch), directory, what: 'macOS app image' }, { progress });
@@ -61,13 +72,16 @@ export async function updateMacosAppFromRelease({ packageRoot, dataDir, version,
       throw new Error(`FULI did not stop before the update; nothing was changed. ${stopped.error ?? ''}`.trim());
     }
     rmSync(previous, { recursive: true, force: true });
+    rmSync(failed, { recursive: true, force: true });
     swap(app, staged, previous);
     const started = await controller(bundleRoot(app), 'start', env);
     if (!started.ok) {
-      await rollBack({ app, previous, env, controller });
-      if (clientWasRunning) client.open(app);
-      throw failure(`v${version} did not start, so the previous version was restored and started again. ${started.error ?? ''}`.trim(),
-        'start_failed');
+      const recovered = await recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts });
+      if (!recovered.ok) {
+        if (clientWasRunning) client.open(app);
+        throw failure(`v${version} did not start (${singleLine(started.error ?? 'no reason given')}); ${recovered.outcome}`,
+          recovered.code);
+      }
     }
     // The clients' MCP entries name paths inside FULI.app, which stay the same;
     // their Skills and hooks come from the new version's client packs.
@@ -140,17 +154,54 @@ function permissionAware(error, message) {
   return failure(`${message} ${error?.message ?? ''}`.trim(), denied ? 'no_permission' : 'download_failed');
 }
 
-async function rollBack({ app, previous, env, controller }) {
-  try {
-    await controller(bundleRoot(app), 'stop', env);
-    rmSync(app, { recursive: true, force: true });
-    renameSync(previous, app);
-    const restarted = await controller(bundleRoot(app), 'start', env);
-    if (!restarted.ok) throw new Error(restarted.error ?? 'The previous version did not start.');
-  } catch (error) {
-    throw failure(`The new version did not start and restoring the previous one failed: ${error?.message ?? error}`,
-      'rollback_failed');
+// After the new version's start was reported failed. Its first start may only
+// be slow (stores upgrade, Neo4j starts cold), so nothing is moved before it
+// stopped: a bundle is never moved or deleted under a FULI that runs from it.
+// The previous version comes back only when it can run on the data the new one
+// may already have upgraded; otherwise the new one stays and is started once
+// more, so the app on disk always matches the data. The new bundle is set
+// aside, not deleted, until the previous version runs.
+// Answers { ok: true } when the new version runs after all, else
+// { ok: false, code, outcome }: what was done, as one sentence.
+async function recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts }) {
+  // A stop sees only a console a finished start recorded. Another start (an
+  // Agent session's automatic one, console-autostart.js) may still be bringing
+  // one up, so the stop runs once no start is under way and none can begin;
+  // the stop's own record keeps automatic starts away afterwards.
+  let release;
+  try { release = holdStarts(dataDir); } catch (error) {
+    return { ok: false, code: 'kept_new_version',
+      outcome: `another start of FULI did not finish, so it was left installed and nothing was switched back (${singleLine(error?.message ?? error)}).` };
   }
+  let stopped;
+  try { stopped = await controller(bundleRoot(app), 'stop', env); } finally { release(); }
+  if (!stopped.ok) {
+    return { ok: false, code: 'kept_new_version',
+      outcome: `it did not stop either, so it was left installed and nothing was switched back (${singleLine(stopped.error ?? 'no reason given')}).` };
+  }
+  let newer;
+  try { newer = dataNewer(dataDir); } catch (error) { newer = `its data could not be checked: ${singleLine(error?.message ?? error)}`; }
+  if (newer) {
+    const retried = await controller(bundleRoot(app), 'start', env);
+    if (retried.ok) return { ok: true };
+    return { ok: false, code: 'kept_new_version',
+      outcome: `the previous version cannot run on this data (${newer}), so the new one was kept; started again, it did not run (${singleLine(retried.error ?? 'no reason given')}).` };
+  }
+  try {
+    renameSync(app, failed);
+    renameSync(previous, app);
+  } catch (error) {
+    try { if (!existsSync(app) && existsSync(failed)) renameSync(failed, app); } catch { /* the message below names the first failure */ }
+    return { ok: false, code: 'rollback_failed',
+      outcome: `switching back to the previous version failed, so the new one stays (${singleLine(error?.message ?? error)}).` };
+  }
+  const restarted = await controller(bundleRoot(app), 'start', env);
+  if (!restarted.ok) {
+    return { ok: false, code: 'rollback_failed',
+      outcome: `the previous version was restored but did not start either (${singleLine(restarted.error ?? 'no reason given')}).` };
+  }
+  rmSync(failed, { recursive: true, force: true });
+  return { ok: false, code: 'start_failed', outcome: 'the previous version was restored and started again.' };
 }
 
 // The bundled controller the desktop client itself runs (macos-controller.js).

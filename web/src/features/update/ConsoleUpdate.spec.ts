@@ -117,4 +117,17 @@ describe('ConsoleUpdate', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能启动，已自动换回原来的版本。 查看详情')
     expect(wrapper.text()).not.toContain('did not start')
   })
+
+  it('says plainly when the Mac app kept the new version instead of switching back', async () => {
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.24.0', kind: 'macos-app' } })
+    api.postJson.mockResolvedValueOnce(job('updating', { kind: 'macos-app', step: null }))
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    api.getJson.mockResolvedValueOnce({ update: job('failed', { kind: 'macos-app', errorCode: 'kept_new_version',
+      error: 'v0.24.0 did not start (synthetic); it did not stop either, so it was left installed and nothing was switched back.' }) })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能正常启动，没有换回旧版本，新版本还装着，请看详情。 查看详情')
+    await wrapper.get('[data-console-update-details]').trigger('click')
+    expect(document.body.textContent).toContain('it did not stop either')
+  })
 })

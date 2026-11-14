@@ -152,11 +152,11 @@ export async function stopWindowsNativeProcess(pid, entry, { timeoutMs } = {}) {
   }
 }
 
-async function spawnOwned(command, args, environment, logPath, { provider = false } = {}) {
+async function spawnOwned(command, args, environment, logPath, { provider = false, cwd } = {}) {
   const log = openChildProcessLog(logPath);
   let child;
   try {
-    child = spawn(command, args, { detached: true, windowsHide: true,
+    child = spawn(command, args, { cwd, detached: true, windowsHide: true,
       stdio: ['ignore', log, log], env: environment });
     await once(child, 'spawn');
     const rows = await inspectWindowsNativeProcess(child.pid, { children: true });
@@ -206,12 +206,12 @@ export function spawnWindowsNativeDatabase(spec) {
     '-Xms' + spec.memory.heapInitial, '-Xmx' + spec.memory.heapMax,
     'org.neo4j.server.CommunityEntryPoint', '--home-dir=' + spec.environment.NEO4J_HOME,
     '--config-dir=' + spec.environment.NEO4J_CONF, '--console-mode'
-  ], spec.environment, spec.logPath);
+  ], spec.environment, spec.logPath, { cwd: spec.workingDirectory });
 }
 
 export function spawnWindowsNativeProvider(spec) {
   return spawnOwned(spec.python, ['-B', '-X', 'utf8', ...providerServerArguments(spec.port), '--app-dir', spec.sourcePath],
-  spec.environment, spec.logPath, { provider: true });
+  spec.environment, spec.logPath, { provider: true, cwd: spec.workingDirectory });
 }
 
 // Read-only boot-anchor evidence for an unconfirmed cleanup hold: the single
