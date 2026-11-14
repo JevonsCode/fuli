@@ -103,12 +103,15 @@ export function parseFinalAnswer(client, { code, signal = null, stdout, stderr =
         { exitCode: code, signal, output: { stderr } });
     }
   }
+  // model and usage: as the client reported them, only where its adapter reads them.
+  const reported = { ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}),
+    ...(state.usage ? { usage: state.usage } : {}) };
   if (code !== 0 || state.failed || !state.completed || !state.body.trim()) {
-    throw wakeFailure('wake_failed', code !== 0 ? 'client_exit_nonzero' : 'no_final_answer', `${client} did not return an answer`,
-      { exitCode: code, signal, output: { stderr, stdout: stdout.slice(-OUTPUT_TAIL_CHARS) } });
+    // A failed run keeps what its client reported before it failed (wake_attempts).
+    throw Object.assign(wakeFailure('wake_failed', code !== 0 ? 'client_exit_nonzero' : 'no_final_answer', `${client} did not return an answer`,
+      { exitCode: code, signal, output: { stderr, stdout: stdout.slice(-OUTPUT_TAIL_CHARS) } }), { reported });
   }
-  // model: as the client reported it, only where its adapter reads one.
-  return { body: state.body.trim(), sessionId, ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}) };
+  return { body: state.body.trim(), sessionId, ...reported };
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.

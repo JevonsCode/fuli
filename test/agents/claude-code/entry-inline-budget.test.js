@@ -3,8 +3,8 @@
 // transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
-import { codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
+import { codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
 import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../../../src/agents/lifecycle-message.js';
 import { compactTaskContext } from '../../../src/conversations/task-context-view.js';
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';

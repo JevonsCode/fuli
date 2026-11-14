@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
 import { builtInClientPack } from '../test-support/client-packs.js';

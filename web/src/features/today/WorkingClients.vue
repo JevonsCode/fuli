@@ -4,7 +4,8 @@ import { useClientLinks } from '@/features/client-links/client-links-store'
 import { useConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskSession } from '@/types'
-import { CLIENT_INITIALS, clientMarks, SHOWN_CLIENTS } from './working-clients'
+import ClientInitial from './ClientInitial.vue'
+import { clientMarks, SHOWN_CLIENTS } from './working-clients'
 
 // Which clients a piece of work runs in, at the end of its 正在干活 row: a mark
 // that opens the session where this console can, a plain one where the client
@@ -28,12 +29,10 @@ const more = computed(() => marks.value.length - shown.value.length)
 <template>
   <span v-if="marks.length" class="working-clients" data-working-clients>
     <template v-for="mark in shown" :key="mark.client">
-      <a v-if="mark.way === 'session'" class="working-client" :href="mark.href" rel="noreferrer"
-        :aria-label="t('today.clients.open', { app: mark.name })" :title="t('today.clients.open', { app: mark.name })"
-        :data-working-client="mark.client" data-way="session">{{ CLIENT_INITIALS[mark.client] }}</a>
-      <span v-else class="working-client" :class="{ 'is-muted': mark.way === 'none' }" role="img"
-        :aria-label="t(`today.clients.${mark.way}`, { app: mark.name })" :title="t(`today.clients.${mark.way}`, { app: mark.name })"
-        :data-working-client="mark.client" :data-way="mark.way">{{ CLIENT_INITIALS[mark.client] }}</span>
+      <ClientInitial v-if="mark.way === 'session'" :client="mark.client" :href="mark.href"
+        :label="t('today.clients.open', { app: mark.name })" :data-working-client="mark.client" data-way="session" />
+      <ClientInitial v-else :client="mark.client" :muted="mark.way === 'none'"
+        :label="t(`today.clients.${mark.way}`, { app: mark.name })" :data-working-client="mark.client" :data-way="mark.way" />
     </template>
     <span v-if="more > 0" class="working-clients-more" :title="t('today.clients.more', { count: more })" data-working-clients-more>+{{ more }}</span>
   </span>
@@ -42,13 +41,8 @@ const more = computed(() => marks.value.length - shown.value.length)
 <style scoped>
 /* Small marks on the row's centre line; a mark that opens something reads as a control. */
 .working-clients { display: inline-flex; flex: none; align-items: center; gap: 4px; user-select: none; }
-.working-client, .working-clients-more {
-  display: inline-grid; min-width: 18px; height: 18px; padding-inline: 2px; place-items: center; border-radius: 5px;
-  color: var(--color-ink-soft); background: var(--color-surface-subtle); box-shadow: 0 0 0 1px var(--color-border);
-  font-size: 10px; font-weight: var(--weight-medium); line-height: 1; letter-spacing: 0; text-decoration: none;
+.working-clients-more {
+  display: inline-grid; min-width: 18px; height: 18px; padding-inline: 2px; place-items: center;
+  color: var(--color-muted); font-size: 10px; font-weight: var(--weight-medium); line-height: 1;
 }
-a.working-client { color: var(--color-ink); transition: background var(--motion-fast); }
-a.working-client:hover { background: var(--color-accent-soft); }
-.working-client.is-muted { opacity: .45; }
-.working-clients-more { box-shadow: none; background: transparent; color: var(--color-muted); }
 </style>

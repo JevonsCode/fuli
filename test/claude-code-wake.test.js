@@ -47,6 +47,21 @@ test('Claude Code answers come from the final result event', () => {
     JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-2', model: 'synthetic-model-a' }),
     JSON.stringify({ type: 'result', result: 'ok' })].join('\n') }),
   { body: 'ok', sessionId: 'fork-2', model: 'synthetic-model-a' });
+  // The result's usage as Claude Code reports it: the whole input is input plus cache reads and writes.
+  const result = usage => JSON.stringify({ type: 'result', result: 'ok', usage });
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: result({ input_tokens: 10, cache_read_input_tokens: 200,
+    cache_creation_input_tokens: 30, output_tokens: 7 }) }).usage, { inputTokens: 240, outputTokens: 7 });
+  // A missing part leaves that side unknown, never a partial sum; nothing reported is no usage at all.
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: result({ input_tokens: 10, output_tokens: 7 }) }).usage,
+    { inputTokens: null, outputTokens: 7 });
+  assert.equal('usage' in parseFinalAnswer('claude_code', { code: 0, stdout: result(undefined) }), false);
+  // A failed run keeps what it reported before failing, for its wake record.
+  assert.throws(() => parseFinalAnswer('claude_code', { code: 1, stdout: [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-3', model: 'synthetic-model-a' }),
+    JSON.stringify({ type: 'result', result: '', is_error: true, usage: { input_tokens: 5, cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0, output_tokens: 1 } })].join('\n') }),
+  error => error.code === 'wake_failed' && error.reported.model === 'synthetic-model-a'
+    && error.reported.usage.inputTokens === 5 && error.reported.usage.outputTokens === 1);
   assert.throws(() => parseFinalAnswer('claude_code', { code: 0, stdout: JSON.stringify({ type: 'result', result: 'x', is_error: true }) }),
     /did not return an answer/);
 });

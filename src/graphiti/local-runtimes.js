@@ -139,7 +139,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // The prompt of each session's current hook-entered task, kept only for the relay check (rec#80).
   app.entryPrompts = entryPromptRecords(dataDir);
   // What the person answered in the client's own question card, for the same check.
-  app.nativeChoiceAnswers = task => nativeChoiceAnswers(task);
+  app.nativeChoiceAnswers = task => nativeChoiceAnswers(task, { env });
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
   app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });
