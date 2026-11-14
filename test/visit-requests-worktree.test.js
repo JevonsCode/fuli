@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -41,19 +41,29 @@ function ownerState(repository) {
     refs: git(repository, 'for-each-ref', '--format=%(refname) %(objectname)').split('\n').filter((line) => line && !line.includes('fuli/visit/')) };
 }
 
+// A junction (Windows) or folder symlink at alias pointing to target, and its removal (the link only, never its target).
+function linkFolder(alias, target) {
+  if (process.platform === 'win32') execFileSync('cmd.exe', ['/c', 'mklink', '/J', alias, target], { stdio: 'ignore' });
+  else symlinkSync(target, alias, 'dir');
+}
+function unlinkFolder(alias) {
+  if (process.platform === 'win32') execFileSync('cmd.exe', ['/c', 'rmdir', alias], { stdio: 'ignore' });
+  else unlinkSync(alias);
+}
+
 // FULI's worktree folder reached through another spelling of the same place,
 // as CI runners have it (/var -> /private/var on macOS, 8.3 short names on
-// Windows): a junction (Windows) or symlink to the real folder, so Git writes
-// one form of the path and FULI holds another on every platform.
+// Windows): its data directory is a junction (Windows) or symlink to the real
+// folder, so Git writes one form of the path and FULI holds another on every
+// platform. The worktree folder itself is a plain folder, as FULI makes it.
 function visitRoot(root) {
-  const real = join(root, 'visit-worktrees-real');
-  const alias = join(root, 'visit-worktrees');
+  const real = join(root, 'data-real');
+  const alias = join(root, 'data');
   if (!existsSync(alias)) {
-    mkdirSync(real);
-    if (process.platform === 'win32') execFileSync('cmd.exe', ['/c', 'mklink', '/J', alias, real], { stdio: 'ignore' });
-    else symlinkSync(real, alias, 'dir');
+    mkdirSync(join(real, 'visit-worktrees'), { recursive: true });
+    linkFolder(alias, real);
   }
-  return alias;
+  return join(alias, 'visit-worktrees');
 }
 
 function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted' } = {}) {
@@ -103,6 +113,7 @@ test('a run edits only its worktree on its branch; the owner\'s working tree and
 
     // The worktree started from the commit, without the owner's uncommitted work.
     assert.equal(request.baseCommit, head);
+    assert.match(request.rootIdentity, /^\d+:\d+$/, 'the worktree folder\'s identity is recorded for the removal');
     assert.deepEqual(request.files, [{ path: 'src/server.js', added: 2, removed: 1 }]);
     assert.deepEqual(request.diffstat, { files: 1, added: 2, removed: 1 });
     const author = git(owner.repository, 'log', '-1', '--format=%an <%ae>', `refs/heads/${request.branch}`).trim();
@@ -305,6 +316,54 @@ test('the removal itself never follows a junction or symlink and never leaves FU
   await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: target, branch: null, root },
     { keepBranch: true }), { code: 'worktree_outside_root' });
   assert.equal(existsSync(join(target, 'keep-me.txt')), true);
+});
+
+// A folder somewhere else holding a child named like the request, as a swapped cleanup root would lead to.
+function decoy(folder, id) {
+  mkdirSync(join(folder, id), { recursive: true });
+  writeFileSync(join(folder, id, 'keep-me.txt'), 'precious\n');
+  return join(folder, id, 'keep-me.txt');
+}
+
+test('a worktree folder replaced by a link after the worktree was made is refused, recorded identity or not', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'swapped-1' });
+  const kept = decoy(join(owner.root, 'elsewhere'), 'swapped-1');
+  renameSync(root, `${root}-moved`);
+  linkFolder(root, join(owner.root, 'elsewhere'));
+  try {
+    for (const rootIdentity of [made.rootIdentity, null]) {
+      await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch,
+        root, rootIdentity }, { keepBranch: false }), { code: 'worktree_root_changed' });
+      assert.equal(readFileSync(kept, 'utf8'), 'precious\n', 'nothing behind the link goes');
+    }
+    assert.notEqual(git(owner.repository, 'branch', '--list', made.branch).trim(), '', 'the branch stays with its worktree');
+  } finally {
+    unlinkFolder(root);
+    renameSync(`${root}-moved`, root);
+  }
+});
+
+test('a worktree folder that is another folder than the one recorded at creation is refused', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'moved-1' });
+  assert.match(made.rootIdentity, /^\d+:\d+$/);
+  // The data directory now leads to another real folder with a visit-worktrees folder of its own.
+  const kept = decoy(join(owner.root, 'other-data', 'visit-worktrees'), 'moved-1');
+  const alias = join(owner.root, 'data');
+  unlinkFolder(alias);
+  linkFolder(alias, join(owner.root, 'other-data'));
+  try {
+    await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch,
+      root, rootIdentity: made.rootIdentity }, { keepBranch: false }), { code: 'worktree_root_changed' });
+    assert.equal(readFileSync(kept, 'utf8'), 'precious\n');
+    assert.equal(existsSync(join(owner.root, 'data-real', 'visit-worktrees', 'moved-1', 'src', 'server.js')), true);
+  } finally {
+    unlinkFolder(alias);
+    linkFolder(alias, join(owner.root, 'data-real'));
+  }
 });
 
 test('removing a visit worktree leaves the owner\'s other worktrees alone, even one whose folder is missing', { timeout: 60_000 }, async (t) => {

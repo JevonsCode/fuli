@@ -81,6 +81,12 @@ export function createVisitRecords(store) {
         AND (? IS NULL OR requester_key = ?) ORDER BY created_at`).all(...states, requesterKey, requesterKey).map(requestView);
     },
 
+    // Requests whose run's client process was not confirmed to have ended (service.js runExit).
+    unconfirmedRuns() {
+      if (!store.readable) return [];
+      return db().prepare(`SELECT * FROM visit_requests WHERE run_exit = 'unconfirmed' ORDER BY created_at`).all().map(requestView);
+    },
+
     // Requests this computer took (not refused) since an ISO instant, of one project or of all.
     acceptedSince(since, { projectId = null } = {}) {
       if (!store.readable) return 0;
@@ -107,7 +113,8 @@ const COLUMNS = Object.freeze({
   plan: 'plan_json', planError: 'plan_error', review: 'review', holdReason: 'hold_reason', modeAtDecision: 'mode_at_decision',
   decidedBy: 'decided_by', reason: 'reason', branch: 'branch', worktreePath: 'worktree_path', baseCommit: 'base_commit',
   projectFolder: 'project_folder', summary: 'result_summary', files: 'files_json', diffstat: 'diffstat_json',
-  planningMs: 'planning_ms', runMs: 'run_ms', error: 'error', heldPaths: 'held_paths_json'
+  planningMs: 'planning_ms', runMs: 'run_ms', error: 'error', heldPaths: 'held_paths_json', rootIdentity: 'root_identity',
+  runPid: 'run_pid', runPidIdentity: 'run_pid_identity', runExit: 'run_exit'
 });
 const JSON_FIELDS = new Set(['plan', 'files', 'diffstat', 'heldPaths']);
 const stored = (field, value) => (JSON_FIELDS.has(field) && value !== null ? JSON.stringify(value) : value);
@@ -121,7 +128,8 @@ function requestView(row) {
     modeAtReceipt: row.mode_at_receipt, modeAtDecision: row.mode_at_decision, decidedBy: row.decided_by, reason: row.reason,
     branch: row.branch, worktreePath: row.worktree_path, baseCommit: row.base_commit, summary: row.result_summary,
     files: parsed(row.files_json), diffstat: parsed(row.diffstat_json), planningMs: row.planning_ms, runMs: row.run_ms,
-    error: row.error, createdAt: row.created_at, updatedAt: row.updated_at };
+    error: row.error, rootIdentity: row.root_identity, runPid: row.run_pid === null ? null : Number(row.run_pid),
+    runPidIdentity: row.run_pid_identity, runExit: row.run_exit, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function eventView(row) {

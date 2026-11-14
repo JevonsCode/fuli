@@ -18,9 +18,10 @@ const CONSTRAINED_RUN_ADAPTERS = Object.freeze({ [claudeCodeConstrainedRun.id]: 
 export const CONSTRAINED_RUN_CLIENTS = Object.freeze(Object.keys(CONSTRAINED_RUN_ADAPTERS));
 
 // step: 'plan' (read only) or 'edit' (read and edit), each confined to cwd.
+// onSpawn(pid): called as the client process starts (runProcess).
 // Answers { body } or throws a wake failure (restricted_mode_unsupported when
 // the client is too old to run restricted; it is never run without it).
-export async function runConstrained({ client, step, cwd, prompt, timeoutMs, signal, env = process.env, home = homedir(),
+export async function runConstrained({ client, step, cwd, prompt, timeoutMs, signal, onSpawn, env = process.env, home = homedir(),
   run = runProcess, readText }) {
   const adapter = Object.hasOwn(CONSTRAINED_RUN_ADAPTERS, client) ? CONSTRAINED_RUN_ADAPTERS[client] : null;
   if (!adapter) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not run for visit requests`);
@@ -39,7 +40,7 @@ export async function runConstrained({ client, step, cwd, prompt, timeoutMs, sig
     if (!adapter.restrictedAs(step, started)) throw unrestricted();
     proven = true;
   };
-  const result = await run(command, adapter.args(step), { cwd, env: childEnv, input: prompt, timeoutMs, signal, onEvent });
+  const result = await run(command, adapter.args(step), { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent });
   if (result.code !== 0 && adapter.restrictedUnsupported(result.stderr ?? '')) throw unrestricted(result);
   if (!proven) throw unrestricted(result);
   const { body } = parseFinalAnswer(client, result);

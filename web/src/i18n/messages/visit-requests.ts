@@ -41,6 +41,8 @@ export const visitRequestMessages = {
       worktree_entry_kept: '副本的登记没对上，分支和登记都留着，没有删。',
       branch_kept: '分支没删掉，还留着。',
       cleanup_failed: '清理副本时出了错，可能还有残留。',
+      process_unconfirmed: '这次运行的程序没确认停下，副本先留着，停下后再删。',
+      process_ended: '运行的程序已确认停下，副本随后删掉。',
       other: '清理时出了点问题，看看这件请求的经过。',
     },
     errors: {
@@ -189,6 +191,8 @@ export const visitRequestMessages = {
       worktree_entry_kept: 'The copy\'s git record did not match, so it and the branch were left in place.',
       branch_kept: 'The branch could not be deleted and is still there.',
       cleanup_failed: 'Cleaning up the copy failed; something may be left behind.',
+      process_unconfirmed: 'The run\'s program was not confirmed to stop, so the copy stays until it has.',
+      process_ended: 'The run\'s program has stopped; the copy is removed now.',
       other: 'Something went wrong cleaning up; see what happened on this request.',
     },
     errors: {

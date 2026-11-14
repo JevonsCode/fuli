@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { LEGACY_CLAIM_TTL_MS, recordedProcessEnded } from '../../packages/roundtable/src/roundtable/wake-claim-release.js';
 import { withoutControls } from '../text/control-characters.js';
 import { AUTO_ENVELOPE_RULE, postRunCheck, preRunCheck, runsOnOpenPaths, secretCheck } from './auto-envelope.js';
 import { createVisitRecords } from './records.js';
@@ -43,15 +44,29 @@ const SHOWN_PATH_CHARS = 200;
 // The lead has no client FULI can run constrained here (only Codex, for now): nothing could run the request.
 const NO_CLIENT = 'no_constrained_client';
 const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
+// The run's client process (runExit): not_started, running (its PID
+// recorded as it starts), ended, or unconfirmed: a stop whose end could not
+// be confirmed (wake.js runProcess), or a restart while it ran. Its worktree
+// stays while unconfirmed, so a process still running never writes into a
+// folder being deleted; noted on the request's history (process_unconfirmed),
+// and once the process is known to have ended (the roundtable's own rule for
+// wake claims; a run an earlier FULI recorded no PID for, a day later) noted
+// again (process_ended) and tidied. Asked at most this often per request.
+const PROCESS_UNCONFIRMED = 'process_unconfirmed';
+const PROCESS_ENDED = 'process_ended';
+const PROCESS_RECHECK_MS = 60 * 1000;
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
 // leads.confirm({ projectId, agentId }) → whether that Agent still leads the shared project, as read now.
 // leads.constrainedClients({ agentId }) → the lead's clients FULI can run constrained here, in order (planning and run use the first).
 // leads.describe({ projectId, agentId }) → { name, responsibility } of the lead, which the runs are given as data.
+// inspectProcess(pids), groupAlive(pgid): as for the roundtable's wake claims (wake-claim-release.js); by default
+// the OS is never asked, so an unconfirmed run's worktree stays.
 export function createVisitRequests({ store, runner, modeOf, leads, platform = process.platform, now = () => new Date(),
-  idFactory = randomUUID }) {
+  idFactory = randomUUID, inspectProcess = async () => null, groupAlive = undefined }) {
   const records = createVisitRecords(store);
   const running = new Map();
+  const processChecked = new Map();
   const lanes = new Map();
   const work = new Set();
   let closed = false;
@@ -179,23 +194,50 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     // Where the worktree and branch will be is recorded with the move, so a
     // restart before they exist still tidies both.
     let request = store.transaction(() => records.move(id, { from: 'approved', to: 'running', by: 'system',
-      fields: runner.planned(approved), at: at() }));
+      fields: { ...runner.planned(approved), runExit: 'not_started' }, at: at() }));
     if (!request) { finish(); return; }
     let result;
     try {
       // The worktree is made only now, after the approval.
       records.update(id, await runner.prepare(request), at());
       request = records.get(id);
-      result = await runner.run(request, { signal, client, lead });
+      result = await runner.run(request, { signal, client, lead, onSpawn: (pid) => spawned(id, pid) });
     } catch (error) {
-      const failed = store.transaction(() => records.move(id, { from: 'running', to: signal.aborted ? 'cancelled' : 'failed',
-        by: 'system', fields: { error: error.code ?? 'run_failed', runMs: error.ms ?? 0 }, at: at() }));
+      const exit = error.cleanup?.status === 'unconfirmed' ? 'unconfirmed' : 'ended';
+      const failed = store.transaction(() => {
+        // Recorded even when a cancel moved the request meanwhile: the cancel's tidy reads it.
+        records.update(id, { runExit: exit }, at());
+        const moved = records.move(id, { from: 'running', to: signal.aborted ? 'cancelled' : 'failed',
+          by: 'system', fields: { error: error.code ?? 'run_failed', runMs: error.ms ?? 0 }, at: at() });
+        if (exit === 'unconfirmed') note(id, PROCESS_UNCONFIRMED);
+        return moved;
+      });
       finish();
       // A request cancelled meanwhile is tidied by whoever cancelled it, once this ended.
       return failed ? tidy(failed) : undefined;
     }
-    store.transaction(() => records.move(id, { from: 'running', to: 'awaiting_review', ...review(request, result), at: at() }));
+    store.transaction(() => {
+      records.update(id, { runExit: 'ended' }, at());
+      records.move(id, { from: 'running', to: 'awaiting_review', ...review(request, result), at: at() });
+    });
     finish();
+  }
+
+  // The run's client process started: its PID is recorded at once (a console
+  // lost right after still knows it), its OS identity once read.
+  function spawned(id, pid) {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return;
+    records.update(id, { runPid: pid, runExit: 'running' }, at());
+    void inspectProcess([pid]).then((found) => {
+      const identity = found?.get(pid)?.identity;
+      if (identity) records.update(id, { runPidIdentity: String(identity) }, at());
+    }).catch(() => {});
+  }
+
+  // A note on a request's history without a change of state.
+  function note(id, text) {
+    const current = records.get(id);
+    records.event(id, { from: current.state, to: current.state, by: 'system', note: text, at: at() });
   }
 
   // ready, or held with the first reason: content that must not be staged,
@@ -220,10 +262,35 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
         files: result.files.map(({ path, added, removed }) => ({ path, added, removed })), diffstat: result.diffstat, runMs: result.ms } };
   }
 
-  // The worktree of a request that ended without a result, and its empty branch, go.
+  // The worktree of a request that ended without a result, and its empty
+  // branch, go; not while its run's process may still be running.
   async function tidy(request) {
-    if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state)) return;
+    if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state) || request.runExit === 'unconfirmed') return;
     await cleanUp(request, { keepBranch: false });
+  }
+
+  // Tidies what an unconfirmed run kept, once its process is known to have ended.
+  async function releaseEnded() {
+    for (const request of records.unconfirmedRuns()) {
+      if (closed || now().getTime() - (processChecked.get(request.id) ?? -Infinity) < PROCESS_RECHECK_MS) continue;
+      processChecked.set(request.id, now().getTime());
+      if (!await processEnded(request)) continue;
+      const ended = store.transaction(() => {
+        if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
+        records.update(request.id, { runExit: 'ended' }, at());
+        note(request.id, PROCESS_ENDED);
+        return records.get(request.id);
+      });
+      processChecked.delete(request.id);
+      await tidy(ended);
+    }
+  }
+
+  async function processEnded(request) {
+    const unproven = now().getTime() - Date.parse(request.updatedAt) >= LEGACY_CLAIM_TTL_MS;
+    if (!request.runPid) return unproven;
+    const ended = await recordedProcessEnded({ pid: request.runPid, identity: request.runPidIdentity }, { inspectProcess, groupAlive });
+    return ended === true || (ended === 'reused' && unproven);
   }
 
   // Removes a request's worktree (and its branch unless kept). What could not
@@ -236,10 +303,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
     const warning = left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
     if (warning) {
-      try {
-        const current = records.get(request.id);
-        store.transaction(() => records.event(request.id, { from: current.state, to: current.state, by: 'system', note: warning, at: at() }));
-      } catch { /* the answer still carries it */ }
+      try { store.transaction(() => note(request.id, warning)); } catch { /* the answer still carries it */ }
     }
     return warning;
   }
@@ -422,16 +486,24 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     for (const request of expired) {
       background(request.files ? cleanUp(request, { keepBranch: true }) : tidy(request));
     }
+    background(releaseEnded());
   }
 
   // After a restart nothing of an earlier process is still being supervised:
-  // a run that was going is unknown and its worktree goes, a plan that was
-  // going waits for the owner without one, and what was approved runs.
+  // a run that was going is unknown and its worktree goes once its client
+  // process is known to have ended (at once when it had not started), a plan
+  // that was going waits for the owner without one, and what was approved runs.
   function resume() {
     if (!store.readable) return;
     const { approved, unknown } = store.transaction(() => {
-      const lost = records.inStates(['running']).map((request) => records.move(request.id, { from: 'running', to: 'unknown',
-        by: 'system', fields: { error: 'restarted' }, at: at() })).filter(Boolean);
+      const lost = records.inStates(['running']).map((request) => {
+        // A run an earlier FULI recorded nothing of (runExit null) may have started too.
+        const exit = request.runExit === 'not_started' ? 'ended' : 'unconfirmed';
+        const moved = records.move(request.id, { from: 'running', to: 'unknown', by: 'system',
+          fields: { error: 'restarted', runExit: exit }, at: at() });
+        if (moved && exit === 'unconfirmed') note(request.id, PROCESS_UNCONFIRMED);
+        return moved;
+      }).filter(Boolean);
       for (const request of records.inStates(['planning'])) {
         records.update(request.id, { planError: 'planning_interrupted' }, at());
         records.move(request.id, { from: 'planning', to: 'awaiting_owner', by: 'system', note: 'planning_interrupted', at: at() });
