@@ -28,6 +28,7 @@ import {
 import { createServerApplication } from './server/application-lifecycle.js';
 import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
+import { fuliMcpServerEntry } from './agent-kits/fuli-mcp-entry.js';
 import { createSystemService } from './system/system-service.js';
 import { startDreamingScheduler } from './dreaming/scheduler.js';
 import { startRetrospectiveScheduler } from './retrospectives/scheduler.js';
@@ -345,6 +346,15 @@ export async function createServer(options = {}) {
   }) ?? (() => {});
   // Resumes only what the owner already turned on; console LAN access never enables it.
   if (application.peer && options.peer !== false) {
+    // FULI's own MCP server as the installer writes it for a client: an ask from another computer,
+    // answered only in this console, loads only this one (packages/roundtable deliver). Set here, in
+    // the console's composition root, so no hook or MCP process reaches the installer's packs.
+    if (localOptions.runtimeConfigPath) {
+      const paths = resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) });
+      application.fuliMcpServer = (client) => {
+        try { return fuliMcpServerEntry({ paths, runtimeConfigPath: localOptions.runtimeConfigPath, client }); } catch { return null; }
+      };
+    }
     peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
       onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
     peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
