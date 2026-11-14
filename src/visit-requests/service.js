@@ -223,7 +223,25 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // The worktree of a request that ended without a result, and its empty branch, go.
   async function tidy(request) {
     if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state)) return;
-    await runner.remove(request, { keepBranch: false }).catch(() => {});
+    await cleanUp(request, { keepBranch: false });
+  }
+
+  // Removes a request's worktree (and its branch unless kept). What could not
+  // be removed is never silent: it is noted on the request's history and
+  // answered (worktree_entry_kept: Git's entry for the worktree did not name
+  // it, so it and the branch stay; branch_kept: Git refused to delete the
+  // branch; cleanup_failed: the removal itself failed).
+  async function cleanUp(request, { keepBranch }) {
+    let left;
+    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
+    const warning = left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    if (warning) {
+      try {
+        const current = records.get(request.id);
+        store.transaction(() => records.event(request.id, { from: current.state, to: current.state, by: 'system', note: warning, at: at() }));
+      } catch { /* the answer still carries it */ }
+    }
+    return warning;
   }
 
   // A request's wake in flight: its abort signal, and when it ended (a cancel waits for that before tidying).
@@ -289,14 +307,16 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   async function keep(id) {
     const moved = act(id, { from: 'awaiting_review', to: 'kept' });
-    if (moved.ok) await runner.remove(moved.request, { keepBranch: true }).catch(() => {});
-    return moved;
+    if (!moved.ok) return moved;
+    const warning = await cleanUp(moved.request, { keepBranch: true });
+    return { ...moved, ...(warning ? { warning } : {}) };
   }
 
   async function discard(id) {
     const moved = act(id, { from: 'awaiting_review', to: 'discarded' });
-    if (moved.ok) await runner.remove(moved.request, { keepBranch: false }).catch(() => {});
-    return moved;
+    if (!moved.ok) return moved;
+    const warning = await cleanUp(moved.request, { keepBranch: false });
+    return { ...moved, ...(warning ? { warning } : {}) };
   }
 
   // ---- a requester's mode, trust and shares ----
@@ -400,7 +420,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
         .map((request) => records.move(request.id, { from: 'awaiting_review', to: 'expired', by: 'system', note: 'review_expired', at: at() }))
     ].filter(Boolean));
     for (const request of expired) {
-      background(request.files ? runner.remove(request, { keepBranch: true }).catch(() => {}) : tidy(request));
+      background(request.files ? cleanUp(request, { keepBranch: true }) : tidy(request));
     }
   }
 

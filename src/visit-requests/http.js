@@ -44,7 +44,7 @@ export async function handleVisitRequestsApiRequest({ request, response, url, vi
     const body = await readJson(request);
     const moved = action === 'decline' ? await requests.decline(id, { reason: body.reason ?? null })
       : await requests[action](id);
-    return answer(response, moved, (done) => ({ request: listItem(done.request) }));
+    return answer(response, moved, (done) => ({ request: listItem(done.request), ...(done.warning ? { warning: done.warning } : {}) }));
   }
   if (one) {
     const card = await requests.card(one[1]);

@@ -34,7 +34,6 @@ import { createVisitorAccess } from '../visitor-access/port.js';
 import { createVisitRequests } from '../visit-requests/service.js';
 import { createVisitRunner } from '../visit-requests/runner.js';
 import { CONSTRAINED_RUN_CLIENTS, runConstrained } from '../../packages/roundtable/src/roundtable/constrained-run.js';
-import { fuliMcpServerEntry } from '../agent-kits/fuli-mcp-entry.js';
 import { createOldDataShelf } from '../old-data/port.js';
 import { createOccupationPlugins } from '../occupation-plugins/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
@@ -125,11 +124,6 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
         return lead?.agentId === agentId ? { name: lead.name, responsibility: lead.responsibility ?? null } : null;
       }
     } }) });
-  // FULI's own MCP server as the installer writes it for a client: a session woken on another
-  // computer's text loads only this one (packages/roundtable deliver).
-  app.fuliMcpServer = (client) => {
-    try { return fuliMcpServerEntry({ paths, runtimeConfigPath, client }); } catch { return null; }
-  };
   // What changed in each project's profile; the file is created by the first change.
   app.projectChangeLog = createProjectChangeLog({ path: join(dataDir, 'project-change-log.sqlite') });
   // The person's own name and picture (「我」); the file is created by the first change.

@@ -41,9 +41,24 @@ function ownerState(repository) {
     refs: git(repository, 'for-each-ref', '--format=%(refname) %(objectname)').split('\n').filter((line) => line && !line.includes('fuli/visit/')) };
 }
 
+// FULI's worktree folder reached through another spelling of the same place,
+// as CI runners have it (/var -> /private/var on macOS, 8.3 short names on
+// Windows): a junction (Windows) or symlink to the real folder, so Git writes
+// one form of the path and FULI holds another on every platform.
+function visitRoot(root) {
+  const real = join(root, 'visit-worktrees-real');
+  const alias = join(root, 'visit-worktrees');
+  if (!existsSync(alias)) {
+    mkdirSync(real);
+    if (process.platform === 'win32') execFileSync('cmd.exe', ['/c', 'mklink', '/J', alias, real], { stdio: 'ignore' });
+    else symlinkSync(real, alias, 'dir');
+  }
+  return alias;
+}
+
 function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted' } = {}) {
   const wakes = [];
-  const runner = createVisitRunner({ root: join(root, 'visit-worktrees'), projectFolder: async () => repository,
+  const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository,
     verifyFolder: async (folder) => folder === repository,
     runClient: async (input) => {
       wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
@@ -102,7 +117,13 @@ test('a run edits only its worktree on its branch; the owner\'s working tree and
 
     const card = await f.port.requests.card(requestId);
     assert.match(card.diff.text, /\+const port = settings\.port;/);
-    await f.port.requests.discard(requestId);
+    // Git names the worktree by another spelling of the same place than FULI holds (the fixture's alias).
+    const common = git(owner.repository, 'rev-parse', '--path-format=absolute', '--git-common-dir').trim();
+    const named = readFileSync(join(common, 'worktrees', requestId, 'gitdir'), 'utf8').trim();
+    assert.notEqual(named.replaceAll('\\', '/').toLowerCase(), join(request.worktreePath, '.git').replaceAll('\\', '/').toLowerCase());
+    const discarded = await f.port.requests.discard(requestId);
+    assert.equal(discarded.warning, undefined, 'nothing was left behind');
+    assert.equal(existsSync(join(common, 'worktrees', requestId)), false, 'Git forgot the worktree');
     assert.equal(existsSync(request.worktreePath), false);
     assert.equal(git(owner.repository, 'branch', '--list', request.branch).trim(), '', 'discard deletes the branch');
     assert.deepEqual(ownerState(owner.repository), before);
@@ -272,7 +293,7 @@ test('a link or junction in the worktree holds the result, and every removal unl
 test('the removal itself never follows a junction or symlink and never leaves FULI\'s worktree folder', { timeout: 60_000 }, async (t) => {
   const owner = ownerRepository(t);
   const target = victim(owner);
-  const root = join(owner.root, 'visit-worktrees');
+  const root = visitRoot(owner.root);
   const made = await createVisitWorktree({ folder: owner.repository, root, id: 'direct-1' });
   const planted = plantLinks(made.worktreePath, target);
   assert.ok(planted.length > 0);
@@ -315,4 +336,18 @@ test('the run prompt carries the plan\'s areas and yes/no answers only, and no r
   }
   assert.ok(!run.includes('SECRET-FROM-DOTENV'), 'no free text from planning reaches the run');
   assert.match(run, /<plan>\n\{"areas":\["src\/server.js"\],"dependencyChanges":false/);
+});
+
+test('a Git entry that does not name the worktree is left alone, with the branch, and the removal says so', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'unmatched-1' });
+  const common = git(owner.repository, 'rev-parse', '--path-format=absolute', '--git-common-dir').trim();
+  const entry = join(common, 'worktrees', 'unmatched-1');
+  writeFileSync(join(entry, 'gitdir'), `${join(owner.root, 'somewhere-else', '.git').split('\\').join('/')}\n`);
+  const left = await removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch, root },
+    { keepBranch: false });
+  assert.deepEqual(left, { entryKept: true, branchKept: true });
+  assert.equal(existsSync(entry), true, 'an entry FULI cannot prove is its own stays');
+  assert.notEqual(git(owner.repository, 'branch', '--list', made.branch).trim(), '');
 });

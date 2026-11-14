@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { shortFingerprint } from '../packages/roundtable/src/peer/protocol.js';
+import { visitView } from '../packages/roundtable/src/peer/query-answer.js';
 import { callRoundtableTool } from '../src/agent-roundtable/tools.js';
 import { handleVisitorAccessRequest } from '../src/http/visitor-access-api-router.js';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
@@ -77,6 +78,18 @@ test('a paired device reads the owner\'s shared project with its own tool call; 
       assert.equal(requests.length, 1);
     } finally { await alpha.close(); await beta.close(); }
   });
+
+test('a failed visit says what to do, in words the asking computer chose by the code', () => {
+  const failed = (code) => visitView({ address: 'peer:0000000000000000:binding', device: 'Synthetic desk', action: 'card', answer: { ok: false, code } });
+  // A coordinator from before visits refuses the query as a message it cannot read.
+  assert.match(failed('invalid_message').guidance, /update/);
+  assert.match(failed('query_timeout').guidance, /later/);
+  for (const code of ['rate_limited_short', 'project_rate_limited_day']) assert.match(failed(code).guidance, /Wait/, code);
+  assert.equal(Object.hasOwn(failed('query_refused'), 'guidance'), false);
+  const found = visitView({ address: 'peer:0000000000000000:binding', device: 'Synthetic desk', action: 'search',
+    answer: { ok: true, remote: { truncated: false, results: [] } } });
+  assert.equal(Object.hasOwn(found, 'guidance'), false);
+});
 
 test('a visit needs a project task of a FULI Agent and a search needs queries', { timeout: 30_000 }, async () => {
   const [alpha, beta] = await Promise.all([device('alpha'), device('beta', { search: syntheticSearch([]) })]);

@@ -102,11 +102,12 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     return { text, truncated };
   }
 
-  // The worktree goes; the branch stays when the owner kept it or it expired unreviewed.
+  // The worktree goes; the branch stays when the owner kept it or it expired
+  // unreviewed. Answers { entryKept, branchKept } (worktree.js).
   async function remove(request, { keepBranch }) {
-    if (!request.worktreePath && !request.branch) return;
+    if (!request.worktreePath && !request.branch) return { entryKept: false, branchKept: false };
     const repository = await repositoryRoot({ folder: request.projectFolder, root });
-    await removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root }, { keepBranch });
+    return removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root }, { keepBranch });
   }
 
   return { folder, planned, prepare, plan, run, patch, remove };

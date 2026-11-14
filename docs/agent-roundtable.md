@@ -364,7 +364,12 @@ entry; nothing outside `<dataDir>/visit-worktrees/` is ever removed. FULI
 never runs `git worktree prune`, which would also drop the owner's other
 worktrees whose folders are missing (one on an unplugged drive): it removes
 only `<common>/worktrees/<id>`, once that entry's `gitdir` file names this
-request's worktree.
+request's worktree, compared by real location (the parent folder's real path and the
+folder name), never by the text of the paths, so 8.3 short names, letter case
+and symlinked temp folders agree. An entry that does not name it stays, with
+the branch, and the request notes `worktree_entry_kept` (a branch Git refused
+to delete: `branch_kept`; a removal that failed: `cleanup_failed`); keep and
+discard answer it as `warning`.
 
 Budgets: per requester 5 requests a day (3 for a guest link, which takes none
 yet), 10 open (results waiting for review included), 60 minutes of planning and
