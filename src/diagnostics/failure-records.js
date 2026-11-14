@@ -1,5 +1,5 @@
 import { isControlledError } from '../app/application-error.js';
-import { errorCode, failureReason } from './safe-event.js';
+import { errorCode, failureReason, recordedFailureReason } from './safe-event.js';
 
 // The diagnostics events of the console's HTTP API and of MCP tool calls
 // (rec#73), recorded after the caller already has its answer. A missing log
@@ -26,7 +26,7 @@ export function recordToolFailure(log, { toolName, error, sessionId = null, star
     operation: toolName,
     outcome: !isControlledError(error) || error.status >= SERVER_ERROR ? 'failed' : 'refused',
     code: isControlledError(error) ? errorCode(error) : 'internal_error',
-    reason: failureReason(error, 'Tool execution failed'),
+    reason: recordedFailureReason(error, 'Tool execution failed'),
     durationMs: Date.now() - startedAt,
     correlationId: sessionId
   }));
