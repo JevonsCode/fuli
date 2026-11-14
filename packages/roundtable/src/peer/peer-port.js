@@ -9,7 +9,7 @@ import { assertionDigest, authorityFromProvider } from './origin-proof.js';
 import { createPeerClient } from './peer-transport.js';
 import { PEER_LIMITS, PEER_PROTOCOL, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerLook, TERMINAL_STATUSES } from './protocol.js';
 import { createPeerChatPort } from './chat-port.js';
-import { parseQueryAnswer, queryCode } from './query-answer.js';
+import { parseQueryAnswer, queryCode, queryPurpose } from './query-answer.js';
 import { matchesAgentDiscovery } from '../roundtable/discovery.js';
 
 const ADDRESS = /^peer:([0-9a-f]{16}):([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/;
@@ -134,7 +134,7 @@ export function createPeerPort({ dataDir, host, clock = Date.now, idFactory = ra
       issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + PEER_LIMITS.queryTtlSeconds * 1000).toISOString() };
     const issued = await host.issueRemoteOrigin({ taskContextToken, client: sourceApplication, messageId: assertion.messageId,
       digest: assertionDigest(assertion), targetNode: target.node, bindingId: target.bindingId, expiresAt: assertion.expiresAt,
-      purpose: 'query' });
+      purpose: queryPurpose(question.action) });
     if (issued.agent_id !== from.agentId) throw new PeerError('origin_mismatch', 'The local authority attributed this task to another Agent', 409);
     assertion.origin = issued.proof;
     let state;

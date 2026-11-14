@@ -173,6 +173,14 @@ own client and model, and wakes nothing there. Everything the other computer sen
 the same limits. `message_agent` to the same address is different: it wakes that lead on the
 owner's computer and spends their client and quota, so use it only when the lead must act.
 
+To have work done on that computer, the project lead's task sends `action: "request"` with
+`request: { title, what, expectedAreas? }` and keeps the returned `requestId`. The owner of that
+computer decides, or a mode they set does; the work runs there in an isolated branch that is never
+merged or pushed. Read it with `action: "request_status"` and the `requestId`: its state and, once
+the owner kept the branch (or at once, when that owner marked your computer fully trusted), a
+summary, the branch name, the changed files and counts, never the patch. Approval is always
+the owner's: a refusal (`ask_only`, `budget_exceeded`) is final; never send the work another way.
+
 ## Report Actual Worker Execution
 
 When a FULI task or task view returns a non-empty Provider `executionSummary`, append a compact

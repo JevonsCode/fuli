@@ -12,9 +12,24 @@ test('Codex runs read-only, resuming a session or starting in the project direct
     ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
   assert.deepEqual(wakeArguments('codex', { cwd: '/work/app' }),
     ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/work/app', '-']);
-  // A group discussion wake is the same: Codex wakes are always read-only.
-  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app', readOnly: true }),
+  // A group discussion wake is the same: Codex answers in the read-only sandbox.
+  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app', mode: 'read_only' }),
     wakeArguments('codex', { cwd: '/work/app' }));
+});
+
+test('an ask from another computer replaces the mcp_servers table with FULI\'s own server, or with none at all', () => {
+  const entry = { command: 'C:\\synthetic\\node.exe', args: ['C:\\synthetic\\mcp-server.js', '--source-application', 'codex'],
+    settings: { enabled: true, startup_timeout_sec: 30, default_tools_approval_mode: 'auto' } };
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: { fuli: entry } }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w',
+      '-c', 'mcp_servers={ fuli = { command = "C:\\\\synthetic\\\\node.exe", args = ["C:\\\\synthetic\\\\mcp-server.js","--source-application","codex"], '
+        + 'enabled = true, startup_timeout_sec = 30, default_tools_approval_mode = "auto" } }',
+      '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
+  // Without FULI's entry: an empty table, and no delegation variables for a server that is not there.
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: {} }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w', '-c', 'mcp_servers={  }', '-']);
+  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('codex', { cwd: '/w' }));
+  assert.throws(() => wakeArguments('codex', { cwd: '/w', mode: 'worktree_edit' }), /Invalid wake mode/);
 });
 
 test('Codex answers are the last agent message of a completed turn', () => {

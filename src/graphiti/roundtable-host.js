@@ -11,6 +11,7 @@ import { findRepositoryRoot } from './project-path-context.js';
 import { recordWakeFailure } from '../diagnostics/failure-records.js';
 import { withoutControls } from '../text/control-characters.js';
 import { shareableText } from '../text/shareable-text.js';
+import { answerVisitRequest, VISIT_REQUEST_ACTIONS } from '../visit-requests/peer-entry.js';
 
 // What the host refuses on its own (the share's lead): the sender learns only QUERY_REFUSED.
 const LEAD_REFUSALS = new Set(['lead_unreadable', 'lead_changed']);
@@ -135,12 +136,17 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // before the search gets). The requester key is the asking device's
     // verified fingerprint (requester.node, checked by the runner against its
     // certificate); name and agentName are display text only.
-    async searchSharedProject({ projectId, agentId, requester, query }) {
+    // A request to have work done here, or its status (seconding C), goes
+    // through the same port and the same lead check (src/visit-requests/peer-entry.js).
+    async searchSharedProject({ projectId, agentId, workingDirectory = null, requester, query }) {
       if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
       const who = visitor(requester);
       const leadRefusal = lead => (!lead ? 'lead_unreadable' : lead.agentId && lead.agentId === agentId ? null : 'lead_changed');
       const currentShareLead = () => (typeof agentId === 'string' && agentId ? currentLead(projectId, query.action) : null);
-      const answer = query.action === 'card'
+      const answer = VISIT_REQUEST_ACTIONS.has(query.action)
+        ? await answerVisitRequest({ visitorAccess: app.visitorAccess, requester: who, projectId, agentId, workingDirectory, query,
+          confirmLead: async () => leadRefusal(await currentShareLead()) })
+        : query.action === 'card'
         ? await app.visitorAccess.showSharedCard({ projectId, requester: who, card: async () => {
           const lead = await currentShareLead();
           const code = leadRefusal(lead);
@@ -152,6 +158,13 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
           confirm: async () => leadRefusal(await currentShareLead()) });
       return !answer.ok && LEAD_REFUSALS.has(answer.code) ? { ok: false, code: QUERY_REFUSED } : answer;
     },
+    // A paired device the person revoked: its open visit requests end too.
+    peerDeviceRevoked: nodeId => app.visitorAccess?.requesterRevoked(`peer:${nodeId}`),
+    // A share removed (or handed to another lead) ends that project's open visit requests.
+    peerSharesChanged: shares => app.visitorAccess?.requests?.sharesChanged(shares),
+    // FULI's own MCP server as its installer writes it for that client; a wake on
+    // another computer's text loads only this one (roundtable deliver onlyFuliMcp).
+    fuliMcpServer: client => app.fuliMcpServer?.(client) ?? null,
     // A visiting query the runner refused once the asking device was proven,
     // with the project of the share it named when that share is known.
     refuseSharedQuery: ({ requester, action, code, projectId = null }) =>

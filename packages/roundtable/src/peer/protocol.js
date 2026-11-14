@@ -190,9 +190,24 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
 }
 
 const QUERY_FIELDS = ['protocol', 'messageId', 'from', 'to', 'query', 'issuedAt', 'expiresAt', 'origin'];
-const QUERY_ACTIONS = new Set(['card', 'search']);
-// Named by the plan for later slices; refused by name until they exist.
-const LATER_QUERY_ACTIONS = new Set(['progress', 'request', 'request_status']);
+const QUERY_ACTIONS = new Set(['card', 'search', 'request', 'request_status']);
+// Named by the plan for a later slice; refused by name until it exists.
+const LATER_QUERY_ACTIONS = new Set(['progress']);
+// A visit request (seconding C): the requester's own draft of the work.
+export const VISIT_REQUEST_LIMITS = Object.freeze({ titleChars: 160, whatChars: 4000, areas: 10, areaChars: 200 });
+const REQUEST_FIELDS = new Set(['title', 'what', 'expectedAreas']);
+const boundedText = (value, max) => typeof value === 'string' && value.trim() !== '' && value.length <= max;
+
+// A request carries a title, what to do and optionally the areas the
+// requester expects, each bounded here, before any queue holds it.
+export function validVisitRequest(request) {
+  const { titleChars, whatChars, areas, areaChars } = VISIT_REQUEST_LIMITS;
+  return Boolean(request) && typeof request === 'object' && !Array.isArray(request)
+    && Object.keys(request).every((key) => REQUEST_FIELDS.has(key))
+    && boundedText(request.title, titleChars) && boundedText(request.what, whatChars)
+    && (request.expectedAreas === undefined || (Array.isArray(request.expectedAreas) && request.expectedAreas.length <= areas
+      && request.expectedAreas.every((area) => boundedText(area, areaChars))));
+}
 const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 
@@ -211,13 +226,19 @@ export function validateQuery(assertion, { now = Date.now() } = {}) {
     fail('Invalid recipient');
   }
   if (from.node === to.node) fail('A device cannot query itself');
-  if (LATER_QUERY_ACTIONS.has(query?.action)) throw new PeerError('query_action_unsupported', 'This device answers only card and search', 422);
+  if (LATER_QUERY_ACTIONS.has(query?.action)) throw new PeerError('query_action_unsupported', 'This device does not answer progress yet', 422);
   if (!QUERY_ACTIONS.has(query?.action)) fail('Unknown query action');
   if (query.action === 'card' && !exactKeys(query, ['action'])) fail('A card query carries no queries');
   if (query.action === 'search' && (!exactKeys(query, ['action', 'queries']) || !Array.isArray(query.queries)
     || query.queries.length < 1 || query.queries.length > PEER_LIMITS.queryCount
     || !query.queries.every((text) => typeof text === 'string' && text.trim() && text.length <= PEER_LIMITS.queryChars))) {
     fail(`A search carries 1 to ${PEER_LIMITS.queryCount} queries of at most ${PEER_LIMITS.queryChars} characters`);
+  }
+  if (query.action === 'request' && (!exactKeys(query, ['action', 'request']) || !validVisitRequest(query.request))) {
+    fail('A request carries a title, what to do and at most 10 expected areas, each bounded');
+  }
+  if (query.action === 'request_status' && (!exactKeys(query, ['action', 'requestId']) || !isOpaqueId(query.requestId))) {
+    fail('A request status names one request id');
   }
   checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.queryTtlSeconds, fail });
   return assertion;

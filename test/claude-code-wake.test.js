@@ -15,10 +15,27 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
 });
 
 test('a read-only wake keeps the non-interactive mode with the reading tools only, and denies file edits and both shells', () => {
-  assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'read_only', plannedSessionId: 'planned-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
       '--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell', '--session-id', 'planned-1']);
-  assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
+  assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('plan'));
+});
+
+test('a wake mode outside answer and read_only is refused: work for another computer is a constrained run, not a wake', () => {
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer' }), wakeArguments('claude_code', {}));
+  for (const mode of ['worktree_edit', 'write_anywhere']) assert.throws(() => wakeArguments('claude_code', { mode }), /Invalid wake mode/);
+});
+
+test('an ask from another computer loads exactly the given MCP servers: FULI\'s own, or none at all', () => {
+  const entry = { command: 'C:/synthetic/node.exe', args: ['C:/synthetic/mcp-server.js', '--source-application', 'claude_code'],
+    settings: {} };
+  const strict = (servers) => ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })];
+  const tail = (args) => args.slice(args.indexOf('--strict-mcp-config'), args.indexOf('--strict-mcp-config') + 3);
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry } })),
+    strict({ fuli: { type: 'stdio', command: entry.command, args: entry.args } }));
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: {} })), strict({}));
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('claude_code', {}));
+  assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('--strict-mcp-config'));
 });
 
 test('Claude Code answers come from the final result event', () => {

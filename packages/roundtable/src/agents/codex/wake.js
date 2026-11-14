@@ -6,6 +6,9 @@ import { findFile, firstField, lastEntries, listDirectory } from '../session-log
 import { reportedWakeUsage } from '../wake-usage.js';
 
 const TURN_START = 'task_started';
+const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+// A TOML array of strings; JSON's string escapes are valid TOML basic strings.
+const tomlArray = (values) => `[${values.map((value) => JSON.stringify(value)).join(',')}]`;
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
 // Wakes Codex headlessly with a read-only sandbox. Resuming records the exchange in
@@ -22,13 +25,23 @@ export const codexWake = Object.freeze({
     return bundled && fileExists(bundled) ? bundled : null;
   },
 
-  args({ sessionId, cwd, delegated = false }) {
+  // Every mode (roundtable/wake.js WAKE_MODES) runs in the read-only sandbox.
+  // mcpServers ({ name: { command, args, settings? } }, possibly empty): a
+  // read_only wake then replaces the whole mcp_servers table with exactly
+  // these (not verified that Codex replaces rather than merges the table).
+  args({ sessionId, cwd, delegated = false, mode, mcpServers = null }) {
+    const replaced = mcpServers && mode === 'read_only';
+    const only = replaced ? ['-c', `mcp_servers={ ${Object.entries(mcpServers).map(([name, entry]) => `${name} = { ${[
+      `command = ${JSON.stringify(entry.command)}`, `args = ${tomlArray(entry.args)}`,
+      ...Object.entries(entry.settings ?? {}).map(([key, value]) => `${key} = ${JSON.stringify(value)}`)].join(', ')} }`).join(', ')} }`] : [];
     // Codex MCP children inherit a filtered environment. Pass variable names,
-    // never the private capability itself in argv or persisted client config.
-    const authority = delegated ? ['-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]'] : [];
+    // never the private capability itself in argv or persisted client config;
+    // only to FULI's server, when there is one.
+    const authority = delegated && (!replaced || mcpServers.fuli)
+      ? ['-c', `mcp_servers.fuli.env_vars=${tomlArray(DELEGATION_VARIABLES)}`] : [];
     return sessionId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...authority, sessionId, '-']
-      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, ...authority, '-'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...only, ...authority, sessionId, '-']
+      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, ...only, ...authority, '-'];
   },
 
   // A session resumes only from the directory it started in.

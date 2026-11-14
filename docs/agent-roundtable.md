@@ -234,6 +234,165 @@ The equivalent local controls are available with `fuli peer --help`. Full databa
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
 
+### Requests run on my computer (seconding, 外派)
+
+A project lead on a paired computer can ask the lead of a project this computer
+shared to do a piece of work here: `visit_shared_lead` `action: "request"` with a
+title (≤160), what to do (≤4000) and up to 10 expected areas, carried as a
+`peer-query/1` assertion signed for the `request` purpose (only a project lead's
+task gets it). The asker keeps the `requestId` and reads progress with
+`action: "request_status"`; only the device that made a request can read it.
+It always gets the state, the title and the owner's one-line reason. The result
+(summary, branch name, at most 50 cleaned paths, diffstat; never the patch)
+crosses only once the owner kept the branch, or, for a computer the owner marked
+fully trusted, as soon as the run is ready. Until then a finished result reads
+as `awaiting_owner`, held or not, like any request waiting for the owner.
+The summary is the run's own final answer: the owner reads it on the card
+before keeping, and it is exactly what the other computer will see. The
+planning pass reads the live project folder (ignored files such as `.env`
+included), so none of its free text reaches the run: the run prompt gets only
+the plan's areas (path-like, cleaned, at most 10) and its yes/no answers. Every
+text in a prompt (the request, the requester's label, the lead, the plan) is
+JSON with `<` and `>` escaped inside its own block, so no text can close a
+block early.
+
+On this computer every request is a row in `visitor-access.sqlite` (format 3)
+with an event row for each change of state:
+
+```
+received ─(ask_only / over a budget / planning busy)→ refused
+received → planning → awaiting_owner ─approve→ approved
+                    └(auto envelope / trusted)→ approved
+planning | approved ─(no constrained client)→ failed
+awaiting_owner ─decline→ declined | ─7 days→ expired | ─cancel→ cancelled
+approved → running → awaiting_review(ready | held) | failed | cancelled | unknown
+awaiting_review → kept (branch stays) | discarded (worktree and branch removed)
+                | ─14 days unreviewed→ expired (worktree removed, branch kept)
+```
+
+A visit request's planning pass and its run are plain constrained client runs
+(`packages/roundtable/src/roundtable/constrained-run.js`), not sessions of the
+lead: no MCP server at all (FULI's included), no grant, none of the person's
+settings, so no FULI tool can send anything to another computer. The lead's
+name and responsibility come in the prompt as data, as does the requester's
+text. Only Claude Code is used, in its restricted mode: `--restricted` removes
+the tools that run commands or code and WebFetch unless `--tools` names them,
+ignores the user, project and local settings files, confines the file tools to
+the working directory, refuses bypassPermissions and leaves writes to settings,
+Git and tool configuration to a person; `--strict-mcp-config` with an empty
+`--mcp-config` loads no MCP server. Planning: `--permission-mode dontAsk` with
+Read, Grep and Glob, in the owner's project folder (3 minutes). The run:
+`--permission-mode acceptEdits` with Read, Grep, Glob, Edit, Write and
+MultiEdit, Bash, PowerShell, WebFetch, WebSearch and NotebookEdit denied, in the
+request's worktree (15 minutes). The run's start event must prove the
+restriction: it may list only the step's tools and no MCP server, or the run is
+stopped at once and fails with `restricted_mode_unsupported`. Model access the person set in the `env` block
+of their user settings (`CLAUDE_CONFIG_DIR` respected; a base URL, a model
+name) is passed to the run's process environment, string values only, never on
+the command line or kept. A Claude Code too old for `--restricted` fails the
+run with `restricted_mode_unsupported`; it is never run without it. Codex is not
+used for visit requests yet: before it is, it must be verified that its
+`-c mcp_servers=…` override replaces the person's table rather than merging
+with it, and that its platform sandbox confines the shell its workspace-write
+mode keeps. A lead whose clients are only Codex gets its request ended as
+`failed` with `no_constrained_client`.
+
+Nothing is copied before approval. What happens next depends on the
+requester's mode, set per paired computer (default 计划): 只能问 refuses
+requests; 计划 waits for the person; 自动 runs only when `auto_envelope_v1`
+passes before the run (the budget, a plan inside the project with no
+dependency, config or network change) and checks the actual diff after it
+(paths inside the worktree; no manifests, lockfiles, build files and wrappers
+such as `build.rs`, `CMakeLists.txt`, `*.targets` or `*.props`, CI, editor,
+container, Python start-up and Agent settings such as `.vscode/`,
+`.devcontainer/`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.mcp.json`, `*.pth` or
+`sitecustomize.py`, env files, `.git*`, `config/`, scripts or executables, and
+on Windows no file without an extension; at most 400 lines in 20 files; no
+secrets), holding the result otherwise; 完全信任 skips only the approval and is
+meant for the person's own computers. A guest link stays 只能问 and takes no requests.
+
+An approved request gets a Git worktree on the branch `fuli/visit/<id>`, cut
+from the repository's HEAD commit under `<dataDir>/visit-worktrees/`; its path
+and branch are recorded before they are made, so a restart in between still
+tidies both. One run per lead at a time on this computer.
+
+A remote `message_agent` ask from another computer (a read-only wake of the
+lead) loads only FULI's own MCP server, from the entry FULI's installer writes
+for that client, and no MCP server at all when FULI cannot name it; never the
+person's others. Without that entry FULI's own hooks do not load either, so
+such an ask fails safely (`delegation_not_redeemed`) instead of loading the
+person's other servers. Group discussion turns are unchanged.
+
+After the run FULI works on the worktree only with its Git directory and work
+tree named explicitly (never discovered from files the run left), without the
+person's system or global Git configuration, hooks, fsmonitor, untracked cache,
+submodule recursion, external diff or textconv. Before anything is staged it
+holds the result as `unsafe_content` when the worktree's `.git` pointer is not
+the one FULI wrote, any symbolic link, junction or other link exists, any other
+`.git` file or folder exists under any spelling Git or the file system treats
+as `.git` (any case, `git~1`, trailing dots or spaces, the characters HFS+
+ignores), a
+`.gitmodules` (any spelling) is added or changed or a file sits inside a
+submodule path, and as `too_large` past 2,000 changed files or 50 MB. The walk is
+asynchronous: on a worktree of 3,000 files the inspection took about 0.5 s and
+the removal about 0.5 s, with the console's event loop never held for more than
+16 ms.
+Otherwise it commits the branch as `FULI visit <visit@fuli.invalid>`, reads the
+files and diffstat from Git, scans the summary and the added lines for secrets,
+and compares a digest of the owner's checkout (status, tracked changes,
+untracked files, the names Git ignores), the repository config,
+`config.worktree`, `info/exclude`, `info/attributes`, `objects/info/alternates`,
+its hooks folder, the other worktrees Git knows and every ref except the
+request's own branch with the one taken before the run; a difference holds the
+result as `integrity_violation`. The "before" snapshot is taken only when the
+run is about to start; each Git step of a snapshot has 60 s, and one that could
+not be taken holds the result as `integrity_unknown` instead of waiting. In
+every mode a result that changed files which can run code when the branch is
+opened, checked out or built (the auto envelope's deny list: manifests,
+lockfiles, build files, editor, container, Agent and Python start-up settings,
+scripts, executables) is held as `runs_on_open`, and the card lists those paths
+(`heldPaths`, at most 50, each cut to 200 characters). This is detection only: nothing is restored,
+and work done in the owner's own checkout during a run also holds it. A commit
+that fails after its files were added leaves unreachable objects that Git's own
+gc removes later; FULI does not prune the owner's object store. FULI never
+merges or pushes.
+
+Removing a worktree never uses `git worktree remove --force` (which follows a
+junction planted inside): links and junctions are unlinked themselves, never
+followed, the remaining plain tree is deleted by Node, then the request's own Git worktree
+entry; nothing outside `<dataDir>/visit-worktrees/` is ever removed. FULI
+never runs `git worktree prune`, which would also drop the owner's other
+worktrees whose folders are missing (one on an unplugged drive): it removes
+only `<common>/worktrees/<id>`, once that entry's `gitdir` file names this
+request's worktree, compared by real location (the parent folder's real path and the
+folder name), never by the text of the paths, so 8.3 short names, letter case
+and symlinked temp folders agree. An entry that does not name it stays, with
+the branch, and the request notes `worktree_entry_kept` (a branch Git refused
+to delete: `branch_kept`; a removal that failed: `cleanup_failed`); keep and
+discard answer it as `warning`.
+
+Budgets: per requester 5 requests a day (3 for a guest link, which takes none
+yet), 10 open (results waiting for review included), 60 minutes of planning and
+run wakes a day; per shared project 10 requests a day; per computer 20 a day;
+at most 2 planning wakes at once. A request over any of them is refused in the
+same transaction, before any run, and a request or a status read must also pass
+the visitor limits a card or search meets; status reads are also counted in
+memory (60 per requester in 10 minutes) and write nothing.
+Lowering a requester to 只能问, revoking its pairing, removing the share, or the
+project getting another lead (checked again just before a run) cancels its open
+requests; a running one is stopped through its abort signal and its worktree is
+removed only once the run, its commit step included, has ended. Lowering to 计划
+returns rule-approved requests that have not started to the person; raising the
+mode approves nothing that waits. After a restart a run that was going is
+`unknown`, its worktree is removed, and it is not run again.
+
+The console reads `GET /api/visit-requests` (with `awaiting` for 等你拍板) and
+`GET /api/visit-requests/:id` (events, and the patch for the owner), and decides
+with `POST /api/visit-requests/:id/{approve,decline,keep,discard,cancel}` and
+`PUT /api/visitor-access/requesters/:key/mode`, all on this computer's loopback
+only. An FLA may decline or cancel for the person (lan_roundtable permission);
+approving, keeping, discarding and every mode change stay the person's own.
+
 ### Guest links: asking without FULI (rec issue 133)
 
 A guest link lets someone on the same network whose computer has no FULI ask one

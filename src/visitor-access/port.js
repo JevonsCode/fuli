@@ -1,5 +1,5 @@
 import { withoutControls } from '../text/control-characters.js';
-import { rateLimitRefusal } from './rate-limit.js';
+import { createStatusReadLimiter, rateLimitRefusal } from './rate-limit.js';
 import { searchableProject, searchableQueries, searchSharedProject, sharedCard } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
 import { createGuestLinks } from './guest-links.js';
@@ -25,14 +25,22 @@ import { createGuestLinks } from './guest-links.js';
 // attempt is reserved, so a requester past its limits causes no Provider read.
 const MODES = new Set(['ask_only', 'plan', 'auto', 'trusted']);
 const DEFAULT_MODE = 'plan';
+// A guest link only asks: it is ask_only by default and can be set to nothing else.
+const defaultMode = (key) => (key.startsWith('guest:') ? 'ask_only' : DEFAULT_MODE);
 const REQUESTER_KEY = /^(?:peer:[0-9a-f]{64}|guest:[A-Za-z0-9_-]{8,64})$/;
 // Display text is cut to this many UTF-16 units before it is cleaned.
 const MAX_LABEL_UNITS = 1000;
 const LABEL_CHARS = 120;
 const READS_LIMIT = 200;
 
-export function createVisitorAccess({ path = ':memory:', application, now = () => new Date(), warn }) {
+// requests({ store, modeOf }): optional, builds the visit request service
+// (src/visit-requests/service.js) over this port's store; without it every
+// request is refused as requests_unavailable.
+export function createVisitorAccess({ path = ':memory:', application, now = () => new Date(), warn, requests: createRequests = null }) {
   const store = new VisitorAccessStore(path, { warn });
+  const modeOf = (key) => store.requester(key)?.mode ?? defaultMode(key);
+  const requests = createRequests ? createRequests({ store, modeOf }) : null;
+  const statusReads = createStatusReadLimiter();
 
   return {
     // confirm(): optional; resolves null to go on, or a refusal code.
@@ -102,27 +110,82 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
     requesterMode(key) {
       if (!validKey(key)) return refused('requester_invalid');
-      try { return { ok: true, mode: store.requester(key)?.mode ?? DEFAULT_MODE }; }
+      try { return { ok: true, mode: store.requester(key)?.mode ?? defaultMode(key) }; }
       catch { return refused(UNAVAILABLE); }
     },
 
+    // label: optional for a requester already stored, which keeps its own.
     setRequesterMode({ key, kind, label, mode, ownDevice } = {}) {
-      const shown = displayText(label);
+      let shown;
+      try { shown = displayText(label) ?? (validKey(key) ? store.requester(key)?.label : null); }
+      catch { return refused(UNAVAILABLE); }
       if (!validKey(key) || !['peer', 'guest'].includes(kind) || !key.startsWith(`${kind}:`) || !shown) {
         return refused('requester_invalid');
       }
       if (!MODES.has(mode)) return refused('mode_unknown');
       if (mode === 'trusted' && !(kind === 'peer' && ownDevice === true)) return refused('mode_not_allowed');
+      if (kind === 'guest' && !GUEST_MODES.has(mode)) return refused('mode_not_allowed');
+      let changed;
       try {
-        return { ok: true, requester: store.setRequester({ key, kind, label: shown, mode,
-          ownDevice: kind === 'peer' && ownDevice === true, at: now().toISOString() }) };
+        // The mode and what it does to the requester's requests, in one transaction.
+        changed = store.transaction(() => ({ requester: store.setRequester({ key, kind, label: shown, mode,
+          ownDevice: kind === 'peer' && ownDevice === true, at: now().toISOString() }),
+        effects: requests?.modeChanged(key, mode) ?? { cancelled: [], returned: [] } }));
+      } catch { return refused(UNAVAILABLE); }
+      // Stops what was running at once; the worktrees are tidied after.
+      if (changed.effects.cancelled.length) void requests.settle(changed.effects).catch(() => {});
+      return { ok: true, ...changed };
+    },
+
+    // ---- visit requests (seconding, 外派 C) ----
+
+    // A visitor's request to have work done on this computer by the lead of
+    // the shared project: the requester's mode, its budget and the state
+    // machine decide; a refusal and every change of state are recorded.
+    // projectFolder: the share's folder when it names one (verified before use).
+    submitRequest({ requester, projectId, agentId, projectFolder = null, request } = {}) {
+      const who = requesterOf(requester);
+      if (!who) return refused('requester_invalid');
+      if (!requests) return refused('requests_unavailable');
+      if (!searchableProject(projectId) || typeof agentId !== 'string' || !agentId) return refused('project_invalid');
+      try {
+        // The visitor limits a card or search meets come first; a request itself is recorded as its own row.
+        const limited = rateLimitRefusal(store, who.requesterKey, projectId, now());
+        if (limited) return refused(limited);
+        return requests.submit({ requester: { key: who.requesterKey, label: who.requesterLabel, agentName: who.agentName },
+          source: who.requesterKey.startsWith('peer:') ? 'peer' : 'guest', projectId, agentId,
+          projectFolder: typeof projectFolder === 'string' && projectFolder ? projectFolder : null, request });
       } catch { return refused(UNAVAILABLE); }
     },
+
+    // The state of one request, only to the requester that made it: checked
+    // against the visitor limits, and nothing is written.
+    requestStatus({ requester, requestId } = {}) {
+      const who = requesterOf(requester);
+      if (!who) return refused('requester_invalid');
+      if (!requests) return refused('requests_unavailable');
+      try {
+        const at = now();
+        const limited = rateLimitRefusal(store, who.requesterKey, '', at) ?? statusReads.refusal(who.requesterKey, at);
+        return limited ? refused(limited) : requests.requesterStatus({ requesterKey: who.requesterKey, requestId });
+      }
+      catch { return refused(UNAVAILABLE); }
+    },
+
+    // A paired device the owner revoked: its open requests end with it.
+    requesterRevoked(key) {
+      if (!validKey(key) || !requests) return Promise.resolve({ cancelled: [], returned: [] });
+      return requests.requesterRevoked(key);
+    },
+
+    // The owner's console (src/visit-requests/http.js): list, card and decisions; null without the service.
+    requests,
 
     // Guest links (deliverable B): created, listed and revoked by the person, opened by a bearer token.
     guestLinks: createGuestLinks({ store, now }),
 
-    close: () => store.close()
+    // With requests, after their running work stopped (a promise).
+    close: () => (requests ? requests.close().then(() => store.close()) : store.close())
   };
 
   // One attempt, checked and written in one transaction: past the requester's
@@ -171,6 +234,8 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 }
 
 const ACTIONS = new Set(['search', 'card']);
+// A guest link only asks (src/guest-access): no request of it is ever taken.
+const GUEST_MODES = new Set(['ask_only']);
 const PLAIN_CODE = /^[a-z][a-z0-9_]{0,39}$/;
 // One word for a store that cannot be used now.
 const UNAVAILABLE = 'visitor_access_unavailable';

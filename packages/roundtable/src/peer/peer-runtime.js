@@ -113,7 +113,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const service = createCoordinatorService({ store: coordinatorStore, identity: device, authority, name,
       onTrustChange: () => server?.refreshTrust(),
       // A device that left (or was revoked) ends its pairing's share, as a revoke here does.
-      onRevoked: (nodeId) => pairingShare.forget(nodeId),
+      onRevoked: (nodeId) => deviceGone(nodeId),
       repositoryChanges: { read: () => store().setting('repositoryChanges'), write: (value) => store().setSetting('repositoryChanges', value) } });
     try {
       server = await startServer({ service, identity: device, host: address, port: listenPort, claimWaitMs,
@@ -538,6 +538,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
         ...Object.fromEntries(changed.map((projectId) => [projectId, clock()])) });
     }
     store().replaceShares(shares, port.idFactory);
+    sharesChanged();
     await runner?.reconcileShares();
     // A list the coordinator did not get is said here, not only in the log.
     try { await publish(); }
@@ -573,6 +574,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     for (const device of storedDevices()) if (!device.self && device.status === 'active') revokeStored(device.nodeId);
     await stopAll();
     store().replaceShares([], port.idFactory);
+    sharesChanged();
     store().forgetAuthorities();
     store().setSetting('membership', null);
     store().setSetting('coordinator', null);
@@ -610,7 +612,22 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       try { coordinatorStore.revokeNode(nodeId, new Date(clock()).toISOString()); } finally { coordinatorStore.close(); }
     }
     store().forgetAuthority(nodeId);
+    deviceGone(nodeId);
+  }
+
+  // What this computer kept for a device that is no longer paired ends with it:
+  // the share its pairing made, and (through the host) its open visit requests.
+  function deviceGone(nodeId) {
     pairingShare.forget(nodeId);
+    Promise.resolve().then(() => host.peerDeviceRevoked?.(nodeId)).catch(() => {});
+  }
+
+  // The shares this computer offers changed: the host ends what was open for
+  // a project or lead no longer shared (its visit requests).
+  function sharesChanged() {
+    const offered = store().shares().filter((share) => !share.communicationOnly)
+      .map((share) => ({ projectId: share.projectId, agentId: share.agentId }));
+    Promise.resolve().then(() => host.peerSharesChanged?.(offered)).catch(() => {});
   }
 
   // ---- Nearby pairing (rec issue 127) ----

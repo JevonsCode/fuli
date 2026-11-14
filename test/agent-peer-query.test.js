@@ -60,7 +60,19 @@ test('a query carries exactly its fields, card or search, bounded queries and a 
   refused({ query: { action: 'search', queries: ['   '] } });
   refused({ query: { action: 'search', queries: ['x'], projectView: false } });
   refused({ query: { action: 'wake' } });
-  for (const action of ['progress', 'request', 'request_status']) refused({ query: { action } }, 'query_action_unsupported');
+  refused({ query: { action: 'progress' } }, 'query_action_unsupported');
+  // A visit request (seconding C): a bounded draft; its status names one request.
+  const draft = { title: 'Fix the port', what: 'Read the port from the settings file', expectedAreas: ['src/server.js'] };
+  assert.ok(validateQuery(queryFor(sender, target, { now, query: { action: 'request', request: draft } }), { now }));
+  assert.ok(validateQuery(queryFor(sender, target, { now, query: { action: 'request_status', requestId: 'request-1' } }), { now }));
+  refused({ query: { action: 'request' } });
+  refused({ query: { action: 'request', request: { ...draft, title: 'x'.repeat(161) } } });
+  refused({ query: { action: 'request', request: { ...draft, what: 'x'.repeat(4001) } } });
+  refused({ query: { action: 'request', request: { ...draft, expectedAreas: Array(11).fill('src') } } });
+  refused({ query: { action: 'request', request: { ...draft, patch: 'diff --git' } } });
+  refused({ query: { action: 'request', request: draft, queries: ['x'] } });
+  refused({ query: { action: 'request_status' } });
+  refused({ query: { action: 'request_status', requestId: '../other' } });
   refused({ from: { node: sender, agentId: 'visitor-agent', name: 'Visitor', client: 'codex' } });
   refused({ to: { node: sender, bindingId: 'binding-1', agentId: 'lead-agent' } });
   refused({ origin: undefined });
