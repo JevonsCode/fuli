@@ -227,6 +227,6 @@ function inspectJsonDirectory(directory, format) {
     .filter(([, count]) => count));
   const state = STATE_ORDER.find((candidate) => counts[candidate]) ?? 'empty';
   return { store: format.store, kind: 'json-records', target: format.supported, version: null,
-    ledger: [], steps: [], state, note: `${records.length} records: ${Object.entries(counts)
+    ledger: [], steps: [], state, counts, note: `${records.length} records: ${Object.entries(counts)
       .map(([name, count]) => `${count} ${name}`).join(', ') || 'none'}` };
 }

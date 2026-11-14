@@ -47,7 +47,7 @@ export function planWindowsUpdate({ source, installRoot, env = process.env, read
 
 export async function updateWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, backupGraph, desktopClient = windowsDesktopClient
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, backupGraph, holdStarts, consolesLeft, desktopClient = windowsDesktopClient
 } = {}) {
   const plan = planWindowsUpdate({ ...options, readShortcut });
   if ((options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId)
@@ -55,10 +55,10 @@ export async function updateWindowsInstallation(options, {
     throw new Error('The installation or update package changed after confirmation; review the update again.');
   }
   return withWindowsClientClosed(plan, desktopClient,
-    () => stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph }));
+    () => stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph, holdStarts, consolesLeft }));
 }
 
-async function stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph }) {
+async function stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, backupGraph, holdStarts, consolesLeft }) {
   const lock = await acquireLock(plan.current.dataDir);
   try {
     lock.assertHeld();
@@ -76,7 +76,7 @@ async function stageAndSwitch(plan, { runCli, createShortcut, readShortcut, acqu
       discard();
       throw error;
     }
-    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard, stopping, backupGraph });
+    return await stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard, stopping, backupGraph, holdStarts, consolesLeft });
   } finally { await lock.release(); }
 }
 

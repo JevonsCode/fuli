@@ -34,7 +34,7 @@ const detailsOpen = ref(false)
 // The text 「查看详情」 shows: the recorded reason, or why the update could not start.
 const details = ref('')
 const REASONS = new Set(['not_installed', 'no_permission', 'download_failed', 'checksum_mismatch', 'start_failed',
-  'rollback_failed'])
+  'rollback_failed', 'kept_new_version'])
 let timer: ReturnType<typeof setTimeout> | undefined
 let unmounted = false
 

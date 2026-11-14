@@ -789,10 +789,13 @@ test('a recorded PID that now runs another program is not ended; the console sta
 
 // The console's wait runs on a fake clock: `wait` advances it instead of
 // sleeping, and each health probe takes `probeMs` of it, up to its budget.
-function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0, portProblem = null } = {}) {
+// endsOn: the signals the console ends on (the first it gets ends it).
+function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0, portProblem = null,
+  endsOn = ['SIGTERM', 'SIGKILL'] } = {}) {
   let elapsedMs = 0;
   const portChecks = [];
   const stopped = [];
+  const signals = [];
   const budgets = [];
   let writtenState = null;
   const run = ensureGraphRuntime({
@@ -817,11 +820,14 @@ function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, 
     },
     async wait(ms) { elapsedMs += ms; },
     now: () => elapsedMs,
-    stopProcess(pid) { stopped.push(pid); },
+    stopProcess(pid, signal = 'SIGTERM') {
+      stopped.push(pid); signals.push(signal);
+      if (endsOn.includes(signal)) exitsAfterMs = Math.min(exitsAfterMs, elapsedMs);
+    },
     writeState(_path, state) { writtenState = state; },
     async consolePortProblem(port, host) { portChecks.push([port, host]); return portProblem; }
   }));
-  return { run, stopped, budgets, portChecks, elapsed: () => elapsedMs, state: () => writtenState };
+  return { run, stopped, signals, budgets, portChecks, elapsed: () => elapsedMs, state: () => writtenState };
 }
 
 test('a console that cannot listen on a port Windows reserves says so first, with the range', async () => {
@@ -861,6 +867,19 @@ test('a console that never answers is stopped after 60 s, saying what still runs
   assert.equal(elapsed(), 60_000, 'the wait ends at the deadline, not past it');
   assert.deepEqual(stopped, [2727]);
   assert.equal(state(), null, 'a console that did not start leaves no runtime state');
+});
+
+test('a console that ignores the stop is killed, and the start returns only once it is gone', async () => {
+  const { run, signals, elapsed } = consoleStartCase({ endsOn: ['SIGKILL'] });
+  await assert.rejects(run, /did not answer at http:\/\/127\.0\.0\.1:2727 within 60 s, so it was stopped/);
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+  assert.ok(elapsed() >= 72_000, "it waited the console's own shutdown deadline before killing it");
+});
+
+test('a console that cannot be confirmed gone is named, so the caller knows a process may remain', async () => {
+  const { run, signals } = consoleStartCase({ endsOn: [] });
+  await assert.rejects(run, /did not end when stopped; its process 2727 may still be running/);
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
 });
 
 test('slow health probes count against the 60 s, and the last probe gets only the time left', async () => {

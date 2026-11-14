@@ -8,6 +8,7 @@ import { boundChildProcessLog, childLogArchives, openChildProcessLog, removeChil
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
 import { providerServerArguments } from '../src/native-runtime/provider-arguments.js';
 import { spawnWindowsNativeProvider } from '../src/native-runtime/windows-processes.js';
+import { waitForExit } from '../src/local-runtime/processes.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 const LIMIT = 50 * 1024 * 1024;
@@ -78,10 +79,13 @@ test('the native Provider spawn rotates its full log before the child starts', a
     writeText: () => {}, pathExists: () => true,
     readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
     waitForDatabase: async () => {}, spawnDatabase: () => ({ pid: 4000 }),
-    readProcessState: () => null, writeProcessState: () => {},
+    readProcessState: () => null, writeProcessState: (_path, state) => { providerPid = state.providers?.personal?.pid ?? providerPid; },
     fetchImpl: async () => Response.json({ status: 'ok', transcript_contract: 1 })
   });
+  let providerPid = null;
   await services.start();
+  // It runs in its instance directory, which Windows keeps until it exits.
+  await waitForExit(providerPid, 10_000);
   assert.equal(lastText(`${logPath}.1`), 'previous-run');
   assert.ok(statSync(logPath).size < LIMIT);
 });

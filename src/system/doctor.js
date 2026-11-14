@@ -65,7 +65,7 @@ const canInstall = (client) => client.detected && !client.manualOnly && !client.
 // dataDirShared: the principals besides the person and SYSTEM that the data
 // directory's ACL lets in (windows-data-acl.js); none outside Windows.
 // runningServers: this installation's MCP servers the OS shows running
-// ([{ pid, parentPid, startedAt }], mcp-process-scan.js), or null when the
+// ([{ pid, parentPid, startedAt }], fuli-process-scan.js), or null when the
 // list could not be read.
 // npmCopies: the npm installations of FULI beside the desktop app's own
 // (src/desktop/npm-copies.js); none when this console is not the app's.

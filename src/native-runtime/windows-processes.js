@@ -152,11 +152,11 @@ export async function stopWindowsNativeProcess(pid, entry, { timeoutMs } = {}) {
   }
 }
 
-async function spawnOwned(command, args, environment, logPath, { provider = false } = {}) {
+async function spawnOwned(command, args, environment, logPath, { provider = false, cwd } = {}) {
   const log = openChildProcessLog(logPath);
   let child;
   try {
-    child = spawn(command, args, { detached: true, windowsHide: true,
+    child = spawn(command, args, { cwd, detached: true, windowsHide: true,
       stdio: ['ignore', log, log], env: environment });
     await once(child, 'spawn');
     const rows = await inspectWindowsNativeProcess(child.pid, { children: true });
@@ -180,14 +180,14 @@ async function spawnOwned(command, args, environment, logPath, { provider = fals
   } finally { closeSync(log); }
 }
 
-export async function runWindowsNeo4j(command, args, { env }) {
+export async function runWindowsNeo4j(command, args, { env, cwd }) {
   if (basename(command) !== 'neo4j-admin') throw new Error('Unowned Windows Neo4j command is not supported');
   const home = dirname(dirname(command));
   // AdminTool uses a typed home path. The outer bootloader escapes non-ASCII
   // Windows paths through its PATH setting parser, even for set-initial-password.
   return execute(join(env.JAVA_HOME, 'bin', 'java.exe'), ['-cp', join(home, 'lib', '*'),
     'org.neo4j.cli.AdminTool', ...args], {
-    env, sensitiveValues: neo4jAdminSensitiveValues(args)
+    env, cwd, sensitiveValues: neo4jAdminSensitiveValues(args)
   });
 }
 
@@ -206,12 +206,12 @@ export function spawnWindowsNativeDatabase(spec) {
     '-Xms' + spec.memory.heapInitial, '-Xmx' + spec.memory.heapMax,
     'org.neo4j.server.CommunityEntryPoint', '--home-dir=' + spec.environment.NEO4J_HOME,
     '--config-dir=' + spec.environment.NEO4J_CONF, '--console-mode'
-  ], spec.environment, spec.logPath);
+  ], spec.environment, spec.logPath, { cwd: spec.workingDirectory });
 }
 
 export function spawnWindowsNativeProvider(spec) {
   return spawnOwned(spec.python, ['-B', '-X', 'utf8', ...providerServerArguments(spec.port), '--app-dir', spec.sourcePath],
-  spec.environment, spec.logPath, { provider: true });
+  spec.environment, spec.logPath, { provider: true, cwd: spec.workingDirectory });
 }
 
 // Read-only boot-anchor evidence for an unconfirmed cleanup hold: the single

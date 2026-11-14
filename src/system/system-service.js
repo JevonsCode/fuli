@@ -40,7 +40,7 @@ import { readFormatOperations } from '../data-format/operations-log.js';
 import { createModelCapture } from '../debug-turns/model-capture.js';
 import { windowsDataAcl } from './windows-data-acl.js';
 import { debugTurnStore } from '../debug-turns/store.js';
-import { runningMcpServers } from './mcp-process-scan.js';
+import { runningMcpServers } from './fuli-process-scan.js';
 import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
 import { createNpmCopyControl } from '../desktop/npm-copy-control.js';
 import { createCliPathControl } from '../desktop/cli-path.js';
@@ -98,7 +98,7 @@ export function createSystemService({
   transcriptFormat = createTranscriptFormatProbe(),
   // Who can open the data directory on Windows (windows-data-acl.js).
   dataDirAcl = windowsDataAcl(),
-  // This installation's MCP servers the OS shows running (mcp-process-scan.js).
+  // This installation's MCP servers the OS shows running (fuli-process-scan.js).
   scanMcpServers = runningMcpServers,
   now = Date.now,
   runtimeBroker = createAdaptiveRuntimeBroker({

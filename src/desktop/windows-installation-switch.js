@@ -4,6 +4,12 @@ import { dirname, join } from 'node:path';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { placeWindowsNodeLauncher } from './windows-node-launcher.js';
+import { dataFormatMarks, dataUpgradedSince } from '../data-format/data-newer-than-package.js';
+import { waitForConsoleStarts } from '../local-runtime/console-autostart-record.js';
+import {
+  consoleLeftRunning, consoleStillRunning, failedStartError, keepNewVersionOnNewerData, newVersionDidNotStop, previousVersionBlocked,
+  startsBusyBeforeUpdate, startsStillRunning
+} from './failed-update-recovery.js';
 import { stopInstalledFuli } from './windows-running-fuli.js';
 import { backupWindowsGraph, prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
 
@@ -48,11 +54,19 @@ export function stageWindowsShortcuts(shortcuts, packageRoot, createShortcut, re
 
 // stopping: how processes that outlive the installed CLI's stop are handled (windows-running-fuli.js).
 // backupGraph: the graph backup before a Neo4j patch upgrade (windows-update-runtime.js).
-export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {}, backupGraph = backupWindowsGraph }) {
+// holdStarts: the console start lock (console-autostart-record.js). A stop sees
+// only a console a finished start recorded, so it runs once no start (an Agent
+// session's automatic one) is under way, and the lock is kept until the record
+// names the version that starts next: no console starts from the version being
+// replaced after its stop. That version's own start takes the lock itself.
+export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {},
+  backupGraph = backupWindowsGraph, holdStarts = waitForConsoleStarts, consolesLeft = consoleLeftRunning }) {
+  let releaseStarts = () => {};
   try {
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
     for (const shortcut of plan.shortcuts) assertInstallationUnchanged(shortcut.path, shortcut.bytes);
+    try { releaseStarts = once(holdStarts(plan.current.dataDir)); } catch (error) { throw startsBusyBeforeUpdate(error); }
     // Client configurations run the version installation.json names through this
     // launcher, so it is placed before anything stops and outlives a restored switch.
     placeWindowsNodeLauncher(plan.installRoot, packageRoot);
@@ -60,13 +74,19 @@ export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot
     await stopInstalledFuli(plan, { ...stopping, runCli, write });
     lock.assertHeld();
   } catch (error) {
+    releaseStarts();
     discard();
     throw error;
   }
-  return switchInstallation(plan, staged, packageRoot, runCli, lock, write, backupGraph);
+  return switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts, consolesLeft });
 }
 
-async function switchInstallation(plan, staged, packageRoot, runCli, lock, write, backupGraph) {
+function once(release) {
+  let released = false;
+  return () => { if (!released) { released = true; release(); } };
+}
+
+async function switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts, consolesLeft }) {
   const execute = runCli;
   runCli = async (...args) => {
     lock.assertHeld();
@@ -81,12 +101,19 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
   const args = command => [command, '--data-dir', current.dataDir];
   // A confirmed downgrade lets the new version replace the recorded Provider.
   const startArgs = () => plan.downgrade ? [...args('start'), '--allow-provider-downgrade'] : args('start');
-  let switched = false, started = false;
+  const startNew = async () => {
+    await requireInstalledCli(runCli, packageRoot, startArgs(), 'Fuli ' + plan.applicationVersion + ' did not start.');
+    await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' did not report a running state.');
+  };
+  let switched = false, started = false, marks = {};
   const replaced = [];
   try {
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
     for (const shortcut of plan.shortcuts) assertInstallationUnchanged(shortcut.path, shortcut.bytes);
+    // The stores as the stopped version left them: what the new one changes
+    // decides whether that version may come back (failed-update-recovery.js).
+    marks = dataFormatMarks(current.dataDir);
     if (upgrade) {
       write(`Backing up the graph before upgrading Neo4j ${upgrade.from} → ${upgrade.to}...`);
       try { await backupGraph(staged.runtime, current); }
@@ -100,17 +127,48 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
       if (bytes) { assertInstallationUnchanged(path, bytes); writeTextFileAtomic(path, staged.shortcuts[index]); replaced.push(index); }
     });
     started = true;
+    releaseStarts();
     write('Starting Fuli ' + plan.applicationVersion + '...');
-    await requireInstalledCli(runCli, packageRoot, startArgs(), 'Fuli ' + plan.applicationVersion + ' did not start.');
-    await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' did not report a running state.');
+    await startNew();
   } catch (error) {
+    releaseStarts();
     lock.assertHeld(); // A lost owner must not interfere with another updater.
-    // Stop while the new receipt is still authoritative. Never restart the old
-    // version when the new process may still be using the same database.
-    if (started) {
-      try { await requireInstalledCli(runCli, packageRoot, args('stop'), 'Fuli ' + plan.applicationVersion + ' could not be stopped; automatic rollback was not attempted.'); }
-      catch (stopError) { throw new AggregateError([error, stopError], stopError.message); }
-    }
+    // From before the new version's stop until the update's own next start, no
+    // start (a person's included) begins: none may run while the data is read
+    // or the record changes. That start takes the lock itself.
+    let releaseRecovery = () => {};
+    try {
+      if (started) {
+        try { releaseRecovery = once(holdStarts(current.dataDir)); }
+        catch (busy) { throw failedStartError(plan.applicationVersion, error.message, startsStillRunning(busy)); }
+      }
+      if (!started || !await newVersionRunsAfterAll(error, releaseRecovery)) await restorePrevious(error, releaseRecovery);
+    } finally { releaseRecovery(); }
+  }
+  return reconnect();
+
+  // Stop while the new receipt is still authoritative, once no start is under
+  // way. Never restart the old version when the new process may still be using
+  // the same database, or on data the new one already upgraded: then the new
+  // one stays selected and is started once more. True when it runs now.
+  async function newVersionRunsAfterAll(error, releaseBeforeStart) {
+    try { await requireInstalledCli(runCli, packageRoot, args('stop'), 'Fuli ' + plan.applicationVersion + ' could not be stopped; automatic rollback was not attempted.'); }
+    catch (stopError) { throw failedStartError(plan.applicationVersion, error.message, newVersionDidNotStop(stopError.message)); }
+    lock.assertHeld();
+    // A console the failed start left, unrecorded, may still upgrade stores or hold its port.
+    const left = await consolesLeft(current.dataDir);
+    if (left) throw failedStartError(plan.applicationVersion, error.message, consoleStillRunning(left));
+    const decision = await keepNewVersionOnNewerData(previousVersionBlocked(() => dataUpgradedSince(marks, current.dataDir)),
+      async () => {
+        releaseBeforeStart();
+        try { await startNew(); return { ok: true }; } catch (retry) { return { ok: false, error: retry.message }; }
+      });
+    if (!decision) return false;
+    if (decision.ok) return true;
+    throw failedStartError(plan.applicationVersion, error.message, decision);
+  }
+
+  async function restorePrevious(error, releaseBeforeStart = () => {}) {
     lock.assertHeld();
     restoreWindowsUpdateRuntime(staged.runtime, plan.applicationVersion);
     const failures = [];
@@ -122,21 +180,25 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
     try {
       lock.assertHeld();
       assertInstallationUnchanged(plan.recordPath, plan.record);
+      releaseBeforeStart();
       await requireInstalledCli(runCli, current.packageRoot, args('start'), 'The previous Fuli did not start again.');
       await requireInstalledCli(runCli, current.packageRoot, args('status'), 'The previous Fuli did not report a running state.');
     } catch (caught) { failures.push(caught); }
     if (failures.length) throw new AggregateError([error, ...failures], 'Rollback needs attention: ' + failures.map(e => e.message).join('; ') + (started ? kept() : ''));
     throw new Error(`${error.message} Fuli ${current.applicationVersion} was restored; the other copy is kept at ${packageRoot}.${started ? kept() : ''}`, { cause: error });
   }
-  write('Reconnecting already connected Agent clients...');
-  let clients = 'not_reconnected';
-  try {
-    const result = await runCli(packageRoot, ['setup', '--yes', '--connected-only', '--data-dir', current.dataDir,
-      ...(plan.downgrade ? ['--allow-provider-downgrade'] : [])]);
-    if (result.code === 0) clients = 'reconnected';
-  } catch { /* Report integration refresh separately from the final runtime check. */ }
-  await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' is installed, but its runtime needs attention after client reconnection. Reopen Fuli to inspect its status.');
-  return { ...staged.next, clients };
+
+  async function reconnect() {
+    write('Reconnecting already connected Agent clients...');
+    let clients = 'not_reconnected';
+    try {
+      const result = await runCli(packageRoot, ['setup', '--yes', '--connected-only', '--data-dir', current.dataDir,
+        ...(plan.downgrade ? ['--allow-provider-downgrade'] : [])]);
+      if (result.code === 0) clients = 'reconnected';
+    } catch { /* Report integration refresh separately from the final runtime check. */ }
+    await requireInstalledCli(runCli, packageRoot, args('status'), 'Fuli ' + plan.applicationVersion + ' is installed, but its runtime needs attention after client reconnection. Reopen Fuli to inspect its status.');
+    return { ...staged.next, clients };
+  }
 }
 
 export function assertInstallationUnchanged(path, bytes) {
