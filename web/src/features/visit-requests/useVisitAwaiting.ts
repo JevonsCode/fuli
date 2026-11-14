@@ -15,11 +15,17 @@ const state = reactive({
   reviews: [] as VisitRequest[],
 })
 
+// The timer, the window coming back and 今天 all read: only the newest read's answer is kept.
+let newestRead = 0
+
 async function load() {
+  const read = ++newestRead
   try {
     const answer = await readVisitRequests({ state: 'awaiting_review', limit: REVIEWS_READ })
+    if (read !== newestRead) return
     Object.assign(state, { status: 'ready', count: answer.awaiting.count, newest: answer.awaiting.newest, reviews: answer.requests })
   } catch (error) {
+    if (read !== newestRead) return
     // Without a local installation (503) or away from this computer (403) nothing here can wait for a call.
     if (error instanceof ApiError && (error.status === 503 || error.status === 403)) {
       Object.assign(state, { status: 'ready', count: 0, newest: [], reviews: [] })

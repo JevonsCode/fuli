@@ -293,8 +293,11 @@ const branchExists = (repository, branch, root) => git(repository, ['rev-parse',
   .then(() => true, (error) => Boolean(error.stderr?.trim()));
 
 // The top folder of the repository folder is inside; a hardened, read-only rev-parse that throws when it is in none.
-export async function repositoryRoot({ folder, root }) {
-  return (await git(folder, ['rev-parse', '--show-toplevel'], root)).trim();
+// It runs while a request is being planned, so it is stopped after LOCATE_MS: a folder on a drive that does not
+// answer must not hold a planning slot.
+export const LOCATE_MS = 15_000;
+export async function repositoryRoot({ folder, root, timeoutMs = LOCATE_MS }) {
+  return (await gitCall(['-C', folder, 'rev-parse', '--show-toplevel'], { cwd: folder, root, timeoutMs })).trim();
 }
 
 // The worktree's Git directory, from the owner's repository's common directory.
