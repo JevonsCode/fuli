@@ -11,7 +11,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { createServer } from '../src/server.js';
-import { forwardLifecycleEvent, HOOK_OUTCOME_HEADER } from '../src/agents/lifecycle-forwarder.js';
+import { forwardLifecycleEvent, HOOK_OUTCOME_HEADER, hookClock } from '../src/agents/lifecycle-forwarder.js';
 import { reachableModules } from '../test-support/module-graph.js';
 import { forgetConsole, recordConsole, startSyntheticHookProvider, syntheticHookDataDirectory }
   from '../test-support/synthetic-hook-provider.js';
@@ -207,6 +207,35 @@ test('a call the console started is never run again', async t => {
   assert.equal((await forwardCall(fixture)).run, 'lost');
 });
 
+test('a connection lost after the payload was sent is not run again: the console may have started it', async t => {
+  const fixture = syntheticHookDataDirectory(tmpdir(), 'http://127.0.0.1:9');
+  t.after(fixture.remove);
+  let consoleRuns = 0;
+  // The console starts the call, then the connection ends before "ran" arrives.
+  const dropped = await consoleDouble(t, request => { consoleRuns += 1; request.socket.destroy(); });
+  recordConsole(fixture.dataDir, { url: dropped.url });
+  const result = await forwardCall(fixture);
+  assert.equal(consoleRuns, 1);
+  assert.equal(result.run, 'lost');
+  assert.equal(result.error.code, 'lifecycle_forward_failed');
+});
+
+test('"ran" sent before the hook gave up counts even when the hook process stalled past its wait', async t => {
+  const fixture = syntheticHookDataDirectory(tmpdir(), 'http://127.0.0.1:9');
+  t.after(fixture.remove);
+  const answer = { stdout: 'x\n', stderr: '', exitCode: 0 };
+  const stalled = await consoleDouble(t, (_request, response) => setImmediate(() => {
+    ranHeaders(response);
+    // This process (the hook's too) stalls past the hook's 200 ms wait, so its
+    // timer is due before it reads the headers already waiting on its socket.
+    const until = Date.now() + 400;
+    while (Date.now() < until) { /* stalled */ }
+    setTimeout(() => response.end(JSON.stringify(answer)), 50);
+  }));
+  recordConsole(fixture.dataDir, { url: stalled.url });
+  assert.deepEqual(await forwardCall(fixture, { budgets: { headers: 200 } }), { run: 'there', result: answer });
+});
+
 for (const client of Object.keys(CLIENTS)) test(`the installed ${client} hook answers a lost call as unavailable and does not run it itself`, async t => {
   const provider = await startSyntheticHookProvider();
   const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
@@ -239,6 +268,7 @@ test('the console runs hook calls only for this computer, this data directory an
   const service = await throwawayConsole(t);
   const { fixture } = service;
   const call = { version: VERSION, cwd: fixture.root, env: {}, timeoutMs: 5000, stdin: Buffer.from('{}').toString('base64'),
+    startBy: hookClock() + 60_000,
     argv: ['--runtime-config', fixture.runtimeConfigPath, '--event', 'UserPromptSubmit'] };
   const authority = new URL(service.url).host;
   for (const [body, headers, status] of [
@@ -249,6 +279,7 @@ test('the console runs hook calls only for this computer, this data directory an
     [{ ...call, env: { PATH: 'synthetic' } }, {}, 400],
     [{ ...call, cwd: 'relative' }, {}, 400],
     [{ ...call, timeoutMs: undefined }, {}, 400],
+    [{ ...call, startBy: undefined }, {}, 400],
     // A transcript the work would open synchronously must be a file.
     [{ ...call, stdin: Buffer.from(JSON.stringify({ session_id: 's', transcript_path: fixture.root })).toString('base64') }, {}, 503]
   ]) {
@@ -270,3 +301,19 @@ async function freePort() {
   await new Promise(done => server.close(done));
   return port;
 }
+
+// startBy only means something if the hook process and the console read the
+// same clock: a second process's reading must fall between two of this one's.
+test('hookClock reads the same clock in another process on this computer', async () => {
+  const before = hookClock();
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `import { hookClock } from ${JSON.stringify(new URL('../src/agents/lifecycle-forwarder.js', import.meta.url).href)}; process.stdout.write(String(hookClock()));`]);
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  const code = await new Promise(done => child.once('close', done));
+  const after = hookClock();
+  assert.equal(code, 0);
+  const other = Number(output);
+  assert.ok(Number.isSafeInteger(other), `not a clock reading: ${output}`);
+  assert.ok(other >= before && other <= after, `${other} is not between ${before} and ${after}`);
+});

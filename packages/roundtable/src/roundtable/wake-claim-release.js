@@ -31,18 +31,9 @@ export function createWakeClaimRelease({ store, inspectProcess = async () => nul
     const age = now() - Date.parse(claim.execution_claimed_at);
     const unproven = age >= LEGACY_CLAIM_TTL_MS;
     if (claim.wake_process_evidence !== '1' || !claim.wake_pid) return unproven;
-    const pid = Number(claim.wake_pid);
-    const running = await inspectProcess([pid]).catch(() => null);
-    if (!running) return false;
-    const current = running.get(pid);
-    const reused = Boolean(current && claim.wake_pid_identity && current.identity
-      && String(current.identity) !== claim.wake_pid_identity);
-    if (current && !reused) return false;
-    const group = groupAlive(pid);
-    if (group === false) return true;
-    // A group that still answers may be the woken client's descendants, or the
-    // reused PID's own group: only the second is left to the day's limit.
-    return group === true && reused && unproven;
+    const ended = await recordedProcessEnded({ pid: Number(claim.wake_pid), identity: claim.wake_pid_identity },
+      { inspectProcess, groupAlive });
+    return ended === true || (ended === 'reused' && unproven);
   }
 
   // Releases what the evidence allows; the number of claims released.
@@ -72,6 +63,23 @@ export function createWakeClaimRelease({ store, inspectProcess = async () => nul
   }
 
   return { release, recordSpawn };
+}
+
+// Whether a recorded wake process has ended: true when it is gone, or its PID
+// now belongs to another process, and (POSIX) no member of its group is left;
+// 'reused' when its PID belongs to another process whose own group still
+// answers, so it cannot be told from the woken client's descendants; false
+// while it runs or when the OS cannot tell. identity: as inspectProcess read
+// it at spawn, or null.
+export async function recordedProcessEnded({ pid, identity }, { inspectProcess, groupAlive = processGroupAlive }) {
+  const running = await inspectProcess([pid]).catch(() => null);
+  if (!running) return false;
+  const current = running.get(pid);
+  const reused = Boolean(current && identity && current.identity && String(current.identity) !== identity);
+  if (current && !reused) return false;
+  const group = groupAlive(pid);
+  if (group === false) return true;
+  return group === true && reused ? 'reused' : false;
 }
 
 // The woken client leads its own process group on POSIX (detached, wake.js).

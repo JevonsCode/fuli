@@ -112,3 +112,14 @@ test('confirmed cleanup waits for a slow-exiting descendant, not only the leader
     await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
+
+test('a caller that cannot record the started PID gets its client stopped, with the usual cleanup verdict', { timeout: 10_000 }, async () => {
+  let pid = null;
+  const failure = await runProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: tmpdir(), env: process.env,
+    input: '', timeoutMs: 8_000, onSpawn: (started) => { pid = started; throw new Error('synthetic store write failed'); } })
+    .then(() => null, (error) => error);
+  assert.ok(failure, 'the run fails instead of leaving the client running');
+  assert.deepEqual([failure.code, failure.detail, failure.cause.message], ['wake_failed', 'spawn_unrecorded', 'synthetic store write failed']);
+  assert.equal(failure.cleanup, undefined, 'the stop was confirmed');
+  assert.equal(alive(pid), false);
+});
