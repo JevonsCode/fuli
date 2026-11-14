@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { RecallImpressionsStore } from '../src/knowledge-impressions/store.js';
+import { RecallImpressionsStore, taskKeyFor } from '../src/knowledge-impressions/store.js';
 import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
 
 // rec#63 direction A, step 1: recording which recalled items the Agent was
@@ -170,7 +170,7 @@ test('a version 1 store gains task deliveries on open, and its older tasks count
   store.recordDelivered({ taskContextToken: 'fuli-task-new', personalSpaceId: 'space-a', sourceApplication: 'codex',
     preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
   assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 2, clients: 1, items: 2 });
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 4);
   // A task recorded before version 3 names no model: it reads as unknown, never guessed.
   assert.deepEqual(store.entriesByClientModel({ personalSpaceId: 'space-a', ...WEEK }), [{ client: 'codex', model: null, entries: 1 }]);
 });
@@ -206,6 +206,65 @@ test('task entry records the preferences it delivered and its client, even witho
     effective_preferences: [{ id: 'pref-1', item_kind: 'entity', instruction: 'Synthetic rule' }] };
   await beginTaskFromPreferences(entryApp(store), preferences, { sessionId: 'session-a', sourceApplication: 'codex' });
   assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 1, clients: 1, items: 1 });
+});
+
+test('a version 3 store gains opens_conversation on open; its older entries opened none', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-recall-impressions-v3-'));
+  const path = join(directory, 'recall-impressions.sqlite');
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE recall_impressions(task_key TEXT NOT NULL, personal_space_id TEXT NOT NULL, personal_project_id TEXT,
+    item_kind TEXT NOT NULL CHECK(item_kind IN ('entity','relationship')), item_id TEXT NOT NULL, rank INTEGER NOT NULL,
+    score REAL, confirmation_status TEXT, shown_at TEXT NOT NULL, use_kind TEXT CHECK(use_kind IN ('cited','applied')),
+    used_at TEXT, PRIMARY KEY(task_key, item_kind, item_id));
+    CREATE TABLE task_deliveries(task_key TEXT PRIMARY KEY, personal_space_id TEXT NOT NULL, source_application TEXT NOT NULL,
+      delivered_at TEXT NOT NULL, preference_keys TEXT NOT NULL, model TEXT);
+    INSERT INTO task_deliveries VALUES ('${'b'.repeat(64)}', 'space-a', 'codex', '2026-11-10T01:00:00.000Z',
+      '["entity:pref-1"]', NULL);
+    PRAGMA user_version = 3;`);
+  old.close();
+  const store = new RecallImpressionsStore(path, () => new Date('2026-11-11T00:00:00Z'));
+  t.after(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.deepEqual(store.delivery('b'.repeat(16)), { taskKey: 'b'.repeat(64), at: '2026-11-10T01:00:00.000Z', client: 'codex',
+    model: null, opensConversation: false, preferenceKeys: ['entity:pref-1'] });
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 4);
+});
+
+test('recordDelivered returns the task key and how many preference keys it stored; nothing written means no count', (t) => {
+  const { store } = storeIn(t, { now: () => new Date('2026-11-10T00:00:00Z') });
+  const preferences = [{ id: 'pref-1', item_kind: 'entity' }, { id: 'pref-1', item_kind: 'entity' },
+    { id: 'rel-pref', item_kind: 'relationship' }, { id: null }];
+  const input = { taskContextToken: 'fuli-task-count', personalSpaceId: 'space-a', sourceApplication: 'codex', preferences,
+    opensConversation: true };
+  const written = store.recordDelivered(input);
+  assert.deepEqual(written, { taskKey: taskKeyFor('fuli-task-count'), count: 2 });
+  assert.equal(store.recordDelivered(input), null, 'the row already exists: nothing written');
+  assert.equal(store.recordDelivered({ ...input, taskContextToken: 'fuli-task-empty', preferences: [] }), null);
+  assert.deepEqual(store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-recall-only' }),
+    { taskKey: taskKeyFor('fuli-task-recall-only'), count: 0 });
+  assert.deepEqual(store.delivery(written.taskKey.slice(0, 16)), { taskKey: written.taskKey, at: '2026-11-10T00:00:00.000Z',
+    client: 'codex', model: null, opensConversation: true, preferenceKeys: ['entity:pref-1', 'relationship:rel-pref'] });
+  assert.equal(store.delivery(taskKeyFor('fuli-task-recall-only').slice(0, 16)).opensConversation, false);
+});
+
+test('delivery reads one row by its 16-hex prefix: unique, ambiguous, missing, malformed and expired', (t) => {
+  let current = new Date('2026-11-10T00:00:00Z');
+  const { store, path } = storeIn(t, { now: () => current });
+  assert.equal(store.delivery('0123456789abcdef'), null);
+  assert.equal(existsSync(path), false, 'a read never creates the store');
+  store.recordDelivered({ taskContextToken: 'fuli-task-seed', personalSpaceId: 'space-a', preferences: [{ id: 'pref-1' }] });
+  const insert = store.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at,
+    preference_keys) VALUES (?, 'space-a', 'codex', '2026-11-10T00:00:00.000Z', '[]')`);
+  insert.run(`${'c'.repeat(16)}${'0'.repeat(48)}`);
+  insert.run(`${'c'.repeat(16)}${'1'.repeat(48)}`);
+  insert.run(`${'d'.repeat(16)}${'0'.repeat(48)}`);
+  assert.equal(store.delivery('c'.repeat(16)), null, 'two rows share the prefix');
+  assert.equal(store.delivery('d'.repeat(16)).taskKey, `${'d'.repeat(16)}${'0'.repeat(48)}`);
+  assert.equal(store.delivery('e'.repeat(16)), null);
+  assert.equal(store.delivery('D'.repeat(16)), null);
+  assert.equal(store.delivery('d'.repeat(15)), null);
+  assert.equal(store.delivery(null), null);
+  current = new Date('2027-06-01T00:00:00Z');
+  assert.equal(store.delivery('d'.repeat(16)), null, 'past retention reads as expired before any write deletes it');
 });
 
 function checkpointApp(recallImpressions) {

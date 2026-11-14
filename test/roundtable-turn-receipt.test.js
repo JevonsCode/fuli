@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { roundtableTurn, withRoundtableReceipt } from '../src/agent-roundtable/turn-receipt.js';
+import { RecallImpressionsStore, taskKeyFor } from '../src/knowledge-impressions/store.js';
 
 // The receipt of a turn that used the roundtable. Synthetic Agents and
 // threads; the task registry and the Provider are fakes.
@@ -63,4 +64,18 @@ test('a result without a thread, a task without an owner or a failed lookup leav
   assert.equal(await withRoundtableReceipt(application(), 'message_agent', {}, answered), answered);
   assert.equal(await withRoundtableReceipt(application({ ownerless: true }), 'message_agent', { taskContextToken: 'turn-y' }, answered), answered);
   assert.equal(await withRoundtableReceipt(application({ registryFails: true }), 'message_agent', { taskContextToken: 'turn-z' }, answered), answered);
+});
+
+test('the first task of a new conversation keeps its habits line in the roundtable receipt; a later task never gains it', async () => {
+  const app = { ...application(), recallImpressions: new RecallImpressionsStore(':memory:') };
+  const habits = [{ id: 'pref-1', item_kind: 'entity' }];
+  app.recallImpressions.recordDelivered({ taskContextToken: 'turn-first', personalSpaceId: 'synthetic-space',
+    preferences: habits, opensConversation: true });
+  app.recallImpressions.recordDelivered({ taskContextToken: 'turn-later', personalSpaceId: 'synthetic-space',
+    preferences: habits, opensConversation: false });
+  const first = await withRoundtableReceipt(app, 'message_agent', { taskContextToken: 'turn-first' }, answered);
+  assert.equal(first.agent_receipt.markdown, `FULI Agents：${LEAD} & ${NOVA} · ${THREAD('thread-1')}\n`
+    + `FULI 习惯：这个新对话带上了你的 1 条习惯 · [看看是哪几条](http://127.0.0.1:3999/habits/${taskKeyFor('turn-first').slice(0, 16)})`);
+  const later = await withRoundtableReceipt(app, 'message_agent', { taskContextToken: 'turn-later' }, answered);
+  assert.equal(later.agent_receipt.markdown, `FULI Agents：${LEAD} & ${NOVA} · ${THREAD('thread-1')}`);
 });

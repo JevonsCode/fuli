@@ -9,6 +9,7 @@ import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphi
 import { providerEpisode } from '../src/graphiti/knowledge-provider-mapping.js';
 import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
 import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
+import { RecallImpressionsStore, taskKeyFor } from '../src/knowledge-impressions/store.js';
 
 // rec#20 part 1: the per-turn receipt. Synthetic Provider only: the fake
 // Provider below plays the authoritative store, so a receipt line can be
@@ -322,6 +323,34 @@ test('rec#20 part 2 (dot P2-2): the first task\'s migration link survives into t
   const later = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Small talk.' });
   assert.equal(later.agent_receipt.markdown.split('\n').length, 1);
+});
+
+test('a first task\'s checkpoint receipt keeps the habits line its entry showed; a later task\'s never gains it', async () => {
+  const { app, begin } = checkpointFixture();
+  app.recallImpressions = new RecallImpressionsStore(':memory:');
+  const habits = [{ id: 'pref-1', item_kind: 'entity' }, { id: 'pref-2', item_kind: 'entity' }];
+  const opened = () => {
+    const task = begin();
+    app.recallImpressions.recordDelivered({ taskContextToken: task.token, personalSpaceId: 'synthetic-space',
+      preferences: habits, opensConversation: true });
+    return task;
+  };
+  const line = task => `FULI 习惯：这个新对话带上了你的 2 条习惯 · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor(task.token).slice(0, 16)})`;
+  const quiet = token => checkpointTaskKnowledge(app, { taskContextToken: token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  const first = opened();
+  assert.equal((await quiet(first.token)).agent_receipt.markdown, `${(await quiet(first.token)).agent_receipt.markdown
+    .split('\n')[0]}\n${line(first)}`, 'a retried checkpoint says it again, once');
+  // The first task of another new conversation saved something: the line follows what it saved.
+  const saving = opened();
+  const saved = await checkpointTaskKnowledge(app, checkpoint(saving, { remember: [{ kind: 'project_fact', text: 'A fact' }] }));
+  assert.equal(saved.agent_receipt.markdown.split('\n').at(-1), line(saving), 'after what the turn saved');
+  assert.equal(saved.agent_receipt.markdown.split('\n').filter(text => text.startsWith('FULI 习惯')).length, 1);
+  // The session's next task: its entry recovered the conversation.
+  const later = begin();
+  app.recallImpressions.recordDelivered({ taskContextToken: later.token, personalSpaceId: 'synthetic-space',
+    preferences: habits, opensConversation: false });
+  assert.equal((await quiet(later.token)).agent_receipt.markdown.split('\n').length, 1);
 });
 
 test('the Provider registry maps unread receipts and claims through the Provider contract', async () => {

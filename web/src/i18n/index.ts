@@ -43,6 +43,7 @@ import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
 import { sessionRecordsMessages } from './messages/session-records'
 import { sessionMigrationMessages } from './messages/session-migration'
+import { habitDeliveryMessages } from './messages/habit-delivery'
 import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
 import { firstRunMessages } from './messages/first-run'
@@ -141,6 +142,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
     sessionRecords: sessionRecordsMessages['zh-CN'],
     sessionMigration: sessionMigrationMessages['zh-CN'],
+    habitDelivery: habitDeliveryMessages['zh-CN'],
     knowledgeTags: knowledgeTagsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
     firstRun: firstRunMessages['zh-CN'],
@@ -208,6 +210,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],
     sessionRecords: sessionRecordsMessages['en-US'],
     sessionMigration: sessionMigrationMessages['en-US'],
+    habitDelivery: habitDeliveryMessages['en-US'],
     knowledgeTags: knowledgeTagsMessages['en-US'],
     capture: captureMessages['en-US'],
     firstRun: firstRunMessages['en-US'],

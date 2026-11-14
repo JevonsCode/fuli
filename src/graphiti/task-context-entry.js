@@ -108,27 +108,6 @@ export async function beginTaskFromPreferences(application, preferences, {
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia
   });
-  // rec#63: record which recalled items the Agent was shown, so ranking can
-  // later learn "shown but not used" from "shown and used", and which
-  // preferences the entry delivered from which client, for the compounding
-  // statement, with the model the client reported. One local write; it never fails task entry and is skipped for
-  // a resumed task.
-  if (!resumed) {
-    try {
-      application.recallImpressions?.recordDelivered({
-        taskContextToken: task.token,
-        personalSpaceId: preferences.context?.personal_space_id,
-        personalProjectId: preferences.context?.personal_project_id ?? null,
-        sourceApplication: task.sourceApplication ?? sourceApplication,
-        model: clientModel,
-        facts: preferences.task_knowledge_recall?.facts,
-        entities: preferences.task_knowledge_recall?.entities,
-        preferences: preferences.effective_preferences
-      });
-    } catch {
-      // Ignore: the impression must never fail task entry.
-    }
-  }
   // Only the Provider can establish that a fallback has no claim or worker /
   // coordination associations. Missing metadata keeps the legacy requirement.
   // A request to keep something is never a routine auto-closed task.
@@ -147,7 +126,12 @@ export async function beginTaskFromPreferences(application, preferences, {
     }
   }
   const conversation = await beginConversation(application, task);
-  const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt) : null;
+  // A conversation the Provider saved without recovering an earlier one is new
+  // (delivery-cache counters reset on compaction, so they cannot tell).
+  const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
+  const delivered = resumed ? null : recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation });
+  const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt,
+    opensConversation ? delivered : null) : null;
   return withPreferenceScope({
     conversation,
     taskContextToken: task.token,
@@ -164,4 +148,29 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance()
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
+}
+
+// rec#63: record which recalled items the Agent was shown, so ranking can
+// later learn "shown but not used" from "shown and used", and which
+// preferences the entry delivered from which client, for the compounding
+// statement, with the model the client reported and whether this entry opened
+// a new conversation. One local write; it never fails task entry. Returns
+// { taskKey, count } of the written row, or null.
+function recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation }) {
+  try {
+    return application.recallImpressions?.recordDelivered({
+      taskContextToken: task.token,
+      personalSpaceId: preferences.context?.personal_space_id,
+      personalProjectId: preferences.context?.personal_project_id ?? null,
+      sourceApplication: task.sourceApplication ?? sourceApplication,
+      model: clientModel,
+      facts: preferences.task_knowledge_recall?.facts,
+      entities: preferences.task_knowledge_recall?.entities,
+      preferences: preferences.effective_preferences,
+      opensConversation
+    }) ?? null;
+  } catch {
+    // Ignore: the impression must never fail task entry.
+    return null;
+  }
 }
