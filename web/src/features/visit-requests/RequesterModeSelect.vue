@@ -50,7 +50,9 @@ async function choose(value: string) {
 
 <template>
   <div class="requester-mode" data-requester-mode :data-requester="requesterKey">
-    <OptionSelect size="sm" :model-value="current" :options="options" :label="t('visitRequests.mode.label')"
+    <!-- A requester with one possible mode (a guest link: 只能问) gets its name, not a select with one option. -->
+    <span v-if="options.length === 1" class="requester-mode-fixed" data-requester-mode-fixed>{{ options[0]!.label }}</span>
+    <OptionSelect v-else size="sm" :model-value="current" :options="options" :label="t('visitRequests.mode.label')"
       :disabled="saving || !modes.loaded.value" @update:model-value="choose" />
     <!-- Over the control's own arrow, so nothing moves while the change is saved. -->
     <GrowthLoading v-if="saving" variant="inline" class="requester-mode-saving" :label="t('visitRequests.mode.saving')" />
@@ -59,6 +61,7 @@ async function choose(value: string) {
 
 <style scoped>
 .requester-mode { position: relative; width: 132px; flex: none; }
+.requester-mode-fixed { display: flex; align-items: center; min-height: var(--control-height-sm); color: var(--color-muted); font-size: var(--text-meta); }
 .requester-mode-saving { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); pointer-events: none; }
 .requester-mode-saving :deep(.growth-loading__label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>

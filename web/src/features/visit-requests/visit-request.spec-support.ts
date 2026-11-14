@@ -7,7 +7,7 @@ export const GUEST_KEY = 'guest:synthetic-link'
 
 export function visitRequest(fields: Partial<VisitRequest> = {}): VisitRequest {
   return {
-    id: 'visit-1', state: 'awaiting_owner', review: null, holdReason: null,
+    id: 'visit-1', state: 'awaiting_owner', review: null, holdReason: null, heldPaths: null,
     requester: { key: PEER_KEY, label: 'Synthetic laptop', agentName: 'Sample lead', source: 'peer' },
     projectId: 'sample-project', agentId: 'sample-lead', title: 'Fix the sample typo',
     plan: { areas: ['src/sample.js'], risks: [], dependencyChanges: false, configChanges: false, network: false, size: 's' },

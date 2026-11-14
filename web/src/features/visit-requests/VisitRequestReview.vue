@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import UiDisclosure from '@/components/UiDisclosure.vue'
 import { useClipboardCopy } from '@/composables/useClipboardCopy'
 import { t } from '@/i18n'
 import UiIconButton from '@/ui/UiIconButton.vue'
@@ -16,6 +17,9 @@ const props = defineProps<{ card: VisitRequestCard }>()
 const clipboard = useClipboardCopy()
 const result = computed(() => props.card.result)
 const files = computed(() => result.value?.files ?? [])
+// The files that would run when the branch is opened (runs_on_open), as text; past five they fold.
+const HELD_PATHS_SHOWN = 5
+const heldPaths = computed(() => (props.card.heldPaths ?? []).map(shownText))
 </script>
 
 <template>
@@ -23,6 +27,16 @@ const files = computed(() => result.value?.files ?? [])
     <h3 class="ui-group-label">{{ t('visitRequests.result.title') }}</h3>
     <UiNotice v-if="card.review === 'held'" tone="warning" data-visit-held>
       <span class="visit-held-line">{{ heldText(card.holdReason) }}</span>
+      <template v-if="heldPaths.length">
+        <ul v-if="heldPaths.length <= HELD_PATHS_SHOWN" class="visit-held-paths" data-visit-held-paths>
+          <li v-for="path in heldPaths" :key="path"><code>{{ path }}</code></li>
+        </ul>
+        <UiDisclosure v-else :title="t('visitRequests.card.details')" data-visit-held-more>
+          <ul class="visit-held-paths" data-visit-held-paths>
+            <li v-for="path in heldPaths" :key="path"><code>{{ path }}</code></li>
+          </ul>
+        </UiDisclosure>
+      </template>
       <span class="visit-held-line">{{ t('visitRequests.result.nothingSent') }}</span>
     </UiNotice>
     <p class="visit-text" data-visit-summary>{{ result?.summary ? shownText(result.summary) : t('visitRequests.result.noSummary') }}</p>
@@ -56,6 +70,8 @@ const files = computed(() => result.value?.files ?? [])
 
 <style scoped>
 .visit-held-line { display: block; }
+.visit-held-paths { display: grid; gap: 2px; margin: 6px 0 0; padding: 0; list-style: none; }
+.visit-held-paths code { font: var(--text-meta) / 1.5 var(--font-mono); overflow-wrap: anywhere; }
 .visit-branch { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 30px; }
 .visit-branch code { min-width: 0; overflow: hidden; font: var(--text-meta) / 1.5 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .visit-label { flex: none; color: var(--color-muted); font-size: var(--text-meta); }

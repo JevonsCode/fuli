@@ -78,6 +78,24 @@ describe('a visit request card', () => {
     expect(document.querySelector('[data-visit-keep-shares]')?.textContent).toBe('保留后，对方能看到摘要和文件清单，看不到改动内容。')
   })
 
+  it('lists the files that would run when the branch is opened as text, folded past five', async () => {
+    const result = { summary: null, branch: 'fuli/visit/visit-1', files: [], diffstat: null }
+    await mountCard(visitCard({ state: 'awaiting_review', review: 'held', holdReason: 'runs_on_open', result, diff: null,
+      heldPaths: ['.vscode/tasks.json', 'package.json'] }))
+    expect(text('[data-visit-held]')).toContain('先别急着打开这个分支')
+    expect([...document.querySelectorAll('[data-visit-held-paths] code')].map(code => code.textContent)).toEqual(['.vscode/tasks.json', 'package.json'])
+    expect(document.querySelector('[data-visit-held-more]')).toBeNull()
+  })
+
+  it('folds more than five held paths under 查看详情', async () => {
+    const result = { summary: null, branch: 'fuli/visit/visit-1', files: [], diffstat: null }
+    const heldPaths = ['a.sh', 'b.sh', 'c.sh', 'd.sh', 'e.sh', '<b>f.sh</b>']
+    await mountCard(visitCard({ state: 'awaiting_review', review: 'held', holdReason: 'runs_on_open', result, diff: null, heldPaths }))
+    expect(text('[data-visit-held-more] summary')).toBe('查看详情')
+    expect(document.querySelectorAll('[data-visit-held-more] li')).toHaveLength(6)
+    expect(document.querySelector('[data-visit-held-paths] b')).toBeNull()
+  })
+
   it('shows an unreviewed result that expired with its branch and copy button, and no actions', async () => {
     await mountCard(visitCard({ state: 'expired', review: 'ready',
       result: { summary: 'Fixed the typo.', branch: 'fuli/visit/visit-1', files: [{ path: 'src/sample.js', added: 1, removed: 0 }], diffstat: null },

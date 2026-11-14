@@ -17,8 +17,8 @@ export function visitActions(request: Pick<VisitRequest, 'state'>): VisitAction[
   return ACTIONS[request.state] ?? []
 }
 
-/** A guest link is never 自动 or 完全信任 (src/visitor-access/port.js). */
-const GUEST_MODES: readonly RequesterMode[] = ['ask_only', 'plan']
+/** A guest link only asks (src/visitor-access/port.js). */
+const GUEST_MODES: readonly RequesterMode[] = ['ask_only']
 
 function requesterKind(key: string): 'peer' | 'guest' {
   return key.startsWith('guest:') ? 'guest' : 'peer'
@@ -59,7 +59,8 @@ export function planErrorText(code: string) {
 // The reasons and codes the server names; any other falls back to a generic sentence, never the bare code.
 const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded', 'computer_budget_exceeded', 'planning_busy'])
 const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only'])
-const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large'])
+const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
+  'integrity_unknown'])
 const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported' }
 const known = (values: Set<string>, value: string | null) => (value && values.has(value) ? value : 'other')
 
@@ -99,7 +100,7 @@ export function modeName(mode: RequesterMode) {
 
 const KNOWN_CHECKS = new Set(['budget_left', 'plan_ready', 'areas_inside_project', 'no_dependency_changes', 'no_config_changes',
   'no_network', 'paths_inside_worktree', 'no_denied_paths', 'no_executables', 'within_size', 'no_secrets', 'integrity',
-  'content_safe'])
+  'content_safe', 'nothing_runs_on_open'])
 export function checkName(name: string) {
   return KNOWN_CHECKS.has(name) ? t(`visitRequests.checks.${name}`) : t('visitRequests.checks.other', { name })
 }

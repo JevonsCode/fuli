@@ -10,9 +10,9 @@ describe('a visit request in plain words', () => {
     expect(visitActions({ state: 'kept' })).toEqual([])
   })
 
-  it('never offers 自动 or 完全信任 to a guest link', () => {
+  it('offers a guest link only 只能问', () => {
     expect(modesFor(PEER_KEY)).toEqual(['ask_only', 'plan', 'auto', 'trusted'])
-    expect(modesFor(GUEST_KEY)).toEqual(['ask_only', 'plan'])
+    expect(modesFor(GUEST_KEY)).toEqual(['ask_only'])
   })
 
   it('names the computer and its assistant, and a finished run by whether it is ready', () => {
@@ -45,6 +45,9 @@ describe('a visit request in plain words', () => {
     expect(endingText(visitRequest({ state: 'failed', error: 'some_new_code' }))).toBe('没做成。')
     expect(heldText('unsafe_content')).toBe('副本里出现了链接、嵌套仓库这类可能带来风险的内容，所以没有保存。')
     expect(heldText('too_large')).toBe('改动太大：超过 2000 个文件或 50 MB。')
+    expect(heldText('runs_on_open')).toBe('改动里有打开、切换或构建分支时会自动执行的文件，先别急着打开这个分支。')
+    expect(heldText('integrity_unknown')).toBe('没能在限定时间内核对你自己的文件有没有被动过，所以先扣下。')
+    expect(checkName('nothing_runs_on_open')).toBe('没有会自动执行的文件')
     expect(heldText('some_new_code')).toBe('结果被拦下了，先看清楚再决定。')
     expect(checkName('content_safe')).toBe('没有会被执行的内容')
     expect(checkName('some_new_check')).toBe('其他检查：some_new_check')

@@ -31,10 +31,16 @@ describe('the trust a requester gets', () => {
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('auto')
   })
 
-  it('offers a guest link only 只能问 and 计划, and shows 计划 when none was set', async () => {
+  it('shows a guest link as 只能问 in words, with no control to change it', async () => {
     stubServer({ 'GET /api/visitor-access/requesters': { defaultMode: 'plan', requesters: [] } })
     const wrapper = await mountSelect(GUEST_KEY)
-    expect(optionValues(wrapper)).toEqual(['ask_only', 'plan'])
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.get('[data-requester-mode-fixed]').text()).toBe('只能问')
+  })
+
+  it('shows 计划 for a paired computer whose mode was never set', async () => {
+    stubServer({ 'GET /api/visitor-access/requesters': { defaultMode: 'plan', requesters: [] } })
+    const wrapper = await mountSelect(PEER_KEY)
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('plan')
   })
 

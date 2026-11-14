@@ -20,6 +20,8 @@ const visitRequestSchema = z.looseObject({
   state: z.enum(VISIT_STATES),
   review: z.enum(['ready', 'held']).nullable(),
   holdReason: z.string().nullable(),
+  // Only for runs_on_open: the files that would run when the branch is opened (at most 50).
+  heldPaths: z.array(z.string()).nullable(),
   requester: z.looseObject({ key: z.string(), label: z.string(), agentName: z.string().nullable(), source: z.string() }),
   projectId: z.string(),
   agentId: z.string(),
