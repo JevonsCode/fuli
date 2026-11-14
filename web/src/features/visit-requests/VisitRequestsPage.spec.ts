@@ -16,6 +16,7 @@ describe('every request another computer sent', () => {
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.get('[data-visit-list-empty]').text()).toBe('还没有另一台电脑请你做事。')
+    expect(wrapper.get('.visit-list-card').classes()).not.toContain('is-filled')
     expect(wrapper.find('[data-visit-list-row]').exists()).toBe(false)
   })
 
@@ -26,5 +27,6 @@ describe('every request another computer sent', () => {
     const [url] = calls('GET /api/visit-requests')[0]!
     expect(new URL(String(url), 'http://console.invalid').searchParams.get('state')).toBeNull()
     expect(wrapper.find('[data-visit-list-empty]').exists()).toBe(false)
+    expect(wrapper.get('.visit-list-card').classes()).toContain('is-filled')
   })
 })

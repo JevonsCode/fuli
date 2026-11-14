@@ -39,7 +39,7 @@ const firstRead = computed(() => pages.loading.value && !rows.value.length)
 <template>
   <section class="view visit-list-view" data-visit-list>
     <Breadcrumb :parent="{ label: t('routes.today.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
-    <div class="workbench-card visit-list-card">
+    <div class="workbench-card visit-list-card" :class="{ 'is-filled': rows.length }">
       <UiNotice v-if="pages.error.value" tone="error" data-visit-list-error>
         {{ t('visitRequests.list.failed') }}
         <template #actions><Button size="sm" variant="ghost" @click="pages.reload()">{{ t('visitRequests.list.retry') }}</Button></template>
@@ -70,7 +70,9 @@ const firstRead = computed(() => pages.loading.value && !rows.value.length)
 
 <style scoped>
 .visit-list-view { display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-bottom: 96px !important; }
-.visit-list-card { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; padding-bottom: 6px; }
+/* The card fills the page only when it has rows to scroll; empty, loading or failed it is as tall as its one line. */
+.visit-list-card { display: flex; flex: 0 0 auto; flex-direction: column; gap: 10px; min-height: 0; padding-bottom: 6px; }
+.visit-list-card.is-filled { flex: 1; }
 .visit-list-rows { flex: 1; min-height: 0; margin: 0 -10px; }
 .visit-list-row {
   height: 100%; padding: 0 10px; border-radius: 12px; color: inherit; text-decoration: none; user-select: none;
