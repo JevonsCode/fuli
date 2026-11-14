@@ -25,7 +25,7 @@ const AGENTS = [agent('lead', 'Ada Lead', '负责人'), agent('dev', 'Jamie Ash'
   agent('ux', 'Jade Lin', '设计'), agent('oc-only', 'Otto Cole', '运维', ['opencode'])];
 
 function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS, store = null, redeemed = true,
-  env = {}, now = Date.now, resumable = false } = {}) {
+  env = {}, now = Date.now, resumable = false, fuliMcp = null } = {}) {
   const woken = [];
   const grants = [];
   const roster = { agents: [...agents] };
@@ -53,6 +53,7 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
       verifyAgentDelegation: async () => ({ redeemed }),
       revokeAgentDelegation: async () => {} }
   };
+  if (fuliMcp) app.fuliMcpServer = fuliMcp;
   let id = 0;
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), openStore: () => store ?? createRoundtableStore(),
     idFactory: () => `id-${++id}`, locateCwd: (client, sessionId) => resumable && sessionId ? '/synthetic/app' : null,
@@ -62,7 +63,8 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
     // reports its model on its init event; Codex reports none.
     wake: async input => {
       const member = /^#FLA \{([^}]+)\}/u.exec(input.prompt)[1];
-      woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, mode: input.mode });
+      woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, mode: input.mode,
+        mcpServers: input.mcpServers ?? null });
       const body = answer ? await answer(member, input) : `${member} 的观点`;
       const sessionId = `session-${member}-${woken.length}`;
       sessions.push({ agent: member, client: input.client, sessionId });
@@ -125,6 +127,18 @@ test('every member is woken in a fresh read-only session and replies for itself;
   assert.deepEqual((await memberPosts(roundtable, started.chatId)).map(message => message.from).sort(),
     ['local:dev', 'local:dev', 'local:qa', 'local:qa']);
   assert.deepEqual(done.summary.not_counted, []);
+  // FULI cannot name its own MCP entry here: the member's client keeps its own servers.
+  assert.ok(woken.every(call => call.mcpServers === null));
+});
+
+test('a woken member loads only the MCP server of FULI where FULI can name it', async t => {
+  const entry = { command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] };
+  const { roundtable, woken, start, settle } = fixture({ fuliMcp: client => (client === 'claude_code' ? entry : null) });
+  t.after(() => roundtable.close());
+  const done = await settle((await start('flg-mcp', ['dev', 'qa'])).chatId);
+  assert.equal(done.status, 'concluded');
+  assert.ok(woken.length >= 2);
+  for (const call of woken) assert.deepEqual(call.mcpServers, call.client === 'claude_code' ? { fuli: entry } : null);
 });
 
 test('the response rounds stop at the cap of two', async t => {

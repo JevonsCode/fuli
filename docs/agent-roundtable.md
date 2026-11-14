@@ -321,7 +321,10 @@ lead) loads only FULI's own MCP server, from the entry FULI's installer writes
 for that client, and no MCP server at all when FULI cannot name it; never the
 person's others. Without that entry FULI's own hooks do not load either, so
 such an ask fails safely (`delegation_not_redeemed`) instead of loading the
-person's other servers. Group discussion turns are unchanged.
+person's other servers. A group discussion turn, whose text comes from the
+person's own Agents, loads only FULI's own server too where FULI can name that
+entry, and keeps the client's own servers where it cannot, so a discussion
+never fails for the lack of it.
 
 After the run FULI works on the worktree only with its Git directory and work
 tree named explicitly (never discovered from files the run left), without the
@@ -506,7 +509,7 @@ and with no more authority than `message_agent`.
 
 Each member turn is a real `message_agent` wake in a fresh session (no resume) of
 the member's own allowed client. Claude Code discussion wakes, like asks from another computer, have the reading tools only: they keep the
-non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Known limit: tools of other MCP servers the person configured in that client are not built-in tools and still follow the person's own allow rules there. The prompt holds the
+non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Where FULI can name its own MCP entry for the client, the wake loads only that server; where it cannot, tools of other MCP servers the person configured in that client still follow the person's own allow rules there. The prompt holds the
 question, the member's role line and 800-character excerpts of the other members;
 the member's own FULI entry delivers its preferences and knowledge index. The
 Provider issues and verifies a per-attempt delegation, and only a verified answer
