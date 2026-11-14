@@ -327,3 +327,18 @@ test('a console the failed start left running keeps the new version selected; th
   assert.deepEqual(commands, ['stop 0.12.4', 'start 0.12.5', 'stop 0.12.5']);
   assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
 });
+
+test('no start can begin while the recovery reads the data or restores the record; the update releases the lock for its own start', async t => {
+  const f = fixture(t); let held = false; const seen = [];
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps,
+    holdStarts: () => { held = true; return () => { held = false; }; },
+    consolesLeft: async () => { seen.push(['consolesLeft', held]); return null; },
+    runCli: async (root, args) => {
+      const version = readWindowsInstallation(root).applicationVersion;
+      seen.push([`${args[0]} ${version}`, held]);
+      return { code: args[0] === 'start' && version === '0.12.5' ? 1 : 0 };
+    } }), /restored/);
+  assert.deepEqual(seen.slice(0, 6), [['stop 0.12.4', true], ['start 0.12.5', false], ['stop 0.12.5', true], ['consolesLeft', true],
+    ['start 0.12.4', false], ['status 0.12.4', false]]);
+  assert.equal(held, false);
+});

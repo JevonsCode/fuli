@@ -35,14 +35,28 @@ export function runningConsoles(runtimeConfigPath, options = {}) {
 async function scan(runtimeConfigPath, matches, { platform = process.platform, run = execute } = {}) {
   try {
     const rows = platform === 'win32' ? await windowsRows(run) : await psRows(run);
-    const wanted = platform === 'win32' ? runtimeConfigPath.toLowerCase() : runtimeConfigPath;
+    // Windows and macOS compare paths without case; Windows also either separator.
+    const fold = platform === 'win32' ? value => value.replaceAll('\\', '/').toLowerCase()
+      : platform === 'darwin' ? value => value.toLowerCase() : value => value;
+    const wanted = fold(runtimeConfigPath);
     return rows.filter(({ commandLine }) => {
-      const command = platform === 'win32' ? commandLine.toLowerCase() : commandLine;
-      return command.includes('--runtime-config') && command.includes(wanted) && matches(command);
+      const command = fold(commandLine);
+      return namesRuntimeConfig(command, wanted) && matches(command);
     }).map(({ pid, parentPid, startedAt }) => ({ pid, parentPid, startedAt }));
   } catch {
     return null;
   }
+}
+
+// Whether the argument after --runtime-config is exactly this path (optionally
+// quoted), not one that merely contains it (/y/x/.fuli/… holds /x/.fuli/…).
+function namesRuntimeConfig(command, wanted) {
+  const flag = /--runtime-config[=\s]\s*"?/g;
+  for (let found = flag.exec(command); found; found = flag.exec(command)) {
+    const rest = command.slice(found.index + found[0].length);
+    if (rest.startsWith(wanted) && /^(?:$|["\s])/.test(rest.slice(wanted.length))) return true;
+  }
+  return false;
 }
 
 async function windowsRows(run) {

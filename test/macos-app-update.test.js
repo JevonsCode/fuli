@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -132,8 +132,9 @@ test('a new version that does not start is swapped back and the previous one sta
   assert.equal(versionOf(app), '0.23.0');
   assert.deepEqual(lifecycle(calls).slice(1), [
     ['holdStarts', '/data'], ['controller', 'stop', '0.23.0'], ['releaseStarts'], ['controller', 'start', '0.24.0'],
-    ['holdStarts', '/data'], ['controller', 'stop', '0.24.0'], ['releaseStarts'], ['dataNewer', '/data'],
-    ['controller', 'start', '0.23.0'], ['client', 'open']
+    ['holdStarts', '/data'], ['controller', 'stop', '0.24.0'], ['dataNewer', '/data'],
+    // No start begins while the data is read or the bundles move; the restored version's own start comes next.
+    ['releaseStarts'], ['controller', 'start', '0.23.0'], ['client', 'open']
   ]);
   assert.equal(existsSync(aside('failed')), false, 'the stopped new bundle is removed once the previous one runs');
   assert.equal(existsSync(aside('previous')), false);
@@ -166,7 +167,7 @@ test('on data the new version already upgraded, the previous one never comes bac
   assert.deepEqual(result, { status: 'updated', version: '0.24.0', clients: 'reconnected' });
   assert.equal(versionOf(app), '0.24.0');
   assert.deepEqual(lifecycle(calls).slice(-4),
-    [['releaseStarts'], ['dataNewer', '/data'], ['controller', 'start', '0.24.0'], ['client', 'open']]);
+    [['dataNewer', '/data'], ['releaseStarts'], ['controller', 'start', '0.24.0'], ['client', 'open']]);
   assert.equal(existsSync(aside('previous')), false, 'the previous bundle goes once the new one runs');
 });
 
@@ -283,4 +284,39 @@ test('the real start lock: a start under way in another process finishes and rec
       return { ok: true, status: action === 'start' ? 'running' : 'stopped' };
     } });
   assert.deepEqual(stopsSaw, [true], 'the stop ran only after the start under way had recorded its console');
+});
+
+test('no start can begin while the recovery reads the data or moves a bundle; the update releases the lock for its own start', async t => {
+  let held = false;
+  const seen = [];
+  const { packageRoot, deps } = setup(t, { starts: [false, true] });
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, { ...deps,
+    holdStarts: () => { held = true; return () => { held = false; }; },
+    consolesLeft: async () => { seen.push(['consolesLeft', held]); return null; },
+    dataNewer: () => { seen.push(['dataNewer', held]); return null; },
+    rename: (from, to) => { seen.push(['rename', held]); renameSync(from, to); },
+    controller: async (root, action) => {
+      seen.push([action, held]);
+      const version = versionOf(dirname(dirname(dirname(root))));
+      return action === 'start' && version === '0.24.0' ? { ok: false, error: 'synthetic' } : { ok: true, status: 'running' };
+    } }), error => error.code === 'start_failed');
+  assert.deepEqual(seen.slice(2), [['stop', true], ['consolesLeft', true], ['dataNewer', true], ['rename', true], ['rename', true],
+    ['start', false]]);
+  assert.equal(held, false);
+});
+
+test('a switch back where both bundles could not be moved says where each one is', async t => {
+  let renames = 0;
+  const { app, packageRoot, deps, aside } = setup(t, { starts: [false] });
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, { ...deps,
+    rename: (from, to) => {
+      renames += 1;
+      if (renames > 1) throw Object.assign(new Error('synthetic EPERM'), { code: 'EPERM' });
+      renameSync(from, to);
+    } }), error => error.code === 'rollback_failed' && error.message.endsWith(
+    `switching back to the previous version failed and nothing is installed at ${app}: the new version is at ${aside('failed')} `
+      + `and the previous one at ${aside('previous')} (synthetic EPERM).`));
+  assert.equal(existsSync(app), false);
+  assert.equal(versionOf(aside('failed')), '0.24.0');
+  assert.equal(versionOf(aside('previous')), '0.23.0');
 });

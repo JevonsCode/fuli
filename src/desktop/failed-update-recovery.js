@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { terminateConsole } from '../local-runtime/unresponsive-console.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { runningConsoles } from '../system/fuli-process-scan.js';
 import { singleLine } from '../text/single-line.js';
@@ -40,23 +41,29 @@ export const newVersionDidNotStop = error => ({ ok: false, code: 'kept_new_versi
 // A console the failed start left is in no record a stop reads: one the start
 // could not end, or one whose start was killed by a timeout. Nothing is read
 // or moved while it may still upgrade the data or hold its port. Waits a
-// bounded time for every console of this data directory to end; answers null,
-// or why nothing may move (also when the processes could not be listed).
+// bounded time for every console of this data directory to end, then ends the
+// ones left (they run this data directory's runtime configuration, so they are
+// its consoles) as a failed start ends its own: left unrecorded, the next start
+// would spawn a second console that fails on the port. Answers null, or why
+// nothing may move (also when the processes could not be listed).
 const LEFT_CONSOLE_WAIT_MS = 30_000;
 const LEFT_CONSOLE_POLL_MS = 1000;
 
-export async function consoleLeftRunning(dataDir, { scan = runningConsoles, wait = delay, now = Date.now } = {}) {
+export async function consoleLeftRunning(dataDir, { scan = runningConsoles, terminate = terminateConsole,
+  wait = delay, now = Date.now } = {}) {
   const configPath = resolveSetupPaths({ dataDir }).graphRuntimeConfigPath;
   const deadline = now() + LEFT_CONSOLE_WAIT_MS;
-  for (;;) {
-    const running = await scan(configPath);
-    if (running?.length === 0) return null;
-    if (now() >= deadline) {
-      return running ? `a FULI console still runs (process ${running.map(({ pid }) => pid).join(', ')})`
-        : 'the running FULI processes could not be listed';
-    }
+  let running = await scan(configPath);
+  while (running?.length && now() < deadline) {
     await wait(LEFT_CONSOLE_POLL_MS);
+    running = await scan(configPath);
   }
+  if (!running) return 'the running FULI processes could not be listed';
+  if (!running.length) return null;
+  for (const { pid } of running) await terminate(pid);
+  const remaining = await scan(configPath);
+  if (!remaining) return 'the running FULI processes could not be listed';
+  return remaining.length ? `a FULI process is still running (process ${remaining.map(({ pid }) => pid).join(', ')})` : null;
 }
 export const consoleStillRunning = reason => ({ ok: false, code: 'kept_new_version',
   outcome: `${reason}, so it was left installed and nothing was switched back.` });

@@ -83,3 +83,13 @@ test('the consoles of this data directory are listed, recorded or not, and never
   assert.deepEqual(await runningConsoles(WINDOWS_CONFIG, { platform: 'win32', run: fakeRun(JSON.stringify(rows)) }),
     [{ pid: 5200, parentPid: 5000, startedAt: null }]);
 });
+
+test('only the exact runtime configuration counts, not a path that contains it or extends it', async () => {
+  const stdout = [
+    `  501   300 Tue Oct 27 10:15:35 2026 node /opt/fuli/src/server.js --runtime-config /y${POSIX_CONFIG}`,
+    `  502   300 Tue Oct 27 10:15:36 2026 node /opt/fuli/src/server.js --runtime-config ${POSIX_CONFIG}.bak`,
+    `  503   300 Tue Oct 27 10:15:37 2026 node /opt/fuli/src/server.js --runtime-config ${POSIX_CONFIG} --port 2727`,
+    ''
+  ].join('\n');
+  assert.deepEqual((await runningConsoles(POSIX_CONFIG, { platform: 'linux', run: fakeRun(stdout) })).map(({ pid }) => pid), [503]);
+});

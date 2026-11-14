@@ -133,7 +133,17 @@ async function switchInstallation(plan, staged, packageRoot, { runCli, lock, wri
   } catch (error) {
     releaseStarts();
     lock.assertHeld(); // A lost owner must not interfere with another updater.
-    if (!started || !await newVersionRunsAfterAll(error)) await restorePrevious(error);
+    // From before the new version's stop until the update's own next start, no
+    // start (a person's included) begins: none may run while the data is read
+    // or the record changes. That start takes the lock itself.
+    let releaseRecovery = () => {};
+    try {
+      if (started) {
+        try { releaseRecovery = once(holdStarts(current.dataDir)); }
+        catch (busy) { throw failedStartError(plan.applicationVersion, error.message, startsStillRunning(busy)); }
+      }
+      if (!started || !await newVersionRunsAfterAll(error, releaseRecovery)) await restorePrevious(error, releaseRecovery);
+    } finally { releaseRecovery(); }
   }
   return reconnect();
 
@@ -141,24 +151,24 @@ async function switchInstallation(plan, staged, packageRoot, { runCli, lock, wri
   // way. Never restart the old version when the new process may still be using
   // the same database, or on data the new one already upgraded: then the new
   // one stays selected and is started once more. True when it runs now.
-  async function newVersionRunsAfterAll(error) {
-    let held;
-    try { held = holdStarts(current.dataDir); } catch (busy) { throw failedStartError(plan.applicationVersion, error.message, startsStillRunning(busy)); }
+  async function newVersionRunsAfterAll(error, releaseBeforeStart) {
     try { await requireInstalledCli(runCli, packageRoot, args('stop'), 'Fuli ' + plan.applicationVersion + ' could not be stopped; automatic rollback was not attempted.'); }
     catch (stopError) { throw failedStartError(plan.applicationVersion, error.message, newVersionDidNotStop(stopError.message)); }
-    finally { held(); }
     lock.assertHeld();
     // A console the failed start left, unrecorded, may still upgrade stores or hold its port.
     const left = await consolesLeft(current.dataDir);
     if (left) throw failedStartError(plan.applicationVersion, error.message, consoleStillRunning(left));
     const decision = await keepNewVersionOnNewerData(previousVersionBlocked(() => dataUpgradedSince(marks, current.dataDir)),
-      async () => { try { await startNew(); return { ok: true }; } catch (retry) { return { ok: false, error: retry.message }; } });
+      async () => {
+        releaseBeforeStart();
+        try { await startNew(); return { ok: true }; } catch (retry) { return { ok: false, error: retry.message }; }
+      });
     if (!decision) return false;
     if (decision.ok) return true;
     throw failedStartError(plan.applicationVersion, error.message, decision);
   }
 
-  async function restorePrevious(error) {
+  async function restorePrevious(error, releaseBeforeStart = () => {}) {
     lock.assertHeld();
     restoreWindowsUpdateRuntime(staged.runtime, plan.applicationVersion);
     const failures = [];
@@ -170,6 +180,7 @@ async function switchInstallation(plan, staged, packageRoot, { runCli, lock, wri
     try {
       lock.assertHeld();
       assertInstallationUnchanged(plan.recordPath, plan.record);
+      releaseBeforeStart();
       await requireInstalledCli(runCli, current.packageRoot, args('start'), 'The previous Fuli did not start again.');
       await requireInstalledCli(runCli, current.packageRoot, args('status'), 'The previous Fuli did not report a running state.');
     } catch (caught) { failures.push(caught); }
