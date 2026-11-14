@@ -52,6 +52,7 @@ import { whatsNewMessages } from './messages/whats-new'
 import { onboardingTourMessages } from './messages/onboarding-tour'
 import { openInAppMessages } from './messages/open-in-app'
 import { cliPathMessages } from './messages/cli-path'
+import { guestLinksMessages } from './messages/guest-links'
 import { agentDelegationMessages } from './messages/agent-delegation'
 import { aiHelpMessages } from './messages/ai-help'
 import { taskBlockerMessages } from './messages/task-blocker'
@@ -146,6 +147,7 @@ export const messages = {
     onboardingTour: onboardingTourMessages['zh-CN'],
     openInApp: openInAppMessages['zh-CN'],
     cliPath: cliPathMessages['zh-CN'],
+    guestLinks: guestLinksMessages['zh-CN'],
     agentDelegation: agentDelegationMessages['zh-CN'],
     aiHelp: aiHelpMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
@@ -210,6 +212,7 @@ export const messages = {
     onboardingTour: onboardingTourMessages['en-US'],
     openInApp: openInAppMessages['en-US'],
     cliPath: cliPathMessages['en-US'],
+    guestLinks: guestLinksMessages['en-US'],
     agentDelegation: agentDelegationMessages['en-US'],
     aiHelp: aiHelpMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],

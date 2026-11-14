@@ -9,8 +9,10 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // written before its search runs (outcome 'pending') and settled afterwards
 // as 'answered' or 'failed'; a refused attempt is a 'refused' row with its
 // code. Rows keep the visitor's queries as they were searched (already cut),
-// how many items and bytes went back, never the items themselves. Guest links
-// and visit requests come with their own slices as later versions.
+// how many items and bytes went back, never the items themselves. A guest
+// link (version 2) lets a person without FULI ask one project from the same
+// network; only the SHA-256 of its token is kept. Visit requests come with
+// their own slice as a later version.
 const READS_TABLE = `
     CREATE TABLE IF NOT EXISTS visitor_reads(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,6 +29,17 @@ const READS_TABLE = `
       at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
     CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`;
+const GUEST_LINK_TABLES = `
+    CREATE TABLE IF NOT EXISTS guest_links(
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_used_at TEXT);
+    CREATE INDEX IF NOT EXISTS guest_links_live ON guest_links(revoked_at, expires_at);`;
 
 export const VISITOR_ACCESS_FORMAT = sqliteFormat({
   store: 'visitor-access',
@@ -39,7 +52,11 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       own_device INTEGER NOT NULL CHECK(own_device IN (0, 1)),
       mode_updated_at TEXT NOT NULL,
       CHECK(mode <> 'trusted' OR (kind = 'peer' AND own_device = 1)));
-    ${READS_TABLE}`
+    ${READS_TABLE}`,
+  migrations: [{
+    id: 'visitor-access/2-guest-links', to: 2, kind: 'add-table', table: 'guest_links',
+    summary: 'guest links: one project a person without FULI may ask from the same network', create: GUEST_LINK_TABLES
+  }]
 });
 
 // Rows older than this are deleted on the next recorded attempt.
@@ -147,6 +164,33 @@ export class VisitorAccessStore {
       .all(requesterKey, requesterKey, projectId, projectId, limit).map(readView);
   }
 
+  // A new guest link and its requester row (mode ask_only), in one transaction.
+  insertGuestLink({ id, projectId, tokenHash, label, createdAt, expiresAt }) {
+    this.transaction(() => {
+      this.db.prepare(`INSERT INTO guest_links(id, project_id, token_hash, label, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(id, projectId, tokenHash, label, createdAt, expiresAt);
+      this.setRequester({ key: `guest:${id}`, kind: 'guest', label, mode: 'ask_only', ownDevice: false, at: createdAt });
+    });
+  }
+
+  // Links neither revoked nor expired at at (an ISO instant), newest first;
+  // optionally of one project.
+  liveGuestLinks(at, projectId = null) {
+    if (!this.readable) return [];
+    return this.db.prepare(`SELECT * FROM guest_links WHERE revoked_at IS NULL AND expires_at > ?
+      AND (? IS NULL OR project_id = ?) ORDER BY created_at DESC, id`).all(at, projectId, projectId).map(guestLinkView);
+  }
+
+  // Answers whether a live link was revoked now.
+  revokeGuestLink(id, at) {
+    if (!this.readable) return false;
+    return this.db.prepare('UPDATE guest_links SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(at, id).changes > 0;
+  }
+
+  touchGuestLink(id, at) {
+    this.db.prepare('UPDATE guest_links SET last_used_at = ? WHERE id = ?').run(at, id);
+  }
+
   close() {
     this.database?.close();
     this.database = null;
@@ -183,6 +227,12 @@ function setAsidePrereleaseReads(database) {
 function requesterView(row) {
   return { key: row.key, kind: row.kind, label: row.label, mode: row.mode, ownDevice: row.own_device === 1,
     modeUpdatedAt: row.mode_updated_at };
+}
+
+// The token hash stays in the row object only for the caller's constant-time compare.
+function guestLinkView(row) {
+  return { id: row.id, projectId: row.project_id, tokenHash: row.token_hash, label: row.label, createdAt: row.created_at,
+    expiresAt: row.expires_at, lastUsedAt: row.last_used_at };
 }
 
 function readView(row) {

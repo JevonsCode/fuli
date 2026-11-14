@@ -26,6 +26,7 @@ import { handleTaskCloseRequest } from './task-close-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleClientLinksRequest } from './client-links-api-router.js';
+import { handleGuestLinksRequest } from './guest-links-api-router.js';
 import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleAgentWorkflowsRequest } from './agent-workflows-api-router.js';
 import { handleAgentAvatarsRequest } from './agent-avatars-api-router.js';
@@ -88,6 +89,7 @@ export async function handleApiRequest({
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleModelListRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
+  if (await handleGuestLinksRequest({ request, response, url, guestAccess: app.guestAccess ?? null })) return true;
   if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;

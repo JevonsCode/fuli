@@ -2,7 +2,8 @@ import { isLocalOwnerRequest } from '../../packages/roundtable/src/peer/control.
 import { sendJson } from './response.js';
 
 // 「最近被问」 in Settings › 局域网圆桌: every contact visitors from paired
-// computers made with this computer's shared projects (who, their Agent, the
+// computers and guest links made with this computer's shared projects (who,
+// whether a paired computer or a guest link, their Agent, the
 // project, a card or what they searched, the outcome, when). It names the
 // visitors and their questions, so it answers under the LAN roundtable
 // controls' own guard: this computer's loopback address and a loopback Host.
@@ -31,6 +32,7 @@ export async function handleVisitorAccessRequest({ request, response, url, visit
     return true;
   }
   sendJson(response, 200, { reads: recent.reads.map(read => ({ id: read.id, requester: read.requesterLabel,
+    requesterKind: read.requesterKey.startsWith('guest:') ? 'guest' : 'peer',
     agentName: read.agentName, projectId: read.projectId, action: read.action, outcome: read.outcome, code: read.code,
     queries: read.queries, resultsCount: read.resultsCount, at: read.at })) });
   return true;

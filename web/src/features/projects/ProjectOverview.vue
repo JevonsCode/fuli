@@ -17,6 +17,7 @@ import ProjectOrganizing from './ProjectOrganizing.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
+import GuestLinksCard from '@/features/guest-links/GuestLinksCard.vue'
 import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
 
 const props = withDefaults(defineProps<{
@@ -69,6 +70,7 @@ const createdDate = computed(() =>
     <ProjectOrganizing :key="`organizing-${project.project_id}`" class="project-organizing-card" :space-id="spaceId" :project-id="project.project_id" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
+    <GuestLinksCard :key="`guests-${project.project_id}`" :project-id="project.project_id" />
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"
       :project-name="project.profile.name" :updated-at="project.updated_at" />
     <section

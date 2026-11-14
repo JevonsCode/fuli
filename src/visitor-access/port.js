@@ -2,6 +2,7 @@ import { withoutControls } from '../text/control-characters.js';
 import { rateLimitRefusal } from './rate-limit.js';
 import { searchableProject, searchableQueries, searchSharedProject, sharedCard } from './shared-project-search.js';
 import { VisitorAccessStore } from './store.js';
+import { createGuestLinks } from './guest-links.js';
 
 // The one port the visiting assistant reaches this computer's shared project
 // knowledge through: a requester from another computer searches one project
@@ -117,6 +118,9 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
           ownDevice: kind === 'peer' && ownDevice === true, at: now().toISOString() }) };
       } catch { return refused(UNAVAILABLE); }
     },
+
+    // Guest links (deliverable B): created, listed and revoked by the person, opened by a bearer token.
+    guestLinks: createGuestLinks({ store, now }),
 
     close: () => store.close()
   };
