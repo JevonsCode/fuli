@@ -13,8 +13,10 @@ export function resolveGraphRuntimeOptions(args = [], env = process.env, options
   const configuredPath = runtimeValue(args, '--runtime-config') ??
     nonEmptyText(env.FULI_GRAPH_RUNTIME_CONFIG);
   const dataDir = resolveSetupPaths({ env, ...options.setupPaths }).dataDir;
+  // A relative --runtime-config is the caller's: a hook run by the console
+  // passes the hook process's working directory (lifecycle-events.js).
   return {
-    runtimeConfigPath: resolve(configuredPath ?? join(dataDir, 'graph-runtime.json'))
+    runtimeConfigPath: resolve(options.setupPaths?.cwd ?? '', configuredPath ?? join(dataDir, 'graph-runtime.json'))
   };
 }
 

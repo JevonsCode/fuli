@@ -57,7 +57,8 @@ const ZH: HowtoContent = {
       id: 'otherClients', title: '用上其他客户端剩下的额度',
       when: '你有好几个 AI 客户端，其中有的额度还没用完。',
       phrases: ['这件机械的活派给 OpenCode 的 DeepSeek 去做，做完你来验收', '让 Antigravity 的 Gemini 只读代码，列出 ‹要查的内容›'],
-      note: '负责人写好任务说明、启动那个客户端，每处改动读过才留下；FULI 自己唤醒 Claude Code 和 Codex，其他由负责人启动。',
+      note: '负责人写好任务说明、启动那个客户端，每处改动读过才留下；FULI 自己唤醒 Claude Code 和 Codex，其他由负责人启动。'
+        + '这周用了哪些客户端和模型，在今天的复利账单「查看详情」里看。',
     },
     {
       id: 'quotaRanOut', title: '客户端额度用完，换一个接着干',
@@ -146,7 +147,8 @@ const EN: HowtoContent = {
       id: 'otherClients', title: 'Use the quota of your other clients',
       when: 'You have several AI clients and some still have quota.',
       phrases: ['Hand this mechanical job to DeepSeek in OpenCode, and review it when it is done', 'Have Gemini in Antigravity read the code only and list ‹what to find›'],
-      note: 'The lead writes the brief, starts that client and reads every change before keeping it; FULI wakes Claude Code and Codex itself, the lead starts the others.',
+      note: 'The lead writes the brief, starts that client and reads every change before keeping it; FULI wakes Claude Code and Codex itself, the lead starts the others. '
+        + 'Which clients and models did this week\'s work is under Details of the statement on Today.',
     },
     {
       id: 'quotaRanOut', title: 'A client ran out of quota mid-task',

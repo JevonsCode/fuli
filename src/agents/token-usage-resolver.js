@@ -71,6 +71,16 @@ export function createAgentTokenUsageResolver({ adapters } = {}) {
   };
 }
 
+// The resolver of an application opened with an explicit environment (a hook
+// call the console runs, lifecycle-events.js): Codex sessions are found under
+// that environment's CODEX_HOME or home folder, not this process's.
+export function environmentTokenUsageResolver(env) {
+  const codexHome = typeof env?.CODEX_HOME === 'string' && env.CODEX_HOME.trim() ? env.CODEX_HOME.trim() : undefined;
+  const home = env?.HOME ?? env?.USERPROFILE ?? undefined;
+  return createAgentTokenUsageResolver({ adapters: {
+    codex: createCodexTokenUsageResolver({ codexHomeDirectory: codexHome, homeDirectory: home }) } });
+}
+
 export async function enrichProjectAgentTaskActivity(input = {}, resolver = DEFAULT_RESOLVER) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
   const actorKind = input.actorKind ?? input.actor_kind;

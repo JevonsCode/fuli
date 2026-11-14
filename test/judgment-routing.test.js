@@ -98,6 +98,29 @@ test('task and assignment locks intersect and the task model strategy constrains
   assert.deepEqual(data.eligible.map(e => e.executorId), ['space']);
   assert.deepEqual(data.eligible[0].models.map(m => m.model), ['model']);
 });
+test('the judgment reads the last 30 days of client and model usage beside its evidence; its answer contract stays', async t => {
+  const { service, app, prompt } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const windows = [];
+  app.recallImpressions = { entriesByClientModel: async ({ personalSpaceId, from, to }) => {
+    windows.push({ personalSpaceId, days: (Date.parse(to) - Date.parse(from)) / 86_400_000 });
+    return [{ client: 'codex', model: 'synthetic-model', entries: 3 }, { client: 'claude-code', model: null, entries: 1 }];
+  } };
+  app.roundtable = { wakeUsage: async () => [{ client: 'claude_code', model: null, wakes: 2, failedWakes: 1,
+    inputTokens: null, outputTokens: null, tokenWakes: 0 }] };
+  const result = await service.assess(routingInput);
+  assert.equal(result.selection.executorId, 'space');
+  assert.deepEqual(windows, [{ personalSpaceId: 's', days: 30 }]);
+  const data = JSON.parse(prompt().split('\nDATA:\n')[1]);
+  assert.equal(data.recentUsage.days, 30);
+  // How wakes ended rides along; a task entry records no outcome.
+  assert.deepEqual(data.recentUsage.rows, [{ client: 'claude_code', model: null, taskEntries: 1, wakes: 2, failedWakes: 1 },
+    { client: 'codex', model: 'synthetic-model', taskEntries: 3, wakes: 0, failedWakes: 0 }]);
+  // A source that cannot be read leaves the input out; the judgment still answers.
+  const quiet = routingFixture(t, { executors: [availableExecutor('space')] });
+  quiet.app.recallImpressions = { entriesByClientModel: () => { throw new Error('synthetic store down'); } };
+  assert.equal((await quiet.service.assess(routingInput)).selection.executorId, 'space');
+  assert.equal('recentUsage' in JSON.parse(quiet.prompt().split('\nDATA:\n')[1]), false);
+});
 test('judgment client cannot read another Agent history through a different eligible client', async t => {
   const { service, app } = routingFixture(t, { executors: [availableExecutor('space', 'claude_code')], allowedClients: ['claude_code'] });
   app.queryAgentConversations = async () => assert.fail('Codex must not read Claude-only Agent conversations');

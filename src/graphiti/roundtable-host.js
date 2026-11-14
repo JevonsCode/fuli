@@ -8,6 +8,9 @@ import { identityKey } from '../text/name-identity.js';
 import { groupMemberContext } from './group-member-context.js';
 import { localOriginRemoteKey, ownRemotes } from './repository-remote.js';
 import { findRepositoryRoot } from './project-path-context.js';
+import { recordWakeFailure } from '../diagnostics/failure-records.js';
+import { withoutControls } from '../text/control-characters.js';
+import { shareableText } from '../text/shareable-text.js';
 
 // What the host refuses on its own (the share's lead): the sender learns only QUERY_REFUSED.
 const LEAD_REFUSALS = new Set(['lead_unreadable', 'lead_changed']);
@@ -157,6 +160,11 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>
       groupMemberContext(app, [{ agentId, name, occupation, projectId }], text, { sourceApplication: client, sessionId }),
+    // A failed wake's captured client output, as this computer may keep it:
+    // controls dropped per line (so a path still ends with its line), then
+    // strict redaction of paths, URL credentials, secrets and opaque tokens.
+    redactDiagnostic: text => withoutControls(shareableText(String(text).split(/\r?\n/).map(withoutControls).join('\n'))),
+    recordWakeFailure: failure => recordWakeFailure(app.diagnosticEvents, failure),
     requestSignal: activeAgentRequestSignal,
     inRestrictedWorker: activeSealedWorkerRequest,
     recordMemoryUsage: input => app.personal.recordProjectMemoryUsage

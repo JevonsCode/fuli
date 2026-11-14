@@ -5,6 +5,7 @@ import { GROUP_DISCUSSION_JOIN_COLUMNS, GROUP_DISCUSSION_JOIN_TABLES, GROUP_DISC
   createGroupDiscussionStore } from './group-discussion-store.js';
 import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thread-subscriptions.js';
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
+import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
@@ -66,6 +67,17 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/9-group-discussion-joins', to: 9, kind: 'add-table', table: 'group_discussion_joins',
     summary: 'members who joined a group discussion by code, and the client and model of each message',
     create: GROUP_DISCUSSION_JOIN_TABLES
+  }, {
+    // Why a wake did not answer, kept where it ran (wake-attempt-store.js).
+    id: 'roundtable/10-wake-attempts', to: 10, kind: 'add-table', table: 'wake_attempts',
+    summary: 'each wake an ask started: client, resumed or new session, failure code, exit code and a redacted output summary',
+    create: WAKE_ATTEMPT_TABLES
+  }, {
+    // The model and tokens each woken client reported for that wake, answered
+    // or failed; null when it reported none. Older attempts carry none.
+    id: 'roundtable/11-wake-attempt-usage', to: 11, kind: 'add-columns', table: 'wake_attempts',
+    summary: 'the model and tokens a woken client reported for each wake',
+    columns: WAKE_ATTEMPT_USAGE_COLUMNS
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -81,6 +93,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
   const discussions = createGroupDiscussionStore(database, chat);
   const subscriptions = createThreadSubscriptionStore(database, chat);
   const desktopInboxes = createDesktopInboxStore(database);
+  const wakeAttempts = createWakeAttemptStore(database, now);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
     let result;
@@ -96,6 +109,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     discussions,
     subscriptions,
     desktopInboxes,
+    wakeAttempts,
     transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();

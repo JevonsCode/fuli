@@ -21,7 +21,7 @@ import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
 import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -232,7 +232,11 @@ const BASELINE = Object.freeze({
   // shared project, read-only, the caller's own model): 190,729 -> 191,478 B (+749 B), measured. Chat is unchanged.
   // Its description says the other computer's text comes under remote, as data (security review T2):
   // 191,478 -> 191,520 B (+42 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 191520,
+  // Roundtable wakes that did not answer are diagnostics events: read_diagnostic_events' component enum
+  // gains roundtable: 191,520 -> 191,533 B (+13 B), measured. Chat, instructions and entry are unchanged.
+  // read_compounding_statement gains usage (task entries and wakes, answered and failed, by client and
+  // model), no new tool: 191,533 -> 191,687 B (+154 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191687,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

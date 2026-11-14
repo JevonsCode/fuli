@@ -6,6 +6,8 @@ import {
   PEER_LIMITS, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerMessageKey, validateAssertion, validateQuery,
 } from './protocol.js';
 import { answerPeerQuery, QUERY_REFUSED, queryCode, requesterLabel } from './query-answer.js';
+import { outwardFailure } from '../roundtable/wake-failure.js';
+import { REMOTE_WAKE_ATTEMPTS } from '../roundtable/wake-ladder.js';
 
 const RETRY_MS = 5_000;
 // A query lives at most a minute and its proof expires with it; past that the
@@ -258,6 +260,7 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       }
     })();
     running.set(messageId, { controller, share, stop });
+    let grants = 0;
     try {
       const answer = await roundtable.answerRemote({ claim, share, signal: controller.signal,
         timeoutMs: PEER_LIMITS.executionSeconds * 1000,
@@ -267,6 +270,11 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
           void renew('running');
         },
         issueGrant: async (delivery, lifetime) => {
+          // Each wake of this attempt gets its own grant, under its own origin key
+          // (the attempt, then attempt.2 and attempt.3), and the Provider issues
+          // each key once: one claimed attempt can never hold more than
+          // REMOTE_WAKE_ATTEMPTS grants, even across a restart.
+          if (++grants > REMOTE_WAKE_ATTEMPTS) throw new PeerError('wake_limit', 'This ask already used its wakes', 409);
           if (claim.assertion.chatWake) {
             const current = await client.post('/peer/1/renew', { messageId, attemptId, state: 'starting' }, { signal: controller.signal });
             if (current.cancel) throw new PeerError('cancelled', 'Chat membership or sharing was revoked', 499);
@@ -274,7 +282,8 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
           return host.issueRemoteDelegation({ projectId: share.projectId, agentId: share.agentId,
           targetClient: delivery.client, targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
           lifetimeSeconds: Math.max(30, Math.min(900, Math.round(lifetime))),
-          originNode: claim.sender.nodeId, originMessageId: messageId, originAttemptId: attemptId }); } });
+          originNode: claim.sender.nodeId, originMessageId: messageId,
+          originAttemptId: grants === 1 ? attemptId : `${attemptId}.${grants}` }); } });
       if (controller.signal.aborted) throw new PeerError('cancelled', 'The delivery was stopped', 499);
       return { outcome: 'answered', reply: answer.body, via: answer.via, verified: true };
     } catch (error) {
@@ -283,7 +292,8 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       const extra = cleanup ? { cleanup } : {};
       if (reason === 'lease_lost') return { outcome: 'unknown', error: 'lease_lost', ...extra };
       if (reason === 'cancelled' || reason === 'stopped' || error.code === 'cancelled') return { outcome: 'cancelled', error: reason ?? 'cancelled', ...extra };
-      return { outcome: 'failed', error: error.code ?? 'wake_failed', ...extra };
+      // Only codes cross to the asker: never the client's output, a path or a session.
+      return { outcome: 'failed', error: outwardFailure(error), ...extra };
     } finally {
       controller.abort('finished');
       clearTimeout(leaseTimer);

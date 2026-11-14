@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { beginTaskContext } from '../src/graphiti/agent-knowledge-workflows.js';
-import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
+import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-event.js';
 
 // rec#85: Codex runs UserPromptSubmit again, with the same turn_id, for input
 // that arrives while the turn runs (an async question's reply). Synthetic

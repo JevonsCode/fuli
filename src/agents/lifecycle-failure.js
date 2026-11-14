@@ -32,6 +32,7 @@ export function consoleRecoveryNotice(runtimeConfigPath) {
 
 // The runtime configuration a hook process was started with, as the hook
 // itself resolves it; null when even that cannot be resolved.
-export function runtimeConfigPathOf(args, env = process.env) {
-  try { return resolveGraphRuntimeOptions(args, env).runtimeConfigPath; } catch { return null; }
+export function runtimeConfigPathOf(args, env = process.env, cwd = undefined) {
+  try { return resolveGraphRuntimeOptions(args, env, cwd === undefined ? {} : { setupPaths: { cwd } }).runtimeConfigPath; }
+  catch { return null; }
 }

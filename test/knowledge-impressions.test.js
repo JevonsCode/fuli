@@ -170,7 +170,34 @@ test('a version 1 store gains task deliveries on open, and its older tasks count
   store.recordDelivered({ taskContextToken: 'fuli-task-new', personalSpaceId: 'space-a', sourceApplication: 'codex',
     preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
   assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 2, clients: 1, items: 2 });
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 3);
+  // A task recorded before version 3 names no model: it reads as unknown, never guessed.
+  assert.deepEqual(store.entriesByClientModel({ personalSpaceId: 'space-a', ...WEEK }), [{ client: 'codex', model: null, entries: 1 }]);
+});
+
+test('task entries keep the model the client reported, as one bounded line, and read by client and model', async () => {
+  const store = new RecallImpressionsStore(':memory:', () => new Date('2026-11-10T00:00:00Z'));
+  const preferences = { context: { personal_space_id: 'space-a', personal_project_id: 'project-a', project_agent_id: null },
+    effective_preferences: [{ id: 'pref-1', item_kind: 'entity', instruction: 'Synthetic rule' }] };
+  let index = 0;
+  const app = { config: { personal: { spaceId: 'space-a' } }, recallImpressions: store,
+    taskContextRegistry: { begin: async ({ sessionId, sourceApplication }) => ({ token: `fuli-task-model-${++index}`, sessionId,
+      personalProjectId: 'project-a', projectAgentId: null, sourceApplication, entryVia: 'tool', checkpoint: null }) } };
+  const enter = (sessionId, sourceApplication, clientModel) => beginTaskFromPreferences(app, preferences,
+    { sessionId, sourceApplication, ...(clientModel === undefined ? {} : { clientModel }) });
+  await enter('session-a', 'codex', 'synthetic-model\u0000-a');
+  await enter('session-b', 'codex', 'synthetic-model -a');
+  await enter('session-c', 'codex', `${'m'.repeat(200)}`);
+  await enter('session-d', 'claude-code');
+  await enter('session-e', 'codex', ' ​ ');
+  assert.deepEqual(store.entriesByClientModel({ personalSpaceId: 'space-a', ...WEEK }), [
+    { client: 'codex', model: 'synthetic-model -a', entries: 2 },
+    { client: 'claude-code', model: null, entries: 1 },
+    { client: 'codex', model: null, entries: 1 },
+    { client: 'codex', model: 'm'.repeat(120), entries: 1 }]);
+  assert.deepEqual(store.entriesByClientModel({ personalSpaceId: 'space-b', ...WEEK }), []);
+  assert.deepEqual(new RecallImpressionsStore(join(tmpdir(), 'fuli-recall-impressions-never-created.sqlite'))
+    .entriesByClientModel({ personalSpaceId: 'space-a', ...WEEK }), []);
 });
 
 test('task entry records the preferences it delivered and its client, even without a recall', async () => {
