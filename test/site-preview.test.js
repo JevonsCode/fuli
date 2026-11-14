@@ -106,13 +106,13 @@ test('the stable page links to the preview page in its own language', () => {
 });
 
 test('a stable version has no newer preview, so /next/ says so and links home in its language', () => {
-  const site = pages('0.27.4');
+  const site = pages('0.27.5');
   for (const [route, locale] of [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']]) {
     const { document } = parseHTML(site.get(`next/${route}index.html`));
     assert.equal(document.documentElement.lang, locale);
     assert.match(document.querySelector('meta[name="robots"]').content, /noindex/);
     assert.equal(document.querySelector('link[rel="canonical"]').href, base + route);
-    assert.ok(document.querySelector('main p').textContent.includes('0.27.4'));
+    assert.ok(document.querySelector('main p').textContent.includes('0.27.5'));
     assert.deepEqual([...document.querySelectorAll('a')].map(link => link.href), [base + route]);
     assert.equal(document.querySelector('.preview-changes, [data-preview-version], .terminal'), null);
     if (locale === 'en') assert.doesNotMatch(document.documentElement.textContent, /[㐀-鿿]/);
@@ -131,15 +131,15 @@ test('the client downloads on both pages are the Windows setup and macOS image o
 
 test('every header shows the brand wordmark and the version the client shows: released on the stable pages, the preview on /next/', () => {
   const pagesWithHeader = ['', 'en/', 'models/', 'tech/', 'guide/', 'report/', 'report/en/'];
-  const stable = pages('0.27.4');
+  const stable = pages('0.27.5');
   for (const path of pagesWithHeader) {
     const { document } = parseHTML(stable.get(path + 'index.html'));
     // Both wordmarks come from brand/ copies; CSS shows the one for the page's language.
     assert.deepEqual([...document.querySelectorAll('.brand .wordmark:not(.wordmark--dark)')].map(node => node.getAttribute('src').replace(/^(\.\.\/)+|^\.\//, '')),
       ['assets/brand/fuli-wordmark-zh.svg', 'assets/brand/fuli-wordmark-en.svg'], path);
     const versionLink = document.querySelector('.brand-row .brand-version');
-    assert.equal(versionLink.textContent, 'v0.27.4', path);
-    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.27.4', path);
+    assert.equal(versionLink.textContent, 'v0.27.5', path);
+    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.27.5', path);
   }
   // During a prerelease cycle the stable pages name no version; the preview page names its own.
   for (const path of pagesWithHeader) assert.equal(parseHTML(files.get(path + 'index.html')).document.querySelector('.brand-version'), null, path);

@@ -1,0 +1,13 @@
+{
+  "version": "0.27.5",
+  "zh": [
+    "别的电脑发来的活，等你拍板时会直接出现在「今天」页。",
+    "助手待在装着项目仓库的工作区里时，FULI 自己找到仓库，不用再填文件夹。",
+    "保存共享后会说明结果：共享了几个项目，或者为什么没保存。"
+  ],
+  "en": [
+    "Work sent from another computer shows on Today as soon as it waits for you.",
+    "An assistant working in a workspace that holds the repository needs no folder filled in.",
+    "Saving shares now says what happened: how many projects are shared, or why it was not saved."
+  ]
+}
