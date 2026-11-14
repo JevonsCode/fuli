@@ -27,8 +27,13 @@ const EXPIRY_MS = 7 * DAY_MS;
 const REVIEW_EXPIRY_MS = 14 * DAY_MS;
 // Per requester over the last 24 hours (open requests, results waiting for
 // review included, at any time); per shared project and for this whole
-// computer over the last 24 hours; and planning wakes at once.
-export const VISIT_BUDGET = Object.freeze({ requestsPerDay: { peer: 5, guest: 3 }, wakeMsPerDay: 60 * 60 * 1000, open: 10,
+// computer over the last 24 hours; and planning wakes at once. A computer
+// its owner marked fully trusted (Jevons 11-15) may ask 20 times a day and
+// is not held to the per-project count; the whole computer's count and the
+// wake minutes still hold. A request that failed here before its run
+// started (a folder that is no repository, a Git step) is not one of the
+// requester's requests of the day: nothing the requester did made it fail.
+export const VISIT_BUDGET = Object.freeze({ requestsPerDay: { peer: 5, trusted: 20, guest: 3 }, wakeMsPerDay: 60 * 60 * 1000, open: 10,
   projectPerDay: 10, computerPerDay: 20, planningAtOnce: 2 });
 // Past this many refusals of one requester in a day they are no longer written, so a flood stays bounded.
 const REFUSALS_KEPT_PER_DAY = 100;
@@ -96,8 +101,9 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     const outcome = store.transaction(() => {
       const mode = source === 'guest' ? 'ask_only' : modeOf(requester.key);
       const usage = records.usage(requester.key, since);
-      const code = mode === 'ask_only' ? 'ask_only' : overBudget(usage, source) ? 'budget_exceeded'
-        : records.acceptedSince(since, { projectId }) >= VISIT_BUDGET.projectPerDay ? 'project_budget_exceeded'
+      const trusted = mode === 'trusted';
+      const code = mode === 'ask_only' ? 'ask_only' : overBudget(usage, trusted ? 'trusted' : source) ? 'budget_exceeded'
+        : !trusted && records.acceptedSince(since, { projectId }) >= VISIT_BUDGET.projectPerDay ? 'project_budget_exceeded'
           : records.acceptedSince(since) >= VISIT_BUDGET.computerPerDay ? 'computer_budget_exceeded'
             : records.count('planning') >= VISIT_BUDGET.planningAtOnce ? 'planning_busy' : null;
       if (code && usage.refused >= REFUSALS_KEPT_PER_DAY) return { code };
@@ -577,8 +583,9 @@ function failureReason(error) {
   return [...error.summary].slice(0, REASON_CHARS).join('') || null;
 }
 
-function overBudget(usage, source) {
-  return usage.requests >= VISIT_BUDGET.requestsPerDay[source] || usage.open >= VISIT_BUDGET.open
+// kind: 'peer', 'guest', or 'trusted' for a computer in that mode.
+function overBudget(usage, kind) {
+  return usage.requests >= VISIT_BUDGET.requestsPerDay[kind] || usage.open >= VISIT_BUDGET.open
     || usage.wakeMs >= VISIT_BUDGET.wakeMsPerDay;
 }
 
