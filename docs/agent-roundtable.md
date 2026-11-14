@@ -398,9 +398,11 @@ memory (60 per requester in 10 minutes) and write nothing.
 Lowering a requester to 只能问, revoking its pairing, removing the share, or the
 project getting another lead (checked again just before a run) cancels its open
 requests; a running one is stopped through its abort signal and its worktree is
-removed only once the run, its commit step included, has ended. Lowering to 计划
-returns rule-approved requests that have not started to the person; raising the
-mode approves nothing that waits. After a restart a run that was going is
+removed only once the run, its commit step included, has ended. A rule's
+approval holds only under the mode it was made in (or 完全信任): lowering to 计划,
+or from 完全信任 to 自动, returns rule-approved requests that have not started to
+the person, queued runs included; a running one goes on and is reviewed by the
+mode it was approved in. Raising the mode approves nothing that waits. After a restart a run that was going is
 `unknown`, its worktree is removed, and it is not run again.
 
 The console reads `GET /api/visit-requests` (with `awaiting` for 等你拍板) and
