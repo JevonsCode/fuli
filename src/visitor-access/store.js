@@ -164,6 +164,12 @@ export class VisitorAccessStore {
     return row ? requesterView(row) : null;
   }
 
+  // Every requester the person gave a mode, the latest change first.
+  requesters() {
+    if (!this.readable) return [];
+    return this.db.prepare('SELECT * FROM requesters ORDER BY mode_updated_at DESC, key').all().map(requesterView);
+  }
+
   setRequester({ key, kind, label, mode, ownDevice, at }) {
     this.db.prepare(`INSERT INTO requesters(key, kind, label, mode, own_device, mode_updated_at)
       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET kind = excluded.kind, label = excluded.label,

@@ -7,6 +7,7 @@ import { createAgentDelegation } from '../src/agent-delegation/port.js';
 import { DELEGATION_HEADER, encodeDelegation } from '../src/agent-delegation/delegation-header.js';
 import { interfaceForRequest } from '../src/agent-tools/interface-catalog.js';
 import { handleDelegatedRequest } from '../src/http/agent-delegation-gate.js';
+import { handleVisitorAccessRequest } from '../src/http/visitor-access-api-router.js';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
 import { handleVisitRequestsApiRequest } from '../src/visit-requests/http.js';
 import { createVisitRequests } from '../src/visit-requests/service.js';
@@ -158,4 +159,24 @@ test('an Agent may decline or cancel for the person, never approve, keep, discar
     assert.equal((await delegated('POST', `/api/visit-requests/r-1/${action}`)).reached, true, action);
   }
   delegation.close();
+});
+
+test('the requesters\' modes are read on this computer only, and one never set reads as plan', async (t) => {
+  const port = access(t);
+  const read = async (options) => {
+    const sent = response();
+    const handled = await handleVisitorAccessRequest({ request: request('GET', '/api/visitor-access/requesters', options), response: sent,
+      url: new URL('/api/visitor-access/requesters', 'http://127.0.0.1'), visitorAccess: port });
+    return { handled, ...sent };
+  };
+  const empty = await read();
+  assert.deepEqual([empty.handled, empty.status, empty.body, empty.headers['cache-control']],
+    [true, 200, { requesters: [], defaultMode: 'plan' }, 'no-store']);
+  await call(port, 'PUT', `/api/visitor-access/requesters/${encodeURIComponent(PEER)}/mode`, { body: { mode: 'auto', label: 'Synthetic laptop' } });
+  const listed = await read();
+  assert.deepEqual(listed.body.requesters.map(({ key, kind, label, mode, ownDevice }) => [key, kind, label, mode, ownDevice]),
+    [[PEER, 'peer', 'Synthetic laptop', 'auto', false]]);
+  const lan = await read({ remoteAddress: '192.168.1.20', host: '192.168.1.5:2828' });
+  assert.deepEqual([lan.status, lan.body.error], [403, 'local_owner_only']);
+  assert.equal(interfaceForRequest('GET', '/api/visitor-access/requesters'), null, 'a read, not a catalogued change');
 });

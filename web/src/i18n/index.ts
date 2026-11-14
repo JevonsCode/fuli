@@ -60,6 +60,7 @@ import { taskReasonMessages } from './messages/task-reason'
 import { doctorMessages } from './messages/doctor'
 import { contextMenuMessages } from './messages/context-menu'
 import { todayMessages } from './messages/today'
+import { visitRequestMessages } from './messages/visit-requests'
 import { statementCalendarMessages } from './messages/statement-calendar'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
@@ -113,6 +114,7 @@ export const messages = {
     ui: uiMessages['zh-CN'],
     overview: overviewMessages['zh-CN'],
     today: todayMessages['zh-CN'],
+    visitRequests: visitRequestMessages['zh-CN'],
     statementCalendar: statementCalendarMessages['zh-CN'],
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
@@ -178,6 +180,7 @@ export const messages = {
     ui: uiMessages['en-US'],
     overview: overviewMessages['en-US'],
     today: todayMessages['en-US'],
+    visitRequests: visitRequestMessages['en-US'],
     statementCalendar: statementCalendarMessages['en-US'],
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],

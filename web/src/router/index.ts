@@ -18,6 +18,8 @@ export const router = createRouter({
     { path: '/workbench', redirect: '/' },
     // The lists 今天 links to, each on its own page with search and filters in the query (Jevons 11-06).
     { path: '/workbench/:list(running|done|notices)', name: 'workbench-list', component: () => import('@/features/workbench-lists/WorkbenchListPage.vue'), meta: { title: 'routes.overview.title', detail: true } },
+    // Every request another computer's assistant sent to be done here, from 等你拍板's 更多 and the LAN roundtable card.
+    { path: '/visit-requests', name: 'visit-requests', component: () => import('@/features/visit-requests/VisitRequestsPage.vue'), meta: { title: 'visitRequests.list.title', detail: true } },
     {
       path: '/preferences',
       name: 'personal-profile',

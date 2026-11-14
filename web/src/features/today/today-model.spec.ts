@@ -5,22 +5,34 @@ import { sparklinePoints, statementSeries, statementTiles, statementValue, state
 import { decisionRows, workingRows } from './today-model'
 import type { ProjectAgentTaskRecord } from '@/types'
 import type { TeamSheet } from '@/features/team-work/team-sheets'
+import type { VisitRequest } from '@/features/visit-requests/visit-request-shape'
 
 beforeEach(() => setLocale('zh-CN', { persist: false }))
 const request = (id: string) => ({ requestId: id }) as AgentAttention
+const visit = (id: string, state = 'awaiting_owner') => ({ id, state }) as VisitRequest
+const NO_VISITS = { awaiting: [], awaitingTotal: 0, reviews: [] }
 
 describe('等你拍板 rows', () => {
   it('fills up to five in order: requests, the habits to confirm, then the disagreeing preferences', () => {
-    const { rows, more } = decisionRows({ requests: [request('a'), request('b')], requestTotal: 2, reviewTotal: 4, conflicts: 1 })
+    const { rows, more } = decisionRows({ requests: [request('a'), request('b')], requestTotal: 2, visits: NO_VISITS, reviewTotal: 4, conflicts: 1 })
     expect(rows.map(row => row.kind)).toEqual(['request', 'request', 'review', 'conflicts'])
     expect(more).toBe(0)
   })
 
   it('counts what no row stands for once five are shown', () => {
     const four = ['a', 'b', 'c', 'd'].map(request)
-    const { rows, more } = decisionRows({ requests: four, requestTotal: 6, reviewTotal: 3, conflicts: 2 })
+    const { rows, more } = decisionRows({ requests: four, requestTotal: 6, visits: NO_VISITS, reviewTotal: 3, conflicts: 2 })
     expect(rows.map(row => row.kind)).toEqual(['request', 'request', 'request', 'request', 'review'])
     expect(more).toBe(2 + 2)
+  })
+
+  it('puts other computers\' requests after the assistants\' own: waiting ones, then finished runs to look at', () => {
+    const visits = { awaiting: [visit('w1'), visit('w2')], awaitingTotal: 7, reviews: [visit('r1', 'awaiting_review')] }
+    const { rows, more, visits: waiting } = decisionRows({ requests: [request('a')], requestTotal: 1, visits, reviewTotal: 2, conflicts: 0 })
+    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['request', 'w1', 'w2', 'r1', 'review'])
+    // Five more wait for the call than the newest two shown.
+    expect(more).toBe(5)
+    expect(waiting).toBe(7 + 1)
   })
 })
 

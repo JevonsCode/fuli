@@ -8,6 +8,7 @@ import { useOverviewData } from '@/features/overview/useOverviewData'
 import { detectPreferenceConflicts, type PreferenceConflictRecord } from '@/features/preferences/preference-conflicts'
 import { useReviewList } from '@/features/review-list/review-store'
 import { useTeamWork } from '@/features/team-work/useTeamWork'
+import { useVisitAwaiting } from '@/features/visit-requests/useVisitAwaiting'
 import type { PersonalProject } from '@/types'
 import { readStatement, statementTiles, statementTotal, statementWeek, type Statement } from './statement'
 import { decisionRows, todayNotices, workingRows } from './today-model'
@@ -35,6 +36,8 @@ export function useTodayData(spaceId: Ref<string>, projects: Ref<PersonalProject
   const team = useTeamWork(spaceId)
   // The same list the top bar counts; the shell already reads it for this space.
   const review = useReviewList()
+  // Other computers' requests belong to this computer, not to a space: one read, shared with every decision.
+  const visits = useVisitAwaiting()
   watch(spaceId, id => { if (id) review.setSpace(id) }, { immediate: true })
 
   const deferred = ref<Read<PreferenceConflictRecord[]>>({ state: 'loading', value: [] })
@@ -64,13 +67,14 @@ export function useTodayData(spaceId: Ref<string>, projects: Ref<PersonalProject
     deferred.value = { state: 'loading', value: [] }
     notices.value = { state: 'loading', value: [] }
     statement.value = { state: 'loading', value: null }
-    void loadDeferred(id); void loadNotices(id); void loadStatement(id)
+    void loadDeferred(id); void loadNotices(id); void loadStatement(id); void visits.load()
   }, { immediate: true })
 
   const conflicts = computed(() => detectPreferenceConflicts(profileItemsOf(review.items), deferred.value.value)
     .filter(conflict => !conflict.aiRecord).length)
   const decisions = computed(() => decisionRows({
     requests: overview.requestItems.value, requestTotal: overview.requests.data?.total ?? 0,
+    visits: { awaiting: visits.state.newest, awaitingTotal: visits.state.count, reviews: visits.state.reviews },
     reviewTotal: review.total, conflicts: deferred.value.state === 'ready' ? conflicts.value : 0,
   }))
   const done = computed(() => todayNotices(notices.value.value, now()))
@@ -79,7 +83,8 @@ export function useTodayData(spaceId: Ref<string>, projects: Ref<PersonalProject
   const working = computed(() => workingRows(overview.taskItems.value, team.sheets.value))
 
   const settled = computed<Record<TodaySection, boolean>>(() => ({
-    decisions: Boolean(overview.requests.data || overview.requests.error) && (review.loaded || Boolean(review.error)) && deferred.value.state !== 'loading',
+    decisions: Boolean(overview.requests.data || overview.requests.error) && (review.loaded || Boolean(review.error)) && deferred.value.state !== 'loading'
+      && visits.state.status !== 'loading',
     done: notices.value.state !== 'loading',
     statement: statement.value.state !== 'loading',
     working: Boolean(overview.tasks.data || overview.tasks.error) && team.state.value !== 'loading',
@@ -103,7 +108,7 @@ export function useTodayData(spaceId: Ref<string>, projects: Ref<PersonalProject
 
   function reload() {
     return Promise.all([overview.loadTasks(), overview.loadRequests(), overview.loadNames(), review.refresh(), team.reload(),
-      loadDeferred(), loadNotices(), loadStatement()])
+      loadDeferred(), loadNotices(), loadStatement(), visits.load()])
   }
   return { overview, team, decisions, done, statement, tiles, total, working, shown, pending, reload }
 }

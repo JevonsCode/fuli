@@ -415,8 +415,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       remoteRemovalPending: Boolean(store().setting('pendingLeave')),
       role: membership?.role ?? null,
       device: device ? { fingerprint: device.fingerprint, shortFingerprint: shortFingerprint(device.fingerprint) } : null,
+      // The full fingerprint names the coordinator as a requester ('peer:<fingerprint>') on a member.
       coordinator: membership ? { name: membership.coordinator.name, url: membership.coordinator.url,
-        shortFingerprint: shortFingerprint(membership.coordinator.fingerprint), listening: Boolean(coordinator),
+        fingerprint: membership.coordinator.fingerprint, shortFingerprint: shortFingerprint(membership.coordinator.fingerprint), listening: Boolean(coordinator),
         listenFailure: membership.role === 'coordinator' && !coordinator ? listenFailure : null } : null,
       addresses: localAddresses(),
       devices: devices.map((entry) => ({ ...entry, shortFingerprint: shortFingerprint(entry.nodeId) })),

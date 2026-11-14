@@ -65,7 +65,7 @@ usePageRefresh(today.reload)
     <div v-else class="today-board" :class="{ 'has-statement': hasStatement }">
       <TodayStatement v-if="hasStatement" :statement="today.statement.value.value!" :total="today.total.value" :tiles="today.tiles.value" />
       <div class="today-feed" data-today-feed>
-      <TodayDecisions v-if="shows('decisions')" :rows="today.decisions.value.rows" :more="today.decisions.value.more" :agent-name="overview.agentName" />
+      <TodayDecisions v-if="shows('decisions')" :rows="today.decisions.value.rows" :more="today.decisions.value.more" :visits="today.decisions.value.visits" :agent-name="overview.agentName" />
       <TodaySection v-if="shows('done')" :title="t('today.sections.done')" data-today-section="done">
         <template #action>
           <Button as-child variant="ghost" size="sm"><RouterLink to="/workbench/notices" data-today-action="done">{{ t('today.actions.earlier') }}</RouterLink></Button>
