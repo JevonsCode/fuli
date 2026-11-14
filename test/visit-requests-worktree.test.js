@@ -98,8 +98,9 @@ function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trus
   return { port, wakes, submit };
 }
 
+// Waits by the clock, not by a count of reads: a Windows CI runner needs more than 600 reads for a run with many Git steps.
 async function reviewed(port, id) {
-  for (let attempt = 0; attempt < 600; attempt += 1) {
+  for (const until = Date.now() + 45_000; Date.now() < until;) {
     const { request } = await port.requests.card(id);
     if (!['received', 'planning', 'approved', 'running'].includes(request.state)) return request;
     await delay(10);
