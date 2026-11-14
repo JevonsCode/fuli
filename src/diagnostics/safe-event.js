@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { isAbsolute, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { isControlledError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
@@ -34,6 +36,38 @@ export function errorCode(error) {
 // the fallback, since another error's message may carry a path, a prompt or a secret.
 export function failureReason(error, fallback) {
   return isControlledError(error) && typeof error.message === 'string' ? error.message : fallback;
+}
+
+// A failure record's reason. An error no caller handled (an Agent saw only
+// internal_error) keeps its message out, like failureReason, but names its
+// class, its cause's code and the first frame of FULI's own code that raised
+// it, relative to the install: enough to find the bug from the record alone
+// (rec#137), with no value the call carried.
+export function recordedFailureReason(error, fallback) {
+  if (isControlledError(error)) return failureReason(error, fallback);
+  const name = [error?.name].find(value => typeof value === 'string' && SAFE_CODE.test(value)) ?? 'unknown';
+  const cause = errorCode(error?.cause);
+  const site = failureSite(error);
+  return `${fallback} (${name}${cause ? `, cause ${cause}` : ''}${site ? ` at ${site}` : ''})`;
+}
+
+const INSTALL_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const OWN_CODE = /^(src|packages)\//;
+const STACK_FRAME = /^\s*at (?:.*\()?(.+?):(\d+):\d+\)?$/;
+
+// `src/…/module.js:LINE` of the innermost stack frame in FULI's own code, or null.
+function failureSite(error) {
+  const stack = typeof error?.stack === 'string' ? error.stack : '';
+  for (const line of stack.split('\n').slice(1)) {
+    const frame = STACK_FRAME.exec(line);
+    if (!frame) continue;
+    let file = frame[1];
+    try { if (file.startsWith('file://')) file = fileURLToPath(file); } catch { continue; }
+    if (!isAbsolute(file)) continue;
+    const own = relative(INSTALL_ROOT, file).split(sep).join('/');
+    if (OWN_CODE.test(own) && !own.includes('node_modules/')) return `${own}:${frame[2]}`;
+  }
+  return null;
 }
 
 // Text kept for an Agent to read: one line, URL credentials dropped and query

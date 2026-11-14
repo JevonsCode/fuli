@@ -132,7 +132,7 @@ test('only a controlled error\'s message reaches the HTTP and MCP writers; any o
     ['mcp', 'read_diagnostic_events', 'refused', 'not_found']
   ]);
   assert.deepEqual(events.map(({ reason }) => reason), ['HTTP 500: internal error',
-    'HTTP 400: limit must be a whole number', 'Tool execution failed', 'No such synthetic record']);
+    'HTTP 400: limit must be a whole number', 'Tool execution failed (TypeError)', 'No such synthetic record']);
   assert.equal(events[2].correlationId, 'synthetic-session');
   const text = JSON.stringify(events);
   assert.equal(text.includes('SYNTHETIC') || text.includes('SyntheticPass'), false);
