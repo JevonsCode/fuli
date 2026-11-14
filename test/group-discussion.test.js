@@ -141,6 +141,20 @@ test('a woken member loads only the MCP server of FULI where FULI can name it', 
   for (const call of woken) assert.deepEqual(call.mcpServers, call.client === 'claude_code' ? { fuli: entry } : null);
 });
 
+test('a member that falls back to its other client is given that client’s own entry or none', async t => {
+  const entry = { command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] };
+  // Claude Code is not installed here, so every turn runs in Codex, whose entry FULI cannot name.
+  const unnamed = fixture({ fuliMcp: client => (client === 'claude_code' ? entry : null), clientAvailable: client => client === 'codex' });
+  t.after(() => unnamed.roundtable.close());
+  assert.equal((await unnamed.settle((await unnamed.start('flg-codex', ['dev'])).chatId)).status, 'concluded');
+  assert.ok(unnamed.woken.length && unnamed.woken.every(call => call.client === 'codex' && call.mcpServers === null));
+  const named = fixture({ fuliMcp: () => entry, clientAvailable: client => client === 'codex' });
+  t.after(() => named.roundtable.close());
+  assert.equal((await named.settle((await named.start('flg-codex-2', ['dev'])).chatId)).status, 'concluded');
+  assert.ok(named.woken.length && named.woken.every(call => call.client === 'codex'));
+  for (const call of named.woken) assert.deepEqual(call.mcpServers, { fuli: entry });
+});
+
 test('the response rounds stop at the cap of two', async t => {
   const { roundtable, woken, start, call, settle } = fixture();
   t.after(() => roundtable.close());

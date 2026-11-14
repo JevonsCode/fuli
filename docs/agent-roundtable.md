@@ -324,7 +324,11 @@ such an ask fails safely (`delegation_not_redeemed`) instead of loading the
 person's other servers. A group discussion turn, whose text comes from the
 person's own Agents, loads only FULI's own server too where FULI can name that
 entry, and keeps the client's own servers where it cannot, so a discussion
-never fails for the lack of it.
+never fails for the lack of it. The entry is the one FULI's installer writes,
+with the chat tool profile whichever profile the person's own entry names.
+Claude Code's side is checked against the real CLI; whether Codex's
+`-c mcp_servers={…}` override replaces the person's table or merges with it
+is not verified yet, so on Codex the person's other servers may remain.
 
 After the run FULI works on the worktree only with its Git directory and work
 tree named explicitly (never discovered from files the run left), without the
