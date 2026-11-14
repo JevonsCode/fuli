@@ -36,14 +36,21 @@ function tools(imageVersion, calls) {
 
 // starts/stops: each controller start/stop answers ok or not, in order (then ok).
 // newerData: what the previous version reads about the data after the new one ran.
-function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerData = null, startsHeld = true } = {}) {
+// held: each wait for the console start lock gets it (true) or not (false), in order (then true).
+// autostartUnderWay: an Agent session's automatic start is bringing a console up
+// when the update begins; it records that console once it finishes, which the
+// start lock waits for.
+function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerData = null, held = [],
+  autostartUnderWay = false } = {}) {
   const root = applications(t);
   const app = join(root, 'Applications', 'FULI.app');
   const packageRoot = bundle(app, '0.23.0');
   const calls = [];
   let errors = 0;
+  let autostart = autostartUnderWay ? 'starting' : null;
   const controller = async (root, action) => {
     calls.push(['controller', action, versionOf(dirname(dirname(dirname(root))))]);
+    if (action === 'stop' && autostart === 'recorded') { autostart = null; calls.push(['stopped the automatic start\'s console']); }
     const ok = (action === 'start' ? starts : stops).shift() ?? true;
     errors += ok ? 0 : 1;
     return ok ? { ok: true, status: action === 'start' ? 'running' : 'stopped' }
@@ -56,10 +63,12 @@ function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerD
     dataNewer: dataDir => { calls.push(['dataNewer', dataDir]); return newerData; },
     holdStarts: dataDir => {
       calls.push(['holdStarts', dataDir]);
-      if (!startsHeld) throw new Error('Another FULI process holds this lock');
+      if (!(held.shift() ?? true)) throw new Error('Another FULI process holds this lock');
+      if (autostart === 'starting') autostart = 'recorded';
       return () => calls.push(['releaseStarts']);
     } };
-  return { app, packageRoot, calls, deps, aside: name => join(dirname(app), `.FULI.app.${name}`) };
+  return { app, packageRoot, calls, deps, aside: name => join(dirname(app), `.FULI.app.${name}`),
+    autostartRunning: () => autostart !== null };
 }
 
 const lifecycle = calls => calls.filter(([kind]) => ['controller', 'client', 'dataNewer', 'holdStarts', 'releaseStarts'].includes(kind));
@@ -74,11 +83,33 @@ test('the app downloads its image, swaps FULI.app for the new one, starts it and
   assert.deepEqual(steps, ['preparing', 'restarting']);
   assert.equal(calls.filter(([kind]) => kind === 'ditto').length, 1);
   assert.deepEqual(calls.filter(([kind]) => !['hdiutil', 'xattr', 'ditto'].includes(kind)), [
-    ['download', 'fuli-macos-arm64-0.24.0.dmg'], ['client', 'close'], ['controller', 'stop', '0.23.0'], ['controller', 'start', '0.24.0'],
+    ['download', 'fuli-macos-arm64-0.24.0.dmg'], ['client', 'close'],
+    ['holdStarts', '/data'], ['controller', 'stop', '0.23.0'], ['releaseStarts'], ['controller', 'start', '0.24.0'],
     ['cli', 'setup --yes --connected-only', '0.24.0'], ['client', 'open']
   ]);
   assert.equal(existsSync(join(dirname(app), '.FULI.app.previous')), false, 'the previous bundle is removed once the new one runs');
   assert.equal(existsSync(join(dirname(app), '.FULI.app.update')), false);
+});
+
+test('an automatic start under way when the update stops FULI is waited for, and the console it recorded is stopped before the swap', async t => {
+  const { app, packageRoot, calls, deps, autostartRunning } = setup(t, { autostartUnderWay: true });
+  await updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, deps);
+  assert.equal(versionOf(app), '0.24.0');
+  assert.equal(autostartRunning(), false, 'no console from the old bundle survives the swap');
+  assert.deepEqual(calls.filter(([kind]) => !['download', 'hdiutil', 'xattr', 'ditto', 'cli'].includes(kind)), [
+    ['client', 'close'], ['holdStarts', '/data'], ['controller', 'stop', '0.23.0'], ['stopped the automatic start\'s console'],
+    ['releaseStarts'], ['controller', 'start', '0.24.0'], ['client', 'open']
+  ]);
+});
+
+test('a start that never lets go of the start lock ends the update before anything is moved', async t => {
+  const { app, packageRoot, calls, deps, aside } = setup(t, { held: [false] });
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, deps),
+    error => error.code === undefined && /^Another start of FULI did not finish, so FULI was not stopped for the update; nothing was changed\./.test(error.message));
+  assert.equal(versionOf(app), '0.23.0');
+  assert.equal(existsSync(aside('previous')), false);
+  assert.equal(existsSync(aside('update')), false);
+  assert.deepEqual(lifecycle(calls), [['client', 'close'], ['holdStarts', '/data'], ['client', 'open']]);
 });
 
 test('a new version that does not start is swapped back and the previous one started again', async t => {
@@ -88,7 +119,7 @@ test('a new version that does not start is swapped back and the previous one sta
       && error.message === 'v0.24.0 did not start (start error 1 second line); the previous version was restored and started again.');
   assert.equal(versionOf(app), '0.23.0');
   assert.deepEqual(lifecycle(calls).slice(1), [
-    ['controller', 'stop', '0.23.0'], ['controller', 'start', '0.24.0'],
+    ['holdStarts', '/data'], ['controller', 'stop', '0.23.0'], ['releaseStarts'], ['controller', 'start', '0.24.0'],
     ['holdStarts', '/data'], ['controller', 'stop', '0.24.0'], ['releaseStarts'], ['dataNewer', '/data'],
     ['controller', 'start', '0.23.0'], ['client', 'open']
   ]);
@@ -109,7 +140,7 @@ test('a new version that would not stop is left in place: nothing is moved or de
 });
 
 test('a start still under way elsewhere keeps the new version in place and stops nothing', async t => {
-  const { app, packageRoot, calls, deps } = setup(t, { starts: [false], startsHeld: false });
+  const { app, packageRoot, calls, deps } = setup(t, { starts: [false], held: [true, false] });
   await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, deps),
     error => error.code === 'kept_new_version' && /another start of FULI did not finish/.test(error.message));
   assert.equal(versionOf(app), '0.24.0');

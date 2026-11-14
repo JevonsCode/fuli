@@ -66,14 +66,25 @@ export async function updateMacosAppFromRelease({ packageRoot, dataDir, version,
 
     progress('restarting');
     const clientWasRunning = await client.close(app);
-    const stopped = await controller(packageRoot, 'stop', env);
-    if (!stopped.ok) {
+    // A stop sees only a console a finished start recorded, so it runs once no
+    // start (an Agent session's automatic one) is under way, and the bundles
+    // are swapped before any start may begin: none runs from the old bundle
+    // after its stop. The new version's own start takes the lock itself.
+    let release;
+    try { release = holdStarts(dataDir); } catch (error) {
       if (clientWasRunning) client.open(app);
-      throw new Error(`FULI did not stop before the update; nothing was changed. ${stopped.error ?? ''}`.trim());
+      throw new Error(`Another start of FULI did not finish, so FULI was not stopped for the update; nothing was changed. ${singleLine(error?.message ?? error)}`);
     }
-    rmSync(previous, { recursive: true, force: true });
-    rmSync(failed, { recursive: true, force: true });
-    swap(app, staged, previous);
+    try {
+      const stopped = await controller(packageRoot, 'stop', env);
+      if (!stopped.ok) {
+        if (clientWasRunning) client.open(app);
+        throw new Error(`FULI did not stop before the update; nothing was changed. ${stopped.error ?? ''}`.trim());
+      }
+      rmSync(previous, { recursive: true, force: true });
+      rmSync(failed, { recursive: true, force: true });
+      swap(app, staged, previous);
+    } finally { release(); }
     const started = await controller(bundleRoot(app), 'start', env);
     if (!started.ok) {
       const recovered = await recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts });
