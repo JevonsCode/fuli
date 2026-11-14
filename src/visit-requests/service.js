@@ -442,13 +442,18 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // ---- a requester's mode, trust and shares ----
 
   // Inside the port's transaction that changes the mode (port.setRequesterMode):
-  // ask_only ends every request of that requester that has not finished;
-  // plan returns what a rule approved and has not started to the owner.
-  // Raising the mode approves nothing that is already waiting.
+  // ask_only ends every request of that requester that has not finished. A
+  // rule's approval holds only under the mode it was made in (auto or
+  // trusted) or trusted: any other mode returns what a rule approved and has
+  // not started to the owner (trusted lowered to auto included, since no auto
+  // check was made). A queued run reads the state before it starts, so it
+  // does not start. A running request goes on, reviewed by the mode it was
+  // approved in. Raising the mode approves nothing that is already waiting.
   function modeChanged(requesterKey, mode, note = `mode_${mode}`) {
     if (mode === 'ask_only') return endOpen(records.inStates(records.OPEN_STATES, { requesterKey }), note);
-    if (mode !== 'plan') return { cancelled: [], returned: [] };
-    const returned = records.inStates(['approved'], { requesterKey }).filter((request) => request.decidedBy === 'rule')
+    if (mode === 'trusted') return { cancelled: [], returned: [] };
+    const returned = records.inStates(['approved'], { requesterKey })
+      .filter((request) => request.decidedBy === 'rule' && request.modeAtDecision !== mode)
       .map((request) => records.move(request.id, { from: 'approved', to: 'awaiting_owner', by: 'owner',
         fields: { decidedBy: null, modeAtDecision: null }, note, at: at() })).filter(Boolean).map((request) => request.id);
     return { cancelled: [], returned };

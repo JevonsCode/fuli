@@ -1,8 +1,9 @@
-import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { captureSettingsUrl, taskAgentReceipt, withReceiptLines } from '../agents/identity-receipt.js';
 import { requiredBinding, requiredString } from '../validation/values.js';
 import { taskAgentIdentity } from './agent-conversations.js';
 import { captureDecision, captureSettingsVersion, taskCaptureScope } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
+import { storedHabitsLine } from './turn-receipt-delivery.js';
 
 // "这次别记" / "继续记" (rec#5 C3, C4-3): an Agent pauses or resumes automatic
 // recording of the session it works in, on the person's word and without a
@@ -31,9 +32,11 @@ export async function setSessionCapturePause(application, { taskContextToken, se
   return { status: !state ? 'unsaved' : sessionPaused ? 'session_paused' : 'session_resumed',
     paused: state ? state.paused : decision.reason === 'session_paused', since: state?.since ?? decision.since ?? null,
     captured: decision.allowed,
-    agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
+    // It replaces the entry receipt, so the first task of a new conversation keeps its habits line.
+    agent_receipt: withReceiptLines(taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId ?? null, ...await taskAgentIdentity(application, task),
       sourceApplication: task.sourceApplication, notices: receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }) }),
+    [storedHabitsLine(application, task)].filter(Boolean)),
     guidance: !state ? UNSAVED_GUIDANCE : sessionPaused ? PAUSED_GUIDANCE : RESUMED_GUIDANCE };
 }
 

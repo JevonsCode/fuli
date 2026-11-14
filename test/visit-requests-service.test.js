@@ -492,6 +492,75 @@ test('lowering to plan returns rule-approved requests that have not started; rai
   assert.equal(await f.state('request-2'), 'awaiting_owner', 'raising the mode approves nothing retroactively');
 });
 
+test('lowering trusted to auto returns a trusted rule approval whose run has not started', async (t) => {
+  const f = fixture(t);
+  // The run is about to start: it waits on the lead's confirmation.
+  let confirmed;
+  const confirm = f.leads.confirm;
+  f.leads.confirm = (options) => new Promise((resolve) => { confirmed = () => resolve(confirm(options)); });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'approved' && confirmed);
+  const changed = f.setMode('auto');
+  confirmed();
+  assert.deepEqual(changed.effects, { cancelled: [], returned: ['request-1'] });
+  await delay(20);
+  const { request, events } = await f.port.requests.card('request-1');
+  assert.deepEqual([request.state, request.decidedBy, request.modeAtDecision], ['awaiting_owner', null, null]);
+  assert.deepEqual(f.runner.calls.ran, [], 'nothing ran without the auto check');
+  assert.deepEqual([events.at(-1).from, events.at(-1).to, events.at(-1).note], ['approved', 'awaiting_owner', 'mode_auto']);
+});
+
+test('lowering trusted to auto keeps a queued trusted approval from starting; a running one goes on', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }) });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'approved');
+  const changed = f.setMode('auto');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: ['request-2'] });
+  release();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  await delay(20);
+  assert.equal(await f.state('request-2'), 'awaiting_owner');
+  assert.deepEqual(f.runner.calls.ran.map((run) => run.id), ['request-1'], 'the queued run did not start');
+});
+
+test('lowering trusted to auto leaves the owner\'s approval as it is', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }) });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.setMode('plan');
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_owner');
+  f.setMode('trusted');
+  assert.equal(f.port.requests.approve('request-2').ok, true);
+  const changed = f.setMode('auto');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: [] });
+  release();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  const { request } = await f.port.requests.card('request-2');
+  assert.deepEqual([request.decidedBy, request.modeAtDecision], ['owner', 'trusted']);
+});
+
+test('raising auto to trusted leaves a request waiting for the owner as it is', async (t) => {
+  const f = fixture(t, { plan: { ...SAFE_PLAN, network: true } });
+  f.setMode('auto');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  const changed = f.setMode('trusted');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: [] });
+  await delay(20);
+  assert.equal(await f.state('request-1'), 'awaiting_owner');
+  assert.deepEqual(f.runner.calls.ran, []);
+});
+
 test('revoking the paired device cancels its open requests and no other device\'s', async (t) => {
   const f = fixture(t);
   f.submit(ALPHA);
