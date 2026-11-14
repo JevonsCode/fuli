@@ -92,8 +92,15 @@ test('C10-3 "先不记录" records nothing, keeps reads, and every receipt says 
     assert.ok(receiptOf(entry.context).endsWith(` · ${RECORDING_OFF} · ${TURN_ON}`), receiptOf(entry.context));
     const checkpoint = await finishTask(f, entry.context);
     assert.equal(checkpoint.capture_status, 'capture_disabled');
-    assert.ok(receiptOf(checkpoint).includes(`记录已关闭；你明确提交的修改仍会保存 · ${TURN_ON}`));
+    assert.ok(receiptOf(checkpoint).endsWith(` · 这条习惯没有记下：记录已关闭 · ${TURN_ON}`), receiptOf(checkpoint));
   }
+  // A checkpoint that asked to keep no habit, or only a project fact, says what is true for it.
+  const finish = async (fields) => receiptOf(await callAgentTool(f.app, 'checkpoint_task_knowledge', {
+    taskContextToken: (await codexEntry(f, f.dirs.thesis)).context.taskContextToken, sourceApplication: 'codex',
+    reason: 'Finished a synthetic task.', workLog: { status: 'completed', summary: 'Did a synthetic task.' }, ...fields }));
+  assert.ok((await finish({ disposition: 'retain_nothing' })).endsWith(` · ${RECORDING_OFF} · ${TURN_ON}`));
+  assert.ok((await finish({ disposition: 'capture_candidates', remember: [{ kind: 'project_fact', text: 'The synthetic draft is due Friday.' }] }))
+    .endsWith(` · 要记住的内容没有记下：记录已关闭 · ${TURN_ON}`));
   assert.deepEqual(f.captureWrites(), []);
   const read = await callAgentTool(f.app, 'get_capture_policy', { projectPath: f.dirs.thesis, sourceApplication: 'codex' });
   assert.deepEqual([read.current.captured, read.current.reason], [false, 'global_off'], 'reading the settings still works');

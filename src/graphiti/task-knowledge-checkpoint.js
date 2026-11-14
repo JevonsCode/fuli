@@ -122,7 +122,8 @@ export async function checkpointTaskKnowledge(application, {
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
         roundtable: roundtableTurn(task.token),
-        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
+        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application),
+          unsavedRemember: decision.allowed ? null : remember }), ...await receiptFormatNotices(application, { taskId: task.token })],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };

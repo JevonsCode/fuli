@@ -138,7 +138,8 @@ project creation returns `capture_disabled`, nothing was stored: automatic recor
 `reason` is `global_off` or `client_off` when the user switched it off, `project_off` when the user
 does not record this project, `project_unregistered` when the work is outside every registered
 project and such work is not recorded, and `policy_unavailable` when FULI could not read the
-capture settings or resolve the project. The receipt already says so; copy it unchanged. Do not
+capture settings or resolve the project. The receipt already says so (for a refused `remember`,
+that the habit or item was not kept); copy it unchanged. Do not
 retry, do not create a fallback record elsewhere, and do not describe the skipped write as stored.
 Edits the user submits in the FULI console still save, and existing knowledge may still be queried.
 
