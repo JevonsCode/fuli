@@ -74,6 +74,16 @@ test('a blocked update names the processes, picked ones are passed on, and the c
   assert.deepEqual(events.at(-1), ['reopen', install.value.installRoot]);
 });
 
+test('a failed update keeps the reason code Update-Fuli reported, for the console page', async (t) => {
+  const install = installation(t);
+  const { deps } = steps({ record: install.record,
+    outcome: () => ({ status: 'failed', error: 'v0.13.0 did not start (synthetic); the new one was kept.', errorCode: 'kept_new_version' }) });
+  const error = await updateWindowsTrayFromRelease({ installation: install.value, version: '0.13.0' },
+    { ...deps, tempRoot: install.root }).then(() => assert.fail('failed'), (caught) => caught);
+  assert.equal(error.code, 'kept_new_version');
+  assert.equal(error.message, 'v0.13.0 did not start (synthetic); the new one was kept.');
+});
+
 test('a client that does not close stops the update before anything is installed; no client was open, none is opened', async (t) => {
   const install = installation(t);
   const busy = steps({ client: 'busy', record: install.record, outcome: () => assert.fail('nothing is installed') });

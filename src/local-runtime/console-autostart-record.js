@@ -29,6 +29,16 @@ export function acquireConsoleStartLock(dataDir, { waitMs = 0 } = {}) {
   return acquireFileLock(join(dataDir, START_LOCK_FILE), { waitMs });
 }
 
+// How long a start waits for another one to finish (Neo4j's first start is slow).
+export const CONSOLE_START_WAIT_MS = 5 * 60_000;
+
+// The start lock once a start under way has finished, so a stop that follows
+// sees the console it recorded and no start begins until release. An app
+// update holds it around its stop and switch.
+export function waitForConsoleStarts(dataDir) {
+  return acquireConsoleStartLock(dataDir, { waitMs: CONSOLE_START_WAIT_MS });
+}
+
 // The record, or { unreadable: true } for one this FULI does not read.
 export function readConsoleAutostart(dataDir) {
   const record = readJsonRecord(recordPath(dataDir), CONSOLE_AUTOSTART_FORMAT);

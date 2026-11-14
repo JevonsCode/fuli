@@ -41,7 +41,10 @@ export async function runWindowsUpdateCommand(args = [], dependencies = {}) {
     if (result.clients !== 'reconnected') write('客户端重新连接未完成；请检查后运行新版 setup。 / Client reconnection did not finish; inspect the installation and run setup from the new version.');
     return result;
   } catch (error) {
-    report({ status: 'failed', error: String(error?.message ?? error).split('\n')[0], ...(error?.blockers ? { blockers: error.blockers } : {}) });
+    // errorCode: the reason the console page names (failed-update-recovery.js, e.g. kept_new_version).
+    report({ status: 'failed', error: String(error?.message ?? error).split('\n')[0],
+      ...(typeof error?.code === 'string' && /^[a-z_]+$/.test(error.code) ? { errorCode: error.code } : {}),
+      ...(error?.blockers ? { blockers: error.blockers } : {}) });
     throw error;
   }
 }

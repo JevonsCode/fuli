@@ -5,9 +5,12 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { dataNewerThanThisPackage } from '../data-format/data-newer-than-package.js';
-import { acquireConsoleStartLock } from '../local-runtime/console-autostart-record.js';
+import { waitForConsoleStarts } from '../local-runtime/console-autostart-record.js';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
-import { singleLine } from '../text/single-line.js';
+import {
+  failedStartError, keepNewVersionOnNewerData, newVersionDidNotStop, previousVersionBlocked, reasonText,
+  startsBusyBeforeUpdate, startsStillRunning
+} from './failed-update-recovery.js';
 import { downloadVerifiedReleaseAsset, failure } from './release-asset.js';
 
 // The console's one-click update of FULI.app, the macOS twin of the Windows
@@ -35,8 +38,6 @@ const OPEN = '/usr/bin/open';
 const PS = '/bin/ps';
 const CONTROLLER_TIMEOUT_MS = 10 * 60_000;
 const CLIENT_EXIT_TIMEOUT_MS = 15_000;
-// How long a rollback waits for a start under way to finish (a start's own wait, lifecycle.js).
-const START_SETTLE_MS = 5 * 60_000;
 
 export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
 
@@ -45,7 +46,7 @@ export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dm
 export async function updateMacosAppFromRelease({ packageRoot, dataDir, version, progress = () => {} }, {
   download = downloadVerifiedReleaseAsset, runCommand = run, controller = runController, cli = runCli,
   client = macosDesktopClient, readBundle = readMacosNativeBundle, tempRoot = tmpdir(), env = process.env,
-  dataNewer = dataNewerThanThisPackage, holdStarts = dataDir => acquireConsoleStartLock(dataDir, { waitMs: START_SETTLE_MS })
+  dataNewer = dataNewerThanThisPackage, holdStarts = waitForConsoleStarts
 } = {}) {
   const app = installedApp(packageRoot);
   const { arch } = readBundle(packageRoot);
@@ -73,7 +74,7 @@ export async function updateMacosAppFromRelease({ packageRoot, dataDir, version,
     let release;
     try { release = holdStarts(dataDir); } catch (error) {
       if (clientWasRunning) client.open(app);
-      throw new Error(`Another start of FULI did not finish, so FULI was not stopped for the update; nothing was changed. ${singleLine(error?.message ?? error)}`);
+      throw startsBusyBeforeUpdate(error);
     }
     try {
       const stopped = await controller(packageRoot, 'stop', env);
@@ -90,8 +91,7 @@ export async function updateMacosAppFromRelease({ packageRoot, dataDir, version,
       const recovered = await recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts });
       if (!recovered.ok) {
         if (clientWasRunning) client.open(app);
-        throw failure(`v${version} did not start (${singleLine(started.error ?? 'no reason given')}); ${recovered.outcome}`,
-          recovered.code);
+        throw failedStartError(version, started.error, recovered);
       }
     }
     // The clients' MCP entries name paths inside FULI.app, which stay the same;
@@ -180,36 +180,25 @@ async function recover({ app, previous, failed, dataDir, env, controller, dataNe
   // one up, so the stop runs once no start is under way and none can begin;
   // the stop's own record keeps automatic starts away afterwards.
   let release;
-  try { release = holdStarts(dataDir); } catch (error) {
-    return { ok: false, code: 'kept_new_version',
-      outcome: `another start of FULI did not finish, so it was left installed and nothing was switched back (${singleLine(error?.message ?? error)}).` };
-  }
+  try { release = holdStarts(dataDir); } catch (error) { return startsStillRunning(error); }
   let stopped;
   try { stopped = await controller(bundleRoot(app), 'stop', env); } finally { release(); }
-  if (!stopped.ok) {
-    return { ok: false, code: 'kept_new_version',
-      outcome: `it did not stop either, so it was left installed and nothing was switched back (${singleLine(stopped.error ?? 'no reason given')}).` };
-  }
-  let newer;
-  try { newer = dataNewer(dataDir); } catch (error) { newer = `its data could not be checked: ${singleLine(error?.message ?? error)}`; }
-  if (newer) {
-    const retried = await controller(bundleRoot(app), 'start', env);
-    if (retried.ok) return { ok: true };
-    return { ok: false, code: 'kept_new_version',
-      outcome: `the previous version cannot run on this data (${newer}), so the new one was kept; started again, it did not run (${singleLine(retried.error ?? 'no reason given')}).` };
-  }
+  if (!stopped.ok) return newVersionDidNotStop(stopped.error);
+  const kept = await keepNewVersionOnNewerData(previousVersionBlocked(() => dataNewer(dataDir)),
+    () => controller(bundleRoot(app), 'start', env));
+  if (kept) return kept;
   try {
     renameSync(app, failed);
     renameSync(previous, app);
   } catch (error) {
     try { if (!existsSync(app) && existsSync(failed)) renameSync(failed, app); } catch { /* the message below names the first failure */ }
     return { ok: false, code: 'rollback_failed',
-      outcome: `switching back to the previous version failed, so the new one stays (${singleLine(error?.message ?? error)}).` };
+      outcome: `switching back to the previous version failed, so the new one stays (${reasonText(error?.message ?? error)}).` };
   }
   const restarted = await controller(bundleRoot(app), 'start', env);
   if (!restarted.ok) {
     return { ok: false, code: 'rollback_failed',
-      outcome: `the previous version was restored but did not start either (${singleLine(restarted.error ?? 'no reason given')}).` };
+      outcome: `the previous version was restored but did not start either (${reasonText(restarted.error)}).` };
   }
   rmSync(failed, { recursive: true, force: true });
   return { ok: false, code: 'start_failed', outcome: 'the previous version was restored and started again.' };

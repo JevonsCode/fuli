@@ -19,6 +19,7 @@ import { isProcessAlive, stopProcess, waitForExit } from './processes.js';
 import { CONSOLE_STOP_LIMITS, consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from './unresponsive-console.js';
 import {
   acquireConsoleStartLock,
+  CONSOLE_START_WAIT_MS,
   readConsoleAutostart,
   recordPersonStart,
   recordPersonStop
@@ -30,8 +31,6 @@ const STOPPING_CONSOLE_GRACE_MS = 3_000;
 // console busy for a few seconds is still the one to stop, and an answer
 // missed here leaves it running (Update-Fuli: "could not be stopped").
 const STOP_IDENTITY_TIMEOUT_MS = 10_000;
-// A start waits this long for another one to finish (Neo4j's first start is slow).
-const START_LOCK_WAIT_MS = 5 * 60_000;
 
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
@@ -328,7 +327,7 @@ function dataDirOf(paths) {
 function lockConsoleStart(dataDir) {
   if (!dataDir || !existsSync(dataDir)) return () => {};
   try {
-    return acquireConsoleStartLock(dataDir, { waitMs: START_LOCK_WAIT_MS });
+    return acquireConsoleStartLock(dataDir, { waitMs: CONSOLE_START_WAIT_MS });
   } catch (error) {
     if (error?.code !== 'file_lock_busy') throw error;
     throw new Error('Another FULI start is still running for this data directory; try again when it has finished.');

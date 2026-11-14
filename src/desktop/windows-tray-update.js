@@ -39,7 +39,7 @@ export async function updateWindowsTrayFromRelease({ installation, version, stop
     // ('reconnected' or 'not_reconnected'); the console's doctor reads it from the journal.
     if (result?.status === 'updated') return { status: 'updated', version: result.applicationVersion, clients: result.clients ?? null };
     throw Object.assign(new Error(result?.error ?? `The update ended without an outcome (exit ${code}); nothing was reported.`),
-      result?.blockers ? { blockers: result.blockers } : {});
+      typeof result?.errorCode === 'string' ? { code: result.errorCode } : {}, result?.blockers ? { blockers: result.blockers } : {});
   } finally {
     // The client of the version installed now: the new one, or the kept one after a rollback.
     if (clientWasRunning) desktopClient.reopen(installation.installRoot);
