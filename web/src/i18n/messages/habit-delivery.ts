@@ -11,7 +11,7 @@ export const habitDeliveryMessages = {
   },
   'en-US': {
     title: 'Habits given to the assistant',
-    header: 'The {count} habits FULI gave the assistant when this conversation started',
+    header: 'Habits FULI handed over when this conversation started: {count}',
     footnote: 'FULI knows it handed these over; whether they were followed shows in the reply.',
     deleted: 'This one was deleted later',
     expired: 'This record has expired or does not exist.',
