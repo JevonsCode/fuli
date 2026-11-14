@@ -323,19 +323,30 @@ test('per project, per computer and planning at once are limits too, in the same
   assert.deepEqual(f.submit(keys[12], DRAFT, 'one-more-project'), { ok: false, code: 'computer_budget_exceeded' });
 });
 
-test('a fully trusted computer may ask twenty times a day and is not held to the per-project count', async (t) => {
-  const f = fixture(t);
+test('a fully trusted computer is held to no daily count or wake minutes, only to ten open at once', async (t) => {
+  // Each run takes thirteen minutes: twenty-five of them are far past sixty wake minutes and every daily count.
+  const f = fixture(t, { result: { ms: 13 * 60 * 1000 } });
   f.setMode('trusted');
-  for (let index = 1; index <= 20; index += 1) {
+  for (let index = 1; index <= 25; index += 1) {
     assert.equal(f.submit().ok, true, String(index));
     await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
-    // Results waiting for a look are open requests (ten at most), so the owner looks at each.
     assert.equal((await f.port.requests.discard(`request-${index}`)).ok, true);
   }
-  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'the twenty-first');
-  // Another computer, in the default mode, is still held to the project's ten a day.
-  assert.deepEqual(f.submit(BETA), { ok: false, code: 'project_budget_exceeded' });
-  // Taking the trust back brings the computer's own five a day back at once.
+  // Its requests are the owner's own: another computer still has the project's ten and its own five.
+  for (let index = 26; index <= 30; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' }, 'five a day for a computer in the default mode');
+  // Ten unlooked-at results stop a trusted computer until the owner has looked: a requester stuck in a loop ends here.
+  for (let index = 32; index <= 41; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
+  }
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'ten open');
+  assert.equal((await f.port.requests.discard('request-32')).ok, true);
+  assert.equal(f.submit().ok, true, 'one looked at, one more taken');
+  // Taking the trust back applies the five a day at once.
   f.setMode('plan');
   assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' });
 });
@@ -361,19 +372,45 @@ test('a request that failed here before its run started is not one of the reques
   assert.deepEqual(f.submit(BETA, DRAFT, 'other-project'), { ok: false, code: 'budget_exceeded' });
 });
 
+test('a fully trusted computer whose runs keep failing is stopped at ten of them in a day', async (t) => {
+  // A requester stuck in a loop of work that cannot finish: every run fails, so nothing ever waits for the owner.
+  const f = fixture(t, { failWith: Object.assign(new Error('client'), { code: 'client_exit_nonzero', ms: 60 * 1000 }) });
+  f.setMode('trusted');
+  for (let index = 1; index <= 10; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'ten failed runs of the day');
+  assert.equal(f.runner.calls.ran.length, 10, 'the eleventh ran nothing');
+  // Another computer is not held back by them.
+  assert.equal(f.submit(BETA).ok, true);
+});
+
+test('a trusted computer\u2019s requests that failed here without any wake are not part of its stop', async (t) => {
+  const f = fixture(t);
+  const folder = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+  f.setMode('trusted');
+  for (let index = 1; index <= 12; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  f.runner.folder = folder;
+  assert.equal(f.submit().ok, true, 'the folder is put right and work goes on');
+});
+
 test('a Git step that fails after the run is counted, and so are its wake minutes', async (t) => {
   // The commit or the reading of the changes failing after the client ran: the requester's edit can cause it.
-  const f = fixture(t, { failWith: Object.assign(new Error('git'), { code: 'git_failed', summary: 'synthetic', ms: 13 * 60 * 1000 }) });
-  f.setMode('trusted', BETA);
+  const f = fixture(t, { failWith: Object.assign(new Error('git'), { code: 'git_failed', summary: 'synthetic', ms: 60 * 1000 }) });
   for (let index = 1; index <= 5; index += 1) {
     assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_owner');
+    f.port.requests.approve(`request-${index}`);
     await settled(async () => await f.state(`request-${index}`) === 'failed');
   }
   const { request } = await f.port.requests.card('request-5');
-  assert.deepEqual([request.error, request.runMs], ['git_failed', 13 * 60 * 1000]);
-  // Five runs of thirteen minutes: the sixth is inside the trusted count of twenty, but the day's sixty wake minutes are used.
-  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
-  f.setMode('plan', BETA);
+  assert.deepEqual([request.error, request.runMs], ['git_failed', 60 * 1000]);
+  // Five minutes of wakes in all: it is the count of five that refuses the sixth, so each failed run was counted.
   assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
 });
 
@@ -391,8 +428,9 @@ test('a run that started and failed is still one of the requester’s requests o
 
 test('the wake minutes of a day are a budget too', async (t) => {
   const f = fixture(t, { result: { ms: 61 * 60 * 1000 } });
-  f.setMode('trusted');
   f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  f.port.requests.approve('request-1');
   await settled(async () => await f.state('request-1') === 'awaiting_review');
   assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' });
 });

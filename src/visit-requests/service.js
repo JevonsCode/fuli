@@ -28,12 +28,18 @@ const REVIEW_EXPIRY_MS = 14 * DAY_MS;
 // Per requester over the last 24 hours (open requests, results waiting for
 // review included, at any time); per shared project and for this whole
 // computer over the last 24 hours; and planning wakes at once. A computer
-// its owner marked fully trusted (Jevons 11-15) may ask 20 times a day and
-// is not held to the per-project count; the whole computer's count and the
-// wake minutes still hold. A request that failed here before its run
-// started (a folder that is no repository, a Git step) is not one of the
-// requester's requests of the day: nothing the requester did made it fail.
-export const VISIT_BUDGET = Object.freeze({ requestsPerDay: { peer: 5, trusted: 20, guest: 3 }, wakeMsPerDay: 60 * 60 * 1000, open: 10,
+// its owner marked fully trusted is the owner's own (Jevons 11-15): it is
+// held to no count of requests or wake minutes a day, and its requests are
+// not part of the project's or the computer's counts. What still holds for
+// it is one stop of ten, for a requester stuck in a loop: its requests that
+// are unfinished or not looked at yet, together with those of the last 24
+// hours that failed after costing a wake. At ten the next is refused, until
+// the owner has looked at some or the failures are a day old. Two planning
+// wakes at once and one run of a lead at a time hold for everyone.
+// A request that failed here before its run started (a folder that is no
+// repository, a Git step) is not one of the requester's requests of the
+// day: nothing the requester did made it fail.
+export const VISIT_BUDGET = Object.freeze({ requestsPerDay: { peer: 5, guest: 3 }, wakeMsPerDay: 60 * 60 * 1000, open: 10,
   projectPerDay: 10, computerPerDay: 20, planningAtOnce: 2 });
 // Past this many refusals of one requester in a day they are no longer written, so a flood stays bounded.
 const REFUSALS_KEPT_PER_DAY = 100;
@@ -102,9 +108,10 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
       const mode = source === 'guest' ? 'ask_only' : modeOf(requester.key);
       const usage = records.usage(requester.key, since);
       const trusted = mode === 'trusted';
-      const code = mode === 'ask_only' ? 'ask_only' : overBudget(usage, trusted ? 'trusted' : source) ? 'budget_exceeded'
+      const over = trusted ? usage.open + usage.spent >= VISIT_BUDGET.open : overBudget(usage, source);
+      const code = mode === 'ask_only' ? 'ask_only' : over ? 'budget_exceeded'
         : !trusted && records.acceptedSince(since, { projectId }) >= VISIT_BUDGET.projectPerDay ? 'project_budget_exceeded'
-          : records.acceptedSince(since) >= VISIT_BUDGET.computerPerDay ? 'computer_budget_exceeded'
+          : !trusted && records.acceptedSince(since) >= VISIT_BUDGET.computerPerDay ? 'computer_budget_exceeded'
             : records.count('planning') >= VISIT_BUDGET.planningAtOnce ? 'planning_busy' : null;
       if (code && usage.refused >= REFUSALS_KEPT_PER_DAY) return { code };
       records.insert({ id, requesterKey: requester.key, requesterLabel: requester.label, agentName: requester.agentName ?? null,
@@ -377,7 +384,9 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     work.add(tracked);
   }
 
+  // A fully trusted computer is held to no wake minutes.
   function wakeBudgetLeft(requesterKey) {
+    if (modeOf(requesterKey) === 'trusted') return true;
     return records.usage(requesterKey, new Date(now().getTime() - DAY_MS).toISOString()).wakeMs < VISIT_BUDGET.wakeMsPerDay;
   }
 
@@ -583,9 +592,8 @@ function failureReason(error) {
   return [...error.summary].slice(0, REASON_CHARS).join('') || null;
 }
 
-// kind: 'peer', 'guest', or 'trusted' for a computer in that mode.
-function overBudget(usage, kind) {
-  return usage.requests >= VISIT_BUDGET.requestsPerDay[kind] || usage.open >= VISIT_BUDGET.open
+function overBudget(usage, source) {
+  return usage.requests >= VISIT_BUDGET.requestsPerDay[source] || usage.open >= VISIT_BUDGET.open
     || usage.wakeMs >= VISIT_BUDGET.wakeMsPerDay;
 }
 

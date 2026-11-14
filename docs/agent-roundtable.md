@@ -381,13 +381,17 @@ discard answer it as `warning`.
 Budgets: per requester 5 requests a day (3 for a guest link, which takes none
 yet), 10 open (results waiting for review included), 60 minutes of planning and
 run wakes a day; per shared project 10 requests a day; per computer 20 a day;
-at most 2 planning wakes at once. A computer in the fully trusted mode may ask
-20 times a day and is not held to the per-project count; its requests still
-count towards the project's and the computer's, and the other limits hold. A
+at most 2 planning wakes at once. A computer in the fully trusted mode is the
+owner's own: it is held to no count of requests or wake minutes a day, and its
+requests are not part of the project's or the computer's counts. One stop of
+ten holds for it, against a requester stuck in a loop: its requests that are
+unfinished or not looked at yet, together with those of the last 24 hours that
+failed after costing a wake; at ten the next is refused. The two planning wakes
+at once and one run of a lead at a time hold for it as for everyone. A
 request that failed on this computer before its run started (`no_repository`,
 `git_failed`, `no_constrained_client`, `no_working_directory`) is not counted
-among the requester's requests of the day; it still counts for the project and
-the computer. A request over any of them is refused in the
+among the requester's requests of the day; from a requester that is not fully
+trusted it still counts for the project and the computer. A request over any of them is refused in the
 same transaction, before any run, and a request or a status read must also pass
 the visitor limits a card or search meets; status reads are also counted in
 memory (60 per requester in 10 minutes) and write nothing.

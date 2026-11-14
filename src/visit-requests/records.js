@@ -89,11 +89,12 @@ export function createVisitRecords(store) {
         .all().map(requestView);
     },
 
-    // Requests this computer took (not refused) since an ISO instant, of one project or of all.
+    // Requests this computer took (not refused) since an ISO instant, of one project or of all. Those
+    // received from a fully trusted computer are the owner's own and are not part of these counts.
     acceptedSince(since, { projectId = null } = {}) {
       if (!store.readable) return 0;
-      return db().prepare(`SELECT COUNT(*) AS count FROM visit_requests WHERE state <> 'refused' AND created_at > ?
-        AND (? IS NULL OR project_id = ?)`).get(since, projectId, projectId).count;
+      return db().prepare(`SELECT COUNT(*) AS count FROM visit_requests WHERE state <> 'refused' AND mode_at_receipt <> 'trusted'
+        AND created_at > ? AND (? IS NULL OR project_id = ?)`).get(since, projectId, projectId).count;
     },
 
     // What one requester used since an ISO instant: requests that were taken
@@ -101,16 +102,20 @@ export function createVisitRecords(store) {
     // this computer's side, NOT_STARTED_HERE), the ones still open, and the
     // minutes of wakes they cost. run_ms is 0 only when the client run never
     // began (the runner records at least 1 ms for any run that did).
+    // spent: the requester's requests since then that ended without a result
+    // after costing a wake (failed or lost track of, with planning or run
+    // time): what a requester stuck in a loop of failing work leaves behind.
     usage(requesterKey, since) {
-      if (!store.readable) return { requests: 0, open: 0, wakeMs: 0, refused: 0 };
+      if (!store.readable) return { requests: 0, open: 0, wakeMs: 0, refused: 0, spent: 0 };
       const row = db().prepare(`SELECT
           SUM(CASE WHEN state <> 'refused' AND NOT (state = 'failed' AND run_ms = 0 AND COALESCE(error, '') IN (${NOT_STARTED_HERE.map(() => '?').join(', ')}))
             AND created_at > ? THEN 1 ELSE 0 END) AS requests,
           SUM(CASE WHEN state IN (${HELD_OPEN_STATES.map(() => '?').join(', ')}) THEN 1 ELSE 0 END) AS open,
           SUM(CASE WHEN created_at > ? THEN planning_ms + run_ms ELSE 0 END) AS wake_ms,
-          SUM(CASE WHEN state = 'refused' AND created_at > ? THEN 1 ELSE 0 END) AS refused
-        FROM visit_requests WHERE requester_key = ?`).get(...NOT_STARTED_HERE, since, ...HELD_OPEN_STATES, since, since, requesterKey);
-      return { requests: row.requests ?? 0, open: row.open ?? 0, wakeMs: row.wake_ms ?? 0, refused: row.refused ?? 0 };
+          SUM(CASE WHEN state = 'refused' AND created_at > ? THEN 1 ELSE 0 END) AS refused,
+          SUM(CASE WHEN state IN ('failed', 'unknown') AND planning_ms + run_ms > 0 AND created_at > ? THEN 1 ELSE 0 END) AS spent
+        FROM visit_requests WHERE requester_key = ?`).get(...NOT_STARTED_HERE, since, ...HELD_OPEN_STATES, since, since, since, requesterKey);
+      return { requests: row.requests ?? 0, open: row.open ?? 0, wakeMs: row.wake_ms ?? 0, refused: row.refused ?? 0, spent: row.spent ?? 0 };
     }
   };
 }
