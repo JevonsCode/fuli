@@ -1,4 +1,5 @@
 import { lstat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 
 import { z } from 'zod';
 
@@ -37,15 +38,25 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   // The project folder a request is planned in and worked from: the share's
   // folder or the lead's known one, only when FULI maps it to the project, and
   // only inside a Git repository (no_repository), since the work is done in a
-  // worktree of it. FULI never looks for a repository below it.
+  // worktree of it. A workspace folder that is no repository itself but holds
+  // the project's checkout under the project's own name (which is how FULI
+  // maps such a folder to the project) stands for that checkout; FULI looks
+  // for a repository nowhere else below it.
   async function folder(request) {
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
-    await repositoryRoot({ folder: found, root }).catch((error) => {
-      throw error.summary === GIT_UNAVAILABLE ? error : coded('no_repository');
-    });
-    return found;
+    if (await inRepository(found)) return found;
+    const checkout = join(found, request.projectId);
+    if (dirname(checkout) === resolve(found) && await Promise.resolve(verifyFolder(checkout, request.projectId)).catch(() => false)
+      && await inRepository(checkout)) return checkout;
+    throw coded('no_repository');
   }
+
+  // Whether a folder is inside a Git repository; Git that cannot run at all is its own failure.
+  const inRepository = (candidate) => repositoryRoot({ folder: candidate, root }).then(() => true, (error) => {
+    if (error.summary === GIT_UNAVAILABLE) throw error;
+    return false;
+  });
 
   // Where the worktree and branch will be, recorded before they are made.
   const planned = (request) => plannedVisitWorktree({ root, id: request.id });

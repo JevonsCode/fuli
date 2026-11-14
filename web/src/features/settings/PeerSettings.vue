@@ -11,11 +11,12 @@ import { OptionSelect } from '@/components/ui/select'
 import UiNotice from '@/ui/UiNotice.vue'
 import PeerNearby from './PeerNearby.vue'
 import PeerSharePicker from './PeerSharePicker.vue'
-import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
+import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, shareSaveRefusal, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
 import { RECENT_READS, readAsker, readQuestion, visitorReadsShape, type VisitorRead } from './visitor-reads'
 import { formatRelativeTime } from '@/lib/relative-time'
 import RequesterModeSelect from '@/features/visit-requests/RequesterModeSelect.vue'
 import { VISIT_REQUESTS_PATH } from '@/features/visit-requests/useVisitPeek'
+import { useConsoleStore } from '@/stores/console'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -23,6 +24,7 @@ type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 // after a pairing, until its shares land (status.autoSharePending).
 const NEARBY_REFRESH_MS = 2_000
 
+const store = useConsoleStore()
 const status = ref<PeerStatus | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -213,10 +215,19 @@ function saveShares(kind = 'shares') {
       ...(draft.folder.trim() ? { workingDirectory: draft.folder.trim() } : {}),
     }]
   })
+  // The save button sits far below the card's own alert, so the outcome floats: what was saved, or why not.
   return run(kind, async () => {
-    const next = await putJson('/api/peer/shares', { shares }, peerStatusShape)
-    added.value = []
-    return next
+    try {
+      const next = await putJson('/api/peer/shares', { shares }, peerStatusShape)
+      added.value = []
+      store.notify(shares.length ? t('settings.peer.sharesSaved', { count: shares.length }) : t('settings.peer.sharesCleared'))
+      return next
+    } catch (caught) {
+      const refusal = shareSaveRefusal(caught)
+      store.reportError(new Error(t(`settings.peer.saveFailed.${refusal}`)))
+      // Saved here but not delivered: the card shows what is saved now.
+      if (refusal === 'share_not_published') return getJson('/api/peer', peerStatusShape).catch(() => undefined)
+    }
   })
 }
 

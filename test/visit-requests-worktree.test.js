@@ -69,10 +69,11 @@ function visitRoot(root) {
 }
 
 // onPlan(repository): runs while the request is being planned.
-function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {} } = {}) {
+// mapped: the folders FULI maps to the project (the lead's known folder alone by default).
+function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {}, mapped = [repository] } = {}) {
   const wakes = [];
   const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository,
-    verifyFolder: async (folder) => folder === repository,
+    verifyFolder: async (folder) => mapped.includes(folder),
     runClient: async (input) => {
       wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
       if (input.step === 'plan') {
@@ -520,6 +521,38 @@ test('a shared folder that is not a Git repository ends the request before any p
   assert.deepEqual(f.wakes, [], 'no planning wake was spent');
   const { events } = await f.port.requests.card(requestId);
   assert.ok(!events.some((event) => event.note === 'cleanup_failed'), 'nothing to clean up');
+});
+
+// The Mac of the first two-computer run: the lead works in a workspace folder
+// that holds the project's checkout under the project's own name.
+function workspaceWithCheckout(t, name) {
+  const owner = ownerRepository(t);
+  const workspace = join(owner.root, 'workspace');
+  mkdirSync(workspace);
+  renameSync(owner.repository, join(workspace, name));
+  return { root: owner.root, workspace, checkout: join(workspace, name) };
+}
+
+test('a workspace folder stands for the project checkout it holds under the project name', { timeout: 60_000 }, async (t) => {
+  const { root, workspace, checkout } = workspaceWithCheckout(t, 'synthetic-project');
+  const f = service(t, { root, repository: workspace }, (cwd) => writeFileSync(join(cwd, 'src', 'server.js'), 'const port = 4200;\n'),
+    { mapped: [workspace, checkout] });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error, request.projectFolder], ['awaiting_review', null, checkout]);
+  assert.equal(f.wakes[0].cwd, checkout, 'planned in the checkout, not the workspace');
+  assert.deepEqual(request.files.map((file) => file.path), ['src/server.js']);
+});
+
+test('a workspace folder is no repository when its checkout has another name or is not mapped to the project', { timeout: 60_000 }, async (t) => {
+  const other = workspaceWithCheckout(t, 'another-name');
+  const named = service(t, { root: other.root, repository: other.workspace }, () => assert.fail('nothing runs'),
+    { mapped: [other.workspace, other.checkout] });
+  assert.equal((await reviewed(named.port, named.submit().requestId)).error, 'no_repository');
+  const foreign = workspaceWithCheckout(t, 'synthetic-project');
+  const unmapped = service(t, { root: foreign.root, repository: foreign.workspace }, () => assert.fail('nothing runs'));
+  assert.equal((await reviewed(unmapped.port, unmapped.submit().requestId)).error, 'no_repository');
+  assert.deepEqual([...named.wakes, ...unmapped.wakes], [], 'no planning wake was spent');
 });
 
 test('a folder that stops being a repository after planning fails the run without a cleanup warning', { timeout: 60_000 }, async (t) => {

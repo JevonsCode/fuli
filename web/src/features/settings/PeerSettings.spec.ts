@@ -2,6 +2,7 @@ import { config, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { openCombobox, optionLabels, toggleOption } from '@/test-support/option-pickers'
+import { useConsoleStore } from '@/stores/console'
 import PeerSettings from './PeerSettings.vue'
 
 const off = {
@@ -43,7 +44,9 @@ function server(routes: Record<string, unknown[]>) {
     const queue = routes[key] ?? (key.startsWith('GET /api/peer/shareable') && !key.startsWith('GET /api/peer/shareable/') ? [noResults]
       : key === 'GET /api/visitor-access/requesters' ? [noModes] : undefined)
     if (!queue?.length) throw new Error(`Unexpected request ${key}`)
-    return json(queue.length > 1 ? queue.shift() : queue[0])
+    const answer = queue.length > 1 ? queue.shift() : queue[0]
+    // A Response is answered as it is (a refusal with its status).
+    return answer instanceof Response ? answer.clone() : json(answer)
   })
   vi.stubGlobal('fetch', fetch)
   const calls = (key: string) => fetch.mock.calls.filter(([url, init]) => `${init?.method ?? 'GET'} ${url.split('?')[0]}` === key)
@@ -472,4 +475,45 @@ it('reads 「最近被问」 again when the person comes back to the page', asyn
   window.dispatchEvent(new Event('focus'))
   await flushPromises()
   expect(calls('GET /api/visitor-access/reads')).toHaveLength(2)
+})
+
+// The save button is far below the card's own alert: the outcome floats (first two-computer run).
+it('floats what a save of the shares did, and why it was refused, instead of an alert at the top of the card', async () => {
+  const saved = { ...paired, shares: [sharedSample] }
+  server({ 'GET /api/peer': [saved], 'PUT /api/peer/shares': [
+    json({ error: 'invalid_folder', message: 'That folder does not belong to this project' }, 422),
+    json({ error: 'something_new', message: 'Not worded yet' }, 409),
+    saved,
+  ] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  const store = useConsoleStore()
+  await wrapper.get('.peer-shares input[type="text"]').setValue('/not/this/project')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(store.feedback).toEqual({ tone: 'error', message: '没保存：填的文件夹不存在，或不是这个项目的。请填这个项目仓库所在的目录。' })
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  expect((wrapper.get('.peer-shares input[type="text"]').element as HTMLInputElement).value).toBe('/not/this/project')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(store.feedback).toEqual({ tone: 'error', message: '没能保存共享，请再试一次。' })
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(store.feedback).toEqual({ tone: 'success', message: '已保存共享：1 个项目。' })
+  wrapper.unmount()
+})
+
+it('says a save reached this computer only, and shows what is saved now', async () => {
+  const before = { ...paired, shares: [sharedSample] }
+  const after = { ...paired, shares: [{ ...sharedSample, workingDirectory: '/synthetic/checkout' }] }
+  const { calls } = server({ 'GET /api/peer': [before, after], 'PUT /api/peer/shares': [
+    json({ error: 'share_not_published', message: 'Saved here, but the coordinator did not get the list' }, 502),
+  ] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(useConsoleStore().feedback).toEqual({ tone: 'error', message: '本机已保存，但对方电脑还没收到。FULI 每分钟会再试。' })
+  expect(calls('GET /api/peer')).toHaveLength(2)
+  wrapper.unmount()
 })
