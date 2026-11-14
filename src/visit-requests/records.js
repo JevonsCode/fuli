@@ -99,11 +99,12 @@ export function createVisitRecords(store) {
     // What one requester used since an ISO instant: requests that were taken
     // (not refused, and not failed before the run started for a reason on
     // this computer's side, NOT_STARTED_HERE), the ones still open, and the
-    // minutes of wakes they cost.
+    // minutes of wakes they cost. run_ms is 0 only when the client run never
+    // began (the runner records at least 1 ms for any run that did).
     usage(requesterKey, since) {
       if (!store.readable) return { requests: 0, open: 0, wakeMs: 0, refused: 0 };
       const row = db().prepare(`SELECT
-          SUM(CASE WHEN state <> 'refused' AND NOT (state = 'failed' AND run_ms = 0 AND error IN (${NOT_STARTED_HERE.map(() => '?').join(', ')}))
+          SUM(CASE WHEN state <> 'refused' AND NOT (state = 'failed' AND run_ms = 0 AND COALESCE(error, '') IN (${NOT_STARTED_HERE.map(() => '?').join(', ')}))
             AND created_at > ? THEN 1 ELSE 0 END) AS requests,
           SUM(CASE WHEN state IN (${HELD_OPEN_STATES.map(() => '?').join(', ')}) THEN 1 ELSE 0 END) AS open,
           SUM(CASE WHEN created_at > ? THEN planning_ms + run_ms ELSE 0 END) AS wake_ms,

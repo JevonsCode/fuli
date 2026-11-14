@@ -361,6 +361,22 @@ test('a request that failed here before its run started is not one of the reques
   assert.deepEqual(f.submit(BETA, DRAFT, 'other-project'), { ok: false, code: 'budget_exceeded' });
 });
 
+test('a Git step that fails after the run is counted, and so are its wake minutes', async (t) => {
+  // The commit or the reading of the changes failing after the client ran: the requester's edit can cause it.
+  const f = fixture(t, { failWith: Object.assign(new Error('git'), { code: 'git_failed', summary: 'synthetic', ms: 13 * 60 * 1000 }) });
+  f.setMode('trusted', BETA);
+  for (let index = 1; index <= 5; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  const { request } = await f.port.requests.card('request-5');
+  assert.deepEqual([request.error, request.runMs], ['git_failed', 13 * 60 * 1000]);
+  // Five runs of thirteen minutes: the sixth is inside the trusted count of twenty, but the day's sixty wake minutes are used.
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
+  f.setMode('plan', BETA);
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
+});
+
 test('a run that started and failed is still one of the requester’s requests of the day', async (t) => {
   const f = fixture(t, { failWith: Object.assign(new Error('client'), { code: 'client_exit_nonzero', ms: 0 }) });
   f.setMode('plan', BETA);
