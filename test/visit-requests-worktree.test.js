@@ -69,11 +69,14 @@ function visitRoot(root) {
 }
 
 // onPlan(repository): runs while the request is being planned.
+const realFolder = (folder) => { try { return realpathSync.native(folder); } catch { return null; } };
+
 // mapped: the folders FULI maps to the project (the lead's known folder alone by default).
 function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {}, mapped = [repository] } = {}) {
   const wakes = [];
   const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository,
-    verifyFolder: async (folder) => mapped.includes(folder),
+    // Git names a repository's top in its own spelling of the path: compared as real paths, as FULI's resolver does.
+    verifyFolder: async (folder) => mapped.map(realFolder).includes(realFolder(folder)),
     runClient: async (input) => {
       wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
       if (input.step === 'plan') {
@@ -560,13 +563,16 @@ test('a workspace inside a repository that is not the project’s still stands f
   const { root, workspace, checkout } = workspaceWithCheckout(t, 'synthetic-project');
   git(root, 'init', '-q', '-b', 'main', root);
   const request = { id: 'folder-1', agentId: 'synthetic-lead', projectId: 'synthetic-project' };
-  const real = (folder) => realpathSync.native(folder);
   const runner = (mapped, known) => createVisitRunner({ root: visitRoot(root), runClient: async () => ({}),
     // Git names the repository's top in its own spelling of the path (long names, /private/var): compared as real paths.
-    projectFolder: async () => known, verifyFolder: async (folder) => mapped.map(real).includes(real(folder)) });
+    projectFolder: async () => known, verifyFolder: async (folder) => mapped.map(realFolder).includes(realFolder(folder)) });
   assert.equal(await runner([workspace, checkout], workspace).folder(request), checkout, 'the outer repository is not the project’s');
   // A project that is a subfolder of someone else’s repository, with no checkout below it: as before this change.
   assert.equal(await runner([workspace], workspace).folder(request), workspace);
+  // A folder of the project’s name with no repository of its own, inside the outer one: not a checkout.
+  const bare = join(root, 'bare-workspace');
+  mkdirSync(join(bare, 'synthetic-project'), { recursive: true });
+  assert.equal(await runner([bare, join(bare, 'synthetic-project')], bare).folder(request), bare);
   // The project’s own repository holding a folder of its own name is not a workspace.
   mkdirSync(join(checkout, 'synthetic-project'));
   assert.equal(await runner([checkout, join(checkout, 'synthetic-project')], checkout).folder(request), checkout);

@@ -51,7 +51,11 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     const top = await repositoryTop(found);
     if (top && await mapped(top)) return found;
     const checkout = join(found, request.projectId);
-    if (dirname(checkout) === resolve(found) && await mapped(checkout) && await repositoryTop(checkout)) return checkout;
+    if (dirname(checkout) === resolve(found) && await mapped(checkout)) {
+      // The checkout's repository must be the project's too, not one further up that merely contains it.
+      const own = await repositoryTop(checkout);
+      if (own && await mapped(own)) return checkout;
+    }
     if (top) return found;
     throw coded('no_repository');
   }
