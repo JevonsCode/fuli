@@ -12,7 +12,8 @@ import { device, pair, remoteAddress } from './fixtures/peer-devices.js';
 const DRAFT = { title: 'Read the port from settings', what: 'The server should read its port from settings.json.',
   expectedAreas: ['src/server.js'] };
 
-function ownerRequests(calls) {
+// overrides: runner steps replaced for one test.
+function ownerRequests(calls, overrides = {}) {
   const runner = {
     folder: async () => '/synthetic/beta',
     planned: (request) => ({ worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}` }),
@@ -26,7 +27,8 @@ function ownerRequests(calls) {
     run: async () => ({ ms: 7, hold: null, summary: 'Reads the port from settings now.', intact: true, addedText: '+port',
       files: [{ path: 'src/server.js', added: 2, removed: 1 }], diffstat: { files: 1, added: 2, removed: 1 } }),
     patch: async () => ({ text: 'diff --git a/src/server.js b/src/server.js\n+SECRET-PATCH-LINE', truncated: false }),
-    remove: async () => {}
+    remove: async () => {},
+    ...overrides
   };
   return ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null } });
 }
@@ -95,6 +97,38 @@ test('a paired device\'s lead requests work; the owner decides; the requester re
       assert.equal(calls.prepared.length, 1);
     } finally { await alpha.close(); await beta.close(); }
   });
+
+test('the requester learns a folder that is no repository by its code, and never what Git said', { timeout: 60_000 }, async () => {
+  const calls = { prepared: [] };
+  let folders = 0;
+  const gitFailure = Object.assign(new Error('git'), { code: 'git_failed', summary: 'fatal: SECRET-GIT-LINE in [path]' });
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta', { search: async () => ({ facts: [], entities: [] }),
+    requests: ownerRequests(calls, {
+      // The first request's folder is no repository; the second's Git step fails once it runs.
+      folder: async () => { folders += 1; if (folders === 1) throw Object.assign(new Error('no'), { code: 'no_repository' }); return '/synthetic/beta'; },
+      prepare: async () => { throw gitFailure; }
+    }) })]);
+  try {
+    await pair(alpha, beta);
+    const address = await remoteAddress(alpha.app);
+    const owner = beta.app.visitorAccess.requests;
+    const alphaDevice = await loadDeviceIdentity(alpha.app.peer.directory);
+    beta.app.visitorAccess.setRequesterMode({ key: `peer:${alphaDevice.fingerprint}`, kind: 'peer', label: 'Alpha', mode: 'trusted',
+      ownDevice: true });
+
+    const first = (await visit(alpha.app, { address, action: 'request', request: DRAFT })).remote.requestId;
+    await until(async () => (await owner.card(first)).request.state === 'failed');
+    const noRepository = await visit(alpha.app, { address, action: 'request_status', requestId: first });
+    assert.deepEqual(noRepository.remote, { requestId: first, state: 'failed', title: DRAFT.title, reason: 'no_repository' });
+
+    const second = (await visit(alpha.app, { address, action: 'request', request: DRAFT })).remote.requestId;
+    await until(async () => (await owner.card(second)).request.state === 'failed');
+    assert.equal((await owner.card(second)).request.reason, 'fatal: SECRET-GIT-LINE in [path]', 'the owner reads the line Git wrote');
+    const gitFailed = await visit(alpha.app, { address, action: 'request_status', requestId: second });
+    assert.deepEqual(gitFailed.remote, { requestId: second, state: 'failed', title: DRAFT.title });
+    assert.ok(!JSON.stringify(gitFailed).includes('SECRET-GIT-LINE'), 'what Git said never crosses');
+  } finally { await alpha.close(); await beta.close(); }
+});
 
 test('a request is checked before it leaves: a draft past its bounds or a status without an id is refused here', async () => {
   const alpha = await device('alpha');

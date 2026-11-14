@@ -15,6 +15,7 @@ import { createVisitRecords } from './records.js';
 // FULI never merges or pushes, and the owner keeps or discards the branch.
 //
 //   received ─(ask_only / over a budget / busy)→ refused
+//   received → planning ─(no repository / no constrained client)→ failed
 //   received → planning → awaiting_owner ─approve→ approved
 //                       └(auto envelope / trusted)→ approved
 //   awaiting_owner ─decline→ declined | ─7 days→ expired | ─cancel→ cancelled
@@ -43,6 +44,10 @@ const SHOWN_FILES = 50;
 const SHOWN_PATH_CHARS = 200;
 // The lead has no client FULI can run constrained here (only Codex, for now): nothing could run the request.
 const NO_CLIENT = 'no_constrained_client';
+// The project's folder is inside no Git repository, so no worktree could be made: said before any planning wake.
+const NO_REPOSITORY = 'no_repository';
+// A Git step failed; its reason is a summary of Git's own message, for the owner only.
+const GIT_FAILED = 'git_failed';
 const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
 // The run's client process (runExit): not_started, running (its PID
 // recorded as it starts), ended, or unconfirmed: a stop whose end could not
@@ -112,29 +117,32 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   // The read-only planning pass in the owner's project folder, then the
   // decision the requester's mode makes. Nothing is copied before approval. A
-  // lead with no client FULI can run constrained here ends the request
-  // (failed, no_constrained_client), since nothing could run it.
+  // lead with no client FULI can run constrained here (no_constrained_client),
+  // or a project folder inside no Git repository (no_repository), ends the
+  // request (failed) before any wake, since nothing could run it; the code is
+  // its reason, which the requester reads too.
   async function planRequest(id) {
     const { signal, finish } = track(id);
     let planned;
-    let unrunnable = false;
+    let ended = null;
     try {
       const request = records.get(id);
       const [client] = await leads.constrainedClients({ agentId: request.agentId }).catch(() => []);
-      if (!client) unrunnable = true;
+      if (!client) ended = NO_CLIENT;
       else {
         records.update(id, { projectFolder: await runner.folder(request) }, at());
         planned = await runner.plan(records.get(id), { signal, client, lead: await leadOf(request) });
       }
     } catch (error) {
-      planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
+      if (error.code === NO_REPOSITORY) ended = NO_REPOSITORY;
+      else planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
     } finally { finish(); }
     const decided = store.transaction(() => {
       const current = records.get(id);
       if (current?.state !== 'planning') return current;
-      if (unrunnable) {
-        return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: { error: NO_CLIENT, reason: NO_CLIENT },
-          note: NO_CLIENT, at: at() });
+      if (ended) {
+        return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: { error: ended, reason: ended },
+          note: ended, at: at() });
       }
       records.update(id, { plan: planned.plan, planError: planned.error, planningMs: planned.ms }, at());
       return decide(records.get(id));
@@ -210,11 +218,12 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
       result = await runner.run(request, { signal, client, lead, onSpawn: (pid) => spawned(id, pid) });
     } catch (error) {
       const exit = error.cleanup?.status === 'unconfirmed' ? 'unconfirmed' : 'ended';
+      const reason = failureReason(error);
       const failed = store.transaction(() => {
         // Recorded even when a cancel moved the request meanwhile: the cancel's tidy reads it.
         records.update(id, { runExit: exit }, at());
         const moved = records.move(id, { from: 'running', to: signal.aborted ? 'cancelled' : 'failed',
-          by: 'system', fields: { error: error.code ?? 'run_failed', runMs: error.ms ?? 0 }, at: at() });
+          by: 'system', fields: { error: error.code ?? 'run_failed', runMs: error.ms ?? 0, ...(reason ? { reason } : {}) }, at: at() });
         if (exit === 'unconfirmed') note(id, PROCESS_UNCONFIRMED);
         return moved;
       });
@@ -464,7 +473,9 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // ---- reads ----
 
   // What the requester may see of its own request, and only its own: state,
-  // title and the owner's one-line reason. The result (summary, branch, at
+  // title and the one-line reason (the owner's, or a plain code), never a
+  // summary of Git's message (git_failed), which may describe the owner's
+  // setup. The result (summary, branch, at
   // most SHOWN_FILES cleaned paths, diffstat; never the patch) only once the
   // owner kept the branch, or, for a computer the owner marked fully trusted,
   // as soon as it is ready; a held result never shows it and reads as still
@@ -478,7 +489,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     // A result waiting for the owner, held or not, reads like any request waiting for the owner.
     const shown = { ok: true, requestId: request.id,
       state: request.state === 'awaiting_review' && !trustedReady ? 'awaiting_owner' : request.state, title: request.title,
-      ...(request.reason ? { reason: request.reason } : {}) };
+      ...(request.reason && request.error !== GIT_FAILED ? { reason: request.reason } : {}) };
     if (held || !(request.state === 'kept' || trustedReady)) return shown;
     return { ...shown, ...(request.summary ? { summary: request.summary } : {}), ...(request.branch ? { branch: request.branch } : {}),
       files: (request.files ?? []).slice(0, SHOWN_FILES).map((file) => [...withoutControls(file.path)].slice(0, SHOWN_PATH_CHARS).join('')),
@@ -555,6 +566,15 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   return { submit, requesterStatus, list, card, approve, decline, cancel, keep, discard, modeChanged, settle,
     requesterRevoked, sharesChanged, resume, close };
+}
+
+// Why a run failed, as the owner reads it: no_repository (the folder stopped
+// being a repository after planning), or the summary of Git's message, cut to
+// a reason's length; otherwise none (the error code says it).
+function failureReason(error) {
+  if (error.code === NO_REPOSITORY) return NO_REPOSITORY;
+  if (error.code !== GIT_FAILED || typeof error.summary !== 'string') return null;
+  return [...error.summary].slice(0, REASON_CHARS).join('') || null;
 }
 
 function overBudget(usage, source) {

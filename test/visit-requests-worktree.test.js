@@ -11,7 +11,7 @@ import test from 'node:test';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
 import { createVisitRequests } from '../src/visit-requests/service.js';
 import { createVisitRunner } from '../src/visit-requests/runner.js';
-import { createVisitWorktree, removeVisitWorktree } from '../src/visit-requests/worktree.js';
+import { createVisitWorktree, removeVisitWorktree, repositoryRoot } from '../src/visit-requests/worktree.js';
 
 // A temporary Git repository made by the test, a fake wake that edits files
 // the way a client would, and nothing else: no client, no data directory.
@@ -68,13 +68,17 @@ function visitRoot(root) {
   return join(alias, 'visit-worktrees');
 }
 
-function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted' } = {}) {
+// onPlan(repository): runs while the request is being planned.
+function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {} } = {}) {
   const wakes = [];
   const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository,
     verifyFolder: async (folder) => folder === repository,
     runClient: async (input) => {
       wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
-      if (input.step === 'plan') return { body: `\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` };
+      if (input.step === 'plan') {
+        onPlan(repository);
+        return { body: `\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` };
+      }
       edit(input.cwd, repository);
       return { body: 'Moved the port into settings.' };
     } });
@@ -501,4 +505,70 @@ test('without a recorded identity a data directory junction is followed, as befo
     unlinkFolder(alias);
     linkFolder(alias, join(owner.root, 'data-real'));
   }
+});
+
+// ---- A shared folder that is not a Git repository (first two-computer run) ----
+
+test('a shared folder that is not a Git repository ends the request before any planning wake', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const plain = join(owner.root, 'plain-folder');
+  mkdirSync(join(plain, 'child'), { recursive: true });
+  const f = service(t, { root: owner.root, repository: plain }, () => assert.fail('nothing runs'));
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error, request.reason, request.worktreePath], ['failed', 'no_repository', 'no_repository', null]);
+  assert.deepEqual(f.wakes, [], 'no planning wake was spent');
+  const { events } = await f.port.requests.card(requestId);
+  assert.ok(!events.some((event) => event.note === 'cleanup_failed'), 'nothing to clean up');
+});
+
+test('a folder that stops being a repository after planning fails the run without a cleanup warning', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const f = service(t, owner, () => assert.fail('nothing runs'),
+    { onPlan: (repository) => renameSync(join(repository, '.git'), join(owner.root, 'moved-git')) });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error, request.reason], ['failed', 'no_repository', 'no_repository']);
+  // The tidy after the failure runs in the background; before this fix its cleanup_failed note came within milliseconds.
+  await delay(500);
+  const { events } = await f.port.requests.card(requestId);
+  assert.deepEqual(events.filter((event) => event.note && event.to === 'failed' && event.from === 'failed'), [],
+    'no worktree was made, so its cleanup is no step and no warning');
+});
+
+test('a failed Git step carries the last line of Git\'s message, without local paths or control characters', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const plain = join(owner.root, 'plain-folder');
+  mkdirSync(plain, { recursive: true });
+  const error = await repositoryRoot({ folder: plain, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
+  assert.equal(error.code, 'git_failed');
+  assert.match(error.summary, /^fatal: not a git repository/);
+  assert.ok(!error.summary.includes(owner.root) && !/[\r\n\u0000-\u001f]/.test(error.summary), error.summary);
+
+  const path = process.env.PATH;
+  process.env.PATH = join(owner.root, 'no-git-here');
+  try {
+    const missing = await repositoryRoot({ folder: owner.repository, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
+    assert.deepEqual([missing.code, missing.summary], ['git_failed', 'git_unavailable']);
+  } finally { process.env.PATH = path; }
+});
+
+test('removing a visit worktree that was never made is a quiet no-op, with or without a repository', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const before = ownerState(owner.repository);
+  // The repository is there, but neither the worktree nor its branch was ever made.
+  assert.deepEqual(await removeVisitWorktree({ repository: owner.repository, worktreePath: join(root, 'never-1'),
+    branch: 'fuli/visit/never-1', root }, { keepBranch: false }), { entryKept: false, branchKept: false });
+  assert.deepEqual(ownerState(owner.repository), before);
+  // The folder is no repository at all (the runner's removal for a request that never got a worktree).
+  const plain = join(owner.root, 'plain-folder');
+  mkdirSync(plain, { recursive: true });
+  const runner = createVisitRunner({ root, projectFolder: async () => plain, verifyFolder: async () => true, runClient: async () => ({}) });
+  assert.deepEqual(await runner.remove({ id: 'never-2', projectFolder: plain, worktreePath: join(root, 'never-2'),
+    branch: 'fuli/visit/never-2', rootIdentity: null }, { keepBranch: false }), { entryKept: false, branchKept: false });
+  // A worktree that was made still needs its repository: no silent success then.
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'made-1' });
+  await assert.rejects(runner.remove({ id: 'made-1', projectFolder: plain, ...made }, { keepBranch: false }), { code: 'git_failed' });
+  assert.equal(existsSync(made.worktreePath), true);
 });

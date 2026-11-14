@@ -198,6 +198,35 @@ test('trusted skips only the approval; auto approves inside its envelope; both r
   assert.equal((await unplanned.port.requests.card('request-1')).request.planError, 'plan_unreadable');
 });
 
+test('a project folder that is not a Git repository ends the request at once: no planning wake, no worktree, one code for the requester',
+  async (t) => {
+    const f = fixture(t);
+    f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+    f.setMode('trusted');
+    assert.deepEqual(f.submit(), { ok: true, requestId: 'request-1', state: 'planning' });
+    await settled(async () => await f.state('request-1') === 'failed');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.error, request.reason, request.worktreePath], ['no_repository', 'no_repository', null]);
+    assert.deepEqual([f.runner.calls.planned, f.runner.calls.prepared, f.runner.calls.ran, f.runner.calls.removed], [[], [], [], []],
+      'no planning wake, no worktree, nothing to clean up');
+    assert.deepEqual(events.slice(-1).map((event) => [event.from, event.to, event.note]), [['planning', 'failed', 'no_repository']]);
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title, reason: 'no_repository' });
+  });
+
+test('a failed Git step keeps a short summary of Git\'s message for the owner, never for the requester', async (t) => {
+  const failWith = Object.assign(new Error('git'), { code: 'git_failed', summary: `fatal: ${'x'.repeat(300)}` });
+  const f = fixture(t, { failWith });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const { request } = await f.port.requests.card('request-1');
+  assert.equal(request.error, 'git_failed');
+  assert.equal(request.reason, `fatal: ${'x'.repeat(300)}`.slice(0, 200), 'cut to the reason length');
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title }, 'Git\'s words stay on this computer');
+});
+
 test('auto: a run whose diff leaves the envelope is held, and the requester only hears it waits for the owner', async (t) => {
   // A binary file runs nothing on open, but auto takes only text it can read.
   const f = fixture(t, { result: { files: [{ path: 'assets/logo.png', added: 0, removed: 0, binary: true }] } });

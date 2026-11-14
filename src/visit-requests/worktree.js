@@ -5,6 +5,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import { sha256Bytes, sha256File } from '../security/digest.js';
 import { fileIdentity } from '../system/file-identity.js';
+import { withoutControls } from '../text/control-characters.js';
+import { withoutLocalPaths } from '../text/local-paths.js';
 import { gitDirectoryName, gitModulesName } from './git-names.js';
 
 // The isolated copy a visit request is worked on: a Git worktree of the
@@ -37,6 +39,8 @@ const GITLINK_MODE = '160000';
 const NO_FILE = '/dev/null';
 // A step of the integrity snapshot (a status of a large checkout) waits no longer than this.
 const SNAPSHOT_STEP_MS = 60_000;
+// A failed Git step's summary when Git itself could not be started (not installed, not on PATH).
+export const GIT_UNAVAILABLE = 'git_unavailable';
 
 // Where a request's worktree and branch will be, recorded before they are made
 // so a restart in between still finds and tidies both.
@@ -205,7 +209,9 @@ export async function removeVisitWorktree({ repository, worktreePath, branch, ro
   let branchKept = false;
   if (!keepBranch && branch) {
     // While Git still lists the worktree, it would refuse anyway: the branch stays, said once.
-    branchKept = entryKept || await git(repository, ['branch', '-D', branch], root).then(() => false, () => true);
+    // A branch that was never made is not kept: nothing to say.
+    branchKept = entryKept || (await branchExists(repository, branch, root)
+      && await git(repository, ['branch', '-D', branch], root).then(() => false, () => true));
   }
   return { entryKept, branchKept };
 }
@@ -282,6 +288,11 @@ async function unlinkLink(path) {
   try { await unlink(path); } catch { await rmdir(path); }
 }
 
+// Whether the branch exists; a check Git could not answer (anything on stderr) counts as yes, so a refusal still shows.
+const branchExists = (repository, branch, root) => git(repository, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], root)
+  .then(() => true, (error) => Boolean(error.stderr?.trim()));
+
+// The top folder of the repository folder is inside; a hardened, read-only rev-parse that throws when it is in none.
 export async function repositoryRoot({ folder, root }) {
   return (await git(folder, ['rev-parse', '--show-toplevel'], root)).trim();
 }
@@ -336,6 +347,7 @@ function git(cwd, args, root) {
 // pager or editor; no system or global configuration; none of the caller's
 // GIT_ variables; never a prompt.
 // timeoutMs: optional; past it the call is stopped and throws.
+// A failure throws git_failed with Git's stderr and its summary (gitSummary).
 function gitCall(args, { cwd, root, timeoutMs = 0 }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const hardened = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'submodule.recurse=false',
@@ -345,7 +357,16 @@ function gitCall(args, { cwd, root, timeoutMs = 0 }) {
     { cwd: existsSync(cwd) ? cwd : root, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: NO_FILE,
       GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
     (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
-      { code: 'git_failed', stderr: String(stderr).slice(-2000) })) : done(stdout))));
+      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr) })) : done(stdout))));
+}
+
+// What the owner may read of a failed Git step: Git's last non-empty line,
+// without local paths or control characters; git_unavailable when Git could
+// not be started at all (a spawn error); null when Git said nothing.
+function gitSummary(error, stderr) {
+  if (error.syscall?.startsWith('spawn')) return GIT_UNAVAILABLE;
+  const last = String(stderr ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1);
+  return last ? withoutControls(withoutLocalPaths(last)) || null : null;
 }
 
 const coded = (code) => Object.assign(new Error(code), { code });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { askerLine, checkName, endingText, eventText, heldText, modesFor, shownText, visitActions, visitStateLabel, warningText } from './visit-request-model'
+import { askerLine, checkName, endingText, eventText, failedLine, heldText, modesFor, shownText, visitActions, visitStateLabel, warningText } from './visit-request-model'
 import { GUEST_KEY, PEER_KEY, visitRequest } from './visit-request.spec-support'
 
 describe('a visit request in plain words', () => {
@@ -50,6 +50,13 @@ describe('a visit request in plain words', () => {
     expect(endingText(visitRequest({ state: 'failed', error: 'restricted_mode_unsupported' })))
       .toBe('这台电脑的 Claude Code 版本太旧，不支持受限模式，请先更新 Claude Code。')
     expect(endingText(visitRequest({ state: 'failed', error: 'some_new_code' }))).toBe('没做成。')
+    expect(endingText(visitRequest({ state: 'failed', error: 'no_repository', reason: 'no_repository' })))
+      .toBe('这个项目共享的文件夹不是 Git 仓库，没法在副本里做。把共享的文件夹改成仓库所在的目录。')
+    expect(endingText(visitRequest({ state: 'failed', error: 'git_failed', reason: 'fatal: not a git repository\u0007' })))
+      .toBe('Git 这一步出错了：fatal: not a git repository')
+    expect(endingText(visitRequest({ state: 'failed', error: 'git_failed', reason: 'git_unavailable' }))).toBe('这台电脑上启动不了 Git，先装好 Git 再试。')
+    expect(endingText(visitRequest({ state: 'failed', error: 'git_failed' }))).toBe('没做成。')
+    expect(failedLine(visitRequest({ state: 'kept' }))).toBeNull()
     expect(heldText('unsafe_content')).toBe('副本里出现了链接、嵌套仓库这类可能带来风险的内容，所以没有保存。')
     expect(heldText('too_large')).toBe('改动太大：超过 2000 个文件或 50 MB。')
     expect(heldText('runs_on_open')).toBe('改动里有打开、切换或构建分支时会自动执行的文件，先别急着打开这个分支。')
