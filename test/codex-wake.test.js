@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -17,19 +17,68 @@ test('Codex runs read-only, resuming a session or starting in the project direct
     wakeArguments('codex', { cwd: '/work/app' }));
 });
 
-test('an ask from another computer replaces the mcp_servers table with FULI\'s own server, or with none at all', () => {
+// A synthetic Codex home and project with the given config.toml texts (null: no file).
+function codexConfig({ user = null, project = null } = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'fuli-codex-config-'));
+  const codexHome = join(home, 'codex-home');
+  const cwd = join(home, 'work', 'app');
+  mkdirSync(join(cwd, '.git'), { recursive: true });
+  mkdirSync(codexHome);
+  if (user !== null) writeFileSync(join(codexHome, 'config.toml'), user);
+  if (project !== null) {
+    mkdirSync(join(cwd, '.codex'));
+    writeFileSync(join(cwd, '.codex', 'config.toml'), project);
+  }
+  return { cwd, home, env: { CODEX_HOME: codexHome } };
+}
+
+const PLUGINS_OFF = ['-c', 'plugins={ _default = { enabled = false } }'];
+const APPS_OFF = ['-c', 'features.apps=false'];
+
+test('an ask from another computer loads FULI\'s own server and turns off every other server, plugin and app', () => {
   const entry = { command: 'C:\\synthetic\\node.exe', args: ['C:\\synthetic\\mcp-server.js', '--source-application', 'codex'],
     settings: { enabled: true, startup_timeout_sec: 30, default_tools_approval_mode: 'auto' } };
-  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: { fuli: entry } }),
-    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w',
-      '-c', 'mcp_servers={ fuli = { command = "C:\\\\synthetic\\\\node.exe", args = ["C:\\\\synthetic\\\\mcp-server.js","--source-application","codex"], '
-        + 'enabled = true, startup_timeout_sec = 30, default_tools_approval_mode = "auto" } }',
-      '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
-  // Without FULI's entry: an empty table, and no delegation variables for a server that is not there.
-  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'read_only', delegated: true, mcpServers: {} }),
-    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/w', '-c', 'mcp_servers={  }', '-']);
-  assert.deepEqual(wakeArguments('codex', { cwd: '/w', mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('codex', { cwd: '/w' }));
+  const fuli = 'fuli = { command = "C:\\\\synthetic\\\\node.exe", args = ["C:\\\\synthetic\\\\mcp-server.js","--source-application","codex"], '
+    + 'enabled = true, startup_timeout_sec = 30, default_tools_approval_mode = "auto" }';
+  const config = codexConfig({
+    user: ['[mcp_servers.fuli]', 'command = "node"', '[mcp_servers.synthetic-notes]', 'command = "notes"',
+      '[mcp_servers."phone.bridge"]', 'url = "http://127.0.0.1:9/mcp"', '[plugins."synthetic@market"]', 'enabled = true', ''].join('\n'),
+    project: 'mcp_servers.project-tool = { command = "tool" }\n' });
+  const others = '"synthetic-notes" = { enabled = false }, "phone.bridge" = { enabled = false }, "project-tool" = { enabled = false }';
+  const plugins = ['-c', 'plugins={ _default = { enabled = false }, "synthetic@market" = { enabled = false } }'];
+  const args = wakeArguments('codex', { ...config, mode: 'read_only', delegated: true, mcpServers: { fuli: entry } });
+  assert.deepEqual(args, ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', config.cwd,
+    '-c', `mcp_servers={ ${fuli}, ${others} }`, ...plugins, ...APPS_OFF,
+    '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
+  // Resuming in the session's folder carries the same overrides.
+  assert.deepEqual(wakeArguments('codex', { ...config, sessionId: 'cx-session-1', mode: 'read_only', mcpServers: { fuli: entry } }),
+    ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...args.slice(7, 13), 'cx-session-1', '-']);
+  // Without FULI's entry the person's own FULI server is turned off as well, and no delegation variables are set.
+  assert.deepEqual(wakeArguments('codex', { ...config, mode: 'read_only', delegated: true, mcpServers: {} }).slice(7),
+    ['-c', `mcp_servers={ "fuli" = { enabled = false }, ${others} }`, ...plugins, ...APPS_OFF, '-']);
+  assert.deepEqual(wakeArguments('codex', { ...config, mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('codex', { cwd: config.cwd }));
   assert.throws(() => wakeArguments('codex', { cwd: '/w', mode: 'worktree_edit' }), /Invalid wake mode/);
+});
+
+test('a Codex configuration with no servers, or no configuration, leaves no MCP server, plugin or app', () => {
+  for (const config of [codexConfig(), codexConfig({ user: 'model = "synthetic"\n' })]) {
+    assert.deepEqual(wakeArguments('codex', { ...config, mode: 'read_only', mcpServers: {} }),
+      ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', config.cwd,
+        '-c', 'mcp_servers={  }', ...PLUGINS_OFF, ...APPS_OFF, '-']);
+  }
+});
+
+test('a Codex configuration that cannot be read refuses the wake instead of loading its servers', () => {
+  const broken = codexConfig({ user: '[mcp_servers.synthetic\ncommand = ' });
+  const folder = codexConfig({ project: '' });
+  rmSync(join(folder.cwd, '.codex', 'config.toml'));
+  mkdirSync(join(folder.cwd, '.codex', 'config.toml'));
+  for (const config of [broken, folder]) {
+    assert.throws(() => wakeArguments('codex', { ...config, mode: 'read_only', mcpServers: {} }),
+      { code: 'wake_failed', detail: 'mcp_config_unreadable' });
+  }
+  // A wake that keeps the person's own servers does not read the configuration.
+  assert.equal(wakeArguments('codex', { ...broken, mode: 'answer' }).includes('features.apps=false'), false);
 });
 
 test('Codex answers are the last agent message of a completed turn', () => {

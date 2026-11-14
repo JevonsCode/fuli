@@ -291,10 +291,10 @@ of their user settings (`CLAUDE_CONFIG_DIR` respected; a base URL, a model
 name) is passed to the run's process environment, string values only, never on
 the command line or kept. A Claude Code too old for `--restricted` fails the
 run with `restricted_mode_unsupported`; it is never run without it. Codex is not
-used for visit requests yet: before it is, it must be verified that its
-`-c mcp_servers=…` override replaces the person's table rather than merging
-with it, and that its platform sandbox confines the shell its workspace-write
-mode keeps. A lead whose clients are only Codex gets its request ended as
+used for visit requests yet: its `-c mcp_servers=…` override merges with the
+person's table rather than replacing it (the wake turns their servers off by
+name instead), and it is not verified that its platform sandbox confines the
+shell its workspace-write mode keeps. A lead whose clients are only Codex gets its request ended as
 `failed` with `no_constrained_client`.
 
 Nothing is copied before approval. What happens next depends on the
@@ -326,9 +326,17 @@ person's own Agents, loads only FULI's own server too where FULI can name that
 entry, and keeps the client's own servers where it cannot, so a discussion
 never fails for the lack of it. The entry is the one FULI's installer writes,
 with the chat tool profile whichever profile the person's own entry names.
-Claude Code's side is checked against the real CLI; whether Codex's
-`-c mcp_servers={…}` override replaces the person's table or merges with it
-is not verified yet, so on Codex the person's other servers may remain.
+Claude Code loads exactly that set (`--strict-mcp-config`), checked against the
+real CLI. Codex merges a `-c` table into the person's configuration instead of
+replacing it, so FULI reads the servers and plugins that the person's
+`$CODEX_HOME/config.toml` and the project's `.codex/config.toml` files (from the
+working folder up to the folder with `.git`) name, and turns each one off by name
+(`enabled = false`), with plugins off by default and apps off
+(`features.apps=false`). A configuration file that exists but cannot be read or
+parsed refuses the wake (`mcp_config_unreadable`). Not covered on Codex:
+servers an administrator's managed configuration adds, and project files above
+a custom project-root marker. The Codex side follows Codex's documentation and
+source; a run against a real Codex has not confirmed it yet.
 
 After the run FULI works on the worktree only with its Git directory and work
 tree named explicitly (never discovered from files the run left), without the
@@ -523,7 +531,7 @@ and with no more authority than `message_agent`.
 
 Each member turn is a real `message_agent` wake in a fresh session (no resume) of
 the member's own allowed client. Claude Code discussion wakes, like asks from another computer, have the reading tools only: they keep the
-non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Where FULI can name its own MCP entry for the client, the wake loads only that server; where it cannot, tools of other MCP servers the person configured in that client still follow the person's own allow rules there. The prompt holds the
+non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Where FULI can name its own MCP entry for the client, the wake loads only that server (on Codex by turning the person's other servers, plugins and apps off, as for an ask from another computer); where it cannot, tools of other MCP servers the person configured in that client still follow the person's own allow rules there. The prompt holds the
 question, the member's role line and 800-character excerpts of the other members;
 the member's own FULI entry delivers its preferences and knowledge index. The
 Provider issues and verifies a per-attempt delegation, and only a verified answer
