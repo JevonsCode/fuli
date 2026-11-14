@@ -28,5 +28,14 @@ describe('every request another computer sent', () => {
     expect(new URL(String(url), 'http://console.invalid').searchParams.get('state')).toBeNull()
     expect(wrapper.find('[data-visit-list-empty]').exists()).toBe(false)
     expect(wrapper.get('.visit-list-card').classes()).toContain('is-filled')
+    expect(wrapper.find('[data-visit-list-cut]').exists()).toBe(false)
+  })
+
+  it('says so when the read was cut at the newest 200', async () => {
+    const requests = Array.from({ length: 200 }, (_, index) => visitRequest({ id: `visit-${index}`, state: 'kept' }))
+    stubServer({ 'GET /api/visit-requests': { requests, awaiting: { count: 0, newest: [] } } })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-visit-list-cut]').text()).toBe('只列出最近 200 条。')
   })
 })

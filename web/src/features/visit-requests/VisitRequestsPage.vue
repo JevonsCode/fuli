@@ -21,7 +21,8 @@ import './visit-card.css'
 
 // Every request other computers sent, newest first, not only the waiting ones:
 // one compact row each (state in plain words, who asked, the title, when), the
-// same card as 等你拍板 from its link (?item=visit/<id>). The server keeps the newest 200; one read.
+// same card as 等你拍板 from its link (?item=visit/<id>). One read of the
+// newest 200; older ones stay on the server, and a full read says so.
 const LIST_READ = 200
 const ROW_HEIGHT = 64
 const WAITING = new Set(['awaiting_owner', 'awaiting_review'])
@@ -34,6 +35,7 @@ const source = computed<ListSource<VisitRequest>>(() => ({ key: 'visit-requests'
 const pages = useListPages(source)
 const rows = computed(() => pages.items.value)
 const firstRead = computed(() => pages.loading.value && !rows.value.length)
+const cut = computed(() => rows.value.length >= LIST_READ)
 </script>
 
 <template>
@@ -63,6 +65,7 @@ const firstRead = computed(() => pages.loading.value && !rows.value.length)
           </RouterLink>
         </template>
       </VirtualDirectoryList>
+      <p v-if="cut" class="workbench-meta visit-list-cut" data-visit-list-cut>{{ t('visitRequests.list.newestOnly', { count: LIST_READ }) }}</p>
     </div>
     <VisitRequestDialog :id="peek.id.value" @close="peek.close()" @changed="pages.reload()" />
   </section>
@@ -81,6 +84,7 @@ const firstRead = computed(() => pages.loading.value && !rows.value.length)
 .visit-list-row:hover { background: var(--color-surface-subtle); }
 .visit-list-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .visit-list-end { display: grid; justify-items: end; gap: 4px; }
+.visit-list-cut { margin: 0; padding: 0 0 6px; }
 @media (max-width: 860px) {
   .visit-list-view { padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important; }
 }
