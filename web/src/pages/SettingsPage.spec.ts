@@ -113,6 +113,44 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('on a fresh installation, keeps advanced areas out of the tabs and lists them last in 系统, where search finds them', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: '我' }],
+      personalProjects: [], projects: [], subscriptions: [], advancedAreas: { shown: [] } } as never
+    const fetch = vi.fn(async (input: unknown) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      if (String(input) === '/api/advanced-areas/reveal') return Response.json({ shown: ['tonborg'] })
+      return Response.json({}, { status: 503 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('[data-open-judgment-standards]').exists()).toBe(false)
+    expect(wrapper.find('[data-peer-settings]').exists()).toBe(false)
+    // The card is the last of 系统, so nothing above it moves when it goes.
+    const system = wrapper.get('[data-settings-tab="system"]')
+    const cards = system.findAll('.settings-card')
+    expect(cards.at(-1)?.attributes('data-hidden-areas')).toBe('')
+    expect(cards.at(-1)?.findAll('[data-hidden-area]').map(row => row.attributes('data-hidden-area'))).toEqual(['roundtable', 'tonborg', 'tidy', 'lan'])
+    // A search for an area's name lands on the card.
+    await wrapper.get('.settings-search input').setValue('配对')
+    await flushPromises()
+    expect(wrapper.get('[data-hidden-areas]').attributes('data-search-hidden')).toBeUndefined()
+    await wrapper.get('.settings-search input').setValue('')
+    await flushPromises()
+    // Show takes effect at once, with no confirmation, and the area's own controls appear.
+    await wrapper.get('[data-show-area="tonborg"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/advanced-areas/reveal')).toBe(true)
+    expect(wrapper.find('[data-open-judgment-standards]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-hidden-area]').map(row => row.attributes('data-hidden-area'))).toEqual(['roundtable', 'tidy', 'lan'])
+    wrapper.unmount()
+  })
+
   it('narrows the page to matching settings and says when nothing matches', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

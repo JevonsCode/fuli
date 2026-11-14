@@ -1,9 +1,10 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { z } from 'zod'
 import { shapeFor, shapeOf } from '@/api/response-shape'
 
 import { getJson, patchJson, postJson } from '@/api/client'
+import { adoptShownAreas } from '@/features/advanced-areas/advanced-areas'
 import { t } from '@/i18n'
 import type {
   AgentAccessPolicy,
@@ -37,6 +38,7 @@ const consoleStateShape = shapeFor<ConsoleState>(z.looseObject({
   projects: z.array(z.looseObject({})),
   subscriptions: z.array(z.looseObject({})),
   firstRunGuide: z.looseObject({ open: z.boolean(), tourSeen: z.number().int().nullish() }).optional(),
+  advancedAreas: z.looseObject({ shown: z.array(z.string()) }).optional(),
 }))
 
 // The capture settings as the server answers them: only `enabled` is always
@@ -73,6 +75,8 @@ const agentAccessPolicyShape = shapeFor<AgentAccessPolicy>(z.looseObject({
 
 export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
+  // Every state read tells the advanced-area registry what the server shows.
+  watch(state, value => { if (value) adoptShownAreas(value.advancedAreas?.shown) }, { flush: 'sync' })
   const runtimeStatus = ref<RuntimeStatus>('idle')
   const refreshError = ref('')
   // The last failed read's own message, for a page that shows it and the prompt the person copies.

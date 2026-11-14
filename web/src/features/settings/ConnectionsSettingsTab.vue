@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import PageStack from '@/components/PageStack.vue'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import ConflictPolicyCard from '@/features/connections/ConflictPolicyCard.vue'
 import ExternalKnowledgeSettings from '@/features/connections/ExternalKnowledgeSettings.vue'
@@ -82,7 +83,7 @@ const activePort = (key: keyof RuntimePorts) => props.active.ports[key] ?? '—'
         </div>
       </div>
     </Card>
-    <PeerSettings />
+    <AdvancedOnly area="lan"><PeerSettings /></AdvancedOnly>
   </PageStack>
 </template>
 

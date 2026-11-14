@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
 import { renamedSettingsTab } from '@/features/settings/settings-tabs'
+import { areaFor, reveal } from '@/features/advanced-areas/advanced-areas'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -250,9 +251,15 @@ export const router = createRouter({
 
 installNavigationRecovery(router)
 
-// An old settings tab (?tab=memory|network|version) opens the tab that holds it
-// now, also when the settings page is already open.
-router.beforeEach(to => to.path === '/settings' ? renamedSettingsTab(to) : true)
+// A link into an advanced area (a bookmark, a receipt, an Agent's answer) shows
+// that area for good before its page looks for its card. An old settings tab
+// (?tab=memory|network|version) opens the tab that holds it now, also when the
+// settings page is already open.
+router.beforeEach((to) => {
+  const area = areaFor(to)
+  if (area) reveal(area, 'link')
+  return to.path === '/settings' ? renamedSettingsTab(to) : true
+})
 
 router.afterEach((route) => {
   updateDocumentTitle(route.meta.title)

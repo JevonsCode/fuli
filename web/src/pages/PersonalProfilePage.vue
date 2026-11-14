@@ -15,6 +15,7 @@ import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
 import PreferencesOrganizeStart from '@/features/preferences/PreferencesOrganizeStart.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import PersonHomeHeader from '@/features/person-home/PersonHomeHeader.vue'
 import {
   detectPreferenceConflicts,
@@ -562,7 +563,7 @@ usePageRefresh(() => load())
  />
       <template #end>
         <span v-if="graph" data-profile-count data-term="memory.preferenceCount">{{ countText }}</span>
-        <PreferencesOrganizeStart :scope="activeScope" />
+        <AdvancedOnly area="tidy"><PreferencesOrganizeStart :scope="activeScope" /></AdvancedOnly>
         <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
       </template>
     </UiToolbar>

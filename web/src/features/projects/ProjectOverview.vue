@@ -19,6 +19,7 @@ import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
 import GuestLinksCard from '@/features/guest-links/GuestLinksCard.vue'
 import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 
 const props = withDefaults(defineProps<{
   spaceId: string
@@ -59,18 +60,22 @@ const createdDate = computed(() =>
       </div>
     </header>
     <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
-    <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
-      :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')">
-      <template #heading-action>
-        <RouterLink class="project-judgment-default-link" to="/employees/tonborg?view=standards" data-judgment-default-link>
-          {{ t('judgment.project.defaultLink') }}
-        </RouterLink>
-      </template>
-    </ProjectJudgmentPolicy>
-    <ProjectOrganizing :key="`organizing-${project.project_id}`" class="project-organizing-card" :space-id="spaceId" :project-id="project.project_id" />
+    <AdvancedOnly area="tonborg">
+      <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
+        :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')">
+        <template #heading-action>
+          <RouterLink class="project-judgment-default-link" to="/employees/tonborg?view=standards" data-judgment-default-link>
+            {{ t('judgment.project.defaultLink') }}
+          </RouterLink>
+        </template>
+      </ProjectJudgmentPolicy>
+    </AdvancedOnly>
+    <AdvancedOnly area="tidy">
+      <ProjectOrganizing :key="`organizing-${project.project_id}`" class="project-organizing-card" :space-id="spaceId" :project-id="project.project_id" />
+    </AdvancedOnly>
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
-    <GuestLinksCard :key="`guests-${project.project_id}`" :project-id="project.project_id" />
+    <AdvancedOnly area="lan"><GuestLinksCard :key="`guests-${project.project_id}`" :project-id="project.project_id" /></AdvancedOnly>
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"
       :project-name="project.profile.name" :updated-at="project.updated_at" />
     <section

@@ -8,6 +8,10 @@ import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 export const ASSISTANT_ROLE = 'assistant';
 export const DREAMING_OPERATION = 'dreaming';
 
+export const dreamingSettings = application => application.modelBackends?.operationSettings(ASSISTANT_ROLE, DREAMING_OPERATION) ?? null;
+// Whether Astro has a model with Dreaming on, whatever the project.
+export const dreamingConnected = application => Boolean(dreamingSettings(application));
+
 // kind names the work in the request ID, so a retrospective and a Dreaming
 // run over the same evidence are never one request.
 export function astroRequest({ kind, personalSpaceId, personalProjectId, evidence, instructions, schema, promptVersion, decisions, timeoutMs }) {

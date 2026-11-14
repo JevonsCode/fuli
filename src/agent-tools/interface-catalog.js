@@ -72,6 +72,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   relayed('POST /api/capture-onboarding', 'Change where FULI records with update_capture_policy.'),
   relayed('POST /api/first-run-guide', 'Not undone; the guide stays closed and 设置 › 客户端 offers the same steps.'),
   delegable('settings', 'POST /api/first-run-guide/tour', 'Nothing to undo; it only stops the console\'s one-time beginner\'s guide, and 设置 › 系统 › 界面 「再看一遍」 shows it again.'),
+  delegable('settings', 'POST /api/advanced-areas/reveal', 'Nothing to undo; a shown area stays shown.'),
   delegable('settings', 'PATCH /api/recall-policy', 'Set answerFromConfirmed back.'),
   local('PATCH /api/agent-access-policy', 'The Agent access kill switch requires local user presence and cannot be changed by an Agent.'),
   local('PUT /api/agent-delegation/categories/:category', 'What FLAs may do for the person (AI permissions) is the local person\'s own grant on this computer; an Agent never widens or narrows it.'),

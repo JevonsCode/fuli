@@ -170,6 +170,13 @@ export class VisitorAccessStore {
     return row ? requesterView(row) : null;
   }
 
+  // Whether any visitor, guest link or visit request was ever recorded here.
+  used() {
+    if (!this.readable) return false;
+    return this.db.prepare(`SELECT EXISTS(SELECT 1 FROM requesters) OR EXISTS(SELECT 1 FROM visitor_reads)
+      OR EXISTS(SELECT 1 FROM guest_links) OR EXISTS(SELECT 1 FROM visit_requests) AS used`).get().used === 1;
+  }
+
   // Every requester the person gave a mode, the latest change first.
   requesters() {
     if (!this.readable) return [];

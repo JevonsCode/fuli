@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import PageStack from '@/components/PageStack.vue'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -41,10 +42,12 @@ const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFrom
     </Card>
     <Card as="section" class="settings-card" :aria-label="t('settings.elsewhere')" data-settings-elsewhere>
       <div class="setting-list">
-        <RouterLink class="setting-row" to="/employees/tonborg?view=standards" data-open-judgment-standards>
-          <span><strong>{{ t('judgment.settings.link') }}</strong></span>
-          <UiIcon name="chevron-right" :size="16" class="setting-row-arrow" />
-        </RouterLink>
+        <AdvancedOnly area="tonborg">
+          <RouterLink class="setting-row" to="/employees/tonborg?view=standards" data-open-judgment-standards>
+            <span><strong>{{ t('judgment.settings.link') }}</strong></span>
+            <UiIcon name="chevron-right" :size="16" class="setting-row-arrow" />
+          </RouterLink>
+        </AdvancedOnly>
         <RouterLink class="setting-row" to="/models" data-open-model-settings>
           <span><strong>{{ t('modelSettings.settingsLink') }}</strong></span>
           <UiIcon name="chevron-right" :size="16" class="setting-row-arrow" />

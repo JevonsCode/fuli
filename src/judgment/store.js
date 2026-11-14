@@ -214,6 +214,15 @@ export class JudgmentStore {
       AND json_extract(value,'$.mode') IN ('shared','autonomous')) OR (key=? AND json_extract(value,'$.enabled')=1))
       LIMIT 1`).get(space, DELEGATION_KEY)?.enabled === 1;
   }
+  // Whether automatic confirmation was ever in use here: 「交给 Tonborg 确认」
+  // switched at any time, a judgment policy set, or a review Tonborg made with
+  // delegation on. Metadata only, like pins: readable while text recovery waits.
+  automaticConfirmationUsed(space) {
+    return this.db.prepare(`SELECT EXISTS(SELECT 1 FROM judgment_settings WHERE space=?1 AND (key=?2
+      OR (key LIKE 'policy:%' AND value <> 'null'))) OR EXISTS(SELECT 1 FROM judgment_records WHERE space=?1
+      AND json_extract(body,'$.kind')='review' AND json_extract(body,'$.delegated')=1) AS used`)
+      .get(space, DELEGATION_KEY).used === 1;
+  }
   // How many judgments Tonborg applied in [from, to), and how many the person
   // undid there (the undo is its own receipt). Counts only, like pins:
   // readable while text recovery waits.

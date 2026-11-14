@@ -7,7 +7,7 @@ import { t } from '@/i18n'
 import { fuliMarkUrl } from '@/lib/brand'
 import { useConsoleStore } from '@/stores/console'
 import { UiDialog, UiIcon } from '@/ui'
-import { TOUR_STEPS, TOUR_VERSION, endTour, pauseTour, startTour, stepTarget, tour, tourDue, type TourStepId } from './onboarding-tour'
+import { TOUR_VERSION, endTour, pauseTour, startTour, stepTarget, tour, tourDue, tourSteps, type TourStepId } from './onboarding-tour'
 
 // The beginner's guide (Jevons 11-12): a centred glass dialog, one step at a
 // time, with Back / Next, 跳过 and the step's one 「去…」. It opens on its own
@@ -34,10 +34,11 @@ watchEffect(() => {
 })
 
 const spaceId = computed(() => store.activePersonalSpace?.id ?? 'current')
-const targets = computed(() => Object.fromEntries(TOUR_STEPS.map(step => [step.id, stepTarget(step.id, spaceId.value)])) as Record<TourStepId, string | null>)
-const last = computed(() => tour.step === TOUR_STEPS.length - 1)
+const steps = computed(tourSteps)
+const targets = computed(() => Object.fromEntries(steps.value.map(step => [step.id, stepTarget(step.id, spaceId.value)])) as Record<TourStepId, string | null>)
+const last = computed(() => tour.step === steps.value.length - 1)
 const progress = computed(() => t('onboardingTour.progress', {
-  step: tour.step + 1, total: TOUR_STEPS.length, title: t(`onboardingTour.steps.${TOUR_STEPS[tour.step]!.id}.title`),
+  step: tour.step + 1, total: steps.value.length, title: t(`onboardingTour.steps.${steps.value[tour.step]!.id}.title`),
 }))
 
 function close() {
@@ -63,10 +64,10 @@ function go(id: TourStepId) {
   <UiDialog :open="tour.open" :title="t('onboardingTour.title')" size="md" class="onboarding-tour" data-onboarding-tour @close="close">
     <p class="ui-sr-only" aria-live="polite" data-tour-progress>{{ progress }}</p>
     <ol class="tour-dots" aria-hidden="true">
-      <li v-for="(step, index) in TOUR_STEPS" :key="step.id" :data-current="index === tour.step || undefined" />
+      <li v-for="(step, index) in steps" :key="step.id" :data-current="index === tour.step || undefined" />
     </ol>
     <div class="tour-stage">
-      <section v-for="(step, index) in TOUR_STEPS" :key="step.id" class="tour-step" :class="{ 'is-current': index === tour.step }"
+      <section v-for="(step, index) in steps" :key="step.id" class="tour-step" :class="{ 'is-current': index === tour.step }"
         :aria-hidden="index !== tour.step || undefined" :inert="index !== tour.step || undefined" :data-tour-step="step.id">
         <span class="tour-figure" aria-hidden="true">
           <img v-if="step.icon === 'brand'" :src="fuliMarkUrl" alt="" width="36" height="36" />
