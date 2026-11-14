@@ -37,6 +37,12 @@ export const visitRequestMessages = {
       approve: '已批准「{title}」', decline: '已拒绝「{title}」', cancel: '已取消「{title}」',
       keep: '已保留「{title}」的分支', discard: '已丢弃「{title}」',
     },
+    warnings: {
+      worktree_entry_kept: '副本的登记没对上，分支和登记都留着，没有删。',
+      branch_kept: '分支没删掉，还留着。',
+      cleanup_failed: '清理副本时出了错，可能还有残留。',
+      other: '清理时出了点问题，看看这件请求的经过。',
+    },
     errors: {
       state_conflict: '这件请求刚刚变了，已重新读取。',
       request_not_found: '找不到这件请求了。',
@@ -178,6 +184,12 @@ export const visitRequestMessages = {
     done: {
       approve: 'Approved "{title}"', decline: 'Declined "{title}"', cancel: 'Cancelled "{title}"',
       keep: 'Kept the branch of "{title}"', discard: 'Discarded "{title}"',
+    },
+    warnings: {
+      worktree_entry_kept: 'The copy\'s git record did not match, so it and the branch were left in place.',
+      branch_kept: 'The branch could not be deleted and is still there.',
+      cleanup_failed: 'Cleaning up the copy failed; something may be left behind.',
+      other: 'Something went wrong cleaning up; see what happened on this request.',
     },
     errors: {
       state_conflict: 'This request just changed; it was read again.',

@@ -15,10 +15,10 @@ export async function readVisitRequest(id: string) {
   return (await getJson(`/api/visit-requests/${encodeURIComponent(id)}`, visitCardShape)).request
 }
 
-/** `reason` is read only by decline. */
+/** `reason` is read only by decline. Answers the moved request and, when cleaning up went wrong, a `warning`. */
 export async function decideVisitRequest(id: string, action: VisitAction, reason?: string) {
   const body = action === 'decline' && reason?.trim() ? { reason: reason.trim() } : {}
-  return (await postJson(`/api/visit-requests/${encodeURIComponent(id)}/${action}`, body, visitDecisionShape)).request
+  return postJson(`/api/visit-requests/${encodeURIComponent(id)}/${action}`, body, visitDecisionShape)
 }
 
 export function readRequesters() {

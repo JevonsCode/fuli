@@ -6,6 +6,7 @@ import { decideVisitRequest, type VisitAction } from './visit-request-api'
 import type { VisitRequest } from './visit-request-shape'
 import { useVisitAwaiting } from './useVisitAwaiting'
 import { visitRequestLocation } from './useVisitPeek'
+import { warningText } from './visit-request-model'
 
 const KNOWN_ERRORS = new Set(['state_conflict', 'request_not_found', 'requests_unavailable'])
 
@@ -29,8 +30,9 @@ export function useVisitDecision() {
     if (busy.value) return null
     busy.value = action
     try {
-      const moved = await decideVisitRequest(request.id, action, reason)
-      store.notify(t(`visitRequests.done.${action}`, { title: request.title }), { to: visitRequestLocation(request.id) })
+      const { request: moved, warning } = await decideVisitRequest(request.id, action, reason)
+      const done = t(`visitRequests.done.${action}`, { title: request.title })
+      store.notify(warning ? `${done} ${warningText(warning)}` : done, { to: visitRequestLocation(request.id) })
       return moved
     } catch (error) {
       store.reportError(new Error(visitErrorText(error)))

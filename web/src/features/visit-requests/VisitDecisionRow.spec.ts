@@ -46,6 +46,15 @@ describe('a request from another computer in 等你拍板', () => {
     expect(useConsoleStore().feedback?.message).toBe('已拒绝「Fix the sample typo」')
   })
 
+  it('says in the same toast when the copy or the branch could not be cleaned up', async () => {
+    stubServer({ 'POST /api/visit-requests/visit-1/approve': { request: visitRequest({ state: 'approved' }), warning: 'branch_kept' },
+      'GET /api/visit-requests': list })
+    const wrapper = mount(VisitDecisionRow, { props: { item: visitRequest() } })
+    await wrapper.get('[data-visit-approve]').trigger('click')
+    await flushPromises()
+    expect(useConsoleStore().feedback?.message).toBe('已批准「Fix the sample typo」 分支没删掉，还留着。')
+  })
+
   it('shows a held result as needing a look and opens its review instead of deciding', async () => {
     stubServer({})
     const wrapper = mount(VisitDecisionRow, { props: { item: visitRequest({ state: 'awaiting_review', review: 'held' }) } })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { askerLine, checkName, endingText, eventText, heldText, modesFor, shownText, visitActions, visitStateLabel } from './visit-request-model'
+import { askerLine, checkName, endingText, eventText, heldText, modesFor, shownText, visitActions, visitStateLabel, warningText } from './visit-request-model'
 import { GUEST_KEY, PEER_KEY, visitRequest } from './visit-request.spec-support'
 
 describe('a visit request in plain words', () => {
@@ -30,7 +30,11 @@ describe('a visit request in plain words', () => {
     expect(endingText(visitRequest({ state: 'refused', reason: 'budget_exceeded' }))).toBe('对方今天请得太多了。')
     expect(endingText(visitRequest({ state: 'declined', reason: 'Not this week' }))).toBe('你写的理由：Not this week')
     expect(endingText(visitRequest({ state: 'awaiting_owner' }))).toBeNull()
-    expect(eventText({ by: 'rule', to: 'approved' })).toBe('规则：已批准')
+    expect(eventText({ by: 'rule', to: 'approved', note: null })).toBe('规则：已批准')
+    expect(eventText({ by: 'system', to: 'kept', note: 'cleanup_failed' })).toBe('清理副本时出了错，可能还有残留。')
+    expect(eventText({ by: 'system', to: 'kept', note: 'some_new_note' })).toBe('FULI：已保留')
+    expect(warningText('worktree_entry_kept')).toBe('副本的登记没对上，分支和登记都留着，没有删。')
+    expect(warningText('some_new_warning')).toBe('清理时出了点问题，看看这件请求的经过。')
   })
 
   it('words every reason and code the server names, and falls back to a plain sentence for any other', () => {

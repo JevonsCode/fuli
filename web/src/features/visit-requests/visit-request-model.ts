@@ -80,6 +80,12 @@ export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'err
   return null
 }
 
+const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed'])
+/** What went wrong removing the copy or the branch after a decision that itself went through. */
+export function warningText(warning: string) {
+  return t(`visitRequests.warnings.${known(WARNINGS, warning)}`)
+}
+
 /** Why a finished run was held, in plain words. */
 export function heldText(holdReason: string | null) {
   return t(`visitRequests.result.held.${known(HELD, holdReason)}`)
@@ -113,7 +119,9 @@ export function ruleChecks(card: Pick<VisitRequestCard, 'events'>) {
 const ACTORS = new Set(['owner', 'rule', 'system', 'requester'])
 const STATES = new Set<string>(VISIT_STATES)
 /** One step of the timeline: who moved it and to what. */
-export function eventText(event: Pick<VisitEvent, 'by' | 'to'>) {
+export function eventText(event: Pick<VisitEvent, 'by' | 'to' | 'note'>) {
+  // A cleanup that went wrong is recorded as a note on its own step; any other note keeps the plain line.
+  if (event.note && WARNINGS.has(event.note)) return warningText(event.note)
   const who = ACTORS.has(event.by) ? t(`visitRequests.card.by.${event.by}`) : event.by
   const state = STATES.has(event.to) ? t(`visitRequests.states.${event.to}`) : event.to
   return t('visitRequests.card.event', { who, state })

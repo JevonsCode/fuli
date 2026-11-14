@@ -69,7 +69,8 @@ export const visitListShape = shapeOf(z.looseObject({
   awaiting: z.looseObject({ count: z.number(), newest: z.array(visitRequestSchema) }),
 }))
 export const visitCardShape = shapeOf(z.looseObject({ request: visitRequestCardSchema }))
-export const visitDecisionShape = shapeOf(z.looseObject({ request: visitRequestSchema }))
+// warning: a decision that went through while removing the copy or the branch did not (worktree_entry_kept, branch_kept, cleanup_failed).
+export const visitDecisionShape = shapeOf(z.looseObject({ request: visitRequestSchema, warning: z.string().optional() }))
 export const requestersShape = shapeOf(z.looseObject({ requesters: z.array(requesterSchema), defaultMode: z.enum(REQUESTER_MODES) }))
 export const requesterModeShape = shapeOf(z.looseObject({
   requester: requesterSchema,
