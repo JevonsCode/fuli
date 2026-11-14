@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
 import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences }
   from '../../../test-support/synthetic-large-entry.js';

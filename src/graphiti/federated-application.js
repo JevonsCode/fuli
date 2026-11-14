@@ -99,6 +99,7 @@ import {
   listProjectRelationWeights,
   upsertPersonalProject
 } from './personal-projects.js';
+import { environmentTokenUsageResolver } from '../agents/token-usage-resolver.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -123,7 +124,7 @@ export function openFederatedGraphApplication({
     ),
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
-    tokenUsageResolver,
+    tokenUsageResolver: tokenUsageResolver ?? environmentTokenUsageResolver(env),
     // Read per use (briefly cached): an MCP process that starts while the console is restarting
     // (an update reconnects every client) must not keep the default port for its whole life.
     consoleUrl: liveSourceConsoleUrl(runtimeConfigPath),

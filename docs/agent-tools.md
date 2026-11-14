@@ -21,6 +21,21 @@ they must not duplicate supplied preferences. Installing configuration never app
 Preference content remains in local Fuli as the single source of truth and is not copied into agent
 configuration.
 
+The Claude Code and Codex hook commands (`src/agents/<client>/lifecycle-hook.js`) load only Node
+built-ins and hand each call to the running console of their data directory
+(`POST /api/lifecycle-hooks/<client>`, loopback and this computer's own hook processes only,
+never an Agent interface), which runs it and answers what the hook prints. Without a running
+console of the same FULI version, or when the console refuses the call before running it, the hook
+runs it in its own process as before; once the console may have run it, the hook never runs it
+again and answers as unavailable. The console takes at most 8 calls at once, none for a session whose
+earlier call is still running past its deadline, and none whose transcript is not a regular file;
+those run in the hook's own process. Two small differences from a hook process: the per-process memory
+of a capture denial that could not be saved (`unkeptDenials` in
+`src/conversations/transcript-capture-gap.js`) is now shared by the calls the console runs, and the
+default warnings of local stores go to the console's log instead of the hook's stderr. The rules and
+the measurement are in `src/agents/lifecycle-forwarder.js`, `src/agents/lifecycle-hook-calls.js` and
+`acceptance/hook-forwarding/measure.js` (rec#132).
+
 FULI also exposes read-only `fuli://` resources for each local personal project and for global taste.
 Agents with MCP mention support can select them from the `@` picker; a project resource selects one
 exact project and never expands the search to other projects or `RELATED_TO` projects.
