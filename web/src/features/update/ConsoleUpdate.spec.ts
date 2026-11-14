@@ -118,6 +118,17 @@ describe('ConsoleUpdate', () => {
     expect(wrapper.text()).not.toContain('did not start')
   })
 
+  it('says that neither version runs when switching back did not end with the previous one running', async () => {
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.24.0', kind: 'macos-app' } })
+    api.postJson.mockResolvedValueOnce(job('updating', { kind: 'macos-app', step: null }))
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    api.getJson.mockResolvedValueOnce({ update: job('failed', { kind: 'macos-app', errorCode: 'rollback_failed',
+      error: 'v0.24.0 did not start (synthetic); the previous version was restored but did not start either (synthetic).' }) })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能启动，原来的版本也没能正常运行，请看详情。 查看详情')
+  })
+
   it('says plainly when the Mac app kept the new version instead of switching back', async () => {
     const wrapper = mount(ConsoleUpdate, { props: { version: '0.24.0', kind: 'macos-app' } })
     api.postJson.mockResolvedValueOnce(job('updating', { kind: 'macos-app', step: null }))

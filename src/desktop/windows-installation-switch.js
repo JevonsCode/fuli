@@ -6,7 +6,10 @@ import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOve
 import { placeWindowsNodeLauncher } from './windows-node-launcher.js';
 import { dataFormatMarks, dataUpgradedSince } from '../data-format/data-newer-than-package.js';
 import { waitForConsoleStarts } from '../local-runtime/console-autostart-record.js';
-import { failedStartError, keepNewVersionOnNewerData, previousVersionBlocked, startsBusyBeforeUpdate, startsStillRunning } from './failed-update-recovery.js';
+import {
+  consoleLeftRunning, consoleStillRunning, failedStartError, keepNewVersionOnNewerData, newVersionDidNotStop, previousVersionBlocked,
+  startsBusyBeforeUpdate, startsStillRunning
+} from './failed-update-recovery.js';
 import { stopInstalledFuli } from './windows-running-fuli.js';
 import { backupWindowsGraph, prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
 
@@ -57,7 +60,7 @@ export function stageWindowsShortcuts(shortcuts, packageRoot, createShortcut, re
 // names the version that starts next: no console starts from the version being
 // replaced after its stop. That version's own start takes the lock itself.
 export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot, { runCli, lock, write, discard = () => {}, stopping = {},
-  backupGraph = backupWindowsGraph, holdStarts = waitForConsoleStarts }) {
+  backupGraph = backupWindowsGraph, holdStarts = waitForConsoleStarts, consolesLeft = consoleLeftRunning }) {
   let releaseStarts = () => {};
   try {
     lock.assertHeld();
@@ -75,7 +78,7 @@ export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot
     discard();
     throw error;
   }
-  return switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts });
+  return switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts, consolesLeft });
 }
 
 function once(release) {
@@ -83,7 +86,7 @@ function once(release) {
   return () => { if (!released) { released = true; release(); } };
 }
 
-async function switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts }) {
+async function switchInstallation(plan, staged, packageRoot, { runCli, lock, write, backupGraph, releaseStarts, holdStarts, consolesLeft }) {
   const execute = runCli;
   runCli = async (...args) => {
     lock.assertHeld();
@@ -142,9 +145,12 @@ async function switchInstallation(plan, staged, packageRoot, { runCli, lock, wri
     let held;
     try { held = holdStarts(current.dataDir); } catch (busy) { throw failedStartError(plan.applicationVersion, error.message, startsStillRunning(busy)); }
     try { await requireInstalledCli(runCli, packageRoot, args('stop'), 'Fuli ' + plan.applicationVersion + ' could not be stopped; automatic rollback was not attempted.'); }
-    catch (stopError) { throw new AggregateError([error, stopError], stopError.message); }
+    catch (stopError) { throw failedStartError(plan.applicationVersion, error.message, newVersionDidNotStop(stopError.message)); }
     finally { held(); }
     lock.assertHeld();
+    // A console the failed start left, unrecorded, may still upgrade stores or hold its port.
+    const left = await consolesLeft(current.dataDir);
+    if (left) throw failedStartError(plan.applicationVersion, error.message, consoleStillRunning(left));
     const decision = await keepNewVersionOnNewerData(previousVersionBlocked(() => dataUpgradedSince(marks, current.dataDir)),
       async () => { try { await startNew(); return { ok: true }; } catch (retry) { return { ok: false, error: retry.message }; } });
     if (!decision) return false;

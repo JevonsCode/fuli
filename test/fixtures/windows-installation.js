@@ -72,5 +72,7 @@ export function installedWindowsFixture(t) {
   return { ...f, current, source, calls, client, options: { source, env: f.env },
     deps: { ...f.deps, desktopClient, acquireLock: async () => ({ assertHeld() {}, async release() {} }), runCli: async (root, args) => { calls.push({ root, args }); return { code: 0 }; },
       // A refused stop is retried without the production pause.
-      stopping: { wait: async () => {} } } };
+      stopping: { wait: async () => {} },
+      // The OS process list is never read: no console from a failed start is left.
+      consolesLeft: async () => null } };
 }

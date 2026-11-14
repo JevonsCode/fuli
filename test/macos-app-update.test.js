@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
 
 import { macosDesktopClient, updateMacosAppFromRelease } from '../src/desktop/macos-app-update.js';
+import { acquireConsoleStartLock } from '../src/local-runtime/console-autostart-record.js';
 
 // The macOS app's one-click update, with every system tool faked: synthetic
 // app bundles in a temporary "Applications" folder, no image is mounted, no
@@ -40,8 +44,10 @@ function tools(imageVersion, calls) {
 // autostartUnderWay: an Agent session's automatic start is bringing a console up
 // when the update begins; it records that console once it finishes, which the
 // start lock waits for.
+// leftConsole: why a console from the failed start still runs, or null.
+// onController(action, version): runs before each controller call answers.
 function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerData = null, held = [],
-  autostartUnderWay = false } = {}) {
+  autostartUnderWay = false, leftConsole = null, onController = () => {} } = {}) {
   const root = applications(t);
   const app = join(root, 'Applications', 'FULI.app');
   const packageRoot = bundle(app, '0.23.0');
@@ -50,6 +56,7 @@ function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerD
   let autostart = autostartUnderWay ? 'starting' : null;
   const controller = async (root, action) => {
     calls.push(['controller', action, versionOf(dirname(dirname(dirname(root))))]);
+    onController(action, versionOf(dirname(dirname(dirname(root)))));
     if (action === 'stop' && autostart === 'recorded') { autostart = null; calls.push(['stopped the automatic start\'s console']); }
     const ok = (action === 'start' ? starts : stops).shift() ?? true;
     errors += ok ? 0 : 1;
@@ -60,7 +67,12 @@ function setup(t, { imageVersion = '0.24.0', starts = [true], stops = [], newerD
   const cli = async (root, args) => { calls.push(['cli', args.slice(0, 3).join(' '), versionOf(dirname(dirname(dirname(root))))]); return { code: 0 }; };
   const deps = { cli, download: async ({ name, directory }) => { calls.push(['download', name]); return join(directory, name); },
     runCommand: tools(imageVersion, calls), controller, client, readBundle: () => ({ arch: 'arm64' }), tempRoot: root, env: {},
-    dataNewer: dataDir => { calls.push(['dataNewer', dataDir]); return newerData; },
+    dataNewer: dataDir => {
+      calls.push(['dataNewer', dataDir]);
+      if (newerData instanceof Error) throw newerData;
+      return newerData;
+    },
+    consolesLeft: async dataDir => { calls.push(['consolesLeft', dataDir]); return leftConsole; },
     holdStarts: dataDir => {
       calls.push(['holdStarts', dataDir]);
       if (!(held.shift() ?? true)) throw new Error('Another FULI process holds this lock');
@@ -210,4 +222,65 @@ test('the desktop client of exactly this app is ended, then killed if it stays',
   assert.deepEqual(signals[0], [7, 'SIGTERM']);
   assert.ok(signals.some(([pid, name]) => pid === 7 && name === 'SIGKILL'));
   assert.equal(signals.some(([pid]) => pid === 8), false);
+});
+
+test('a console the failed start left running keeps everything where it is: no data is read and no bundle moves', async t => {
+  const { app, packageRoot, calls, deps, aside } = setup(t, { starts: [false], leftConsole: 'a FULI console still runs (process 4242)' });
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, deps),
+    error => error.code === 'kept_new_version' && error.message === 'v0.24.0 did not start (start error 1 second line); '
+      + 'a FULI console still runs (process 4242), so it was left installed and nothing was switched back.');
+  assert.equal(versionOf(app), '0.24.0');
+  assert.equal(versionOf(aside('previous')), '0.23.0');
+  assert.equal(existsSync(aside('failed')), false);
+  assert.equal(calls.some(([kind]) => kind === 'dataNewer'), false, 'the data is not read while that console may still change it');
+  assert.deepEqual(lifecycle(calls).slice(-3), [['controller', 'stop', '0.24.0'], ['releaseStarts'], ['client', 'open']]);
+});
+
+test('data that cannot be checked keeps the new version and starts it once more', async t => {
+  const { app, packageRoot, deps } = setup(t, { starts: [false, false], newerData: new Error('synthetic read failure') });
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0' }, deps),
+    error => error.code === 'kept_new_version' && error.message.includes(
+      'the previous version cannot run on this data (its data could not be checked: synthetic read failure), so the new one was kept'));
+  assert.equal(versionOf(app), '0.24.0');
+});
+
+test('a switch back that fails part way says where both bundles are', async t => {
+  let aside;
+  const fixture = setup(t, { starts: [false],
+    // The previous bundle is gone by the time FULI is switched back to it.
+    onController: (action, version) => { if (action === 'stop' && version === '0.24.0') rmSync(aside('previous'), { recursive: true }); } });
+  aside = fixture.aside;
+  await assert.rejects(updateMacosAppFromRelease({ packageRoot: fixture.packageRoot, dataDir: '/data', version: '0.24.0' }, fixture.deps),
+    error => error.code === 'rollback_failed' && /switching back to the previous version failed, so the new one stays/.test(error.message));
+  assert.equal(versionOf(fixture.app), '0.24.0', 'the new bundle was put back where it was');
+  assert.equal(existsSync(aside('failed')), false);
+});
+
+test('the real start lock: a start under way in another process finishes and records its console before the first stop', async t => {
+  const { packageRoot, deps } = setup(t);
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-start-lock-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const recorded = join(dataDir, 'synthetic-console-recorded');
+  const locked = join(dataDir, 'synthetic-lock-held');
+  // A synthetic start in another process: it takes the real lock, works for a while, records its console, lets go.
+  const lockModule = pathToFileURL(join(process.cwd(), 'src', 'local-runtime', 'console-autostart-record.js')).href;
+  const start = spawn(process.execPath, ['--input-type=module', '-e', [
+    `const { acquireConsoleStartLock } = await import(${JSON.stringify(lockModule)});`,
+    `const { writeFileSync } = await import('node:fs');`,
+    `const release = acquireConsoleStartLock(${JSON.stringify(dataDir)});`,
+    `writeFileSync(${JSON.stringify(locked)}, '');`,
+    'await new Promise(resolve => setTimeout(resolve, 1500));',
+    `writeFileSync(${JSON.stringify(recorded)}, '');`,
+    'release();'
+  ].join('\n')], { stdio: 'ignore' });
+  t.after(() => start.kill());
+  while (!existsSync(locked)) await delay(20);
+  const stopsSaw = [];
+  await updateMacosAppFromRelease({ packageRoot, dataDir, version: '0.24.0' }, { ...deps,
+    holdStarts: dir => acquireConsoleStartLock(dir, { waitMs: 20_000 }),
+    controller: async (root, action) => {
+      if (action === 'stop') stopsSaw.push(existsSync(recorded));
+      return { ok: true, status: action === 'start' ? 'running' : 'stopped' };
+    } });
+  assert.deepEqual(stopsSaw, [true], 'the stop ran only after the start under way had recorded its console');
 });

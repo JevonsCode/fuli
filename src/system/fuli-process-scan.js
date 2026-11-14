@@ -1,32 +1,44 @@
 import { execute, parsePowershellJson, powershellArguments } from '../local-runtime/windows-process-handle.js';
 
-// The FULI stdio MCP servers of this installation that the OS shows running,
-// recorded or not: a server started by a FULI older than process-registry.js
-// writes no record, so only the process list can name it. A server is a
-// process whose command line runs mcp-server.js with this installation's
-// --runtime-config; worker (--worker) and one-shot (--call) runs are not
-// sessions. Answers [{ pid, parentPid, startedAt }], or null when the list
-// could not be read in time. A session can show more than one: the stdio
-// relay (stdio-relay.js) and, on an installed Windows copy, FuliNode.exe run
-// the same arguments as their server child.
+// FULI processes of one data directory that the OS shows running, recorded or
+// not, by the --runtime-config their command line names. Each answers
+// [{ pid, parentPid, startedAt }], or null when the list could not be read in time.
 const SCAN_TIMEOUT_MS = 5000;
-const SERVER_SCRIPT = 'mcp-server.js';
+const MCP_SCRIPT = 'mcp-server.js';
 const NOT_SESSIONS = ['--worker', '--call'];
+// The console's entry, src/server.js (not mcp-server.js).
+const CONSOLE_SCRIPT = /[\\/]src[\\/]server\.js\b/;
 
-const WINDOWS_SCRIPT = `$found = @(Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${SERVER_SCRIPT}%'" | ForEach-Object {
+// Every command line naming server.js (the console's and the MCP server's); each scan filters its own.
+const WINDOWS_SCRIPT = `$found = @(Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%server.js%'" | ForEach-Object {
   [pscustomobject]@{ pid = [int]$_.ProcessId; parentPid = [int]$_.ParentProcessId; commandLine = $_.CommandLine;
     startedAt = $(if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { $null }) } })
 ConvertTo-Json -Compress -Depth 3 -InputObject $found`;
 
+// The stdio MCP servers of this installation: a server started by a FULI
+// older than process-registry.js writes no record, so only the process list
+// can name it. Worker (--worker) and one-shot (--call) runs are not sessions.
+// A session can show more than one: the stdio relay (stdio-relay.js) and, on
+// an installed Windows copy, FuliNode.exe run the same arguments as their server child.
 // run(command, args, options) → { stdout }: execute() in production, a fake in tests.
-export async function runningMcpServers(runtimeConfigPath, { platform = process.platform, run = execute } = {}) {
+export function runningMcpServers(runtimeConfigPath, options = {}) {
+  return scan(runtimeConfigPath, command => command.includes(MCP_SCRIPT) && !NOT_SESSIONS.some((flag) => command.includes(flag)),
+    options);
+}
+
+// The consoles serving this data directory, recorded or not: one a start
+// gave up on, or whose start was killed, is in no record a stop reads.
+export function runningConsoles(runtimeConfigPath, options = {}) {
+  return scan(runtimeConfigPath, command => CONSOLE_SCRIPT.test(command), options);
+}
+
+async function scan(runtimeConfigPath, matches, { platform = process.platform, run = execute } = {}) {
   try {
     const rows = platform === 'win32' ? await windowsRows(run) : await psRows(run);
     const wanted = platform === 'win32' ? runtimeConfigPath.toLowerCase() : runtimeConfigPath;
     return rows.filter(({ commandLine }) => {
       const command = platform === 'win32' ? commandLine.toLowerCase() : commandLine;
-      return command.includes(SERVER_SCRIPT) && command.includes('--runtime-config') && command.includes(wanted)
-        && !NOT_SESSIONS.some((flag) => command.includes(flag));
+      return command.includes('--runtime-config') && command.includes(wanted) && matches(command);
     }).map(({ pid, parentPid, startedAt }) => ({ pid, parentPid, startedAt }));
   } catch {
     return null;

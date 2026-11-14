@@ -101,6 +101,8 @@ test('native graph services start databases before Providers and preserve shutdo
       [join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
         'dbms', 'set-initial-password', '--', 'workspace-password']
     ]);
+    assert.deepEqual(commands.map(({ options }) => options.cwd), [PATHS.nativePersonalDir, PATHS.nativeWorkspaceDir],
+      'neo4j-admin runs in the instance directory too, never in the directory of whoever started FULI');
     assert.deepEqual(spawnedDatabases.map(({ id, command, args }) => ({ id, command, args })), [
       {
         id: 'personal',
@@ -484,15 +486,15 @@ test('offline dump and load run neo4j-admin with the instance home Windows start
     pathExists: () => true,
     markInitialized: () => {},
     readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
-    run: async (command, args, { env }) => commands.push({ command, args,
-      home: env.NEO4J_HOME, conf: env.NEO4J_CONF, java: env.JAVA_HOME })
+    run: async (command, args, { env, cwd }) => commands.push({ command, args,
+      home: env.NEO4J_HOME, conf: env.NEO4J_CONF, java: env.JAVA_HOME, cwd })
   });
 
   await services.dumpDatabase('personal', '/stage/out');
   await services.loadDatabase('personal', '/stage/in');
   await assert.rejects(services.dumpDatabase('workspace', '/stage/out'), /Unsupported graph instance/);
 
-  const instance = { home: PATHS.nativePersonalDir, conf: join(PATHS.nativePersonalDir, 'conf'), java: '/jre-21' };
+  const instance = { home: PATHS.nativePersonalDir, conf: join(PATHS.nativePersonalDir, 'conf'), java: '/jre-21', cwd: PATHS.nativePersonalDir };
   assert.deepEqual(commands, [
     { command: join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
       args: ['database', 'dump', 'neo4j', '--to-path=/stage/out'], ...instance },

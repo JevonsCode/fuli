@@ -8,8 +8,8 @@ import { dataNewerThanThisPackage } from '../data-format/data-newer-than-package
 import { waitForConsoleStarts } from '../local-runtime/console-autostart-record.js';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 import {
-  failedStartError, keepNewVersionOnNewerData, newVersionDidNotStop, previousVersionBlocked, reasonText,
-  startsBusyBeforeUpdate, startsStillRunning
+  consoleLeftRunning, consoleStillRunning, failedStartError, keepNewVersionOnNewerData, newVersionDidNotStop,
+  previousVersionBlocked, reasonText, startsBusyBeforeUpdate, startsStillRunning
 } from './failed-update-recovery.js';
 import { downloadVerifiedReleaseAsset, failure } from './release-asset.js';
 
@@ -46,7 +46,7 @@ export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dm
 export async function updateMacosAppFromRelease({ packageRoot, dataDir, version, progress = () => {} }, {
   download = downloadVerifiedReleaseAsset, runCommand = run, controller = runController, cli = runCli,
   client = macosDesktopClient, readBundle = readMacosNativeBundle, tempRoot = tmpdir(), env = process.env,
-  dataNewer = dataNewerThanThisPackage, holdStarts = waitForConsoleStarts
+  dataNewer = dataNewerThanThisPackage, holdStarts = waitForConsoleStarts, consolesLeft = consoleLeftRunning
 } = {}) {
   const app = installedApp(packageRoot);
   const { arch } = readBundle(packageRoot);
@@ -88,7 +88,7 @@ export async function updateMacosAppFromRelease({ packageRoot, dataDir, version,
     } finally { release(); }
     const started = await controller(bundleRoot(app), 'start', env);
     if (!started.ok) {
-      const recovered = await recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts });
+      const recovered = await recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts, consolesLeft });
       if (!recovered.ok) {
         if (clientWasRunning) client.open(app);
         throw failedStartError(version, started.error, recovered);
@@ -174,7 +174,7 @@ function permissionAware(error, message) {
 // aside, not deleted, until the previous version runs.
 // Answers { ok: true } when the new version runs after all, else
 // { ok: false, code, outcome }: what was done, as one sentence.
-async function recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts }) {
+async function recover({ app, previous, failed, dataDir, env, controller, dataNewer, holdStarts, consolesLeft }) {
   // A stop sees only a console a finished start recorded. Another start (an
   // Agent session's automatic one, console-autostart.js) may still be bringing
   // one up, so the stop runs once no start is under way and none can begin;
@@ -184,6 +184,9 @@ async function recover({ app, previous, failed, dataDir, env, controller, dataNe
   let stopped;
   try { stopped = await controller(bundleRoot(app), 'stop', env); } finally { release(); }
   if (!stopped.ok) return newVersionDidNotStop(stopped.error);
+  // A console the failed start left, unrecorded, may still upgrade stores or hold its port.
+  const left = await consolesLeft(dataDir);
+  if (left) return consoleStillRunning(left);
   const kept = await keepNewVersionOnNewerData(previousVersionBlocked(() => dataNewer(dataDir)),
     () => controller(bundleRoot(app), 'start', env));
   if (kept) return kept;
@@ -191,9 +194,12 @@ async function recover({ app, previous, failed, dataDir, env, controller, dataNe
     renameSync(app, failed);
     renameSync(previous, app);
   } catch (error) {
-    try { if (!existsSync(app) && existsSync(failed)) renameSync(failed, app); } catch { /* the message below names the first failure */ }
-    return { ok: false, code: 'rollback_failed',
-      outcome: `switching back to the previous version failed, so the new one stays (${reasonText(error?.message ?? error)}).` };
+    try { if (!existsSync(app) && existsSync(failed)) renameSync(failed, app); } catch { /* said below */ }
+    const reason = reasonText(error?.message ?? error);
+    return { ok: false, code: 'rollback_failed', outcome: existsSync(app)
+      ? `switching back to the previous version failed, so the new one stays (${reason}).`
+      : `switching back to the previous version failed and nothing is installed at ${app}: the new version is at ${failed} `
+        + `and the previous one at ${previous} (${reason}).` };
   }
   const restarted = await controller(bundleRoot(app), 'start', env);
   if (!restarted.ok) {

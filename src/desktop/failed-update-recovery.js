@@ -1,3 +1,7 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
+import { resolveSetupPaths } from '../setup/paths.js';
+import { runningConsoles } from '../system/fuli-process-scan.js';
 import { singleLine } from '../text/single-line.js';
 import { failure } from './release-asset.js';
 
@@ -32,6 +36,30 @@ export const startsStillRunning = error => ({ ok: false, code: 'kept_new_version
   outcome: `another start of FULI did not finish, so it was left installed and nothing was switched back (${reasonText(error?.message ?? error)}).` });
 export const newVersionDidNotStop = error => ({ ok: false, code: 'kept_new_version',
   outcome: `it did not stop either, so it was left installed and nothing was switched back (${reasonText(error)}).` });
+
+// A console the failed start left is in no record a stop reads: one the start
+// could not end, or one whose start was killed by a timeout. Nothing is read
+// or moved while it may still upgrade the data or hold its port. Waits a
+// bounded time for every console of this data directory to end; answers null,
+// or why nothing may move (also when the processes could not be listed).
+const LEFT_CONSOLE_WAIT_MS = 30_000;
+const LEFT_CONSOLE_POLL_MS = 1000;
+
+export async function consoleLeftRunning(dataDir, { scan = runningConsoles, wait = delay, now = Date.now } = {}) {
+  const configPath = resolveSetupPaths({ dataDir }).graphRuntimeConfigPath;
+  const deadline = now() + LEFT_CONSOLE_WAIT_MS;
+  for (;;) {
+    const running = await scan(configPath);
+    if (running?.length === 0) return null;
+    if (now() >= deadline) {
+      return running ? `a FULI console still runs (process ${running.map(({ pid }) => pid).join(', ')})`
+        : 'the running FULI processes could not be listed';
+    }
+    await wait(LEFT_CONSOLE_POLL_MS);
+  }
+}
+export const consoleStillRunning = reason => ({ ok: false, code: 'kept_new_version',
+  outcome: `${reason}, so it was left installed and nothing was switched back.` });
 
 // Before an update stops FULI: a start that did not finish in time ends it.
 export const startsBusyBeforeUpdate = error =>

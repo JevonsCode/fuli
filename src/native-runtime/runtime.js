@@ -212,7 +212,7 @@ export function createNativeGraphServices({
       // Compatibility with native runtimes created before database PIDs were recorded.
       for (const spec of await serviceSpecs()) {
         await run(join(descriptor.neo4jHome, 'bin', 'neo4j'), ['stop'], {
-          env: neo4jEnvironment(spec)
+          env: neo4jEnvironment(spec), cwd: spec.instanceDir
         }).catch(() => {});
       }
     }
@@ -258,7 +258,7 @@ export function createNativeGraphServices({
     // is still read as the positional <password> value.
     await run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), [
       'dbms', 'set-initial-password', '--', spec.password
-    ], { env: neo4jEnvironment(spec) });
+    ], { env: neo4jEnvironment(spec), cwd: spec.instanceDir });
     await markInitialized(marker);
   }
 
@@ -350,7 +350,7 @@ export function createNativeGraphServices({
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
     return run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), args, {
-      env: neo4jEnvironment(spec)
+      env: neo4jEnvironment(spec), cwd: spec.instanceDir
     });
   }
 
@@ -662,6 +662,8 @@ function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     execFile(command, args, {
       env: options.env ?? process.env,
+      // Neo4j's tools, like its server, run in the instance directory (spawnNativeDatabase).
+      cwd: options.cwd,
       timeout: COMMAND_TIMEOUT_MS,
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,

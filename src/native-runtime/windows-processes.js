@@ -180,14 +180,14 @@ async function spawnOwned(command, args, environment, logPath, { provider = fals
   } finally { closeSync(log); }
 }
 
-export async function runWindowsNeo4j(command, args, { env }) {
+export async function runWindowsNeo4j(command, args, { env, cwd }) {
   if (basename(command) !== 'neo4j-admin') throw new Error('Unowned Windows Neo4j command is not supported');
   const home = dirname(dirname(command));
   // AdminTool uses a typed home path. The outer bootloader escapes non-ASCII
   // Windows paths through its PATH setting parser, even for set-initial-password.
   return execute(join(env.JAVA_HOME, 'bin', 'java.exe'), ['-cp', join(home, 'lib', '*'),
     'org.neo4j.cli.AdminTool', ...args], {
-    env, sensitiveValues: neo4jAdminSensitiveValues(args)
+    env, cwd, sensitiveValues: neo4jAdminSensitiveValues(args)
   });
 }
 

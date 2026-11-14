@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runningMcpServers } from '../src/system/mcp-process-scan.js';
+import { runningConsoles, runningMcpServers } from '../src/system/fuli-process-scan.js';
 
 // The OS process list is a fake runner's synthetic output: no real process is listed.
 
@@ -67,4 +67,19 @@ test('a listing that fails or runs out of time answers null', async () => {
   assert.equal(await runningMcpServers(POSIX_CONFIG, { platform: 'linux', run: failed }), null);
   assert.equal(await runningMcpServers(WINDOWS_CONFIG, { platform: 'win32', run: failed }), null);
   assert.equal(await runningMcpServers(WINDOWS_CONFIG, { platform: 'win32', run: fakeRun('not json') }), null);
+});
+
+test('the consoles of this data directory are listed, recorded or not, and never an MCP server', async () => {
+  const stdout = [
+    `  406   300 Tue Oct 27 10:15:35 2026 /Applications/FULI.app/Contents/Resources/fuli/runtime/node/bin/node /Applications/FULI.app/Contents/Resources/fuli/src/server.js --runtime-config ${POSIX_CONFIG} --port 2727`,
+    `  407   300 Tue Oct 27 10:15:36 2026 node /opt/fuli/src/mcp-server.js --runtime-config ${POSIX_CONFIG}`,
+    '  408   300 Tue Oct 27 10:15:37 2026 node /opt/fuli/src/server.js --runtime-config /other/graph-runtime.json',
+    ''
+  ].join('\n');
+  assert.deepEqual(await runningConsoles(POSIX_CONFIG, { platform: 'darwin', run: fakeRun(stdout) }),
+    [{ pid: 406, parentPid: 300, startedAt: '2026-10-27T10:15:35.000Z' }]);
+  const rows = [{ pid: 5200, parentPid: 5000, startedAt: null,
+    commandLine: `"C:\\Synthetic\\Fuli\\versions\\a\\runtime\\node\\node.exe" C:\\Synthetic\\Fuli\\versions\\a\\src\\server.js --runtime-config ${WINDOWS_CONFIG}` }];
+  assert.deepEqual(await runningConsoles(WINDOWS_CONFIG, { platform: 'win32', run: fakeRun(JSON.stringify(rows)) }),
+    [{ pid: 5200, parentPid: 5000, startedAt: null }]);
 });
