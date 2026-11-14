@@ -593,6 +593,20 @@ test('a folder that stops being a repository after planning fails the run withou
     'no worktree was made, so its cleanup is no step and no warning');
 });
 
+test('a Git step failing after the client ran keeps the run’s time: a recorded 0 means the run never began', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  // The client's edit takes the owner's repository away, so the inspection after the run fails.
+  const f = service(t, owner, (cwd, repository) => renameSync(join(repository, '.git'), join(owner.root, 'moved-git-after-run')));
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error], ['failed', 'git_failed']);
+  assert.ok(request.runMs >= 1, 'the run happened');
+  assert.equal(f.wakes.filter((wake) => wake.mode === 'edit').length, 1);
+  // Put back, so the tidy after the failure can finish before the folder is removed.
+  renameSync(join(owner.root, 'moved-git-after-run'), join(owner.repository, '.git'));
+  await delay(1500);
+});
+
 test('a failed Git step carries the last line of Git\'s message, without local paths or control characters', { timeout: 60_000 }, async (t) => {
   const owner = ownerRepository(t);
   const plain = join(owner.root, 'plain-folder');

@@ -105,23 +105,31 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     const snapshot = () => integritySnapshot({ repository, root, ownBranch: request.branch, id: request.id }).catch(() => null);
     const before = await snapshot();
     const started = clock();
+    // Never 0 once the client was started: a recorded run time of 0 means the run never began.
+    const elapsed = () => Math.max(1, clock() - started);
     let answer;
     try {
       answer = await runClient({ client, step: 'edit', cwd: request.worktreePath, prompt: runPrompt(request, lead),
         timeoutMs: RUN_MS, signal, onSpawn });
     } catch (error) {
       // error.cleanup ({ status: 'unconfirmed' }) stays: the client may still be running.
-      throw Object.assign(error, { code: runCode(error), ms: clock() - started });
+      throw Object.assign(error, { code: runCode(error), ms: elapsed() });
     }
-    const ms = clock() - started;
-    const place = { folder: request.projectFolder, root, id: request.id, worktreePath: request.worktreePath };
-    const hold = await inspectVisitWorktree({ ...place, baseCommit: request.baseCommit });
-    if (!hold) await commitVisitWorktree({ ...place, message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
-    const after = await snapshot();
-    const changes = hold ? { files: [], diffstat: { files: 0, added: 0, removed: 0 }, addedText: '' }
-      : await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
-    return { ms, hold, intact: before === null || after === null ? null : before === after, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''),
-      files: changes.files, diffstat: changes.diffstat, addedText: changes.addedText };
+    const ms = elapsed();
+    // The run happened: whatever fails after it (the inspection, the commit, reading the changes), its time is recorded.
+    try { return await concluded(); }
+    catch (error) { throw Object.assign(error, { ms }); }
+
+    async function concluded() {
+      const place = { folder: request.projectFolder, root, id: request.id, worktreePath: request.worktreePath };
+      const hold = await inspectVisitWorktree({ ...place, baseCommit: request.baseCommit });
+      if (!hold) await commitVisitWorktree({ ...place, message: `FULI visit request ${request.id}\n\n${oneLine(request.title)}` });
+      const after = await snapshot();
+      const changes = hold ? { files: [], diffstat: { files: 0, added: 0, removed: 0 }, addedText: '' }
+        : await branchChanges({ repository, baseCommit: request.baseCommit, branch: request.branch, root });
+      return { ms, hold, intact: before === null || after === null ? null : before === after, summary: [...withoutControls(answer.body)].slice(0, SUMMARY_CHARS).join(''),
+        files: changes.files, diffstat: changes.diffstat, addedText: changes.addedText };
+    }
   }
 
   async function patch(request) {
