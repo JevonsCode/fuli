@@ -27,7 +27,7 @@ const PLAN = z.object({
   size: z.enum(['s', 'm', 'l'])
 });
 
-// runClient({ client, step: 'plan' | 'edit', cwd, prompt, timeoutMs, signal }) → { body }
+// runClient({ client, step: 'plan' | 'edit', cwd, prompt, timeoutMs, signal, onSpawn }) → { body }
 // projectFolder({ agentId, projectId }) → the lead's known folder of the project, or null
 // verifyFolder(folder, projectId) → whether FULI maps that folder to the project
 // root: the folder visit worktrees are made in (<dataDir>/visit-worktrees).
@@ -73,7 +73,8 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   // intact: true, false, or null when a snapshot could not be taken in time
   // (the result is then held as integrity_unknown rather than waited for).
   // The "before" snapshot is taken here, right before the run starts.
-  async function run(request, { signal, client, lead }) {
+  // onSpawn(pid): the client process of the edit started (recorded by the caller).
+  async function run(request, { signal, client, lead, onSpawn }) {
     const repository = await repositoryRoot({ folder: request.projectFolder, root });
     const snapshot = () => integritySnapshot({ repository, root, ownBranch: request.branch, id: request.id }).catch(() => null);
     const before = await snapshot();
@@ -81,8 +82,9 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     let answer;
     try {
       answer = await runClient({ client, step: 'edit', cwd: request.worktreePath, prompt: runPrompt(request, lead),
-        timeoutMs: RUN_MS, signal });
+        timeoutMs: RUN_MS, signal, onSpawn });
     } catch (error) {
+      // error.cleanup ({ status: 'unconfirmed' }) stays: the client may still be running.
       throw Object.assign(error, { code: runCode(error), ms: clock() - started });
     }
     const ms = clock() - started;
@@ -107,7 +109,8 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   async function remove(request, { keepBranch }) {
     if (!request.worktreePath && !request.branch) return { entryKept: false, branchKept: false };
     const repository = await repositoryRoot({ folder: request.projectFolder, root });
-    return removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root }, { keepBranch });
+    return removeVisitWorktree({ repository, worktreePath: request.worktreePath, branch: request.branch, root,
+      rootIdentity: request.rootIdentity }, { keepBranch });
   }
 
   return { folder, planned, prepare, plan, run, patch, remove };

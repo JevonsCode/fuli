@@ -115,6 +115,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
       projectFolder: (input) => app.roundtable.knownProjectFolder(input),
       verifyFolder: async (folder, projectId) => await app.roundtableHost.projectForPath(folder) === projectId,
       root: join(dataDir, 'visit-worktrees') }),
+    // A run whose client may still be running keeps its worktree until the OS shows that process ended.
+    inspectProcess: createProcessInspector().inspect,
     leads: {
       confirm: async ({ projectId, agentId }) => await app.roundtableHost.projectLeadId(projectId) === agentId,
       constrainedClients: async ({ agentId }) => (await app.roundtable.visitClients({ agentId }))

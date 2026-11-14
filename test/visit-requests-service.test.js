@@ -15,7 +15,8 @@ const LEAD = 'synthetic-lead';
 const SAFE_PLAN = { areas: ['src/server.js'], risks: [], dependencyChanges: false, configChanges: false, network: false, size: 's' };
 const DRAFT = { title: 'Read the port from settings', what: 'The server should read its port from settings.json', expectedAreas: ['src/'] };
 
-function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort = null } = {}) {
+// pid: the run's client process starts with this PID; failWith: the run throws it; abortError: what a stopped run throws.
+function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort = null, pid = null, failWith = null, abortError = null } = {}) {
   const calls = { folders: [], prepared: [], planned: [], ran: [], removed: [] };
   return {
     calls,
@@ -28,13 +29,15 @@ function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort 
     planned: (request) => ({ worktreePath: `/synthetic/worktrees/${request.id}`, branch: `fuli/visit/${request.id}` }),
     async plan(request, { client }) { calls.planned.push({ id: request.id, cwd: request.projectFolder, worktree: request.worktreePath, client });
       return { plan, error: plan ? null : 'plan_unreadable', ms: 1000 }; },
-    async run(request, { signal, client, lead }) {
+    async run(request, { signal, client, lead, onSpawn }) {
       calls.ran.push({ id: request.id, decidedBy: request.decidedBy, mode: request.modeAtDecision, client, lead });
+      if (pid) onSpawn(pid);
+      if (failWith) throw failWith;
       if (holdRun) {
         await Promise.race([holdRun, new Promise((_, reject) => signal.addEventListener('abort', async () => {
           // A commit step still finishing after the abort.
           if (afterAbort) await afterAbort();
-          reject(Object.assign(new Error('cancelled'), { code: 'cancelled', ms: 5 }));
+          reject(abortError ?? Object.assign(new Error('cancelled'), { code: 'cancelled', ms: 5 }));
         }))]);
       }
       return { ms: 2000, hold: null, summary: 'Changed the server to read its port.', intact: true, addedText: '+const port = settings.port;',
@@ -47,14 +50,14 @@ function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort 
 }
 
 function fixture(t, runnerOptions = {}, { now = () => new Date('2026-11-14T08:00:00.000Z'), lead = LEAD, clients = ['claude_code'],
-  platform = 'linux' } = {}) {
+  platform = 'linux', processes = {} } = {}) {
   const runner = fakeRunner(runnerOptions);
   const leads = { current: lead, confirm: async ({ agentId }) => agentId === leads.current, constrainedClients: async () => clients,
     describe: async () => ({ name: 'Synthetic lead', responsibility: 'Owns the server' }) };
   let sequence = 0;
   const port = createVisitorAccess({ application: {}, now,
     requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads, platform, now,
-      idFactory: () => `request-${++sequence}` }) });
+      idFactory: () => `request-${++sequence}`, ...processes }) });
   t.after(() => port.close());
   const submit = (key = ALPHA, request = DRAFT, projectId = PROJECT) => port.submitRequest({
     requester: { key, label: 'Synthetic desk', agentName: 'Visitor lead' }, projectId, agentId: LEAD, request });
@@ -419,7 +422,7 @@ test('a status read is rate limited and writes nothing', async (t) => {
   assert.deepEqual(f.port.recentReads().reads, [], 'no visitor read row either');
 });
 
-test('after a restart a run that was going is unknown and its worktree goes; approved work runs', async (t) => {
+test('after a restart a run whose client had not started is unknown and its worktree goes at once; approved work runs', async (t) => {
   const runner = fakeRunner({ holdRun: new Promise(() => {}) });
   const now = () => new Date('2026-11-14T08:00:00.000Z');
   const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
@@ -476,4 +479,192 @@ test('status reads are counted without writing: past 60 in ten minutes a request
   assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }), { ok: false, code: 'rate_limited_short' });
   assert.equal(f.port.requestStatus({ requester: { key: BETA }, requestId: 'request-1' }).code, 'request_not_found', 'others are not affected');
   assert.deepEqual(f.port.recentReads().reads, []);
+});
+
+// ---- A run whose client process may still be running keeps its worktree (dot review, cleanup after exit) ----
+
+// A fake OS for the run's client process: running until os.alive turns false.
+function fakeProcesses(pid) {
+  const os = { alive: true };
+  return { os, processes: { inspectProcess: async () => new Map(os.alive ? [[pid, { identity: 'synthetic-start-1' }]] : []),
+    groupAlive: () => os.alive } };
+}
+// What runProcess throws when it stopped a client but could not confirm the process tree ended.
+const unconfirmedStop = (code) => Object.assign(new Error(code), { code, ms: 5, cleanup: { status: 'unconfirmed', code: 'cleanup_timeout' } });
+const MINUTE_LATER = 61_000;
+
+// A run left going by an earlier console, over the same store, and the console that starts after it.
+async function restartedWhileRunning(t, { pid = null, processes = {}, before = () => {} }) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner({ pid, holdRun: new Promise(() => {}) });
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1' });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.runExit === (pid ? 'running' : 'not_started'));
+  before(shared.store);
+  const fresh = fakeRunner();
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'plan', runner: fresh, leads, now: () => clock.now, ...processes });
+  t.after(() => restarted.close());
+  restarted.resume();
+  return { clock, fresh, restarted };
+}
+
+test('a failed run whose client was not confirmed to stop keeps its worktree until the process is gone', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  const { os, processes } = fakeProcesses(4242);
+  const f = fixture(t, { pid: 4242, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock, processes });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const failed = await f.port.requests.card('request-1');
+  assert.deepEqual([failed.request.runExit, failed.request.runPid, failed.request.error], ['unconfirmed', 4242, 'wake_timeout']);
+  assert.deepEqual(failed.events.at(-1), { from: 'failed', to: 'failed', by: 'system', rule: null, checks: null,
+    note: 'process_unconfirmed', at: '2026-11-14T08:00:00.000Z' });
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'the worktree stays while the client may still be running');
+  os.alive = false;
+  await f.port.requests.card('request-1');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'the OS is asked again only after a minute');
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  await f.port.requests.card('request-1');
+  await settled(async () => f.runner.calls.removed.length === 1);
+  const released = await f.port.requests.card('request-1');
+  assert.deepEqual([released.request.state, released.request.runExit, released.events.at(-1).note], ['failed', 'ended', 'process_ended']);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: false }]);
+});
+
+test('a failed run whose client was confirmed to stop is tidied at once', async (t) => {
+  const f = fixture(t, { pid: 4343, failWith: Object.assign(new Error('timed out'), { code: 'wake_timeout', ms: 5 }) });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('a cancelled run whose client was not confirmed to stop keeps its worktree until the process is gone', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  let release;
+  const { os, processes } = fakeProcesses(5151);
+  const f = fixture(t, { pid: 5151, holdRun: new Promise((resolve) => { release = resolve; }), abortError: unconfirmedStop('cancelled') },
+    { now: () => clock, processes });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  const cancelled = await f.port.requests.cancel('request-1');
+  assert.deepEqual([cancelled.request.state, cancelled.request.runExit], ['cancelled', 'unconfirmed']);
+  assert.equal((await f.port.requests.card('request-1')).events.at(-1).note, 'process_unconfirmed');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, []);
+  os.alive = false;
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  f.port.requests.list();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('after a restart a run whose client had started keeps its worktree until that process is gone', async (t) => {
+  const { os, processes } = fakeProcesses(6161);
+  const { clock, fresh, restarted } = await restartedWhileRunning(t, { pid: 6161, processes });
+  const lost = await restarted.card('request-1');
+  assert.deepEqual([lost.request.state, lost.request.runExit, lost.request.runPid, lost.events.at(-1).note],
+    ['unknown', 'unconfirmed', 6161, 'process_unconfirmed']);
+  await delay(20);
+  assert.deepEqual(fresh.calls.removed, [], 'the earlier console\'s client may still be writing there');
+  os.alive = false;
+  clock.now = new Date(clock.now.getTime() + MINUTE_LATER);
+  restarted.list();
+  await settled(async () => fresh.calls.removed.length === 1);
+  assert.deepEqual(fresh.calls.removed, [{ id: 'request-1', keepBranch: false }]);
+});
+
+test('after a restart a run an earlier FULI recorded nothing of is kept for a day', async (t) => {
+  // As a FULI from before run_exit left a running request.
+  const { clock, fresh, restarted } = await restartedWhileRunning(t, {
+    before: (store) => store.db.prepare('UPDATE visit_requests SET run_exit = NULL').run() });
+  assert.equal((await restarted.card('request-1')).request.runExit, 'unconfirmed');
+  await delay(20);
+  assert.deepEqual(fresh.calls.removed, []);
+  clock.now = new Date(clock.now.getTime() + 24 * 60 * 60 * 1000);
+  restarted.list();
+  await settled(async () => fresh.calls.removed.length === 1);
+});
+
+// ---- A failed removal is tried again; a PID without identity is limited to a day (review of PR 967) ----
+
+const DAY_LATER = 24 * 60 * 60 * 1000;
+// On Windows no process group is kept: once the client's PID is gone it counts as ended.
+const windowsGone = { inspectProcess: async () => new Map(), groupAlive: () => false };
+
+// A request failed with an unconfirmed stop, and a removal that fails failures times (a file a child still holds).
+async function failedWithHeldFiles(t, { failures, processes = windowsGone }) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const f = fixture(t, { pid: 7171, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock.now, processes });
+  const attempts = [];
+  f.runner.remove = async (request) => {
+    attempts.push(clock.now.toISOString());
+    if (attempts.length <= failures) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    f.runner.calls.removed.push({ id: request.id });
+  };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const later = async (ms) => {
+    clock.now = new Date(clock.now.getTime() + ms);
+    await f.port.requests.card('request-1');
+    await delay(20);
+  };
+  const notes = async () => (await f.port.requests.card('request-1')).events.map((event) => event.note).filter(Boolean);
+  return { f, attempts, later, notes, runExit: async () => (await f.port.requests.card('request-1')).request.runExit };
+}
+
+test('on Windows, children still holding the copy after the client\'s PID is gone: the removal is tried again each minute', async (t) => {
+  const { f, attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: 1 });
+  await later(0);
+  assert.deepEqual([attempts.length, await runExit()], [1, 'cleanup_pending'], 'the PID is gone, the first removal failed');
+  await later(0);
+  assert.equal(attempts.length, 1, 'not again within the minute');
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit(), f.runner.calls.removed.length], [2, 'ended', 1]);
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed', 'cleanup_done']);
+});
+
+test('a removal that keeps failing is tried for a day, warned about once, and then left as it is', async (t) => {
+  const { attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: Infinity });
+  await later(0);
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit()], [2, 'cleanup_pending']);
+  await later(DAY_LATER);
+  assert.equal(await runExit(), 'ended', 'given up a day after it first failed');
+  const tries = attempts.length;
+  await later(MINUTE_LATER);
+  assert.equal(attempts.length, tries, 'no more tries');
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed'], 'the warning stays the last word');
+});
+
+test('a recorded PID whose identity could not be read, later held by another process, is released after a day', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  let reads = 0;
+  // The read at spawn fails; afterwards another process holds the PID, with its group.
+  const processes = { inspectProcess: async () => (++reads === 1 ? null : new Map([[8181, { identity: 'synthetic-other' }]])),
+    groupAlive: () => true };
+  const f = fixture(t, { pid: 8181, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock, processes });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  assert.equal((await f.port.requests.card('request-1')).request.runPidIdentity, null);
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  await f.port.requests.card('request-1');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'within the day it may still be the client');
+  clock = new Date(clock.getTime() + DAY_LATER);
+  await f.port.requests.card('request-1');
+  await settled(async () => f.runner.calls.removed.length === 1);
 });

@@ -115,6 +115,12 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
     id: 'visitor-access/3-visit-requests', to: 3, kind: 'add-table', table: 'visit_requests',
     summary: 'visit requests: work a paired computer asked to have done here, and every change of its state',
     create: VISIT_REQUEST_TABLES
+  }, {
+    // A run's client process may outlive a failed, cancelled or restarted run;
+    // its worktree stays until that process is known to have ended.
+    id: 'visitor-access/4-visit-run-process', to: 4, kind: 'add-columns', table: 'visit_requests',
+    summary: 'visit requests: the run\'s client process and whether it ended, and the worktree folder\'s identity',
+    columns: { root_identity: 'TEXT', run_pid: 'TEXT', run_pid_identity: 'TEXT', run_exit: 'TEXT' }
   }]
 });
 
