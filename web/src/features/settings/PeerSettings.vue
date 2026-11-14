@@ -224,7 +224,9 @@ function saveShares(kind = 'shares') {
       return next
     } catch (caught) {
       const refusal = shareSaveRefusal(caught)
-      store.reportError(new Error(t(`settings.peer.saveFailed.${refusal}`)))
+      // A refusal the console has no words for keeps the server's own sentence.
+      const worded = t(`settings.peer.saveFailed.${refusal}`)
+      store.reportError(new Error(refusal === 'other' ? peerApiMessage(caught, worded) : worded))
       // Saved here but not delivered: the card shows what is saved now.
       if (refusal === 'share_not_published') return getJson('/api/peer', peerStatusShape).catch(() => undefined)
     }

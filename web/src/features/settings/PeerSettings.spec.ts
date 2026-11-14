@@ -483,6 +483,7 @@ it('floats what a save of the shares did, and why it was refused, instead of an 
   server({ 'GET /api/peer': [saved], 'PUT /api/peer/shares': [
     json({ error: 'invalid_folder', message: 'That folder does not belong to this project' }, 422),
     json({ error: 'something_new', message: 'Not worded yet' }, 409),
+    json({ error: 'unreadable' }, 500),
     saved,
   ] })
   const wrapper = mount(PeerSettings)
@@ -494,6 +495,9 @@ it('floats what a save of the shares did, and why it was refused, instead of an 
   expect(store.feedback).toEqual({ tone: 'error', message: '没保存：填的文件夹不存在，或不是这个项目的。请填这个项目仓库所在的目录。' })
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   expect((wrapper.get('.peer-shares input[type="text"]').element as HTMLInputElement).value).toBe('/not/this/project')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(store.feedback).toEqual({ tone: 'error', message: 'Not worded yet' })
   await wrapper.get('[data-save-shares]').trigger('click')
   await flushPromises()
   expect(store.feedback).toEqual({ tone: 'error', message: '没能保存共享，请再试一次。' })

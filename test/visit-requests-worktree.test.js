@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -553,6 +553,23 @@ test('a workspace folder is no repository when its checkout has another name or 
   const unmapped = service(t, { root: foreign.root, repository: foreign.workspace }, () => assert.fail('nothing runs'));
   assert.equal((await reviewed(unmapped.port, unmapped.submit().requestId)).error, 'no_repository');
   assert.deepEqual([...named.wakes, ...unmapped.wakes], [], 'no planning wake was spent');
+});
+
+test('a workspace inside a repository that is not the project’s still stands for the checkout; without one the folder is used as before', async (t) => {
+  // A home folder kept in Git (dotfiles) above the workspace.
+  const { root, workspace, checkout } = workspaceWithCheckout(t, 'synthetic-project');
+  git(root, 'init', '-q', '-b', 'main', root);
+  const request = { id: 'folder-1', agentId: 'synthetic-lead', projectId: 'synthetic-project' };
+  const real = (folder) => realpathSync.native(folder);
+  const runner = (mapped, known) => createVisitRunner({ root: visitRoot(root), runClient: async () => ({}),
+    // Git names the repository's top in its own spelling of the path (long names, /private/var): compared as real paths.
+    projectFolder: async () => known, verifyFolder: async (folder) => mapped.map(real).includes(real(folder)) });
+  assert.equal(await runner([workspace, checkout], workspace).folder(request), checkout, 'the outer repository is not the project’s');
+  // A project that is a subfolder of someone else’s repository, with no checkout below it: as before this change.
+  assert.equal(await runner([workspace], workspace).folder(request), workspace);
+  // The project’s own repository holding a folder of its own name is not a workspace.
+  mkdirSync(join(checkout, 'synthetic-project'));
+  assert.equal(await runner([checkout, join(checkout, 'synthetic-project')], checkout).folder(request), checkout);
 });
 
 test('a folder that stops being a repository after planning fails the run without a cleanup warning', { timeout: 60_000 }, async (t) => {
