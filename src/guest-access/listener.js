@@ -64,27 +64,32 @@ export async function startGuestListener({ addresses, port, authenticate, route,
       return;
     }
     const token = bearerToken(request.headers.authorization);
-    const refuse = () => {
-      failedBearers.fail(source);
-      onRefused(source);
-      if (response.headersSent) return;
+    const unauthorized = () => {
       response.setHeader('www-authenticate', 'Bearer');
       sendJson(response, 401, { error: 'unauthorized' });
     };
     const opened = authenticate(token);
     if (!opened.ok) {
-      refuse();
+      failedBearers.fail(source);
+      onRefused(source);
+      unauthorized();
       return;
     }
-    // A route calls recheck once the body is in and again before it answers:
-    // a link revoked or expired meanwhile is refused as a request arriving now
-    // would be (answered 401 while nothing was sent yet), and recheck is false.
-    const recheck = () => {
-      if (authenticate(token).ok) return true;
-      refuse();
-      return false;
+    // A route asks live() once the body is in and again as it answers; when
+    // the link was revoked or expired meanwhile it calls refuse(): this
+    // request is refused once, with the answer a revoked token gets. It is not
+    // a guess, so it does not count toward the failed-token limit: one
+    // revocation never locks out the address of a guest whose calls were under way.
+    let refused = false;
+    const refuse = () => {
+      if (refused) return;
+      refused = true;
+      onRefused(source);
+      if (!response.headersSent) unauthorized();
     };
-    if (!await route(request, response, { link: opened.link, pathname, recheck })) sendJson(response, 404, { error: 'not_found' });
+    if (!await route(request, response, { link: opened.link, pathname, live: () => authenticate(token).ok, refuse })) {
+      sendJson(response, 404, { error: 'not_found' });
+    }
   }
 
   // Serves exactly addresses (in that order): closes the servers of addresses

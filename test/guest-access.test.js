@@ -85,7 +85,7 @@ function fakeServers(available) {
 }
 
 function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'), discoverAddresses = () => ['127.0.0.1'],
-  createServer, searchGate } = {}) {
+  createServer, searchGate, host = fakeHost() } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-guest-access-'));
   const time = clock();
   const searches = [];
@@ -99,7 +99,7 @@ function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'),
     handler(request, response);
     arrived.push(request);
   });
-  const guestAccess = createGuestAccess({ visitorAccess, host: fakeHost(), port: 0, discoverAddresses,
+  const guestAccess = createGuestAccess({ visitorAccess, host, port: 0, discoverAddresses,
     now: () => time.now().getTime(),
     createRoutes: (deps) => {
       const routes = createGuestRoutes(deps);
@@ -125,7 +125,8 @@ function call(authority, options = {}) {
     ...options.headers } }).finish(body);
 }
 
-// A request whose headers are sent now and whose body only at finish(body).
+// A request whose headers are sent now and whose body only at finish(body)
+// (a string is sent as it is). The answer also carries its headers, unlisted.
 function openCall(authority, { method = 'GET', path = '/guest/1/card', token, host = authority, headers = {} } = {}) {
   const [hostname, port] = authority.split(':');
   let request;
@@ -137,13 +138,18 @@ function openCall(authority, { method = 'GET', path = '/guest/1/card', token, ho
       response.setEncoding('utf8');
       response.on('data', (chunk) => { text += chunk; });
       response.on('end', () => {
-        try { resolve({ status: response.statusCode, body: text ? JSON.parse(text) : null }); } catch { resolve({ status: response.statusCode, text }); }
+        let answer;
+        try { answer = { status: response.statusCode, body: text ? JSON.parse(text) : null }; } catch { answer = { status: response.statusCode, text }; }
+        resolve(Object.defineProperty(answer, 'headers', { value: response.headers }));
       });
     });
     request.on('error', reject);
   });
   request.flushHeaders();
-  return { finish: (body) => { request.end(body ? JSON.stringify(body) : undefined); return answer; } };
+  return { finish: (body) => {
+    request.end(typeof body === 'string' || body === undefined ? body : JSON.stringify(body));
+    return answer;
+  } };
 }
 
 async function until(condition) {
@@ -217,7 +223,7 @@ test('a card the project behind it cannot answer is refused in one word and reco
   const routes = createGuestRoutes({ visitorAccess, host });
   t.after(() => routes.close());
   const response = { headers: {}, setHeader() {}, writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
-  assert.equal(await routes.handle({ method: 'GET' }, response, { link, pathname: '/guest/1/card', recheck: () => true }), true);
+  assert.equal(await routes.handle({ method: 'GET' }, response, { link, pathname: '/guest/1/card', live: () => true, refuse() {} }), true);
   assert.deepEqual({ status: response.status, body: response.body }, { status: 503, body: { error: 'unavailable' } });
   assert.deepEqual(visitorAccess.recentReads({ requesterKey: `guest:${link.id}`, limit: 10 }).reads
     .map(({ action, outcome, code }) => ({ action, outcome, code })), [{ action: 'card', outcome: 'refused', code: 'project_unavailable' }]);
@@ -314,36 +320,96 @@ for (const [ending, end] of Object.entries(LINK_ENDS)) {
     const { guestAccess, searches, arrivedWith } = context;
     const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
     const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
-    const { transport } = await connect(t, kept.addresses[0], ended.token);
+    const transport = await rawSession(kept.addresses[0], ended.token);
     const pending = openCall(kept.addresses[0], { method: 'POST', path: '/guest/1/mcp', token: ended.token,
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-test-request': 'pending',
-        'mcp-session-id': transport.sessionId, 'mcp-protocol-version': transport.protocolVersion } });
+      headers: { ...mcpHeaders(transport), 'content-type': 'application/json', 'x-test-request': 'pending' } });
     await until(() => arrivedWith('pending'));
     const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
     await end({ ...context, link: ended.link });
-    assert.deepEqual(await pending.finish({ jsonrpc: '2.0', id: 7, method: 'tools/call',
-      params: { name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } } }), UNAUTHORIZED);
+    assertRefused(await pending.finish({ jsonrpc: '2.0', id: 7, method: 'tools/call',
+      params: { name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } } }));
     assert.equal(searches.length, 0);
     assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
   });
 
-  test(`an MCP search whose link is ${ending} while it runs returns no result`, async (t) => {
+  test(`MCP calls whose link is ${ending} while they run are each refused once, as that link, without a lockout`, async (t) => {
     const held = gate();
     const context = setup(t, { searchGate: held.wait });
     const { guestAccess, searches } = context;
     const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
     const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
-    const { client } = await connect(t, kept.addresses[0], ended.token);
-    // A revoked link's session is closed under the call, which the client only notices at its own timeout.
-    const found = client.callTool({ name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } }, undefined,
-      { timeout: 3000 }).then((result) => result, (error) => ({ rejected: String(error) }));
-    await until(() => searches.length === 1);
+    const authority = kept.addresses[0];
+    const transport = await rawSession(authority, ended.token);
+    // Each tools/call on its own request, all under way when the link ends.
+    const calls = Array.from({ length: LATE_CALLS }, (_, index) => call(authority, { method: 'POST', path: '/guest/1/mcp',
+      token: ended.token, headers: mcpHeaders(transport), body: { jsonrpc: '2.0', id: 100 + index, method: 'tools/call',
+        params: { name: 'search_project_knowledge', arguments: { queries: [`deploy port ${index}`] } } } }));
+    await until(() => searches.length === LATE_CALLS);
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
     const ending = end({ ...context, link: ended.link });
     held.release();
     await ending;
-    const result = await found;
-    assert.equal(JSON.stringify(result).includes('Deploys'), false, JSON.stringify(result));
+    for (const answer of await Promise.all(calls)) assertRefused(answer);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + LATE_CALLS);
+    // Not counted as failed tokens: the same address still opens another link.
+    assert.equal((await call(authority, { token: kept.token })).status, 200);
   });
+
+  for (const [problem, body] of [['unparsable', '{"jsonrpc":'], ['oversized', `"${'x'.repeat(1024 * 1024 + 16)}"`]]) {
+    test(`an ${problem} MCP body whose link is ${ending} meanwhile gets the revoked link's answer`, async (t) => {
+      const context = setup(t);
+      const { guestAccess, arrivedWith } = context;
+      const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+      const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+      const transport = await rawSession(kept.addresses[0], ended.token);
+      const pending = openCall(kept.addresses[0], { method: 'POST', path: '/guest/1/mcp', token: ended.token,
+        headers: { ...mcpHeaders(transport), 'content-type': 'application/json', 'x-test-request': 'pending' } });
+      await until(() => arrivedWith('pending'));
+      await end({ ...context, link: ended.link });
+      assertRefused(await pending.finish(body).catch(() => ({ status: 'reset' })));
+    });
+  }
+
+  test(`a card whose link is ${ending} while it is read is refused like that link`, async (t) => {
+    const held = gate();
+    const host = fakeHost();
+    const read = host.projectTeam;
+    let reading = 0;
+    host.projectTeam = async (...args) => { reading += 1; await held.wait(); return read(...args); };
+    const context = setup(t, { host });
+    const { guestAccess } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const answer = call(kept.addresses[0], { token: ended.token });
+    await until(() => reading === 1);
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
+    const ending = end({ ...context, link: ended.link });
+    held.release();
+    await ending;
+    assertRefused(await answer);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
+  });
+}
+
+const LATE_CALLS = 12;
+const PROTOCOL_VERSION = '2025-06-18';
+
+// An MCP session opened by one plain request, with no client left running
+// that could make requests (and refusals) of its own.
+async function rawSession(authority, token) {
+  const opened = await call(authority, { method: 'POST', path: '/guest/1/mcp', token,
+    headers: { accept: 'application/json, text/event-stream' }, body: { jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'guest-test', version: '1.0.0' } } } });
+  assert.equal(opened.status, 200);
+  return { sessionId: opened.headers['mcp-session-id'], protocolVersion: PROTOCOL_VERSION };
+}
+const mcpHeaders = (transport) => ({ accept: 'application/json, text/event-stream', 'mcp-session-id': transport.sessionId,
+  'mcp-protocol-version': transport.protocolVersion });
+
+// The answer a revoked or never-valid token gets, headers included.
+function assertRefused(answer) {
+  assert.deepEqual(answer, UNAUTHORIZED);
+  assert.equal(answer.headers['www-authenticate'], 'Bearer');
 }
 
 test('ten failed tokens from one address in ten minutes refuse even the right one', async (t) => {

@@ -12,13 +12,16 @@
 //   (C:\Users\Alice\Private Repo);
 // - a POSIX, home or relative path takes the following words on its line up
 //   to the last one, within eight, that holds a separator or ends in a dot
-//   extension (/home/alice/my folder/file.txt), then the capitalised words or
-//   numbers right after it, unless it ends a sentence (/home/alice/Secret
-//   Plans 2); lower-case words after it stay (see /opt/app for details);
-// - such a path right after a quote or backtick runs to the same mark on its
-//   line ("/home/alice/secret plans");
-// - closing punctuation after a POSIX, home or relative path stays, outside
-//   the replacement ([path], then).
+//   extension (/home/alice/my folder/file.txt); when its last segment begins
+//   with a capital or a digit, also up to eight capitalised words or numbers
+//   right after it, unless it ends a sentence (/home/alice/Secret Plans 2);
+//   other words after it stay (see /opt/app for details, /usr/bin I think);
+//   known limit: a lower-case segment's tail stays (/home/alice/secret Plans);
+// - such a path, or a file: URL, right after a quote or backtick runs to the
+//   same mark on its line ("/home/alice/secret plans"); a file: URL follows
+//   the capitalised words like a POSIX path;
+// - closing punctuation after these paths stays, outside the replacement
+//   ([path], then).
 // mode 'keep-routes' (a diagnostic event) treats only home, mount and system
 // roots as POSIX paths and follows no spaces after the path: its operations
 // name the console's own routes (POST /api/tasks) and the prose after them.
@@ -34,16 +37,17 @@ const SYSTEM_ROOTS = '(?:home|Users|mnt|root|tmp|var|private|etc|opt|Volumes|usr
 const QUOTES = new Set(['"', '\'', '`']);
 const MAX_PATH_WORDS = 8;
 // A following word that continues a path in strict mode: capitalised or a number.
-const CAPITALISED_WORD = new RegExp(String.raw`^[ \t]+[\p{Lu}\p{N}]${WORD}*`, 'u');
+const CAPITALISED_WORD = new RegExp(String.raw`[ \t]+[\p{Lu}\p{N}]${WORD}*`, 'uy');
+const CAPITALISED = /[\p{Lu}\p{N}]/u;
 // Punctuation that closes a sentence or a bracket after a path.
-const CLOSING = /[.,;:!?)\]}]+$/;
+const CLOSING_MARKS = new Set(['.', ',', ';', ':', '!', '?', ')', ']', '}']);
+const LINE_BREAKS = new Set(['\r', '\n']);
 
 const PATTERNS = Object.freeze({
   strict: new RegExp([
-    FILE_URL,
     String.raw`\b[A-Za-z]:[\\/]${TO_LINE_END}`,
     String.raw`\\\\${TO_LINE_END}`,
-    `(?<words>${HOME_OR_RELATIVE}${PATH_WORDS}|${POSIX}[^\\s/"'\`<>]+[^\\s"'\`<>]*${PATH_WORDS})`
+    `(?<words>${FILE_URL}|${HOME_OR_RELATIVE}${PATH_WORDS}|${POSIX}[^\\s/"'\`<>]+[^\\s"'\`<>]*${PATH_WORDS})`
   ].join('|'), 'gi'),
   'keep-routes': new RegExp([
     FILE_URL,
@@ -67,19 +71,28 @@ export function withoutLocalPaths(text, { mode = 'strict' } = {}) {
   return shown + text.slice(from);
 }
 
-// Where a strict POSIX, home or relative path that the pattern matched from
-// start to end really ends (see the rules above).
+// Where a strict file: URL, POSIX, home or relative path that the pattern
+// matched from start to end really ends (see the rules above). Each loop only
+// walks characters no later match walks again, so long input stays linear.
 function pathWordsEnd(text, start, end) {
   const opener = text[start - 1];
-  const lineEnd = text.slice(start).search(/[\r\n]/);
-  const line = lineEnd === -1 ? text.length : start + lineEnd;
-  const closer = QUOTES.has(opener) ? text.indexOf(opener, end) : -1;
-  if (closer !== -1 && closer <= line) return closer;
-  let reached = end;
-  for (let words = 0; words < MAX_PATH_WORDS && !CLOSING.test(text.slice(start, reached)); words += 1) {
-    const word = CAPITALISED_WORD.exec(text.slice(reached, line));
-    if (!word) break;
-    reached += word[0].length;
+  if (QUOTES.has(opener)) {
+    for (let at = end; at < text.length && !LINE_BREAKS.has(text[at]); at += 1) if (text[at] === opener) return at;
   }
-  return reached - (CLOSING.exec(text.slice(start, reached))?.[0].length ?? 0);
+  let reached = end;
+  if (CAPITALISED.test(text[lastSegmentStart(text, start, end)] ?? '')) {
+    for (let words = 0; words < MAX_PATH_WORDS && !CLOSING_MARKS.has(text[reached - 1]); words += 1) {
+      CAPITALISED_WORD.lastIndex = reached;
+      if (!CAPITALISED_WORD.test(text)) break;
+      reached = CAPITALISED_WORD.lastIndex;
+    }
+  }
+  while (reached > start + 1 && CLOSING_MARKS.has(text[reached - 1])) reached -= 1;
+  return reached;
+}
+
+function lastSegmentStart(text, start, end) {
+  let at = end;
+  while (at > start && text[at - 1] !== '/' && text[at - 1] !== '\\') at -= 1;
+  return at;
 }

@@ -27,11 +27,15 @@ export function createGuestRoutes({ visitorAccess, host }) {
     maxSessionsPerOwner: MCP_SESSIONS_PER_LINK,
     sessionIdleTtlMs: MCP_SESSION_IDLE_MS, sessionSweepIntervalMs: MCP_SWEEP_MS, now: Date.now });
 
-  // recheck (the listener's) refuses the request and answers false once the link is no longer live.
-  async function handle(request, response, { link, pathname, recheck }) {
+  // live and refuse are the listener's, for this request: live() tells whether
+  // its link is still live, refuse() refuses this request as a revoked link.
+  async function handle(request, response, { link, pathname, live, refuse }) {
+    const recheck = () => live() || (refuse(), false);
     if (pathname === '/guest/1/mcp') {
-      await mcpSessions.handle(request, response, { owner: link.id, admit: recheck,
-        createMcp: () => createGuestMcp({ link, actions: liveActions(actions, recheck) }) });
+      // A POST starts only once its body is in and its link is still live, and
+      // its answer goes out only while it is.
+      const admit = () => recheck() && (answerWhileLive(response, live, refuse), true);
+      await mcpSessions.handle(request, response, { owner: link.id, admit, createMcp: () => createGuestMcp({ link, actions }) });
       return true;
     }
     if (pathname === '/guest/1/card') {
@@ -80,19 +84,33 @@ function guestActions({ visitorAccess, host }) {
   };
 }
 
-// The actions of one MCP session: an answer that is ready after its link
-// ended is replaced by the refusal that link now gets. recheck is the one of
-// the request that opened the session; any request of the session carries
-// the same link's token.
-function liveActions(actions, recheck) {
-  const answered = answer => (recheck() ? answer : UNAUTHORIZED);
-  return {
-    card: async link => answered(await actions.card(link)),
-    search: async (link, queries) => answered(await actions.search(link, queries))
+// The answer of one MCP POST (an event stream opened at once) keeps its head
+// until its first event or its end, the moment of answering: it goes out only
+// while live(); otherwise the request gets refuse() and the rest is dropped,
+// also when a revoked link's session closes the stream with no result. A
+// keep-alive comment while the head is held is dropped.
+function answerWhileLive(response, live, refuse) {
+  const { writeHead, write, end, flushHeaders } = response;
+  let head = null;
+  const goesOut = () => {
+    Object.assign(response, { writeHead, write, end, flushHeaders });
+    if (live()) {
+      if (head) writeHead.apply(response, head);
+      return true;
+    }
+    refuse();
+    Object.assign(response, { write: () => true, end: () => response });
+    return false;
   };
+  Object.assign(response, {
+    writeHead: (...held) => { head = held; return response; },
+    flushHeaders: () => {},
+    write: (chunk, ...rest) => isComment(chunk) || (goesOut() ? write.call(response, chunk, ...rest) : true),
+    end: (...rest) => (goesOut() ? end.apply(response, rest) : response)
+  });
 }
 
-const UNAUTHORIZED = Object.freeze({ status: 401, body: Object.freeze({ error: 'unauthorized' }) });
+const isComment = chunk => (typeof chunk === 'string' ? chunk.startsWith(':') : chunk?.[0] === 0x3a);
 
 // A refusal as a guest sees it: what they asked wrong, a limit, or one word for everything else.
 function refusal(code) {
