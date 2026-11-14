@@ -55,6 +55,7 @@ describe('StatementDetails', () => {
     await flushPromises()
     expect(String(fetch.mock.calls[0]?.[0])).toMatch(/^\/api\/statement\/usage\?from=.+&to=.+/)
     expect(document.body.querySelector('[data-statement-usage] h3')?.textContent).toBe('用了哪些客户端和模型')
+    expect(document.body.querySelector('[data-statement-usage-partial]')?.textContent).toBe('这里只数按客户端记下来的那部分，可能比上面的总数少。')
     expect(usageRows()).toEqual([
       'Cx Codex · synthetic-model-a 3 次对话 FULI 亲眼看到的',
       'CC Claude Code · 模型未知 1 次对话 · 叫醒 2 次 · 1 次没答上 · 320 Token FULI 亲眼看到的；Token 是客户端在 1 次叫醒里自己报告的',
