@@ -33,7 +33,7 @@ test('on Windows, where Git keeps no file modes, a file without an extension is 
 });
 
 test('names Git or the file system treat as .git or .gitmodules are recognised under any spelling', () => {
-  for (const name of ['.git', '.GIT', '.Git', 'git~1', 'GIT~1', '.git.', '.git ', '.git. .', '.g\u200bit', '\ufeff.git']) {
+  for (const name of ['.git', '.GIT', '.Git', 'git~1', 'GIT~1', '.git.', '.git ', '.git. .', '.g\u200bit', '\ufeff.git', '.gi\u206at', '.git\u206f']) {
     assert.equal(gitDirectoryName(name), true, JSON.stringify(name));
   }
   for (const name of ['.gitmodules', '.GITMODULES', 'gitmod~1', '.gitmodules.', '.git\u200cmodules']) {

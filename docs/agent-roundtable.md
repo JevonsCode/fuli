@@ -247,6 +247,14 @@ It always gets the state, the title and the owner's one-line reason. The result
 crosses only once the owner kept the branch, or, for a computer the owner marked
 fully trusted, as soon as the run is ready. Until then a finished result reads
 as `awaiting_owner`, held or not, like any request waiting for the owner.
+The summary is the run's own final answer: the owner reads it on the card
+before keeping, and it is exactly what the other computer will see. The
+planning pass reads the live project folder (ignored files such as `.env`
+included), so none of its free text reaches the run: the run prompt gets only
+the plan's areas (path-like, cleaned, at most 10) and its yes/no answers. Every
+text in a prompt (the request, the requester's label, the lead, the plan) is
+JSON with `<` and `>` escaped inside its own block, so no text can close a
+block early.
 
 On this computer every request is a row in `visitor-access.sqlite` (format 3)
 with an event row for each change of state:
@@ -276,7 +284,9 @@ Git and tool configuration to a person; `--strict-mcp-config` with an empty
 Read, Grep and Glob, in the owner's project folder (3 minutes). The run:
 `--permission-mode acceptEdits` with Read, Grep, Glob, Edit, Write and
 MultiEdit, Bash, PowerShell, WebFetch, WebSearch and NotebookEdit denied, in the
-request's worktree (15 minutes). Model access the person set in the `env` block
+request's worktree (15 minutes). The run's start event must prove the
+restriction: it may list only the step's tools and no MCP server, or the run is
+stopped at once and fails with `restricted_mode_unsupported`. Model access the person set in the `env` block
 of their user settings (`CLAUDE_CONFIG_DIR` respected; a base URL, a model
 name) is passed to the run's process environment, string values only, never on
 the command line or kept. A Claude Code too old for `--restricted` fails the
@@ -309,7 +319,9 @@ tidies both. One run per lead at a time on this computer.
 A remote `message_agent` ask from another computer (a read-only wake of the
 lead) loads only FULI's own MCP server, from the entry FULI's installer writes
 for that client, and no MCP server at all when FULI cannot name it; never the
-person's others. Group discussion turns are unchanged.
+person's others. Without that entry FULI's own hooks do not load either, so
+such an ask fails safely (`delegation_not_redeemed`) instead of loading the
+person's other servers. Group discussion turns are unchanged.
 
 After the run FULI works on the worktree only with its Git directory and work
 tree named explicitly (never discovered from files the run left), without the
@@ -318,9 +330,13 @@ submodule recursion, external diff or textconv. Before anything is staged it
 holds the result as `unsafe_content` when the worktree's `.git` pointer is not
 the one FULI wrote, any symbolic link, junction or other link exists, any other
 `.git` file or folder exists under any spelling Git or the file system treats
-as `.git` (any case, `git~1`, trailing dots or spaces, ignorable characters), a
+as `.git` (any case, `git~1`, trailing dots or spaces, the characters HFS+
+ignores), a
 `.gitmodules` (any spelling) is added or changed or a file sits inside a
-submodule path, and as `too_large` past 2,000 changed files or 50 MB.
+submodule path, and as `too_large` past 2,000 changed files or 50 MB. The walk is
+asynchronous: on a worktree of 3,000 files the inspection took about 0.5 s and
+the removal about 0.5 s, with the console's event loop never held for more than
+16 ms.
 Otherwise it commits the branch as `FULI visit <visit@fuli.invalid>`, reads the
 files and diffstat from Git, scans the summary and the added lines for secrets,
 and compares a digest of the owner's checkout (status, tracked changes,
@@ -328,7 +344,14 @@ untracked files, the names Git ignores), the repository config,
 `config.worktree`, `info/exclude`, `info/attributes`, `objects/info/alternates`,
 its hooks folder, the other worktrees Git knows and every ref except the
 request's own branch with the one taken before the run; a difference holds the
-result as `integrity_violation`. This is detection only: nothing is restored,
+result as `integrity_violation`. The "before" snapshot is taken only when the
+run is about to start; each Git step of a snapshot has 60 s, and one that could
+not be taken holds the result as `integrity_unknown` instead of waiting. In
+every mode a result that changed files which can run code when the branch is
+opened, checked out or built (the auto envelope's deny list: manifests,
+lockfiles, build files, editor, container, Agent and Python start-up settings,
+scripts, executables) is held as `runs_on_open`, and the card lists those paths
+(`heldPaths`, at most 50, each cut to 200 characters). This is detection only: nothing is restored,
 and work done in the owner's own checkout during a run also holds it. A commit
 that fails after its files were added leaves unreachable objects that Git's own
 gc removes later; FULI does not prune the owner's object store. FULI never
@@ -336,8 +359,12 @@ merges or pushes.
 
 Removing a worktree never uses `git worktree remove --force` (which follows a
 junction planted inside): links and junctions are unlinked themselves, never
-followed, the remaining plain tree is deleted by Node, then Git prunes the
-worktree; nothing outside `<dataDir>/visit-worktrees/` is ever removed.
+followed, the remaining plain tree is deleted by Node, then the request's own Git worktree
+entry; nothing outside `<dataDir>/visit-worktrees/` is ever removed. FULI
+never runs `git worktree prune`, which would also drop the owner's other
+worktrees whose folders are missing (one on an unplugged drive): it removes
+only `<common>/worktrees/<id>`, once that entry's `gitdir` file names this
+request's worktree.
 
 Budgets: per requester 5 requests a day (3 for a guest link, which takes none
 yet), 10 open (results waiting for review included), 60 minutes of planning and

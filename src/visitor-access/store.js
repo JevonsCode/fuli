@@ -67,6 +67,7 @@ const VISIT_REQUEST_TABLES = `
         'awaiting_review', 'declined', 'expired', 'cancelled', 'failed', 'unknown', 'kept', 'discarded')),
       review TEXT CHECK(review IN ('ready', 'held')),
       hold_reason TEXT,
+      held_paths_json TEXT,
       mode_at_receipt TEXT NOT NULL,
       mode_at_decision TEXT,
       decided_by TEXT CHECK(decided_by IN ('owner', 'rule')),

@@ -28,11 +28,20 @@ export async function runConstrained({ client, step, cwd, prompt, timeoutMs, sig
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = { ...Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_'))),
     ...adapter.environment({ env, home, ...(readText ? { readText } : {}) }) };
-  const result = await run(command, adapter.args(step), { cwd, env: childEnv, input: prompt, timeoutMs, signal });
-  if (result.code !== 0 && adapter.restrictedUnsupported(result.stderr ?? '')) {
-    throw wakeFailure('wake_failed', 'restricted_mode_unsupported', `${client} is too old to run restricted; update it`,
-      { exitCode: result.code, signal: result.signal, output: { stderr: result.stderr } });
-  }
+  // The client's own start event is the proof that the restriction holds: any
+  // tool outside the step's set, or any MCP server, stops the run at once.
+  let proven = false;
+  const unrestricted = (output = null) => wakeFailure('wake_failed', 'restricted_mode_unsupported',
+    `${client} did not start restricted; update it`, output ? { exitCode: output.code, signal: output.signal, output: { stderr: output.stderr } } : {});
+  const onEvent = (event) => {
+    const started = adapter.startedWith(event);
+    if (!started) return;
+    if (!adapter.restrictedAs(step, started)) throw unrestricted();
+    proven = true;
+  };
+  const result = await run(command, adapter.args(step), { cwd, env: childEnv, input: prompt, timeoutMs, signal, onEvent });
+  if (result.code !== 0 && adapter.restrictedUnsupported(result.stderr ?? '')) throw unrestricted(result);
+  if (!proven) throw unrestricted(result);
   const { body } = parseFinalAnswer(client, result);
   return { body };
 }

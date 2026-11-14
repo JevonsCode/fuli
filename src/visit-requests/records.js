@@ -107,9 +107,9 @@ const COLUMNS = Object.freeze({
   plan: 'plan_json', planError: 'plan_error', review: 'review', holdReason: 'hold_reason', modeAtDecision: 'mode_at_decision',
   decidedBy: 'decided_by', reason: 'reason', branch: 'branch', worktreePath: 'worktree_path', baseCommit: 'base_commit',
   projectFolder: 'project_folder', summary: 'result_summary', files: 'files_json', diffstat: 'diffstat_json',
-  planningMs: 'planning_ms', runMs: 'run_ms', error: 'error'
+  planningMs: 'planning_ms', runMs: 'run_ms', error: 'error', heldPaths: 'held_paths_json'
 });
-const JSON_FIELDS = new Set(['plan', 'files', 'diffstat']);
+const JSON_FIELDS = new Set(['plan', 'files', 'diffstat', 'heldPaths']);
 const stored = (field, value) => (JSON_FIELDS.has(field) && value !== null ? JSON.stringify(value) : value);
 const parsed = (text) => (text === null ? null : JSON.parse(text));
 
@@ -117,7 +117,7 @@ function requestView(row) {
   return { id: row.id, requesterKey: row.requester_key, requesterLabel: row.requester_label, agentName: row.agent_name,
     source: row.source, projectId: row.project_id, agentId: row.agent_id, projectFolder: row.project_folder,
     title: row.title, what: row.what, requesterAreas: JSON.parse(row.requester_areas_json), plan: parsed(row.plan_json),
-    planError: row.plan_error, state: row.state, review: row.review, holdReason: row.hold_reason,
+    planError: row.plan_error, state: row.state, review: row.review, holdReason: row.hold_reason, heldPaths: parsed(row.held_paths_json),
     modeAtReceipt: row.mode_at_receipt, modeAtDecision: row.mode_at_decision, decidedBy: row.decided_by, reason: row.reason,
     branch: row.branch, worktreePath: row.worktree_path, baseCommit: row.base_commit, summary: row.result_summary,
     files: parsed(row.files_json), diffstat: parsed(row.diffstat_json), planningMs: row.planning_ms, runMs: row.run_ms,

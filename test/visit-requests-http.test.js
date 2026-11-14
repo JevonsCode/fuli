@@ -72,7 +72,7 @@ test('the list, the card and each decision answer this computer only, with the s
   assert.equal(listed.headers['cache-control'], 'no-store');
   assert.equal(listed.body.awaiting.count, 1);
   const [item] = listed.body.requests;
-  assert.deepEqual(Object.keys(item), ['id', 'state', 'review', 'holdReason', 'requester', 'projectId', 'agentId', 'title', 'plan',
+  assert.deepEqual(Object.keys(item), ['id', 'state', 'review', 'holdReason', 'heldPaths', 'requester', 'projectId', 'agentId', 'title', 'plan',
     'planError', 'risk', 'modeAtReceipt', 'modeAtDecision', 'decidedBy', 'reason', 'error', 'result', 'createdAt', 'updatedAt']);
   assert.deepEqual([item.title, item.requester, item.risk], ['Add a check',
     { key: PEER, label: 'Synthetic desk', agentName: 'Visitor lead', source: 'peer' }, { level: 'medium', flags: [] }]);

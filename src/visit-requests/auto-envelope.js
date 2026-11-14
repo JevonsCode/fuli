@@ -65,6 +65,17 @@ export function postRunCheck({ files, addedText, platform = process.platform }) 
   return { ok: checks.every((check) => check.ok), checks };
 }
 
+// Runs for every request whatever its mode: the changed paths that can run
+// code when the branch is opened, checked out or built (the deny list above),
+// at most HELD_PATHS of them, each cut to HELD_PATH_CHARS; any of them holds
+// the result as runs_on_open for the owner to look at first.
+const HELD_PATHS = 50;
+const HELD_PATH_CHARS = 200;
+export function runsOnOpenPaths(files, platform = process.platform) {
+  return files.filter((file) => deniedPath(file.path, platform) || file.executable || file.symlink)
+    .slice(0, HELD_PATHS).map((file) => file.path.slice(0, HELD_PATH_CHARS));
+}
+
 // Runs for every request whatever its mode: nothing that looks like a secret
 // leaves this computer in a summary or reaches the owner's branch unflagged.
 export function secretCheck(text) {

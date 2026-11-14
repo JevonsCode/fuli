@@ -5,13 +5,19 @@ import test from 'node:test';
 import { CONSTRAINED_RUN_CLIENTS, runConstrained } from '../packages/roundtable/src/roundtable/constrained-run.js';
 
 // A fake process runner and synthetic settings text: no client starts, no real settings file is read.
-const ANSWER = [JSON.stringify({ type: 'system', subtype: 'init', session_id: 'synthetic-run' }),
-  JSON.stringify({ type: 'result', result: 'Planned.' })].join('\n');
+const answer = (tools = ['Read', 'Grep', 'Glob'], mcpServers = []) => [JSON.stringify({ type: 'system', subtype: 'init',
+  session_id: 'synthetic-run', tools, mcp_servers: mcpServers }), JSON.stringify({ type: 'result', result: 'Planned.' })].join('\n');
+const ANSWER = answer();
 
+// Hands each output line to onEvent as runProcess does; a throwing onEvent stops the run.
 function fixture({ result = { code: 0, stdout: ANSWER, stderr: '' }, settings = null } = {}) {
   const calls = [];
   const read = [];
-  const run = async (command, args, options) => { calls.push({ command, args, options }); return result; };
+  const run = async (command, args, options) => {
+    calls.push({ command, args, options });
+    for (const line of result.stdout.split('\n').filter(Boolean)) await options.onEvent(JSON.parse(line));
+    return result;
+  };
   const readText = (path) => { read.push(path); if (settings === null) throw new Error('missing'); return settings; };
   const env = { FULI_CLAUDE_BIN: 'synthetic-claude', FULI_ROUNDTABLE_DELEGATION: 'must-not-pass', PATH: '/synthetic/bin' };
   return { calls, read, go: (input) => runConstrained({ client: 'claude_code', cwd: '/synthetic/project', prompt: 'p',
@@ -55,6 +61,18 @@ test('a CLI that does not know restricted mode fails with its own detail, never 
   const f = fixture({ result: { code: 1, stdout: '', stderr: "error: unknown option '--restricted'" } });
   await assert.rejects(f.go({ step: 'edit' }), { code: 'wake_failed', detail: 'restricted_mode_unsupported' });
   assert.equal(f.calls.length, 1);
+});
+
+test('the client\'s start event must prove the restriction: an extra tool, an MCP server or no start event stops the run', async () => {
+  const bash = fixture({ result: { code: 0, stdout: answer(['Read', 'Grep', 'Glob', 'Bash']), stderr: '' } });
+  await assert.rejects(bash.go({ step: 'plan' }), { code: 'wake_failed', detail: 'restricted_mode_unsupported' });
+  const edit = fixture({ result: { code: 0, stdout: answer(['Read', 'Edit', 'Write']), stderr: '' } });
+  await assert.rejects(edit.go({ step: 'plan' }), { detail: 'restricted_mode_unsupported' }, 'edit tools in a planning pass');
+  assert.deepEqual(await edit.go({ step: 'edit' }), { body: 'Planned.' });
+  const mcp = fixture({ result: { code: 0, stdout: answer(['Read'], [{ name: 'someone-elses', status: 'connected' }]), stderr: '' } });
+  await assert.rejects(mcp.go({ step: 'plan' }), { detail: 'restricted_mode_unsupported' });
+  const silent = fixture({ result: { code: 0, stdout: JSON.stringify({ type: 'result', result: 'Planned.' }), stderr: '' } });
+  await assert.rejects(silent.go({ step: 'plan' }), { detail: 'restricted_mode_unsupported' });
 });
 
 test('only Claude Code runs constrained for now; Codex is refused', async () => {
