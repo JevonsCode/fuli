@@ -200,6 +200,10 @@ test('local paths, credentials and secrets in titles and texts are replaced', as
     'C:\\Users\\Alice Smith\\secret.txt is it': ['Alice', 'Smith', 'secret.txt'],
     'share \\\\server\\Team Share\\plan.docx': ['server', 'Team Share', 'plan.docx'],
     'link file:///Users/x': ['file:', '/Users/x'],
+    'Stored in /home/synthetic/Secret Confidential Folder': ['synthetic', 'Secret', 'Confidential', 'Folder'],
+    'Stored in "/home/synthetic/secret plans" now': ['synthetic', 'secret', 'plans'],
+    'Stored in `~/secret plans`': ['secret', 'plans'],
+    'Stored in ~\\Secret Folder, then': ['Secret', 'Folder'],
     'token 0123456789abcdef0123456789abcdef0123': ['0123456789abcdef0123456789abcdef']
   };
   const facts = Object.keys(leaks).map((text, index) => fact({ id: `f${index}`, relationship: text, fact: text }));

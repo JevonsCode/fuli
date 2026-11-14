@@ -32,8 +32,10 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
   };
 
   // An authenticated MCP request of owner; createMcp() builds the MCP server
-  // of a new session.
-  async function handle(request, response, { owner, createMcp }) {
+  // of a new session. admit, when given, is asked once a POST body is in and
+  // before anything runs; false means it already answered the request (its
+  // authentication no longer holds).
+  async function handle(request, response, { owner, createMcp, admit = () => true }) {
     if (!['GET', 'POST', 'DELETE'].includes(request.method ?? '')) {
       response.writeHead(405, { allow: 'GET, POST, DELETE' }).end();
       return;
@@ -63,6 +65,7 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
         }
         throw error;
       }
+      if (!admit()) return;
       // Reading a streamed body yields control. Shutdown may have started while the
       // client was still uploading, so re-check before allocating a session.
       if (isClosing()) {

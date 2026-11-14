@@ -39,13 +39,15 @@ function fakeHost() {
       if (projectId !== PROJECT) throw new Error('not found');
       return { projectId, name: 'Synthetic guest project' };
     },
-    projectTeam: async () => ({ lead: { name: 'Synthetic lead', responsibility: 'Keeps notes in /home/someone/private/notes.md' } })
+    projectTeam: async () => ({ lead: { name: 'Synthetic lead', responsibility: 'Keeps notes in /home/someone/Secret Confidential Folder' } })
   };
 }
 
-function application(searches) {
+// searchGate, when given, holds each search open until the promise it returns settles.
+function application(searches, searchGate) {
   return { config: { personal: { spaceId: SPACE } }, personal: { search: async (request) => {
     searches.push(request);
+    await searchGate?.();
     return { facts: [{ relationship: 'USES', fact: 'Deploys from /srv/synthetic/app on port 4100', score: 1,
       defined_project_id: request.active_personal_project_id, inherited: false }], entities: [] };
   } } };
@@ -83,13 +85,20 @@ function fakeServers(available) {
 }
 
 function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'), discoverAddresses = () => ['127.0.0.1'],
-  createServer } = {}) {
+  createServer, searchGate } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-guest-access-'));
   const time = clock();
   const searches = [];
-  const visitorAccess = createVisitorAccess({ path: join(directory, 'visitor-access.sqlite'), application: application(searches), now: time.now });
+  const visitorAccess = createVisitorAccess({ path: join(directory, 'visitor-access.sqlite'),
+    application: application(searches, searchGate), now: time.now });
   const started = [];
   const keptLinks = [];
+  // Every request the real servers handed to the listener, once its token was checked.
+  const arrived = [];
+  const recording = (handler) => createHttpServer((request, response) => {
+    handler(request, response);
+    arrived.push(request);
+  });
   const guestAccess = createGuestAccess({ visitorAccess, host: fakeHost(), port: 0, discoverAddresses,
     now: () => time.now().getTime(),
     createRoutes: (deps) => {
@@ -97,7 +106,7 @@ function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'),
       return { ...routes, keepLinks: (ids) => { keptLinks.push(ids); return routes.keepLinks(ids); } };
     },
     startListener: async (options) => {
-      const listener = await startGuestListener({ ...options, sourceAllowed, ...(createServer ? { createServer } : {}) });
+      const listener = await startGuestListener({ ...options, sourceAllowed, createServer: createServer ?? recording });
       started.push(listener);
       return listener;
     } });
@@ -106,23 +115,46 @@ function setup(t, { sourceAllowed = (address) => address.startsWith('127.0.0.'),
     visitorAccess.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  return { directory, time, searches, visitorAccess, guestAccess, started, keptLinks };
+  const arrivedWith = (marker) => arrived.some((request) => request.headers['x-test-request'] === marker);
+  return { directory, time, searches, visitorAccess, guestAccess, started, keptLinks, arrivedWith };
 }
 
-function call(authority, { method = 'GET', path = '/guest/1/card', token, host = authority, headers = {}, body } = {}) {
+function call(authority, options = {}) {
+  const { body } = options;
+  return openCall(authority, { ...options, body: undefined, headers: { ...(body ? { 'content-type': 'application/json' } : {}),
+    ...options.headers } }).finish(body);
+}
+
+// A request whose headers are sent now and whose body only at finish(body).
+function openCall(authority, { method = 'GET', path = '/guest/1/card', token, host = authority, headers = {} } = {}) {
   const [hostname, port] = authority.split(':');
-  return new Promise((resolve, reject) => {
-    const request = httpRequest({ hostname, port: Number(port), method, path, agent: false,
-      headers: { host, ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}), ...headers } },
+  let request;
+  const answer = new Promise((resolve, reject) => {
+    request = httpRequest({ hostname, port: Number(port), method, path, agent: false,
+      headers: { host, ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers } },
     (response) => {
       let text = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => { text += chunk; });
-      response.on('end', () => resolve({ status: response.statusCode, body: text ? JSON.parse(text) : null }));
+      response.on('end', () => {
+        try { resolve({ status: response.statusCode, body: text ? JSON.parse(text) : null }); } catch { resolve({ status: response.statusCode, text }); }
+      });
     });
     request.on('error', reject);
-    request.end(body ? JSON.stringify(body) : undefined);
   });
+  request.flushHeaders();
+  return { finish: (body) => { request.end(body ? JSON.stringify(body) : undefined); return answer; } };
+}
+
+async function until(condition) {
+  for (let turn = 0; turn < 2000 && !condition(); turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(condition(), 'condition never held');
+}
+
+function gate() {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  return { wait: () => held, release };
 }
 
 test('a link is fgl_ and 32 random bytes, stored only as its SHA-256, 7 days by default, asking only', async (t) => {
@@ -162,7 +194,7 @@ test('the card names the project and its lead without local paths, and how to as
   assert.equal(status, 200);
   assert.equal(body.project.name, 'Synthetic guest project');
   assert.equal(body.assistant.name, 'Synthetic lead');
-  assert.equal(body.assistant.responsibility.includes('/home/someone'), false);
+  assert.equal(body.assistant.responsibility, 'Keeps notes in [path]');
   assert.equal(body.mode, 'ask_only');
   assert.equal(body.expiresAt, link.expiresAt);
   assert.deepEqual(body.actions.map(({ method, path }) => `${method} ${path}`), ['GET /guest/1/card', 'POST /guest/1/search']);
@@ -185,7 +217,7 @@ test('a card the project behind it cannot answer is refused in one word and reco
   const routes = createGuestRoutes({ visitorAccess, host });
   t.after(() => routes.close());
   const response = { headers: {}, setHeader() {}, writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
-  assert.equal(await routes.handle({ method: 'GET' }, response, { link, pathname: '/guest/1/card' }), true);
+  assert.equal(await routes.handle({ method: 'GET' }, response, { link, pathname: '/guest/1/card', recheck: () => true }), true);
   assert.deepEqual({ status: response.status, body: response.body }, { status: 503, body: { error: 'unavailable' } });
   assert.deepEqual(visitorAccess.recentReads({ requesterKey: `guest:${link.id}`, limit: 10 }).reads
     .map(({ action, outcome, code }) => ({ action, outcome, code })), [{ action: 'card', outcome: 'refused', code: 'project_unavailable' }]);
@@ -235,6 +267,84 @@ test('missing, wrong, URL-borne, expired and revoked tokens get one answer', asy
   assert.deepEqual(await call(authority, { token: short.token }), unauthorized);
   assert.equal((await call(authority, { token: kept.token })).status, 200);
 });
+
+// How a link stops in the middle of a request: the owner revokes it, or its day runs out.
+const LINK_ENDS = {
+  revoked: ({ guestAccess, link }) => guestAccess.revoke(link.id),
+  expired: ({ time }) => time.advance(DAY_MS + 1)
+};
+const UNAUTHORIZED = Object.freeze({ status: 401, body: { error: 'unauthorized' } });
+
+for (const [ending, end] of Object.entries(LINK_ENDS)) {
+  test(`a search whose link is ${ending} while its body is still arriving starts nothing and is refused like that link`, async (t) => {
+    const context = setup(t);
+    const { guestAccess, searches, arrivedWith } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const pending = openCall(kept.addresses[0], { method: 'POST', path: '/guest/1/search', token: ended.token,
+      headers: { 'content-type': 'application/json', 'x-test-request': 'pending' } });
+    await until(() => arrivedWith('pending'));
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
+    await end({ ...context, link: ended.link });
+    assert.deepEqual(await pending.finish({ queries: ['deploy port'] }), UNAUTHORIZED);
+    assert.equal(searches.length, 0);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
+  });
+
+  test(`a search whose link is ${ending} while it runs returns no result and is refused like that link`, async (t) => {
+    const held = gate();
+    const context = setup(t, { searchGate: held.wait });
+    const { guestAccess, searches } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const answer = call(kept.addresses[0], { method: 'POST', path: '/guest/1/search', token: ended.token,
+      body: { queries: ['deploy port'] } });
+    await until(() => searches.length === 1);
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
+    // The link ends at once; settling the listener may wait for the held search, so release it first.
+    const ending = end({ ...context, link: ended.link });
+    held.release();
+    await ending;
+    assert.deepEqual(await answer, UNAUTHORIZED);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
+  });
+
+  test(`an MCP search whose link is ${ending} while its body is still arriving starts nothing`, async (t) => {
+    const context = setup(t);
+    const { guestAccess, searches, arrivedWith } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const { transport } = await connect(t, kept.addresses[0], ended.token);
+    const pending = openCall(kept.addresses[0], { method: 'POST', path: '/guest/1/mcp', token: ended.token,
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-test-request': 'pending',
+        'mcp-session-id': transport.sessionId, 'mcp-protocol-version': transport.protocolVersion } });
+    await until(() => arrivedWith('pending'));
+    const refusedBefore = guestAccess.list({ projectId: PROJECT }).refusedToday;
+    await end({ ...context, link: ended.link });
+    assert.deepEqual(await pending.finish({ jsonrpc: '2.0', id: 7, method: 'tools/call',
+      params: { name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } } }), UNAUTHORIZED);
+    assert.equal(searches.length, 0);
+    assert.equal(guestAccess.list({ projectId: PROJECT }).refusedToday, refusedBefore + 1);
+  });
+
+  test(`an MCP search whose link is ${ending} while it runs returns no result`, async (t) => {
+    const held = gate();
+    const context = setup(t, { searchGate: held.wait });
+    const { guestAccess, searches } = context;
+    const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+    const ended = await guestAccess.create({ projectId: PROJECT, days: 1 });
+    const { client } = await connect(t, kept.addresses[0], ended.token);
+    // A revoked link's session is closed under the call, which the client only notices at its own timeout.
+    const found = client.callTool({ name: 'search_project_knowledge', arguments: { queries: ['deploy port'] } }, undefined,
+      { timeout: 3000 }).then((result) => result, (error) => ({ rejected: String(error) }));
+    await until(() => searches.length === 1);
+    const ending = end({ ...context, link: ended.link });
+    held.release();
+    await ending;
+    const result = await found;
+    assert.equal(JSON.stringify(result).includes('Deploys'), false, JSON.stringify(result));
+  });
+}
 
 test('ten failed tokens from one address in ten minutes refuse even the right one', async (t) => {
   const listener = await startGuestListener({ addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,

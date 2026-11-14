@@ -27,23 +27,26 @@ export function createGuestRoutes({ visitorAccess, host }) {
     maxSessionsPerOwner: MCP_SESSIONS_PER_LINK,
     sessionIdleTtlMs: MCP_SESSION_IDLE_MS, sessionSweepIntervalMs: MCP_SWEEP_MS, now: Date.now });
 
-  async function handle(request, response, { link, pathname }) {
+  // recheck (the listener's) refuses the request and answers false once the link is no longer live.
+  async function handle(request, response, { link, pathname, recheck }) {
     if (pathname === '/guest/1/mcp') {
-      await mcpSessions.handle(request, response, { owner: link.id, createMcp: () => createGuestMcp({ link, actions }) });
+      await mcpSessions.handle(request, response, { owner: link.id, admit: recheck,
+        createMcp: () => createGuestMcp({ link, actions: liveActions(actions, recheck) }) });
       return true;
     }
     if (pathname === '/guest/1/card') {
       if (request.method !== 'GET') return methodNotAllowed(response, 'GET');
       const { status, body } = await actions.card(link);
-      sendJson(response, status, body);
+      if (recheck()) sendJson(response, status, body);
       return true;
     }
     if (pathname === '/guest/1/search') {
       if (request.method !== 'POST') return methodNotAllowed(response, 'POST');
       let asked;
       try { asked = await readJson(request); } catch { asked = null; }
+      if (!recheck()) return true;
       const { status, body } = await actions.search(link, asked?.queries);
-      sendJson(response, status, body);
+      if (recheck()) sendJson(response, status, body);
       return true;
     }
     return false;
@@ -76,6 +79,20 @@ function guestActions({ visitorAccess, host }) {
     }
   };
 }
+
+// The actions of one MCP session: an answer that is ready after its link
+// ended is replaced by the refusal that link now gets. recheck is the one of
+// the request that opened the session; any request of the session carries
+// the same link's token.
+function liveActions(actions, recheck) {
+  const answered = answer => (recheck() ? answer : UNAUTHORIZED);
+  return {
+    card: async link => answered(await actions.card(link)),
+    search: async (link, queries) => answered(await actions.search(link, queries))
+  };
+}
+
+const UNAUTHORIZED = Object.freeze({ status: 401, body: Object.freeze({ error: 'unauthorized' }) });
 
 // A refusal as a guest sees it: what they asked wrong, a limit, or one word for everything else.
 function refusal(code) {
