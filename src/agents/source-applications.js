@@ -19,3 +19,11 @@ export function coversClient(clients, client, { explicit = [] } = {}) {
   const legacy = LEGACY_ALIASES[client];
   return Boolean(legacy) && listed.includes(legacy) && !explicit.includes(client);
 }
+
+// The console writes a client lower-case with spaces and dashes as underscores,
+// so `claude-code`, `Claude Code` and `claude_code` are one client there too.
+export function normalisedClient(value) {
+  return typeof value === 'string'
+    ? value.trim().toLocaleLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+    : '';
+}

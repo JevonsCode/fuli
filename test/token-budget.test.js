@@ -234,7 +234,9 @@ const BASELINE = Object.freeze({
   // 191,478 -> 191,520 B (+42 B), measured. Chat is unchanged.
   // Roundtable wakes that did not answer are diagnostics events: read_diagnostic_events' component enum
   // gains roundtable: 191,520 -> 191,533 B (+13 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 191533,
+  // read_compounding_statement gains usage (task entries and wakes, answered and failed, by client and
+  // model), no new tool: 191,533 -> 191,687 B (+154 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191687,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

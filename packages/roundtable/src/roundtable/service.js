@@ -259,7 +259,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         failure = attemptFailure(error);
         detail = error.detail ?? null;
         ladder?.attempt(delivery, 'failed', failure);
-        if (grant) recordWake(ask, delivery, { startedAt, remote, error });
+        // A failed wake still keeps what its client reported (the stream before
+        // it failed, or an answer whose session did not restore the Agent).
+        if (grant) recordWake(ask, delivery, { startedAt, remote, error, reported: error.reported ?? answer });
         // The team rules refused this Agent: no other channel or stand-in may reach it.
         if (failure === 'not_permitted') break;
         // A process that may still be running must not get a sibling on another channel.
@@ -282,7 +284,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         // the fail-closed backstop if the Provider is temporarily unreachable.
         if (grant?.token) await host.revokeDelegation({ token: grant.token }).catch(() => {});
       }
-      recordWake(ask, delivery, { startedAt, remote });
+      recordWake(ask, delivery, { startedAt, remote, reported: answer });
       ladder?.attempt(delivery, 'answered');
       return { answer, delivery, via: `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}` };
     }
@@ -293,9 +295,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // Each wake is kept where it ran, its output only as the host redacts it
   // (wake-failure.js); a failure also reaches the host's diagnostics, without that output.
   // The record is diagnostics: failing to keep it never changes what the ask answers.
-  function recordWake(ask, delivery, { startedAt, remote, error = null }) {
+  // reported: the model and usage the client reported for this wake, if any.
+  function recordWake(ask, delivery, { startedAt, remote, error = null, reported = null }) {
     try {
-      const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error,
+      const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error, reported,
         durationMs: now() - startedAt, redact: host.redactDiagnostic });
       store.wakeAttempts.record(ask.id, record);
       if (!error || record.code === 'cancelled') return;
@@ -886,6 +889,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     messageStatus, cancelMessage, answerRemote, visitSharedLead,
     // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
+    // Woken clients' answers in [from, to) by client and reported model (statement usage).
+    wakeUsage: ({ from, to }) => store.wakeAttempts.usageBetween(spaceId(), from, to),
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,

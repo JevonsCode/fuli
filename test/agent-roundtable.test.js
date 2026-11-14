@@ -77,6 +77,30 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.deepEqual([summary.mode, summary.replying], [null, false]);
 });
 
+test('a woken answer keeps the model and tokens its client reported; wake usage counts answers by client and model', async () => {
+  const answers = [{ body: 'a', sessionId: 'fork-1', model: 'synthetic-model-a', usage: { inputTokens: 120, outputTokens: 30 } },
+    { body: 'b', sessionId: 'fork-2', model: 'synthetic-model-a', usage: { inputTokens: null, outputTokens: 5 } },
+    { body: 'c', sessionId: 'fork-3' }];
+  const { roundtable } = fixture({ wake: async () => answers.shift() });
+  for (const body of ['one', 'two', 'three']) {
+    assert.equal((await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+      to: 'Nova Lane', body })).status, 'answered');
+  }
+  // A wake that failed counts as failed, with what its client reported before failing;
+  // the inbox reply that answered the ask afterwards is not a wake.
+  const queued = fixture({ wake: async () => { throw Object.assign(new Error('no answer'), { code: 'wake_failed',
+    reported: { model: 'synthetic-model-b', usage: { inputTokens: 40, outputTokens: 2 } } }); } });
+  const sent = await queued.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'Nova Lane', body: 'x' });
+  await queued.roundtable.replyMessage({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId, body: 'y' });
+  const window = { from: '2000-01-01T00:00:00.000Z', to: '2999-01-01T00:00:00.000Z' };
+  assert.deepEqual(queued.roundtable.wakeUsage(window),
+    [{ client: 'codex', model: 'synthetic-model-b', wakes: 0, failedWakes: 1, inputTokens: 40, outputTokens: 2, tokenWakes: 1 }]);
+  assert.deepEqual(roundtable.wakeUsage(window), [
+    { client: 'codex', model: 'synthetic-model-a', wakes: 2, failedWakes: 0, inputTokens: 120, outputTokens: 35, tokenWakes: 2 },
+    { client: 'codex', model: null, wakes: 1, failedWakes: 0, inputTokens: null, outputTokens: null, tokenWakes: 0 }]);
+  assert.deepEqual(roundtable.wakeUsage({ from: '2999-01-01T00:00:00.000Z', to: '2999-01-02T00:00:00.000Z' }), []);
+});
+
 test('employee numbers find and address the same identity across clients', async () => {
   const { roundtable, woken } = fixture();
   const result = await roundtable.findAgents({ query: '000002' });
@@ -378,6 +402,15 @@ test('waking validates the session id and the client, and reports a client that 
     (error) => error.code === 'client_login_required');
   assert.throws(() => parseFinalAnswer('claude_code', { code: 2, stdout: JSON.stringify({ type: 'result', result: 'ok' }) }),
     (error) => error.code === 'wake_failed');
+});
+
+test('a Codex wake keeps the tokens its turn.completed reported and names no model', () => {
+  const stdout = usage => [{ type: 'thread.started', thread_id: 'synthetic-thread' },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'Answer' } },
+    { type: 'turn.completed', ...(usage ? { usage } : {}) }].map(JSON.stringify).join('\n');
+  assert.deepEqual(parseFinalAnswer('codex', { code: 0, stdout: stdout({ input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 }) }),
+    { body: 'Answer', sessionId: 'synthetic-thread', usage: { inputTokens: 100, outputTokens: 10 } });
+  assert.deepEqual(parseFinalAnswer('codex', { code: 0, stdout: stdout(null) }), { body: 'Answer', sessionId: 'synthetic-thread' });
 });
 
 test('task entry hands the selected Agent the questions waiting for it', async () => {

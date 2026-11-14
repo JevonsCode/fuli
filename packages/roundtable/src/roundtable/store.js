@@ -5,7 +5,7 @@ import { GROUP_DISCUSSION_JOIN_COLUMNS, GROUP_DISCUSSION_JOIN_TABLES, GROUP_DISC
   createGroupDiscussionStore } from './group-discussion-store.js';
 import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thread-subscriptions.js';
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
-import { WAKE_ATTEMPT_TABLES, createWakeAttemptStore } from './wake-attempt-store.js';
+import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
@@ -72,6 +72,12 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/10-wake-attempts', to: 10, kind: 'add-table', table: 'wake_attempts',
     summary: 'each wake an ask started: client, resumed or new session, failure code, exit code and a redacted output summary',
     create: WAKE_ATTEMPT_TABLES
+  }, {
+    // The model and tokens each woken client reported for that wake, answered
+    // or failed; null when it reported none. Older attempts carry none.
+    id: 'roundtable/11-wake-attempt-usage', to: 11, kind: 'add-columns', table: 'wake_attempts',
+    summary: 'the model and tokens a woken client reported for each wake',
+    columns: WAKE_ATTEMPT_USAGE_COLUMNS
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });

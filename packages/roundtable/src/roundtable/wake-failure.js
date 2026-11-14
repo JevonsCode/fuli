@@ -32,7 +32,8 @@ export function wakeFailure(code, detail, message, { exitCode = null, signal = n
 // The record kept for one wake attempt. redact: the host's redaction of text
 // that leaves the process; without one, the client's output is dropped and
 // only the codes, exit code and signal are kept.
-export function wakeAttemptRecord({ client, sessionId, error = null, durationMs, redact = null }) {
+// reported: the model and usage the client itself reported for the wake (wake.js), or null.
+export function wakeAttemptRecord({ client, sessionId, error = null, reported = null, durationMs, redact = null }) {
   const detail = WAKE_FAILURE_DETAILS.includes(error?.detail) ? error.detail : null;
   let summary = null;
   if (error && redact) {
@@ -42,7 +43,9 @@ export function wakeAttemptRecord({ client, sessionId, error = null, durationMs,
     code: error ? error.code ?? 'wake_failed' : null, detail,
     exitCode: Number.isSafeInteger(error?.exitCode) ? error.exitCode : null,
     signal: typeof error?.signal === 'string' && /^SIG[A-Z0-9]{1,12}$/.test(error.signal) ? error.signal : null,
-    durationMs: Math.max(0, Math.round(durationMs)), outputSummary: summary };
+    durationMs: Math.max(0, Math.round(durationMs)), outputSummary: summary,
+    model: reported?.model ?? null, inputTokens: reported?.usage?.inputTokens ?? null,
+    outputTokens: reported?.usage?.outputTokens ?? null };
 }
 
 // The end of each captured part, stderr first: a client's own error is its last lines.
