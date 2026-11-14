@@ -22,6 +22,7 @@ import OpenInAppButton from '@/features/open-in-app/OpenInAppButton.vue'
 import { shellPageTools } from '@/features/webmcp/shell-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { useVisitAwaiting } from '@/features/visit-requests/useVisitAwaiting'
 import { useReviewList } from '@/features/review-list/review-store'
 import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
@@ -120,6 +121,12 @@ watch(activeSpaceId, (id) => { attention.setSpace(id); review.setSpace(id) }, { 
 let attentionTimer: ReturnType<typeof setInterval> | undefined
 let reviewTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
+// Another computer's request arrives while the page is open: read with the assistants' requests, so 等你拍板 shows it without a reload.
+const visitsAwaiting = useVisitAwaiting()
+function refreshWaiting() {
+  refreshAttention()
+  if (document.visibilityState === 'visible') void visitsAwaiting.load()
+}
 // The knowledge read is larger, so it refreshes less often; the 待决策 page refreshes it on open.
 function refreshReview() { if (document.visibilityState === 'visible' && !review.loading) void review.refresh() }
 // The top bar's one refresh reads the console again, the waiting requests (the whole
@@ -149,15 +156,15 @@ onMounted(() => {
     // Version checks are advisory and never interrupt the console.
     .catch(() => {})
   if (store.runtimeStatus === 'idle') void store.refresh()
-  attentionTimer = setInterval(refreshAttention, 30000)
+  attentionTimer = setInterval(refreshWaiting, 30000)
   reviewTimer = setInterval(refreshReview, 300000)
-  document.addEventListener('visibilitychange', refreshAttention)
+  document.addEventListener('visibilitychange', refreshWaiting)
 })
 onBeforeUnmount(() => {
   versionRequest.abort()
   clearInterval(attentionTimer)
   clearInterval(reviewTimer)
-  document.removeEventListener('visibilitychange', refreshAttention)
+  document.removeEventListener('visibilitychange', refreshWaiting)
   attention.setSpace('')
   review.setSpace('')
 })

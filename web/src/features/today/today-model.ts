@@ -20,8 +20,10 @@ export type DecisionRow =
 interface VisitDecisions { awaiting: readonly VisitRequest[]; awaitingTotal: number; reviews: readonly VisitRequest[] }
 
 /**
- * 等你拍板, at most five rows: the open requests of the person's assistants
- * first, then other computers' requests (waiting, then finished runs), then
+ * 等你拍板, at most five rows: other computers' requests waiting for the call
+ * first (someone else waits on them and they expire, so the assistants' own
+ * never push them out of sight), then the open requests of the person's
+ * assistants, then other computers' finished runs to look at, then
  * one row for the habits waiting to be confirmed and one for preferences that
  * disagree. `more` counts what waits and no row stands for; `visits` how many
  * of other computers' requests wait, shown or not (they lead to their own list).
@@ -30,8 +32,9 @@ export function decisionRows({ requests, requestTotal, visits, reviewTotal, conf
   requests: readonly AgentAttention[]; requestTotal: number; visits: VisitDecisions; reviewTotal: number; conflicts: number
 }): { rows: DecisionRow[]; more: number; visits: number } {
   const items: DecisionRow[] = [
+    ...visits.awaiting.map(item => ({ kind: 'visit' as const, item })),
     ...requests.map(item => ({ kind: 'request' as const, item })),
-    ...[...visits.awaiting, ...visits.reviews].map(item => ({ kind: 'visit' as const, item })),
+    ...visits.reviews.map(item => ({ kind: 'visit' as const, item })),
   ]
   const rows = items.slice(0, DECISION_ROWS)
   const visitTotal = Math.max(visits.awaitingTotal, visits.awaiting.length) + visits.reviews.length
