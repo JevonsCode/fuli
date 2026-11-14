@@ -301,3 +301,19 @@ async function freePort() {
   await new Promise(done => server.close(done));
   return port;
 }
+
+// startBy only means something if the hook process and the console read the
+// same clock: a second process's reading must fall between two of this one's.
+test('hookClock reads the same clock in another process on this computer', async () => {
+  const before = hookClock();
+  const child = spawn(process.execPath, ['--input-type=module', '-e',
+    `import { hookClock } from ${JSON.stringify(new URL('../src/agents/lifecycle-forwarder.js', import.meta.url).href)}; process.stdout.write(String(hookClock()));`]);
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  const code = await new Promise(done => child.once('close', done));
+  const after = hookClock();
+  assert.equal(code, 0);
+  const other = Number(output);
+  assert.ok(Number.isSafeInteger(other), `not a clock reading: ${output}`);
+  assert.ok(other >= before && other <= after, `${other} is not between ${before} and ${after}`);
+});
