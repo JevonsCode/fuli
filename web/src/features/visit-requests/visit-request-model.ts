@@ -60,6 +60,7 @@ export function planErrorText(code: string) {
 const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded', 'computer_budget_exceeded', 'planning_busy'])
 const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only'])
 const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large'])
+const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported' }
 const known = (values: Set<string>, value: string | null) => (value && values.has(value) ? value : 'other')
 
 /** A finished run nobody reviewed for 14 days: its copy is gone, its result and branch stay. */
@@ -74,19 +75,13 @@ export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'err
   if (request.state === 'cancelled' && request.reason) return t(`visitRequests.card.cancelledBecause.${known(CANCELLED, request.reason)}`)
   if (request.state === 'expired') return t(reviewExpired(request) ? 'visitRequests.card.reviewExpired' : 'visitRequests.card.ownerExpired')
   if (request.state === 'unknown') return t('visitRequests.card.restarted')
-  if (request.state === 'failed') return t(request.error === 'fuli_mcp_unavailable' ? 'visitRequests.card.mcpUnavailable' : 'visitRequests.card.failed')
+  if (request.state === 'failed') return t(`visitRequests.card.${FAILED[request.error ?? ''] ?? 'failed'}`)
   return null
 }
 
 /** Why a finished run was held, in plain words. */
 export function heldText(holdReason: string | null) {
   return t(`visitRequests.result.held.${known(HELD, holdReason)}`)
-}
-
-/** A request that came in under 自动 but waits for the person because its client cannot run unwatched (Codex on Windows). */
-export function waitsForConstrainedClient(card: Pick<VisitRequestCard, 'state' | 'modeAtReceipt' | 'events'>) {
-  return card.state === 'awaiting_owner' && card.modeAtReceipt === 'auto'
-    && ruleChecks(card).some(check => check.name === 'constrained_client' && !check.ok)
 }
 
 /** Who decided and under which mode. */
@@ -104,7 +99,7 @@ export function modeName(mode: RequesterMode) {
 
 const KNOWN_CHECKS = new Set(['budget_left', 'plan_ready', 'areas_inside_project', 'no_dependency_changes', 'no_config_changes',
   'no_network', 'paths_inside_worktree', 'no_denied_paths', 'no_executables', 'within_size', 'no_secrets', 'integrity',
-  'constrained_client', 'content_safe'])
+  'content_safe'])
 export function checkName(name: string) {
   return KNOWN_CHECKS.has(name) ? t(`visitRequests.checks.${name}`) : t('visitRequests.checks.other', { name })
 }

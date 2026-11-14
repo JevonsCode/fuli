@@ -11,7 +11,7 @@ import RequesterModeSelect from './RequesterModeSelect.vue'
 import VisitRequestReview from './VisitRequestReview.vue'
 import type { VisitAction } from './visit-request-api'
 import { askerLine, checkName, decisionText, endingText, eventText, modeName, planErrorText, reviewExpired, ruleChecks, shownText, visitActions,
-  visitStateLabel, waitsForConstrainedClient } from './visit-request-model'
+  visitStateLabel } from './visit-request-model'
 import type { VisitRequestCard } from './visit-request-shape'
 import './visit-card.css'
 
@@ -46,7 +46,7 @@ const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitReq
     </DialogDescription>
     <div class="visit-card-mode">
       <RequesterModeSelect :requester-key="card.requester.key" :label="card.requester.label" @changed="emit('changed')" />
-      <p class="visit-note">{{ t('visitRequests.mode.never') }}</p>
+      <p class="visit-note">{{ t('visitRequests.mode.never') }} {{ t('visitRequests.mode.byClaudeCode') }}</p>
     </div>
   </DialogHeader>
 
@@ -75,7 +75,6 @@ const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitReq
   <section class="visit-section" data-visit-decision>
     <h3 class="ui-group-label">{{ t('visitRequests.card.decision') }}</h3>
     <p class="visit-line">{{ t('visitRequests.card.modeAtReceipt', { mode: modeName(card.modeAtReceipt) }) }} · {{ decisionText(card) }}</p>
-    <p v-if="waitsForConstrainedClient(card)" class="visit-line" data-visit-constrained>{{ t('visitRequests.card.constrainedClient') }}</p>
     <p v-if="ending" class="visit-line" data-visit-ending>{{ ending }}</p>
     <UiDisclosure v-if="checks.length || card.error" :title="t('visitRequests.card.details')" data-visit-details>
       <p v-if="checks.length" class="visit-note">{{ t('visitRequests.card.checks') }}</p>

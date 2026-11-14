@@ -32,6 +32,7 @@ describe('a visit request card', () => {
     expect(text('[data-visit-assessment] h3')).toBe('助手评估')
     expect(text('[data-visit-touches]')).toBe('会改依赖：不会 · 配置：不会 · 联网：不会')
     expect(document.body.textContent).toContain('无论哪种，都不会合并或推送。')
+    expect(document.body.textContent).toContain('「自动」和「完全信任」的活由这台电脑上的 Claude Code 来做。')
   })
 
   it('says the assessment did not finish and why', async () => {
@@ -87,10 +88,10 @@ describe('a visit request card', () => {
     expect(document.querySelector('[data-visit-actions]')).toBeNull()
   })
 
-  it('says why a request sent under 自动 waits for the person when its client cannot run unwatched', async () => {
-    await mountCard(visitCard({ modeAtReceipt: 'auto', events: [{ from: 'planning', to: 'awaiting_owner', by: 'rule', rule: 'auto_envelope_v1',
-      note: null, at: '2026-11-14T08:01:00.000Z', checks: [{ name: 'constrained_client', ok: false }, { name: 'no_network', ok: true }] }] }))
-    expect(text('[data-visit-constrained]')).toBe('这台电脑上的助手没法在没人看着时安全地自动做，所以等你拍板。')
+  it('says when no client here can do the work safely, with no empty rows for a copy that was never made', async () => {
+    await mountCard(visitCard({ state: 'failed', error: 'no_constrained_client', reason: 'no_constrained_client', plan: null, risk: null }))
+    expect(text('[data-visit-ending]')).toBe('这台电脑上没有能安全执行这类活的客户端（现在只用 Claude Code）。')
+    expect(document.querySelector('[data-visit-actions]')).toBeNull()
     // Before approval there is no copy or branch: no empty rows for them.
     expect(document.querySelector('[data-visit-review-section]')).toBeNull()
     expect(document.querySelector('[data-visit-branch]')).toBeNull()

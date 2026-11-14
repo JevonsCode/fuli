@@ -430,7 +430,7 @@ function shareState(projectId: string) {
             </li>
           </ul>
           <div class="peer-actions">
-            <p>{{ t('visitRequests.mode.never') }}</p>
+            <p>{{ t('visitRequests.mode.never') }} {{ t('visitRequests.mode.byClaudeCode') }}</p>
             <Button as-child variant="ghost" size="sm"><RouterLink :to="VISIT_REQUESTS_PATH" data-visit-requests-link>{{ t('visitRequests.list.open') }}</RouterLink></Button>
           </div>
         </section>
