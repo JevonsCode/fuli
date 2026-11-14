@@ -27,19 +27,24 @@ import { isProcessAlive } from '../local-runtime/processes.js';
 // - sent but not started: the console answered HOOK_OUTCOME_HEADER "refused"
 //   (another version or data directory, too many calls, this session's
 //   earlier call still running past its deadline, an unsafe path), answered
-//   without that header (a console from before this route), or sent no
-//   headers within HEADERS_BUDGET_MS (its JavaScript is blocked: the kernel
-//   accepts connections anyway). The console flushes "ran" in the same turn
-//   that starts the call, after checking the connection is still open, and
-//   this side closes the connection when it stops waiting → run here. The
-//   only double run left: headers flushed in the last instant before this
-//   side's timer fired, which needs the console to answer after almost exactly
-//   HEADERS_BUDGET_MS; health was answered a moment earlier, so that console
-//   is not blocked and answers in milliseconds;
+//   without that header (a console from before this route, or one reached
+//   past startBy), or sent no headers within HEADERS_BUDGET_MS (its
+//   JavaScript is blocked: the kernel accepts connections anyway) → run here.
+//   The console flushes "ran" in the same turn that starts the call, and only
+//   while the connection is open and its hookClock() has not passed the
+//   payload's startBy, START_MARGIN_MS before this side stops waiting; this
+//   side decides only after reading what already arrived on its socket. A
+//   double run needs both processes stalled for START_MARGIN_MS inside that
+//   window (the console between its check and its write);
+// - may have started: the connection made, then lost before "ran" arrived
+//   (the console may have died or reset it after starting the call);
 // - started ("ran" received): a connection lost after that, no answer by the
-//   deadline less ANSWER_MARGIN_MS, or a malformed answer → never run again;
-//   the turn gets the hook's unavailable answer (lostLifecycleEvent) and the
-//   failure is recorded.
+//   deadline less ANSWER_MARGIN_MS, or a malformed answer.
+// The last two never run again: a second run repeats the event's writes
+// without anyone seeing it (a prompt's turn gets a new id each run), a lost
+// one is shown in that turn.
+// The turn gets the hook's unavailable answer (lostLifecycleEvent) and the
+// failure is recorded.
 
 // Hosts close stdin as soon as they wrote the payload; one that does not is
 // left to the hook's own deadline, which the fallback keeps.
@@ -52,6 +57,9 @@ const HEALTH_BUDGET_MS = 300;
 // bounds a console whose port is wedged before it accepted anything.
 const CONNECT_BUDGET_MS = 300;
 const HEADERS_BUDGET_MS = 1500;
+// The console starts the call only this long before this side stops waiting
+// for its headers, which leaves their hop here inside the wait.
+const START_MARGIN_MS = 500;
 // The answer is due this long before the hook's deadline (measured from the
 // hook's start), which leaves the lost answer (it loads the hook, ~0.6 s)
 // inside the host's own wait: Claude Code waits 30 s, the deadline is 28 s.
@@ -66,6 +74,12 @@ export const LIFECYCLE_HOOK_ROUTE = '/api/lifecycle-hooks/';
 // Set by the console on every answer of that route: "ran" once it starts the
 // call, "refused" when it did not.
 export const HOOK_OUTCOME_HEADER = 'x-fuli-lifecycle-hook';
+
+// Milliseconds on this computer's monotonic clock, which the hook process and
+// the console read alike (unlike the wall clock, it never steps back).
+export function hookClock() {
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
 
 const PACKAGE_JSON = new URL('../../package.json', import.meta.url);
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
@@ -120,9 +134,11 @@ export async function forwardLifecycleEvent({ client, argv, env, cwd, stdin }, {
   const answerAt = deadlineAt - ANSWER_MARGIN_MS;
   const timeoutMs = answerAt - now() - RETURN_MARGIN_MS;
   if (timeoutMs < MIN_CONSOLE_MS) return { run: 'here', reason: 'no_time' };
-  const body = JSON.stringify({ version, argv, env, cwd, timeoutMs, stdin: Buffer.concat(stdin).toString('base64') });
-  return post(new URL(`${LIFECYCLE_HOOK_ROUTE}${client}`, recorded.url), body,
-    { connectMs: connect, headersMs: headers, answerMs: answerAt - now() });
+  const answerMs = answerAt - now();
+  const headersMs = Math.min(headers, answerMs);
+  const startBy = hookClock() + headersMs - START_MARGIN_MS;
+  const body = JSON.stringify({ version, argv, env, cwd, timeoutMs, startBy, stdin: Buffer.concat(stdin).toString('base64') });
+  return post(new URL(`${LIFECYCLE_HOOK_ROUTE}${client}`, recorded.url), body, { connectMs: connect, headersMs, answerMs });
 }
 
 function namedEnvironment(env, names) {
@@ -193,20 +209,25 @@ function post(url, body, { connectMs, headersMs, answerMs }) {
       request.destroy();
       done(outcome);
     };
-    // Before "ran" the console has not started the call.
-    const failed = (error, reason) => finish(started ? { run: 'lost', error } : { run: 'here', reason });
+    // Once connected the payload may have reached the console, which may have
+    // started the call: a connection lost before "ran" is lost, not run here.
+    const failed = error => finish(connected ? { run: 'lost', error } : { run: 'here', reason: 'unreachable' });
+    // A due timer runs before this process reads its sockets: decide after
+    // reading them, so "ran" already waiting on the socket counts.
+    const afterReading = decide => setImmediate(() => { if (!settled) decide(); });
     const request = httpRequest(url, { method: 'POST', agent: false, headers: {
       'content-type': 'application/json', 'content-length': Buffer.byteLength(body), connection: 'close'
     } });
     timers.push(setTimeout(() => { if (!connected) finish({ run: 'here', reason: 'connect_timeout' }); }, connectMs),
-      setTimeout(() => { if (!started) finish({ run: 'here', reason: 'no_headers' }); }, headersMs),
-      setTimeout(() => failed(lostError('lifecycle_forward_timeout'), 'no_headers'), answerMs));
+      setTimeout(() => afterReading(() => { if (!started) finish({ run: 'here', reason: 'no_headers' }); }), headersMs),
+      setTimeout(() => afterReading(() => finish(started ? { run: 'lost', error: lostError('lifecycle_forward_timeout') }
+        : { run: 'here', reason: 'no_headers' })), answerMs));
     request.once('socket', socket => {
       const onConnect = () => { connected = true; };
       if (!socket.connecting) onConnect();
       else socket.once('connect', onConnect);
     });
-    request.once('error', () => failed(lostError('lifecycle_forward_failed'), 'unreachable'));
+    request.once('error', () => failed(lostError('lifecycle_forward_failed')));
     request.once('response', response => {
       const outcome = response.headers[HOOK_OUTCOME_HEADER];
       if (outcome !== 'ran') {

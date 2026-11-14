@@ -36,9 +36,10 @@ export function createLifecycleHookCalls({ runtimeConfigPath, baseEnv, maxCalls 
   const running = new Set();
   return {
     runtimeConfigPath,
-    // { refused: reason } or { start(): Promise<result> }. Synchronous after
-    // the path check, so the router can confirm its socket and send its
-    // headers in the same turn as start().
+    // { refused: reason } or { start(): Promise<result>, release() }. A taken
+    // call holds its place from the check on (admissions awaited together
+    // cannot all pass it); the router calls start() or, when it does not
+    // start the call, release().
     async admit(call) {
       const input = hookInput(call.stdin);
       if (!(await pathsSafe(input))) return { refused: 'unsafe_path' };
@@ -47,15 +48,15 @@ export function createLifecycleHookCalls({ runtimeConfigPath, baseEnv, maxCalls 
       if (session && [...running].some(entry => entry.session === session && entry.overdue)) {
         return { refused: 'session_overdue' };
       }
-      return { start: () => start(call, session, input) };
+      const entry = { session, overdue: false };
+      running.add(entry);
+      return { start: () => start(call, entry, input), release: () => running.delete(entry) };
     },
     running: () => running.size
   };
 
-  function start(call, session, input) {
+  function start(call, entry, input) {
     const startedAt = now();
-    const entry = { session, overdue: false };
-    running.add(entry);
     const settle = () => {
       clearTimeout(overdue);
       running.delete(entry);
