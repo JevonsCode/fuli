@@ -16,7 +16,9 @@ import { VISIT_REQUESTS_PATH } from './useVisitPeek'
 // 完全信任, each with its one line. A change is reversible, so it applies at
 // once with no dialog; the floating toast names the computer and says what the
 // change did to its open requests. The place that shows it says once that no
-// mode merges or pushes (visitRequests.mode.never).
+// mode merges or pushes (visitRequests.mode.never). Choosing the mode already
+// shown reads the modes again instead of doing nothing, and so does a failed
+// save: what is shown may be older than what another window set.
 const props = defineProps<{ requesterKey: string; label: string }>()
 const emit = defineEmits<{ changed: [] }>()
 const store = useConsoleStore()
@@ -31,7 +33,8 @@ const current = computed(() => (modes.loaded.value ? modes.modeOf(props.requeste
 
 async function choose(value: string) {
   const mode = value as RequesterMode
-  if (saving.value || mode === current.value) return
+  if (saving.value) return
+  if (mode === current.value) { void modes.refresh(); return }
   saving.value = true
   try {
     const { requester, effects } = await saveRequesterMode(props.requesterKey, mode, props.label)
@@ -44,6 +47,7 @@ async function choose(value: string) {
     emit('changed')
   } catch (error) {
     store.reportError(new Error(visitErrorText(error)))
+    void modes.refresh()
   } finally { saving.value = false }
 }
 </script>

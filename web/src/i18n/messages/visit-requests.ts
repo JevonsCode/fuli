@@ -12,6 +12,7 @@ export const visitRequestMessages = {
       failed: '读不到另一台电脑的请求。',
       retry: '再读一次',
       open: '看所有请求',
+      newestOnly: '只列出最近 {count} 条。',
     },
     states: {
       received: '刚收到', refused: '没有接', planning: '助手在看', awaiting_owner: '等你拍板', approved: '已批准', running: '正在做',
@@ -160,6 +161,7 @@ export const visitRequestMessages = {
       failed: 'Requests from other computers could not be read.',
       retry: 'Read again',
       open: 'All requests',
+      newestOnly: 'Only the newest {count} are listed.',
     },
     states: {
       received: 'Just received', refused: 'Not taken', planning: 'Assistant is looking', awaiting_owner: 'Waiting for your call',

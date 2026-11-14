@@ -62,4 +62,41 @@ describe('the trust a requester gets', () => {
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
+
+  const requesters = (mode: string) => ({ defaultMode: 'plan', requesters: [{ key: PEER_KEY, kind: 'peer',
+    label: 'Synthetic laptop', mode, ownDevice: mode === 'trusted', modeUpdatedAt: '2026-11-14T08:00:00.000Z' }] })
+
+  it('reads the modes again when the window is looked at again, so another window’s change shows', async () => {
+    const routes: Record<string, unknown> = { 'GET /api/visitor-access/requesters': requesters('plan') }
+    const { calls } = stubServer(routes)
+    const wrapper = await mountSelect(PEER_KEY)
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('plan')
+    // Another window marked this computer 完全信任.
+    routes['GET /api/visitor-access/requesters'] = requesters('trusted')
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    // (Earlier specs' module copies listen too, so only a lower bound is exact here.)
+    expect(calls('GET /api/visitor-access/requesters').length).toBeGreaterThanOrEqual(2)
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('trusted')
+  })
+
+  it('choosing the mode already shown reads the modes again instead of doing nothing', async () => {
+    const routes: Record<string, unknown> = { 'GET /api/visitor-access/requesters': requesters('plan') }
+    const { calls } = stubServer(routes)
+    const wrapper = await mountSelect(PEER_KEY)
+    // This window still shows 计划 while another one set 完全信任; the owner picks 计划 to be sure.
+    routes['GET /api/visitor-access/requesters'] = requesters('trusted')
+    await wrapper.get('select').setValue('plan')
+    await flushPromises()
+    expect(calls(`PUT /api/visitor-access/requesters/${encodeURIComponent(PEER_KEY)}/mode`)).toHaveLength(0)
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('trusted')
+    // Now the stale mode is gone, the same choice is a real change and is sent.
+    routes[`PUT /api/visitor-access/requesters/${encodeURIComponent(PEER_KEY)}/mode`] = {
+      requester: { key: PEER_KEY, kind: 'peer', label: 'Synthetic laptop', mode: 'plan', ownDevice: false, modeUpdatedAt: '2026-11-14T09:00:00.000Z' },
+      effects: { cancelled: [], returned: [] } }
+    await wrapper.get('select').setValue('plan')
+    await flushPromises()
+    expect(calls(`PUT /api/visitor-access/requesters/${encodeURIComponent(PEER_KEY)}/mode`)).toHaveLength(1)
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('plan')
+  })
 })
