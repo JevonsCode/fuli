@@ -89,11 +89,12 @@ export function createVisitRecords(store) {
         .all().map(requestView);
     },
 
-    // Requests this computer took (not refused) since an ISO instant, of one project or of all.
+    // Requests this computer took (not refused) since an ISO instant, of one project or of all. Those
+    // received from a fully trusted computer are the owner's own and are not part of these counts.
     acceptedSince(since, { projectId = null } = {}) {
       if (!store.readable) return 0;
-      return db().prepare(`SELECT COUNT(*) AS count FROM visit_requests WHERE state <> 'refused' AND created_at > ?
-        AND (? IS NULL OR project_id = ?)`).get(since, projectId, projectId).count;
+      return db().prepare(`SELECT COUNT(*) AS count FROM visit_requests WHERE state <> 'refused' AND mode_at_receipt <> 'trusted'
+        AND created_at > ? AND (? IS NULL OR project_id = ?)`).get(since, projectId, projectId).count;
     },
 
     // What one requester used since an ISO instant: requests that were taken
