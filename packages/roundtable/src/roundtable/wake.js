@@ -36,11 +36,13 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
 // Work done for another computer is not a wake: see constrained-run.js.
 export const WAKE_MODES = Object.freeze(['answer', 'read_only']);
 
+// env, home: where a client's own configuration is read (Codex, to turn off
+// the person's other MCP servers by name).
 export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer',
-  mcpServers = null } = {}) {
+  mcpServers = null, env = process.env, home = homedir() } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
   if (!WAKE_MODES.includes(mode)) throw new TypeError('Invalid wake mode');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers, env, home });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -69,7 +71,7 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers, env }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;

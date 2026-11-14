@@ -50,7 +50,7 @@ user names and passwords are dropped, local paths become `[path]`, and long opaq
   that raised it (`Tool execution failed (TypeError at src/…/module.js:51)`), never its message.
 - **Roundtable wakes**: a client woken for an ask (a local one or a paired device's) that did not answer, as `failed`
   with its detail code (`client_not_found`, `spawn_error`, `login_required`, `client_exit_nonzero`,
-  `no_final_answer`, `output_too_large`, `timed_out`), the client, a resumed or new session, and the exit code and
+  `no_final_answer`, `output_too_large`, `timed_out`, `mcp_config_unreadable`), the client, a resumed or new session, and the exit code and
   signal. The client's own output is never written here; a redacted summary of at most 600 characters stays in the
   roundtable store of the computer where it ran. A cancelled wake is not recorded.
 

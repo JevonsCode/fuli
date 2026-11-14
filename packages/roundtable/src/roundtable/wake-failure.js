@@ -15,6 +15,7 @@ const WAKE_FAILURE_DETAILS = Object.freeze([
   'output_too_large', // it wrote more than a wake may read
   'timed_out', // it did not answer within the wake's time
   'cancelled', // the asker or the owner stopped it
+  'mcp_config_unreadable', // a wake that must turn off the client's other MCP servers could not read its configuration
   'restricted_mode_unsupported' // a constrained run's client is too old for restricted mode (never run without it)
 ]);
 

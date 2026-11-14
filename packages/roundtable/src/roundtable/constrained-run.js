@@ -9,11 +9,11 @@ import { wakeFailure } from './wake-failure.js';
 // no MCP server, no person's settings. Unlike the wake port it restores no
 // Agent and proves no identity; the prompt carries what the run needs as data.
 //
-// Clients that can be run this way, in order. Codex is not among them yet:
-// before enabling it, verify that its `-c mcp_servers=…` override replaces the
-// person's whole table rather than merging with it, and that its platform
-// sandbox confines the shell its workspace-write mode keeps (it is not verified
-// on native Windows).
+// Clients that can be run this way, in order. Codex is not among them yet: its
+// `-c mcp_servers=…` override merges with the person's table (the wake turns
+// their servers off by name instead, agents/codex/wake.js), and it is not
+// verified that its platform sandbox confines the shell its workspace-write
+// mode keeps (not on native Windows either).
 const CONSTRAINED_RUN_ADAPTERS = Object.freeze({ [claudeCodeConstrainedRun.id]: claudeCodeConstrainedRun });
 export const CONSTRAINED_RUN_CLIENTS = Object.freeze(Object.keys(CONSTRAINED_RUN_ADAPTERS));
 
