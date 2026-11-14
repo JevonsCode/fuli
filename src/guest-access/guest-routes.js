@@ -27,23 +27,30 @@ export function createGuestRoutes({ visitorAccess, host }) {
     maxSessionsPerOwner: MCP_SESSIONS_PER_LINK,
     sessionIdleTtlMs: MCP_SESSION_IDLE_MS, sessionSweepIntervalMs: MCP_SWEEP_MS, now: Date.now });
 
-  async function handle(request, response, { link, pathname }) {
+  // live and refuse are the listener's, for this request: live() tells whether
+  // its link is still live, refuse() refuses this request as a revoked link.
+  async function handle(request, response, { link, pathname, live, refuse }) {
+    const recheck = () => live() || (refuse(), false);
     if (pathname === '/guest/1/mcp') {
-      await mcpSessions.handle(request, response, { owner: link.id, createMcp: () => createGuestMcp({ link, actions }) });
+      // A POST starts only once its body is in and its link is still live, and
+      // its answer goes out only while it is.
+      const admit = () => recheck() && (answerWhileLive(response, live, refuse), true);
+      await mcpSessions.handle(request, response, { owner: link.id, admit, createMcp: () => createGuestMcp({ link, actions }) });
       return true;
     }
     if (pathname === '/guest/1/card') {
       if (request.method !== 'GET') return methodNotAllowed(response, 'GET');
       const { status, body } = await actions.card(link);
-      sendJson(response, status, body);
+      if (recheck()) sendJson(response, status, body);
       return true;
     }
     if (pathname === '/guest/1/search') {
       if (request.method !== 'POST') return methodNotAllowed(response, 'POST');
       let asked;
       try { asked = await readJson(request); } catch { asked = null; }
+      if (!recheck()) return true;
       const { status, body } = await actions.search(link, asked?.queries);
-      sendJson(response, status, body);
+      if (recheck()) sendJson(response, status, body);
       return true;
     }
     return false;
@@ -76,6 +83,50 @@ function guestActions({ visitorAccess, host }) {
     }
   };
 }
+
+// The answer of one MCP POST (an event stream opened at once; a batch has
+// several events) keeps its head until its first event or its end, and every
+// event and the end go out only while live(). When the link ended before the
+// head went out, the request gets refuse() (401); after, refuse() records it
+// and the response is destroyed. Either way, also when a revoked link's
+// session closes the stream, what follows is swallowed. A keep-alive comment
+// while the head is held is dropped.
+function answerWhileLive(response, live, refuse) {
+  const { writeHead, write, end, flushHeaders } = response;
+  let head = null;
+  let state = 'held';
+  const swallowed = () => true;
+  const refused = () => {
+    const held = state === 'held';
+    state = 'refused';
+    if (held) Object.assign(response, { writeHead, end, flushHeaders });
+    refuse();
+    Object.assign(response, { write: swallowed, end: () => response });
+    if (!held) response.destroy();
+  };
+  // Whether what comes next may go out; sends the held head first.
+  const goesOut = () => {
+    if (state === 'refused') return false;
+    if (!live()) {
+      refused();
+      return false;
+    }
+    if (state === 'held') {
+      state = 'open';
+      Object.assign(response, { writeHead, flushHeaders });
+      if (head) writeHead.apply(response, head);
+    }
+    return true;
+  };
+  Object.assign(response, {
+    writeHead: (...held) => { head = held; return response; },
+    flushHeaders: () => {},
+    write: (chunk, ...rest) => (state === 'held' && isComment(chunk)) || !goesOut() || write.call(response, chunk, ...rest),
+    end: (...rest) => (goesOut() ? end.apply(response, rest) : response)
+  });
+}
+
+const isComment = chunk => (typeof chunk === 'string' ? chunk.startsWith(':') : chunk?.[0] === 0x3a);
 
 // A refusal as a guest sees it: what they asked wrong, a limit, or one word for everything else.
 function refusal(code) {

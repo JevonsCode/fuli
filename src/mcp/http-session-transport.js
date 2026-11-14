@@ -32,8 +32,11 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
   };
 
   // An authenticated MCP request of owner; createMcp() builds the MCP server
-  // of a new session.
-  async function handle(request, response, { owner, createMcp }) {
+  // of a new session. admit, when given, is asked once a POST body is in (or
+  // found too large or unreadable) and before anything runs or is answered;
+  // false means it already answered the request (its authentication no
+  // longer holds).
+  async function handle(request, response, { owner, createMcp, admit = () => true }) {
     if (!['GET', 'POST', 'DELETE'].includes(request.method ?? '')) {
       response.writeHead(405, { allow: 'GET, POST, DELETE' }).end();
       return;
@@ -52,17 +55,20 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
       } catch (error) {
         if (error instanceof RequestTooLargeError) {
           response.once('finish', () => request.destroy());
+          if (!admit()) return;
           sendJsonRpcError(response, 413, -32600, 'Request too large', {
             closeConnection: true
           });
           return;
         }
         if (error instanceof SyntaxError) {
+          if (!admit()) return;
           sendJsonRpcError(response, 400, -32700, 'Parse error');
           return;
         }
         throw error;
       }
+      if (!admit()) return;
       // Reading a streamed body yields control. Shutdown may have started while the
       // client was still uploading, so re-check before allocating a session.
       if (isClosing()) {

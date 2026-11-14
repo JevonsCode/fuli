@@ -12,7 +12,8 @@ import { createFailedBearerLimit } from './failed-bearer-limit.js';
 // guest source address (lan-access.js), name one of the bound addresses as its
 // Host, carry no Origin (no web page may call it) and present a live link's
 // token as `Authorization: Bearer fgl_…`; a token anywhere else is never read.
-// Unknown, expired and revoked tokens are one answer. A source with too many
+// Unknown, expired and revoked tokens are one answer, also when the link ends
+// while its request is under way (the route's recheck). A source with too many
 // failed tokens is refused until they age out; onRefused hears of each of
 // those refusals. rebind follows the computer's addresses as they change.
 const GUEST_PREFIX = '/guest/1/';
@@ -62,15 +63,33 @@ export async function startGuestListener({ addresses, port, authenticate, route,
       sendJson(response, 429, { error: 'too_many_attempts' });
       return;
     }
-    const opened = authenticate(bearerToken(request.headers.authorization));
+    const token = bearerToken(request.headers.authorization);
+    const unauthorized = () => {
+      response.setHeader('www-authenticate', 'Bearer');
+      sendJson(response, 401, { error: 'unauthorized' });
+    };
+    const opened = authenticate(token);
     if (!opened.ok) {
       failedBearers.fail(source);
       onRefused(source);
-      response.setHeader('www-authenticate', 'Bearer');
-      sendJson(response, 401, { error: 'unauthorized' });
+      unauthorized();
       return;
     }
-    if (!await route(request, response, { link: opened.link, pathname })) sendJson(response, 404, { error: 'not_found' });
+    // A route asks live() once the body is in and again as it answers; when
+    // the link was revoked or expired meanwhile it calls refuse(): this
+    // request is refused once, with the answer a revoked token gets. It is not
+    // a guess, so it does not count toward the failed-token limit: one
+    // revocation never locks out the address of a guest whose calls were under way.
+    let refused = false;
+    const refuse = () => {
+      if (refused) return;
+      refused = true;
+      onRefused(source);
+      if (!response.headersSent) unauthorized();
+    };
+    if (!await route(request, response, { link: opened.link, pathname, live: () => authenticate(token).ok, refuse })) {
+      sendJson(response, 404, { error: 'not_found' });
+    }
   }
 
   // Serves exactly addresses (in that order): closes the servers of addresses
