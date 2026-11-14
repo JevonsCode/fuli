@@ -23,6 +23,7 @@ export const todayMessages = {
       unknownModel: '模型未知',
       otherClient: '其他客户端',
       more: '只列出最多的 20 行。',
+      partial: '这里只数按客户端记下来的那部分，可能比上面的总数少。',
     },
     decisions: {
       review: '还有 {count} 条习惯等你确认',
@@ -105,6 +106,7 @@ export const todayMessages = {
       unknownModel: 'Model unknown',
       otherClient: 'Other client',
       more: 'Only the 20 busiest rows are listed.',
+      partial: 'Only what was recorded per client is counted here, so it can be lower than the totals above.',
     },
     decisions: {
       review: '{count} habits wait for you to confirm',

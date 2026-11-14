@@ -6,7 +6,9 @@ import { usageRows, type StatementUsage } from './statement-usage'
 
 // 用了哪些客户端和模型, under the statement's numbers: one row per client and
 // model with the client's mark, its counts and who saw them. A model no
-// client reported reads 模型未知. Nothing to show says nothing.
+// client reported reads 模型未知. Nothing to show says nothing. The per-client
+// record started later than the statement's own counts, so one line says the
+// rows can add up to less than the totals above.
 const props = withDefaults(defineProps<{ usage: StatementUsage | null; busy?: boolean }>(), { busy: false })
 const rows = computed(() => usageRows(props.usage))
 </script>
@@ -22,6 +24,7 @@ const rows = computed(() => usageRows(props.usage))
         <span class="statement-usage-source">{{ row.source }}</span>
       </li>
     </ul>
+    <p class="statement-usage-more" data-statement-usage-partial>{{ t('today.usage.partial') }}</p>
     <p v-if="usage?.more" class="statement-usage-more">{{ t('today.usage.more') }}</p>
   </section>
 </template>
