@@ -72,7 +72,7 @@ test('C3-1 C4-3 C5 one sentence pauses this session at once; later turns record 
     assert.ok(entry.output.systemMessage.includes(PAUSED), 'the hook says it at entry too');
     const checkpoint = await finishTask(f, entry.context);
     assert.equal(checkpoint.capture_status, 'capture_disabled', 'no knowledge or preference evidence');
-    assert.ok(lastNotice(receiptOf(checkpoint)).startsWith(PAUSED));
+    assert.ok(lastNotice(receiptOf(checkpoint)).startsWith(`这条习惯没有记下：${PAUSED}`), receiptOf(checkpoint));
     assert.equal(JSON.stringify([entry.context.agent_receipt, checkpoint.agent_receipt]).includes(PRIVATE), false);
   }
   const usage = await callAgentTool(f.app, 'record_knowledge_usage', { sourceApplication: 'codex', sessionId: SESSION,

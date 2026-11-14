@@ -79,6 +79,7 @@ export const todayMessages = {
     empty: {
       text: '今天还没有事。对你的 AI 说一条习惯，它会记下来。',
       try: '说一条试试',
+      opener: '记住我的一个习惯：',
       title: '说一条习惯',
       lead: '选一个 AI，它会带着这句话开始，你接着说你的习惯。',
       opened: '已在 {client} 打开，接着说你的习惯吧。',
@@ -162,6 +163,7 @@ export const todayMessages = {
     empty: {
       text: 'Nothing yet today. Tell your AI one of your habits and it will remember it.',
       try: 'Try one',
+      opener: 'Remember one of my habits: ',
       title: 'Tell a habit',
       lead: 'Pick an AI. It starts with this line; then say your habit.',
       opened: 'Opened in {client}. Go on and say your habit.',

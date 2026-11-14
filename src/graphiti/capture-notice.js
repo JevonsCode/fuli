@@ -75,11 +75,25 @@ export function sinceNotice(text, since) {
 // only by the person, so the receipt shows where (rec#5 C10-3).
 const SWITCHED_OFF = new Set(['global_off', 'client_off']);
 
+// A checkpoint's `remember` the decision refused: the person who just said a
+// habit would read "your explicit changes still save" as "saved", so the
+// receipt says it was not kept and why. Switched off reads plainly 记录已关闭.
+const UNSAVED_HABIT = '这条习惯没有记下';
+const UNSAVED_REMEMBERED = '要记住的内容没有记下';
+
+function unsavedRememberNotice(remember, decision) {
+  const what = remember.some(item => item?.kind === 'preference') ? UNSAVED_HABIT : UNSAVED_REMEMBERED;
+  const why = SWITCHED_OFF.has(decision.reason) ? '记录已关闭' : decisionNotice(decision.reason, decision.since);
+  return `${what}：${why}`;
+}
+
 // A receipt's notices for one turn: the decision, the settings page that turns
 // recording on again, then each explicit operation the person asked for that
 // ran while automatic recording was off. settingsUrl: the console's settings.
-export function receiptNotices(decision, explicitOperations = [], { settingsUrl = null } = {}) {
-  const notice = captureNotice(decision.reason, decision.since);
+// unsavedRemember: the checkpoint's `remember` items, which a refusing decision did not save.
+export function receiptNotices(decision, explicitOperations = [], { settingsUrl = null, unsavedRemember = null } = {}) {
+  const notice = decision.reason && unsavedRemember?.length
+    ? unsavedRememberNotice(unsavedRemember, decision) : captureNotice(decision.reason, decision.since);
   if (!notice) return [];
   const entry = settingsUrl && SWITCHED_OFF.has(decision.reason) ? [markdownLink('在 FULI 设置里打开', settingsUrl)] : [];
   return [notice, ...entry, ...explicitOperations.map(operation => EXPLICIT_OPERATION_RESULTS[operation])];

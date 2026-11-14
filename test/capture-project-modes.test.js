@@ -19,6 +19,8 @@ const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexT
 // Every notice also says that what the person submits explicitly still saves (rec#11 D-01).
 const PROJECT_OFF = '此项目未开启记忆；你明确提交的修改仍会保存';
 const UNREGISTERED = '当前目录不是 FULI 项目，未自动记录；你明确提交的修改仍会保存';
+// A checkpoint whose remembered habit the decision refused says so instead.
+const UNSAVED = '这条习惯没有记下：';
 
 const captureShape = value => ({ status: value?.status, reason: value?.reason, layer: value?.layer });
 
@@ -43,7 +45,7 @@ test('C2-1 selected mode records only the chosen project and tells the other one
   const ledgerCheckpoint = await finishTask(f, ledger.context);
   assert.equal(ledgerCheckpoint.status, 'checkpointed');
   assert.equal(ledgerCheckpoint.capture_status, 'capture_disabled');
-  assert.ok(receiptOf(ledgerCheckpoint).endsWith(` · ${PROJECT_OFF}`), 'the checkpoint receipt says it too');
+  assert.ok(receiptOf(ledgerCheckpoint).endsWith(` · ${UNSAVED}此项目未开启记忆`), 'the checkpoint receipt says the habit was not kept');
   assert.deepEqual(f.captureWrites().slice(before), [], 'nothing from family-ledger was written');
 });
 
@@ -82,7 +84,7 @@ test('C2-3 an unregistered directory is not recorded quietly under selected mode
     assert.ok(receiptOf(entry.context).endsWith(` · ${UNREGISTERED}`), receiptOf(entry.context));
     const checkpoint = await finishTask(f, entry.context);
     assert.deepEqual([checkpoint.status, checkpoint.capture_status], ['checkpointed', 'capture_disabled']);
-    assert.ok(receiptOf(checkpoint).endsWith(` · ${UNREGISTERED}`));
+    assert.ok(receiptOf(checkpoint).endsWith(` · ${UNSAVED}当前目录不是 FULI 项目，未自动记录`), receiptOf(checkpoint));
     assert.deepEqual(f.writes.slice(before), [], 'no record, and no project registered for the folder');
   }
   assert.equal(f.projects.has('side-repo'), false);

@@ -20,16 +20,28 @@ const CLIENTS = [
 
 type Desktop = { fuliDesktopClient?: unknown, flutter_inappwebview?: unknown }
 
-function mountGuide({ ask = true, guide = true, connect = async (id: string) => Response.json({ id, status: 'connected', restartRequired: false }) }: {
+function mountGuide({ ask = true, guide = true, listed = CLIENTS, connect = async (id: string) => Response.json({ id, status: 'connected', restartRequired: false }) }: {
   ask?: boolean
   guide?: boolean
+  listed?: typeof CLIENTS
   connect?: (id: string) => Promise<Response>
 } = {}) {
   const connects: string[] = []
+  const restarts: string[] = []
   const guidePosts: unknown[] = []
-  let clients = CLIENTS
+  let clients = listed
+  let reads = 0
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
-    if (input === '/api/system/client-connection/status') return Response.json({ observedAt: 'x', historySaved: true, available: true, clients })
+    if (input === '/api/system/client-connection/status') {
+      reads += 1
+      return Response.json({ observedAt: 'x', historySaved: true, available: true, clients })
+    }
+    if (input === '/api/system/client-connection/restart') {
+      const { clientId } = JSON.parse(String(init?.body))
+      restarts.push(clientId)
+      clients = clients.map(item => item.id === clientId ? { ...item, status: 'connected' } : item)
+      return Response.json({ id: clientId, status: 'connected' })
+    }
     if (input === '/api/system/client-connection/connect') {
       const { clientId } = JSON.parse(String(init?.body))
       connects.push(clientId)
@@ -53,7 +65,8 @@ function mountGuide({ ask = true, guide = true, connect = async (id: string) => 
   store.state = { mode: 'personal_only', personalSpaces: [{ id: 'space', name: '我' }], activePersonalSpaceId: 'space',
     projects: [], subscriptions: [], personalProjects: [], capturePolicy: OFF, captureOnboarding: { ask }, firstRunGuide: { open: guide } }
   const wrapper = mount(CaptureOnboardingDialog, { global: { plugins: [pinia] }, attachTo: document.body })
-  return { wrapper, store, connects, guidePosts }
+  return { wrapper, store, connects, restarts, guidePosts, reads: () => reads,
+    install: (more: typeof CLIENTS) => { clients = more } }
 }
 
 const find = (selector: string) => document.body.querySelector<HTMLElement>(selector)
@@ -102,7 +115,7 @@ describe('first-run guide', () => {
     answers['claude-desktop']!(Response.json({ id: 'claude-desktop', status: 'connected', restartRequired: false }))
     await flushPromises()
     expect(connects).toEqual(['claude-code', 'claude-desktop'])
-    expect(find('[data-first-run-client="claude-code"] [data-first-run-outcome]')?.textContent?.trim()).toBe('已接入，重启 Claude Code 后生效。')
+    expect(find('[data-first-run-client="claude-code"] [data-first-run-outcome]')?.textContent?.trim()).toBe('已接入。新开的对话就能用；开着的 Claude Code 要重启。')
     expect(find('[data-first-run-client="claude-desktop"]')?.dataset.clientStatus).toBe('connected')
     expect(find('[data-first-run-client="cursor"]')?.dataset.clientStatus).toBe('not_connected')
     wrapper.unmount()
@@ -120,6 +133,39 @@ describe('first-run guide', () => {
     expect(find('[data-first-run-client="claude-code"] [data-first-run-outcome]')?.textContent?.trim()).toBe('已接入。')
     // The failed client stays ticked for another try.
     expect(find('[data-first-run-client="cursor"] [role="checkbox"]')?.getAttribute('aria-checked')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('an open Claude Desktop says so and offers 「重启并接入」 behind the same question as 设置', async () => {
+    const { wrapper, connects, restarts } = mountGuide({ connect: async id => id === 'claude-desktop'
+      ? Response.json({ id, status: 'failed', restartRequired: false, reason: 'client_running', message: 'synthetic' })
+      : Response.json({ id, status: 'connected', restartRequired: true }) })
+    await flushPromises()
+    await click('[data-first-run-connect]')
+    expect(connects).toEqual(['claude-code', 'cursor', 'claude-desktop'])
+    const open = find('[data-first-run-client="claude-desktop"] [data-first-run-outcome]')!
+    expect([open.dataset.firstRunOutcome, open.getAttribute('role')]).toEqual(['running', 'alert'])
+    expect(open.textContent).toContain('Claude Desktop 开着，先退出它再接入。')
+    await click('[data-first-run-restart="claude-desktop"]')
+    expect(restarts).toEqual([])
+    expect(find('[data-restart-confirm]')?.textContent).toContain('正在进行的任务和会话会中断')
+    await click('[data-restart-confirmed]')
+    expect(restarts).toEqual(['claude-desktop'])
+    expect(find('[data-first-run-client="claude-desktop"] [data-first-run-restart-result]')?.textContent?.trim()).toBe('已重启并更新，配置检查通过。')
+    expect(find('[data-first-run-client="claude-desktop"]')?.dataset.clientStatus).toBe('connected')
+    wrapper.unmount()
+  })
+
+  it('with no client found, 「再找一次」 looks again and lists what was installed since', async () => {
+    const { wrapper, reads, install } = mountGuide({ listed: [client('cursor', 'Cursor', 'not_detected')] })
+    await flushPromises()
+    expect(find('[data-first-run-none]')?.textContent).toContain('还没发现 AI 客户端，装好后点「再找一次」。')
+    expect(reads()).toBe(1)
+    install([client('cursor', 'Cursor', 'not_connected')])
+    await click('[data-first-run-look-again]')
+    expect(reads()).toBe(2)
+    expect(rows().map(row => row.dataset.firstRunClient)).toEqual(['cursor'])
+    expect(rows()[0]!.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('true')
     wrapper.unmount()
   })
 

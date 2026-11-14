@@ -86,9 +86,12 @@ like a task prompt ("front-end styling" becomes `frontend`) and an unknown one i
 preference is still kept.
 
 When the person asks to keep something for later ("remember", "keep this for later sessions",
-"from now on", 记住, 以后都…), task entry adds `remember_guidance` and the task is never auto-closed:
-record it with `checkpoint_task_knowledge` `remember` before finishing. Writing it into a repository
-file or the host's own memory files does not put it in FULI.
+"from now on", 记住, 以后都…) or states one of their own habits ("my habit", "one of my habits",
+我的习惯, 我的一个习惯, 我习惯), task entry adds `remember_guidance` and the task is never auto-closed:
+record it with `checkpoint_task_knowledge` `remember` before finishing. A stated habit is a
+`preference` with the person's exact words as `quote`, scope `global` unless they name a project.
+Writing it into a repository file or the host's own memory files does not put it in FULI.
+Broader talk ("I always", "I prefer", 我喜欢, 我总是) adds no guidance.
 
 ## Route by Ownership
 
@@ -135,7 +138,8 @@ project creation returns `capture_disabled`, nothing was stored: automatic recor
 `reason` is `global_off` or `client_off` when the user switched it off, `project_off` when the user
 does not record this project, `project_unregistered` when the work is outside every registered
 project and such work is not recorded, and `policy_unavailable` when FULI could not read the
-capture settings or resolve the project. The receipt already says so; copy it unchanged. Do not
+capture settings or resolve the project. The receipt already says so (for a refused `remember`,
+that the habit or item was not kept); copy it unchanged. Do not
 retry, do not create a fallback record elsewhere, and do not describe the skipped write as stored.
 Edits the user submits in the FULI console still save, and existing knowledge may still be queried.
 

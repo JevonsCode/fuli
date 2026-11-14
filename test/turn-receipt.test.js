@@ -285,7 +285,7 @@ test('nothing is reported saved while capture is off, for retain_nothing or a du
   const off = checkpointFixture({ captureEnabled: false });
   const offResult = await checkpointTaskKnowledge(off.app, checkpoint(off.begin()));
   assert.doesNotMatch(offResult.agent_receipt.markdown, /沉淀|已保存/);
-  assert.match(offResult.agent_receipt.markdown, /自动记录已关闭/);
+  assert.match(offResult.agent_receipt.markdown, /这条习惯没有记下：记录已关闭/);
   assert.equal(off.writes.length, 0);
   const plain = checkpointFixture();
   const none = await checkpointTaskKnowledge(plain.app, { taskContextToken: plain.begin().token, sourceApplication: 'codex',

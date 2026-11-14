@@ -5,24 +5,32 @@ import { getJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import ClientRestartConfirm from '@/features/settings/ClientRestartConfirm.vue'
 import { canConnect, type ClientObservation, type ConnectionStatus } from '@/features/settings/client-connection-model'
+import { restartClient, restartOutcomeText, type RestartOutcome } from '@/features/settings/client-restart'
 import { t } from '@/i18n'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 
-import { connectionResultShape, connectionStatusShape, connectOutcome, detectedClients, preselectedClients } from './first-run-clients'
+import { connectionResultShape, connectionStatusShape, connectOutcome, detectedClients, preselectedClients, type ConnectOutcome } from './first-run-clients'
 
 // The guide's first step: the AI clients on this computer, the ones not yet
 // connected ticked, and 「一键接入」 connecting the ticked ones one after
-// another through the same install as 设置 › 客户端.
+// another through the same install as 设置 › 客户端. A client that was open
+// offers 设置's 「重启并更新」 as 「重启并接入」, behind the same question.
 const busy = defineModel<boolean>('busy', { default: false })
 
 const observation = ref<ConnectionStatus | null>(null)
 const reading = ref(true)
+// 「再找一次」 reads the list again while the empty line stays.
+const looking = ref(false)
 const readFailed = ref(false)
 const ticked = ref<Record<string, boolean>>({})
 const connecting = ref('')
-const outcomes = ref<Record<string, 'connected' | 'restart' | 'failed'>>({})
+const outcomes = ref<Record<string, ConnectOutcome>>({})
+const confirming = ref<ClientObservation | null>(null)
+const restarting = ref('')
+const restarted = ref<Record<string, RestartOutcome>>({})
 let unmounted = false
 
 const clients = computed(() => detectedClients(observation.value))
@@ -43,6 +51,7 @@ async function connectChosen() {
   const queue = chosen.value
   busy.value = true
   outcomes.value = {}
+  restarted.value = {}
   for (const client of queue) {
     if (unmounted) break
     connecting.value = client.id
@@ -55,6 +64,29 @@ async function connectChosen() {
   connecting.value = ''
   // A connected client is no longer ticked; one that failed stays ticked for another try.
   ticked.value = Object.fromEntries(Object.entries(ticked.value).filter(([id]) => outcomes.value[id] !== 'connected' && outcomes.value[id] !== 'restart'))
+  if (!unmounted) await read()
+  busy.value = false
+}
+
+async function lookAgain() {
+  if (looking.value) return
+  looking.value = true
+  await read()
+  ticked.value = preselectedClients(clients.value)
+  looking.value = false
+}
+
+// Quits the open client, connects it while it is closed, reopens it: 设置's 「重启并更新」.
+async function restart(client: ClientObservation) {
+  if (busy.value) return
+  busy.value = true
+  restarting.value = client.id
+  delete outcomes.value[client.id]
+  restarted.value[client.id] = await restartClient(client.id)
+  restarting.value = ''
+  if (restarted.value[client.id] === 'connected' || restarted.value[client.id] === 'reopen_failed') {
+    ticked.value = Object.fromEntries(Object.entries(ticked.value).filter(([id]) => id !== client.id))
+  }
   if (!unmounted) await read()
   busy.value = false
 }
@@ -88,7 +120,11 @@ onBeforeUnmount(() => { unmounted = true })
     <UiNotice v-else-if="readFailed || observation?.available === false" tone="warning" data-first-run-clients-unreadable>
       {{ t('firstRun.clients.unreadable') }}
     </UiNotice>
-    <p v-else-if="!clients.length" class="first-run-note">{{ t('firstRun.clients.none') }}</p>
+    <p v-else-if="!clients.length" class="first-run-note first-run-none" data-first-run-none>
+      {{ t('firstRun.clients.none') }}
+      <Button size="sm" variant="outline" data-first-run-look-again :loading="looking" :loading-label="t('firstRun.clients.reading')"
+        @click="lookAgain">{{ t('firstRun.clients.lookAgain') }}</Button>
+    </p>
     <ul v-else class="first-run-clients">
       <li v-for="client in clients" :key="client.id" :data-first-run-client="client.id" :data-client-status="client.status">
         <label class="first-run-client">
@@ -103,13 +139,22 @@ onBeforeUnmount(() => { unmounted = true })
           <span v-else class="first-run-client__status">{{ statusLabel(client) }}</span>
         </label>
         <p v-if="outcomes[client.id]" class="first-run-client__outcome" :data-first-run-outcome="outcomes[client.id]"
-          :role="outcomes[client.id] === 'failed' ? 'alert' : 'status'">
+          :role="outcomes[client.id] === 'failed' || outcomes[client.id] === 'running' ? 'alert' : 'status'">
           {{ t(`firstRun.clients.outcome.${outcomes[client.id]}`, { client: client.label }) }}
+          <Button v-if="outcomes[client.id] === 'running'" size="sm" variant="outline" :data-first-run-restart="client.id" :disabled="busy"
+            @click="confirming = client">{{ t('firstRun.clients.restart') }}</Button>
+        </p>
+        <p v-else-if="restarting === client.id || restarted[client.id]" class="first-run-client__outcome" data-first-run-restart-result
+          :role="restarted[client.id] && restarted[client.id] !== 'connected' ? 'alert' : 'status'">
+          <GrowthLoading v-if="restarting === client.id" variant="inline"
+            :label="t('settings.connection.clients.restarting', { client: client.label })" />
+          <template v-else>{{ restartOutcomeText(restarted[client.id]!, client.label) }}</template>
         </p>
         <p v-else-if="client.manualOnly && client.status !== 'connected'" class="first-run-client__outcome">{{ t('firstRun.clients.manual') }}</p>
       </li>
     </ul>
     <p class="first-run-note">{{ t('firstRun.clients.later') }}</p>
+    <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
   </section>
 </template>
 
@@ -125,5 +170,7 @@ onBeforeUnmount(() => { unmounted = true })
 .first-run-client > :deep(.growth-loading) { margin-left: auto; }
 [data-client-status="connected"] .first-run-client__status { color: var(--color-success); }
 .first-run-client__outcome { margin: 0 0 6px 60px; color: var(--color-muted); font-size: var(--text-meta); }
-[data-first-run-outcome="failed"] { color: var(--color-danger); }
+[data-first-run-outcome="failed"], [data-first-run-outcome="running"] { color: var(--color-danger); }
+.first-run-client__outcome [data-slot="button"] { margin-left: 8px; }
+.first-run-none { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 </style>
