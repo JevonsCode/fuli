@@ -50,10 +50,16 @@ const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cance
 // stays while unconfirmed, so a process still running never writes into a
 // folder being deleted; noted on the request's history (process_unconfirmed),
 // and once the process is known to have ended (the roundtable's own rule for
-// wake claims; a run an earlier FULI recorded no PID for, a day later) noted
-// again (process_ended) and tidied. Asked at most this often per request.
+// wake claims; a run an earlier FULI recorded no PID, or no identity of its
+// PID, for, a day later) noted again (process_ended) and tidied. Asked at most
+// this often per request. cleanup_pending: the removal of such a request's
+// worktree failed (a file something still holds, cleanup_failed noted once);
+// it is tried again as often, until it succeeds (cleanup_done) or a day after
+// it first failed, when it is left as it is with its warning.
 const PROCESS_UNCONFIRMED = 'process_unconfirmed';
 const PROCESS_ENDED = 'process_ended';
+const CLEANUP_PENDING = 'cleanup_pending';
+const CLEANUP_DONE = 'cleanup_done';
 const PROCESS_RECHECK_MS = 60 * 1000;
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
@@ -264,16 +270,34 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   // The worktree of a request that ended without a result, and its empty
   // branch, go; not while its run's process may still be running.
+  // A removal that failed is left to the next pass (cleanup_pending), noted once.
   async function tidy(request) {
     if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state) || request.runExit === 'unconfirmed') return;
-    await cleanUp(request, { keepBranch: false });
+    const retry = request.runExit === CLEANUP_PENDING;
+    const warning = await removeWorktree(request, { keepBranch: false });
+    if (warning === 'cleanup_failed' && retry) return;
+    // The next try waits the same minute as a process check.
+    if (warning === 'cleanup_failed') processChecked.set(request.id, now().getTime());
+    store.transaction(() => {
+      if (warning === 'cleanup_failed') records.update(request.id, { runExit: CLEANUP_PENDING }, at());
+      else if (retry) records.update(request.id, { runExit: 'ended' }, at());
+      if (warning) note(request.id, warning);
+      else if (retry) note(request.id, CLEANUP_DONE);
+    });
   }
 
-  // Tidies what an unconfirmed run kept, once its process is known to have ended.
+  // Tidies what an unconfirmed run kept, once its process is known to have
+  // ended, and tries a failed removal again.
   async function releaseEnded() {
-    for (const request of records.unconfirmedRuns()) {
+    for (const request of records.unfinishedRuns()) {
       if (closed || now().getTime() - (processChecked.get(request.id) ?? -Infinity) < PROCESS_RECHECK_MS) continue;
       processChecked.set(request.id, now().getTime());
+      if (request.runExit === CLEANUP_PENDING) {
+        // Past a day it is left as it is; its cleanup_failed warning stays the last word.
+        if (dayPassed(request)) store.transaction(() => records.update(request.id, { runExit: 'ended' }, at()));
+        else await tidy(request);
+        continue;
+      }
       if (!await processEnded(request)) continue;
       const ended = store.transaction(() => {
         if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
@@ -281,17 +305,20 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
         note(request.id, PROCESS_ENDED);
         return records.get(request.id);
       });
-      processChecked.delete(request.id);
       await tidy(ended);
     }
   }
 
+  // Without an identity of the PID a later process holding it cannot be told
+  // from the client, so it is left to the day's limit, as a run without a PID.
   async function processEnded(request) {
-    const unproven = now().getTime() - Date.parse(request.updatedAt) >= LEGACY_CLAIM_TTL_MS;
+    const unproven = dayPassed(request);
     if (!request.runPid) return unproven;
     const ended = await recordedProcessEnded({ pid: request.runPid, identity: request.runPidIdentity }, { inspectProcess, groupAlive });
-    return ended === true || (ended === 'reused' && unproven);
+    return ended === true || ((ended === 'reused' || !request.runPidIdentity) && unproven);
   }
+
+  const dayPassed = (request) => now().getTime() - Date.parse(request.updatedAt) >= LEGACY_CLAIM_TTL_MS;
 
   // Removes a request's worktree (and its branch unless kept). What could not
   // be removed is never silent: it is noted on the request's history and
@@ -299,13 +326,18 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // it, so it and the branch stay; branch_kept: Git refused to delete the
   // branch; cleanup_failed: the removal itself failed).
   async function cleanUp(request, { keepBranch }) {
-    let left;
-    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
-    const warning = left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    const warning = await removeWorktree(request, { keepBranch });
     if (warning) {
       try { store.transaction(() => note(request.id, warning)); } catch { /* the answer still carries it */ }
     }
     return warning;
+  }
+
+  // The removal itself; answers the warning, nothing noted.
+  async function removeWorktree(request, { keepBranch }) {
+    let left;
+    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
+    return left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
   }
 
   // A request's wake in flight: its abort signal, and when it ended (a cancel waits for that before tidying).

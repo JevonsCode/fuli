@@ -198,7 +198,7 @@ export async function removeVisitWorktree({ repository, worktreePath, branch, ro
     if (current && rootIdentity && current !== rootIdentity) throw coded('worktree_root_changed');
     // Matched before the folder goes: the folder's identity is part of the match.
     const entry = await ownAdminEntry({ repository, worktreePath, root });
-    await removeTreeUnder(worktreePath, root);
+    await removeTreeUnder(worktreePath, root, rootIdentity);
     if (entry.matched) await removeTreeUnder(entry.path, entry.entries);
     entryKept = entry.exists && !entry.matched;
   }
@@ -233,28 +233,42 @@ async function sameLocation(left, right) {
   return parents[0] !== null && parents[0] === parents[1] && basename(resolve(left)) === basename(resolve(right));
 }
 
-// The identity of the folder a path leads to (links followed), or null when there is none.
-const identityOf = (path) => stat(path, { bigint: true }).then(fileIdentity, () => null);
+// The identity of the folder a path leads to (links followed), or null when there is none or it is unknown.
+const identityOf = (path) => stat(path, { bigint: true }).then(knownIdentity, () => null);
+
+// A file ID of 0 (some network shares report it for every file) names no folder in particular: unknown.
+const knownIdentity = (stats) => (stats.ino === 0n ? null : fileIdentity(stats));
 
 // The identity of a folder that must be a plain folder, not a link, junction
-// or other reparse point (refused with code); null when it does not exist.
+// or other reparse point, with a known identity (refused with code); null
+// when it does not exist.
 async function plainFolderIdentity(path, code) {
   const stats = await lstat(path, { bigint: true }).catch(() => null);
   if (!stats) return null;
-  if (isLinkStats(stats) || !stats.isDirectory()) throw coded(code);
-  return fileIdentity(stats);
+  const identity = isLinkStats(stats) || !stats.isDirectory() ? null : knownIdentity(stats);
+  if (!identity) throw coded(code);
+  return identity;
 }
 
-// Removes path, which must sit directly in root, a plain folder; compared by folder identity.
-async function removeTreeUnder(path, root) {
+// Removes path, which must sit directly in root, a plain folder; compared by
+// folder identity (expected: root's identity recorded at creation, if any).
+// Root is read again right before each unlink and before the delete, so it
+// cannot be swapped for another folder while the tree is walked.
+async function removeTreeUnder(path, root, expected = null) {
   const stats = await lstat(path).catch(() => null);
   if (!stats) return;
-  const [parent, folder] = await Promise.all([identityOf(dirname(resolve(path))), plainFolderIdentity(root, 'worktree_outside_root')]);
+  const folder = await plainFolderIdentity(root, 'worktree_outside_root');
+  if (expected && folder !== expected) throw coded('worktree_root_changed');
+  const parent = await identityOf(dirname(resolve(path)));
   if (!parent || parent !== folder) throw coded('worktree_outside_root');
-  if (isLinkStats(stats)) { await unlinkLink(path); return; }
+  const unchanged = async () => {
+    if (await plainFolderIdentity(root, 'worktree_root_changed') !== folder) throw coded('worktree_root_changed');
+  };
+  if (isLinkStats(stats)) { await unchanged(); await unlinkLink(path); return; }
   const links = [];
   for await (const { path: inner, link } of walk(path)) if (link) links.push(join(path, inner));
-  for (const link of links) await unlinkLink(link);
+  for (const link of links) { await unchanged(); await unlinkLink(link); }
+  await unchanged();
   // Only plain folders and files are left; rm does not follow links (and none is left to follow).
   await rm(path, { recursive: true, force: true, maxRetries: 3 });
 }

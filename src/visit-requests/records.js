@@ -81,10 +81,12 @@ export function createVisitRecords(store) {
         AND (? IS NULL OR requester_key = ?) ORDER BY created_at`).all(...states, requesterKey, requesterKey).map(requestView);
     },
 
-    // Requests whose run's client process was not confirmed to have ended (service.js runExit).
-    unconfirmedRuns() {
+    // Requests whose run's client process was not confirmed to have ended, or
+    // whose worktree removal failed and is tried again (service.js runExit).
+    unfinishedRuns() {
       if (!store.readable) return [];
-      return db().prepare(`SELECT * FROM visit_requests WHERE run_exit = 'unconfirmed' ORDER BY created_at`).all().map(requestView);
+      return db().prepare(`SELECT * FROM visit_requests WHERE run_exit IN ('unconfirmed', 'cleanup_pending') ORDER BY created_at`)
+        .all().map(requestView);
     },
 
     // Requests this computer took (not refused) since an ISO instant, of one project or of all.

@@ -129,8 +129,14 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     } catch (error) { reject(startFailure(error)); return; }
     const closed = new Promise((resolve) => child.once('close', resolve));
     // The PID is known as soon as spawn() returns: record it before anything can
-    // lose the console, not on the later spawn event (rec#97).
-    if (Number.isSafeInteger(child.pid)) onSpawn?.(child.pid);
+    // lose the console, not on the later spawn event (rec#97). A caller that could
+    // not record it cannot supervise the child: it is stopped like a cancel below.
+    let unrecorded = null;
+    if (Number.isSafeInteger(child.pid)) {
+      try { onSpawn?.(child.pid); } catch (error) {
+        unrecorded = Object.assign(wakeFailure('wake_failed', 'spawn_unrecorded', 'The started client could not be recorded'), { cause: error });
+      }
+    }
     let output = '', pending = '', bytes = 0, settled = false, childClosed = false, exitSignal = null;
     const decoder = new StringDecoder('utf8');
     // Only the last part of stderr is kept, so a chatty client never grows memory.
@@ -223,6 +229,7 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
       void finish(eventFailure, code);
     });
     child.stdin.on('error', () => {});
+    if (unrecorded) { void finish(unrecorded); return; }
     child.stdin.end(input);
   });
 }

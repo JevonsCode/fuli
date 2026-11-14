@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
@@ -409,4 +411,94 @@ test('a Git entry that does not name the worktree is left alone, with the branch
   assert.deepEqual(left, { entryKept: true, branchKept: true });
   assert.equal(existsSync(entry), true, 'an entry FULI cannot prove is its own stays');
   assert.notEqual(git(owner.repository, 'branch', '--list', made.branch).trim(), '');
+});
+
+// ---- Folder identities that cannot be trusted, and a root swapped mid-removal (review of PR 967) ----
+
+// Replaces fs/promises functions for the worktree module (its named imports follow
+// syncBuiltinESMExports); answers the restore.
+function replaceFileSystem(replacements) {
+  const original = Object.fromEntries(Object.keys(replacements).map((name) => [name, fsPromises[name]]));
+  Object.assign(fsPromises, Object.fromEntries(Object.entries(replacements).map(([name, make]) => [name, make(original[name])])));
+  syncBuiltinESMExports();
+  return () => { Object.assign(fsPromises, original); syncBuiltinESMExports(); };
+}
+
+test('a volume that reports file ID 0 for every folder is never cleaned up or used', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'zero-1' });
+  // As some network shares answer: every folder dev:0.
+  const zeroed = (read) => async (path, options) => {
+    const stats = await read(path, options);
+    if (options?.bigint) stats.ino = 0n;
+    return stats;
+  };
+  const restore = replaceFileSystem({ lstat: zeroed, stat: zeroed });
+  try {
+    for (const rootIdentity of [made.rootIdentity, null]) {
+      await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch,
+        root, rootIdentity }, { keepBranch: false }), { code: 'worktree_root_changed' });
+    }
+    await assert.rejects(createVisitWorktree({ folder: owner.repository, root, id: 'zero-2' }), { code: 'worktree_root_unexpected' });
+  } finally { restore(); }
+  assert.equal(existsSync(join(made.worktreePath, 'src', 'server.js')), true, 'nothing was removed');
+});
+
+test('a worktree folder swapped for a link while the tree is walked is refused right before the delete', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const made = await createVisitWorktree({ folder: owner.repository, root, id: 'race-1' });
+  const kept = decoy(join(owner.root, 'elsewhere'), 'race-1');
+  let swapped = false;
+  // The swap lands after every check before the walk; the walk then sees nothing to unlink.
+  const restore = replaceFileSystem({ readdir: (read) => async (folder, ...rest) => {
+    if (swapped || resolve(folder) !== resolve(made.worktreePath)) return read(folder, ...rest);
+    swapped = true;
+    renameSync(root, `${root}-moved`);
+    linkFolder(root, join(owner.root, 'elsewhere'));
+    return [];
+  } });
+  try {
+    await assert.rejects(removeVisitWorktree({ repository: owner.repository, worktreePath: made.worktreePath, branch: made.branch,
+      root, rootIdentity: made.rootIdentity }, { keepBranch: false }), { code: 'worktree_root_changed' });
+    assert.equal(swapped, true);
+    assert.equal(readFileSync(kept, 'utf8'), 'precious\n', 'nothing behind the link goes');
+  } finally {
+    restore();
+    if (swapped) {
+      unlinkFolder(root);
+      renameSync(`${root}-moved`, root);
+    }
+  }
+});
+
+// A request recorded before format 4 (or lost to a restart before its worktree
+// was recorded) has no rootIdentity. Its data directory junction is followed as
+// before: the link check covers visit-worktrees itself, not the folders above
+// it, since those are legitimately links (/var -> /private/var on macOS). So
+// a data directory retargeted after creation still leads the removal into the
+// new target's visit-worktrees/<id>; with rootIdentity that is refused (above).
+test('without a recorded identity a data directory junction is followed, as before', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const first = await createVisitWorktree({ folder: owner.repository, root, id: 'legacy-1' });
+  await removeVisitWorktree({ repository: owner.repository, worktreePath: first.worktreePath, branch: first.branch, root },
+    { keepBranch: false });
+  assert.equal(existsSync(join(owner.root, 'data-real', 'visit-worktrees', 'legacy-1')), false, 'removed through the junction');
+
+  const second = await createVisitWorktree({ folder: owner.repository, root, id: 'legacy-2' });
+  const followed = decoy(join(owner.root, 'other-data', 'visit-worktrees'), 'legacy-2');
+  const alias = join(owner.root, 'data');
+  unlinkFolder(alias);
+  linkFolder(alias, join(owner.root, 'other-data'));
+  try {
+    await removeVisitWorktree({ repository: owner.repository, worktreePath: second.worktreePath, branch: second.branch, root },
+      { keepBranch: true });
+    assert.equal(existsSync(followed), false, 'the retargeted folder\'s same-named child went: the known limit without rootIdentity');
+    assert.equal(existsSync(join(owner.root, 'data-real', 'visit-worktrees', 'legacy-2')), true);
+  } finally {
+    unlinkFolder(alias);
+    linkFolder(alias, join(owner.root, 'data-real'));
+  }
 });

@@ -80,8 +80,9 @@ export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'err
   return null
 }
 
-// process_unconfirmed / process_ended: the copy stays while the run's program may still be running, and goes once it stopped.
-const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed', 'process_unconfirmed', 'process_ended'])
+// process_unconfirmed / process_ended: the copy stays while the run's program may still be running, and goes once it stopped; cleanup_done: a failed removal went through later.
+const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed', 'process_unconfirmed', 'process_ended',
+  'cleanup_done'])
 /** What happened to the copy or the branch apart from the request's own steps (mostly what went wrong removing them). */
 export function warningText(warning: string) {
   return t(`visitRequests.warnings.${known(WARNINGS, warning)}`)

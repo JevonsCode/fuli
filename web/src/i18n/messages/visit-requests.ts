@@ -43,6 +43,7 @@ export const visitRequestMessages = {
       cleanup_failed: '清理副本时出了错，可能还有残留。',
       process_unconfirmed: '这次运行的程序没确认停下，副本先留着，停下后再删。',
       process_ended: '运行的程序已确认停下，副本随后删掉。',
+      cleanup_done: '副本后来清理干净了。',
       other: '清理时出了点问题，看看这件请求的经过。',
     },
     errors: {
@@ -193,6 +194,7 @@ export const visitRequestMessages = {
       cleanup_failed: 'Cleaning up the copy failed; something may be left behind.',
       process_unconfirmed: 'The run\'s program was not confirmed to stop, so the copy stays until it has.',
       process_ended: 'The run\'s program has stopped; the copy is removed now.',
+      cleanup_done: 'The copy was cleaned up after all.',
       other: 'Something went wrong cleaning up; see what happened on this request.',
     },
     errors: {

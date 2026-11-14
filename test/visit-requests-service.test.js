@@ -596,3 +596,75 @@ test('after a restart a run an earlier FULI recorded nothing of is kept for a da
   restarted.list();
   await settled(async () => fresh.calls.removed.length === 1);
 });
+
+// ---- A failed removal is tried again; a PID without identity is limited to a day (review of PR 967) ----
+
+const DAY_LATER = 24 * 60 * 60 * 1000;
+// On Windows no process group is kept: once the client's PID is gone it counts as ended.
+const windowsGone = { inspectProcess: async () => new Map(), groupAlive: () => false };
+
+// A request failed with an unconfirmed stop, and a removal that fails failures times (a file a child still holds).
+async function failedWithHeldFiles(t, { failures, processes = windowsGone }) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const f = fixture(t, { pid: 7171, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock.now, processes });
+  const attempts = [];
+  f.runner.remove = async (request) => {
+    attempts.push(clock.now.toISOString());
+    if (attempts.length <= failures) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    f.runner.calls.removed.push({ id: request.id });
+  };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const later = async (ms) => {
+    clock.now = new Date(clock.now.getTime() + ms);
+    await f.port.requests.card('request-1');
+    await delay(20);
+  };
+  const notes = async () => (await f.port.requests.card('request-1')).events.map((event) => event.note).filter(Boolean);
+  return { f, attempts, later, notes, runExit: async () => (await f.port.requests.card('request-1')).request.runExit };
+}
+
+test('on Windows, children still holding the copy after the client\'s PID is gone: the removal is tried again each minute', async (t) => {
+  const { f, attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: 1 });
+  await later(0);
+  assert.deepEqual([attempts.length, await runExit()], [1, 'cleanup_pending'], 'the PID is gone, the first removal failed');
+  await later(0);
+  assert.equal(attempts.length, 1, 'not again within the minute');
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit(), f.runner.calls.removed.length], [2, 'ended', 1]);
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed', 'cleanup_done']);
+});
+
+test('a removal that keeps failing is tried for a day, warned about once, and then left as it is', async (t) => {
+  const { attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: Infinity });
+  await later(0);
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit()], [2, 'cleanup_pending']);
+  await later(DAY_LATER);
+  assert.equal(await runExit(), 'ended', 'given up a day after it first failed');
+  const tries = attempts.length;
+  await later(MINUTE_LATER);
+  assert.equal(attempts.length, tries, 'no more tries');
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed'], 'the warning stays the last word');
+});
+
+test('a recorded PID whose identity could not be read, later held by another process, is released after a day', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  let reads = 0;
+  // The read at spawn fails; afterwards another process holds the PID, with its group.
+  const processes = { inspectProcess: async () => (++reads === 1 ? null : new Map([[8181, { identity: 'synthetic-other' }]])),
+    groupAlive: () => true };
+  const f = fixture(t, { pid: 8181, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock, processes });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  assert.equal((await f.port.requests.card('request-1')).request.runPidIdentity, null);
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  await f.port.requests.card('request-1');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'within the day it may still be the client');
+  clock = new Date(clock.getTime() + DAY_LATER);
+  await f.port.requests.card('request-1');
+  await settled(async () => f.runner.calls.removed.length === 1);
+});
