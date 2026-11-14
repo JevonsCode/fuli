@@ -18,11 +18,16 @@ const MAX_ITEMS = 8;
 // tasks carry no extra entry text.
 // rec#63: "make sure this decision is remembered" and "keep this for later
 // sessions" were missed, and the model wrote only a repository file.
+// A person stating their own habit (我的习惯, 我的一个习惯, 我习惯, "my habit",
+// "one of my habits") is a request to keep it too; the opener 今天 hands a client
+// uses these words. Broader talk (我喜欢, 我总是, "I always", "I prefer") is
+// left out: it is ordinary in any turn and would force a checkpoint on all of them.
 const REMEMBER_REQUEST = new RegExp('(?:记住|记一下|记下来|记好|别忘|以后要用|今后|往后|以后(?:都|也|就)?(?:要|按|用|这样)|下次(?:也|还)?(?:要|按|用)'
+  + '|我(?:的(?:一个)?)?习惯(?!性)|\\bmy habits?\\b'
   + '|\\bremember(?:ed|s|ing)?\\b|keep in mind|don\'?t forget|from now on|going forward'
   + '|\\b(?:keep|save|note) (?:this|it|that)(?: \\w+){0,2} for (?:later|next time|future)'
   + '|\\bfor (?:later|future) (?:sessions?|work|tasks?|reference)|\\bfuture (?:sessions?|work)\\b)', 'iu');
-export const REMEMBER_GUIDANCE = 'The user asked to keep something: record it with checkpoint_task_knowledge remember (preference or project_fact) before finishing; a repository file or the host memory files are not FULI memory.';
+export const REMEMBER_GUIDANCE = 'The user asked to keep something: record it with checkpoint_task_knowledge remember (preference or project_fact) before finishing; a repository file or the host memory files are not FULI memory. A stated habit is a preference: quote the user\'s exact words, scope global unless they name a project.';
 
 export function rememberRequested(taskPrompt) {
   return typeof taskPrompt === 'string' && REMEMBER_REQUEST.test(taskPrompt);

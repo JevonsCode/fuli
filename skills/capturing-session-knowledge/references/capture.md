@@ -86,9 +86,12 @@ like a task prompt ("front-end styling" becomes `frontend`) and an unknown one i
 preference is still kept.
 
 When the person asks to keep something for later ("remember", "keep this for later sessions",
-"from now on", 记住, 以后都…), task entry adds `remember_guidance` and the task is never auto-closed:
-record it with `checkpoint_task_knowledge` `remember` before finishing. Writing it into a repository
-file or the host's own memory files does not put it in FULI.
+"from now on", 记住, 以后都…) or states one of their own habits ("my habit", "one of my habits",
+我的习惯, 我的一个习惯, 我习惯), task entry adds `remember_guidance` and the task is never auto-closed:
+record it with `checkpoint_task_knowledge` `remember` before finishing. A stated habit is a
+`preference` with the person's exact words as `quote`, scope `global` unless they name a project.
+Writing it into a repository file or the host's own memory files does not put it in FULI.
+Broader talk ("I always", "I prefer", 我喜欢, 我总是) adds no guidance.
 
 ## Route by Ownership
 
