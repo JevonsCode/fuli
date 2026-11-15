@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -658,9 +658,6 @@ test('a failed Git step carries the last line of Git\'s message, without local p
   mkdirSync(plain, { recursive: true });
   const error = await repositoryRoot({ folder: plain, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
   assert.equal(error.timedOut, false, 'Git answered: not a timeout');
-  // Git stopped after a millisecond, before it can answer: the failure says it was the time, not Git's answer.
-  const late = await repositoryRoot({ folder: owner.repository, root: visitRoot(owner.root), timeoutMs: 1 }).then(() => null, (failure) => failure);
-  assert.deepEqual([late.code, late.timedOut], ['git_failed', true]);
   assert.equal(error.code, 'git_failed');
   assert.match(error.summary, /^fatal: not a git repository/);
   assert.ok(!error.summary.includes(owner.root) && !/[\r\n\u0000-\u001f]/.test(error.summary), error.summary);
@@ -691,4 +688,29 @@ test('removing a visit worktree that was never made is a quiet no-op, with or wi
   const made = await createVisitWorktree({ folder: owner.repository, root, id: 'made-1' });
   await assert.rejects(runner.remove({ id: 'made-1', projectFolder: plain, ...made }, { keepBranch: false }), { code: 'git_failed' });
   assert.equal(existsSync(made.worktreePath), true);
+});
+
+// Git's process stood in for (worktree.js reads execFile through the module's live binding); answers the restore.
+function gitEndsWith(error) {
+  const original = childProcess.execFile;
+  childProcess.execFile = (file, args, options, done) => { setImmediate(() => done(error, '', '')); return {}; };
+  syncBuiltinESMExports();
+  return () => { childProcess.execFile = original; syncBuiltinESMExports(); };
+}
+
+test('a Git step stopped by its time limit says so; one stopped for another reason, or without a limit, does not', async (t) => {
+  const owner = ownerRepository(t);
+  const located = (options = {}) => repositoryRoot({ folder: owner.repository, root: visitRoot(owner.root), ...options })
+    .then(() => null, (failure) => [failure.code, failure.timedOut, failure.summary]);
+  const killed = (extra = {}) => Object.assign(new Error('synthetic'), { killed: true, signal: 'SIGTERM', ...extra });
+  let restore = gitEndsWith(killed());
+  t.after(() => restore());
+  assert.deepEqual(await located(), ['git_failed', true, null], 'the removal\'s first step has a limit by default');
+  assert.deepEqual(await located({ timeoutMs: 0 }), ['git_failed', false, null], 'no limit, no timeout');
+  restore();
+  restore = gitEndsWith(killed({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }));
+  assert.deepEqual(await located(), ['git_failed', false, null], 'stopped for its output, not for its time');
+  restore();
+  restore = gitEndsWith(Object.assign(new Error('synthetic'), { killed: false, code: 128 }));
+  assert.deepEqual(await located(), ['git_failed', false, null], 'Git answered with a failure');
 });

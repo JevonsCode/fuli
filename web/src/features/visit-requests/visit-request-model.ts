@@ -104,7 +104,7 @@ export function failedLine(request: Pick<VisitRequest, 'state' | 'reason' | 'err
 const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed', 'process_unconfirmed', 'process_ended',
   'cleanup_done'])
 // Why a removal failed, when the server knows: the code after the note (cleanup_failed:git_timeout).
-const CLEANUP_CAUSES = new Set(['git_timeout', 'git_unavailable', 'git_failed', 'worktree_root_changed', 'worktree_outside_root', 'files_held'])
+const CLEANUP_CAUSES = new Set(['git_timeout', 'git_unavailable', 'git_failed', 'worktree_root_changed', 'worktree_outside_root', 'files_left'])
 /** What happened to the copy or the branch apart from the request's own steps (mostly what went wrong removing them). */
 export function warningText(warning: string) {
   const [kind = '', cause = ''] = warning.split(':')

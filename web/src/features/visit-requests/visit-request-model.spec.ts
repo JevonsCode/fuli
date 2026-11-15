@@ -39,10 +39,10 @@ describe('a visit request in plain words', () => {
     // A failed removal says why when the server knows; an unknown cause keeps the plain line.
     expect(eventText({ by: 'system', to: 'cancelled', note: 'cleanup_failed:git_timeout' }))
       .toBe('清理副本时出了错，可能还有残留。Git 在项目文件夹里迟迟没有回应。')
-    expect(eventText({ by: 'system', to: 'cancelled', note: 'cleanup_failed:files_held' }))
-      .toBe('清理副本时出了错，可能还有残留。有文件还被别的程序占着。')
+    expect(eventText({ by: 'system', to: 'cancelled', note: 'cleanup_failed:files_left' }))
+      .toBe('清理副本时出了错，可能还有残留。有文件删不掉（被占用，或没有权限）。')
     expect(eventText({ by: 'system', to: 'cancelled', note: 'cleanup_failed:some_new_cause' })).toBe('清理副本时出了错，可能还有残留。')
-    expect(warningText('cleanup_failed:worktree_root_changed')).toBe('清理副本时出了错，可能还有残留。放副本的文件夹被换过，为了安全没有删。')
+    expect(warningText('cleanup_failed:worktree_root_changed')).toBe('清理副本时出了错，可能还有残留。放副本的文件夹被换过，为了安全停下了。')
     expect(warningText('worktree_entry_kept')).toBe('副本的登记没对上，分支和登记都留着，没有删。')
     expect(warningText('some_new_warning')).toBe('清理时出了点问题，看看这件请求的经过。')
   })
@@ -60,7 +60,7 @@ describe('a visit request in plain words', () => {
     expect(withdrawn('withdrawn_by_requester', 'worktree_entry_kept')).toBe(left)
     expect(withdrawn('withdrawn_by_requester', 'process_unconfirmed')).toBe(left)
     expect(withdrawn('withdrawn_by_requester', 'process_unconfirmed', 'process_ended')).toBe(gone)
-    expect(withdrawn('withdrawn_by_requester', 'process_unconfirmed', 'process_ended', 'cleanup_failed:files_held')).toBe(left)
+    expect(withdrawn('withdrawn_by_requester', 'process_unconfirmed', 'process_ended', 'cleanup_failed:files_left')).toBe(left)
     // Any other cancellation says nothing about the copy, whatever its history.
     expect(endingText({ ...visitRequest({ state: 'cancelled', reason: 'share_removed' }), events: [{ note: 'cleanup_failed' }] }))
       .toBe('你不再共享这个项目，请求就取消了。')

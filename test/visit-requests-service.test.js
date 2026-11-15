@@ -835,7 +835,7 @@ test('on Windows, children still holding the copy after the client\'s PID is gon
   assert.equal(attempts.length, 1, 'not again within the minute');
   await later(MINUTE_LATER);
   assert.deepEqual([attempts.length, await runExit(), f.runner.calls.removed.length], [2, 'ended', 1]);
-  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_held', 'cleanup_done'],
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_left', 'cleanup_done'],
     'the failure is noted with its cause');
 });
 
@@ -849,7 +849,7 @@ test('a removal that keeps failing is tried for a day, warned about once, and th
   const tries = attempts.length;
   await later(MINUTE_LATER);
   assert.equal(attempts.length, tries, 'no more tries');
-  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_held'], 'the warning stays the last word');
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_left'], 'the warning stays the last word');
 });
 
 test('a recorded PID whose identity could not be read, later held by another process, is released after a day', async (t) => {
@@ -1028,7 +1028,7 @@ test('a failed removal names its cause when it is a known one, and nothing of Gi
       'cleanup_failed:git_failed'],
     [Object.assign(new Error('worktree_root_changed'), { code: 'worktree_root_changed' }), 'cleanup_failed:worktree_root_changed'],
     [Object.assign(new Error('worktree_outside_root'), { code: 'worktree_outside_root' }), 'cleanup_failed:worktree_outside_root'],
-    [Object.assign(new Error('EACCES: /synthetic/secret'), { code: 'EACCES' }), 'cleanup_failed:files_held'],
+    [Object.assign(new Error('EACCES: /synthetic/secret'), { code: 'EACCES' }), 'cleanup_failed:files_left'],
     [new Error('something else at /synthetic/secret'), 'cleanup_failed']
   ];
   for (const [error, noted] of causes) {
@@ -1043,4 +1043,112 @@ test('the owner\'s own discard that cannot remove the copy notes the cause too, 
   const discarded = await f.port.requests.discard('request-1');
   assert.deepEqual([discarded.request.state, discarded.warning], ['discarded', 'cleanup_failed']);
   assert.deepEqual([(await notes()).at(-1), timers.length], ['cleanup_failed:git_timeout', 0], 'a decision\'s removal is not retried');
+});
+
+// ---- The retry timer: one pass at a time, to the day's limit, never after close, again after a restart (review of PR 996) ----
+
+test('a failed removal sets no second timer while its pass still runs, and the next one only once the pass ended', async (t) => {
+  const { f, timers, fire } = await withdrawnWithFailingRemoval(t, [gitTimeout(), gitTimeout()]);
+  assert.equal((await withdraw(f, 'request-1')).ok, true);
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.equal(timers.length, 1, 'one timer for both pending removals');
+  // In the timer's pass the first removal fails at once and the second hangs, as a Git that does not answer.
+  let held;
+  f.runner.remove = (request) => (request.id === 'request-1' ? Promise.reject(gitTimeout())
+    : new Promise((resolve, reject) => { held = () => reject(gitTimeout()); }));
+  await fire();
+  assert.equal(timers.length, 0, 'the first failed, the pass is still running: no timer yet');
+  f.port.requests.list();
+  await delay(20);
+  assert.equal(timers.length, 0, 'a read during the pass sets none either');
+  held();
+  await delay(20);
+  assert.equal(timers.length, 1, 'set again once the pass ended, both removals still pending');
+});
+
+test('one request whose process cannot be checked does not end the pass for a removal that is pending', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const timers = [];
+  const f = fixture(t, { pid: 7171, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock.now, processes: {
+    inspectProcess: async () => new Map(), groupAlive: () => { throw new Error('synthetic'); },
+    setTimer: (run, ms) => { timers.push({ run, ms }); return null; } } });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  // A second request, ordered after it, whose removal fails once.
+  f.runner.run = fakeRunner().run;
+  let failing = true;
+  f.runner.remove = async (request, { keepBranch }) => {
+    if (failing) throw gitTimeout();
+    f.runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.deepEqual([timers.length, (await f.port.requests.card('request-1')).request.runExit], [1, 'unconfirmed']);
+  failing = false;
+  const { run, ms } = timers.shift();
+  clock.now = new Date(clock.now.getTime() + ms);
+  run();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-2', keepBranch: false }], 'the pass went on past the request it could not check');
+});
+
+test('the retry timer stops at the day\'s limit, and does nothing once the service is closed', async (t) => {
+  const always = Array.from({ length: 50 }, gitTimeout);
+  const { f, timers, fire, notes, tries } = await withdrawnWithFailingRemoval(t, always);
+  assert.equal((await withdraw(f, 'request-1')).ok, true);
+  await fire();
+  assert.deepEqual([tries(), timers.length], [2, 1], 'still failing: tried again, timer set again');
+  // A day later the timer's pass gives up, and no further timer is set.
+  timers[0].ms = DAY_LATER;
+  await fire();
+  assert.deepEqual([tries(), timers.length, (await f.port.requests.card('request-1')).request.runExit], [2, 0, 'ended']);
+  assert.deepEqual(await notes(), ['withdrawn_by_requester', 'cleanup_failed:git_timeout'], 'the warning stays the last word');
+
+  // A second request whose removal fails: its timer does nothing once the service is closed.
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.equal(timers.length, 1);
+  const before = tries();
+  await f.port.close();
+  timers.shift().run();
+  await delay(20);
+  assert.deepEqual([tries(), timers.length], [before, 0], 'no removal and no timer after close');
+});
+
+test('after a restart a removal that was pending is tried at once, and by the timer when it fails again', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner();
+  const tried = [];
+  runner.remove = async (request) => { tried.push(request.id); if (tried.length < 3) throw gitTimeout(); };
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1', setTimer: () => null });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'awaiting_review');
+  assert.equal((await port.withdrawRequest({ requester: { key: ALPHA }, requestId: 'request-1' })).ok, true);
+  assert.deepEqual([tried.length, (await port.requests.card('request-1')).request.runExit], [1, 'cleanup_pending']);
+
+  const timers = [];
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'trusted', runner, leads, now: () => clock.now,
+    setTimer: (run, ms) => { timers.push({ run, ms }); return null; } });
+  t.after(() => restarted.close());
+  restarted.resume();
+  await settled(async () => tried.length === 2 && timers.length === 1);
+  const { run, ms } = timers.shift();
+  clock.now = new Date(clock.now.getTime() + ms);
+  run();
+  await settled(async () => tried.length === 3);
+  await delay(20);
+  const card = await restarted.card('request-1');
+  assert.deepEqual([card.request.runExit, timers.length, card.events.at(-1).note], ['ended', 0, 'cleanup_done']);
 });

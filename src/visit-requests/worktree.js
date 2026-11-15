@@ -362,7 +362,7 @@ function gitCall(args, { cwd, root, timeoutMs = 0 }) {
       GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
     (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
       { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr),
-        timedOut: Boolean(timeoutMs && error.killed) })) : done(stdout))));
+        timedOut: Boolean(timeoutMs && error.killed && error.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') })) : done(stdout))));
 }
 
 // What the owner may read of a failed Git step: Git's last non-empty line,

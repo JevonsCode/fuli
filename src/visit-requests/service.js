@@ -82,18 +82,19 @@ const PROCESS_ENDED = 'process_ended';
 const CLEANUP_PENDING = 'cleanup_pending';
 const CLEANUP_DONE = 'cleanup_done';
 const PROCESS_RECHECK_MS = 60 * 1000;
-// A removal that failed is tried again by a timer this long after the minute, so nobody has to open the list for it.
+// A removal that failed is tried again by a timer this long after the minute, so nobody has to open the list for
+// it. The timer is set again only once its pass has ended, so passes never overlap, however long one takes.
 const RETRY_MARGIN_MS = 1000;
 // Why a removal failed, as one short code after the note (cleanup_failed:git_timeout), for the owner's history
-// only: never Git's text or a path. Git did not answer in time, could not be started or failed; the folder
-// worktrees are made in is not the one this worktree was made in, or the worktree is not in it (worktree.js
-// refuses both); a file something still holds. Without a known cause the note is cleanup_failed alone.
+// only: never Git's text or a path. Git did not answer in time, could not be started or failed; a folder is not
+// the one the worktree was made in, or not where it has to be (worktree.js stops at both, possibly part-way);
+// files that could not be deleted (in use, or no permission). Without a known cause the note is cleanup_failed alone.
 const REMOVAL_REFUSED = new Set(['worktree_root_changed', 'worktree_outside_root']);
-const FILES_HELD = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM', 'EACCES']);
+const FILES_LEFT = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM', 'EACCES']);
 function removalCause(error) {
   if (error?.code === GIT_FAILED) return error.timedOut ? 'git_timeout' : error.summary === 'git_unavailable' ? 'git_unavailable' : GIT_FAILED;
   if (REMOVAL_REFUSED.has(error?.code)) return error.code;
-  return FILES_HELD.has(error?.code) ? 'files_held' : null;
+  return FILES_LEFT.has(error?.code) ? 'files_left' : null;
 }
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
@@ -332,16 +333,22 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     });
   }
 
-  // The next try of a failed removal, on its own: one timer for all of them, set again while any is still pending.
+  // The next try of a failed removal, on its own: one timer for all of them. It stays armed while its pass
+  // runs (a removal failing in the pass sets nothing), and is set again after the pass, however that ended,
+  // while any removal is still pending.
   function retrySoon() {
     if (closed || retryArmed) return;
     retryArmed = true;
     retryTimer = setTimer(() => {
-      retryArmed = false;
-      background(releaseEnded().then(() => {
-        if (store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING)) retrySoon();
+      background(releaseEnded().catch(() => {}).then(() => {
+        retryArmed = false;
+        if (removalPending()) retrySoon();
       }));
     }, PROCESS_RECHECK_MS + RETRY_MARGIN_MS);
+  }
+
+  function removalPending() {
+    try { return store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING); } catch { return false; }
   }
 
   // Tidies what an unconfirmed run kept, once its process is known to have
@@ -350,21 +357,26 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     for (const request of records.unfinishedRuns()) {
       if (closed || now().getTime() - (processChecked.get(request.id) ?? -Infinity) < PROCESS_RECHECK_MS) continue;
       processChecked.set(request.id, now().getTime());
-      if (request.runExit === CLEANUP_PENDING) {
-        // Past a day it is left as it is; its cleanup_failed warning stays the last word.
-        if (dayPassed(request)) store.transaction(() => records.update(request.id, { runExit: 'ended' }, at()));
-        else await tidy(request);
-        continue;
-      }
-      if (!await processEnded(request)) continue;
-      const ended = store.transaction(() => {
-        if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
-        records.update(request.id, { runExit: 'ended' }, at());
-        note(request.id, PROCESS_ENDED);
-        return records.get(request.id);
-      });
-      await tidy(ended);
+      // One request that cannot be checked or written now does not end the pass for the others; it is asked again next time.
+      try { await releaseOne(request); } catch { /* next pass */ }
     }
+  }
+
+  async function releaseOne(request) {
+    if (request.runExit === CLEANUP_PENDING) {
+      // Past a day it is left as it is; its cleanup_failed warning stays the last word.
+      if (dayPassed(request)) store.transaction(() => records.update(request.id, { runExit: 'ended' }, at()));
+      else await tidy(request);
+      return;
+    }
+    if (!await processEnded(request)) return;
+    const ended = store.transaction(() => {
+      if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
+      records.update(request.id, { runExit: 'ended' }, at());
+      note(request.id, PROCESS_ENDED);
+      return records.get(request.id);
+    });
+    await tidy(ended);
   }
 
   // Without an identity of the PID a later process holding it cannot be told
