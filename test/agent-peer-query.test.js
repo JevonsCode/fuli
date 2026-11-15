@@ -73,6 +73,11 @@ test('a query carries exactly its fields, card or search, bounded queries and a 
   refused({ query: { action: 'request', request: draft, queries: ['x'] } });
   refused({ query: { action: 'request_status' } });
   refused({ query: { action: 'request_status', requestId: '../other' } });
+  // Taking a request back names one request too, and nothing else.
+  assert.ok(validateQuery(queryFor(sender, target, { now, query: { action: 'request_withdraw', requestId: 'request-1' } }), { now }));
+  refused({ query: { action: 'request_withdraw' } });
+  refused({ query: { action: 'request_withdraw', requestId: '../other' } });
+  refused({ query: { action: 'request_withdraw', requestId: 'request-1', reason: 'because' } });
   refused({ from: { node: sender, agentId: 'visitor-agent', name: 'Visitor', client: 'codex' } });
   refused({ to: { node: sender, bindingId: 'binding-1', agentId: 'lead-agent' } });
   refused({ origin: undefined });

@@ -564,7 +564,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // its shared knowledge and wakes nothing; message_agent is the path that wakes its lead.
   async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, request, requestId, signal }) {
     if (!peer?.isRemoteAddress(address)) throw validation('Visit a paired device\'s lead by its peer:<device>:<binding> address from find_agents');
-    if (!VISIT_ACTIONS.has(action)) throw validation('action is card, search, request or request_status');
+    if (!VISIT_ACTIONS.has(action)) throw validation('action is card, search, request, request_status or request_withdraw');
     if (action === 'search' && (!Array.isArray(queries) || !queries.length || queries.length > 4
       || !queries.every((query) => typeof query === 'string' && query.trim() && query.length <= 200))) {
       throw validation('search needs 1-4 focused queries of at most 200 characters');
@@ -572,7 +572,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (action === 'request' && !validVisitRequest(request)) {
       throw validation('request needs request: { title (≤160), what (≤4000), expectedAreas? (≤10 paths of ≤200) }');
     }
-    if (action === 'request_status' && !isOpaqueId(requestId)) throw validation('request_status needs the requestId request answered');
+    if (REQUEST_ID_ACTIONS.has(action) && !isOpaqueId(requestId)) throw validation(`${action} needs the requestId request answered`);
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
     // An address that names no shared lead right now (not shared any more, or that computer has just
@@ -1011,7 +1011,9 @@ function inboxGreeting(target) {
   return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
 }
 
-const VISIT_ACTIONS = new Set(['card', 'search', 'request', 'request_status']);
+const VISIT_ACTIONS = new Set(['card', 'search', 'request', 'request_status', 'request_withdraw']);
+// The two actions that name one request made earlier.
+const REQUEST_ID_ACTIONS = new Set(['request_status', 'request_withdraw']);
 
 // Exactly the fields each visit action carries across devices.
 function visitQuestion({ action, queries, request, requestId }) {
@@ -1020,7 +1022,7 @@ function visitQuestion({ action, queries, request, requestId }) {
     const { title, what, expectedAreas } = request;
     return { action, request: { title, what, ...(expectedAreas ? { expectedAreas } : {}) } };
   }
-  return action === 'request_status' ? { action, requestId } : { action };
+  return REQUEST_ID_ACTIONS.has(action) ? { action, requestId } : { action };
 }
 
 function label(agent) {
