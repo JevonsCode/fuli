@@ -39,8 +39,10 @@ function withProjects(record, projects) {
   return lead;
 }
 
+// Waits by the clock, not by a count of reads: on a slow Windows CI runner 200 reads of the status were not
+// enough for a listener to move (it failed twice on 2026-11-15 with nothing wrong in the product).
 async function until(runtime, matches, label) {
-  for (let index = 0; index < 200; index += 1) {
+  for (const deadline = Date.now() + 30_000; Date.now() < deadline;) {
     const status = await runtime.status();
     if (matches(status)) return status;
     await delay(25);
