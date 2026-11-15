@@ -74,7 +74,7 @@ const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cance
 // wake claims; a run an earlier FULI recorded no PID, or no identity of its
 // PID, for, a day later) noted again (process_ended) and tidied. Asked at most
 // this often per request. cleanup_pending: the removal of such a request's
-// worktree failed (a file something still holds, cleanup_failed noted once);
+// worktree failed (cleanup_failed noted once, with its cause when known);
 // it is tried again as often, until it succeeds (cleanup_done) or a day after
 // it first failed, when it is left as it is with its warning.
 const PROCESS_UNCONFIRMED = 'process_unconfirmed';
@@ -82,6 +82,20 @@ const PROCESS_ENDED = 'process_ended';
 const CLEANUP_PENDING = 'cleanup_pending';
 const CLEANUP_DONE = 'cleanup_done';
 const PROCESS_RECHECK_MS = 60 * 1000;
+// A removal that failed is tried again by a timer this long after the minute, so nobody has to open the list for
+// it. The timer is set again only once its pass has ended, so passes never overlap, however long one takes.
+const RETRY_MARGIN_MS = 1000;
+// Why a removal failed, as one short code after the note (cleanup_failed:git_timeout), for the owner's history
+// only: never Git's text or a path. Git did not answer in time, could not be started or failed; a folder is not
+// the one the worktree was made in, or not where it has to be (worktree.js stops at both, possibly part-way);
+// files that could not be deleted (in use, or no permission). Without a known cause the note is cleanup_failed alone.
+const REMOVAL_REFUSED = new Set(['worktree_root_changed', 'worktree_outside_root']);
+const FILES_LEFT = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM', 'EACCES']);
+function removalCause(error) {
+  if (error?.code === GIT_FAILED) return error.timedOut ? 'git_timeout' : error.summary === 'git_unavailable' ? 'git_unavailable' : GIT_FAILED;
+  if (REMOVAL_REFUSED.has(error?.code)) return error.code;
+  return FILES_LEFT.has(error?.code) ? 'files_left' : null;
+}
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
 // leads.confirm({ projectId, agentId }) → whether that Agent still leads the shared project, as read now.
@@ -89,14 +103,17 @@ const PROCESS_RECHECK_MS = 60 * 1000;
 // leads.describe({ projectId, agentId }) → { name, responsibility } of the lead, which the runs are given as data.
 // inspectProcess(pids), groupAlive(pgid): as for the roundtable's wake claims (wake-claim-release.js); by default
 // the OS is never asked, so an unconfirmed run's worktree stays.
+// setTimer(run, ms) → a timer that does not keep the process alive, cleared with clearTimeout.
 export function createVisitRequests({ store, runner, modeOf, leads, platform = process.platform, now = () => new Date(),
-  idFactory = randomUUID, inspectProcess = async () => null, groupAlive = undefined }) {
+  idFactory = randomUUID, inspectProcess = async () => null, groupAlive = undefined, setTimer = unrefTimer }) {
   const records = createVisitRecords(store);
   const running = new Map();
   const processChecked = new Map();
   const lanes = new Map();
   const work = new Set();
   let closed = false;
+  let retryTimer = null;
+  let retryArmed = false;
   const at = () => now().toISOString();
 
   // A requester's new request. Answers { ok: true, requestId, state } or
@@ -299,20 +316,43 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   // The worktree of a request that ended without a result, and its empty
   // branch, go; not while its run's process may still be running.
-  // A removal that failed is left to the next pass (cleanup_pending), noted once.
+  // A removal that failed is left to the next pass (cleanup_pending), noted once with its cause.
   async function tidy(request) {
     if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state) || request.runExit === 'unconfirmed') return;
     const retry = request.runExit === CLEANUP_PENDING;
-    const warning = await removeWorktree(request, { keepBranch: false });
-    if (warning === 'cleanup_failed' && retry) return;
+    const { warning, noted } = await removeWorktree(request, { keepBranch: false });
+    if (warning === 'cleanup_failed' && retry) { retrySoon(); return; }
     // The next try waits the same minute as a process check.
     if (warning === 'cleanup_failed') processChecked.set(request.id, now().getTime());
     store.transaction(() => {
       if (warning === 'cleanup_failed') records.update(request.id, { runExit: CLEANUP_PENDING }, at());
       else if (retry) records.update(request.id, { runExit: 'ended' }, at());
-      if (warning) note(request.id, warning);
+      if (warning) note(request.id, noted);
       else if (retry) note(request.id, CLEANUP_DONE);
     });
+    // After the note and the mark are written, in the same step, so a timer that cannot be set loses neither.
+    if (warning === 'cleanup_failed') retrySoon();
+  }
+
+  // The next try of a failed removal, on its own: one timer for all of them. It stays armed while its pass
+  // runs (a removal failing in the pass sets nothing), and is set again after the pass, however that ended,
+  // while any removal is still pending.
+  function retrySoon() {
+    if (closed || retryArmed) return;
+    try {
+      retryTimer = setTimer(() => {
+        background(releaseEnded().catch(() => {}).then(() => {
+          retryArmed = false;
+          if (removalPending()) retrySoon();
+        }));
+      }, PROCESS_RECHECK_MS + RETRY_MARGIN_MS);
+      retryArmed = true;
+    } catch { /* no timer: the next read of the list or a card tries again */ }
+  }
+
+  // A read that fails now counts as pending: the next pass asks again, and a store that is closed answers no.
+  function removalPending() {
+    try { return store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING); } catch { return true; }
   }
 
   // Tidies what an unconfirmed run kept, once its process is known to have
@@ -321,21 +361,26 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     for (const request of records.unfinishedRuns()) {
       if (closed || now().getTime() - (processChecked.get(request.id) ?? -Infinity) < PROCESS_RECHECK_MS) continue;
       processChecked.set(request.id, now().getTime());
-      if (request.runExit === CLEANUP_PENDING) {
-        // Past a day it is left as it is; its cleanup_failed warning stays the last word.
-        if (dayPassed(request)) store.transaction(() => records.update(request.id, { runExit: 'ended' }, at()));
-        else await tidy(request);
-        continue;
-      }
-      if (!await processEnded(request)) continue;
-      const ended = store.transaction(() => {
-        if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
-        records.update(request.id, { runExit: 'ended' }, at());
-        note(request.id, PROCESS_ENDED);
-        return records.get(request.id);
-      });
-      await tidy(ended);
+      // One request that cannot be checked or written now does not end the pass for the others; it is asked again next time.
+      try { await releaseOne(request); } catch { /* next pass */ }
     }
+  }
+
+  async function releaseOne(request) {
+    if (request.runExit === CLEANUP_PENDING) {
+      // Past a day it is left as it is; its cleanup_failed warning stays the last word.
+      if (dayPassed(request)) store.transaction(() => records.update(request.id, { runExit: 'ended' }, at()));
+      else await tidy(request);
+      return;
+    }
+    if (!await processEnded(request)) return;
+    const ended = store.transaction(() => {
+      if (records.get(request.id)?.runExit !== 'unconfirmed') return null;
+      records.update(request.id, { runExit: 'ended' }, at());
+      note(request.id, PROCESS_ENDED);
+      return records.get(request.id);
+    });
+    await tidy(ended);
   }
 
   // Without an identity of the PID a later process holding it cannot be told
@@ -355,18 +400,19 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // it, so it and the branch stay; branch_kept: Git refused to delete the
   // branch; cleanup_failed: the removal itself failed).
   async function cleanUp(request, { keepBranch }) {
-    const warning = await removeWorktree(request, { keepBranch });
+    const { warning, noted } = await removeWorktree(request, { keepBranch });
     if (warning) {
-      try { store.transaction(() => note(request.id, warning)); } catch { /* the answer still carries it */ }
+      try { store.transaction(() => note(request.id, noted)); } catch { /* the answer still carries it */ }
     }
     return warning;
   }
 
-  // The removal itself; answers the warning, nothing noted.
+  // The removal itself; answers the warning and what to note of it (a failure with its cause), nothing noted.
   async function removeWorktree(request, { keepBranch }) {
     let left;
-    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
-    return left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch (error) { left = { failed: true, cause: removalCause(error) }; }
+    const warning = left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    return { warning, noted: left.failed && left.cause ? `${warning}:${left.cause}` : warning };
   }
 
   // A request's wake in flight: its abort signal, and when it ended (a cancel waits for that before tidying).
@@ -630,6 +676,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   async function close() {
     closed = true;
+    clearTimeout(retryTimer);
     for (const { controller } of running.values()) controller.abort();
     await Promise.allSettled([...work]);
   }
@@ -663,3 +710,9 @@ function requestText(request) {
 }
 
 const refused = (code) => ({ ok: false, code });
+
+function unrefTimer(run, ms) {
+  const timer = setTimeout(run, ms);
+  timer.unref?.();
+  return timer;
+}

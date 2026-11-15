@@ -181,7 +181,7 @@ the owner kept the branch (or at once, when that owner marked your computer full
 summary, the branch name, the changed files and counts, never the patch. Take your own request
 back with `action: "request_withdraw"` and the `requestId` when the work is no longer wanted: before
 its run starts, or once you were shown its ready result; its worktree and branch are removed
-there. `request_not_withdrawable` means it is running (wait for its result), it ended, or it
+there (a removal that fails is tried again there and shown to that owner). `request_not_withdrawable` means it is running (wait for its result), it ended, or it
 waits for that owner, who alone decides it now. Approval is always
 the owner's: a refusal (`ask_only`, `budget_exceeded`) is final; never send the work another way.
 A request that ends `failed` with reason `no_repository` or `folder_not_this_project` cannot be done there: the folder that

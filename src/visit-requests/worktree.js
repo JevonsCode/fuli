@@ -195,6 +195,8 @@ export async function integritySnapshot({ repository, root, ownBranch, id }) {
 // not be done, so the owner sees it: entryKept (Git's entry for the worktree
 // did not name it, so it and the branch stay) and branchKept (Git refused to
 // delete the branch).
+// Every Git step of a removal is stopped after LOCATE_MS, as the step that locates the repository is: a Git that
+// does not answer fails the removal (to be tried again) instead of holding it, and every later one, forever.
 export async function removeVisitWorktree({ repository, worktreePath, branch, root, rootIdentity = null }, { keepBranch }) {
   let entryKept = false;
   if (worktreePath) {
@@ -211,7 +213,7 @@ export async function removeVisitWorktree({ repository, worktreePath, branch, ro
     // While Git still lists the worktree, it would refuse anyway: the branch stays, said once.
     // A branch that was never made is not kept: nothing to say.
     branchKept = entryKept || (await branchExists(repository, branch, root)
-      && await git(repository, ['branch', '-D', branch], root).then(() => false, () => true));
+      && await git(repository, ['branch', '-D', branch], root, LOCATE_MS).then(() => false, () => true));
   }
   return { entryKept, branchKept };
 }
@@ -222,7 +224,7 @@ export async function removeVisitWorktree({ repository, worktreePath, branch, ro
 // case, slash direction and symlinked temp folders such as /var ->
 // /private/var all agree), never by the text of the two paths.
 async function ownAdminEntry({ repository, worktreePath, root }) {
-  const common = (await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root)).trim();
+  const common = (await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir'], root, LOCATE_MS)).trim();
   const entries = join(common, 'worktrees');
   const path = join(entries, basename(worktreePath));
   const named = await readFile(join(path, 'gitdir'), 'utf8').catch(() => null);
@@ -288,9 +290,9 @@ async function unlinkLink(path) {
   try { await unlink(path); } catch { await rmdir(path); }
 }
 
-// Whether the branch exists; a check Git could not answer (anything on stderr) counts as yes, so a refusal still shows.
-const branchExists = (repository, branch, root) => git(repository, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], root)
-  .then(() => true, (error) => Boolean(error.stderr?.trim()));
+// Whether the branch exists; a check Git could not answer (anything on stderr, or no answer in time) counts as yes, so a refusal still shows.
+const branchExists = (repository, branch, root) => git(repository, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], root, LOCATE_MS)
+  .then(() => true, (error) => Boolean(error.timedOut || error.stderr?.trim()));
 
 // The top folder of the repository folder is inside; a hardened, read-only rev-parse that throws when it is in none.
 // It runs while a request is being planned, so it is stopped after LOCATE_MS: a folder on a drive that does not
@@ -340,11 +342,12 @@ function worktreeGit({ gitDir, worktreePath, root }, args) {
   return gitCall([`--git-dir=${gitDir}`, `--work-tree=${worktreePath}`, ...args], { cwd: worktreePath, root });
 }
 
-// One Git call on the owner's repository (trusted to locate itself).
-function git(cwd, args, root) {
-  return gitCall(['-C', cwd, ...args], { cwd, root });
+// One Git call on the owner's repository (trusted to locate itself); stopped after timeoutMs when given.
+function git(cwd, args, root, timeoutMs = 0) {
+  return gitCall(['-C', cwd, ...args], { cwd, root, timeoutMs });
 }
 
+// A call given timeoutMs that Git did not answer in time rejects with timedOut.
 // Every call: no fsmonitor, untracked cache, submodule recursion, hooks
 // (a folder that does not exist), file-protocol transport, external diff,
 // pager or editor; no system or global configuration; none of the caller's
@@ -360,7 +363,8 @@ function gitCall(args, { cwd, root, timeoutMs = 0 }) {
     { cwd: existsSync(cwd) ? cwd : root, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: NO_FILE,
       GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
     (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
-      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr) })) : done(stdout))));
+      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr),
+        timedOut: Boolean(timeoutMs && error.killed && error.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') })) : done(stdout))));
 }
 
 // What the owner may read of a failed Git step: Git's last non-empty line,

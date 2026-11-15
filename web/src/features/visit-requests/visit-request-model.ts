@@ -72,10 +72,14 @@ export function reviewExpired(request: Pick<VisitRequest, 'state' | 'result'>) {
   return request.state === 'expired' && request.result !== null
 }
 
-/** How the request ended, or null while it is open or when it ended with a result. */
-export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'error' | 'result'>) {
+/** How the request ended, or null while it is open or when it ended with a result. events: its history, when at hand. */
+export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'error' | 'result'> & { events?: Pick<VisitEvent, 'note'>[] }) {
   if (request.state === 'refused') return t(`visitRequests.card.refused.${known(REFUSED, request.reason)}`)
   if (request.state === 'declined' && request.reason) return t('visitRequests.card.ownReason', { reason: shownText(request.reason) })
+  // A withdrawal says the copy and branch are gone only when they are.
+  if (request.state === 'cancelled' && request.reason === 'withdrawn_by_requester' && somethingLeft(request.events ?? [])) {
+    return t('visitRequests.card.cancelledBecause.withdrawn_left')
+  }
   if (request.state === 'cancelled' && request.reason) return t(`visitRequests.card.cancelledBecause.${known(CANCELLED, request.reason)}`)
   if (request.state === 'expired') return t(reviewExpired(request) ? 'visitRequests.card.reviewExpired' : 'visitRequests.card.ownerExpired')
   if (request.state === 'unknown') return t('visitRequests.card.restarted')
@@ -99,9 +103,25 @@ export function failedLine(request: Pick<VisitRequest, 'state' | 'reason' | 'err
 // process_unconfirmed / process_ended: the copy stays while the run's program may still be running, and goes once it stopped; cleanup_done: a failed removal went through later.
 const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed', 'process_unconfirmed', 'process_ended',
   'cleanup_done'])
+// Why a removal failed, when the server knows: the code after the note (cleanup_failed:git_timeout).
+const CLEANUP_CAUSES = new Set(['git_timeout', 'git_unavailable', 'git_failed', 'worktree_root_changed', 'worktree_outside_root', 'files_left'])
 /** What happened to the copy or the branch apart from the request's own steps (mostly what went wrong removing them). */
 export function warningText(warning: string) {
-  return t(`visitRequests.warnings.${known(WARNINGS, warning)}`)
+  const [kind = '', cause = ''] = warning.split(':')
+  if (kind === 'cleanup_failed' && CLEANUP_CAUSES.has(cause)) {
+    return t('visitRequests.warnings.cleanup_failed_because', { cause: t(`visitRequests.warnings.cause.${cause}`) })
+  }
+  return t(`visitRequests.warnings.${known(WARNINGS, kind)}`)
+}
+const warningKind = (note: string | null) => (note ?? '').split(':')[0] ?? ''
+
+// The copy, its git record or the branch is still there: the last word of the history on removing them is not a success.
+// process_ended: the copy goes right after it, and a removal that fails then notes cleanup_failed after it.
+const LEFT = new Set(['cleanup_failed', 'worktree_entry_kept', 'branch_kept', 'process_unconfirmed'])
+const GONE = new Set(['cleanup_done', 'process_ended'])
+function somethingLeft(events: Pick<VisitEvent, 'note'>[]) {
+  const last = events.map(event => warningKind(event.note)).filter(kind => LEFT.has(kind) || GONE.has(kind)).at(-1)
+  return last !== undefined && LEFT.has(last)
 }
 
 /** Why a finished run was held, in plain words. */
@@ -139,7 +159,7 @@ const STATES = new Set<string>(VISIT_STATES)
 /** One step of the timeline: who moved it and to what. */
 export function eventText(event: Pick<VisitEvent, 'by' | 'to' | 'note'>) {
   // A cleanup that went wrong is recorded as a note on its own step; any other note keeps the plain line.
-  if (event.note && WARNINGS.has(event.note)) return warningText(event.note)
+  if (event.note && WARNINGS.has(warningKind(event.note))) return warningText(event.note)
   const who = ACTORS.has(event.by) ? t(`visitRequests.card.by.${event.by}`) : event.by
   const state = STATES.has(event.to) ? t(`visitRequests.states.${event.to}`) : event.to
   return t('visitRequests.card.event', { who, state })

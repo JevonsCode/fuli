@@ -247,7 +247,11 @@ That device can also take its request back with `action: "request_withdraw"`
 flight is stopped), or once it was shown a ready result while its computer is
 still fully trusted. The request ends `cancelled` with the reason
 `withdrawn_by_requester`, its event says the requester did it, and its worktree and
-branch are removed. A run in progress (stopping it would skip the checks its
+branch are removed. A removal that fails is noted on the request's history with its
+cause when known (`cleanup_failed:git_timeout`, `git_unavailable`, `git_failed`,
+`worktree_root_changed`, `worktree_outside_root`, `files_left`), tried again about
+each minute by the service itself (one pass at a time) for a day (`cleanup_done` once it went through), and
+the owner's card says the copy or branch is still there until then. A run in progress (stopping it would skip the checks its
 result gets), a held result, a result the requester was not shown, a ready result
 of a computer since trusted less and anything kept, discarded or ended answer
 `request_not_withdrawable`: those stay the owner's, and keeping a branch is never
