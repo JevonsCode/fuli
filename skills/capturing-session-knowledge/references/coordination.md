@@ -186,7 +186,9 @@ waits for that owner, who alone decides it now. Approval is always
 the owner's: a refusal (`ask_only`, `budget_exceeded`) is final; never send the work another way.
 A request that ends `failed` with reason `no_repository` or `folder_not_this_project` cannot be done there: the folder that
 computer shares for the project is not a Git repository. Stop waiting and tell your person so; only
-that owner can share the repository's folder instead.
+that owner can share the repository's folder instead. A request that ends `failed` with no reason failed
+on something only that owner can read (a Git there that failed or did not answer in the project folder,
+for one): tell your person that computer's owner has to look at the request.
 
 ## Report Actual Worker Execution
 

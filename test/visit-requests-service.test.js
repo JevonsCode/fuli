@@ -1201,3 +1201,38 @@ test('a pass that cannot read the store at all still sets the timer again, and a
   await fire();
   assert.deepEqual([timers.length, runner.calls.removed], [0, [{ id: 'request-1', keepBranch: false }]]);
 });
+
+// ---- A Git that failed or did not answer while the folder was looked at (two real requests on 0.27.11 read "no_repository") ----
+
+test('a Git failure when the project folder is looked at ends the request failed with Git\'s cause for the owner, and no reason for the requester', async (t) => {
+  for (const [mode, error, reason] of [
+    ['trusted', Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_timeout', timedOut: true }), 'git_timeout'],
+    ['plan', Object.assign(new Error('git'), { code: 'git_failed', summary: 'fatal: cannot change to \'<path>\': Operation not permitted', timedOut: false }),
+      'fatal: cannot change to \'<path>\': Operation not permitted'],
+    ['auto', Object.assign(new Error('git'), { code: 'git_failed', summary: null, timedOut: false }), null]
+  ]) {
+    const f = fixture(t);
+    f.runner.folder = async () => { throw error; };
+    f.setMode(mode);
+    f.submit();
+    await settled(async () => await f.state('request-1') === 'failed');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.error, request.reason, request.planningMs ?? 0, events.at(-1).note], ['git_failed', reason, 0, 'git_failed'], mode);
+    assert.deepEqual([f.runner.calls.planned, f.runner.calls.prepared, f.runner.calls.ran], [[], [], []], 'no wake, no copy, no run');
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title }, 'the requester is told it failed, not why: the cause may describe the owner\'s setup');
+  }
+});
+
+test('a request that failed on Git before any wake is not among a fully trusted requester\'s ten', async (t) => {
+  const f = fixture(t);
+  const working = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_timeout', timedOut: true }); };
+  f.setMode('trusted');
+  for (let index = 1; index <= 12; index += 1) {
+    assert.equal(f.submit().ok, true, `request ${index}`);
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  f.runner.folder = working;
+  assert.equal(f.submit().ok, true, 'Git answers again: the next one is taken');
+});

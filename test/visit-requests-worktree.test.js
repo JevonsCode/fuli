@@ -657,7 +657,7 @@ test('a failed Git step carries the last line of Git\'s message, without local p
   const plain = join(owner.root, 'plain-folder');
   mkdirSync(plain, { recursive: true });
   const error = await repositoryRoot({ folder: plain, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
-  assert.equal(error.timedOut, false, 'Git answered: not a timeout');
+  assert.deepEqual([error.timedOut, error.notRepository], [false, true], 'Git answered, and its answer was: in no repository');
   assert.equal(error.code, 'git_failed');
   assert.match(error.summary, /^fatal: not a git repository/);
   assert.ok(!error.summary.includes(owner.root) && !/[\r\n\u0000-\u001f]/.test(error.summary), error.summary);
@@ -705,7 +705,7 @@ test('a Git step stopped by its time limit says so; one stopped for another reas
   const killed = (extra = {}) => Object.assign(new Error('synthetic'), { killed: true, signal: 'SIGTERM', ...extra });
   let restore = gitEndsWith(killed());
   t.after(() => restore());
-  assert.deepEqual(await located(), ['git_failed', true, null], 'the removal\'s first step has a limit by default');
+  assert.deepEqual(await located(), ['git_failed', true, 'git_timeout'], 'the removal\'s first step has a limit by default');
   assert.deepEqual(await located({ timeoutMs: 0 }), ['git_failed', false, null], 'no limit, no timeout');
   restore();
   restore = gitEndsWith(killed({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }));
@@ -727,4 +727,52 @@ test('every Git step of a removal has a time limit: one that does not answer fai
   // Without one: neither the check of the branch nor its deletion answers, so the branch is reported as kept, not as absent.
   assert.deepEqual(await removeVisitWorktree({ repository: owner.repository, worktreePath: null, branch: 'fuli/visit/synthetic-request', root },
     { keepBranch: false }), { entryKept: false, branchKept: true });
+});
+
+// Git's process stood in for, failing with what Git wrote; answers the restore.
+function gitWrites(stderr, error = Object.assign(new Error('synthetic'), { killed: false, code: 128 })) {
+  const original = childProcess.execFile;
+  childProcess.execFile = (file, args, options, done) => { setImmediate(() => done(error, '', stderr)); return {}; };
+  syncBuiltinESMExports();
+  return () => { childProcess.execFile = original; syncBuiltinESMExports(); };
+}
+
+test('a project folder Git cannot read, or does not answer in, is a Git failure with its cause, never "no repository"', async (t) => {
+  const owner = ownerRepository(t);
+  const runner = createVisitRunner({ runClient: async () => ({}), projectFolder: async () => owner.repository, verifyFolder: async () => true,
+    root: visitRoot(owner.root) });
+  const request = { id: 'synthetic-request', projectId: 'synthetic-project', agentId: 'synthetic-lead', projectFolder: null };
+  const folder = () => runner.folder(request).then((found) => ['found', found], (failure) => [failure.code, failure.summary ?? null, failure.timedOut ?? null]);
+  assert.deepEqual(await folder(), ['found', owner.repository], 'real Git, a real repository');
+
+  let restore = gitWrites('fatal: cannot change to \'/synthetic/Documents/project\': Operation not permitted\n');
+  t.after(() => restore());
+  const refused = await folder();
+  assert.deepEqual([refused[0], refused[2]], ['git_failed', false], 'the system kept Git out of the folder');
+  assert.match(refused[1], /Operation not permitted$/);
+  assert.ok(!refused[1].includes('/synthetic/Documents'), 'the summary carries no local path');
+  restore();
+
+  restore = gitWrites('', Object.assign(new Error('synthetic'), { killed: true, signal: 'SIGTERM' }));
+  assert.deepEqual(await folder(), ['git_failed', 'git_timeout', true], 'Git did not answer in time');
+  restore();
+
+  // Git's own answer, in any position of what it wrote, is still "no repository"; a message that only resembles it is not.
+  restore = gitWrites('warning: synthetic\nfatal: not a git repository (or any of the parent directories): .git\n');
+  assert.deepEqual(await folder(), ['no_repository', null, null]);
+  restore();
+  restore = gitWrites('fatal: this operation must be run in a work tree\n');
+  assert.deepEqual((await folder()).slice(0, 1), ['git_failed']);
+});
+
+test('Git is asked for its messages in English whatever the computer\'s language, so "no repository" is recognised', async (t) => {
+  const owner = ownerRepository(t);
+  const plain = join(owner.root, 'plain-folder-language');
+  mkdirSync(plain, { recursive: true });
+  const before = { LC_ALL: process.env.LC_ALL, LANG: process.env.LANG, LANGUAGE: process.env.LANGUAGE };
+  Object.assign(process.env, { LC_ALL: 'zh_CN.UTF-8', LANG: 'zh_CN.UTF-8', LANGUAGE: 'zh_CN' });
+  t.after(() => { for (const [key, value] of Object.entries(before)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  const error = await repositoryRoot({ folder: plain, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
+  assert.deepEqual([error.code, error.notRepository], ['git_failed', true]);
+  assert.match(error.summary, /^fatal: not a git repository/);
 });
