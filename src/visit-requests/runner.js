@@ -43,7 +43,10 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
   // project's own name (which is how FULI maps such a folder to the project)
   // stands for that checkout, whether the workspace is in no repository or in
   // one that is not the project's; FULI looks nowhere else below it. Without
-  // such a checkout a folder inside any repository is used, as before.
+  // such a checkout a folder inside any repository is used, as before. Where
+  // that checkout is a repository FULI does not take for the project's, the
+  // request ends folder_not_this_project rather than no_repository, so both
+  // computers can tell which of the two to put right.
   async function folder(request) {
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
@@ -51,13 +54,15 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     const top = await repositoryTop(found);
     if (top && await mapped(top)) return found;
     const checkout = join(found, request.projectId);
-    if (dirname(checkout) === resolve(found) && await mapped(checkout)) {
-      // The checkout's repository must be the project's too, not one further up that merely contains it.
+    let unmapped = false;
+    if (dirname(checkout) === resolve(found)) {
       const own = await repositoryTop(checkout);
-      if (own && await mapped(own)) return checkout;
+      // The checkout's repository must be the project's too, not one further up that merely contains it.
+      if (own && await mapped(checkout) && await mapped(own)) return checkout;
+      unmapped = Boolean(own);
     }
     if (top) return found;
-    throw coded('no_repository');
+    throw coded(unmapped ? 'folder_not_this_project' : 'no_repository');
   }
 
   // The top folder of the repository a folder is in, or null in none; Git that cannot run at all is its own failure.
