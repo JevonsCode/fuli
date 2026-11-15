@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { StringDecoder } from 'node:string_decoder';
 
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
+import { findInLoginShellPath, withLoginShellPath } from './login-shell-path.js';
 import { wakeFailure } from './wake-failure.js';
 
 // Wakes the recipient Agent in its own client, headlessly in the given mode, and
@@ -127,7 +128,8 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     let child;
     // Windows refuses some files at once (EFTYPE); other systems report it as an error event.
     try {
-      child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
+      // The login shell's directories, once learned for a lookup (login-shell-path.js): a client found there starts its own helpers from there too.
+      child = spawn(command, args, { cwd, env: withLoginShellPath(env), shell: false, windowsHide: true,
         detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (error) { reject(startFailure(error)); return; }
     const closed = new Promise((resolve) => child.once('close', resolve));
@@ -253,9 +255,11 @@ async function processGroupExited(pgid, stopped) {
   }
 }
 
+// On FULI's own PATH first; a desktop app's PATH is shorter than the person's shell's, so a command missing there is
+// looked for in the login shell's directories (login-shell-path.js).
 function whichCommand(name, platform) {
   const result = spawnSync(platform === 'win32' ? 'where.exe' : 'which', [name], { encoding: 'utf8', windowsHide: true });
-  if (result.status !== 0) return null;
+  if (result.status !== 0) return platform === 'win32' ? null : findInLoginShellPath(name, { platform });
   // On Windows only real executables can be spawned without a shell.
   return result.stdout.split(/\r?\n/).map((line) => line.trim())
     .find((line) => line && (platform !== 'win32' || /\.exe$/i.test(line))) ?? null;
