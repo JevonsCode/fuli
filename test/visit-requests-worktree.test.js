@@ -548,6 +548,19 @@ test('a workspace folder stands for the project checkout it holds under the proj
   assert.deepEqual(request.files.map((file) => file.path), ['src/server.js']);
 });
 
+test('a checkout FULI does not take for the project ends the request with its own reason, not no_repository', { timeout: 60_000 }, async (t) => {
+  const { root, workspace } = workspaceWithCheckout(t, 'synthetic-project');
+  // The workspace maps to the project; the repository inside it, under the project's name, does not.
+  const f = service(t, { root, repository: workspace }, () => assert.fail('nothing runs'), { mapped: [workspace] });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error, request.reason, request.worktreePath],
+    ['failed', 'folder_not_this_project', 'folder_not_this_project', null]);
+  assert.deepEqual(f.wakes, [], 'no planning wake was spent');
+  assert.deepEqual(f.port.requestStatus({ requester: { key: PEER }, requestId }),
+    { ok: true, requestId, state: 'failed', title: 'Port from settings', reason: 'folder_not_this_project' });
+});
+
 test('a workspace folder is no repository when its checkout has another name or is not mapped to the project', { timeout: 60_000 }, async (t) => {
   const other = workspaceWithCheckout(t, 'another-name');
   const named = service(t, { root: other.root, repository: other.workspace }, () => assert.fail('nothing runs'),
@@ -555,7 +568,7 @@ test('a workspace folder is no repository when its checkout has another name or 
   assert.equal((await reviewed(named.port, named.submit().requestId)).error, 'no_repository');
   const foreign = workspaceWithCheckout(t, 'synthetic-project');
   const unmapped = service(t, { root: foreign.root, repository: foreign.workspace }, () => assert.fail('nothing runs'));
-  assert.equal((await reviewed(unmapped.port, unmapped.submit().requestId)).error, 'no_repository');
+  assert.equal((await reviewed(unmapped.port, unmapped.submit().requestId)).error, 'folder_not_this_project');
   assert.deepEqual([...named.wakes, ...unmapped.wakes], [], 'no planning wake was spent');
 });
 

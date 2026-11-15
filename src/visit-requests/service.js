@@ -57,6 +57,8 @@ const SHOWN_PATH_CHARS = 200;
 const NO_CLIENT = 'no_constrained_client';
 // The project's folder is inside no Git repository, so no worktree could be made: said before any planning wake.
 const NO_REPOSITORY = 'no_repository';
+// The two ways a project folder gives nothing to work in (runner.folder): no repository, or one that is not taken for the project's.
+const NO_PLACE_TO_WORK = new Set([NO_REPOSITORY, 'folder_not_this_project']);
 // A Git step failed; its reason is a summary of Git's own message, for the owner only.
 const GIT_FAILED = 'git_failed';
 const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
@@ -131,9 +133,9 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // The read-only planning pass in the owner's project folder, then the
   // decision the requester's mode makes. Nothing is copied before approval. A
   // lead with no client FULI can run constrained here (no_constrained_client),
-  // or a project folder inside no Git repository (no_repository), ends the
-  // request (failed) before any wake, since nothing could run it; the code is
-  // its reason, which the requester reads too.
+  // or a project folder that gives no place to work (no_repository,
+  // folder_not_this_project), ends the request (failed) before any wake, since
+  // nothing could run it; the code is its reason, which the requester reads too.
   async function planRequest(id) {
     const { signal, finish } = track(id);
     let planned;
@@ -147,7 +149,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
         planned = await runner.plan(records.get(id), { signal, client, lead: await leadOf(request) });
       }
     } catch (error) {
-      if (error.code === NO_REPOSITORY) ended = NO_REPOSITORY;
+      if (NO_PLACE_TO_WORK.has(error.code)) ended = error.code;
       else planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
     } finally { finish(); }
     const decided = store.transaction(() => {
@@ -592,7 +594,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 // being a repository after planning), or the summary of Git's message, cut to
 // a reason's length; otherwise none (the error code says it).
 function failureReason(error) {
-  if (error.code === NO_REPOSITORY) return NO_REPOSITORY;
+  if (NO_PLACE_TO_WORK.has(error.code)) return error.code;
   if (error.code !== GIT_FAILED || typeof error.summary !== 'string') return null;
   return [...error.summary].slice(0, REASON_CHARS).join('') || null;
 }

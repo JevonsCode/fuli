@@ -99,6 +99,23 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       const resolved = app.projectPathResolver(path, await projects());
       return resolved.status === 'matched' ? resolved.personalProjectId : null;
     },
+    // For work that only needs the project's repository (a visit request's worktree), not a
+    // session bound to the project: starting sessions keeps to projectForPath.
+    // Whether a folder is this project's: FULI maps it to the project, or, where
+    // FULI names no single project for it (two projects record one repository,
+    // or the folder's name says another), it is a checkout of a repository the
+    // project records as its own. Addresses are compared without case: the
+    // hosts people use treat owner and repository names that way.
+    async folderBelongsTo(path, projectId) {
+      if (!path || !projectId) return false;
+      if (await this.projectForPath(path) === projectId) return true;
+      const remote = this.folderRepository(path);
+      if (!remote) return false;
+      const project = (await projects()).map(projectView).find(entry => entry.projectId === projectId);
+      // Temporary and archived projects are left out, as the resolver and matchWork leave them out.
+      return Boolean(project && !project.temporary && !project.archived
+        && project.repositories.some(recorded => recorded.toLowerCase() === remote.toLowerCase()));
+    },
     issueDelegation: ({ taskContextToken, client, agentId, targetProjectId = null, targetClient, targetSessionId, lifetimeSeconds }) =>
       app.personal.issueAgentDelegation({ personal_space_id: spaceId(), task_context_token: taskContextToken,
         source_application: client, agent_id: agentId,

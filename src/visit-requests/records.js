@@ -122,7 +122,7 @@ export function createVisitRecords(store) {
 
 // Why a request can fail on this computer before its run starts: nothing the
 // requester did. Such a request is not counted among the requester's of the day.
-const NOT_STARTED_HERE = Object.freeze(['no_repository', 'git_failed', 'no_constrained_client', 'no_working_directory']);
+const NOT_STARTED_HERE = Object.freeze(['no_repository', 'folder_not_this_project', 'git_failed', 'no_constrained_client', 'no_working_directory']);
 
 const COLUMNS = Object.freeze({
   plan: 'plan_json', planError: 'plan_error', review: 'review', holdReason: 'hold_reason', modeAtDecision: 'mode_at_decision',

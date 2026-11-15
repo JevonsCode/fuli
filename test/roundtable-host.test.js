@@ -124,3 +124,39 @@ test('a project whose lead cannot be read is left out of work matches; the other
   assert.deepEqual(await host.matchWork('app'), [{ agentId: 'lead-app', projectId: 'app', project: 'App' }]);
   assert.deepEqual(await host.matchWork('\u0085'), []);
 });
+
+test('a folder belongs to a project FULI maps it to, or whose own recorded repository it is a checkout of', async (t) => {
+  const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'host-folder-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // A checkout whose origin two projects record (FULI then names neither), spelled in another case than they recorded it.
+  const checkout = join(root, 'checkout');
+  mkdirSync(join(checkout, '.git'), { recursive: true });
+  writeFileSync(join(checkout, '.git', 'config'), '[remote "origin"]\n\turl = https://example.test/Team/App.git\n');
+  const plain = join(root, 'plain');
+  mkdirSync(plain);
+  const own = (uri) => ({ sources: [{ kind: 'repository', role: 'own', uri }] });
+  const app = {
+    config: { personal: { spaceId: 'space-1' } },
+    projectPathResolver: path => path === '/work/app' ? { status: 'matched', personalProjectId: 'app' } : { status: 'ambiguous', candidateCount: 2 },
+    personal: { listPersonalProjects: async () => ({ projects: [
+      { project_id: 'app', scope_type: 'registered', profile: { name: 'App', ...own('git@example.test:team/app.git') } },
+      { project_id: 'app-twin', scope_type: 'registered', profile: { name: 'Twin', ...own('https://example.test/team/app') } },
+      { project_id: 'other', scope_type: 'registered', profile: { name: 'Other', ...own('https://example.test/team/other') } },
+      { project_id: 'gone', scope_type: 'registered', profile: { name: 'Gone', lifecycle: 'archived', ...own('https://example.test/team/app') } },
+      { project_id: 'scratch', scope_type: 'temporary', profile: { name: 'Scratch', ...own('https://example.test/team/app') } }] }) }
+  };
+  const host = createFuliRoundtableHost(app);
+  assert.equal(await host.folderBelongsTo('/work/app', 'app'), true, 'the one project FULI maps the folder to');
+  assert.equal(await host.projectForPath(checkout), null, 'two projects record this repository: FULI names neither');
+  assert.equal(await host.folderBelongsTo(checkout, 'app'), true, 'a checkout of the project’s own repository');
+  assert.equal(await host.folderBelongsTo(checkout, 'app-twin'), true);
+  assert.equal(await host.folderBelongsTo(checkout, 'other'), false, 'another project’s repository');
+  assert.equal(await host.folderBelongsTo(checkout, 'gone'), false, 'an archived project');
+  assert.equal(await host.folderBelongsTo(checkout, 'scratch'), false, 'a temporary project');
+  assert.equal(await host.folderBelongsTo(checkout, 'unknown'), false);
+  assert.equal(await host.folderBelongsTo(plain, 'app'), false, 'no repository, and FULI does not map it');
+  assert.equal(await host.folderBelongsTo('', 'app'), false);
+});

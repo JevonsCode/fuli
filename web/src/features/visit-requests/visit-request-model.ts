@@ -62,7 +62,7 @@ const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked',
 const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
   'integrity_unknown'])
 const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported',
-  no_repository: 'noRepository' }
+  no_repository: 'noRepository', folder_not_this_project: 'folderNotThisProject' }
 // A failed Git step's reason: Git's own last line (paths removed on the server), or git_unavailable when Git could not start.
 const GIT_UNAVAILABLE = 'git_unavailable'
 const known = (values: Set<string>, value: string | null) => (value && values.has(value) ? value : 'other')

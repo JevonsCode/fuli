@@ -397,6 +397,7 @@ unfinished or not looked at yet, together with those of the last 24 hours that
 failed after costing a wake; at ten the next is refused. The two planning wakes
 at once and one run of a lead at a time hold for it as for everyone. A
 request that failed on this computer before its run started (`no_repository`,
+`folder_not_this_project`,
 `git_failed`, `no_constrained_client`, `no_working_directory`) is not counted
 among the requester's requests of the day; from a requester that is not fully
 trusted it still counts for the project and the computer. A request over any of them is refused in the
