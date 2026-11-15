@@ -1,0 +1,11 @@
+{
+  "version": "0.27.9",
+  "zh": [
+    "设置页默认用「左侧分类」布局；喜欢顶部标签的，开关还在原地，选了就记着。",
+    "另一台电脑派来的活，现在认得项目自己仓库的检出；认不出时会说清是哪种认不出。"
+  ],
+  "en": [
+    "Settings opens with the topics on the left; the switch to tabs on top is where it was.",
+    "Work sent from another computer now finds the project's own repository, or says why it cannot."
+  ]
+}
