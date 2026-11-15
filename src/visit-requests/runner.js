@@ -1,11 +1,11 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 import { z } from 'zod';
 
 import { parseModelJson } from '../text/model-json.js';
 import { withoutControls } from '../text/control-characters.js';
-import { branchChanges, commitVisitWorktree, createVisitWorktree, GIT_UNAVAILABLE, inspectVisitWorktree, integritySnapshot,
+import { branchChanges, commitVisitWorktree, createVisitWorktree, inspectVisitWorktree, integritySnapshot,
   plannedVisitWorktree, removeVisitWorktree, repositoryRoot } from './worktree.js';
 
 // The two runs of a visit request on this computer, both plain constrained
@@ -51,11 +51,13 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
     const mapped = (candidate) => Promise.resolve().then(() => verifyFolder(candidate, request.projectId)).catch(() => false);
+    // A folder that is gone gives no place to work, as before; Git is not asked about it.
+    if (!await present(found)) throw coded('no_repository');
     const top = await repositoryTop(found);
     if (top && await mapped(top)) return found;
     const checkout = join(found, request.projectId);
     let unmapped = false;
-    if (dirname(checkout) === resolve(found)) {
+    if (dirname(checkout) === resolve(found) && await present(checkout)) {
       const own = await repositoryTop(checkout);
       // The checkout's repository must be the project's too, not one further up that merely contains it.
       if (own && await mapped(checkout) && await mapped(own)) return checkout;
@@ -65,10 +67,15 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     throw coded(unmapped ? 'folder_not_this_project' : 'no_repository');
   }
 
-  // The top folder of the repository a folder is in, or null in none; Git that cannot run at all is its own failure.
+  // Whether a folder is at a path (a file is not one); a path that cannot be looked at counts as there, so Git says why.
+  const present = (path) => stat(path).then((stats) => stats.isDirectory(), (error) => !['ENOENT', 'ENOTDIR'].includes(error.code));
+
+  // The top folder of the repository a folder is in, or null when Git says it is in none. Any other failure is
+  // its own (git_failed), never "no repository": Git that cannot run, did not answer in time, or was refused
+  // the folder (a folder the system keeps from this program, for one).
   const repositoryTop = (candidate) => repositoryRoot({ folder: candidate, root }).catch((error) => {
-    if (error.summary === GIT_UNAVAILABLE) throw error;
-    return null;
+    if (error.notRepository) return null;
+    throw error;
   });
 
   // Where the worktree and branch will be, recorded before they are made.

@@ -156,6 +156,8 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // or a project folder that gives no place to work (no_repository,
   // folder_not_this_project), ends the request (failed) before any wake, since
   // nothing could run it; the code is its reason, which the requester reads too.
+  // So does a Git that failed, or did not answer, when the folder was looked
+  // at (git_failed): its reason is for the owner only, as for a failed run.
   async function planRequest(id) {
     const { signal, finish } = track(id);
     let planned;
@@ -163,14 +165,19 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     try {
       const request = records.get(id);
       const [client] = await leads.constrainedClients({ agentId: request.agentId }).catch(() => []);
-      if (!client) ended = NO_CLIENT;
+      if (!client) ended = { error: NO_CLIENT, reason: NO_CLIENT };
       else {
-        records.update(id, { projectFolder: await runner.folder(request) }, at());
-        planned = await runner.plan(records.get(id), { signal, client, lead: await leadOf(request) });
+        const folder = await runner.folder(request).catch((error) => {
+          if (NO_PLACE_TO_WORK.has(error.code) || error.code === GIT_FAILED) ended = { error: error.code, reason: failureReason(error) };
+          else throw error;
+        });
+        if (!ended) {
+          records.update(id, { projectFolder: folder }, at());
+          planned = await runner.plan(records.get(id), { signal, client, lead: await leadOf(request) });
+        }
       }
     } catch (error) {
-      if (NO_PLACE_TO_WORK.has(error.code)) ended = error.code;
-      else planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
+      planned = { plan: null, error: error.code ?? 'planning_failed', ms: 0 };
     } finally { finish(); }
     const decided = store.transaction(() => {
       const current = records.get(id);
@@ -178,8 +185,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
       if (current && current.state !== 'planning' && planned?.ms) records.update(id, { planningMs: planned.ms }, at());
       if (current?.state !== 'planning') return current;
       if (ended) {
-        return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: { error: ended, reason: ended },
-          note: ended, at: at() });
+        return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: ended, note: ended.error, at: at() });
       }
       records.update(id, { plan: planned.plan, planError: planned.error, planningMs: planned.ms }, at());
       return decide(records.get(id));

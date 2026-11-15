@@ -41,6 +41,8 @@ const NO_FILE = '/dev/null';
 const SNAPSHOT_STEP_MS = 60_000;
 // A failed Git step's summary when Git itself could not be started (not installed, not on PATH).
 export const GIT_UNAVAILABLE = 'git_unavailable';
+// A failed Git step's summary when Git was stopped at its time limit without having answered.
+export const GIT_TIMED_OUT = 'git_timeout';
 
 // Where a request's worktree and branch will be, recorded before they are made
 // so a restart in between still finds and tidies both.
@@ -353,19 +355,29 @@ function git(cwd, args, root, timeoutMs = 0) {
 // pager or editor; no system or global configuration; none of the caller's
 // GIT_ variables; never a prompt.
 // timeoutMs: optional; past it the call is stopped and throws.
-// A failure throws git_failed with Git's stderr and its summary (gitSummary).
+// A failure throws git_failed with Git's stderr and its summary (gitSummary), timedOut when it was the time
+// limit, and notRepository when Git itself said the folder is in no repository. Git's messages are asked for
+// in English (LC_ALL=C), so that answer is told from every other failure whatever the computer's language.
 function gitCall(args, { cwd, root, timeoutMs = 0 }) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_') && key !== 'LANGUAGE'));
   const hardened = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'submodule.recurse=false',
     '-c', `core.hooksPath=${NO_FILE}`, '-c', 'protocol.file.allow=never', '-c', 'diff.external=',
     '-c', 'core.editor=false', '-c', 'safe.directory=*'];
   return new Promise((done, reject) => execFile('git', [...hardened, ...args],
     { cwd: existsSync(cwd) ? cwd : root, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: NO_FILE,
-      GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
-    (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
-      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr),
-        timedOut: Boolean(timeoutMs && error.killed && error.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') })) : done(stdout))));
+      GIT_PAGER: 'cat', GIT_EDITOR: 'false', LC_ALL: 'C' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
+    (error, stdout, stderr) => {
+      if (!error) return done(stdout);
+      const timedOut = Boolean(timeoutMs && error.killed && error.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER');
+      return reject(Object.assign(new Error('A Git step of the visit request failed'),
+        { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: timedOut ? GIT_TIMED_OUT : gitSummary(error, stderr),
+          timedOut, notRepository: !timedOut && NOT_A_REPOSITORY.test(String(stderr)) }));
+    }));
 }
+
+// Git's own answer that a folder is in no repository, or in one without a work tree (a bare repository, or
+// inside its .git), where no worktree can be made either (messages in English, see gitCall).
+const NOT_A_REPOSITORY = /^fatal: (not a git repository|this operation must be run in a work tree)/m;
 
 // What the owner may read of a failed Git step: Git's last non-empty line,
 // without local paths or control characters; git_unavailable when Git could
