@@ -738,7 +738,7 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  describe('two layouts to compare', () => {
+  describe('two layouts to switch between', () => {
     // jsdom has no matchMedia: a test says whether the window is wide enough for the topics on the left.
     function windowWide(wide: boolean) {
       vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: wide && query === '(min-width: 861px)', media: query,
@@ -760,51 +760,60 @@ describe('SettingsPage', () => {
     const outlineLabels = (wrapper: VueWrapper) => wrapper.findAll('[data-settings-outline-item]').map(item => item.text())
     const pressedLayout = (wrapper: VueWrapper) => wrapper.get('[data-settings-layout] [aria-pressed="true"]').attributes('data-value')
 
-    it('opens with the tabs on top, and keeps the topics on the left once the person picks them', async () => {
+    it('opens with the topics on the left, and keeps the tabs on top once the person picks them', async () => {
       windowWide(true)
+      window.localStorage.removeItem('fuli.settings.layout')
       const first = await mountSettings()
-      expect(first.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
-      expect(first.find('[data-settings-side]').exists()).toBe(false)
-      expect(pressedLayout(first)).toBe('tabs')
-      await first.get('[data-settings-layout] [data-value="side"]').trigger('click')
-      await flushPromises()
       expect(first.find('[data-settings-side]').exists()).toBe(true)
       expect(first.find('[data-settings-tab-trigger]').exists()).toBe(false)
       expect(first.get('[data-settings-topic="recording"]').attributes('aria-current')).toBe('true')
+      expect(pressedLayout(first)).toBe('side')
+      await first.get('[data-settings-layout] [data-value="tabs"]').trigger('click')
+      await flushPromises()
+      expect(first.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
+      expect(first.find('[data-settings-side]').exists()).toBe(false)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('tabs')
       first.unmount()
 
       const again = await mountSettings()
+      expect(again.find('[data-settings-side]').exists()).toBe(false)
+      expect(pressedLayout(again)).toBe('tabs')
+      // Back to the default: nothing is kept, so a later change of the default reaches this person.
+      await again.get('[data-settings-layout] [data-value="side"]').trigger('click')
+      await flushPromises()
       expect(again.find('[data-settings-side]').exists()).toBe(true)
-      expect(pressedLayout(again)).toBe('side')
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
       again.unmount()
     })
 
     it('opens a ?layout= link in that layout for the visit without keeping it', async () => {
       windowWide(true)
-      const side = await mountSettings('/settings?layout=side')
-      expect(side.find('[data-settings-side]').exists()).toBe(true)
-      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
-      side.unmount()
-      window.localStorage.setItem('fuli.settings.layout', 'side')
+      window.localStorage.removeItem('fuli.settings.layout')
       const tabs = await mountSettings('/settings?layout=tabs')
       expect(tabs.find('[data-settings-side]').exists()).toBe(false)
-      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('side')
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
       tabs.unmount()
+      window.localStorage.setItem('fuli.settings.layout', 'tabs')
+      const side = await mountSettings('/settings?layout=side')
+      expect(side.find('[data-settings-side]').exists()).toBe(true)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('tabs')
+      side.unmount()
+      window.localStorage.removeItem('fuli.settings.layout')
     })
 
     it('follows the ?layout= in the address while the page stays open', async () => {
       windowWide(true)
       window.localStorage.removeItem('fuli.settings.layout')
       const router = settingsRouter()
-      const wrapper = await mountSettings('/settings?layout=side', router)
-      expect(wrapper.find('[data-settings-side]').exists()).toBe(true)
-      // A link without ?layout= (or Back after the switch removed it) returns to the stored choice.
+      const wrapper = await mountSettings('/settings?layout=tabs', router)
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      // A link without ?layout= (or Back after the switch removed it) returns to the kept choice, here the default.
       await router.push('/settings')
       await flushPromises()
-      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
-      await router.push('/settings?layout=side')
-      await flushPromises()
       expect(wrapper.find('[data-settings-side]').exists()).toBe(true)
+      await router.push('/settings?layout=tabs')
+      await flushPromises()
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -879,9 +888,9 @@ describe('SettingsPage', () => {
       wrapper.unmount()
     })
 
-    it('shows the tabs on top in a narrow window, even when the topics on the left were chosen', async () => {
+    it('shows the tabs on top in a narrow window, though the topics on the left are the default', async () => {
       windowWide(false)
-      window.localStorage.setItem('fuli.settings.layout', 'side')
+      window.localStorage.removeItem('fuli.settings.layout')
       const wrapper = await mountSettings()
       expect(wrapper.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
       expect(wrapper.find('[data-settings-side]').exists()).toBe(false)

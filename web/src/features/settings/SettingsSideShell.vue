@@ -6,7 +6,7 @@ import { t } from '@/i18n'
 import { useSettingsOutline } from './settings-outline'
 import { SETTINGS_TABS, type SettingsTab } from './settings-tabs'
 
-// Layout B, 「左侧分类」: a fixed column on the left (the search, the topics
+// Layout B, 「左侧分类」 (the default): a fixed column on the left (the search, the topics
 // with the open topic's cards under it, the layout switch at its foot) and the
 // open topic's cards on the right, the only part that scrolls (Jevons 11-13:
 // two halves only when one is fixed). The page passes the search, the switch

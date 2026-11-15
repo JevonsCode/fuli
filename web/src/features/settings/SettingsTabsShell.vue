@@ -3,7 +3,7 @@ import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { t } from '@/i18n'
 import { SETTINGS_TABS } from './settings-tabs'
 
-// Layout A, 「顶部标签」 (the default): the topics as tabs across the top, the
+// Layout A, 「顶部标签」 (also what a narrow window shows): the topics as tabs across the top, the
 // search and the layout switch at the row's right end, the page scrolling as a
 // whole. The page (SettingsPage.vue) passes the search, the switch and the
 // topics' panels; this shell only places them.
