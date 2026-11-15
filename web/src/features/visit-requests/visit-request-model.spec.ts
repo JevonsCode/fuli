@@ -73,7 +73,7 @@ describe('a visit request in plain words', () => {
     expect(endingText(visitRequest({ state: 'cancelled', reason: 'some_new_code' }))).toBe('这件请求取消了。')
     expect(endingText(visitRequest({ state: 'cancelled', reason: 'withdrawn_by_requester' }))).toBe('对方撤回了这件请求，它的副本和分支已删除。')
     expect(endingText(visitRequest({ state: 'failed', error: 'git_failed', reason: 'git_timeout' })))
-      .toBe('Git 在项目文件夹里迟迟没有回应，这件活没法做。看看这个文件夹现在打不打得开。')
+      .toBe('Git 在项目文件夹里迟迟没有回应，这件活没法做。在 Mac 上，FULI 更新后系统常要你重新允许它访问这个文件夹。')
     expect(endingText(visitRequest({ state: 'failed', error: 'no_constrained_client', reason: 'no_constrained_client' })))
       .toBe('这台电脑上没有能安全执行这类活的客户端（现在只用 Claude Code）。')
     expect(endingText(visitRequest({ state: 'failed', error: 'restricted_mode_unsupported' })))
