@@ -180,7 +180,7 @@ test('the requester takes its own request back across devices; the owner\'s reco
 
     const withdrawn = await visit(alpha.app, { address, action: 'request_withdraw', requestId });
     assert.deepEqual([withdrawn.ok, withdrawn.remote], [true, { requestId, state: 'cancelled' }], JSON.stringify(withdrawn));
-    assert.match(withdrawn.guidance, /worktree and branch are removed/);
+    assert.match(withdrawn.guidance, /worktree and branch made for it are removed/);
     // Taking a request back is signed for the same purpose as making one: a project lead's task only.
     assert.equal(alpha.calls.origins.at(-1).purpose, 'request');
     await until(async () => removed.length === 1);

@@ -953,10 +953,12 @@ test('requests taken back count toward the stop of ten of a fully trusted reques
   // A planning pass that goes on until it is stopped, as a withdrawal stops it.
   let planning = 0;
   const quickPlan = f.runner.plan;
-  const stoppedPlan = { plan: null, error: 'cancelled', ms: 40 };
+  // Stopped at once it cost nothing measurable (0 ms); the last one cost 40 ms.
+  let stoppedMs = 0;
+  const stoppedPlan = () => ({ plan: null, error: 'cancelled', ms: stoppedMs });
   f.runner.plan = (request, options) => (planning-- > 0
-    ? new Promise((resolve) => (options.signal.aborted ? resolve(stoppedPlan)
-      : options.signal.addEventListener('abort', () => resolve(stoppedPlan))))
+    ? new Promise((resolve) => (options.signal.aborted ? resolve(stoppedPlan())
+      : options.signal.addEventListener('abort', () => resolve(stoppedPlan()))))
     : quickPlan(request, options));
   f.setMode('trusted');
   for (let index = 1; index <= 5; index += 1) {
@@ -966,12 +968,14 @@ test('requests taken back count toward the stop of ten of a fully trusted reques
   }
   for (let index = 6; index <= 10; index += 1) {
     planning = 1;
+    stoppedMs = index === 10 ? 40 : 0;
     assert.equal(f.submit().ok, true, `request ${index}`);
     assert.equal(await f.state(`request-${index}`), 'planning');
     assert.equal((await withdraw(f, `request-${index}`)).ok, true, 'taken back while it is being planned');
   }
-  // The planning wake that was stopped is still counted as spent time.
+  // The planning wake that was stopped is still counted as spent time; one that cost nothing counts as taken back all the same.
   await settled(async () => (await f.port.requests.card('request-10')).request.planningMs === 40);
+  assert.equal((await f.port.requests.card('request-9')).request.planningMs, 0);
   assert.equal(f.runner.calls.ran.length, 5, 'none of the five taken back during planning ran');
   assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'asking and withdrawing in a loop stops at ten');
 });

@@ -33,7 +33,7 @@ const VISIT_GUIDANCE = 'You are this project\'s visiting assistant, running on y
 const REQUEST_GUIDANCE = 'The owner of that computer decides whether and when it runs, there, in an isolated branch that is never merged or pushed. '
   + 'Check it later with action "request_status" and this requestId; once the owner keeps the branch you get a summary, the branch name, the changed files and counts, never the patch. '
   + 'Action "request_withdraw" takes it back before its run starts, or once you were shown its ready result.';
-const WITHDRAW_GUIDANCE = 'The request is cancelled there, and its worktree and branch are removed. Send a new request if the work is still wanted.';
+const WITHDRAW_GUIDANCE = 'The request is cancelled there; a worktree and branch made for it are removed. Send a new request if the work is still wanted.';
 const ACTION_GUIDANCE = Object.freeze({ card: VISIT_GUIDANCE, request: REQUEST_GUIDANCE, request_withdraw: WITHDRAW_GUIDANCE });
 const WITHDRAW_OLD_CODES = new Set(['invalid_query', 'invalid_message']);
 
