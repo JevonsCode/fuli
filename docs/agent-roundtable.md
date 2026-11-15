@@ -411,7 +411,8 @@ unfinished or not looked at yet, together with those of the last 24 hours that
 failed after costing a wake or were taken back by the requester; at ten the
 next is refused. The two planning wakes
 at once and one run of a lead at a time hold for it as for everyone. When the project folder is looked at before
-planning, only Git's own answer that the folder is in no repository ends the request
+planning, only a folder that is gone, or Git's own answer that the folder is in no repository
+(or in one without a work tree), ends the request
 `no_repository`; a Git that failed, was refused the folder by the system or did not answer
 in time ends it `git_failed`, with the cause (`git_timeout`, or Git's last line without
 paths) for the owner only. A

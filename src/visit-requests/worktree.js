@@ -375,8 +375,9 @@ function gitCall(args, { cwd, root, timeoutMs = 0 }) {
     }));
 }
 
-// Git's own answer that a folder is in no repository (messages in English, see gitCall).
-const NOT_A_REPOSITORY = /^fatal: not a git repository/m;
+// Git's own answer that a folder is in no repository, or in one without a work tree (a bare repository, or
+// inside its .git), where no worktree can be made either (messages in English, see gitCall).
+const NOT_A_REPOSITORY = /^fatal: (not a git repository|this operation must be run in a work tree)/m;
 
 // What the owner may read of a failed Git step: Git's last non-empty line,
 // without local paths or control characters; git_unavailable when Git could

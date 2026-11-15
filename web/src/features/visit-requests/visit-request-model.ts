@@ -61,8 +61,9 @@ const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded
 const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only', 'withdrawn_by_requester'])
 const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
   'integrity_unknown'])
+// git_failed: only when Git left no line to show (with one, failedText shows it).
 const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported',
-  no_repository: 'noRepository', folder_not_this_project: 'folderNotThisProject' }
+  no_repository: 'noRepository', folder_not_this_project: 'folderNotThisProject', git_failed: 'gitFailedSilent' }
 // A failed Git step's reason: Git's own last line (paths removed on the server), or git_unavailable when Git could not start.
 const GIT_UNAVAILABLE = 'git_unavailable'
 // Git was stopped at its time limit without an answer.

@@ -1,4 +1,4 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 import { z } from 'zod';
@@ -51,6 +51,8 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     const found = request.projectFolder ?? await projectFolder({ agentId: request.agentId, projectId: request.projectId });
     if (!found || !await verifyFolder(found, request.projectId)) throw coded('no_working_directory');
     const mapped = (candidate) => Promise.resolve().then(() => verifyFolder(candidate, request.projectId)).catch(() => false);
+    // A folder that is gone gives no place to work, as before; Git is not asked about it.
+    if (!await present(found)) throw coded('no_repository');
     const top = await repositoryTop(found);
     if (top && await mapped(top)) return found;
     const checkout = join(found, request.projectId);
@@ -65,8 +67,8 @@ export function createVisitRunner({ runClient, projectFolder, verifyFolder, root
     throw coded(unmapped ? 'folder_not_this_project' : 'no_repository');
   }
 
-  // Whether something is at a path; a path that cannot be looked at counts as there, so Git says why.
-  const present = (path) => lstat(path).then(() => true, (error) => !['ENOENT', 'ENOTDIR'].includes(error.code));
+  // Whether a folder is at a path (a file is not one); a path that cannot be looked at counts as there, so Git says why.
+  const present = (path) => stat(path).then((stats) => stats.isDirectory(), (error) => !['ENOENT', 'ENOTDIR'].includes(error.code));
 
   // The top folder of the repository a folder is in, or null when Git says it is in none. Any other failure is
   // its own (git_failed), never "no repository": Git that cannot run, did not answer in time, or was refused

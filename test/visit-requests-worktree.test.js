@@ -730,9 +730,9 @@ test('every Git step of a removal has a time limit: one that does not answer fai
 });
 
 // Git's process stood in for, failing with what Git wrote; answers the restore.
-function gitWrites(stderr, error = Object.assign(new Error('synthetic'), { killed: false, code: 128 })) {
+function gitWrites(stderr, error = Object.assign(new Error('synthetic'), { killed: false, code: 128 }), seen = []) {
   const original = childProcess.execFile;
-  childProcess.execFile = (file, args, options, done) => { setImmediate(() => done(error, '', stderr)); return {}; };
+  childProcess.execFile = (file, args, options, done) => { seen.push(options.env); setImmediate(() => done(error, '', stderr)); return {}; };
   syncBuiltinESMExports();
   return () => { childProcess.execFile = original; syncBuiltinESMExports(); };
 }
@@ -761,8 +761,42 @@ test('a project folder Git cannot read, or does not answer in, is a Git failure 
   restore = gitWrites('warning: synthetic\nfatal: not a git repository (or any of the parent directories): .git\n');
   assert.deepEqual(await folder(), ['no_repository', null, null]);
   restore();
+  // A bare repository, or a folder inside .git, holds no work tree to copy: no place to work, as before.
   restore = gitWrites('fatal: this operation must be run in a work tree\n');
-  assert.deepEqual((await folder()).slice(0, 1), ['git_failed']);
+  assert.deepEqual(await folder(), ['no_repository', null, null]);
+  restore();
+  // Any other message of Git's is its own failure.
+  restore = gitWrites('fatal: unable to read tree (synthetic)\n');
+  assert.deepEqual((await folder()).slice(0, 2), ['git_failed', 'fatal: unable to read tree (synthetic)']);
+});
+
+test('a project folder that is gone, and a file where the checkout would be, give no place to work without asking Git', async (t) => {
+  const owner = ownerRepository(t);
+  const workspace = join(owner.root, 'workspace-with-file');
+  mkdirSync(workspace, { recursive: true });
+  writeFileSync(join(workspace, 'synthetic-project'), 'not a folder');
+  const asked = [];
+  const runnerFor = (folder) => createVisitRunner({ runClient: async () => ({}), projectFolder: async () => folder, verifyFolder: async () => true,
+    root: visitRoot(owner.root) });
+  const request = { id: 'synthetic-request', projectId: 'synthetic-project', agentId: 'synthetic-lead', projectFolder: null };
+  const ended = (folder) => runnerFor(folder).folder(request).then((found) => ['found', found], (failure) => [failure.code]);
+  // The workspace is in no repository and the "checkout" is a file: real Git says so about the workspace, and is not asked about the file.
+  assert.deepEqual(await ended(workspace), ['no_repository']);
+  const restore = gitWrites('fatal: synthetic, must not be asked\n', undefined, asked);
+  t.after(() => restore());
+  assert.deepEqual(await ended(join(owner.root, 'moved-away')), ['no_repository']);
+  assert.equal(asked.length, 0, 'Git was not asked about a folder that is not there');
+});
+
+test('every Git call gets English messages: LC_ALL is C and LANGUAGE is not passed on', async (t) => {
+  const owner = ownerRepository(t);
+  const before = { LC_ALL: process.env.LC_ALL, LANGUAGE: process.env.LANGUAGE };
+  Object.assign(process.env, { LC_ALL: 'zh_CN.UTF-8', LANGUAGE: 'zh_CN' });
+  const seen = [];
+  const restore = gitWrites('fatal: synthetic\n', undefined, seen);
+  t.after(() => { restore(); for (const [key, value] of Object.entries(before)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  await repositoryRoot({ folder: owner.repository, root: visitRoot(owner.root) }).catch(() => {});
+  assert.deepEqual([seen.length, seen[0].LC_ALL, 'LANGUAGE' in seen[0]], [1, 'C', false]);
 });
 
 test('Git is asked for its messages in English whatever the computer\'s language, so "no repository" is recognised', async (t) => {
