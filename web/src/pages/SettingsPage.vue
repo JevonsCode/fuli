@@ -66,8 +66,8 @@ watch(activeTab, tab => {
   const { tab: _previous, ...query } = route.query
   void router.replace({ query: tab === DEFAULT_SETTINGS_TAB ? query : { ...query, tab } })
 })
-// Two layouts of the same topics to compare (11-13): tabs on top, or the topics
-// in a fixed column on the left. Both shells take the same search, switch and
+// Two layouts of the same topics, for the person to switch between: the topics
+// in a fixed column on the left (the default), or tabs on top. Both shells take the same search, switch and
 // panels below, so the content, search, autosave and links are written once.
 const layout = useSettingsLayout(() => route.query.layout)
 const layoutOptions = computed(() => SETTINGS_LAYOUTS.map(value => ({ value, label: t(`settings.layout.${value}`) })))
