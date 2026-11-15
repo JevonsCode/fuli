@@ -88,6 +88,12 @@ test('a failed visit says what to do, in words the asking computer chose by the 
   assert.match(failed('query_timeout').guidance, /later/);
   for (const code of ['rate_limited_short', 'project_rate_limited_day']) assert.match(failed(code).guidance, /Wait/, code);
   assert.equal(Object.hasOwn(failed('query_refused'), 'guidance'), false);
+  // A computer from before withdrawals refuses the action it does not know; any other action keeps its own guidance.
+  const withdrawal = (code) => visitView({ address: 'peer:0000000000000000:binding', device: 'Synthetic desk', action: 'request_withdraw',
+    answer: { ok: false, code } });
+  assert.match(withdrawal('invalid_query').guidance, /before withdrawals/);
+  assert.match(withdrawal('request_not_withdrawable').guidance, /only the owner decides/);
+  assert.equal(Object.hasOwn(failed('invalid_query'), 'guidance'), false);
   const found = visitView({ address: 'peer:0000000000000000:binding', device: 'Synthetic desk', action: 'search',
     answer: { ok: true, remote: { truncated: false, results: [] } } });
   assert.equal(Object.hasOwn(found, 'guidance'), false);

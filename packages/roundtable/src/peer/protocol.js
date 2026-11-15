@@ -190,7 +190,7 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
 }
 
 const QUERY_FIELDS = ['protocol', 'messageId', 'from', 'to', 'query', 'issuedAt', 'expiresAt', 'origin'];
-const QUERY_ACTIONS = new Set(['card', 'search', 'request', 'request_status']);
+const QUERY_ACTIONS = new Set(['card', 'search', 'request', 'request_status', 'request_withdraw']);
 // Named by the plan for a later slice; refused by name until it exists.
 const LATER_QUERY_ACTIONS = new Set(['progress']);
 // A visit request (seconding C): the requester's own draft of the work.
@@ -239,6 +239,9 @@ export function validateQuery(assertion, { now = Date.now() } = {}) {
   }
   if (query.action === 'request_status' && (!exactKeys(query, ['action', 'requestId']) || !isOpaqueId(query.requestId))) {
     fail('A request status names one request id');
+  }
+  if (query.action === 'request_withdraw' && (!exactKeys(query, ['action', 'requestId']) || !isOpaqueId(query.requestId))) {
+    fail('A withdrawal names one request id');
   }
   checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.queryTtlSeconds, fail });
   return assertion;

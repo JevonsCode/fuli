@@ -22,6 +22,7 @@ import { createVisitRecords } from './records.js';
 //   approved → running → awaiting_review(ready | held) | failed | cancelled | unknown (lost to a restart)
 //   awaiting_review → kept (branch stays) | discarded (worktree and branch removed)
 //                   | ─14 days unreviewed→ expired (worktree removed, branch kept)
+//   unfinished, or a ready result its requester was shown ─the requester withdraws→ cancelled (worktree and branch removed)
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRY_MS = 7 * DAY_MS;
 const REVIEW_EXPIRY_MS = 14 * DAY_MS;
@@ -59,6 +60,8 @@ const NO_CLIENT = 'no_constrained_client';
 const NO_REPOSITORY = 'no_repository';
 // The two ways a project folder gives nothing to work in (runner.folder): no repository, or one that is not taken for the project's.
 const NO_PLACE_TO_WORK = new Set([NO_REPOSITORY, 'folder_not_this_project']);
+// The requester took its own request back (requesterWithdraw): the reason of the cancelled request, on both computers.
+const WITHDRAWN = 'withdrawn_by_requester';
 // A Git step failed; its reason is a summary of Git's own message, for the owner only.
 const GIT_FAILED = 'git_failed';
 const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cancelled', 'failed', 'unknown']);
@@ -441,6 +444,37 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     return { ...moved, ...(warning ? { warning } : {}) };
   }
 
+  // ---- the requester takes its own request back ----
+
+  // Only the requester that made it, and only what that requester can see as
+  // its own to end: a request that has not finished (a running one is stopped,
+  // as the owner's cancel stops it), or a ready result it has been shown
+  // (shownReady: a fully trusted computer's, not held). The worktree and the
+  // branch go, the request ends cancelled with the reason withdrawn_by_requester
+  // and its event says who did it. A held result, a result the requester was
+  // not shown and anything already kept, discarded or ended stay the owner's:
+  // request_not_withdrawable, so a withdrawal never removes what a check held
+  // back for the owner to look at. Answers at once; the stop and the removal
+  // follow in the background, noted on the request's history when they leave
+  // anything behind.
+  function requesterWithdraw({ requesterKey, requestId }) {
+    const outcome = store.transaction(() => {
+      const request = typeof requestId === 'string' ? records.get(requestId) : null;
+      if (!request || request.requesterKey !== requesterKey) return { code: 'request_not_found' };
+      if (!(records.OPEN_STATES.includes(request.state) || shownReady(request))) return { code: 'request_not_withdrawable' };
+      const moved = records.move(request.id, { from: request.state, to: 'cancelled', by: 'requester', fields: { reason: WITHDRAWN },
+        note: WITHDRAWN, at: at() });
+      return moved ? { request: moved } : { code: 'request_not_withdrawable' };
+    });
+    if (outcome.code) return refused(outcome.code);
+    background(stopped(outcome.request.id).then(() => tidy(records.get(outcome.request.id))));
+    return { ok: true, requestId: outcome.request.id, state: outcome.request.state };
+  }
+
+  // A result its requester reads as ready: approved by the trusted rule and not held.
+  const shownReady = (request) => request.state === 'awaiting_review' && request.review !== 'held'
+    && request.modeAtDecision === 'trusted' && request.decidedBy === 'rule';
+
   // ---- a requester's mode, trust and shares ----
 
   // Inside the port's transaction that changes the mode (port.setRequesterMode):
@@ -506,8 +540,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     const request = typeof requestId === 'string' ? records.get(requestId) : null;
     if (!request || request.requesterKey !== requesterKey) return refused('request_not_found');
     const held = request.review === 'held';
-    const trustedReady = request.state === 'awaiting_review' && !held && request.modeAtDecision === 'trusted'
-      && request.decidedBy === 'rule';
+    const trustedReady = shownReady(request);
     // A result waiting for the owner, held or not, reads like any request waiting for the owner.
     const shown = { ok: true, requestId: request.id,
       state: request.state === 'awaiting_review' && !trustedReady ? 'awaiting_owner' : request.state, title: request.title,
@@ -586,7 +619,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     await Promise.allSettled([...work]);
   }
 
-  return { submit, requesterStatus, list, card, approve, decline, cancel, keep, discard, modeChanged, settle,
+  return { submit, requesterStatus, requesterWithdraw, list, card, approve, decline, cancel, keep, discard, modeChanged, settle,
     requesterRevoked, sharesChanged, resume, close };
 }
 

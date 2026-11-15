@@ -239,7 +239,9 @@ const BASELINE = Object.freeze({
   // Seconding C: visit_shared_lead gains request (a bounded draft) and request_status (requestId):
   // 191,533 -> 192,058 B (+525 B), measured. Chat is unchanged.
   // Both together: 192,212 B.
-  fullToolSchemaBytes: 192212,
+  // visit_shared_lead gains request_withdraw (the requester takes its own request back, by requestId):
+  // 192,212 -> 192,290 B (+78 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 192290,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

@@ -58,7 +58,7 @@ export function planErrorText(code: string) {
 
 // The reasons and codes the server names; any other falls back to a generic sentence, never the bare code.
 const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded', 'computer_budget_exceeded', 'planning_busy'])
-const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only'])
+const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only', 'withdrawn_by_requester'])
 const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
   'integrity_unknown'])
 const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported',

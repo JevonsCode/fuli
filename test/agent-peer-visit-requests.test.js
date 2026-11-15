@@ -135,7 +135,8 @@ test('a request is checked before it leaves: a draft past its bounds or a status
   try {
     const address = `peer:${'0'.repeat(64)}:binding-1`;
     for (const input of [{ action: 'request' }, { action: 'request', request: { title: 'x'.repeat(161), what: 'y' } },
-      { action: 'request', request: { title: 'x', what: 'y', expectedAreas: Array(11).fill('a') } }, { action: 'request_status' }]) {
+      { action: 'request', request: { title: 'x', what: 'y', expectedAreas: Array(11).fill('a') } }, { action: 'request_status' },
+      { action: 'request_withdraw' }, { action: 'request_withdraw', requestId: '../other' }]) {
       await assert.rejects(visit(alpha.app, { address, ...input }), { code: 'validation' }, JSON.stringify(input).slice(0, 60));
     }
   } finally { await alpha.close(); }
@@ -152,5 +153,46 @@ test('revoking a paired device tells the host, which ends that device\'s open vi
     await alpha.runtime.revokeDevice(betaDevice.fingerprint);
     await until(() => revoked.length > 0);
     assert.ok(revoked.every((key) => key === `peer:${betaDevice.fingerprint}`));
+  } finally { await alpha.close(); await beta.close(); }
+});
+
+test('the requester takes its own request back across devices; the owner\'s record says who did it', { timeout: 60_000 }, async () => {
+  const calls = { prepared: [] };
+  const removed = [];
+  const [alpha, beta] = await Promise.all([device('alpha'), device('beta', { search: async () => ({ facts: [], entities: [] }),
+    requests: ownerRequests(calls, { remove: async (request, options) => { removed.push([request.id, options.keepBranch]); } }) })]);
+  try {
+    await pair(alpha, beta);
+    const address = await remoteAddress(alpha.app);
+    const alphaDevice = await loadDeviceIdentity(alpha.app.peer.directory);
+    assert.equal(beta.app.visitorAccess.setRequesterMode({ key: `peer:${alphaDevice.fingerprint}`, kind: 'peer', label: 'Alpha',
+      mode: 'trusted', ownDevice: true }).ok, true);
+    const submitted = await visit(alpha.app, { address, action: 'request', request: DRAFT });
+    assert.match(submitted.guidance, /request_withdraw/);
+    const { requestId } = submitted.remote;
+    const owner = beta.app.visitorAccess.requests;
+    await until(async () => (await owner.card(requestId)).request?.state === 'awaiting_review');
+    assert.equal((await visit(alpha.app, { address, action: 'request_status', requestId })).remote.state, 'awaiting_review');
+
+    // Someone else's request reads as absent, as a status read does.
+    const other = await visit(alpha.app, { address, action: 'request_withdraw', requestId: 'someone-elses-request' });
+    assert.deepEqual([other.ok, other.code], [false, 'request_not_found']);
+
+    const withdrawn = await visit(alpha.app, { address, action: 'request_withdraw', requestId });
+    assert.deepEqual([withdrawn.ok, withdrawn.remote], [true, { requestId, state: 'cancelled' }], JSON.stringify(withdrawn));
+    assert.match(withdrawn.guidance, /worktree and branch are removed/);
+    // Taking a request back is signed for the same purpose as making one: a project lead's task only.
+    assert.equal(alpha.calls.origins.at(-1).purpose, 'request');
+    await until(async () => removed.length === 1);
+    assert.deepEqual(removed, [[requestId, false]]);
+    const card = await owner.card(requestId);
+    assert.deepEqual([card.request.state, card.request.reason, card.events.at(-1).by, card.events.at(-1).note],
+      ['cancelled', 'withdrawn_by_requester', 'requester', 'withdrawn_by_requester']);
+    const after = await visit(alpha.app, { address, action: 'request_status', requestId });
+    assert.deepEqual(after.remote, { requestId, state: 'cancelled', title: DRAFT.title, reason: 'withdrawn_by_requester' });
+
+    const again = await visit(alpha.app, { address, action: 'request_withdraw', requestId });
+    assert.deepEqual([again.ok, again.code], [false, 'request_not_withdrawable']);
+    assert.match(again.guidance, /only the owner decides/);
   } finally { await alpha.close(); await beta.close(); }
 });

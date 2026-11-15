@@ -21,19 +21,26 @@ const VISIT_FAILURE_GUIDANCE = Object.freeze({
   invalid_message: 'The other computer, or the computer that relays for this group, runs a FULI from before visits (0.27.3). Ask its owner to update it; message_agent still works.',
   query_timeout: 'The other computer did not answer in time. It may be off or busy; try again later.',
   agent_not_shared: 'That lead is not shared with this computer right now: its owner stopped sharing it, or that computer has just started and has not listed its shares yet. Try again in a minute, then call find_agents.',
+  request_not_withdrawable: 'That request can no longer be taken back from here: it ended, was kept or discarded, or its result waits for that computer\'s owner. Read it with request_status; only the owner decides it now.',
 });
+// A computer from before withdrawals refuses the action it does not know as an invalid query.
+const WITHDRAW_UNSUPPORTED = 'That computer\'s FULI may be from before withdrawals (0.27.10) and refused the action. Ask its owner to update it; until then only the owner can discard the result there.';
 const VISIT_LIMITED_GUIDANCE = 'That project has answered as often as it may for now. Wait before asking again.';
-const failureGuidance = (code) => VISIT_FAILURE_GUIDANCE[code] ?? (String(code).includes('rate_limited') ? VISIT_LIMITED_GUIDANCE : null);
+const failureGuidance = (code, action) => (action === 'request_withdraw' && WITHDRAW_OLD_CODES.has(code) ? WITHDRAW_UNSUPPORTED
+  : VISIT_FAILURE_GUIDANCE[code] ?? (String(code).includes('rate_limited') ? VISIT_LIMITED_GUIDANCE : null));
 const VISIT_GUIDANCE = 'You are this project\'s visiting assistant, running on your own model. Before asking the person a stable fact or method about this project, call action "search" with 1-4 focused queries. To have work done on the owner\'s computer, a project lead uses action "request"; the owner decides, and request_status reads it.';
 
 const REQUEST_GUIDANCE = 'The owner of that computer decides whether and when it runs, there, in an isolated branch that is never merged or pushed. '
-  + 'Check it later with action "request_status" and this requestId; once the owner keeps the branch you get a summary, the branch name, the changed files and counts, never the patch.';
-const ACTION_GUIDANCE = Object.freeze({ card: VISIT_GUIDANCE, request: REQUEST_GUIDANCE });
+  + 'Check it later with action "request_status" and this requestId; once the owner keeps the branch you get a summary, the branch name, the changed files and counts, never the patch. '
+  + 'Action "request_withdraw" takes it back while it is unfinished, or once you were shown its ready result.';
+const WITHDRAW_GUIDANCE = 'The request is cancelled there, and its worktree and branch are removed. Send a new request if the work is still wanted.';
+const ACTION_GUIDANCE = Object.freeze({ card: VISIT_GUIDANCE, request: REQUEST_GUIDANCE, request_withdraw: WITHDRAW_GUIDANCE });
+const WITHDRAW_OLD_CODES = new Set(['invalid_query', 'invalid_message', 'query_failed']);
 
 // The origin proof a visitor's query is signed under: a request to have work
 // done has its own purpose, which the sending Provider gives only to a project
-// lead's task; every read is a query.
-export const queryPurpose = (action) => (action === 'request' ? 'request' : 'query');
+// lead's task, and so has taking one back; every read is a query.
+export const queryPurpose = (action) => (action === 'request' || action === 'request_withdraw' ? 'request' : 'query');
 
 // The audit label of an asking device: the name the coordinator gave it,
 // which nothing signs, and always the start of its verified fingerprint, so a
@@ -66,7 +73,8 @@ export async function answerPeerQuery({ host, share, assertion, device, deviceNa
 // A refusal as it crosses devices and reaches the visitor: a plain word, never free text.
 export const queryCode = (code) => (typeof code === 'string' && PLAIN_CODE.test(code) ? code : 'query_failed');
 const failed = (code) => ({ outcome: 'failed', error: queryCode(code) });
-const replyBytes = (action) => (action === 'card' || action === 'request' ? CARD_BYTES : PEER_LIMITS.queryReplyBytes);
+const replyBytes = (action) => (action === 'card' || action === 'request' || action === 'request_withdraw' ? CARD_BYTES
+  : PEER_LIMITS.queryReplyBytes);
 
 // Every string and list bounded: with the byte check before parsing, nothing
 // larger than the reply cap reaches this device's model.
@@ -87,7 +95,9 @@ const REQUEST_STATUS = z.object({ action: z.literal('request_status'), requestId
   title: shownText(VISIT_REQUEST_LIMITS.titleChars), reason: shownText(400).optional(), summary: shownText(4000).optional(),
   branch: shownText(200).optional(), files: z.array(shownText(1024)).max(200).optional(),
   diffstat: z.object({ files: COUNT, added: COUNT, removed: COUNT }).strict().optional() }).strict();
-const ANSWERS = Object.freeze({ card: CARD, search: SEARCH, request: REQUEST, request_status: REQUEST_STATUS });
+const REQUEST_WITHDRAW = z.object({ action: z.literal('request_withdraw'), requestId: REQUEST_ID, state: z.enum(REQUEST_STATES) }).strict();
+const ANSWERS = Object.freeze({ card: CARD, search: SEARCH, request: REQUEST, request_status: REQUEST_STATUS,
+  request_withdraw: REQUEST_WITHDRAW });
 
 // The other device's reply as this device passes it on, its fields only (no
 // action), or null when it is larger than the asked action allows, or not
@@ -105,7 +115,7 @@ export function parseQueryAnswer(reply, action) {
 // What visit_shared_lead returns: a fixed envelope this device fills, and the
 // other computer's validated fields only under remote.
 export function visitView({ address, device, action, answer }) {
-  const guidance = answer.ok ? ACTION_GUIDANCE[action] : failureGuidance(answer.code);
+  const guidance = answer.ok ? ACTION_GUIDANCE[action] : failureGuidance(answer.code, action);
   return { address, device, action, ok: answer.ok, ...(answer.ok ? {} : { code: answer.code }), notice: VISIT_NOTICE,
     ...(guidance ? { guidance } : {}), ...(answer.ok ? { remote: answer.remote } : {}) };
 }

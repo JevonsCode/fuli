@@ -45,6 +45,7 @@ describe('a visit request in plain words', () => {
     expect(endingText(visitRequest({ state: 'refused', reason: 'some_new_code' }))).toBe('没有接这件请求。')
     expect(endingText(visitRequest({ state: 'cancelled', reason: 'share_removed' }))).toBe('你不再共享这个项目，请求就取消了。')
     expect(endingText(visitRequest({ state: 'cancelled', reason: 'some_new_code' }))).toBe('这件请求取消了。')
+    expect(endingText(visitRequest({ state: 'cancelled', reason: 'withdrawn_by_requester' }))).toBe('对方撤回了这件请求，它的副本和分支已删除。')
     expect(endingText(visitRequest({ state: 'failed', error: 'no_constrained_client', reason: 'no_constrained_client' })))
       .toBe('这台电脑上没有能安全执行这类活的客户端（现在只用 Claude Code）。')
     expect(endingText(visitRequest({ state: 'failed', error: 'restricted_mode_unsupported' })))
