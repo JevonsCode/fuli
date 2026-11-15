@@ -102,19 +102,28 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // For work that only needs the project's repository (a visit request's worktree), not a
     // session bound to the project: starting sessions keeps to projectForPath.
     // Whether a folder is this project's: FULI maps it to the project, or, where
-    // FULI names no single project for it (two projects record one repository,
-    // or the folder's name says another), it is a checkout of a repository the
-    // project records as its own. Addresses are compared without case: the
-    // hosts people use treat owner and repository names that way.
+    // FULI names no single project for it, the caller's naming the project
+    // settles it in two cases. One: the folder is a checkout of a repository
+    // the project records as its own (two projects record one repository, or
+    // the folder's name says another). Addresses are compared without case:
+    // the hosts people use treat owner and repository names that way. Two:
+    // the resolver left the choice between this project and one other to the
+    // person (the folder is named after a project that claims a repository
+    // without its address, while another project records the address), and
+    // this project is one of the two; a message that names the project is
+    // settled the same way at a task's entry.
     async folderBelongsTo(path, projectId) {
-      if (!path || !projectId) return false;
-      if (await this.projectForPath(path) === projectId) return true;
-      const remote = this.folderRepository(path);
-      if (!remote) return false;
-      const project = (await projects()).map(projectView).find(entry => entry.projectId === projectId);
+      if (!path || !projectId || !app.projectPathResolver) return false;
+      const all = await projects();
+      const resolved = app.projectPathResolver(path, all);
+      if (resolved.status === 'matched') return resolved.personalProjectId === projectId;
+      const project = all.map(projectView).find(entry => entry.projectId === projectId);
       // Temporary and archived projects are left out, as the resolver and matchWork leave them out.
-      return Boolean(project && !project.temporary && !project.archived
-        && project.repositories.some(recorded => recorded.toLowerCase() === remote.toLowerCase()));
+      if (!project || project.temporary || project.archived) return false;
+      if (resolved.status === 'ambiguous' && resolved.reason === 'repository_remote_conflict'
+        && resolved.candidateProjectIds?.includes(projectId)) return true;
+      const remote = this.folderRepository(path);
+      return Boolean(remote && project.repositories.some(recorded => recorded.toLowerCase() === remote.toLowerCase()));
     },
     issueDelegation: ({ taskContextToken, client, agentId, targetProjectId = null, targetClient, targetSessionId, lifetimeSeconds }) =>
       app.personal.issueAgentDelegation({ personal_space_id: spaceId(), task_context_token: taskContextToken,
