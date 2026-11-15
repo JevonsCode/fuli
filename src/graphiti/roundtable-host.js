@@ -116,7 +116,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       if (!path || !projectId || !app.projectPathResolver) return false;
       const all = await projects();
       const resolved = app.projectPathResolver(path, all);
-      if (resolved.status === 'matched') return resolved.personalProjectId === projectId;
+      if (resolved.status === 'matched' && resolved.personalProjectId === projectId) return true;
       const project = all.map(projectView).find(entry => entry.projectId === projectId);
       // Temporary and archived projects are left out, as the resolver and matchWork leave them out.
       if (!project || project.temporary || project.archived) return false;

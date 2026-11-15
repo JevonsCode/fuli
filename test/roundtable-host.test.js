@@ -137,10 +137,15 @@ test('a folder belongs to a project FULI maps it to, or whose own recorded repos
   writeFileSync(join(checkout, '.git', 'config'), '[remote "origin"]\n\turl = https://example.test/Team/App.git\n');
   const plain = join(root, 'plain');
   mkdirSync(plain);
+  // The same repository in a folder FULI maps to another project (its address is recorded there in the checkout's own spelling).
+  const cased = join(root, 'cased');
+  mkdirSync(join(cased, '.git'), { recursive: true });
+  writeFileSync(join(cased, '.git', 'config'), '[remote "origin"]\n\turl = https://example.test/Team/App.git\n');
   const own = (uri) => ({ sources: [{ kind: 'repository', role: 'own', uri }] });
   const app = {
     config: { personal: { spaceId: 'space-1' } },
-    projectPathResolver: path => path === '/work/app' ? { status: 'matched', personalProjectId: 'app' } : { status: 'ambiguous', candidateCount: 2 },
+    projectPathResolver: path => path === '/work/app' ? { status: 'matched', personalProjectId: 'app' }
+      : path === cased ? { status: 'matched', personalProjectId: 'other' } : { status: 'ambiguous', candidateCount: 2 },
     personal: { listPersonalProjects: async () => ({ projects: [
       { project_id: 'app', scope_type: 'registered', profile: { name: 'App', ...own('git@example.test:team/app.git') } },
       { project_id: 'app-twin', scope_type: 'registered', profile: { name: 'Twin', ...own('https://example.test/team/app') } },
@@ -157,6 +162,9 @@ test('a folder belongs to a project FULI maps it to, or whose own recorded repos
   assert.equal(await host.folderBelongsTo(checkout, 'gone'), false, 'an archived project');
   assert.equal(await host.folderBelongsTo(checkout, 'scratch'), false, 'a temporary project');
   assert.equal(await host.folderBelongsTo(checkout, 'unknown'), false);
+  assert.equal(await host.folderBelongsTo(cased, 'other'), true, 'the project FULI maps it to');
+  assert.equal(await host.folderBelongsTo(cased, 'app'), true, 'mapped to another project, and still a checkout of this one’s own repository');
+  assert.equal(await host.folderBelongsTo(cased, 'gone'), false);
   assert.equal(await host.folderBelongsTo(plain, 'app'), false, 'no repository, and FULI does not map it');
   assert.equal(await host.folderBelongsTo('', 'app'), false);
 });
