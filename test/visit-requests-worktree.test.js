@@ -8,6 +8,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
+import { resolvePersonalProjectPath } from '../src/graphiti/project-path-context.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
 import { createVisitRequests } from '../src/visit-requests/service.js';
 import { createVisitRunner } from '../src/visit-requests/runner.js';
@@ -71,12 +73,12 @@ function visitRoot(root) {
 // onPlan(repository): runs while the request is being planned.
 const realFolder = (folder) => { try { return realpathSync.native(folder); } catch { return null; } };
 
-// mapped: the folders FULI maps to the project (the lead's known folder alone by default).
-function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {}, mapped = [repository] } = {}) {
+// mapped: the folders FULI maps to the project (the lead's known folder alone by default); verifyFolder replaces that list with a real check.
+function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trusted', onPlan = () => {}, mapped = [repository],
+  // Git names a repository's top in its own spelling of the path: compared as real paths, as FULI's resolver does.
+  verifyFolder = async (folder) => mapped.map(realFolder).includes(realFolder(folder)) } = {}) {
   const wakes = [];
-  const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository,
-    // Git names a repository's top in its own spelling of the path: compared as real paths, as FULI's resolver does.
-    verifyFolder: async (folder) => mapped.map(realFolder).includes(realFolder(folder)),
+  const runner = createVisitRunner({ root: visitRoot(root), projectFolder: async () => repository, verifyFolder,
     runClient: async (input) => {
       wakes.push({ mode: input.step, cwd: input.cwd, timeoutMs: input.timeoutMs, prompt: input.prompt, client: input.client });
       if (input.step === 'plan') {
@@ -546,6 +548,36 @@ test('a workspace folder stands for the project checkout it holds under the proj
   assert.deepEqual([request.state, request.error, request.projectFolder], ['awaiting_review', null, checkout]);
   assert.equal(f.wakes[0].cwd, checkout, 'planned in the checkout, not the workspace');
   assert.deepEqual(request.files.map((file) => file.path), ['src/server.js']);
+});
+
+// What one computer really had: the lead works in a workspace folder, the project says it has a repository without
+// its address, and another project records the address of the checkout named after the project. FULI's own resolver
+// and host decide here, not a list of folders.
+test('a project that names no repository address is worked on in its checkout, though another project records that address', { timeout: 60_000 }, async (t) => {
+  const { root, workspace, checkout } = workspaceWithCheckout(t, 'synthetic-project');
+  git(checkout, 'remote', 'add', 'origin', 'https://example.test/team/shared.git');
+  const project = (id, uri, more = {}) => ({ project_id: id, scope_type: 'registered', profile: { name: id, sources: [{ kind: 'repository', uri }], ...more } });
+  const hostOf = (projects) => createFuliRoundtableHost({ config: { personal: { spaceId: 'space-1' } },
+    projectPathResolver: resolvePersonalProjectPath, personal: { listPersonalProjects: async () => ({ projects }) } });
+  const host = hostOf([project('synthetic-project', null), project('other-project', 'https://example.test/team/shared')]);
+  assert.equal(await host.projectForPath(workspace), 'synthetic-project');
+  assert.equal(await host.projectForPath(checkout), null, 'FULI leaves the choice between the two projects to the person');
+  assert.equal(await host.folderBelongsTo(checkout, 'synthetic-project'), true, 'the caller names the project');
+  assert.equal(await host.folderBelongsTo(checkout, 'other-project'), true, 'the project that records the address');
+  assert.equal(await host.folderBelongsTo(checkout, 'unrelated'), false);
+  // A project that states its repository's address, and it is another one, is not this checkout.
+  const elsewhere = hostOf([project('synthetic-project', 'https://example.test/team/elsewhere'), project('other-project', 'https://example.test/team/shared')]);
+  assert.equal(await elsewhere.folderBelongsTo(checkout, 'synthetic-project'), false);
+  // An archived project is not chosen: the checkout is the other project's alone.
+  const archived = hostOf([project('synthetic-project', null, { lifecycle: 'archived' }), project('other-project', 'https://example.test/team/shared')]);
+  assert.equal(await archived.folderBelongsTo(checkout, 'synthetic-project'), false);
+
+  const f = service(t, { root, repository: workspace }, (cwd) => writeFileSync(join(cwd, 'src', 'server.js'), 'const port = 4200;\n'),
+    { verifyFolder: (folder, projectId) => host.folderBelongsTo(folder, projectId) });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.state, request.error, request.projectFolder], ['awaiting_review', null, checkout]);
+  assert.equal(f.wakes[0].cwd, checkout, 'planned in the checkout, not the workspace');
 });
 
 test('a checkout FULI does not take for the project ends the request with its own reason, not no_repository', { timeout: 60_000 }, async (t) => {

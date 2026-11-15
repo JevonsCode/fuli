@@ -31,7 +31,9 @@ remote, when exactly one does; ssh and https forms of one repository are equal, 
 sources never match. Only when the checkout's folder (or a worktree's original repository) names
 another current project that has an own repository source without a `uri` does the task's project
 stay ambiguous until the person names one project or marks the other's source `reference`; give
-your own repository its `uri` to avoid that. A checkout whose folder is named after a project
+your own repository its `uri` to avoid that. Work another paired computer asks this project's lead
+to do (a visit request) already names the project, so it is done in that checkout meanwhile; a
+session opened in it still asks. A checkout whose folder is named after a project
 that records another repository does not resolve to it. Keep the source `private` unless the user
 said it may be shared.
 
