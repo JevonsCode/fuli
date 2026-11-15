@@ -21,7 +21,7 @@ const VISIT_FAILURE_GUIDANCE = Object.freeze({
   invalid_message: 'The other computer, or the computer that relays for this group, runs a FULI from before visits (0.27.3). Ask its owner to update it; message_agent still works.',
   query_timeout: 'The other computer did not answer in time. It may be off or busy; try again later.',
   agent_not_shared: 'That lead is not shared with this computer right now: its owner stopped sharing it, or that computer has just started and has not listed its shares yet. Try again in a minute, then call find_agents.',
-  request_not_withdrawable: 'That request can no longer be taken back from here: it ended, was kept or discarded, or its result waits for that computer\'s owner. Read it with request_status; only the owner decides it now.',
+  request_not_withdrawable: 'That request cannot be taken back from here: it is running (wait for its result), it ended, was kept or discarded, or its result waits for that computer\'s owner. Read it with request_status; only the owner decides it now.',
 });
 // A computer from before withdrawals refuses the action it does not know as an invalid query.
 const WITHDRAW_UNSUPPORTED = 'That computer\'s FULI may be from before withdrawals (0.27.10) and refused the action. Ask its owner to update it; until then only the owner can discard the result there.';
@@ -32,10 +32,10 @@ const VISIT_GUIDANCE = 'You are this project\'s visiting assistant, running on y
 
 const REQUEST_GUIDANCE = 'The owner of that computer decides whether and when it runs, there, in an isolated branch that is never merged or pushed. '
   + 'Check it later with action "request_status" and this requestId; once the owner keeps the branch you get a summary, the branch name, the changed files and counts, never the patch. '
-  + 'Action "request_withdraw" takes it back while it is unfinished, or once you were shown its ready result.';
+  + 'Action "request_withdraw" takes it back before its run starts, or once you were shown its ready result.';
 const WITHDRAW_GUIDANCE = 'The request is cancelled there, and its worktree and branch are removed. Send a new request if the work is still wanted.';
 const ACTION_GUIDANCE = Object.freeze({ card: VISIT_GUIDANCE, request: REQUEST_GUIDANCE, request_withdraw: WITHDRAW_GUIDANCE });
-const WITHDRAW_OLD_CODES = new Set(['invalid_query', 'invalid_message', 'query_failed']);
+const WITHDRAW_OLD_CODES = new Set(['invalid_query', 'invalid_message']);
 
 // The origin proof a visitor's query is signed under: a request to have work
 // done has its own purpose, which the sending Provider gives only to a project

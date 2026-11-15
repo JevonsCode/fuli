@@ -179,10 +179,10 @@ computer decides, or a mode they set does; the work runs there in an isolated br
 merged or pushed. Read it with `action: "request_status"` and the `requestId`: its state and, once
 the owner kept the branch (or at once, when that owner marked your computer fully trusted), a
 summary, the branch name, the changed files and counts, never the patch. Take your own request
-back with `action: "request_withdraw"` and the `requestId` when the work is no longer wanted: while
-it is unfinished, or once you were shown its ready result; its worktree and branch are removed
-there. `request_not_withdrawable` means it ended or waits for that owner, who alone decides it
-now. Approval is always
+back with `action: "request_withdraw"` and the `requestId` when the work is no longer wanted: before
+its run starts, or once you were shown its ready result; its worktree and branch are removed
+there. `request_not_withdrawable` means it is running (wait for its result), it ended, or it
+waits for that owner, who alone decides it now. Approval is always
 the owner's: a refusal (`ask_only`, `budget_exceeded`) is final; never send the work another way.
 A request that ends `failed` with reason `no_repository` or `folder_not_this_project` cannot be done there: the folder that
 computer shares for the project is not a Git repository. Stop waiting and tell your person so; only

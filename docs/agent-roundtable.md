@@ -243,13 +243,15 @@ title (≤160), what to do (≤4000) and up to 10 expected areas, carried as a
 task gets it). The asker keeps the `requestId` and reads progress with
 `action: "request_status"`; only the device that made a request can read it.
 That device can also take its request back with `action: "request_withdraw"`
-(signed for the `request` purpose too): while the request is unfinished (a run in
-progress is stopped), or once it was shown a ready result, which only a fully
-trusted computer is. The request ends `cancelled` with the reason
+(signed for the `request` purpose too): before its run starts (a planning wake in
+flight is stopped), or once it was shown a ready result while its computer is
+still fully trusted. The request ends `cancelled` with the reason
 `withdrawn_by_requester`, its event says the requester did it, and its worktree and
-branch are removed. A held result, a result the requester was not shown and
-anything kept, discarded or ended answer `request_not_withdrawable`: those stay
-the owner's, and keeping a branch is never the requester's or an Agent's to do.
+branch are removed. A run in progress (stopping it would skip the checks its
+result gets), a held result, a result the requester was not shown, a ready result
+of a computer since trusted less and anything kept, discarded or ended answer
+`request_not_withdrawable`: those stay the owner's, and keeping a branch is never
+the requester's or an Agent's to do.
 It always gets the state, the title and the owner's one-line reason. The result
 (summary, branch name, at most 50 cleaned paths, diffstat; never the patch)
 crosses only once the owner kept the branch, or, for a computer the owner marked
@@ -402,7 +404,7 @@ owner's own: it is held to no count of requests or wake minutes a day, and its
 requests are not part of the project's or the computer's counts. One stop of
 ten holds for it, against a requester stuck in a loop: its requests that are
 unfinished or not looked at yet, together with those of the last 24 hours that
-failed, or were taken back by the requester, after costing a wake; at ten the
+failed after costing a wake or were taken back by the requester; at ten the
 next is refused. The two planning wakes
 at once and one run of a lead at a time hold for it as for everyone. A
 request that failed on this computer before its run started (`no_repository`,

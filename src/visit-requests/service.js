@@ -22,7 +22,7 @@ import { createVisitRecords } from './records.js';
 //   approved → running → awaiting_review(ready | held) | failed | cancelled | unknown (lost to a restart)
 //   awaiting_review → kept (branch stays) | discarded (worktree and branch removed)
 //                   | ─14 days unreviewed→ expired (worktree removed, branch kept)
-//   unfinished, or a ready result its requester was shown ─the requester withdraws→ cancelled (worktree and branch removed)
+//   not started yet, or a ready result its requester was shown ─the requester withdraws→ cancelled (worktree and branch removed)
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRY_MS = 7 * DAY_MS;
 const REVIEW_EXPIRY_MS = 14 * DAY_MS;
@@ -157,6 +157,8 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     } finally { finish(); }
     const decided = store.transaction(() => {
       const current = records.get(id);
+      // The planning wake was spent even when the request ended while it ran (taken back, cancelled): its time is kept.
+      if (current && current.state !== 'planning' && planned?.ms) records.update(id, { planningMs: planned.ms }, at());
       if (current?.state !== 'planning') return current;
       if (ended) {
         return records.move(id, { from: 'planning', to: 'failed', by: 'system', fields: { error: ended, reason: ended },
@@ -446,30 +448,43 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   // ---- the requester takes its own request back ----
 
-  // Only the requester that made it, and only what that requester can see as
-  // its own to end: a request that has not finished (a running one is stopped,
-  // as the owner's cancel stops it), or a ready result it has been shown
-  // (shownReady: a fully trusted computer's, not held). The worktree and the
-  // branch go, the request ends cancelled with the reason withdrawn_by_requester
-  // and its event says who did it. A held result, a result the requester was
-  // not shown and anything already kept, discarded or ended stay the owner's:
-  // request_not_withdrawable, so a withdrawal never removes what a check held
-  // back for the owner to look at. Answers at once; the stop and the removal
-  // follow in the background, noted on the request's history when they leave
-  // anything behind.
-  function requesterWithdraw({ requesterKey, requestId }) {
+  // Only the requester that made it, and only in two cases. One: the run has
+  // not started (received, planning, awaiting_owner, approved); a planning wake
+  // in flight is stopped, and nothing was copied yet. Two: a ready result it
+  // has been shown (shownReady) while its computer is still fully trusted:
+  // the worktree and the branch go. Either way the request ends cancelled with
+  // the reason withdrawn_by_requester and its event says who did it.
+  // Everything else stays the owner's (request_not_withdrawable): a run in
+  // progress, because stopping it would skip the checks its result gets
+  // (integrity, secrets, files that run on open) and remove what they would
+  // have held; a held result; a result the requester was not shown; a ready
+  // result of a computer the owner has since trusted less; and anything kept,
+  // discarded or ended. So a withdrawal never removes what a check held back,
+  // or could have, for the owner to look at. A refusal can tell the requester
+  // that a request reading awaiting_owner has in fact run (it saw running
+  // before), and a fully trusted one that its result was held (it would have
+  // been shown otherwise); never why. The stop and the removal are waited
+  // for, as the owner's cancel waits, and noted on the request's history when
+  // they leave anything behind.
+  async function requesterWithdraw({ requesterKey, requestId }) {
     const outcome = store.transaction(() => {
       const request = typeof requestId === 'string' ? records.get(requestId) : null;
       if (!request || request.requesterKey !== requesterKey) return { code: 'request_not_found' };
-      if (!(records.OPEN_STATES.includes(request.state) || shownReady(request))) return { code: 'request_not_withdrawable' };
+      const mayEnd = NOT_STARTED_STATES.includes(request.state) || (shownReady(request) && modeOf(requesterKey) === 'trusted');
+      if (!mayEnd) return { code: 'request_not_withdrawable' };
       const moved = records.move(request.id, { from: request.state, to: 'cancelled', by: 'requester', fields: { reason: WITHDRAWN },
         note: WITHDRAWN, at: at() });
       return moved ? { request: moved } : { code: 'request_not_withdrawable' };
     });
     if (outcome.code) return refused(outcome.code);
-    background(stopped(outcome.request.id).then(() => tidy(records.get(outcome.request.id))));
-    return { ok: true, requestId: outcome.request.id, state: outcome.request.state };
+    const { id, state } = outcome.request;
+    await stopped(id);
+    await tidy(records.get(id));
+    return { ok: true, requestId: id, state };
   }
+
+  // The open states before the run: nothing was copied or changed for the request yet.
+  const NOT_STARTED_STATES = records.OPEN_STATES.filter((state) => state !== 'running');
 
   // A result its requester reads as ready: approved by the trusted rule and not held.
   const shownReady = (request) => request.state === 'awaiting_review' && request.review !== 'held'

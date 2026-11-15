@@ -180,14 +180,14 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
 
     // The requester takes back one request of its own (requests.requesterWithdraw
     // decides what may be taken back); checked against the visitor limits first.
-    withdrawRequest({ requester, requestId } = {}) {
+    async withdrawRequest({ requester, requestId } = {}) {
       const who = requesterOf(requester);
       if (!who) return refused('requester_invalid');
       if (!requests) return refused('requests_unavailable');
       try {
         const at = now();
         const limited = rateLimitRefusal(store, who.requesterKey, '', at) ?? statusReads.refusal(who.requesterKey, at);
-        return limited ? refused(limited) : requests.requesterWithdraw({ requesterKey: who.requesterKey, requestId });
+        return limited ? refused(limited) : await requests.requesterWithdraw({ requesterKey: who.requesterKey, requestId });
       }
       catch { return refused(UNAVAILABLE); }
     },

@@ -872,32 +872,45 @@ test('a recorded PID whose identity could not be read, later held by another pro
 });
 
 const withdraw = (f, requestId, key = ALPHA) => f.port.withdrawRequest({ requester: { key }, requestId });
+const NOT_WITHDRAWABLE = { ok: false, code: 'request_not_withdrawable' };
 
-test('a requester takes back its own running request: it is stopped, and tidied only after its run ended', async (t) => {
+test('a requester takes back a request that waits for the owner; nobody else can, and it cannot be approved after', async (t) => {
+  const f = fixture(t);
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  // Another device cannot take it back, or learn that it exists; neither can a made-up id.
+  assert.deepEqual(await withdraw(f, 'request-1', BETA), { ok: false, code: 'request_not_found' });
+  assert.deepEqual(await withdraw(f, 'no-such-request'), { ok: false, code: 'request_not_found' });
+  assert.deepEqual(await f.port.withdrawRequest({ requester: { key: 'not-a-key' }, requestId: 'request-1' }),
+    { ok: false, code: 'requester_invalid' });
+  assert.equal(await f.state('request-1'), 'awaiting_owner');
+
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  const last = (await f.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([last.from, last.to, last.by, last.note], ['awaiting_owner', 'cancelled', 'requester', 'withdrawn_by_requester']);
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'cancelled', title: DRAFT.title, reason: 'withdrawn_by_requester' });
+  assert.deepEqual(f.port.requests.approve('request-1'), { ok: false, code: 'state_conflict' });
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE, 'only once');
+  assert.deepEqual([f.runner.calls.ran, f.runner.calls.removed], [[], []], 'it never ran, and nothing had been copied');
+});
+
+test('a run in progress is not the requester\'s to stop, in any mode: its result still gets its checks', async (t) => {
   let release;
-  const order = [];
-  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }),
-    afterAbort: async () => { await delay(30); order.push('commit_step_ended'); } });
-  t.after(() => release());
-  const remove = f.runner.remove;
-  f.runner.remove = async (request, options) => { order.push(`removed:${request.id}:${options.keepBranch}`); return remove(request, options); };
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }), result: { intact: false } });
   f.setMode('trusted');
   f.submit();
   await settled(async () => await f.state('request-1') === 'running');
-  // Another device cannot take it back, or learn that it exists; neither can a made-up id.
-  assert.deepEqual(withdraw(f, 'request-1', BETA), { ok: false, code: 'request_not_found' });
-  assert.deepEqual(withdraw(f, 'no-such-request'), { ok: false, code: 'request_not_found' });
-  assert.deepEqual(f.port.withdrawRequest({ requester: { key: 'not-a-key' }, requestId: 'request-1' }), { ok: false, code: 'requester_invalid' });
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE);
   assert.equal(await f.state('request-1'), 'running');
-
-  assert.deepEqual(withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
-  await settled(async () => order.length === 2);
-  assert.deepEqual(order, ['commit_step_ended', 'removed:request-1:false'], 'no worktree removed under a commit');
-  const last = (await f.port.requests.card('request-1')).events.at(-1);
-  assert.deepEqual([last.from, last.to, last.by, last.note], ['running', 'cancelled', 'requester', 'withdrawn_by_requester']);
-  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
-    { ok: true, requestId: 'request-1', state: 'cancelled', title: DRAFT.title, reason: 'withdrawn_by_requester' });
-  assert.deepEqual(withdraw(f, 'request-1'), { ok: false, code: 'request_not_withdrawable' }, 'only once');
+  release();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  // What the run did is held for the owner, and stays.
+  const { request } = await f.port.requests.card('request-1');
+  assert.deepEqual([request.review, request.holdReason], ['held', 'integrity_violation']);
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE, 'a held result cannot be taken back, even by a fully trusted requester');
+  assert.equal(await f.state('request-1'), 'awaiting_review');
+  assert.deepEqual(f.runner.calls.removed, [], 'what a check held back for the owner is not removed');
 });
 
 test('a fully trusted requester takes back a ready result it was shown; what waits for the owner stays the owner\'s', async (t) => {
@@ -905,50 +918,60 @@ test('a fully trusted requester takes back a ready result it was shown; what wai
   f.setMode('trusted');
   f.submit();
   await settled(async () => await f.state('request-1') === 'awaiting_review');
-  assert.deepEqual(withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
-  await settled(async () => f.runner.calls.removed.length === 1);
-  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: false }], 'the worktree and the branch go');
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: false }], 'the worktree and the branch are gone when it answers');
   assert.deepEqual(await f.port.requests.keep('request-1'), { ok: false, code: 'state_conflict' });
   assert.deepEqual(await f.port.requests.discard('request-1'), { ok: false, code: 'state_conflict' });
 
-  // plan mode: a request still waiting for the owner can be taken back, and the owner cannot approve it after.
-  f.submit(BETA);
-  await settled(async () => await f.state('request-2') === 'awaiting_owner');
-  assert.deepEqual(withdraw(f, 'request-2', BETA), { ok: true, requestId: 'request-2', state: 'cancelled' });
-  assert.deepEqual(f.port.requests.approve('request-2'), { ok: false, code: 'state_conflict' });
-  assert.equal(f.runner.calls.ran.length, 1, 'it never ran');
-
   // plan mode: a result the requester was not shown (it reads as waiting for the owner) is the owner's to keep or discard.
   f.submit(BETA);
-  await settled(async () => await f.state('request-3') === 'awaiting_owner');
-  f.port.requests.approve('request-3');
-  await settled(async () => await f.state('request-3') === 'awaiting_review');
-  assert.deepEqual(withdraw(f, 'request-3', BETA), { ok: false, code: 'request_not_withdrawable' });
-  assert.equal(await f.state('request-3'), 'awaiting_review');
-  await f.port.requests.keep('request-3');
-  assert.deepEqual(withdraw(f, 'request-3', BETA), { ok: false, code: 'request_not_withdrawable' }, 'a kept result stays');
-  assert.deepEqual(f.runner.calls.removed.filter((call) => call.id === 'request-3'), [{ id: 'request-3', keepBranch: true }]);
+  await settled(async () => await f.state('request-2') === 'awaiting_owner');
+  f.port.requests.approve('request-2');
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.deepEqual(await withdraw(f, 'request-2', BETA), NOT_WITHDRAWABLE);
+  assert.equal(await f.state('request-2'), 'awaiting_review');
+  await f.port.requests.keep('request-2');
+  assert.deepEqual(await withdraw(f, 'request-2', BETA), NOT_WITHDRAWABLE, 'a kept result stays');
+  assert.deepEqual(f.runner.calls.removed.filter((call) => call.id === 'request-2'), [{ id: 'request-2', keepBranch: true }]);
 });
 
-test('a held result cannot be taken back, even by a fully trusted requester', async (t) => {
-  const f = fixture(t, { result: { intact: false } });
+test('a computer the owner trusts less than when its result was made can still read it, not remove it', async (t) => {
+  const f = fixture(t);
   f.setMode('trusted');
   f.submit();
   await settled(async () => await f.state('request-1') === 'awaiting_review');
-  const { request } = await f.port.requests.card('request-1');
-  assert.deepEqual([request.review, request.holdReason], ['held', 'integrity_violation']);
-  assert.deepEqual(withdraw(f, 'request-1'), { ok: false, code: 'request_not_withdrawable' });
-  assert.equal(await f.state('request-1'), 'awaiting_review');
-  assert.deepEqual(f.runner.calls.removed, [], 'what a check held back for the owner is not removed');
+  f.setMode('auto');
+  assert.equal(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }).state, 'awaiting_review');
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE);
+  assert.deepEqual(f.runner.calls.removed, []);
+  f.setMode('trusted');
+  assert.equal((await withdraw(f, 'request-1')).ok, true, 'trusted again, it may');
 });
 
-test('requests taken back after they cost a wake still count toward the stop of ten of a fully trusted requester', async (t) => {
+test('requests taken back count toward the stop of ten of a fully trusted requester, whenever they were taken back', async (t) => {
   const f = fixture(t);
+  // A planning pass that goes on until it is stopped, as a withdrawal stops it.
+  let planning = 0;
+  const quickPlan = f.runner.plan;
+  const stoppedPlan = { plan: null, error: 'cancelled', ms: 40 };
+  f.runner.plan = (request, options) => (planning-- > 0
+    ? new Promise((resolve) => (options.signal.aborted ? resolve(stoppedPlan)
+      : options.signal.addEventListener('abort', () => resolve(stoppedPlan))))
+    : quickPlan(request, options));
   f.setMode('trusted');
-  for (let index = 1; index <= 10; index += 1) {
+  for (let index = 1; index <= 5; index += 1) {
     assert.equal(f.submit().ok, true, `request ${index}`);
     await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
-    assert.equal(withdraw(f, `request-${index}`).ok, true);
+    assert.equal((await withdraw(f, `request-${index}`)).ok, true);
   }
+  for (let index = 6; index <= 10; index += 1) {
+    planning = 1;
+    assert.equal(f.submit().ok, true, `request ${index}`);
+    assert.equal(await f.state(`request-${index}`), 'planning');
+    assert.equal((await withdraw(f, `request-${index}`)).ok, true, 'taken back while it is being planned');
+  }
+  // The planning wake that was stopped is still counted as spent time.
+  await settled(async () => (await f.port.requests.card('request-10')).request.planningMs === 40);
+  assert.equal(f.runner.calls.ran.length, 5, 'none of the five taken back during planning ran');
   assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'asking and withdrawing in a loop stops at ten');
 });
