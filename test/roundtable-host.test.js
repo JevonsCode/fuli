@@ -145,7 +145,8 @@ test('a folder belongs to a project FULI maps it to, or whose own recorded repos
       { project_id: 'app', scope_type: 'registered', profile: { name: 'App', ...own('git@example.test:team/app.git') } },
       { project_id: 'app-twin', scope_type: 'registered', profile: { name: 'Twin', ...own('https://example.test/team/app') } },
       { project_id: 'other', scope_type: 'registered', profile: { name: 'Other', ...own('https://example.test/team/other') } },
-      { project_id: 'gone', scope_type: 'registered', profile: { name: 'Gone', lifecycle: 'archived', ...own('https://example.test/team/app') } }] }) }
+      { project_id: 'gone', scope_type: 'registered', profile: { name: 'Gone', lifecycle: 'archived', ...own('https://example.test/team/app') } },
+      { project_id: 'scratch', scope_type: 'temporary', profile: { name: 'Scratch', ...own('https://example.test/team/app') } }] }) }
   };
   const host = createFuliRoundtableHost(app);
   assert.equal(await host.folderBelongsTo('/work/app', 'app'), true, 'the one project FULI maps the folder to');
@@ -154,6 +155,7 @@ test('a folder belongs to a project FULI maps it to, or whose own recorded repos
   assert.equal(await host.folderBelongsTo(checkout, 'app-twin'), true);
   assert.equal(await host.folderBelongsTo(checkout, 'other'), false, 'another project’s repository');
   assert.equal(await host.folderBelongsTo(checkout, 'gone'), false, 'an archived project');
+  assert.equal(await host.folderBelongsTo(checkout, 'scratch'), false, 'a temporary project');
   assert.equal(await host.folderBelongsTo(checkout, 'unknown'), false);
   assert.equal(await host.folderBelongsTo(plain, 'app'), false, 'no repository, and FULI does not map it');
   assert.equal(await host.folderBelongsTo('', 'app'), false);

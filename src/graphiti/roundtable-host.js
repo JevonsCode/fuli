@@ -112,7 +112,8 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       const remote = this.folderRepository(path);
       if (!remote) return false;
       const project = (await projects()).map(projectView).find(entry => entry.projectId === projectId);
-      return Boolean(project && !project.archived
+      // Temporary and archived projects are left out, as the resolver and matchWork leave them out.
+      return Boolean(project && !project.temporary && !project.archived
         && project.repositories.some(recorded => recorded.toLowerCase() === remote.toLowerCase()));
     },
     issueDelegation: ({ taskContextToken, client, agentId, targetProjectId = null, targetClient, targetSessionId, lifetimeSeconds }) =>
