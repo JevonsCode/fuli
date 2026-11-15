@@ -1055,7 +1055,8 @@ test('a failed removal sets no second timer while its pass still runs, and the n
   assert.equal((await withdraw(f, 'request-2')).ok, true);
   assert.equal(timers.length, 1, 'one timer for both pending removals');
   // In the timer's pass the first removal fails at once and the second hangs, as a Git that does not answer.
-  let held;
+  let held = () => {};
+  t.after(() => held());
   f.runner.remove = (request) => (request.id === 'request-1' ? Promise.reject(gitTimeout())
     : new Promise((resolve, reject) => { held = () => reject(gitTimeout()); }));
   await fire();
@@ -1077,7 +1078,8 @@ test('one request whose process cannot be checked does not end the pass for a re
   f.setMode('trusted');
   f.submit();
   await settled(async () => await f.state('request-1') === 'failed');
-  // A second request, ordered after it, whose removal fails once.
+  // A second request, a second after it, whose removal fails once.
+  clock.now = new Date(clock.now.getTime() + 1000);
   f.runner.run = fakeRunner().run;
   let failing = true;
   f.runner.remove = async (request, { keepBranch }) => {
@@ -1151,4 +1153,51 @@ test('after a restart a removal that was pending is tried at once, and by the ti
   await delay(20);
   const card = await restarted.card('request-1');
   assert.deepEqual([card.request.runExit, timers.length, card.events.at(-1).note], ['ended', 0, 'cleanup_done']);
+});
+
+test('a pass that cannot read the store at all still sets the timer again, and a timer that cannot be set loses no note', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner();
+  let failing = true;
+  runner.remove = async (request, { keepBranch }) => {
+    if (failing) throw gitTimeout();
+    runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const timers = [];
+  let timerBroken = true;
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1',
+      setTimer: (run, ms) => { if (timerBroken) throw new Error('synthetic'); timers.push({ run, ms }); return null; } });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'awaiting_review');
+  // The timer cannot be set: the withdrawal still answers, and the failure is noted and marked for a retry.
+  assert.deepEqual(await port.withdrawRequest({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'cancelled' });
+  const card = await port.requests.card('request-1');
+  assert.deepEqual([card.request.state, card.request.runExit, card.events.at(-1).note], ['cancelled', 'cleanup_pending', 'cleanup_failed:git_timeout']);
+
+  // A read a minute on tries again and sets the timer, which works now.
+  timerBroken = false;
+  clock.now = new Date(clock.now.getTime() + MINUTE_LATER);
+  port.requests.list();
+  await settled(async () => timers.length === 1);
+  // The timer's pass cannot read the store: no removal is tried, and the timer is set again all the same.
+  const db = shared.store.db;
+  const prepare = db.prepare.bind(db);
+  let unreadable = true;
+  db.prepare = (sql) => { if (unreadable && sql.includes('run_exit IN')) throw new Error('synthetic: database is busy'); return prepare(sql); };
+  t.after(() => { delete db.prepare; });
+  const fire = async () => { const { run, ms } = timers.shift(); clock.now = new Date(clock.now.getTime() + ms); run(); await delay(20); };
+  await fire();
+  assert.deepEqual([timers.length, runner.calls.removed], [1, []]);
+  unreadable = false;
+  failing = false;
+  await fire();
+  assert.deepEqual([timers.length, runner.calls.removed], [0, [{ id: 'request-1', keepBranch: false }]]);
 });

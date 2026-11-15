@@ -74,7 +74,7 @@ const TERMINAL_WITHOUT_RESULT =new Set(['refused', 'declined', 'expired', 'cance
 // wake claims; a run an earlier FULI recorded no PID, or no identity of its
 // PID, for, a day later) noted again (process_ended) and tidied. Asked at most
 // this often per request. cleanup_pending: the removal of such a request's
-// worktree failed (a file something still holds, cleanup_failed noted once);
+// worktree failed (cleanup_failed noted once, with its cause when known);
 // it is tried again as often, until it succeeds (cleanup_done) or a day after
 // it first failed, when it is left as it is with its warning.
 const PROCESS_UNCONFIRMED = 'process_unconfirmed';
@@ -321,8 +321,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
     if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state) || request.runExit === 'unconfirmed') return;
     const retry = request.runExit === CLEANUP_PENDING;
     const { warning, noted } = await removeWorktree(request, { keepBranch: false });
-    if (warning === 'cleanup_failed') retrySoon();
-    if (warning === 'cleanup_failed' && retry) return;
+    if (warning === 'cleanup_failed' && retry) { retrySoon(); return; }
     // The next try waits the same minute as a process check.
     if (warning === 'cleanup_failed') processChecked.set(request.id, now().getTime());
     store.transaction(() => {
@@ -331,6 +330,8 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
       if (warning) note(request.id, noted);
       else if (retry) note(request.id, CLEANUP_DONE);
     });
+    // After the note and the mark are written, in the same step, so a timer that cannot be set loses neither.
+    if (warning === 'cleanup_failed') retrySoon();
   }
 
   // The next try of a failed removal, on its own: one timer for all of them. It stays armed while its pass
@@ -338,17 +339,20 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // while any removal is still pending.
   function retrySoon() {
     if (closed || retryArmed) return;
-    retryArmed = true;
-    retryTimer = setTimer(() => {
-      background(releaseEnded().catch(() => {}).then(() => {
-        retryArmed = false;
-        if (removalPending()) retrySoon();
-      }));
-    }, PROCESS_RECHECK_MS + RETRY_MARGIN_MS);
+    try {
+      retryTimer = setTimer(() => {
+        background(releaseEnded().catch(() => {}).then(() => {
+          retryArmed = false;
+          if (removalPending()) retrySoon();
+        }));
+      }, PROCESS_RECHECK_MS + RETRY_MARGIN_MS);
+      retryArmed = true;
+    } catch { /* no timer: the next read of the list or a card tries again */ }
   }
 
+  // A read that fails now counts as pending: the next pass asks again, and a store that is closed answers no.
   function removalPending() {
-    try { return store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING); } catch { return false; }
+    try { return store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING); } catch { return true; }
   }
 
   // Tidies what an unconfirmed run kept, once its process is known to have

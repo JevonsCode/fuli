@@ -714,3 +714,17 @@ test('a Git step stopped by its time limit says so; one stopped for another reas
   restore = gitEndsWith(Object.assign(new Error('synthetic'), { killed: false, code: 128 }));
   assert.deepEqual(await located(), ['git_failed', false, null], 'Git answered with a failure');
 });
+
+test('every Git step of a removal has a time limit: one that does not answer fails it, and an unanswered branch check counts as a branch', async (t) => {
+  const owner = ownerRepository(t);
+  const root = visitRoot(owner.root);
+  const restore = gitEndsWith(Object.assign(new Error('synthetic'), { killed: true, signal: 'SIGTERM' }));
+  t.after(() => restore());
+  // With a worktree: the step that finds Git's own entry for it does not answer; nothing was deleted yet.
+  const stopped = await removeVisitWorktree({ repository: owner.repository, worktreePath: join(root, 'synthetic-request'), branch: 'fuli/visit/synthetic-request', root },
+    { keepBranch: false }).then(() => null, (failure) => [failure.code, failure.timedOut]);
+  assert.deepEqual(stopped, ['git_failed', true]);
+  // Without one: neither the check of the branch nor its deletion answers, so the branch is reported as kept, not as absent.
+  assert.deepEqual(await removeVisitWorktree({ repository: owner.repository, worktreePath: null, branch: 'fuli/visit/synthetic-request', root },
+    { keepBranch: false }), { entryKept: false, branchKept: true });
+});
