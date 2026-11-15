@@ -657,6 +657,10 @@ test('a failed Git step carries the last line of Git\'s message, without local p
   const plain = join(owner.root, 'plain-folder');
   mkdirSync(plain, { recursive: true });
   const error = await repositoryRoot({ folder: plain, root: visitRoot(owner.root) }).then(() => null, (failure) => failure);
+  assert.equal(error.timedOut, false, 'Git answered: not a timeout');
+  // Git stopped after a millisecond, before it can answer: the failure says it was the time, not Git's answer.
+  const late = await repositoryRoot({ folder: owner.repository, root: visitRoot(owner.root), timeoutMs: 1 }).then(() => null, (failure) => failure);
+  assert.deepEqual([late.code, late.timedOut], ['git_failed', true]);
   assert.equal(error.code, 'git_failed');
   assert.match(error.summary, /^fatal: not a git repository/);
   assert.ok(!error.summary.includes(owner.root) && !/[\r\n\u0000-\u001f]/.test(error.summary), error.summary);

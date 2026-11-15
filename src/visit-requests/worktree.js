@@ -345,6 +345,7 @@ function git(cwd, args, root) {
   return gitCall(['-C', cwd, ...args], { cwd, root });
 }
 
+// A call given timeoutMs that Git did not answer in time rejects with timedOut.
 // Every call: no fsmonitor, untracked cache, submodule recursion, hooks
 // (a folder that does not exist), file-protocol transport, external diff,
 // pager or editor; no system or global configuration; none of the caller's
@@ -360,7 +361,8 @@ function gitCall(args, { cwd, root, timeoutMs = 0 }) {
     { cwd: existsSync(cwd) ? cwd : root, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: NO_FILE,
       GIT_PAGER: 'cat', GIT_EDITOR: 'false' }, maxBuffer: OUTPUT_BYTES, windowsHide: true, encoding: 'utf8', timeout: timeoutMs },
     (error, stdout, stderr) => (error ? reject(Object.assign(new Error('A Git step of the visit request failed'),
-      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr) })) : done(stdout))));
+      { code: 'git_failed', stderr: String(stderr).slice(-2000), summary: gitSummary(error, stderr),
+        timedOut: Boolean(timeoutMs && error.killed) })) : done(stdout))));
 }
 
 // What the owner may read of a failed Git step: Git's last non-empty line,

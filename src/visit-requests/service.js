@@ -82,6 +82,19 @@ const PROCESS_ENDED = 'process_ended';
 const CLEANUP_PENDING = 'cleanup_pending';
 const CLEANUP_DONE = 'cleanup_done';
 const PROCESS_RECHECK_MS = 60 * 1000;
+// A removal that failed is tried again by a timer this long after the minute, so nobody has to open the list for it.
+const RETRY_MARGIN_MS = 1000;
+// Why a removal failed, as one short code after the note (cleanup_failed:git_timeout), for the owner's history
+// only: never Git's text or a path. Git did not answer in time, could not be started or failed; the folder
+// worktrees are made in is not the one this worktree was made in, or the worktree is not in it (worktree.js
+// refuses both); a file something still holds. Without a known cause the note is cleanup_failed alone.
+const REMOVAL_REFUSED = new Set(['worktree_root_changed', 'worktree_outside_root']);
+const FILES_HELD = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM', 'EACCES']);
+function removalCause(error) {
+  if (error?.code === GIT_FAILED) return error.timedOut ? 'git_timeout' : error.summary === 'git_unavailable' ? 'git_unavailable' : GIT_FAILED;
+  if (REMOVAL_REFUSED.has(error?.code)) return error.code;
+  return FILES_HELD.has(error?.code) ? 'files_held' : null;
+}
 
 // store: the visitor-access store; runner: runner.js; modeOf(key): the requester's current mode.
 // leads.confirm({ projectId, agentId }) → whether that Agent still leads the shared project, as read now.
@@ -89,14 +102,17 @@ const PROCESS_RECHECK_MS = 60 * 1000;
 // leads.describe({ projectId, agentId }) → { name, responsibility } of the lead, which the runs are given as data.
 // inspectProcess(pids), groupAlive(pgid): as for the roundtable's wake claims (wake-claim-release.js); by default
 // the OS is never asked, so an unconfirmed run's worktree stays.
+// setTimer(run, ms) → a timer that does not keep the process alive, cleared with clearTimeout.
 export function createVisitRequests({ store, runner, modeOf, leads, platform = process.platform, now = () => new Date(),
-  idFactory = randomUUID, inspectProcess = async () => null, groupAlive = undefined }) {
+  idFactory = randomUUID, inspectProcess = async () => null, groupAlive = undefined, setTimer = unrefTimer }) {
   const records = createVisitRecords(store);
   const running = new Map();
   const processChecked = new Map();
   const lanes = new Map();
   const work = new Set();
   let closed = false;
+  let retryTimer = null;
+  let retryArmed = false;
   const at = () => now().toISOString();
 
   // A requester's new request. Answers { ok: true, requestId, state } or
@@ -299,20 +315,33 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   // The worktree of a request that ended without a result, and its empty
   // branch, go; not while its run's process may still be running.
-  // A removal that failed is left to the next pass (cleanup_pending), noted once.
+  // A removal that failed is left to the next pass (cleanup_pending), noted once with its cause.
   async function tidy(request) {
     if (!request?.worktreePath || !TERMINAL_WITHOUT_RESULT.has(request.state) || request.runExit === 'unconfirmed') return;
     const retry = request.runExit === CLEANUP_PENDING;
-    const warning = await removeWorktree(request, { keepBranch: false });
+    const { warning, noted } = await removeWorktree(request, { keepBranch: false });
+    if (warning === 'cleanup_failed') retrySoon();
     if (warning === 'cleanup_failed' && retry) return;
     // The next try waits the same minute as a process check.
     if (warning === 'cleanup_failed') processChecked.set(request.id, now().getTime());
     store.transaction(() => {
       if (warning === 'cleanup_failed') records.update(request.id, { runExit: CLEANUP_PENDING }, at());
       else if (retry) records.update(request.id, { runExit: 'ended' }, at());
-      if (warning) note(request.id, warning);
+      if (warning) note(request.id, noted);
       else if (retry) note(request.id, CLEANUP_DONE);
     });
+  }
+
+  // The next try of a failed removal, on its own: one timer for all of them, set again while any is still pending.
+  function retrySoon() {
+    if (closed || retryArmed) return;
+    retryArmed = true;
+    retryTimer = setTimer(() => {
+      retryArmed = false;
+      background(releaseEnded().then(() => {
+        if (store.readable && records.unfinishedRuns().some((request) => request.runExit === CLEANUP_PENDING)) retrySoon();
+      }));
+    }, PROCESS_RECHECK_MS + RETRY_MARGIN_MS);
   }
 
   // Tidies what an unconfirmed run kept, once its process is known to have
@@ -355,18 +384,19 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
   // it, so it and the branch stay; branch_kept: Git refused to delete the
   // branch; cleanup_failed: the removal itself failed).
   async function cleanUp(request, { keepBranch }) {
-    const warning = await removeWorktree(request, { keepBranch });
+    const { warning, noted } = await removeWorktree(request, { keepBranch });
     if (warning) {
-      try { store.transaction(() => note(request.id, warning)); } catch { /* the answer still carries it */ }
+      try { store.transaction(() => note(request.id, noted)); } catch { /* the answer still carries it */ }
     }
     return warning;
   }
 
-  // The removal itself; answers the warning, nothing noted.
+  // The removal itself; answers the warning and what to note of it (a failure with its cause), nothing noted.
   async function removeWorktree(request, { keepBranch }) {
     let left;
-    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch { left = { failed: true }; }
-    return left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    try { left = (await runner.remove(request, { keepBranch })) ?? {}; } catch (error) { left = { failed: true, cause: removalCause(error) }; }
+    const warning = left.failed ? 'cleanup_failed' : left.entryKept ? 'worktree_entry_kept' : left.branchKept ? 'branch_kept' : null;
+    return { warning, noted: left.failed && left.cause ? `${warning}:${left.cause}` : warning };
   }
 
   // A request's wake in flight: its abort signal, and when it ended (a cancel waits for that before tidying).
@@ -630,6 +660,7 @@ export function createVisitRequests({ store, runner, modeOf, leads, platform = p
 
   async function close() {
     closed = true;
+    clearTimeout(retryTimer);
     for (const { controller } of running.values()) controller.abort();
     await Promise.allSettled([...work]);
   }
@@ -663,3 +694,9 @@ function requestText(request) {
 }
 
 const refused = (code) => ({ ok: false, code });
+
+function unrefTimer(run, ms) {
+  const timer = setTimeout(run, ms);
+  timer.unref?.();
+  return timer;
+}

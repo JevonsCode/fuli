@@ -835,7 +835,8 @@ test('on Windows, children still holding the copy after the client\'s PID is gon
   assert.equal(attempts.length, 1, 'not again within the minute');
   await later(MINUTE_LATER);
   assert.deepEqual([attempts.length, await runExit(), f.runner.calls.removed.length], [2, 'ended', 1]);
-  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed', 'cleanup_done']);
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_held', 'cleanup_done'],
+    'the failure is noted with its cause');
 });
 
 test('a removal that keeps failing is tried for a day, warned about once, and then left as it is', async (t) => {
@@ -848,7 +849,7 @@ test('a removal that keeps failing is tried for a day, warned about once, and th
   const tries = attempts.length;
   await later(MINUTE_LATER);
   assert.equal(attempts.length, tries, 'no more tries');
-  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed'], 'the warning stays the last word');
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_held'], 'the warning stays the last word');
 });
 
 test('a recorded PID whose identity could not be read, later held by another process, is released after a day', async (t) => {
@@ -978,4 +979,68 @@ test('requests taken back count toward the stop of ten of a fully trusted reques
   assert.equal((await f.port.requests.card('request-9')).request.planningMs, 0);
   assert.equal(f.runner.calls.ran.length, 5, 'none of the five taken back during planning ran');
   assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'asking and withdrawing in a loop stops at ten');
+});
+
+// ---- A withdrawal whose removal fails: named, and tried again by the service itself (the first real withdrawal, 0.27.10) ----
+
+// The removal of a trusted requester's ready result fails as errors[n] for its nth try, then goes through.
+async function withdrawnWithFailingRemoval(t, errors) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const timers = [];
+  const f = fixture(t, {}, { now: () => clock.now, processes: { setTimer: (run, ms) => { timers.push({ run, ms }); return null; } } });
+  let tries = 0;
+  f.runner.remove = async (request, { keepBranch }) => {
+    if (tries++ < errors.length) throw errors[tries - 1];
+    f.runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  // The timer fires a minute on, with nobody reading the list or the card.
+  const fire = async () => {
+    const { run, ms } = timers.shift();
+    clock.now = new Date(clock.now.getTime() + ms);
+    run();
+    await delay(20);
+  };
+  const notes = async () => (await f.port.requests.card('request-1')).events.map((event) => event.note).filter(Boolean);
+  return { f, timers, fire, notes, tries: () => tries };
+}
+const gitTimeout = () => Object.assign(new Error('A Git step of the visit request failed'), { code: 'git_failed', summary: null, timedOut: true });
+
+test('a withdrawal whose removal fails still answers cancelled, notes why, and the service tries again by itself', async (t) => {
+  const { f, timers, fire, notes, tries } = await withdrawnWithFailingRemoval(t, [gitTimeout(), gitTimeout()]);
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  assert.deepEqual([tries(), timers.length, timers[0].ms > 60_000], [1, 1, true], 'one timer, past the minute a retry waits');
+  await fire();
+  assert.deepEqual([tries(), f.runner.calls.removed, timers.length], [2, [], 1], 'failed again: the timer is set again, nothing noted twice');
+  await fire();
+  assert.deepEqual([tries(), f.runner.calls.removed, timers.length], [3, [{ id: 'request-1', keepBranch: false }], 0],
+    'gone on the third try, and no timer is left');
+  assert.deepEqual(await notes(), ['withdrawn_by_requester', 'cleanup_failed:git_timeout', 'cleanup_done']);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('a failed removal names its cause when it is a known one, and nothing of Git\'s text or a path', async (t) => {
+  const causes = [
+    [Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_unavailable', timedOut: false }), 'cleanup_failed:git_unavailable'],
+    [Object.assign(new Error('git'), { code: 'git_failed', summary: 'fatal: not a git repository: /synthetic/secret', timedOut: false }),
+      'cleanup_failed:git_failed'],
+    [Object.assign(new Error('worktree_root_changed'), { code: 'worktree_root_changed' }), 'cleanup_failed:worktree_root_changed'],
+    [Object.assign(new Error('worktree_outside_root'), { code: 'worktree_outside_root' }), 'cleanup_failed:worktree_outside_root'],
+    [Object.assign(new Error('EACCES: /synthetic/secret'), { code: 'EACCES' }), 'cleanup_failed:files_held'],
+    [new Error('something else at /synthetic/secret'), 'cleanup_failed']
+  ];
+  for (const [error, noted] of causes) {
+    const { f, notes } = await withdrawnWithFailingRemoval(t, [error]);
+    assert.equal((await withdraw(f, 'request-1')).ok, true);
+    assert.equal((await notes()).at(-1), noted);
+  }
+});
+
+test('the owner\'s own discard that cannot remove the copy notes the cause too, and answers the plain warning', async (t) => {
+  const { f, timers, notes } = await withdrawnWithFailingRemoval(t, [gitTimeout()]);
+  const discarded = await f.port.requests.discard('request-1');
+  assert.deepEqual([discarded.request.state, discarded.warning], ['discarded', 'cleanup_failed']);
+  assert.deepEqual([(await notes()).at(-1), timers.length], ['cleanup_failed:git_timeout', 0], 'a decision\'s removal is not retried');
 });
