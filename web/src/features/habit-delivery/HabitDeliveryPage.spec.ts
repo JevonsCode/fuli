@@ -49,7 +49,12 @@ describe('HabitDeliveryPage', () => {
       return habit(url.includes('h-1') ? 'h-1' : 'h-2')
     })
     expect(wrapper.findAll('[data-habit]')).toHaveLength(3)
-    expect(pageTitle.value.text).toBe('这个对话一开始，FULI 交给助手的 3 条习惯')
+    expect(pageTitle.value.text).toBe('交给助手的习惯')
+    expect(wrapper.get('h2').text()).toBe('这个对话一开始，FULI 交给助手的 3 条习惯')
+    expect(wrapper.get('[data-habit="h-1"] [data-habit-scope]').text()).not.toBe('')
+    // One line per habit: no detail card, no second copy of its text.
+    expect(wrapper.findAll('[data-habit="h-1"] a')).toHaveLength(1)
+    expect(wrapper.get('[data-habit="h-1"]').text().split('Synthetic habit h-1')).toHaveLength(2)
     expect(wrapper.get('[data-habit="h-1"] a').attributes('href')).toBe('/knowledge/item/space/entity/h-1')
     expect(wrapper.get('[data-habit="h-1"] a').classes()).toContain('select-none')
     expect(wrapper.get('[data-habit="h-2"]').text()).toContain('Synthetic habit h-2')

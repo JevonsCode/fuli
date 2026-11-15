@@ -3,12 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageStack from '@/components/PageStack.vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
-import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeItemSummaryCard.vue'
-import { itemEditPath } from '@/features/knowledge-quick-edit/model'
+import { itemEditPath, scopeLabel } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import { usePageTitle } from '@/layouts/page-title'
 import { useConsoleStore } from '@/stores/console'
@@ -17,7 +15,7 @@ import type { HabitRow } from './model'
 
 // The habits FULI handed to the assistant when a conversation started: the
 // list behind the first reply's 「FULI 习惯」 receipt line. Read in the active
-// space; each habit opens its own quick edit.
+// space; each habit is one line that opens its own page.
 const route = useRoute()
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
@@ -30,7 +28,8 @@ const error = ref('')
 const showLoading = useMinimumLoadingDisplay(computed(() => (loading.value || !spaceId.value) && !rows.value && !expired.value))
 let requestVersion = 0
 
-usePageTitle(computed(() => rows.value ? t('habitDelivery.header', { count: rows.value.length }) : ''))
+// The bar names the page; the card's heading says how many, so nothing is said twice or cut short.
+usePageTitle(computed(() => t('habitDelivery.title')))
 
 async function load() {
   if (!spaceId.value) return
@@ -62,22 +61,21 @@ watch([spaceId, taskKey], () => { rows.value = null; expired.value = false; void
         <Button variant="outline" size="sm" @click="load">{{ t('knowledgeQuickEdit.retry') }}</Button>
       </div>
       <p v-else-if="expired" class="m-0 text-sm text-muted-foreground" data-habit-expired>{{ t('habitDelivery.expired') }}</p>
-      <template v-else-if="rows">
-        <PageStack role="list">
-          <div v-for="row in rows" :key="`${row.kind}:${row.id}`" role="listitem" class="grid gap-2" :data-habit="row.id">
-            <Card v-if="row.deleted" as="section" class="px-5" data-habit-deleted>
-              <p class="m-0 text-sm text-muted-foreground">{{ t('habitDelivery.deleted') }}</p>
-            </Card>
-            <template v-else>
-              <RouterLink :to="itemEditPath(spaceId, row.item)" class="select-none text-sm font-medium underline">
-                {{ t('knowledgeQuickEdit.turn.open') }} · {{ row.item.title }}
-              </RouterLink>
-              <KnowledgeItemSummaryCard :item="row.item" />
-            </template>
-          </div>
-        </PageStack>
-        <p class="m-0 text-sm text-muted-foreground" data-habit-footnote>{{ t('habitDelivery.footnote') }}</p>
-      </template>
+      <!-- One plain list: a habit is its text (two lines at most) with where it applies under it, and opens its own page. -->
+      <Card v-else-if="rows" as="section" class="gap-3 px-5" aria-labelledby="habit-delivery-heading">
+        <h2 id="habit-delivery-heading" class="m-0 text-lg font-semibold">{{ t('habitDelivery.header', { count: rows.length }) }}</h2>
+        <ul class="m-0 grid list-none p-0" role="list">
+          <li v-for="row in rows" :key="`${row.kind}:${row.id}`" class="border-t first:border-t-0" :data-habit="row.id">
+            <p v-if="row.deleted" class="m-0 px-2 py-2.5 text-sm text-muted-foreground" data-habit-deleted>{{ t('habitDelivery.deleted') }}</p>
+            <RouterLink v-else :to="itemEditPath(spaceId, row.item)" :title="row.item.content || row.item.title"
+              class="grid select-none gap-1 rounded-md px-2 py-2.5 no-underline hover:bg-muted/60">
+              <span class="line-clamp-2 text-sm font-medium text-foreground">{{ row.item.content || row.item.title }}</span>
+              <span class="whitespace-nowrap text-xs text-muted-foreground" data-habit-scope>{{ scopeLabel(row.item.scope) }}</span>
+            </RouterLink>
+          </li>
+        </ul>
+        <p class="m-0 text-xs text-muted-foreground" data-habit-footnote>{{ t('habitDelivery.footnote') }}</p>
+      </Card>
     </div>
   </section>
 </template>
