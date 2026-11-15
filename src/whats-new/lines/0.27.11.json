@@ -1,0 +1,11 @@
+{
+  "version": "0.27.11",
+  "zh": [
+    "撤回的活在那台电脑上没清干净时，卡片不再写「已删除」，会写明还没删和原因。",
+    "清理失败后 FULI 每分钟自己再试，最多一天，不用等人打开页面。"
+  ],
+  "en": [
+    "A request taken back but not fully cleared no longer reads \"removed\"; the card says why.",
+    "After a failed cleanup FULI tries again every minute for up to a day, on its own."
+  ]
+}
