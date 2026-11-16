@@ -37,12 +37,17 @@ export function statementWeek(now: Date, weeksBack = 0): StatementWeek {
   return { from: monday.toISOString(), to: next.toISOString() }
 }
 
-/** The days of a week, as the statement's dialogs name it (「11月16日 到 11月22日」); a bound that is no date reads as nothing. */
+/** The days of a week, as the statement's dialogs name it (「11月16日 到 11月22日」); its bounds are instants. */
 export function weekRangeLabel({ from, to }: StatementWeek) {
-  const day = (value: number) => (Number.isNaN(value) ? ''
-    : formatDateTime(new Date(value).toISOString(), currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' }))
+  const day = (value: string) => formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' })
   // The week ends where the next one begins: its last day is the instant before.
-  return t('today.statement.week.range', { from: day(Date.parse(from)), to: day(Date.parse(to) - 1) })
+  return t('today.statement.week.range', { from: day(from), to: day(new Date(Date.parse(to) - 1).toISOString()) })
+}
+
+/** The week a statement was read for, or null when it names none that can be read as two instants. */
+export function statementWindow(statement: Statement): StatementWeek | null {
+  const { from, to } = statement.window ?? {}
+  return from && to && !Number.isNaN(Date.parse(from)) && !Number.isNaN(Date.parse(to)) ? { from, to } : null
 }
 
 /** The week's statement, or null when the server cannot give one. */

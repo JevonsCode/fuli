@@ -36,7 +36,10 @@ export async function handleStatementRequest({ request, response, url, app, owne
   }
   if (url.pathname === CARRIED_PATH) {
     // The record of what task entries carried is this installation's own; without it there is no list, not an empty one.
-    if (!app.recallImpressions) return ownerReadsUnavailable(response);
+    if (!app.recallImpressions) {
+      sendJson(response, 503, { error: 'The conversations that carried habits are recorded only by a local FULI installation' });
+      return true;
+    }
     sendJson(response, 200, carriedTasks(app, statementWindow({ from: params.get('from'), to: params.get('to') })));
     return true;
   }

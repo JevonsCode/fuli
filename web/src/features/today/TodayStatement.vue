@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import StatementDetails from './StatementDetails.vue'
 import StatementLists from './StatementLists.vue'
-import { sparklinePoints, statementSeries, type Statement, type StatementTile } from './statement'
+import { sparklinePoints, statementSeries, statementWindow, type Statement, type StatementTile } from './statement'
 import TodaySection from './TodaySection.vue'
 import UiIcon from '@/ui/UiIcon.vue'
 
@@ -52,7 +52,7 @@ const listOpen = ref<'carried' | 'learned' | null>(null)
         </component>
       </li>
     </ul>
-    <StatementLists :list="listOpen" :week="statement.window ?? null" @close="listOpen = null" />
+    <StatementLists :list="listOpen" :week="statementWindow(statement)" @close="listOpen = null" />
     <StatementDetails :open="detailsOpen" :statement="statement" @close="detailsOpen = false" />
   </TodaySection>
 </template>
