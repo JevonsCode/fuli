@@ -39,7 +39,7 @@ defineExpose({ initialFocusRef })
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         </Button>
       </header>
-      <div class="ui-dialog__body">
+      <div class="ui-dialog__body" tabindex="-1">
         <p v-if="error" class="ui-dialog__error" role="alert">{{ error }}</p>
         <slot />
       </div>
