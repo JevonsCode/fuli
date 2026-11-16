@@ -56,6 +56,33 @@ describe('ModelList', () => {
     expect(wrapper.emitted('checked')).toHaveLength(1)
   })
 
+  it('tests each use whose own task failed, one after another, and stops at the first that does not answer', async () => {
+    const own = { status: 'failing' as const, at: ago(5), reason: 'timeout', scope: 'role' as const }
+    const uses = () => payload([role('assistant', 'shared', { health: { status: 'ok', at: ago(1), reason: null, scope: 'connection' } }),
+      role('bole', 'shared', { health: own }), role('jefa', 'shared', { health: own })])
+    const answered = { ok: true, receipt: { status: 'completed', actualModel: 'shared-model' } }
+    let first: (value: typeof answered) => void = () => {}
+    vi.mocked(checkModelRole).mockReturnValueOnce(new Promise((resolve) => { first = resolve })).mockResolvedValue(answered)
+    const wrapper = mount(ModelList, { props: { payload: uses() } })
+    const label = () => row(wrapper, 'shared').get('[data-model-connection-check] [role="status"]').attributes('aria-label')
+    await row(wrapper, 'shared').get('[data-model-connection-check]').trigger('click')
+    expect(label()).toBe('正在测试 Bole 的模型')
+    first(answered)
+    await flushPromises()
+    // Astro answered an hour ago and is not asked again; the two whose own task failed are.
+    expect(vi.mocked(checkModelRole).mock.calls).toEqual([['bole'], ['jefa']])
+    expect(row(wrapper, 'shared').get('[data-model-connection-health]').text()).toBe('连接正常，shared-model 回答了。')
+    expect(wrapper.emitted('checked')).toHaveLength(1)
+
+    vi.mocked(checkModelRole).mockReset()
+    vi.mocked(checkModelRole).mockResolvedValue({ ok: false, receipt: { status: 'failed', reason: 'timeout' } })
+    const failing = mount(ModelList, { props: { payload: uses() } })
+    await row(failing, 'shared').get('[data-model-connection-check]').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(checkModelRole).mock.calls).toEqual([['bole']])
+    expect(row(failing, 'shared').get('[data-model-connection-health]').text()).toBe('没有连上：等太久没有回答')
+  })
+
   it('shows why a test failed in the row, and does not test a connection whose uses are all off', async () => {
     vi.mocked(checkModelRole).mockResolvedValue({ ok: false, receipt: { status: 'failed', reason: 'auth_failed' } })
     const wrapper = mount(ModelList, { props: { payload: payload([role('assistant', 'on'), role('jefa', 'off', { state: 'disabled' })]) } })

@@ -6,7 +6,9 @@ import { getJson } from '@/api/client'
 import { t } from '@/i18n'
 import HeaderPeek from '@/components/HeaderPeek.vue'
 import { UiIcon } from '@/ui'
-import { roleName, type ModelRolesPayload } from './model'
+import { latestModelRoles } from './latest-model-roles'
+import { readModelRoles, roleName, type ModelRoleView } from './model'
+import { failingState, isRoleFailure } from './model-health'
 
 // The model entry in the top bar, beside 设置 (Jevons 11-06): one look at the
 // bar says whether FULI has a model behind it. With none it is a plain icon in
@@ -14,12 +16,15 @@ import { roleName, type ModelRolesPayload } from './model'
 // and now and then breaks up like a weak signal; while old knowledge is being
 // indexed a ring fills around it; when a connected model's latest call failed,
 // or the settings cannot be read, it is red and still. It only reads, every
-// minute and when the page comes back into view.
+// minute and when the page comes back into view, and shows the one copy of
+// the settings the model page shows too (latest-model-roles), so a test or a
+// save there shows here at once. A failure says what it is about, as on that page:
+// the connection does not answer, or a role's own task failed.
 type SemanticStatus = { total: number, done: number, running: boolean }
 type Power = 'off' | 'on' | 'filling' | 'problem'
 
 const REFRESH_MS = 60_000
-const roles = ref<ModelRolesPayload | null>(null)
+const roles = latestModelRoles
 const semantic = ref<SemanticStatus | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 let request: AbortController | null = null
@@ -38,10 +43,17 @@ const power = computed<Power>(() => {
   return enabled.value ? 'on' : 'off'
 })
 const progress = computed(() => (filling.value ? Math.round((filling.value.done / filling.value.total) * 100) : 0))
+// The failing uses by what failed, each said in its own words; empty when none fails.
+function failingWords(connection: (uses: ModelRoleView[]) => string, task: (uses: ModelRoleView[]) => string, between: string) {
+  const own = failing.value.filter(role => isRoleFailure(role.health))
+  const shared = failing.value.filter(role => !isRoleFailure(role.health))
+  return [shared.length ? connection(shared) : '', own.length ? task(own) : ''].filter(Boolean).join(between)
+}
+const names = (uses: ModelRoleView[]) => uses.map(role => roleName(role.role)).join('、')
 const label = computed(() => {
   if (power.value === 'problem') {
-    return failing.value.length ? t('modelSettings.power.failing', { roles: failing.value.map(role => roleName(role.role)).join('、') })
-      : t('modelSettings.power.problem')
+    return failingWords(uses => t('modelSettings.power.failing', { roles: names(uses) }),
+      uses => t('modelSettings.power.roleFailing', { roles: names(uses) }), ' ') || t('modelSettings.power.problem')
   }
   if (power.value === 'filling') return t('modelSettings.power.filling', { done: filling.value!.done, total: filling.value!.total })
   return power.value === 'on' ? t('modelSettings.power.on', { count: enabled.value }) : t('modelSettings.power.off')
@@ -52,7 +64,7 @@ async function refresh() {
   request = new AbortController()
   const { signal } = request
   try {
-    roles.value = await getJson<ModelRolesPayload>('/api/model-backends/roles', { signal })
+    roles.value = await readModelRoles(signal)
   } catch {
     // The last answer stays; a console that does not answer says so elsewhere.
   }
@@ -76,7 +88,10 @@ onBeforeUnmount(() => {
 })
 // The hover panel's one-line status, beside its title.
 const peekStatus = computed(() => {
-  if (power.value === 'problem') return failing.value.length ? t('modelSettings.power.peek.failingCount', { count: failing.value.length }) : t('modelSettings.power.peek.unreadable')
+  if (power.value === 'problem') {
+    return failingWords(uses => t('modelSettings.power.peek.failingCount', { count: uses.length }),
+      uses => t('modelSettings.power.peek.roleFailingCount', { count: uses.length }), ' · ') || t('modelSettings.power.peek.unreadable')
+  }
   if (power.value === 'filling') return t('modelSettings.power.filling', { done: filling.value!.done, total: filling.value!.total })
   return power.value === 'on' ? t('modelSettings.power.peek.on', { count: enabled.value }) : t('modelSettings.power.peek.off')
 })
@@ -118,7 +133,7 @@ const active = computed(() => route?.path === '/models')
       <li v-for="role in enabledRoles" :key="role.role" class="header-peek-row" data-model-peek-role>
         <span class="header-peek-text">{{ roleName(role.role) }}</span>
         <span class="header-peek-tag" :class="{ 'is-problem': role.health?.status === 'failing' }">
-          {{ role.health?.status === 'failing' ? t('modelSettings.power.peek.failing') : role.connection?.model }}
+          {{ role.health?.status === 'failing' ? failingState(role.health) : role.connection?.model }}
         </span>
       </li>
     </ul>

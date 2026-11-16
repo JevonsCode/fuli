@@ -24,7 +24,9 @@ export async function runRoleCheck(role: ModelRoleId, model: string): Promise<Ro
   }
 }
 
-export function useRoleCheck(target: () => { role: ModelRoleId; model: string }, checked: (ok: boolean) => void = () => {}) {
+// checked: called after every test. A test changes what the settings say of the role (its latest call), so
+// whoever offers one passes it on for the page to read them again; it is required so that no place forgets.
+export function useRoleCheck(target: () => { role: ModelRoleId; model: string }, checked: (ok: boolean) => void) {
   const checking = ref(false)
   const result = ref<RoleCheckResult | null>(null)
 

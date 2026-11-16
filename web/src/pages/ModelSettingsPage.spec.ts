@@ -12,6 +12,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 }))
 
 import { ApiError } from '@/api/client'
+import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { reloadPage } from '@/layouts/page-refresh'
@@ -54,6 +55,7 @@ const trust = (overrides: Record<string, unknown> = {}) => ({ operation: 'knowle
 let rolesPayload = roles()
 const dreamingOff = { readiness: 'needs_model', projects: [] }
 beforeEach(() => {
+  latestModelRoles.value = null
   setActivePinia(createPinia())
   const store = useConsoleStore()
   store.runtimeStatus = 'ready'
@@ -319,8 +321,52 @@ describe('ModelSettingsPage', () => {
     await tonborg.get('[data-model-check]').trigger('click')
     await flushPromises()
     expect(reads()).toBe(before + 1)
+    // What the page read after the test is what the top bar's model button shows.
+    expect(latestModelRoles.value?.roles.find(view => view.role === 'tonborg')?.health?.status).toBe('ok')
     expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
     expect(wrapper.find('[data-model-role="tonborg"] [data-model-failure]').exists()).toBe(false)
+  })
+
+  // A real report on 0.27.12: 测试连接 inside a use's 查看详情 answered, and the use's card, its connection's row and the top bar stayed as they were.
+  it('reads the settings again after 测试连接 in a use\'s details, so its card and its connection turn with the answer', async () => {
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'timeout', scope: 'role' } } as never
+    const wrapper = await mountPage()
+    const state = () => wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()
+    expect(state()).toBe('任务失败')
+    const details = await openDetails(wrapper, 'tonborg')
+    const reads = () => api.getJson.mock.calls.filter(([url]) => url === '/api/model-backends/roles').length
+    const before = reads()
+
+    // The test answers, and the settings read after it carry that answer.
+    api.postJson.mockResolvedValue({ ok: true, receipt: { status: 'completed', actualModel: 'qwen-test' } })
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'ok', at: new Date().toISOString(), reason: null, scope: 'connection' } } as never
+    await details.get('[data-model-check]').trigger('click')
+    await flushPromises()
+    expect(reads()).toBe(before + 1)
+    expect(state()).toBe('已接上')
+    expect(wrapper.get('[data-model-connection-id="local-qwen"] [data-model-connection-health]').text()).toContain('连接正常')
+    expect(latestModelRoles.value?.roles.find(view => view.role === 'tonborg')?.health?.status).toBe('ok')
+
+    // And the other way: a test that fails turns the card to the failure.
+    api.postJson.mockResolvedValue({ ok: false, receipt: { status: 'failed', reason: 'auth_failed' } })
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'auth_failed', scope: 'role' } } as never
+    await wrapper.get('[data-model-use-details] [data-model-check]').trigger('click')
+    await flushPromises()
+    expect(state()).toBe('任务失败')
+  })
+
+  it('shows what the top bar\'s model button read since, without a read of its own', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
+    const reads = api.getJson.mock.calls.length
+    const newer = roles()
+    newer.roles[3] = { ...(newer.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'timeout', scope: 'role' } } as never
+    latestModelRoles.value = newer as never
+    await flushPromises()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('任务失败')
+    expect(api.getJson.mock.calls.length).toBe(reads)
   })
 
   it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {

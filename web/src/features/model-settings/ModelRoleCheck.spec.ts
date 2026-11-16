@@ -15,6 +15,7 @@ describe('ModelRoleCheck', () => {
     await flushPromises()
     expect(checkModelRole).toHaveBeenCalledWith('assistant')
     expect(wrapper.get('[data-model-check-result]').text()).toContain('synthetic-model')
+    expect(wrapper.emitted('checked')).toEqual([[true]])
   })
 
   it('says why it failed', async () => {
@@ -24,5 +25,7 @@ describe('ModelRoleCheck', () => {
     await flushPromises()
     expect(wrapper.get('[data-model-check-result]').text()).toContain('authentication failed')
     expect(wrapper.get('[data-model-check-result]').attributes('role')).toBe('alert')
+    // A failed test is reported too: the use's card and the top bar turn to it.
+    expect(wrapper.emitted('checked')).toEqual([[false]])
   })
 })
