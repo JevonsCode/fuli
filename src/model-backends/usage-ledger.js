@@ -67,6 +67,12 @@ export const MODEL_USAGE_FORMAT = sqliteFormat({
     id: 'model-usage/3-health-identity', to: 3, kind: 'add-columns', table: 'model_attempts',
     summary: 'the health identity (connection and key reference) of the configuration each attempt used (rec#122)',
     columns: { health_identity: 'TEXT' }
+  }, {
+    // Earlier attempts keep it NULL: whether their caller tightened the time
+    // limit is not known, so their timeouts still count as the role's.
+    id: 'model-usage/4-caller-deadline', to: 4, kind: 'add-columns', table: 'model_attempts',
+    summary: 'whether the caller of each attempt tightened the role\'s time limit, as a hot path does (rec#139)',
+    columns: { caller_deadline: 'INTEGER' }
   }]
 });
 
@@ -85,7 +91,7 @@ export class ModelUsageLedger {
   // True when stored, false when this (requestId, attemptId) already exists.
   record(attempt) {
     const { usage } = attempt;
-    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(33).fill('?').join(',')})
+    const result = this.db.prepare(`INSERT INTO model_attempts VALUES(${Array(34).fill('?').join(',')})
       ON CONFLICT(request_id, attempt_id) DO NOTHING`).run(
       attempt.requestId, attempt.attemptId, attempt.attemptNumber, attempt.purpose, attempt.channel,
       attempt.role, attempt.operation, attempt.personalSpaceId, attempt.personalProjectId,
@@ -93,7 +99,8 @@ export class ModelUsageLedger {
       attempt.outputMode, attempt.startedAt, attempt.durationMs, attempt.outcome, attempt.failureClass, attempt.failureReason,
       usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens,
       usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency,
-      attempt.endpoint ?? null, attempt.observedTagDigest ?? null, attempt.healthIdentity ?? null);
+      attempt.endpoint ?? null, attempt.observedTagDigest ?? null, attempt.healthIdentity ?? null,
+      attempt.callerDeadline ? 1 : null);
     return result.changes === 1;
   }
 
@@ -210,14 +217,17 @@ export class ModelUsageLedger {
   // red while the configured model fails). With role, only that role's
   // attempts. With connectivityReasons and no role, the latest attempt of any
   // role that says whether the connection answers (rec#122): an answer, valid
-  // or not, or a failure for one of those reasons.
-  lastAttempt({ healthIdentity, role = null, connectivityReasons = null }) {
+  // or not, or a failure for one of those reasons. With
+  // skipCallerTimeouts, a timeout under a time limit the caller tightened is
+  // passed over (rec#139): it says the caller would not wait, nothing more.
+  lastAttempt({ healthIdentity, role = null, connectivityReasons = null, skipCallerTimeouts = false }) {
     const reasons = connectivityReasons ? JSON.stringify(connectivityReasons) : null;
     const row = this.db.prepare(`SELECT outcome, failure_class, failure_reason, started_at, duration_ms FROM model_attempts
       WHERE channel = 'model_api' AND health_identity = ?1 AND (?2 IS NULL OR role = ?2)
         AND (?3 IS NULL OR outcome != 'failed' OR failure_reason IN (SELECT value FROM json_each(?3)))
+        AND (?4 = 0 OR outcome != 'failed' OR failure_reason != 'timeout' OR caller_deadline IS NOT 1)
       ORDER BY julianday(started_at) * 86400000 + duration_ms DESC, rowid DESC LIMIT 1`)
-      .get(healthIdentity, role, reasons);
+      .get(healthIdentity, role, reasons, skipCallerTimeouts ? 1 : 0);
     return row ? { outcome: row.outcome, failureClass: row.failure_class, failureReason: row.failure_reason,
       at: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
   }

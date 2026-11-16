@@ -34,6 +34,7 @@ function harness({ connections = { shared: connection() }, roles = { assistant: 
   const fetchImpl = async () => {
     const mode = transport[current] ?? 'up';
     if (mode === 'down') throw new TypeError('fetch failed');
+    if (mode === 'slow') throw new DOMException('The operation timed out.', 'TimeoutError');
     if (mode === 'forbidden') return Response.json({ error: { message: 'not allowed for this project' } }, { status: 403 });
     return openAiStream(READY, { model: 'synthetic-model' });
   };
@@ -47,8 +48,20 @@ function harness({ connections = { shared: connection() }, roles = { assistant: 
     current = name;
     return port.checkConnection(name);
   };
+  // One decision by a role, a minute after the previous one; timeoutMs is the
+  // time limit its caller asks for, as a hot path does.
+  const decide = async (name, mode, timeoutMs = null) => {
+    at += 60_000;
+    transport[name] = mode;
+    current = name;
+    return port.decide({ role: name, operation: 'pick', requestId: `pick:${at}`,
+      scope: { personalSpaceId: 'synthetic-space', personalProjectId: null, sessionRef: null },
+      versions: { evidence: 'none', policy: 'none' }, instructions: 'Choose the option ready.',
+      output: { type: 'choice', options: [{ id: 'ready', description: 'Ready.' }, { id: 'none', description: 'Not ready.' }] },
+      decisions: ['propose'], ...(timeoutMs ? { budget: { timeoutMs } } : {}) });
+  };
   const health = name => port.health(name, config.roles[name].connection, config.connections[config.roles[name].connection]);
-  return { port, config, check, health, ledger };
+  return { port, config, check, decide, health, ledger };
 }
 
 test('a newer answer by another role on the same configuration supersedes an older network failure', async () => {
@@ -89,6 +102,35 @@ test('a role\'s own failure for another reason is not cleared by another role\'s
   // Only the role's own answer clears it.
   await check('tonborg');
   assert.deepEqual([health('tonborg').status, health('tonborg').scope], ['ok', 'connection']);
+});
+
+// rec#139: a hot path asks for a few seconds where the role allows far more.
+test('a timeout under a time limit the caller tightened is not the role\'s failure', async () => {
+  const { check, decide, health } = harness();
+  await check('jefa');
+  const skipped = await decide('jefa', 'slow', 3000);
+  assert.deepEqual([skipped.modelReceipt.status, skipped.modelReceipt.reason], ['failed', 'timeout']);
+  // The caller would not wait; the role's answer before it still stands.
+  assert.deepEqual([health('jefa').status, health('jefa').scope], ['ok', 'connection']);
+});
+
+test('a timeout within the role\'s own time limit is still the role\'s failure', async () => {
+  const { check, decide, health } = harness();
+  await check('jefa');
+  await decide('jefa', 'slow');
+  assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'timeout']);
+  // A limit no tighter than the role's is the role's own.
+  await check('jefa');
+  await decide('jefa', 'slow', 30_000);
+  assert.deepEqual([health('jefa').status, health('jefa').scope], ['failing', 'role']);
+});
+
+test('another failure under a tightened time limit stays the role\'s, and a caller timeout does not clear it', async () => {
+  const { decide, health } = harness();
+  await decide('jefa', 'forbidden', 3000);
+  assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'permission_denied']);
+  await decide('jefa', 'slow', 3000);
+  assert.deepEqual([health('jefa').status, health('jefa').reason], ['failing', 'permission_denied']);
 });
 
 test('another endpoint, model, protocol or key reference shares nothing', async () => {

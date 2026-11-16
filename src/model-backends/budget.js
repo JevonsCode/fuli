@@ -25,6 +25,8 @@ export function estimateTokens(value) {
 
 // A request may tighten the role's per-call limits, never widen them.
 // outputRoomTokens: the most a retry stopped at the output limit may ask for.
+// callerDeadline: the request tightened the role's time limit, as a hot path
+// does; running out of it is the caller's choice, not the role's failure.
 export function callLimits(budget, requested = {}) {
   const maxOutputTokens = Math.min(budget.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS, requested.maxOutputTokens ?? Infinity);
   const unset = budget.maxOutputTokens == null && requested.maxOutputTokens == null;
@@ -32,7 +34,8 @@ export function callLimits(budget, requested = {}) {
     maxInputTokens: budget.maxInputTokens ?? Infinity,
     maxOutputTokens,
     outputRoomTokens: unset ? UNSET_OUTPUT_ROOM_TOKENS : maxOutputTokens,
-    timeoutMs: Math.min(budget.timeoutMs ?? DEFAULT_TIMEOUT_MS, requested.timeoutMs ?? Infinity)
+    timeoutMs: Math.min(budget.timeoutMs ?? DEFAULT_TIMEOUT_MS, requested.timeoutMs ?? Infinity),
+    callerDeadline: (requested.timeoutMs ?? Infinity) < (budget.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   };
 }
 
