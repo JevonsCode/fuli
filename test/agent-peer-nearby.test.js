@@ -344,7 +344,7 @@ test('second review: a coordinator whose address is gone says so, and turning it
 
 // A real case (2026-11-16): a laptop restarted FULI on another network, and after that its paired
 // computer could not reach it; back on its own network it would have stayed silent until a restart.
-test('a coordinator whose address was away listens again by itself once it is back, its devices still paired; any other failure waits for the person', { timeout: 90_000 }, async () => {
+test('a coordinator whose address was away listens again by itself once it is back, its devices still paired; any other failure waits for the person', { timeout: 180_000 }, async () => {
   const [laptop, desk] = await Promise.all([device('laptop'), device('desk')]);
   const runtimes = [];
   // The laptop's own addresses and what a listener on the stored one is answered, as the test sets them.
@@ -382,6 +382,17 @@ test('a coordinator whose address was away listens again by itself once it is ba
     assert.deepEqual([...new Set(network.ports)], [store.setting('coordinator').port], 'and on the same port');
     assert.equal(back.devices.find((entry) => entry.nodeId === deskNode).status, 'active', 'no trust changed');
     await until(away, (status) => status.devices.some((entry) => entry.nodeId === deskNode && entry.online), 'the desk to reconnect');
+
+    // The address goes just as nearby pairing moves the listener: the new place and the one it had both
+    // refuse. What the card then says (it returns by itself) holds here too.
+    Object.assign(network, { home: false, refusal: 'EADDRNOTAVAIL' });
+    const moved = await away.nearbyOn({ name: 'Laptop' });
+    assert.deepEqual([moved.coordinator.listening, moved.coordinator.listenFailure.address, moved.coordinator.listenFailure.addressAway],
+      [false, '10.255.255.1', true]);
+    Object.assign(network, { home: true, refusal: null });
+    await until(away, (status) => status.coordinator.listening, 'the listener to return after the move');
+    assert.equal(store.setting('coordinator').host, '10.255.255.1');
+    await away.nearbyOff();
     await away.close();
 
     // A stop while the address is away ends the looking.

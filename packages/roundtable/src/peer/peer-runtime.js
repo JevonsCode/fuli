@@ -824,7 +824,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // Moves the listener to another address on the same port. When that fails it
   // tries the address it had; when that fails too nothing listens and the
-  // card and `fuli peer status` say why. Trust never changes here.
+  // card and `fuli peer status` say why (an address that is only away is
+  // looked for again, awaitAddress). Trust never changes here.
   async function rebindCoordinator(address) {
     const settings = store().setting('coordinator');
     await stopAll();
@@ -833,7 +834,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       onError(error);
       const failure = listenFailure;
       try { await startCoordinator({ host: settings.host, port: settings.port, name: settings.name }); }
-      catch (again) { onError(again); return; }
+      catch (again) { onError(again); awaitAddress(); return; }
       listenFailure = failure;
     }
     await startRunner();
