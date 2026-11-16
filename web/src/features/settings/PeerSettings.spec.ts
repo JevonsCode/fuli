@@ -354,6 +354,17 @@ it('says when the coordinator is not listening and why', async () => {
   wrapper.unmount()
 })
 
+it('says a listener whose address is away comes back by itself, and never to turn the roundtable off (that unpairs)', async () => {
+  server({ 'GET /api/peer': [{ ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '10.255.255.1', port: 4101, code: 'EADDRNOTAVAIL', at: '2030-01-01T00:00:00.000Z', addressAway: true } } }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  const text = wrapper.get('[data-listen-failure]').text()
+  expect(text).toBe('这台电脑现在没有 10.255.255.1 这个地址，已配对的电脑暂时连不上。重新拿到这个地址后会自己恢复，不用重新配对。')
+  expect(text).not.toContain('关掉')
+  wrapper.unmount()
+})
+
 it('says when no checkout of the project is known here', async () => {
   server({ 'GET /api/peer': [{ ...paired, shareable: [{ ...paired.shareable[0],
     sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }], knownFolder: null }] }] })

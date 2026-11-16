@@ -194,7 +194,12 @@ cannot be opened it turns off with the reason and the console keeps running. Whi
 off, its routes answer like any unknown path. Afterwards a listener returns to the
 address the person chose, or narrows to the address its paired devices reached (kept
 across restarts). When that address is gone, nothing listens and the card says so;
-turning the LAN roundtable off revokes every paired device even then. The computer that already coordinates
+turning the LAN roundtable off revokes every paired device even then. An address that is
+only away (a laptop on another network: `listenFailure.addressAway`) is looked for every
+30 seconds, and the listener starts by itself once that same address is on this computer
+again, with no restart, no other address and no change of trust; the card says so instead
+of asking for off and on. A network that gives the computer a different address does not
+bring it back: then off and on, and pairing again, is still the way. The computer that already coordinates
 other devices keeps coordinating; otherwise the computer that was picked from the list
 does. Without nearby pairing, choose one computer to host, copy its one-use invitation
 to the other computer, compare the displayed fingerprints, and join. Select the project
