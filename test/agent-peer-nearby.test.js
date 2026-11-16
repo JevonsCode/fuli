@@ -465,8 +465,8 @@ test('a coordinator whose address was away listens again by itself once it is ba
     await delay(120);
     assert.deepEqual([network.opened - network.closed, atOnce.runnerActive()], [0, false], 'a start that would begin after the stop keeps nothing');
 
-    // Closed while the connection to the coordinator is being made (the listener is already kept): the close
-    // waits for it and ends it, and nothing is published afterwards.
+    // Closed during the first publish of a connection just made (the listener is already kept): the close
+    // ends the connection without waiting for that publish, and nothing is published afterwards.
     let busy;
     let busyClose = null;
     let listed = 0;
@@ -559,8 +559,10 @@ test('a coordinator whose address was away listens again by itself once it is ba
     for (let waited = 0; freshAsked.length < 1 && waited < 100; waited += 1) await delay(20);
     const freshClose = fresh.close();
     await delay(40);
+    // Asked again while that close is still under way: it has the new count, and is ended all the same.
+    const turningOnAgain = fresh.enableCoordinator({ host: '10.255.255.1', name: 'Laptop' }).then(() => null, (error) => error.code);
     open();
-    assert.equal(await turningOn, 'listen_stopped');
+    assert.deepEqual([await turningOn, await turningOnAgain], ['listen_stopped', 'listen_stopped']);
     await freshClose;
     await delay(120);
     assert.deepEqual([store.setting('coordinator'), store.setting('membership'), fresh.runnerActive(), network.opened - network.closed],
@@ -697,6 +699,26 @@ test('nearby pairing turns itself off after a pairing and after its time, with a
     const ended = await until(tablet.runtime, (status) => !status.nearby.on && !status.role, 'the session and its listener to end');
     assert.deepEqual([ended.nearby.ended.kind, ended.role], ['timeout', null], 'the listener it opened closes too');
   } finally { await tablet.close(); }
+});
+
+test('a service closed in the wait after a pairing does nothing when that wait would have ended', { timeout: 30_000 }, async () => {
+  const bus = discoveryBus();
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: { pairedGraceMs: 300 } }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { pairedGraceMs: 60_000 } })]);
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const { here, there } = await nearbyPair(desk, laptop);
+    await desk.runtime.confirmPairing({ requestId: here.requestId, code: there.code });
+    await laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code });
+    await until(desk.runtime, (status) => ['paired', 'waiting'].includes(status.nearby.ended?.kind), 'the pairing to end on the desk');
+    await desk.runtime.close();
+    const store = desk.app.peer.nodeStore();
+    const kept = store.setting('nearby');
+    assert.ok(kept, 'a close keeps nearby pairing as it was, for the next start');
+    await delay(600);
+    assert.deepEqual(store.setting('nearby'), kept, 'the wait that was running wrote nothing after the close');
+  } finally { await desk.close(); await laptop.close(); }
 });
 
 test('trust written for a pairing the other computer never finished is taken back', { timeout: 30_000 }, async () => {
