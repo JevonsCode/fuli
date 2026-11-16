@@ -355,13 +355,15 @@ test('a coordinator whose address was away listens again by itself once it is ba
     const close = server.close.bind(server);
     return Object.assign(server, { close: async () => { network.closed += 1; return close(); } });
   };
-  const started = (asked) => { const runtime = restartedRuntime(laptop, { listenRetryMs: 20,
+  // hold: what a listener start waits for before it is answered; a function is asked with the number of
+  // starts this runtime has made, so one start of several can be held.
+  const started = (asked, more = {}) => { const runtime = restartedRuntime(laptop, { listenRetryMs: 20, ...more,
     interfaces: () => (network.home ? { en0: [{ address: '10.255.255.1', family: 'IPv4', internal: false }] } : {}),
     startServer: (options) => {
       asked.push(options.host);
       network.ports.push(options.port);
       const refusal = network.refusal;
-      return Promise.resolve(network.hold).then(() => (refusal ? Promise.reject(Object.assign(new Error('synthetic'), { code: refusal }))
+      return Promise.resolve(typeof network.hold === 'function' ? network.hold(asked.length) : network.hold).then(() => (refusal ? Promise.reject(Object.assign(new Error('synthetic'), { code: refusal }))
         : startCoordinatorServer({ ...options, host: '127.0.0.1' }).then(counted)));
     } }); runtimes.push(runtime); return runtime; };
   try {
@@ -454,6 +456,34 @@ test('a coordinator whose address was away listens again by itself once it is ba
     await delay(120);
     assert.deepEqual([lateAsked, network.opened - network.closed], [['10.255.255.1'], 0]);
 
+    // Closed at once after the service starts, before its listener start has begun: that start opens nothing.
+    Object.assign(network, { home: true, refusal: null, hold: null });
+    const atOnce = started([]);
+    const atOnceResume = atOnce.resume();
+    await atOnce.close();
+    await atOnceResume;
+    await delay(120);
+    assert.deepEqual([network.opened - network.closed, atOnce.runnerActive()], [0, false], 'a start that would begin after the stop keeps nothing');
+
+    // Closed while the connection to the coordinator is being made (the listener is already kept): the close
+    // waits for it and ends it, and nothing is published afterwards.
+    let busy;
+    let busyClose = null;
+    let listed = 0;
+    const realHost = createFuliRoundtableHost(laptop.app);
+    const closingHost = Object.assign(Object.create(realHost), { listAgents: async (...args) => {
+      listed += 1;
+      busyClose ??= busy.close();
+      return realHost.listAgents(...args);
+    } });
+    busy = started([], { host: closingHost, publishMs: 30 });
+    await busy.resume();
+    assert.ok(busyClose, 'the connection was being made');
+    await busyClose;
+    const listedAtClose = listed;
+    await delay(200);
+    assert.deepEqual([listed - listedAtClose, busy.runnerActive(), network.opened - network.closed], [0, false, 0]);
+
     // The service closes while the listener is being moved and both places then refuse: the move ends
     // there, and the address coming back later starts nothing.
     Object.assign(network, { home: true, refusal: null, hold: null });
@@ -474,6 +504,27 @@ test('a coordinator whose address was away listens again by itself once it is ba
     Object.assign(network, { home: true, refusal: null, hold: null });
     await delay(120);
     assert.deepEqual([movingAsked.length, network.opened - network.closed, moving.runnerActive()], [2, 0, false], 'and nothing starts when the address is back');
+
+    // The same close, arriving while the address it had is being tried: the move still ends there, and
+    // nearby pairing is not written back as on.
+    Object.assign(network, { home: true, refusal: null, hold: null });
+    const fallbackAsked = [];
+    const fallback = started(fallbackAsked);
+    await fallback.resume();
+    let refuseOld;
+    const heldOld = new Promise((resolve) => { refuseOld = resolve; });
+    Object.assign(network, { home: false, refusal: 'EADDRNOTAVAIL', hold: (count) => (count >= 3 ? heldOld : null) });
+    const fallbackMove = fallback.nearbyOn({ name: 'Laptop' }).then(() => null, (error) => error.code);
+    for (let waited = 0; fallbackAsked.length < 3 && waited < 100; waited += 1) await delay(20);
+    assert.equal(fallbackAsked.length, 3, 'the address it had is being tried');
+    const fallbackClose = fallback.close();
+    await delay(40);
+    refuseOld();
+    assert.equal(await fallbackMove, 'listen_stopped');
+    await fallbackClose;
+    Object.assign(network, { home: true, refusal: null, hold: null });
+    await delay(120);
+    assert.deepEqual([store.setting('nearby') ?? null, fallbackAsked.length, network.opened - network.closed], [null, 3, 0]);
 
     // Turned off while the returning listener is still starting: off waits for that start and closes it, and
     // the settings it clears stay cleared, so nothing listens now or after a restart.
