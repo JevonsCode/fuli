@@ -66,9 +66,12 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // The start awaitAddress has under way, if any: a stop waits for it, so it closes what that start opened
   // and whatever the stop clears afterwards (turning the roundtable off clears its settings) stays cleared.
   let listenWork = null;
-  // Counts stops asked for. A start that one overtook arms no retry (resume's own start is not waited for by
-  // a stop), and the retry's start skips connecting, which the waiting stop would only undo.
+  // Counts stops asked for. One rule for every listener start, whoever began it (the first start at service
+  // start, the retry, turning the roundtable on, moving the listener): a stop waits for the starts under way
+  // (starting), and a start a stop overtook keeps nothing: the listener it opened is closed again, no
+  // setting is written, no retry is armed and nothing connects. So off and close leave nothing behind.
   let stops = 0;
+  const starting = new Set();
   const trustChecks = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
@@ -107,7 +110,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     // An address that is gone (a new network, DHCP) is said, not replaced: nothing listens until the person
     // acts, or until that same address is on this computer again (awaitAddress).
     const stopped = stops;
-    if (settings) await startCoordinator(settings).catch((error) => { onError(error); if (stops === stopped) awaitAddress(); });
+    if (settings) await startCoordinator(settings).catch((error) => { onError(error); awaitAddress(stopped); });
+    // A stop that came while the listener started ends this resume: nothing connects or advertises after it.
+    if (stops !== stopped) return;
     if (store().setting('membership') && (coordinator || !settings)) await startRunner();
     checkPendingTrust();
     pairingShare.resume();
@@ -122,10 +127,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // laptop that returns to its network and is given the address it had): nothing is replaced and no trust
   // changes, so the person need not act and paired devices stay paired. A network that gives the computer
   // another address does not bring it back, and any other failure waits for the person, as before.
-  function awaitAddress() {
+  // stopped: the count of stops when the start that failed began; a stop since then means nothing is looked for.
+  function awaitAddress(stopped) {
     clearTimeout(listenRetry);
     listenRetry = null;
-    if (!listenFailure?.addressAway) return;
+    if (stops !== stopped || !listenFailure?.addressAway) return;
     listenRetry = setTimeout(() => {
       listenRetry = null;
       listenWork = listenAgain().catch(onError).finally(() => { listenWork = null; });
@@ -136,13 +142,20 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function listenAgain() {
     const settings = port.configured() ? store().setting('coordinator') : null;
     if (!settings || coordinator || !listenFailure?.addressAway) return;
-    if (!localAddresses().includes(settings.host)) return awaitAddress();
     const stopped = stops;
-    try { await startCoordinator(settings); } catch (error) { onError(error); return awaitAddress(); }
+    if (!localAddresses().includes(settings.host)) return awaitAddress(stopped);
+    try { await startCoordinator(settings); } catch (error) { onError(error); return awaitAddress(stopped); }
     if (stops === stopped && store().setting('membership')) await startRunner();
   }
 
-  async function startCoordinator({ host: address, port: listenPort, name }) {
+  async function startCoordinator(settings) {
+    const start = openCoordinator(settings, stops);
+    starting.add(start);
+    try { await start; } finally { starting.delete(start); }
+  }
+
+  // stopped: the count of stops when this start began.
+  async function openCoordinator({ host: address, port: listenPort, name }, stopped) {
     const device = await identity();
     const authority = await port.localAuthority();
     const coordinatorStore = createCoordinatorStore(joinPath(port.directory, 'coordinator.sqlite'));
@@ -163,6 +176,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       // addressAway: the address is not on this computer now; the listener returns by itself when it is.
       listenFailure = { address, port: listenPort, code, at: new Date(clock()).toISOString(), addressAway: code === ADDRESS_AWAY };
       throw new PeerError('listen_failed', `Could not listen on ${address}:${listenPort}: ${failureCode(error)}`, 409);
+    }
+    if (stops !== stopped) {
+      await server.close();
+      coordinatorStore.close();
+      throw stoppedMeanwhile();
     }
     listenFailure = null;
     coordinator = { service, server, store: coordinatorStore, host: address, name };
@@ -194,8 +212,12 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     publisher.unref();
   }
 
+  const stoppedMeanwhile = () => new PeerError('listen_stopped', 'The LAN roundtable stopped while its listener was starting', 409);
+
   async function stopAll() {
     stops += 1;
+    // Each start under way ends first: it sees this stop and closes what it opened.
+    await Promise.allSettled([...starting]);
     await listenWork;
     // After the wait: a start that found the address still away asks to be tried again.
     clearTimeout(listenRetry);
@@ -829,14 +851,18 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function rebindCoordinator(address) {
     const settings = store().setting('coordinator');
     await stopAll();
+    const stopped = stops;
     try { await startCoordinator({ host: address, port: settings.port, name: settings.name }); }
     catch (error) {
       onError(error);
+      // A stop that came meanwhile ends the move: the address it had is not tried in its place.
+      if (stops !== stopped) throw stoppedMeanwhile();
       const failure = listenFailure;
       try { await startCoordinator({ host: settings.host, port: settings.port, name: settings.name }); }
-      catch (again) { onError(again); awaitAddress(); return; }
+      catch (again) { onError(again); awaitAddress(stopped); return; }
       listenFailure = failure;
     }
+    if (stops !== stopped) throw stoppedMeanwhile();
     await startRunner();
   }
 
