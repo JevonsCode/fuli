@@ -476,13 +476,15 @@ test('a coordinator whose address was away listens again by itself once it is ba
       busyClose ??= busy.close();
       return realHost.listAgents(...args);
     } });
-    busy = started([], { host: closingHost, publishMs: 30 });
+    const busyErrors = [];
+    busy = started([], { host: closingHost, publishMs: 30, onError: (error) => busyErrors.push(error?.name) });
     await busy.resume();
     assert.ok(busyClose, 'the connection was being made');
     await busyClose;
     const listedAtClose = listed;
     await delay(200);
     assert.deepEqual([listed - listedAtClose, busy.runnerActive(), network.opened - network.closed], [0, false, 0]);
+    assert.ok(!busyErrors.includes('TypeError'), 'the publish the close overtook goes on with the connection it began with, and reports nothing');
 
     // The service closes while the listener is being moved and both places then refuse: the move ends
     // there, and the address coming back later starts nothing.

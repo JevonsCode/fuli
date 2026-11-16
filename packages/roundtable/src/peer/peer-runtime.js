@@ -164,7 +164,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const stopped = stops;
     if (!localAddresses().includes(settings.host)) return awaitAddress(stopped);
     try { await startCoordinator(settings, stopped); } catch (error) { report(error); return awaitAddress(stopped); }
-    if (store().setting('membership')) await startRunner(stopped);
+    // Not awaited here: a stop waits for this work (listenWork), and the connection's first publish is a
+    // network call. Making the connection is known to the stop by itself (starting).
+    if (store().setting('membership')) startRunner(stopped).catch(onError);
   }
 
   // stopped: the count of stops when the operation that asks for this listener began.
@@ -309,8 +311,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // What this device offers, sent to the coordinator now and every minute.
   // The outcome is kept for status, so a list the coordinator never got is
   // visible on the card and in `fuli peer status` instead of only in a log.
+  // A publish whose connection a stop ended meanwhile keeps nothing: not its outcome, and not a repository
+  // key that belongs to the group this computer has left.
   async function publish() {
-    if (!runnerClient) return;
+    const client = runnerClient;
+    if (!client) return;
     try {
       const profiles = await host.listAgents();
       const seeds = await generatedLookSeeds();
@@ -326,18 +331,20 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       });
       await runner?.reconcileShares(new Set(agents.map((agent) => agent.bindingId)));
       const sent = repositoryKey;
-      const answer = await runnerClient.post('/peer/1/directory/publish', { agents,
+      const answer = await client.post('/peer/1/directory/publish', { agents,
         ...(sent ? { repositories: { keyId: sent.id, digests: await repositoryDigests(sent) } } : {}) });
+      if (runnerClient !== client) return;
       published.clear();
       for (const agent of agents) published.set(agent.bindingId, agent);
       lastPublish = { at: new Date().toISOString(), agents: agents.length, error: null };
       // The group's repository key comes with the answer; a new one means sending the digests again.
       if (validKey(answer.repositoryKey) && answer.repositoryKey.id !== sent?.id) {
         repositoryKey = answer.repositoryKey;
-        await runnerClient.post('/peer/1/directory/publish', { agents,
+        await client.post('/peer/1/directory/publish', { agents,
           repositories: { keyId: repositoryKey.id, digests: await repositoryDigests(repositoryKey) } });
       }
     } catch (error) {
+      if (runnerClient !== client) return;
       // Only a known word reaches the card and CLI: the coordinator's own text never does.
       lastPublish = { at: new Date().toISOString(), agents: null, error: failureCode(error) };
       throw error;
