@@ -1,9 +1,8 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
-import { FIXED_EMPLOYEE_AGENT_TYPES, employeeAgentId, employeeCapability } from '../employees/manifest.js';
+import { ASSISTANT_AGENT_ID, FIXED_ROLES, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { identityKey } from '../text/name-identity.js';
 import { termIndex } from '../standing-assignments/term-match.js';
 import { agentUnavailableReason } from './agent-availability.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { isPeerRoleAgent } from './project-team-view.js';
 import { projectDisplayName } from './task-entry-project-mention.js';
 
@@ -20,7 +19,7 @@ import { projectDisplayName } from './task-entry-project-mention.js';
 const PICKER_OPTIONS = 4;
 const GLOBAL_PROJECT = '全局';
 // Built-in roles that also work without a project (roleCandidates).
-const SPACE_ROLES = new Set([employeeAgentId('tonborg')]);
+const SPACE_ROLES = new Set([TONBORG_AGENT_ID]);
 // Management peers, AR and the assistant are FULI's own roles, and temporary
 // Agents belong to one task: none is an FLA a person continues by name.
 const NOT_PICKABLE_TYPES = new Set(['hr', 'temporary']);
@@ -68,8 +67,8 @@ function inSpace(roster, personalSpaceId) {
 
 // The Provider's own identity of a fixed role, not an Agent reusing its id.
 function isFixedRole(agent) {
-  return Object.keys(FIXED_EMPLOYEE_AGENT_TYPES).some(id => agent.agent_id === employeeAgentId(id)
-    && (agent.profile?.capabilities ?? []).includes(employeeCapability(id)));
+  return Object.values(FIXED_ROLES).some(role => agent.agent_id === role.agentId
+    && (agent.profile?.capabilities ?? []).includes(role.capability));
 }
 
 function placements(agent, named) {

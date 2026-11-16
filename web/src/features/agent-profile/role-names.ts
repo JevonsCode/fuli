@@ -3,19 +3,14 @@ import { i18n, t } from '@/i18n'
 import { roleNameMessages } from '@/i18n/messages/role-names'
 import type { ProjectAgentRecord } from '@/types'
 import { projectAgentShape } from './agent-record-shape'
+import { ROLE_AGENT_IDS, type BuiltInRole } from './fixed-roles'
 import { agentDisplayName } from './profile-model'
 
 // The names FULI's built-in roles go by now (rec#11 D-89). Copy names a role
 // through the roleNames messages, so writing a role's current name there
 // renames it in every label at once. The shell reads the four roles once per
 // space; a rename through renameAgent writes the new name straight away.
-export const ROLE_AGENT_IDS = {
-  jefa: 'employee.jefa',
-  bole: 'employee.bole',
-  tonborg: 'employee.tonborg',
-  astro: 'employee.assistant',
-} as const
-export type BuiltInRole = keyof typeof ROLE_AGENT_IDS
+export { ROLE_AGENT_IDS, type BuiltInRole }
 const ROLES = Object.keys(ROLE_AGENT_IDS) as BuiltInRole[]
 const LOCALES = Object.keys(roleNameMessages) as (keyof typeof roleNameMessages)[]
 

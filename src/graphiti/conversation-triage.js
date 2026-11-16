@@ -1,5 +1,5 @@
 import { projectByName, projectNames } from './task-entry-project-mention.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID, JEFA_AGENT_ID } from '../employees/fixed-roles.js';
 import { PROPOSAL_MIN_CONVERSATIONS, topicOutcome } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
@@ -53,7 +53,7 @@ export async function recordTriage(application, task, conversation, label) {
       personal_space_id: spaceId, conversation_id: conversation.conversation_id, kind: label.kind,
       personal_project_id: projectId, topic: label.kind === 'topic' ? label.topic : null, source: 'host'
     });
-    const result = { status: 'recorded', recorded_by: 'employee.jefa', ...recorded.triage,
+    const result = { status: 'recorded', recorded_by: JEFA_AGENT_ID, ...recorded.triage,
       ...(recorded.kept ? { kept: recorded.kept } : {}) };
     if (!recorded.kept && label.kind === 'topic' && recorded.topic_count >= PROPOSAL_MIN_CONVERSATIONS) {
       // A formed project (D-86) is announced; otherwise the person is asked.

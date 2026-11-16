@@ -12,6 +12,12 @@ from .project_agent_attention_models import (
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .store_project_agent_task_blockers import BLOCKER_ATTENTION_KINDS
+from .system_agents import (
+    LEGACY_COORDINATOR_AGENT_ID,
+    SYSTEM_COORDINATOR_AGENT_ID,
+    SYSTEM_HR_AGENT_ID,
+    SYSTEM_JUDGMENT_AGENT_ID,
+)
 from .system_hr_identity import resolve_hr_alias
 
 
@@ -26,7 +32,8 @@ class StoreProjectAgentAttention:
             self, actor, space, request.personal_project_id, agent_id,
             require_active=True,
             allow_unassigned=agent_id in {
-                'employee.bole', 'employee.jefa', 'employee.tonborg', 'fuli-project-coordinator',
+                SYSTEM_HR_AGENT_ID, SYSTEM_COORDINATOR_AGENT_ID, SYSTEM_JUDGMENT_AGENT_ID,
+                LEGACY_COORDINATOR_AGENT_ID,
             },
         )
         if request.task_id:
