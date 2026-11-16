@@ -255,6 +255,10 @@ export class GraphitiProviderClient {
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
     return this.#request(`/v1/task-context-sessions/recent?${query}`);
   }
+  // Each Agent that began a task since then, the latest first, and whether one is under way.
+  recentWorkingAgents({ personalSpaceId, since }) {
+    return this.#request(`/v1/task-context-agents/recent?${new URLSearchParams({ personal_space_id: personalSpaceId, since })}`);
+  }
   staffDefaultProjectLead(input) {
     return this.#request('/v1/project-agent-context/default-lead', { method: 'POST', body: input });
   }

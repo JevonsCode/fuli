@@ -1,11 +1,25 @@
+import '../api/fuli_api.dart';
+import '../api/glance.dart';
 import '../l10n/strings.dart';
 import '../platform/ports.dart';
 import 'fuli_condition.dart';
 
+// 今天, where 等你拍板 lists the open requests (the console sends /workbench there).
+const _todayLink = 'fuli://workbench';
+// A menu line stays short: a subject past this many characters is cut.
+const _subjectChars = 24;
+
 /// The tray icon and its menu entries for the latest check. [canChangePort]
-/// and [launchAtLogin] (null: not offered) come from the platform.
+/// and [launchAtLogin] (null: not offered) come from the platform; [glance]
+/// and [waitingRequests] are the work the menu shows, with times read at [now].
 TrayView trayViewOf(FuliSnapshot? snapshot,
-    {required bool busy, required Strings strings, bool canChangePort = false, bool? launchAtLogin}) {
+    {required bool busy,
+    required Strings strings,
+    bool canChangePort = false,
+    bool? launchAtLogin,
+    Glance? glance,
+    int waitingRequests = 0,
+    DateTime? now}) {
   if (snapshot == null) {
     return TrayView(icon: TrayIcon.needsPerson, tooltip: '${strings.appName} · ${strings.checking}',
         toggleLabel: strings.startFuli, toggleEnabled: false,
@@ -20,7 +34,43 @@ TrayView trayViewOf(FuliSnapshot? snapshot,
     tooltip: '${strings.appName} · ${snapshot.sentence(strings)}',
     toggleLabel: snapshot.running ? strings.stopFuli : strings.startFuli,
     toggleEnabled: snapshot.installed && !busy,
+    lines: _workLines(glance, waitingRequests, strings, now ?? DateTime.now()),
     changePortEnabled: canChangePort ? snapshot.installed && !busy : null,
     launchAtLogin: launchAtLogin,
   );
+}
+
+// The open requests first, then each section that has rows under its heading.
+// A section without rows says nothing.
+List<TrayLine> _workLines(Glance? glance, int waitingRequests, Strings strings, DateTime now) => [
+      if (waitingRequests > 0)
+        TrayLine(strings.requestsWaiting(waitingRequests, orMore: waitingRequests >= openAttentionLimit), link: _todayLink),
+      if (glance != null) ...[
+        ..._section(strings.assistantsAtWork, glance.assistants, strings,
+            (row) => TrayLine(strings.assistantAtWork(row.name, _when(row, strings, now)), link: row.link)),
+        ..._section(strings.roundtablesUnderWay, glance.roundtables, strings,
+            (row) => TrayLine(strings.roundtableUnderWay(_cut(row.subject), row.replying, row.waitingFor), link: row.link)),
+      ],
+    ];
+
+List<TrayLine> _section<Row>(String heading, GlanceSection<Row> section, Strings strings, TrayLine Function(Row) line) => [
+      if (section.rows.isNotEmpty) ...[
+        TrayLine(heading),
+        ...section.rows.map(line),
+        if (section.more > 0 && section.link != null) TrayLine(strings.moreRows(section.more), link: section.link),
+      ],
+    ];
+
+// At work now, or the local time its latest task began (the day before says so).
+String _when(AssistantAtWork row, Strings strings, DateTime now) {
+  if (row.working) return strings.workingNow;
+  final at = row.at?.toLocal();
+  if (at == null) return '';
+  final clock = '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}';
+  return at.day == now.day ? clock : strings.yesterdayAt(clock);
+}
+
+String _cut(String text) {
+  final runes = text.runes.toList();
+  return runes.length > _subjectChars ? '${String.fromCharCodes(runes.take(_subjectChars - 1)).trimRight()}…' : text;
 }

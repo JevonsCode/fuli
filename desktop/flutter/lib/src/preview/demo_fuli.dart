@@ -1,4 +1,5 @@
 import '../api/fuli_api.dart';
+import '../api/glance.dart';
 import '../api/migration_plan.dart';
 import '../doctor/doctor_report.dart';
 import '../runtime/fuli_runtime.dart';
@@ -25,6 +26,8 @@ class DemoFuliApi implements FuliApi {
   String? latest;
   MigrationPlan plan;
   List<AttentionNotice> attention = const [];
+  // Null: a FULI from before the glance.
+  Glance? work;
   final List<String> requests = [];
   final List<String> _updateSteps = ['downloading', 'verifying', 'installing'];
   int _updateRead = 0;
@@ -38,6 +41,12 @@ class DemoFuliApi implements FuliApi {
   Future<List<AttentionNotice>> openAttention() async {
     _call('attention');
     return attention;
+  }
+
+  @override
+  Future<Glance> glance() async {
+    _call('glance');
+    return work ?? (throw const FuliHttpError(404, message: 'Not found'));
   }
 
   @override
