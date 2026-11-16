@@ -152,6 +152,47 @@ test('deliveredBetween counts the tasks, clients and distinct items entries carr
   assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-c', ...WEEK }), { tasks: 0, clients: 0, items: 0 });
 });
 
+test('deliveredTasks lists the tasks deliveredBetween counts, the latest first, each with what it carried', (t) => {
+  let current = new Date('2026-11-10T08:00:00Z');
+  const { store } = storeIn(t, { now: () => current });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-recall-and-preferences', sourceApplication: 'codex', model: 'synthetic-model',
+    preferences: [{ id: 'pref-1', item_kind: 'entity' }, { id: 'rel-pref', item_kind: 'relationship' }] });
+  current = new Date('2026-11-11T08:00:00Z');
+  store.recordDelivered({ taskContextToken: 'fuli-task-preferences-only', personalSpaceId: 'space-a', sourceApplication: 'claude-code',
+    preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-other-space', personalSpaceId: 'space-b', sourceApplication: 'cursor' });
+  current = new Date('2026-11-16T00:00:00Z');
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-next-week', sourceApplication: 'opencode' });
+  // A task from before version 2: recall rows and no entry row.
+  store.db.prepare(`INSERT INTO recall_impressions VALUES ('${'a'.repeat(64)}', 'space-a', NULL, 'entity', 'ent-old', 1, NULL, NULL,
+    '2026-11-09T01:00:00.000Z', NULL, NULL)`).run();
+
+  const window = { personalSpaceId: 'space-a', ...WEEK };
+  const rows = store.deliveredTasks({ ...window, limit: 10 });
+  assert.equal(rows.length, store.deliveredBetween(window).tasks, 'the list is as long as the number');
+  assert.deepEqual(rows.map(({ key, ...row }) => row), [
+    { at: '2026-11-11T08:00:00.000Z', client: 'claude-code', model: null, habits: 1, recalled: 0 },
+    { at: '2026-11-10T08:00:00.000Z', client: 'codex', model: 'synthetic-model', habits: 2, recalled: 4 },
+    { at: '2026-11-09T01:00:00.000Z', client: null, model: null, habits: 0, recalled: 1 }
+  ]);
+  assert.equal(rows[2].key, null, 'a task without an entry row has no habit list to open');
+  assert.deepEqual(store.delivery(rows[1].key).preferenceKeys, ['entity:pref-1', 'relationship:rel-pref'], 'the key reads the habit list back');
+  assert.deepEqual(store.deliveredTasks({ ...window, limit: 1 }).map(row => row.at), ['2026-11-11T08:00:00.000Z']);
+
+  // A task that began the week before and recalled one more item this week is this week's by that
+  // recall alone: its row names its client, and neither last week's habits nor last week's recall.
+  current = new Date('2026-11-08T23:00:00Z');
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-across-weeks', sourceApplication: 'cursor',
+    preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  current = new Date('2026-11-12T08:00:00Z');
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-across-weeks', sourceApplication: 'cursor', facts: [{ id: 'rel-later' }], entities: [] });
+  const [across] = store.deliveredTasks({ ...window, limit: 10 });
+  assert.deepEqual({ ...across, key: typeof across.key },
+    { key: 'string', at: '2026-11-12T08:00:00.000Z', client: 'cursor', model: null, habits: 0, recalled: 1 });
+  assert.equal(store.deliveredTasks({ ...window, limit: 10 }).length, store.deliveredBetween(window).tasks);
+  assert.deepEqual(store.deliveredTasks({ personalSpaceId: 'space-c', ...WEEK, limit: 10 }), []);
+});
+
 test('a version 1 store gains task deliveries on open, and its older tasks count by their recall alone', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-recall-impressions-v1-'));
   const path = join(directory, 'recall-impressions.sqlite');

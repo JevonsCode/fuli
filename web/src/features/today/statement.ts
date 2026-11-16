@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { getJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 
 // 这周的复利账单: GET /api/statement for one local week (Monday 00:00 to the
 // next Monday 00:00). Every section may be missing, or named in `unavailable`;
@@ -36,6 +37,19 @@ export function statementWeek(now: Date, weeksBack = 0): StatementWeek {
   return { from: monday.toISOString(), to: next.toISOString() }
 }
 
+/** The days of a week, as the statement's dialogs name it (「11月16日 到 11月22日」); its bounds are instants. */
+export function weekRangeLabel({ from, to }: StatementWeek) {
+  const day = (value: string) => formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' })
+  // The week ends where the next one begins: its last day is the instant before.
+  return t('today.statement.week.range', { from: day(from), to: day(new Date(Date.parse(to) - 1).toISOString()) })
+}
+
+/** The week a statement was read for, or null when it names none that can be read as two instants. */
+export function statementWindow(statement: Statement): StatementWeek | null {
+  const { from, to } = statement.window ?? {}
+  return from && to && !Number.isNaN(Date.parse(from)) && !Number.isNaN(Date.parse(to)) ? { from, to } : null
+}
+
 /** The week's statement, or null when the server cannot give one. */
 export async function readStatement(week: StatementWeek, signal?: AbortSignal): Promise<Statement | null> {
   const query = new URLSearchParams({ from: week.from, to: week.to, weeks: String(STATEMENT_WEEKS) })
@@ -54,7 +68,8 @@ export function statementValue(statement: Statement, name: Section, field: strin
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-export interface StatementTile { key: string; value: number; label: string; sub: string | null }
+/** `list`: the rows this tile's number counts can be listed (StatementLists); absent where no list exists. */
+export interface StatementTile { key: string; value: number; label: string; sub: string | null; list?: 'carried' | 'learned' }
 
 /** The four tiles under the headline; a tile whose number is 0 or missing is left out. */
 export function statementTiles(statement: Statement): StatementTile[] {
@@ -62,15 +77,15 @@ export function statementTiles(statement: Statement): StatementTile[] {
   // A second line with nothing to count (「跨 0 个客户端」) says nothing, so it is left out.
   const sub = (key: string, amount: number | null) => (amount ? t(`today.statement.tiles.${key}`, { count: amount }) : null)
   const tiles: Array<StatementTile | null> = [
-    tile('carried', value('carried', 'tasks'), sub('carriedSub', value('carried', 'clients'))),
+    tile('carried', value('carried', 'tasks'), sub('carriedSub', value('carried', 'clients')), 'carried'),
     tile('used', value('used', 'times'), t('today.statement.tiles.usedSub')),
-    tile('learned', value('learned', 'captured'), sub('learnedSub', value('learned', 'confirmedByYou'))),
+    tile('learned', value('learned', 'captured'), sub('learnedSub', value('learned', 'confirmedByYou')), 'learned'),
     tile('decided', value('decided', 'forYou'), sub('decidedSub', value('decided', 'undone'))),
   ]
   return tiles.filter((item): item is StatementTile => item !== null)
 }
-function tile(key: string, value: number | null, sub: string | null): StatementTile | null {
-  return value ? { key, value, label: t(`today.statement.tiles.${key}`), sub } : null
+function tile(key: string, value: number | null, sub: string | null, list?: StatementTile['list']): StatementTile | null {
+  return value ? { key, value, label: t(`today.statement.tiles.${key}`), sub, ...(list ? { list } : {}) } : null
 }
 
 /** The headline's number: everything confirmed so far, or null when there is none to show. */

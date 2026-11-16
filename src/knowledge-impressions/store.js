@@ -167,6 +167,29 @@ export class RecallImpressionsStore {
     };
   }
 
+  // deliveredBetween's tasks one by one, the latest first, at most `limit`:
+  // when each began, the client and model its entry recorded, and what it
+  // carried inside the window: the habits its entry was handed (none when the
+  // entry is from before the window and only a later recall brings the task
+  // in) and the recalled items it was shown. `key` is what a receipt link
+  // names the task by (delivery reads it back); a task from before version 2
+  // has recall rows only, so no key, client or model.
+  deliveredTasks({ personalSpaceId, from, to, limit }) {
+    if (!this.readable) return [];
+    const window = [personalSpaceId, from, to];
+    return this.db.prepare(`SELECT tasks.task_key AS task_key, tasks.at AS at, entry.task_key IS NOT NULL AS entered,
+        entry.source_application AS client, entry.model AS model,
+        CASE WHEN entry.delivered_at >= ? AND entry.delivered_at < ? THEN json_array_length(entry.preference_keys) END AS habits,
+        (SELECT COUNT(*) FROM recall_impressions AS shown
+          WHERE shown.task_key = tasks.task_key AND shown.shown_at >= ? AND shown.shown_at < ?) AS recalled
+      FROM (SELECT task_key, MIN(at) AS at FROM (SELECT task_key, shown_at AS at ${RECALL_IN_WINDOW}
+          UNION ALL SELECT task_key, delivered_at AS at ${ENTRIES_IN_WINDOW}) GROUP BY task_key) AS tasks
+      LEFT JOIN task_deliveries AS entry ON entry.task_key = tasks.task_key
+      ORDER BY tasks.at DESC, tasks.task_key LIMIT ?`).all(from, to, from, to, ...window, ...window, limit)
+      .map(row => ({ key: row.entered ? row.task_key.slice(0, TASK_KEY_PREFIX_LENGTH) : null, at: row.at,
+        client: row.client, model: row.model, habits: row.habits ?? 0, recalled: row.recalled }));
+  }
+
   // deliveredBetween's tasks per local day: the day is the stored UTC instant
   // moved by offsetMinutes (the caller's UTC offset), as YYYY-MM-DD. One
   // grouped read; days without a task are not listed.

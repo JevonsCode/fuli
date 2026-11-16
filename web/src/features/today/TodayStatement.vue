@@ -4,20 +4,23 @@ import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import StatementDetails from './StatementDetails.vue'
-import { sparklinePoints, statementSeries, type Statement, type StatementTile } from './statement'
+import StatementLists from './StatementLists.vue'
+import { sparklinePoints, statementSeries, statementWindow, type Statement, type StatementTile } from './statement'
 import TodaySection from './TodaySection.vue'
+import UiIcon from '@/ui/UiIcon.vue'
 
 // 这周的复利账单, the fixed left half of 今天: the running total as the one
 // number to look at, its trend over the last weeks, up to four numbers of this
 // week, and 查看详情 with every number and who saw it happen. It never scrolls;
-// the trend takes whatever height is left. No tile is a link: no page lists
-// these records yet.
+// the trend takes whatever height is left. A tile whose rows can be listed is
+// a button that opens them (StatementLists); the others stay plain numbers.
 const props = defineProps<{ statement: Statement; total: number | null; tiles: StatementTile[] }>()
 const SPARK = { width: 320, height: 96 }
 const series = computed(() => statementSeries(props.statement))
 const points = computed(() => sparklinePoints(series.value, SPARK.width, SPARK.height))
 const trendLabel = computed(() => t('today.statement.trend', { weeks: series.value.length, first: series.value[0] ?? 0, last: series.value.at(-1) ?? 0 }))
 const detailsOpen = ref(false)
+const listOpen = ref<'carried' | 'learned' | null>(null)
 </script>
 
 <template>
@@ -39,12 +42,17 @@ const detailsOpen = ref(false)
       <figcaption>{{ trendLabel }}</figcaption>
     </figure>
     <ul v-if="tiles.length" class="statement-tiles">
-      <li v-for="tile in tiles" :key="tile.key" class="statement-tile" :data-statement-tile="tile.key">
-        <strong class="statement-number">{{ tile.value }}</strong>
-        <span class="statement-label">{{ tile.label }}</span>
-        <span v-if="tile.sub" class="statement-sub">{{ tile.sub }}</span>
+      <li v-for="tile in tiles" :key="tile.key" class="statement-tile-item">
+        <component :is="tile.list ? 'button' : 'div'" class="statement-tile" :class="{ 'is-link': tile.list }" :data-statement-tile="tile.key"
+          :type="tile.list ? 'button' : undefined" :aria-haspopup="tile.list ? 'dialog' : undefined" @click="listOpen = tile.list ?? null">
+          <strong class="statement-number">{{ tile.value }}</strong>
+          <span class="statement-label">{{ tile.label }}</span>
+          <span v-if="tile.sub" class="statement-sub">{{ tile.sub }}</span>
+          <UiIcon v-if="tile.list" name="chevron-right" :size="16" class="statement-tile-go" />
+        </component>
       </li>
     </ul>
+    <StatementLists :list="listOpen" :week="statementWindow(statement)" @close="listOpen = null" />
     <StatementDetails :open="detailsOpen" :statement="statement" @close="detailsOpen = false" />
   </TodaySection>
 </template>
@@ -61,8 +69,13 @@ const detailsOpen = ref(false)
 /* Two by two in the half-width card. */
 .statement-tiles { display: grid; flex: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 /* An odd last tile takes the whole row, so the grid never ends on a hole. */
-.statement-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.statement-tile { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 14px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+.statement-tile-item:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.statement-tile-item { display: grid; min-width: 0; }
+.statement-tile { position: relative; display: grid; align-content: start; justify-items: start; gap: 2px; min-width: 0; padding: 12px 14px; border: 0; border-radius: var(--radius-control); color: inherit; background: var(--color-surface-subtle); font: inherit; text-align: start; }
+/* A tile that opens its rows: an arrow in its corner, and it darkens under the pointer. */
+.statement-tile.is-link { cursor: pointer; user-select: none; transition: background var(--motion-fast); }
+.statement-tile.is-link:hover { background: var(--color-surface-hover); }
+.statement-tile-go { position: absolute; top: 12px; right: 12px; color: var(--color-muted); }
 .statement-number { font-size: var(--text-title); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; line-height: var(--leading-title); }
 .statement-label { font-size: var(--text-body); font-weight: var(--weight-medium); }
 .statement-sub { color: var(--color-muted); font-size: var(--text-meta); }

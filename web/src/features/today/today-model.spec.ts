@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { setLocale } from '@/i18n'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
-import { sparklinePoints, statementSeries, statementTiles, statementValue, statementWeek, type Statement } from './statement'
+import { sparklinePoints, statementSeries, statementTiles, statementValue, statementWeek, statementWindow, weekRangeLabel, type Statement } from './statement'
 import { decisionRows, workingRows } from './today-model'
 import type { ProjectAgentTaskRecord } from '@/types'
 import type { TeamSheet } from '@/features/team-work/team-sheets'
@@ -92,5 +92,15 @@ describe('复利账单', () => {
   it('orders the running total oldest first', () => {
     const statement = { series: [{ to: '2026-11-09T00:00:00Z', confirmed: 9 }, { to: '2026-11-02T00:00:00Z', confirmed: 4 }] } as Statement
     expect(statementSeries(statement)).toEqual([4, 9])
+  })
+})
+
+describe('the week a statement names', () => {
+  it('is read back only when both bounds are instants, and named by its first and last day', () => {
+    const week = { from: new Date(2026, 10, 16).toISOString(), to: new Date(2026, 10, 23).toISOString() }
+    expect(statementWindow({ window: week } as Statement)).toEqual(week)
+    expect(statementWindow({ window: { from: 'x', to: week.to } } as Statement)).toBeNull()
+    expect(statementWindow({} as Statement)).toBeNull()
+    expect(weekRangeLabel(week)).toBe('11月16日 到 11月22日')
   })
 })

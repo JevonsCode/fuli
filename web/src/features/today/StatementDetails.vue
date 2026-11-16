@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { currentLocale, t } from '@/i18n'
-import { formatDateTime } from '@/lib/date-time'
+import { t } from '@/i18n'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import StatementRows from './StatementRows.vue'
 import StatementUsage from './StatementUsage.vue'
-import { readStatement, statementDetails, statementWeek, type Statement } from './statement'
+import { readStatement, statementDetails, statementWeek, weekRangeLabel, type Statement } from './statement'
 import { readStatementUsage, type StatementUsage as Usage } from './statement-usage'
 
 // 查看详情 of the statement: every number it has, each with one line on what it
@@ -26,12 +25,7 @@ const usage = ref<Usage | null>(null)
 const reading = ref<'statement' | 'usage' | null>(null)
 let readId = 0
 const weekOptions = computed(() => (['previous', 'current'] as const).map(value => ({ value, label: t(`today.statement.week.${value}`) })))
-const range = computed(() => {
-  const { from, to } = statementWeek(new Date(), week.value === 'previous' ? 1 : 0)
-  const last = new Date(Date.parse(to) - 1).toISOString()
-  const day = (value: string) => formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' })
-  return t('today.statement.week.range', { from: day(from), to: day(last) })
-})
+const range = computed(() => weekRangeLabel(statementWeek(new Date(), week.value === 'previous' ? 1 : 0)))
 const rows = computed(() => shown.value ? statementDetails(shown.value) : [])
 const readingLabel = computed(() => reading.value === 'usage' ? t('today.loading.usage')
   : t(week.value === 'previous' ? 'today.loading.previousStatement' : 'today.loading.statement'))
