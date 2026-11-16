@@ -61,19 +61,37 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   let repositoryKey = null;
   let nearbyNotice = null;
   let nearbyTimer = null;
+  // The wait after a pairing before nearby pairing turns itself off.
+  let graceTimer = null;
   let listenFailure = null;
   let listenRetry = null;
   // The start awaitAddress has under way, if any: a stop waits for it, so it closes what that start opened
   // and whatever the stop clears afterwards (turning the roundtable off clears its settings) stays cleared.
   let listenWork = null;
-  // Counts stops asked for. A start that one overtook arms no retry (resume's own start is not waited for by
-  // a stop), and the retry's start skips connecting, which the waiting stop would only undo.
+  // Counts stops asked for. One rule for whatever starts something (service start, the retry, turning the
+  // roundtable or nearby pairing on, joining, moving the listener): the operation takes the count when it
+  // begins and hands it to each step, and a step that finds the count moved does nothing more. A listener or
+  // a connection being opened is known to the stop (starting), which waits for it; one a stop overtook is
+  // closed again, writes no setting, arms no retry and no timer. So off and close leave nothing behind.
   let stops = 0;
+  const starting = new Set();
+  // The endings, close and turning the roundtable off: how many began (ends) and how many are under way
+  // (ending). What begins while one is under way has the new count already, so it is ended by this instead.
+  let ends = 0;
+  let ending = 0;
+  const stoppedSince = (stopped) => ending > 0 || stops !== stopped;
+  const stoppedMeanwhile = () => new PeerError('listen_stopped', 'The LAN roundtable stopped while this was starting', 409);
+  // What a person asked for says so when a stop ended it.
+  const live = (stopped) => { if (stoppedSince(stopped)) throw stoppedMeanwhile(); };
+  // Awaited where a stop that ended the step is no failure of the one that asked.
+  const unlessStopped = (error) => { if (error?.code !== 'listen_stopped') throw error; };
+  // A background step that a stop ended is not a failure to report.
+  const report = (error) => { if (error?.code !== 'listen_stopped') onError(error); };
   const trustChecks = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
   const discovery = createDiscovery({ adapters: () => discoveryAdapters(interfaces),
-    onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: failureCode(error) }).catch(onError) });
+    onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: failureCode(error) }).catch(report) });
   const presence = createNearbyPresence({ discovery, clock });
   const attempts = createAttemptLedger({ clock, read: () => (port.configured() ? store().setting('nearbyAttempts') : null),
     update: (change) => store().updateSetting('nearbyAttempts', change) });
@@ -102,30 +120,37 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function resume() {
     if (!port.configured()) return;
+    // Taken before anything is awaited: a stop from here on ends what this resume would still start, and an
+    // ending (close, off) ends the resume. A listener move of its own meanwhile does not: the trust still
+    // waiting and the sharing still owed are looked at whatever moved.
+    const stopped = stops;
+    const ended = ends;
     await finishLeaving();
+    if (stoppedSince(stopped)) return;
     const settings = store().setting('coordinator');
     // An address that is gone (a new network, DHCP) is said, not replaced: nothing listens until the person
     // acts, or until that same address is on this computer again (awaitAddress).
-    const stopped = stops;
-    if (settings) await startCoordinator(settings).catch((error) => { onError(error); if (stops === stopped) awaitAddress(); });
-    if (store().setting('membership') && (coordinator || !settings)) await startRunner();
+    if (settings) await startCoordinator(settings, stopped).catch((error) => { report(error); awaitAddress(stopped); });
+    if (store().setting('membership') && (coordinator || !settings)) await startRunner(stopped);
+    if (ending || ends !== ended) return;
     checkPendingTrust();
     pairingShare.resume();
     const nearby = store().setting('nearby');
     if (!nearby) return;
-    if (!(nearby.until > clock())) await endNearby({ kind: 'timeout' });
-    else if (settings && !coordinator) await endNearby(null);
-    else await startNearby();
+    if (!(nearby.until > clock())) await endNearby({ kind: 'timeout' }).catch(unlessStopped);
+    else if (settings && !coordinator) await endNearby(null).catch(unlessStopped);
+    else await startNearby(stopped);
   }
 
   // A listener whose address is not on this computer now starts by itself once that same address is back (a
   // laptop that returns to its network and is given the address it had): nothing is replaced and no trust
   // changes, so the person need not act and paired devices stay paired. A network that gives the computer
   // another address does not bring it back, and any other failure waits for the person, as before.
-  function awaitAddress() {
+  // stopped: the count of stops when the start that failed began; a stop since then means nothing is looked for.
+  function awaitAddress(stopped) {
     clearTimeout(listenRetry);
     listenRetry = null;
-    if (!listenFailure?.addressAway) return;
+    if (stoppedSince(stopped) || !listenFailure?.addressAway) return;
     listenRetry = setTimeout(() => {
       listenRetry = null;
       listenWork = listenAgain().catch(onError).finally(() => { listenWork = null; });
@@ -136,13 +161,23 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function listenAgain() {
     const settings = port.configured() ? store().setting('coordinator') : null;
     if (!settings || coordinator || !listenFailure?.addressAway) return;
-    if (!localAddresses().includes(settings.host)) return awaitAddress();
     const stopped = stops;
-    try { await startCoordinator(settings); } catch (error) { onError(error); return awaitAddress(); }
-    if (stops === stopped && store().setting('membership')) await startRunner();
+    if (!localAddresses().includes(settings.host)) return awaitAddress(stopped);
+    try { await startCoordinator(settings, stopped); } catch (error) { report(error); return awaitAddress(stopped); }
+    // Not awaited here: a stop waits for this work (listenWork), and the connection's first publish is a
+    // network call. Making the connection is known to the stop by itself (starting).
+    if (store().setting('membership')) startRunner(stopped).catch(onError);
   }
 
-  async function startCoordinator({ host: address, port: listenPort, name }) {
+  // stopped: the count of stops when the operation that asks for this listener began.
+  async function startCoordinator(settings, stopped) {
+    live(stopped);
+    const start = openCoordinator(settings, stopped);
+    starting.add(start);
+    try { await start; } finally { starting.delete(start); }
+  }
+
+  async function openCoordinator({ host: address, port: listenPort, name }, stopped) {
     const device = await identity();
     const authority = await port.localAuthority();
     const coordinatorStore = createCoordinatorStore(joinPath(port.directory, 'coordinator.sqlite'));
@@ -164,6 +199,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       listenFailure = { address, port: listenPort, code, at: new Date(clock()).toISOString(), addressAway: code === ADDRESS_AWAY };
       throw new PeerError('listen_failed', `Could not listen on ${address}:${listenPort}: ${failureCode(error)}`, 409);
     }
+    if (stoppedSince(stopped)) {
+      try { await server.close(); } finally { coordinatorStore.close(); }
+      throw stoppedMeanwhile();
+    }
     listenFailure = null;
     coordinator = { service, server, store: coordinatorStore, host: address, name };
     // A wildcard listener answers this computer on loopback.
@@ -175,10 +214,30 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     store().bindAuthority(device.fingerprint, authority, 'self');
   }
 
-  async function startRunner() {
-    if (runner) return;
+  // Connects this computer to its coordinator and keeps its shares published. Making the connection is
+  // known to a stop, like a listener start, so the stop ends the connection it made. The first publish
+  // after it is a network call a stop does not wait for; it arms no publisher once a stop came.
+  async function startRunner(stopped) {
+    if (runner || stoppedSince(stopped)) return;
+    const start = openRunner(stopped);
+    starting.add(start);
+    let opened;
+    try { opened = await start; } finally { starting.delete(start); }
+    if (!opened) return;
+    await publish().catch(onError);
+    if (stoppedSince(stopped)) return;
+    publisher = setInterval(() => {
+      publish().catch(onError);
+      narrowListener().catch(report);
+    }, publishMs);
+    publisher.unref();
+  }
+
+  // True when this call made the connection.
+  async function openRunner(stopped) {
     const membership = store().setting('membership');
     const device = await identity();
+    if (runner || stoppedSince(stopped)) return false;
     runnerClient = createPeerClient({ identity: device, coordinator: membership.coordinator });
     runner = createPeerRunner({ store: store(), client: runnerClient, roundtable, host,
       nodeId: device.fingerprint, spaceId, onError,
@@ -186,16 +245,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       pairedDevices: () => (coordinator ? new Set(coordinator.service.devices()
         .filter((entry) => entry.status === 'active' && !entry.self).map((entry) => entry.nodeId)) : null) });
     runner.start().catch(onError);
-    await publish().catch(onError);
-    publisher = setInterval(() => {
-      publish().catch(onError);
-      narrowListener().catch(onError);
-    }, publishMs);
-    publisher.unref();
+    return true;
   }
 
   async function stopAll() {
     stops += 1;
+    // What is being opened ends first, until nothing is: each sees this stop and keeps nothing, or is closed below.
+    while (starting.size) await Promise.allSettled([...starting]);
     await listenWork;
     // After the wait: a start that found the address still away asks to be tried again.
     clearTimeout(listenRetry);
@@ -255,8 +311,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // What this device offers, sent to the coordinator now and every minute.
   // The outcome is kept for status, so a list the coordinator never got is
   // visible on the card and in `fuli peer status` instead of only in a log.
+  // A publish whose connection a stop ended meanwhile keeps nothing: not its outcome, and not a repository
+  // key that belongs to the group this computer has left.
   async function publish() {
-    if (!runnerClient) return;
+    const client = runnerClient;
+    if (!client) return;
     try {
       const profiles = await host.listAgents();
       const seeds = await generatedLookSeeds();
@@ -272,18 +331,20 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       });
       await runner?.reconcileShares(new Set(agents.map((agent) => agent.bindingId)));
       const sent = repositoryKey;
-      const answer = await runnerClient.post('/peer/1/directory/publish', { agents,
+      const answer = await client.post('/peer/1/directory/publish', { agents,
         ...(sent ? { repositories: { keyId: sent.id, digests: await repositoryDigests(sent) } } : {}) });
+      if (runnerClient !== client) return;
       published.clear();
       for (const agent of agents) published.set(agent.bindingId, agent);
       lastPublish = { at: new Date().toISOString(), agents: agents.length, error: null };
       // The group's repository key comes with the answer; a new one means sending the digests again.
       if (validKey(answer.repositoryKey) && answer.repositoryKey.id !== sent?.id) {
         repositoryKey = answer.repositoryKey;
-        await runnerClient.post('/peer/1/directory/publish', { agents,
+        await client.post('/peer/1/directory/publish', { agents,
           repositories: { keyId: repositoryKey.id, digests: await repositoryDigests(repositoryKey) } });
       }
     } catch (error) {
+      if (runnerClient !== client) return;
       // Only a known word reaches the card and CLI: the coordinator's own text never does.
       lastPublish = { at: new Date().toISOString(), agents: null, error: failureCode(error) };
       throw error;
@@ -484,9 +545,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       throw new PeerError('invalid_address', 'Choose one of this computer\'s network addresses', 422);
     }
     if (!Number.isSafeInteger(listenPort) || listenPort < 0 || listenPort > 65535) throw new PeerError('invalid_address', 'Invalid port', 422);
-    await startCoordinator({ host: address, port: listenPort, name: cleanName(name) || 'FULI coordinator' });
-    await startRunner();
-    await startNearby();
+    const stopped = stops;
+    await startCoordinator({ host: address, port: listenPort, name: cleanName(name) || 'FULI coordinator' }, stopped);
+    await startRunner(stopped);
+    await startNearby(stopped);
+    live(stopped);
     return status();
   }
 
@@ -534,9 +597,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function adoptCoordinator({ url, certPem, fingerprint, name, authority }) {
     const membership = store().setting('membership');
     if (membership?.role === 'member') throw new PeerError('already_paired', 'This device is already paired', 409);
+    let stopped = stops;
     if (membership?.role === 'coordinator') {
       if (coordinatesOthers()) throw new PeerError('already_coordinating', 'This computer coordinates other devices', 409);
-      await stopAll();
+      stopped = await restart(stopped);
       store().setSetting('coordinator', null);
       const nearby = store().setting('nearby');
       if (nearby) store().setSetting('nearby', { ...nearby, openedListener: false });
@@ -544,8 +608,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     store().forgetAuthority(fingerprint);
     store().bindAuthority(fingerprint, authority, 'pairing');
     store().setSetting('membership', { role: 'member', coordinator: { url, certPem, fingerprint, name: name || 'FULI coordinator' } });
-    await startRunner();
-    await startNearby();
+    await startRunner(stopped);
+    await startNearby(stopped);
+    live(stopped);
   }
 
   // The owner picks each project, the clients it may be woken in and,
@@ -612,23 +677,28 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // Leaves the LAN roundtable. History stays; trust, sharing, listening and nearby discovery end.
   async function disable() {
-    stopNearby();
-    const membership = store().setting('membership');
-    // A coordinator turned on again later must not silently trust old devices,
-    // even when its listener could not start: the store itself is revoked.
-    for (const device of storedDevices()) if (!device.self && device.status === 'active') revokeStored(device.nodeId);
-    await stopAll();
-    store().replaceShares([], port.idFactory);
-    sharesChanged();
-    store().forgetAuthorities();
-    store().setSetting('membership', null);
-    store().setSetting('coordinator', null);
-    store().setSetting('reachedAddresses', null);
-    store().setSetting('pendingTrust', null);
-    pairingShare.clear();
-    store().setSetting('shareTouches', null);
-    listenFailure = null;
-    if (membership?.role === 'member') store().setSetting('pendingLeave', membership.coordinator);
+    // An ending under way until everything is stopped and cleared: nothing that begins meanwhile starts.
+    ends += 1;
+    ending += 1;
+    try {
+      stopNearby();
+      const membership = store().setting('membership');
+      // A coordinator turned on again later must not silently trust old devices,
+      // even when its listener could not start: the store itself is revoked.
+      for (const device of storedDevices()) if (!device.self && device.status === 'active') revokeStored(device.nodeId);
+      await stopAll();
+      store().replaceShares([], port.idFactory);
+      sharesChanged();
+      store().forgetAuthorities();
+      store().setSetting('membership', null);
+      store().setSetting('coordinator', null);
+      store().setSetting('reachedAddresses', null);
+      store().setSetting('pendingTrust', null);
+      pairingShare.clear();
+      store().setSetting('shareTouches', null);
+      listenFailure = null;
+      if (membership?.role === 'member') store().setSetting('pendingLeave', membership.coordinator);
+    } finally { ending -= 1; }
     await finishLeaving();
     return status();
   }
@@ -731,23 +801,27 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       ended: noticeOutcome === 'waiting' ? { ...notice, kind: 'waiting' } : notice };
   }
 
-  async function startNearby() {
+  async function startNearby(stopped) {
     const settings = store().setting('nearby');
     if (!settings) return;
     const device = await identity();
+    // A stop that came meanwhile ended nearby pairing too: nothing is advertised or timed after it.
+    if (stoppedSince(stopped)) return;
     presence.browse(device.fingerprint);
     if (coordinator) {
       presence.advertise({ name: settings.name, port: coordinator.server.address.port, fingerprint: device.fingerprint,
         addresses: coordinator.host === NEARBY_LISTEN_HOST ? announcedAddresses(interfaces) : [coordinator.host] });
     } else presence.stopAdvertising();
     clearTimeout(nearbyTimer);
-    nearbyTimer = setTimeout(() => endNearby({ kind: 'timeout' }).catch(onError), Math.max(0, settings.until - clock()));
+    nearbyTimer = setTimeout(() => endNearby({ kind: 'timeout' }).catch(report), Math.max(0, settings.until - clock()));
     nearbyTimer.unref?.();
   }
 
   function stopNearby() {
     clearTimeout(nearbyTimer);
     nearbyTimer = null;
+    clearTimeout(graceTimer);
+    graceTimer = null;
     pairing.close();
     presence.stop();
     if (port.configured()) store().setSetting('nearby', null);
@@ -759,24 +833,27 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // and returns to that address when nearby pairing turns off. Turning it on
   // again while on keeps its end time.
   async function nearbyOn({ name } = {}) {
+    let stopped = stops;
     const previous = store().setting('nearby');
     const chosen = cleanName(name) || previous?.name || defaultName(await identity());
     const opened = !store().setting('membership');
     let previousHost = previous?.previousHost ?? null;
     if (opened) {
       if (store().setting('pendingLeave')) throw new PeerError('leave_pending', 'The previous coordinator is offline. Retry after it is available, or revoke this device there.', 409);
-      await startCoordinator({ host: nearbyListenHost, port: 0, name: chosen });
+      await startCoordinator({ host: nearbyListenHost, port: 0, name: chosen }, stopped);
     } else if (!previous && coordinator && coordinator.host !== NEARBY_LISTEN_HOST && coordinator.host !== nearbyListenHost) {
       previousHost = coordinator.host;
-      await rebindCoordinator(nearbyListenHost);
+      stopped = await rebindCoordinator(nearbyListenHost, stopped);
     } else if (!previous && !coordinator && store().setting('membership')?.role === 'coordinator') {
       throw new PeerError('listen_failed', 'The LAN roundtable is not listening; turn it off and on again first', 409);
     }
+    live(stopped);
     nearbyNotice = null;
     store().setSetting('nearby', { name: chosen, openedListener: opened || Boolean(previous?.openedListener), previousHost,
       until: previous?.until > clock() ? previous.until : clock() + nearbySessionMs });
-    if (opened) await startRunner();
-    await startNearby();
+    if (opened) await startRunner(stopped);
+    await startNearby(stopped);
+    live(stopped);
     return status();
   }
 
@@ -801,14 +878,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   function afterPairing(peer) {
     nearbyNotice = { kind: 'paired', name: peer.name, fingerprint: peer.fingerprint, at: new Date(clock()).toISOString() };
     pairingShare.start(peer.fingerprint)?.catch(onError);
-    const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name, fingerprint: peer.fingerprint }).catch(onError), pairedGraceMs);
-    timer.unref?.();
+    clearTimeout(graceTimer);
+    graceTimer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name, fingerprint: peer.fingerprint }).catch(report), pairedGraceMs);
+    graceTimer.unref?.();
   }
 
   // Where each paired device last reached this listener, kept across restarts.
   function rememberReached(nodeId, address) {
     store().setSetting('reachedAddresses', { ...(store().setting('reachedAddresses') ?? {}), [nodeId]: address });
-    if (!store().setting('nearby')) narrowListener().catch(onError);
+    if (!store().setting('nearby')) narrowListener().catch(report);
   }
 
   // While nearby pairing is off, a wildcard listener moves to the one address
@@ -826,18 +904,35 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // tries the address it had; when that fails too nothing listens and the
   // card and `fuli peer status` say why (an address that is only away is
   // looked for again, awaitAddress). Trust never changes here.
-  async function rebindCoordinator(address) {
+  // since: the count of stops when the operation that moves it began (now, for a move of its own).
+  // Answers the count to go on with: the move's own stop is part of it.
+  async function rebindCoordinator(address, since = stops) {
+    const stopped = await restart(since);
+    // Read after its own stop: an off that finished meanwhile left no listener to move.
     const settings = store().setting('coordinator');
-    await stopAll();
-    try { await startCoordinator({ host: address, port: settings.port, name: settings.name }); }
+    if (!settings) return stopped;
+    try { await startCoordinator({ host: address, port: settings.port, name: settings.name }, stopped); }
     catch (error) {
+      // A stop that came meanwhile ends the move: the address it had is not tried in its place.
+      live(stopped);
       onError(error);
       const failure = listenFailure;
-      try { await startCoordinator({ host: settings.host, port: settings.port, name: settings.name }); }
-      catch (again) { onError(again); awaitAddress(); return; }
+      try { await startCoordinator({ host: settings.host, port: settings.port, name: settings.name }, stopped); }
+      catch (again) { live(stopped); onError(again); awaitAddress(stopped); return stopped; }
       listenFailure = failure;
     }
-    await startRunner();
+    await startRunner(stopped);
+    live(stopped);
+    return stopped;
+  }
+
+  // An operation's own stop of what runs, before it starts something in its place. Answers the count to go
+  // on with; any other stop meanwhile (close, off, another move) ends the operation instead.
+  async function restart(stopped) {
+    live(stopped);
+    await stopAll();
+    if (ending || stops !== stopped + 1) throw stoppedMeanwhile();
+    return stops;
   }
 
   // Trust written for a nearby pairing is kept only once the other computer
@@ -937,13 +1032,18 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   async function close() {
-    clearTimeout(nearbyTimer);
-    for (const timer of trustChecks) clearTimeout(timer);
-    trustChecks.clear();
-    pairingShare.close();
-    pairing.close();
-    presence.stop();
-    await stopAll();
+    ends += 1;
+    ending += 1;
+    try {
+      clearTimeout(nearbyTimer);
+      clearTimeout(graceTimer);
+      for (const timer of trustChecks) clearTimeout(timer);
+      trustChecks.clear();
+      pairingShare.close();
+      pairing.close();
+      presence.stop();
+      await stopAll();
+    } finally { ending -= 1; }
   }
 
   return { resume, status, searchShareable, shareableProject, enableCoordinator, createInvitation, previewInvitation, join, setShares, revokeDevice, disable,
