@@ -3,7 +3,7 @@ import { graphReadPath, preferenceConflictsPath } from '../graphiti/knowledge-re
 
 // The person's own full reads of personal knowledge, from the local console:
 // the graph, one item's view, a turn's full receipt, a session's records and
-// what it holds for a migration and the preference conflicts; the person's defer and completion of a conflict, which answer as
+// what it holds for a migration, the items a statement's numbers count and the preference conflicts; the person's defer and completion of a conflict, which answer as
 // missing to a reader that may not see its items; and the person's own change
 // of an item (a revision, a batch confirmation, a move to another project),
 // which the provider records as theirs only with this proof. Knowledge an FLA wrote, and
@@ -35,6 +35,7 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
     itemView: (body) => request('/v1/knowledge/item-views', body),
     turnReceipt: (body) => request('/v1/knowledge/turn-receipts', body),
     sessionRecords: (body) => request('/v1/session-records', body),
+    statementItems: (body) => request('/v1/knowledge/statement/items', body),
     sessionMigration: (body) => request('/v1/knowledge/session-migrations/preview', body),
     preferenceConflicts: ({ personalSpaceId, status, limit, offset }) =>
       request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }), null, 'GET'),

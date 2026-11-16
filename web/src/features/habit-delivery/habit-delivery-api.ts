@@ -23,7 +23,7 @@ export async function readHabitDelivery(taskKey: string): Promise<HabitDelivery 
 }
 
 /** Each handed-over habit as it is now; one deleted since reads as deleted, any other failure fails the list. */
-export function readHabitRows(spaceId: string, delivery: HabitDelivery): Promise<HabitRow[]> {
+export function readHabitRows(spaceId: string, delivery: Pick<HabitDelivery, 'items'>): Promise<HabitRow[]> {
   return Promise.all(delivery.items.map(async ({ kind, id }): Promise<HabitRow> => {
     try {
       return { kind, id, item: await readKnowledgeItem(spaceId, kind, id), deleted: false }

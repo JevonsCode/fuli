@@ -7,6 +7,7 @@ import pytest
 
 from fuli_graph.knowledge_audit import AGENT_CONFIRMATION_POLICY_VERSION
 from fuli_graph.tonborg_confirmation import TONBORG_CONFIRMATION_POLICY_VERSION
+from knowledge_tag_scenarios import REVIEW
 from test_knowledge_tags_neo4j import run_in_world
 
 PATH = '/v1/knowledge/statement'
@@ -106,6 +107,49 @@ async def statement_scenario(world):
         'done': {'finished': 1, 'failed': 1},
         'answered': 1,
     }
+
+
+async def listed_items(world, *, since=SINCE, until=UNTIL, headers=REVIEW, **more):
+    return await world.client.post(PATH + '/items', headers=headers, json={
+        'personal_space_id': world.space, 'since': since.isoformat(), 'until': until.isoformat(), **more})
+
+
+async def statement_items_scenario(world):
+    """The lists name exactly the items the scenario's numbers count."""
+    await statement_scenario(world)
+
+    def names(listed):
+        return [(row['item_kind'], row['item_id'].removeprefix(world.space + '-')) for row in listed['items']]
+
+    response = await listed_items(world)
+    assert response.status_code == 200, response.text
+    this_week = response.json()
+    # learned.captured 2 and learned.confirmed_by_you 1 above: the new version of person-new is in neither list.
+    assert this_week['captured']['total'] == 2
+    assert names(this_week['captured']) == [('entity', 'person-new'), ('entity', 'pending')]
+    assert this_week['confirmed_by_you']['total'] == 1
+    assert names(this_week['confirmed_by_you']) == [('entity', 'person-new')]
+    assert datetime.fromisoformat(this_week['confirmed_by_you']['items'][0]['at']) == THIS_WEEK
+
+    # The week before, facts are listed with entities; Tonborg's and the usage rule's confirmations are not the person's.
+    last_week = (await listed_items(world, since=SINCE - timedelta(days=7), until=SINCE)).json()
+    assert sorted(names(last_week['captured'])) == [
+        ('entity', 'forged'), ('entity', 'person-old'), ('entity', 'tonborg'), ('entity', 'usage'), ('relationship', 'fact')]
+    assert sorted(names(last_week['confirmed_by_you'])) == [('entity', 'person-old'), ('relationship', 'fact')]
+
+    # A limit cuts the rows, never the count.
+    cut = (await listed_items(world, limit=1)).json()['captured']
+    assert (cut['total'], names(cut)) == (2, [('entity', 'person-new')])
+
+    # The lists name every FLA's items: no proof, or a wrong one, reads nothing.
+    for headers in ({}, {'x-fuli-human-review-token': 'synthetic-wrong-review-token-000000000000'}):
+        assert (await listed_items(world, headers=headers)).status_code == 403
+    assert (await listed_items(world, since=UNTIL, until=SINCE)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_statement_items_list_what_the_numbers_count():
+    await run_in_world(statement_items_scenario)
 
 
 @pytest.mark.asyncio

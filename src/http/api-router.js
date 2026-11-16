@@ -244,7 +244,7 @@ export async function handleApiRequest({
   if (await handleOccupationPluginsRequest({ request, response, url, app })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleNoticesRequest({ request, response, url, app, delegation: agentDelegation, system })) return true;
-  if (await handleStatementRequest({ request, response, url, app })) return true;
+  if (await handleStatementRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleRetrospectivesRequest({ request, response, url, app })) return true;
   if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
   if (await handleEmbeddingModelsRequest({ request, response, url, embeddingModels: app.embeddingModels ?? null })) return true;

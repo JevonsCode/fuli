@@ -1,5 +1,7 @@
 import { InvalidInputError } from '../app/application-error.js';
 import { clientModelUsage, compoundingStatement, statementDays, statementDaysWindow, statementWindow } from '../statement/compounding-statement.js';
+import { carriedTasks, learnedItems } from '../statement/detail-lists.js';
+import { ownerReadsUnavailable } from './knowledge-item-api-router.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { sendJson } from './response.js';
 
@@ -7,13 +9,18 @@ import { sendJson } from './response.js';
 // this computer, like the workbench's notices: it counts what was done for
 // the person. from/to are the person's local week bounds the console computed;
 // /days takes a range of local days with the person's UTC offset; /usage the
-// clients and models the assistants worked with in from/to.
+// clients and models the assistants worked with in from/to; /carried the
+// conversations that carried habits and /learned the items captured and
+// confirmed in from/to, the lists behind those numbers. /learned names every
+// FLA's items, so it is read through ownerReads, the console's human-review port.
 const PATH = '/api/statement';
 const DAYS_PATH = '/api/statement/days';
 const USAGE_PATH = '/api/statement/usage';
-const PATHS = new Set([PATH, DAYS_PATH, USAGE_PATH]);
+const CARRIED_PATH = '/api/statement/carried';
+const LEARNED_PATH = '/api/statement/learned';
+const PATHS = new Set([PATH, DAYS_PATH, USAGE_PATH, CARRIED_PATH, LEARNED_PATH]);
 
-export async function handleStatementRequest({ request, response, url, app }) {
+export async function handleStatementRequest({ request, response, url, app, ownerReads = null }) {
   if (!PATHS.has(url.pathname)) return false;
   response.setHeader('Cache-Control', 'no-store');
   if (refuseRemoteDecision(request, response, 'The statement is read only on this computer')) return true;
@@ -25,6 +32,15 @@ export async function handleStatementRequest({ request, response, url, app }) {
   }
   if (url.pathname === USAGE_PATH) {
     sendJson(response, 200, await clientModelUsage(app, statementWindow({ from: params.get('from'), to: params.get('to') })));
+    return true;
+  }
+  if (url.pathname === CARRIED_PATH) {
+    sendJson(response, 200, carriedTasks(app, statementWindow({ from: params.get('from'), to: params.get('to') })));
+    return true;
+  }
+  if (url.pathname === LEARNED_PATH) {
+    if (!ownerReads) return ownerReadsUnavailable(response);
+    sendJson(response, 200, await learnedItems(app, ownerReads, statementWindow({ from: params.get('from'), to: params.get('to') })));
     return true;
   }
   if (params.has('weeks') && !/^\d{1,2}$/.test(params.get('weeks'))) throw new InvalidInputError('weeks must be a whole number of weeks');

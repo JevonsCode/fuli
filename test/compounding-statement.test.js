@@ -145,6 +145,40 @@ function daysApp({ provider = async () => ({ days: [{ day: '2026-11-10', learned
   return { app, calls };
 }
 
+test('the carried list names each conversation the number counts, and the learned list is read only with the owner proof', async () => {
+  const { app } = syntheticApp();
+  const carried = await call(app, { from: FROM, to: TO }, '127.0.0.1', '/api/statement/carried');
+  assert.equal(carried.status, 200);
+  assert.equal(carried.body.more, false);
+  assert.deepEqual(carried.body.rows.map(({ key, at, ...row }) => [typeof key, typeof at, row]).sort((left, right) => left[2].client.localeCompare(right[2].client)), [
+    ['string', 'string', { client: 'claude_code', model: null, habits: 1, recalled: 0 }],
+    ['string', 'string', { client: 'codex', model: null, habits: 1, recalled: 2 }]
+  ]);
+  assert.equal(carried.body.rows.length, (await call(app, { from: FROM, to: TO })).body.carried.tasks);
+
+  const asked = [];
+  const ownerReads = { statementItems: async input => { asked.push(input); return {
+    captured: { total: 7, items: [{ item_kind: 'entity', item_id: 'synthetic-new', at: FROM }] },
+    confirmed_by_you: { total: 1, items: [{ item_kind: 'relationship', item_id: 'synthetic-kept', at: FROM }] } }; } };
+  const learned = async (ports, remoteAddress = '127.0.0.1') => {
+    let status; let body;
+    const response = { setHeader() {}, writeHead(code) { status = code; }, end(text) { body = JSON.parse(text); } };
+    await handleStatementRequest({ request: { method: 'GET', socket: { remoteAddress }, headers: { host: '127.0.0.1' } }, response, app,
+      ownerReads: ports, url: new URL(`http://127.0.0.1/api/statement/learned?${new URLSearchParams({ from: FROM, to: TO })}`) });
+    return { status, body };
+  };
+  const read = await learned(ownerReads);
+  assert.equal(read.status, 200);
+  assert.deepEqual(asked, [{ personal_space_id: SPACE, since: FROM, until: TO, limit: 50 }]);
+  assert.deepEqual([read.body.captured, read.body.confirmedByYou], [
+    { total: 7, items: [{ kind: 'entity', id: 'synthetic-new', at: FROM }] },
+    { total: 1, items: [{ kind: 'relationship', id: 'synthetic-kept', at: FROM }] }]);
+  assert.equal((await learned(null)).status, 503, 'no owner port, no list');
+  assert.equal((await learned(ownerReads, '192.0.2.7')).status, 403);
+  assert.equal(asked.length, 1, 'neither refusal reached the Provider');
+  await assert.rejects(call(app, { from: TO, to: FROM }, '127.0.0.1', '/api/statement/carried'), /from must be before to/);
+});
+
 test('the statement by day cuts at the local midnight of the offset the caller sends', async () => {
   const { app, calls } = daysApp();
   const { status, body } = await call(app, { from: DAYS_FROM, to: DAYS_TO }, '127.0.0.1', '/api/statement/days');
