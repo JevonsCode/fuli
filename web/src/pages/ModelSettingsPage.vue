@@ -224,7 +224,7 @@ onBeforeUnmount(() => {
         <ModelUsage />
 
         <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
-          @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" />
+          @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />
         <BuiltinEmbeddingDialog :open="builtinOpen" @close="builtinOpen = false" @changed="settingsChanged()"
           @own="builtinOpen = false; edit(SEMANTIC_ROLE)" />
         <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"

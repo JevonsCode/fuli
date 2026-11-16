@@ -4,9 +4,11 @@ import { t } from '@/i18n'
 import { roleName, type ModelRoleId } from './model'
 import { useRoleCheck } from './useRoleCheck'
 
-// 测试连接 with its answer beside it, in a use's details.
+// 测试连接 with its answer beside it, in a use's details. checked: a test ran, so the settings read
+// differently now (the use's card, its connection's row and the top bar follow the page's next read).
 const props = defineProps<{ role: ModelRoleId; model: string }>()
-const { checking, result, check } = useRoleCheck(() => props)
+const emit = defineEmits<{ checked: [ok: boolean] }>()
+const { checking, result, check } = useRoleCheck(() => props, ok => emit('checked', ok))
 </script>
 
 <template>
