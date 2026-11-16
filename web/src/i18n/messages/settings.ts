@@ -227,6 +227,7 @@ export const settingsMessages = {
       clearAttempts: '确认清零',
       clearingAttempts: '正在清零配对尝试…',
       listenFailure: '没能在 {address} 上监听（{code}），已配对的电脑现在连不上。关掉再打开局域网圆桌。',
+      listenAway: '这台电脑现在没有 {address} 这个地址，已配对的电脑暂时连不上。重新拿到这个地址后会自己恢复，不用重新配对。',
       nearbyEnded: {
         paired: '已和 {name} 配对，附近的 FULI 已自动关闭。',
         waiting: '已和 {name} 配对，等它第一次连上。附近的 FULI 已自动关闭。',
@@ -686,6 +687,7 @@ export const settingsMessages = {
       clearAttempts: 'Clear attempts',
       clearingAttempts: 'Clearing pairing attempts…',
       listenFailure: 'Not listening on {address} ({code}). Turn the LAN roundtable off and on to fix it.',
+      listenAway: 'This computer does not have {address} now. It listens again once it is back; devices stay paired.',
       nearbyEnded: {
         paired: 'Paired with {name}. FULI nearby turned itself off.',
         waiting: 'Paired with {name}; waiting for its first connection. FULI nearby turned itself off.',

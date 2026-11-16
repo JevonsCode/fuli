@@ -322,7 +322,8 @@ function shareState(projectId: string) {
 
       <template v-if="status && paired">
         <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure>
-          {{ t('settings.peer.listenFailure', { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
+          {{ t(status.coordinator.listenFailure.addressAway ? 'settings.peer.listenAway' : 'settings.peer.listenFailure',
+            { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
         </UiNotice>
         <dl class="peer-identity">
           <div>

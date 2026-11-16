@@ -75,7 +75,7 @@ export type PeerStatus = {
   // fingerprint: names the coordinator as a requester ('peer:<fingerprint>') on a computer that joined.
   coordinator: { name: string; url: string; fingerprint?: string; shortFingerprint: string; listening: boolean;
     // Why the listener is not running: an address that is gone, a port in use.
-    listenFailure?: { address: string; port: number; code: string; at: string } | null } | null
+    listenFailure?: { address: string; port: number; code: string; at: string; addressAway?: boolean } | null } | null
   addresses: string[]
   devices: Device[]
   openInvitations: number

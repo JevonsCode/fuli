@@ -31,6 +31,10 @@ const PAIRED_GRACE_MS = 5_000;
 // A device this computer trusted through nearby pairing that never connects
 // within this time did not finish its side: the trust is taken back.
 const TRUST_USE_MS = 60_000;
+// What a listener is refused with when its address is not on this computer now (a laptop on another
+// network), and how often a coordinator stopped by that looks whether the address is back.
+const ADDRESS_AWAY = 'EADDRNOTAVAIL';
+const LISTEN_RETRY_MS = 30_000;
 const LOOPBACK = /^(127\.|::1$)/;
 // The search for projects to add answers with this many by default, at most SEARCH_MAX.
 const SEARCH_LIMIT = 20;
@@ -44,7 +48,7 @@ const pickable = project => !project.temporary && !project.sessionOnly && !proje
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
   claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
   nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, autoShareRetryMs, autoShareAttempts,
-  publishMs = PUBLISH_MS, onError = () => {} }) {
+  publishMs = PUBLISH_MS, listenRetryMs = LISTEN_RETRY_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -58,6 +62,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   let nearbyNotice = null;
   let nearbyTimer = null;
   let listenFailure = null;
+  let listenRetry = null;
+  // The start awaitAddress has under way, if any: a stop waits for it, so it closes what that start opened
+  // and whatever the stop clears afterwards (turning the roundtable off clears its settings) stays cleared.
+  let listenWork = null;
+  // Counts stops asked for. A start that one overtook arms no retry (resume's own start is not waited for by
+  // a stop), and the retry's start skips connecting, which the waiting stop would only undo.
+  let stops = 0;
   const trustChecks = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
@@ -93,8 +104,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (!port.configured()) return;
     await finishLeaving();
     const settings = store().setting('coordinator');
-    // An address that is gone (a new network, DHCP) is said, not replaced: nothing listens until the person acts.
-    if (settings) await startCoordinator(settings).catch((error) => { onError(error); });
+    // An address that is gone (a new network, DHCP) is said, not replaced: nothing listens until the person
+    // acts, or until that same address is on this computer again (awaitAddress).
+    const stopped = stops;
+    if (settings) await startCoordinator(settings).catch((error) => { onError(error); if (stops === stopped) awaitAddress(); });
     if (store().setting('membership') && (coordinator || !settings)) await startRunner();
     checkPendingTrust();
     pairingShare.resume();
@@ -103,6 +116,30 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (!(nearby.until > clock())) await endNearby({ kind: 'timeout' });
     else if (settings && !coordinator) await endNearby(null);
     else await startNearby();
+  }
+
+  // A listener whose address is not on this computer now starts by itself once that same address is back (a
+  // laptop that returns to its network and is given the address it had): nothing is replaced and no trust
+  // changes, so the person need not act and paired devices stay paired. A network that gives the computer
+  // another address does not bring it back, and any other failure waits for the person, as before.
+  function awaitAddress() {
+    clearTimeout(listenRetry);
+    listenRetry = null;
+    if (!listenFailure?.addressAway) return;
+    listenRetry = setTimeout(() => {
+      listenRetry = null;
+      listenWork = listenAgain().catch(onError).finally(() => { listenWork = null; });
+    }, listenRetryMs);
+    listenRetry.unref?.();
+  }
+
+  async function listenAgain() {
+    const settings = port.configured() ? store().setting('coordinator') : null;
+    if (!settings || coordinator || !listenFailure?.addressAway) return;
+    if (!localAddresses().includes(settings.host)) return awaitAddress();
+    const stopped = stops;
+    try { await startCoordinator(settings); } catch (error) { onError(error); return awaitAddress(); }
+    if (stops === stopped && store().setting('membership')) await startRunner();
   }
 
   async function startCoordinator({ host: address, port: listenPort, name }) {
@@ -122,7 +159,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
         onReached: rememberReached });
     } catch (error) {
       coordinatorStore.close();
-      listenFailure = { address, port: listenPort, code: failureCode(error), at: new Date(clock()).toISOString() };
+      const code = failureCode(error);
+      // addressAway: the address is not on this computer now; the listener returns by itself when it is.
+      listenFailure = { address, port: listenPort, code, at: new Date(clock()).toISOString(), addressAway: code === ADDRESS_AWAY };
       throw new PeerError('listen_failed', `Could not listen on ${address}:${listenPort}: ${failureCode(error)}`, 409);
     }
     listenFailure = null;
@@ -156,6 +195,11 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   async function stopAll() {
+    stops += 1;
+    await listenWork;
+    // After the wait: a start that found the address still away asks to be tried again.
+    clearTimeout(listenRetry);
+    listenRetry = null;
     clearTimeout(leaveRetry);
     leaveRetry = null;
     leaveAbort?.abort();

@@ -111,7 +111,8 @@ function printStatus(status, write) {
   write(`This device: ${status.device.shortFingerprint}`);
   write(`Coordinator: ${status.coordinator.name} ${status.coordinator.url} (${status.coordinator.shortFingerprint})`);
   const failure = status.coordinator.listenFailure;
-  if (failure) write(`Not listening: could not open ${failure.address}:${failure.port} (${failure.code}). Paired devices cannot reach this computer; turn the LAN roundtable off and on again.`);
+  if (failure?.addressAway) write(`Not listening: this computer does not have ${failure.address} now (another network, or a new address). Paired devices cannot reach it; it listens again by itself once it has that same address, and they stay paired.`);
+  else if (failure) write(`Not listening: could not open ${failure.address}:${failure.port} (${failure.code}). Paired devices cannot reach this computer; turn the LAN roundtable off and on again.`);
   for (const device of status.devices.filter((entry) => !entry.self)) {
     write(`  device ${device.name} ${device.shortFingerprint} ${device.status}${device.online ? ' online' : ''} · shared Agents ${device.sharedAgents} · ${device.nodeId}`);
   }
