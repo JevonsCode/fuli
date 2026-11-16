@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
 import { connectionService, modelGuideUrl, modelName, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
-import { latestHealth } from './model-health'
+import { isRoleFailure, latestHealth } from './model-health'
 
 // The model center (11-06): every connected model once with who uses
 // it, and every use with the capability that is enough for it. A use is a
@@ -46,8 +46,9 @@ export interface ModelInUse {
   uses: { use: ModelUseId; on: boolean }[]
   // Whether it works now, from the roles that are on; null when none of them has a record.
   health: ModelRoleHealth | null
-  // The role 「测试连接」 tests it through: the first that is on, else none.
-  checkRole: ModelRoleId | null
+  // The roles 「测试连接」 tests it through: each one that is on whose own task failed (only its own
+  // answer clears that), else the first that is on; none when every use is off.
+  checkRoles: ModelRoleId[]
 }
 
 /** Each connection a role names, once, with the uses on it; a use that is off stays listed, marked off. */
@@ -57,17 +58,20 @@ export function modelsInUse(payload: ModelRolesPayload): ModelInUse[] {
     const connection = view.connection
     if (!connection) continue
     const entry = models.get(connection.id) ?? { id: connection.id, model: connection.model, label: modelName(connection),
-      service: connectionService(connection), uses: [], health: null, checkRole: null }
+      service: connectionService(connection), uses: [], health: null, checkRoles: [] }
     const on = view.state === 'enabled'
     entry.uses.push({ use: view.role, on })
-    if (on) {
-      entry.health = latestHealth([entry.health, view.health])
-      entry.checkRole ??= view.role
-    }
+    if (on) entry.health = latestHealth([entry.health, view.health])
     if (view.role === 'assistant') {
       for (const task of ASTRO_TASKS) if (view.allowedOperations?.includes(task)) entry.uses.push({ use: task, on: view.state === 'enabled' })
     }
     models.set(connection.id, entry)
   }
-  return [...models.values()]
+  return [...models.values()].map(entry => ({ ...entry, checkRoles: rolesToCheck(payload, entry.id) }))
+}
+
+function rolesToCheck(payload: ModelRolesPayload, connectionId: string): ModelRoleId[] {
+  const on = payload.roles.filter(view => view.state === 'enabled' && view.connection?.id === connectionId)
+  const own = on.filter(view => isRoleFailure(view.health))
+  return (own.length ? own : on.slice(0, 1)).map(view => view.role)
 }

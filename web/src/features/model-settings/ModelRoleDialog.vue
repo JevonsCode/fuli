@@ -62,8 +62,12 @@ const modelListText = computed(() => {
   }
   return ''
 })
+// The settings the draft was made from. The page's copy is read again while the form is open (the top
+// bar reads it every minute); a save names this one, so a change made elsewhere meanwhile is still refused.
+let draftRevision = props.payload.revision
 watch(() => props.role, (role) => {
   draft.value = role ? roleDraft(props.payload, role) : null
+  draftRevision = props.payload.revision
   error.value = ''
   refreshModels()
 }, { immediate: true })
@@ -125,7 +129,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    emit('saved', await saveModelRole(props.role, draft.value, props.payload.revision))
+    emit('saved', await saveModelRole(props.role, draft.value, draftRevision))
   } catch (cause) {
     const code = configConflict(cause)
     if (code) emit('conflict', code)

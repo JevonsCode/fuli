@@ -71,6 +71,19 @@ describe('the model picker in the role dialog', () => {
     expect(api.putJson.mock.calls[0][1].connection.model).toBe('synthetic-coder:7b')
   })
 
+  it('saves against the settings the form was opened on, though the page read newer ones meanwhile', async () => {
+    api.putJson.mockResolvedValue(payload('jefa', 'openai_chat', 'synthetic-old'))
+    const wrapper = mountDialog('jefa')
+    await flushPromises()
+    // The top bar read the settings again while the form was open: they changed elsewhere.
+    await wrapper.setProps({ payload: { ...payload('jefa', 'openai_chat', 'synthetic-elsewhere'), revision: 'd'.repeat(64) } })
+    expect((modelField(wrapper).get('input').element as HTMLInputElement).value).toBe('synthetic-old')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    // The server refuses a save that names older settings (model_config_changed), so nothing is overwritten unseen.
+    expect(api.putJson.mock.calls[0][1].revision).toBe(REVISION)
+  })
+
   it('keeps a name the list does not have, as typed', async () => {
     api.putJson.mockResolvedValue(payload('jefa', 'openai_chat', 'my-own-model'))
     const wrapper = mountDialog('jefa')

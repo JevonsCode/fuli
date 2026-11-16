@@ -17,7 +17,8 @@ export function failureReason(reason: string | null | undefined): string {
 
 export const isFailing = (health: ModelRoleHealth | null | undefined) => health?.status === 'failing'
 
-const isRoleFailure = (health: ModelRoleHealth | null | undefined) => isFailing(health) && health?.scope === 'role'
+/** A failure of the role's own task, which only that role's own answer clears; any other failure is the connection's. */
+export const isRoleFailure = (health: ModelRoleHealth | null | undefined) => isFailing(health) && health?.scope === 'role'
 
 /** The short state of a failing use: the connection does not answer, or the role's own task failed. */
 export const failingState = (health: ModelRoleHealth | null | undefined) =>

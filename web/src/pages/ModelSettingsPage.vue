@@ -8,6 +8,7 @@ import PageOutline from '@/components/PageOutline.vue'
 import { Button } from '@/components/ui/button'
 import BuiltinEmbeddingDialog from '@/features/model-settings/BuiltinEmbeddingDialog.vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
+import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
 import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
 import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
@@ -38,13 +39,15 @@ import { UiNotice } from '@/ui'
 // action. Lists, facts, trust and history open in 「查看详情」. A model that did
 // not answer says why where it shows, with 「测试连接」 and, where something
 // can run again, 「重试」; a test reads the settings again so every place
-// agrees. Then what the roles suggested and their usage. A save is accepted
+// agrees, the top bar's model button included (both show one copy of the
+// settings, latest-model-roles). Then what the roles suggested and their usage. A save is accepted
 // only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const pageRoot = ref<HTMLElement | null>(null)
-const payload = ref<ModelRolesPayload | null>(null)
+// The one copy the top bar's model button shows too: what either reads, both show.
+const payload = latestModelRoles
 const loading = ref(true)
 const loadError = ref('')
 const editing = ref<ModelRoleId | null>(null)

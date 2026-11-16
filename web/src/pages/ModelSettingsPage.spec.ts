@@ -12,6 +12,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 }))
 
 import { ApiError } from '@/api/client'
+import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { reloadPage } from '@/layouts/page-refresh'
@@ -54,6 +55,7 @@ const trust = (overrides: Record<string, unknown> = {}) => ({ operation: 'knowle
 let rolesPayload = roles()
 const dreamingOff = { readiness: 'needs_model', projects: [] }
 beforeEach(() => {
+  latestModelRoles.value = null
   setActivePinia(createPinia())
   const store = useConsoleStore()
   store.runtimeStatus = 'ready'
@@ -319,8 +321,22 @@ describe('ModelSettingsPage', () => {
     await tonborg.get('[data-model-check]').trigger('click')
     await flushPromises()
     expect(reads()).toBe(before + 1)
+    // What the page read after the test is what the top bar's model button shows.
+    expect(latestModelRoles.value?.roles.find(view => view.role === 'tonborg')?.health?.status).toBe('ok')
     expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
     expect(wrapper.find('[data-model-role="tonborg"] [data-model-failure]').exists()).toBe(false)
+  })
+
+  it('shows what the top bar\'s model button read since, without a read of its own', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
+    const reads = api.getJson.mock.calls.length
+    const newer = roles()
+    newer.roles[3] = { ...(newer.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'timeout', scope: 'role' } } as never
+    latestModelRoles.value = newer as never
+    await flushPromises()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('任务失败')
+    expect(api.getJson.mock.calls.length).toBe(reads)
   })
 
   it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {

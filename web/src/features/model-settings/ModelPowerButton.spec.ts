@@ -7,6 +7,8 @@ vi.mock('vue-router', async (importOriginal) => ({ ...await importOriginal<typeo
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
 import { setLocale } from '@/i18n'
+import { latestModelRoles } from './latest-model-roles'
+import type { ModelRolesPayload } from './model'
 import ModelPowerButton from './ModelPowerButton.vue'
 
 const role = (name: string, state: string) => ({ role: name, state, answeredBy: state === 'enabled' ? 'model_api' : 'current_session' })
@@ -27,7 +29,7 @@ async function mountButton() {
   return wrapper
 }
 
-afterEach(() => { api.getJson.mockReset(); routeState.path = '/' })
+afterEach(() => { api.getJson.mockReset(); routeState.path = '/'; latestModelRoles.value = null })
 
 describe('ModelPowerButton', () => {
   it('stays quiet when no model is connected, and points to the model page', async () => {
@@ -126,6 +128,42 @@ describe('ModelPowerButton', () => {
     const rows = wrapper.findAll('[data-model-peek-role]').map(row => row.findAll('span').map(span => span.text()))
     expect(rows).toEqual([[expect.any(String), 'synthetic-chat'], [expect.any(String), '没回应']])
     expect(wrapper.get('[data-model-peek-status]').text()).toBe('1 项没回应')
+    wrapper.unmount()
+  })
+
+  // A real report on 0.27.12: the connection had just been tested and answered, and the panel still said a use "did not answer".
+  const connection = (model: string) => ({ id: model, protocol: 'anthropic_messages', endpointHost: '192.0.2.1:6666', model, secretRef: 'synthetic' })
+  const use = (role: string, health: unknown) => ({ role, state: 'enabled', answeredBy: 'model_api', connection: connection('synthetic-chat'), health })
+  const own = { status: 'failing', at: '2026-11-11T02:00:00.000Z', reason: 'timeout', scope: 'role' }
+  const peekStub = { RouterLink: RouterLinkStub, HeaderPeek: { template: '<div><slot name="trigger" /><div data-peek-body><slot /></div></div>' } }
+  const peekRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-model-peek-role]').map(row => row.findAll('span')[1]!.text())
+
+  it('says a use\'s own failed task as that, not as a model that does not answer', async () => {
+    answer({ state: 'valid', roles: [use('assistant', { status: 'ok', scope: 'connection' }), use('jefa', own),
+      use('tonborg', { status: 'failing', reason: 'network', scope: 'connection' })] }, null)
+    setLocale('zh-CN')
+    const wrapper = mount(ModelPowerButton, { global: { stubs: peekStub } })
+    await flushPromises()
+    expect(peekRows(wrapper)).toEqual(['synthetic-chat', '任务失败', '没回应'])
+    expect(wrapper.get('[data-model-peek-status]').text()).toBe('1 项没回应 · 1 项任务失败')
+    expect(wrapper.get('[data-model-power]').attributes('aria-label')).toBe('模型连不上：Tonborg。点开看看 任务没做成：Jefa。点开看看')
+    wrapper.unmount()
+  })
+
+  it('shows what the model page holds after a test there, at once and without a read of its own', async () => {
+    answer({ state: 'valid', roles: [use('assistant', { status: 'ok', scope: 'connection' }), use('jefa', own)] }, null)
+    setLocale('zh-CN')
+    const wrapper = mount(ModelPowerButton, { global: { stubs: peekStub } })
+    await flushPromises()
+    expect([wrapper.get('[data-model-power]').attributes('data-model-power'), wrapper.get('[data-model-peek-status]').text()]).toEqual(['problem', '1 项任务失败'])
+    const reads = api.getJson.mock.calls.length
+    // The page read the settings again after its test: Jefa answered.
+    latestModelRoles.value = { state: 'valid', roles: [use('assistant', { status: 'ok', scope: 'connection' }),
+      use('jefa', { status: 'ok', scope: 'connection' })] } as unknown as ModelRolesPayload
+    await flushPromises()
+    expect([wrapper.get('[data-model-power]').attributes('data-model-power'), wrapper.get('[data-model-peek-status]').text()]).toEqual(['on', '2 项在用'])
+    expect(peekRows(wrapper)).toEqual(['synthetic-chat', 'synthetic-chat'])
+    expect(api.getJson.mock.calls.length).toBe(reads)
     wrapper.unmount()
   })
 })
