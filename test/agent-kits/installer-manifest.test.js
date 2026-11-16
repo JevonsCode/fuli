@@ -39,7 +39,7 @@ test('the OpenCode plugin is named only where OpenCode takes it, beside its sour
   const withPlugin = composed(t, true);
   assert.equal(withPlugin.variables.openCodePlugin, join(withPlugin.root, 'agent-kits', 'opencode-plugin'));
   assert.match(readFileSync(join(withPlugin.variables.openCodePlugin, 'index.js'), 'utf8'), /fuliOpenCodePlugin/);
-  assert.deepEqual(Object.keys(withPlugin.variables).sort(), ['claudeHook', 'codexHook', 'cursorHook', 'dshBundle', 'mcpServerPath',
+  assert.deepEqual(Object.keys(withPlugin.variables).sort(), ['chengxiaobangHook', 'claudeHook', 'codexHook', 'cursorHook', 'dshBundle', 'mcpServerPath',
     'nodePath', 'openCodePlugin', 'runtimeConfigPath', 'skillsDir']);
 });
 
@@ -63,4 +63,14 @@ test('a client gets prompts only when its list is known; an empty list is still 
   assert.deepEqual(manifest.clients.codex.prompts, prompts);
   assert.equal(manifest.clients.nobody, undefined);
   assert.deepEqual(composed(t, false, { codex: [] }).manifest.clients.codex.prompts, []);
+});
+
+
+test('Chengxiaobang receives hooks, shared skills and the generic MCP identity', t => {
+  const {manifest, variables, root} = composed(t, false);
+  const client = manifest.clients.chengxiaobang;
+  assert.deepEqual(Object.keys(client.hooks.events), ['userPromptSubmit', 'stop']);
+  assert.equal(variables.chengxiaobangHook, join(root, 'src', 'agents', 'chengxiaobang', 'lifecycle-hook.js'));
+  assert.equal(client.mcp, undefined, 'inherits the generic other source');
+  assert.equal(client.skills.length, 3);
 });

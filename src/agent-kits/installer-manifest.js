@@ -24,6 +24,7 @@ function fuliInstallerManifest({ packs, openCodePlugin, clientPrompts }) {
   for (const pack of packs) manifest.clients[pack.id] = packManifestClient(pack);
   if (openCodePlugin) manifest.clients.opencode.plugin = { source: '{openCodePlugin}' };
   // DSH reads no MCP file: the bundle starts FULI's MCP server itself.
+  manifest.clients.chengxiaobang.skills = packagedSkills(false);
   manifest.clients.dsh = { mcp: null, plugin: { name: 'fuli', source: '{dshBundle}' }, skills: packagedSkills(false) };
   for (const [id, prompts] of Object.entries(clientPrompts)) {
     if (Array.isArray(prompts) && manifest.clients[id]) manifest.clients[id].prompts = prompts;
@@ -64,6 +65,7 @@ function installerVariables(context, openCodePlugin, dshBundle) {
     claudeHook: join(agents, 'claude-code', 'lifecycle-hook.js'),
     codexHook: join(agents, 'codex', 'lifecycle-hook.js'),
     cursorHook: join(agents, 'cursor', 'lifecycle-hook.js'),
+    chengxiaobangHook: join(agents, 'chengxiaobang', 'lifecycle-hook.js'),
     skillsDir: context.skillsDir,
     dshBundle,
     ...(openCodePlugin ? { openCodePlugin } : {})

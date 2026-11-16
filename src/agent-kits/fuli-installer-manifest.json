@@ -28,6 +28,34 @@
     },
     "antigravity": {
       "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "antigravity", "--tool-profile", "chat"] }
+    },
+    "chengxiaobang": {
+      "hooks": {
+        "markers": [
+          "/agents/chengxiaobang/lifecycle-hook.js",
+          "\\agents\\chengxiaobang\\lifecycle-hook.js"
+        ],
+        "events": {
+          "userPromptSubmit": {
+            "command": [
+              "{nodePath}",
+              "{chengxiaobangHook}",
+              "--runtime-config",
+              "{runtimeConfigPath}"
+            ],
+            "timeoutSec": 20
+          },
+          "stop": {
+            "command": [
+              "{nodePath}",
+              "{chengxiaobangHook}",
+              "--runtime-config",
+              "{runtimeConfigPath}"
+            ],
+            "timeoutSec": 20
+          }
+        }
+      }
     }
   }
 }

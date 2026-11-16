@@ -481,6 +481,60 @@
           }
         }
       ]
+    },
+    "chengxiaobang": {
+      "hooks": {
+        "markers": [
+          "/agents/chengxiaobang/lifecycle-hook.js",
+          "\\agents\\chengxiaobang\\lifecycle-hook.js"
+        ],
+        "events": {
+          "userPromptSubmit": {
+            "command": [
+              "{nodePath}",
+              "{chengxiaobangHook}",
+              "--runtime-config",
+              "{runtimeConfigPath}"
+            ],
+            "timeoutSec": 20
+          },
+          "stop": {
+            "command": [
+              "{nodePath}",
+              "{chengxiaobangHook}",
+              "--runtime-config",
+              "{runtimeConfigPath}"
+            ],
+            "timeoutSec": 20
+          }
+        }
+      },
+      "skills": [
+        {
+          "name": "capturing-session-knowledge",
+          "source": "{skillsDir}/capturing-session-knowledge",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: capturing-session-knowledge"
+          }
+        },
+        {
+          "name": "grilling-project",
+          "source": "{skillsDir}/grilling-project",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: grilling-project"
+          }
+        },
+        {
+          "name": "operating-fuli",
+          "source": "{skillsDir}/operating-fuli",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: operating-fuli"
+          }
+        }
+      ]
     }
   }
 }

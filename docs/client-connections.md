@@ -16,7 +16,7 @@ process, that a Hook delivered context, or that a tool call succeeded.**
 1. Finish `npm install --global fuli-context` and `fuli setup` (or `fuli setup --skip-agents` if
    you only want local Fuli services without editing any client). Setup can finish even when no
    known client is installed.
-2. Prefer automatic setup when Codex, Claude Code, Cursor, or Claude Desktop is detected. For any
+2. Prefer automatic setup when Codex, Claude Code, Cursor, Claude Desktop, or Chengxiaobang is detected. For any
    other MCP client, run `fuli connect`, or open **Settings → Client connection** in the console and
    add it under **Connect by hand**.
 3. Merge the generated `fuli` entry into the client's MCP settings while keeping its other servers.
@@ -42,6 +42,19 @@ Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PA
 `fuli mcp --tools` lists the available tool contract without starting a task.
 
 ### Chengxiaobang (程小帮) lifecycle hooks
+
+After launching Chengxiaobang once, run `fuli setup`, or select **Chengxiaobang
+(程小帮)** in **Settings → Client connection** and connect it. The shared installer
+writes MCP, both lifecycle hooks and Fuli skills together. Open a new conversation
+to load them. Refresh and remove use the same client card; unrelated MCP servers
+and hooks are preserved. A disabled global hook switch must be enabled in the client.
+`CHENGXIAOBANG_HOME` is supported for a custom client home.
+
+Release dependency: automatic onboarding requires an agent-installer release with
+this target and an updated Fuli component pin. The currently pinned 0.5.1 does not
+include it; until that release is integrated, use the manual fallback below.
+
+**Manual fallback:**
 
 Connect its MCP server with `fuli connect --profile chat --source-application other`.
 Then run `fuli connect --format chengxiaobang-hooks` (with the same `--runtime-config`
