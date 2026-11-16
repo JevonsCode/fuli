@@ -25,7 +25,7 @@ const usage = ref<Usage | null>(null)
 const reading = ref<'statement' | 'usage' | null>(null)
 let readId = 0
 const weekOptions = computed(() => (['previous', 'current'] as const).map(value => ({ value, label: t(`today.statement.week.${value}`) })))
-const range = computed(() => weekRangeLabel(week.value === 'previous' ? 1 : 0))
+const range = computed(() => weekRangeLabel(statementWeek(new Date(), week.value === 'previous' ? 1 : 0)))
 const rows = computed(() => shown.value ? statementDetails(shown.value) : [])
 const readingLabel = computed(() => reading.value === 'usage' ? t('today.loading.usage')
   : t(week.value === 'previous' ? 'today.loading.previousStatement' : 'today.loading.statement'))

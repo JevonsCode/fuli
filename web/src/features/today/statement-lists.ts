@@ -33,12 +33,10 @@ export type LearnedList = 'captured' | 'confirmedByYou'
 const windowQuery = (week: StatementWeek) => new URLSearchParams({ from: week.from, to: week.to })
 
 /** The week's conversations that carried habits, the latest first; a failed read throws. */
-export const readCarriedTasks = (week: StatementWeek, signal?: AbortSignal) =>
-  getJson(`/api/statement/carried?${windowQuery(week)}`, carriedShape, { signal })
+export const readCarriedTasks = (week: StatementWeek) => getJson(`/api/statement/carried?${windowQuery(week)}`, carriedShape)
 
 /** Which items the week's 新学到的 and 你确认的 count, the latest first; a failed read throws. */
-export const readLearnedItems = (week: StatementWeek, signal?: AbortSignal) =>
-  getJson(`/api/statement/learned?${windowQuery(week)}`, learnedShape, { signal })
+export const readLearnedItems = (week: StatementWeek) => getJson(`/api/statement/learned?${windowQuery(week)}`, learnedShape)
 
 /** One conversation as its row shows it; `to` is its habit list, when it was handed any. */
 export interface CarriedRow {

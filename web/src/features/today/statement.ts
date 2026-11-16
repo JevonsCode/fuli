@@ -37,11 +37,12 @@ export function statementWeek(now: Date, weeksBack = 0): StatementWeek {
   return { from: monday.toISOString(), to: next.toISOString() }
 }
 
-/** The days of the local week `weeksBack` weeks ago, as the statement's dialogs name it (「11月16日 到 11月22日」). */
-export function weekRangeLabel(weeksBack: number, now = new Date()) {
-  const { from, to } = statementWeek(now, weeksBack)
-  const day = (value: string) => formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' })
-  return t('today.statement.week.range', { from: day(from), to: day(new Date(Date.parse(to) - 1).toISOString()) })
+/** The days of a week, as the statement's dialogs name it (「11月16日 到 11月22日」); a bound that is no date reads as nothing. */
+export function weekRangeLabel({ from, to }: StatementWeek) {
+  const day = (value: number) => (Number.isNaN(value) ? ''
+    : formatDateTime(new Date(value).toISOString(), currentLocale(), { month: 'short', day: 'numeric' }, { missing: '', invalid: '' }))
+  // The week ends where the next one begins: its last day is the instant before.
+  return t('today.statement.week.range', { from: day(Date.parse(from)), to: day(Date.parse(to) - 1) })
 }
 
 /** The week's statement, or null when the server cannot give one. */

@@ -35,6 +35,8 @@ export async function handleStatementRequest({ request, response, url, app, owne
     return true;
   }
   if (url.pathname === CARRIED_PATH) {
+    // The record of what task entries carried is this installation's own; without it there is no list, not an empty one.
+    if (!app.recallImpressions) return ownerReadsUnavailable(response);
     sendJson(response, 200, carriedTasks(app, statementWindow({ from: params.get('from'), to: params.get('to') })));
     return true;
   }

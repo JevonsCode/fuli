@@ -177,6 +177,8 @@ test('the carried list names each conversation the number counts, and the learne
   assert.equal((await learned(ownerReads, '192.0.2.7')).status, 403);
   assert.equal(asked.length, 1, 'neither refusal reached the Provider');
   await assert.rejects(call(app, { from: TO, to: FROM }, '127.0.0.1', '/api/statement/carried'), /from must be before to/);
+  const noStore = await call(syntheticApp({ local: false }).app, { from: FROM, to: TO }, '127.0.0.1', '/api/statement/carried');
+  assert.equal(noStore.status, 503, 'no record of task entries, no list (never an empty one)');
 });
 
 test('the statement by day cuts at the local midnight of the offset the caller sends', async () => {

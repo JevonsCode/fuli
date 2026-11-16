@@ -20,7 +20,7 @@ const series = computed(() => statementSeries(props.statement))
 const points = computed(() => sparklinePoints(series.value, SPARK.width, SPARK.height))
 const trendLabel = computed(() => t('today.statement.trend', { weeks: series.value.length, first: series.value[0] ?? 0, last: series.value.at(-1) ?? 0 }))
 const detailsOpen = ref(false)
-const listOpen = ref<StatementTile['list'] | null>(null)
+const listOpen = ref<'carried' | 'learned' | null>(null)
 </script>
 
 <template>
@@ -44,7 +44,7 @@ const listOpen = ref<StatementTile['list'] | null>(null)
     <ul v-if="tiles.length" class="statement-tiles">
       <li v-for="tile in tiles" :key="tile.key" class="statement-tile-item">
         <component :is="tile.list ? 'button' : 'div'" class="statement-tile" :class="{ 'is-link': tile.list }" :data-statement-tile="tile.key"
-          :type="tile.list ? 'button' : undefined" :aria-haspopup="tile.list ? 'dialog' : undefined" @click="tile.list && (listOpen = tile.list)">
+          :type="tile.list ? 'button' : undefined" :aria-haspopup="tile.list ? 'dialog' : undefined" @click="listOpen = tile.list ?? null">
           <strong class="statement-number">{{ tile.value }}</strong>
           <span class="statement-label">{{ tile.label }}</span>
           <span v-if="tile.sub" class="statement-sub">{{ tile.sub }}</span>
@@ -52,7 +52,7 @@ const listOpen = ref<StatementTile['list'] | null>(null)
         </component>
       </li>
     </ul>
-    <StatementLists :list="listOpen ?? null" @close="listOpen = null" />
+    <StatementLists :list="listOpen" :week="statement.window ?? null" @close="listOpen = null" />
     <StatementDetails :open="detailsOpen" :statement="statement" @close="detailsOpen = false" />
   </TodaySection>
 </template>

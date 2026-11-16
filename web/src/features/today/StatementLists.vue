@@ -14,15 +14,19 @@ import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import ClientInitial from './ClientInitial.vue'
-import { statementWeek, weekRangeLabel } from './statement'
+import { statementWeek, weekRangeLabel, type StatementWeek } from './statement'
 import { carriedRows, firstLearnedList, readCarriedTasks, readLearnedItems, type CarriedRow, type LearnedItems, type LearnedList } from './statement-lists'
 
-// What a statement tile counts, row by row, for this week: the conversations
-// that carried habits (each opens the habits it was handed), or the items
-// newly learned and the ones the person confirmed (each opens its own page).
-// `list` null: closed. Each opening reads again; a tab's items are read when
-// it is first shown and kept while the dialog stays open.
-const props = defineProps<{ list: 'carried' | 'learned' | null }>()
+// What a statement tile counts, row by row: the conversations that carried
+// habits (each opens the habits it was handed), or the items newly learned
+// and the ones the person confirmed (each opens its own page). `week` is the
+// week the tile's number was read for, so the rows are that number's own
+// (null: this week). `list` null: closed. Each opening reads again; a tab's
+// items are read when it is first shown, a few at a time, and kept while the
+// dialog stays open.
+const props = defineProps<{ list: 'carried' | 'learned' | null; week: StatementWeek | null }>()
+// How many item views one request round reads.
+const ITEM_BATCH = 10
 defineEmits<{ close: [] }>()
 const spaceId = computed(() => useConsoleStore().activePersonalSpace?.id ?? '')
 const carried = ref<{ rows: CarriedRow[]; more: boolean } | null>(null)
@@ -34,6 +38,7 @@ const reading = ref<'carried' | 'learned' | LearnedList | null>(null)
 const error = ref('')
 let readId = 0
 
+const week = computed(() => props.week ?? statementWeek(new Date()))
 const title = computed(() => t(`today.lists.${props.list ?? 'carried'}.title`))
 const tabs = computed(() => (['captured', 'confirmedByYou'] as const).map(value => ({
   value, label: t(`today.lists.learned.${value}`), count: learned.value?.[value].total,
@@ -50,12 +55,11 @@ async function read() {
   error.value = ''
   reading.value = list
   try {
-    const week = statementWeek(new Date())
     if (list === 'carried') {
-      const value = await readCarriedTasks(week)
+      const value = await readCarriedTasks(week.value)
       if (current === readId) carried.value = { rows: carriedRows(value), more: value.more }
     } else {
-      const value = await readLearnedItems(week)
+      const value = await readLearnedItems(week.value)
       if (current !== readId) return
       learned.value = value
       tab.value = firstLearnedList(value)
@@ -72,9 +76,16 @@ async function readItems(current: number) {
   const list = tab.value
   if (!learned.value || items.value[list]) return
   reading.value = list
-  const rows = await readHabitRows(spaceId.value, learned.value[list])
+  const listed = learned.value[list].items
+  const rows: HabitRow[] = []
+  for (let start = 0; start < listed.length && current === readId; start += ITEM_BATCH) {
+    rows.push(...await readHabitRows(spaceId.value, { items: listed.slice(start, start + ITEM_BATCH) }))
+  }
   if (current === readId) items.value = { ...items.value, [list]: rows }
 }
+
+// 重试 reads what failed: a tab's items when the lists are there, else the list itself.
+const retry = () => (props.list === 'learned' && learned.value ? choose(tab.value) : read())
 
 async function choose(next: LearnedList) {
   tab.value = next
@@ -98,14 +109,14 @@ watch(() => props.list, () => {
 </script>
 
 <template>
-  <UiDialog :open="list !== null" :title="title" :description="weekRangeLabel(0)" size="md" @close="$emit('close')">
+  <UiDialog :open="list !== null" :title="title" :description="weekRangeLabel(week)" size="md" @close="$emit('close')">
     <div class="statement-list" :data-statement-list="list">
       <UiSegmented v-if="list === 'learned' && learned" :model-value="tab" :options="tabs" :label="t('today.lists.learned.which')" size="sm"
         @update:model-value="choose" />
       <GrowthLoading v-if="reading" variant="compact" :label="t(`today.lists.loading.${reading}`)" />
       <UiNotice v-else-if="error" tone="error">
         {{ t('today.lists.failed', { error }) }}
-        <template #actions><Button variant="outline" size="sm" @click="read">{{ t('common.actions.retry') }}</Button></template>
+        <template #actions><Button variant="outline" size="sm" @click="retry">{{ t('common.actions.retry') }}</Button></template>
       </UiNotice>
       <template v-else-if="list === 'carried' && carried">
         <p v-if="!carried.rows.length" class="statement-list-note">{{ t('today.lists.carried.none') }}</p>

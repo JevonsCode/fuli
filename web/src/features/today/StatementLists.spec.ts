@@ -12,7 +12,8 @@ import TodayStatement from './TodayStatement.vue'
 import { statementTiles, type Statement } from './statement'
 
 // The statement's tiles that open the rows they count. Synthetic conversations and items only.
-const statement = { carried: { tasks: 3, clients: 2, items: 9 }, used: { times: 4, tasks: 2, cited: 1, applied: 3 },
+const WEEK = { from: '2026-11-08T16:00:00.000Z', to: '2026-11-15T16:00:00.000Z' }
+const statement = { window: WEEK, carried: { tasks: 3, clients: 2, items: 9 }, used: { times: 4, tasks: 2, cited: 1, applied: 3 },
   learned: { captured: 2, confirmedByYou: 5, confirmedByTonborg: 0, promotedByUse: 0, retired: 0 }, unavailable: [] } as unknown as Statement
 const item = (id: string) => ({ item_kind: 'entity', item_id: id, version: 1, title: `Item ${id}`, content: `Synthetic item ${id}`,
   type: 'Preference', category: 'rule', scope: { kind: 'global', projects: [], status: 'set' }, weight: null, tags: [],
@@ -63,7 +64,8 @@ describe('statement tiles that open their rows', () => {
     const wrapper = await mounted(answers)
     await wrapper.get('[data-statement-tile="carried"]').trigger('click')
     await flushPromises()
-    expect(String(getJson.mock.calls[0]?.[0])).toMatch(/^\/api\/statement\/carried\?from=.+&to=.+/)
+    // The rows are read for the week the tile's number was read for, not for the week it is now.
+    expect(String(getJson.mock.calls[0]?.[0])).toBe(`/api/statement/carried?${new URLSearchParams(WEEK)}`)
     expect(document.body.querySelector('dialog h2')?.textContent).toBe('带上习惯的对话')
     const rows = [...document.body.querySelectorAll('[data-statement-carried]')]
     expect(rows.map(row => row.querySelector('a')?.getAttribute('href') ?? null)).toEqual(['/habits/aaaaaaaaaaaaaaaa', null, null])
@@ -93,6 +95,24 @@ describe('statement tiles that open their rows', () => {
     await flushPromises()
     expect(dialogText('[data-statement-learned]')).toHaveLength(2)
     expect(urls().filter(url => url.endsWith('/new-1'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('重试 after a tab could not be read reads that tab again and stays on it', async () => {
+    let fail = false
+    const wrapper = await mounted((url) => { if (fail && url.includes('/kept-1')) throw new ApiError('synthetic failure', 500); return answers(url) })
+    await wrapper.get('[data-statement-tile="learned"]').trigger('click')
+    await flushPromises()
+    fail = true
+    document.body.querySelectorAll<HTMLElement>('dialog .ui-segmented button')[1]!.click()
+    await flushPromises()
+    expect(document.body.querySelector('dialog [role="alert"]')?.textContent).toContain('synthetic failure')
+    fail = false
+    document.body.querySelector<HTMLElement>('dialog [role="alert"] button')!.click()
+    await flushPromises()
+    expect(dialogText('dialog .ui-segmented button[aria-pressed="true"]')).toEqual(['你确认的5'])
+    expect(dialogText('[data-statement-learned]')).toEqual(['Synthetic item kept-1个人全局'])
+    expect(urls().filter(url => url === '/api/statement/learned')).toHaveLength(1)
     wrapper.unmount()
   })
 
