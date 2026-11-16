@@ -1,11 +1,12 @@
 /*
- * One tile per client, shared by the clients' status card and the manual card
- * (ClientConnectionSettings.vue, ClientManualConnection.vue). Tiles fill the
- * row by width; past two rows the grid scrolls inside itself.
+ * One tile per client in the clients' status card (ClientConnectionSettings.vue);
+ * the manual card shares the section spacing (ClientManualConnection.vue).
+ * Tiles fill the row by width; the usual six clients and the add tile show
+ * whole, and a longer list scrolls inside the grid.
  */
 .client-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 248px), 1fr)); gap: 12px;
-  max-height: 392px; margin: 0; padding: 2px; overflow-y: auto; list-style: none; scrollbar-gutter: stable;
+  max-height: 560px; margin: 0; padding: 2px; overflow-y: auto; list-style: none; scrollbar-gutter: stable;
 }
 .client-grid__empty { grid-column: 1 / -1; color: var(--color-muted); font-size: 13px; }
 .client-row {

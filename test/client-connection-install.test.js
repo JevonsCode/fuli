@@ -16,6 +16,16 @@ test('one-click connection applies a client agent-installer found and self-check
   assert.deepEqual(installer.calls, [['apply', ['gemini']]]);
 });
 
+test('a client described by hand connects like a built-in one, even before its file exists', async () => {
+  const installer = fakeClientInstaller([{ id: 'acme-agent', builtin: false, detected: false }]);
+  const connect = createClientInstaller({ installer });
+  assert.deepEqual(await connect({ clientId: 'acme-agent' }), { id: 'acme-agent', status: 'connected', restartRequired: true });
+  assert.deepEqual(installer.calls, [['apply', ['acme-agent']]]);
+  // An update's self-check reads the same client: one agent-installer still finds outdated is partial.
+  const outdated = createClientInstaller({ installer: fakeClientInstaller([{ id: 'acme-agent', builtin: false }], { afterApply: 'update_available' }) });
+  assert.equal((await outdated({ clientId: 'acme-agent' })).status, 'partial');
+});
+
 test('the self-check reads agent-installer: a write it does not see as connected is partial', async () => {
   const connect = createClientInstaller({ installer: fakeClientInstaller([{ id: 'gemini' }], { afterApply: 'update_available' }) });
   assert.deepEqual(await connect({ clientId: 'gemini' }), { id: 'gemini', status: 'partial', restartRequired: false });

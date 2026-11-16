@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changedExplanation, changesNewestFirst, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
+import { awaitsFirstConnection, canConnect, changedExplanation, changesNewestFirst, clientTiles, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
 
 const client = (id: string, status: ClientObservation['status']): ClientObservation =>
   ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
@@ -12,6 +12,12 @@ describe('client connection summary', () => {
         { id: 'team', label: 'Team', detected: true, status: 'connected', mcpPaths: [], removable: false }] }
     expect(shownClients(observation).map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini'])
     expect(connectionSummary(observation)).toEqual({ connected: 2, total: 5 })
+    // A client described by hand is a tile whatever its status, and FULI writes it before its file exists.
+    const tiles = clientTiles(observation)
+    expect(tiles.map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini', 'acme', 'team'])
+    expect(tiles.map(canConnect)).toEqual([true, true, true, true, true])
+    expect(canConnect(client('kiro', 'not_detected'))).toBe(false)
+    expect(tiles.map(awaitsFirstConnection)).toEqual([false, false, false, true, false])
   })
 
   it('is empty before the first answer', () => {

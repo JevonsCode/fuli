@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { postJson } from '@/api/client'
+import { deleteJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,15 +12,18 @@ import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
+import CustomClientDialog from './CustomClientDialog.vue'
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
 
-import { STATUS_ICONS, canConnect, changedExplanation, connectActionKey, connectionSummary, offersRestart, shownClients,
-  type ClientObservation, type ConnectionResult } from './client-connection-model'
+import { STATUS_ICONS, awaitsFirstConnection, canConnect, changedExplanation, clientTiles, connectActionKey, connectionSummary, offersRestart,
+  type ClientObservation, type ClientTile, type ConnectionResult } from './client-connection-model'
 
-// Settings › 客户端's first card: whether each client on this machine has
-// FULI, with 接入, 一键接入 and 重启并更新. Clients described by hand and the
-// configuration to copy are the manual card's (ClientManualConnection.vue).
+// Settings › 客户端's first card: whether each client has FULI, with 接入,
+// 一键接入 and 重启并更新. Clients on this machine come first, then the ones
+// the person described by hand, then the tile that adds another
+// (CustomClientDialog.vue). The configuration to copy into any other client
+// is the manual card's (ClientManualConnection.vue).
 const { observation, checking, checkError, connectingAll, busy, check, writing } = injectClientConnectionStatus()
 const connecting = ref('')
 const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'clientRunning'>>({})
@@ -31,7 +34,7 @@ const restartFeedback = ref<Record<string, RestartOutcome>>({})
 // 查看详情: a client's id, or 'installs' for the 「本机有两份 FULI」 notice.
 const details = ref<string | null>(null)
 let unmounted = false
-const clients = computed(() => shownClients(observation.value))
+const clients = computed(() => clientTiles(observation.value))
 const summary = computed(() => connectionSummary(observation.value))
 const installs = computed(() => observation.value?.installs)
 const otherInstalls = computed(() => installs.value?.others ?? [])
@@ -40,7 +43,23 @@ const detailClient = computed(() => clients.value.find(client => client.id === d
 // A running client that writes its old entry back waits for its own 重启并更新 (rec issue 106).
 const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected' && !offersRestart(client)))
 
+// 添加客户端: the dialog, and removing a client the person added here.
+const adding = ref(false)
+const removing = ref('')
+const removeError = ref(false)
+
 onBeforeUnmount(() => { unmounted = true })
+
+async function removeCustom(client: ClientTile) {
+  if (busy.value) return
+  removing.value = client.id
+  removeError.value = false
+  await writing(async () => {
+    try { await deleteJson(`/api/system/client-connection/custom-clients/${encodeURIComponent(client.id)}`) }
+    catch { if (!unmounted) removeError.value = true }
+    finally { removing.value = '' }
+  })
+}
 
 // One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
 async function connectOne(client: ClientObservation) {
@@ -93,7 +112,8 @@ async function connectAll() {
 function formatTime(value: string) {
   return formatDateTime(value, currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: '—' })
 }
-function explanation(client: ClientObservation) {
+function explanation(client: ClientTile) {
+  if (awaitsFirstConnection(client)) return t('settings.connection.custom.notConnected')
   if (client.status === 'unknown' && client.lastKnownStatus) {
     return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
   }
@@ -145,15 +165,22 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
         </UiNotice>
         <!-- One tile per client, as many per row as the width holds; a long list scrolls inside, the page does not grow. -->
         <ul v-if="observation && observation.available !== false" class="client-grid">
-          <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
+          <li v-for="client in clients" :key="client.id" :data-client-status="client.status" :data-custom-client="client.custom ? client.id : undefined"
             :class="`client-row client-row--${client.status}`">
             <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="STATUS_ICONS[client.status]" :name="STATUS_ICONS[client.status]!" :size="client.status === 'connected' ? 14 : 12" /></span>
             <div class="client-row__body">
               <div class="client-row__head">
                 <strong :title="client.label">{{ client.label }}</strong>
                 <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
+                <Button v-if="client.custom?.removable" size="icon-sm" variant="ghost" class="client-row__action" :data-remove-custom-client="client.id"
+                  :disabled="busy" :loading="removing === client.id" :loading-label="t('settings.connection.custom.removing', { client: client.label })"
+                  :title="t('settings.connection.custom.remove', { client: client.label })"
+                  :aria-label="t('settings.connection.custom.remove', { client: client.label })" @click="removeCustom(client)">
+                  <UiIcon name="close" :size="14" />
+                </Button>
               </div>
               <p>{{ explanation(client) }}</p>
+              <p v-for="path in client.custom?.mcpPaths" :key="path" class="client-row__meta" :title="path">{{ t('settings.connection.custom.where', { path }) }}</p>
               <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">
                 {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
@@ -185,7 +212,16 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             </div>
           </li>
           <li v-if="!clients.length" class="client-grid__empty">{{ t('settings.connection.clients.none') }}</li>
+          <!-- Always the last tile: a client that is not listed is added here, then connects and updates with the rest. -->
+          <li class="client-add">
+            <Button variant="ghost" class="client-add__button" data-add-custom-client :disabled="busy" @click="adding = true">
+              <UiIcon name="plus" :size="32" />
+              <strong>{{ t('settings.connection.custom.add') }}</strong>
+              <span>{{ t('settings.connection.custom.addHint') }}</span>
+            </Button>
+          </li>
         </ul>
+        <UiNotice v-if="removeError" tone="error">{{ t('settings.connection.custom.removeError') }}</UiNotice>
         <p v-if="observation && observation.available !== false" class="client-row__meta" role="status">
           {{ t('settings.connection.clients.observedAt', { time: formatTime(observation.observedAt) }) }}
           {{ t('settings.connection.clients.boundary') }}
@@ -194,6 +230,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       </section>
     </div>
     <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
+    <CustomClientDialog v-model:open="adding" />
     <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
       <DialogContent v-if="details" size="md" data-connection-details>
         <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />
@@ -223,4 +260,15 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
   line-height: 1.6; text-align: start; cursor: pointer; user-select: none;
 }
 .client-row__history:hover, .client-row__history:focus-visible { color: var(--color-ink); text-decoration: underline; }
+/* The add tile: as tall as its row's tiles, a dashed outline and one large plus. */
+.client-add { display: grid; min-width: 0; min-height: 132px; }
+.client-add__button {
+  display: grid; place-content: center; justify-items: center; gap: 4px; min-width: 0; height: auto; padding: 14px; border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-card); background: none; color: var(--color-muted); font-size: 12px; font-weight: 400; line-height: 1.5; text-align: center;
+  white-space: normal; user-select: none;
+}
+/* The shared Button wraps its content in one span: the plus, the name and the hint stack inside it. */
+.client-add__button :deep(.button-content) { display: grid; justify-items: center; gap: 4px; }
+.client-add__button strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
+.client-add__button:hover:not(:disabled), .client-add__button:focus-visible { border-color: var(--color-ink); background: var(--color-surface); color: var(--color-ink); }
 </style>

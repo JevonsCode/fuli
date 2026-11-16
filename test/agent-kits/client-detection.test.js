@@ -146,6 +146,10 @@ test('every built-in client connects through agent-installer and then reads as c
   await custom.addCustomClient({ name: 'Acme Agent', mcpFile: '~/.acme/mcp.json' });
   const acme = (await detectClients(installer)).clients.find(({ id }) => id === 'acme-agent');
   assert.deepEqual([acme.builtin, acme.detected, acme.mcpPaths], [false, false, ['~/.acme/mcp.json']]);
+  // FULI writes it too: agent-installer creates the file the person named, and the self-check reads it back.
+  const written = await installAgent(installer, { id: 'acme-agent', label: 'Acme Agent' });
+  assert.deepEqual([written.status, written.selfCheck.status], ['connected', 'passed'], written.message);
+  assert.equal(JSON.parse(readFileSync(join(home, '.acme', 'mcp.json'), 'utf8')).mcpServers.fuli.args.includes('--runtime-config'), true);
   const removed = await installer.remove(builtIn.map(({ id }) => id));
   assert.deepEqual(removed.problems, []);
   const after = (await detectAgents(installer)).agents.filter(({ id }) => builtIn.some((agent) => agent.id === id));

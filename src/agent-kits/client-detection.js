@@ -49,22 +49,25 @@ function clientOf(client) {
 
 const hasFuli = (client) => Object.values(client.components).some((state) => PRESENT.has(state));
 
-// The built-in clients FULI sets up, in the shape setup, uninstall and start
-// read: `available` (the client is on this machine), `manualOnly` (the
-// person configures it by hand), `integrationStatus` and
-// `integrationDetails` (component states).
+// One client in the shape setup, uninstall and start read: `available` (the
+// client is on this machine), `manualOnly` (the person configures it by
+// hand), `integrationStatus` and `integrationDetails` (component states).
+const agentOf = (client) => ({
+  id: client.id, label: client.label, available: client.detected, ...(client.manual ? { manualOnly: true } : {}),
+  integrationStatus: client.connected ? 'connected' : hasFuli(client) ? 'update_available' : 'not_connected',
+  integrationDetails: client.components });
+
+// The built-in clients FULI sets up.
 export async function detectAgents(installer) {
   const answer = await detectClients(installer);
   if (answer.status !== 'available') return answer;
-  return { status: 'available', agents: answer.clients.filter((client) => client.builtin).map((client) => ({
-    id: client.id, label: client.label, available: client.detected, ...(client.manual ? { manualOnly: true } : {}),
-    integrationStatus: client.connected ? 'connected' : hasFuli(client) ? 'update_available' : 'not_connected',
-    integrationDetails: client.components })) };
+  return { status: 'available', agents: answer.clients.filter((client) => client.builtin).map(agentOf) };
 }
 
-// One client as agent-installer finds it now, or null when it cannot say:
-// the self-check after a connection.
+// One client as agent-installer finds it now, built-in or described by hand,
+// or null when it cannot say: the self-check after a connection.
 export async function inspectAgent(installer, id) {
-  const answer = await detectAgents(installer);
-  return answer.status === 'available' ? answer.agents.find((agent) => agent.id === id) ?? null : null;
+  const answer = await detectClients(installer);
+  const client = answer.status === 'available' ? answer.clients.find((candidate) => candidate.id === id) : null;
+  return client ? agentOf(client) : null;
 }
