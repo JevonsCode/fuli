@@ -1,10 +1,11 @@
 import { resolveSetupPaths } from '../setup/paths.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
+import { chengxiaobangHookConfig } from '../agents/chengxiaobang/hook-config.js';
 
 export function runConnectCommand(args, { env = process.env, write = console.log } = {}) {
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
-    write('fuli connect [--format standard|vscode|server] [--profile full|chat] [--source-application codex|claude|claude_code|cursor|kiro|opencode|antigravity|dsh|other] [--data-dir DIR | --runtime-config FILE]\nPrint local MCP configuration; merge the fuli entry into your client settings. No files are changed.\nUse --profile chat for chat apps that load every tool into each conversation. fuli setup configures Claude Desktop automatically.');
+    write('fuli connect [--format standard|vscode|server|chengxiaobang-hooks] [--profile full|chat] [--source-application codex|claude|claude_code|cursor|kiro|opencode|antigravity|dsh|other] [--data-dir DIR | --runtime-config FILE]\nPrint MCP configuration or a Chengxiaobang hooks snippet; merge entries into existing settings. No files are changed.\nUse --profile chat for chat apps that load every tool into each conversation. fuli setup configures Claude Desktop automatically.');
     return;
   }
   const options = new Map();
@@ -22,7 +23,16 @@ export function runConnectCommand(args, { env = process.env, write = console.log
   const paths = resolveSetupPaths({ dataDir: options.get('--data-dir'), env });
   const runtimeConfigPath = options.has('--data-dir') ? paths.graphRuntimeConfigPath
     : resolveGraphRuntimeOptions(options.has('--runtime-config') ? ['--runtime-config', options.get('--runtime-config')] : [], env).runtimeConfigPath;
-  const config = clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, options.get('--format'), {
+  const context = { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath };
+  if (options.get('--format') === 'chengxiaobang-hooks') {
+    if (options.has('--profile') || options.has('--source-application')) {
+      throw new TypeError('Hook configuration uses the Chengxiaobang MCP source other; omit MCP profile and source options');
+    }
+    const config = chengxiaobangHookConfig(context);
+    write(JSON.stringify(config, null, 2));
+    return config;
+  }
+  const config = clientConnectionConfig(context, options.get('--format'), {
     profile: options.get('--profile') ?? 'chat',
     sourceApplication: options.get('--source-application') ?? 'other'
   });

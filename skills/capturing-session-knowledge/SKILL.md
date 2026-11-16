@@ -148,3 +148,13 @@ Open these files next to this skill only when the task reaches that step; ordina
 - `references/retrieval.md`: searching remembered context beyond the entry recall, the generated taste Skill, citing online sources.
 - `references/coordination.md`: coordinating project Agents, asking another project's lead on the roundtable, and reporting actual worker execution.
 - `references/capture.md`: knowledge state, personal profile growth, routing by ownership, child-knowledge convergence, registering the local project, and structuring and flushing a capture.
+
+### Chengxiaobang command hooks
+
+When configured with `fuli connect --format chengxiaobang-hooks`, the host injects
+FULI task context before each user prompt and closes the task on Stop. Use that
+context and its token; do not call the fallback entry again. Its MCP source is
+`other`. No transcript capture is implied: explicitly checkpoint useful findings,
+otherwise Stop records an honest empty close. See `docs/client-connections.md`
+for configuration and end-to-end verification; an MCP connection alone does not
+prove hook delivery.

@@ -41,6 +41,37 @@ VS Code's `servers` envelope; `--format server` prints only `type`, `command`, a
 Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PATH`.
 `fuli mcp --tools` lists the available tool contract without starting a task.
 
+### Chengxiaobang (程小帮) lifecycle hooks
+
+Connect its MCP server with `fuli connect --profile chat --source-application other`.
+Then run `fuli connect --format chengxiaobang-hooks` (with the same `--runtime-config`
+if specified for MCP). Merge the generated entries by their `id` into the `hooks`
+array in `~/.chengxiaobang/hooks.json`, or `$CHENGXIAOBANG_HOME/hooks.json` when
+that override is used. Keep unrelated hooks (for example, completion notifications).
+Both the top-level switch and the two FULI entries must be enabled. Do not redirect
+this snippet over an existing hooks file. Regenerate it after moving Node or FULI.
+
+`UserPromptSubmit` passes the native session id, run id and working directory to
+FULI and returns top-level `additionalContext` before the model runs. `Stop`
+closes that hook task through the shared lifecycle without requiring a second
+model turn. No extra `SessionStart` entry is needed. Child-agent events are
+ignored because they inherit the parent session id. The adapter uses source
+`other`, matching the MCP connection; it does not impersonate Claude Code.
+
+This is a command-hook integration, verified against Chengxiaobang's native
+`hook_event_name`, `session_id`, `run_id`, `cwd`, `prompt`, and `subagent` contract.
+It does not read private conversation databases or save raw transcripts. The
+Agent can explicitly checkpoint useful conclusions; an ordinary Stop closes as
+`retain_nothing` and `reported`, not a claimed completion. A missing session id
+or unavailable FULI produces a notice and lets the user's request continue.
+
+Verify in a fresh conversation: the model should see “Fuli task context
+(Chengxiaobang plugin)” and its task token without calling the fallback entry;
+the host's hook log should show both events executing successfully, and FULI's
+task checkpoint should be closed after the reply. A connected MCP badge alone
+is not proof of either hook. Removal only requires removing the two `fuli-*`
+entries; keep the other hooks and MCP configuration if still wanted.
+
 ### Client status in Settings
 
 **Settings → Client connection** is always open. Its summary counts the clients FULI is in (「已接入
