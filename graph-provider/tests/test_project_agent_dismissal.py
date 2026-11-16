@@ -45,7 +45,7 @@ def test_duplicate_lessons_are_rejected_instead_of_silently_merged():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('agent_id', [
-    'employee.assistant', 'employee.jefa', 'employee.bole',
+    'employee.assistant', 'employee.jefa', 'employee.bole', 'employee.tonborg',
     'fuli-project-coordinator', 'fuli-project-hr',
 ])
 async def test_system_roles_are_refused_before_any_graph_read(agent_id):

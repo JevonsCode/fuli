@@ -37,8 +37,7 @@ const FUZZY = 2;
 // project (its global scope); undefined is one whose projects all ended.
 export function flaCandidates(roster, projects, personalSpaceId) {
   const named = new Map(projects.map(project => [project.project_id, project]));
-  return inSpace(roster, personalSpaceId).filter(agent => agent.agent_id !== ASSISTANT_AGENT_ID
-    && !NOT_PICKABLE_TYPES.has(agent.profile?.agent_type)
+  return inSpace(roster, personalSpaceId).filter(agent => !NOT_PICKABLE_TYPES.has(agent.profile?.agent_type)
     && !isPeerRoleAgent({ agentId: agent.agent_id, agentType: agent.profile?.agent_type,
       capabilities: agent.profile?.capabilities ?? [] }))
     .flatMap(agent => placements(agent, named).map(placement => candidate(agent, placement)));

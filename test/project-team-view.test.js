@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildProjectTeam, loadProjectTeam } from '../src/graphiti/project-team-view.js';
+import { FIXED_ROLES } from '../src/employees/fixed-roles.js';
+import { buildProjectTeam, isPeerRoleAgent, loadProjectTeam } from '../src/graphiti/project-team-view.js';
 import { loadProjectTeamContext } from '../src/graphiti/project-agent-team-context.js';
 
 const assigned = (agent_id, extra = {}) => ({
@@ -33,6 +34,14 @@ test('a peer role named in a legacy member list stays a peer without a reporting
     agents: [assigned('lead'), assigned('member'), assigned('employee.jefa')] });
   assert.deepEqual(team.members.map(member => member.agentId), ['member']);
   assert.deepEqual(team.peers.map(person => [person.agentId, person.reportsToAgentId]), [['employee.jefa', undefined]]);
+});
+
+test('every one of FULI\'s own roles is a peer, by its ID or by its capability on another ID', () => {
+  for (const role of Object.values(FIXED_ROLES)) {
+    assert.equal(isPeerRoleAgent({ agentId: role.agentId, agentType: role.agentType }), true, role.agentId);
+    assert.equal(isPeerRoleAgent({ agentId: 'someone', agentType: 'durable', capabilities: [role.capability] }), true, role.capability);
+  }
+  assert.equal(isPeerRoleAgent({ agentId: 'someone', agentType: 'durable', capabilities: ['代码实现'] }), false);
 });
 
 test('project team excludes ended, archived and other-project assignments and reports them', () => {

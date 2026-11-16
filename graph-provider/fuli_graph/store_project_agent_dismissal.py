@@ -25,6 +25,7 @@ from .system_agents import (
     SYSTEM_ASSISTANT_AGENT_ID,
     SYSTEM_COORDINATOR_AGENT_ID,
     SYSTEM_HR_AGENT_ID,
+    SYSTEM_JUDGMENT_AGENT_ID,
 )
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 
@@ -36,6 +37,7 @@ SYSTEM_ROLE_REFUSALS = {
     SYSTEM_COORDINATOR_AGENT_ID: 'the project manager cannot be archived',
     LEGACY_COORDINATOR_AGENT_ID: 'the project manager cannot be archived',
     SYSTEM_HR_AGENT_ID: 'the system AR cannot be archived',
+    SYSTEM_JUDGMENT_AGENT_ID: 'the decision maker cannot be archived',
     LEGACY_HR_AGENT_ID: 'the system AR cannot be archived',
 }
 
