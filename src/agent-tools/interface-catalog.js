@@ -191,6 +191,9 @@ const UI_MUTATION_PARITY = Object.freeze([
   // Guest links (rec issue 133): a person without FULI asks one project from the same network.
   local('POST /api/visitor-access/guest-links', 'A guest link lets someone outside FULI read one project from the same network; only the person creates one, on this computer, and sees its token once.'),
   delegable('lan_roundtable', 'DELETE /api/visitor-access/guest-links/:linkId', 'The person makes a new link; a revoked one never works again.'),
+  // Runners (docs/runner.md): another computer of the person whose clients use this FULI.
+  local('POST /api/runners/invitations', 'A runner gets full read and write access to this FULI; only the person invites one, on this computer (fuli runner invite).'),
+  delegable('lan_roundtable', 'DELETE /api/runners/:fingerprint', 'The person invites that computer again; a revoked runner never reaches this FULI again.'),
   local('POST /api/data-format/apply', 'Applying a data format migration rewrites real local data; a person confirms the previewed plan in the local console or at a terminal (fuli migrate apply). Agents may run fuli migrate status or preview, which only read.'),
   relayed('POST /api/data-format/dismiss-notices', 'Not undone; the reminders were about migrations already finished.'),
   local('POST /api/data-format/rollback', 'Undoing a data format migration changes real local data and is confirmed by a person in the local console or with fuli migrate rollback.'),

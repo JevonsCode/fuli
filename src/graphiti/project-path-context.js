@@ -19,7 +19,8 @@ const UNSUPPORTED_PATH_MESSAGE = 'projectPath is a WSL or POSIX path this Window
   + 'Pass the Windows path of the current working directory, such as C:\\Users\\name\\project '
   + 'or \\\\wsl.localhost\\<distribution>\\home\\name\\project; /mnt/<drive>/ paths are translated.';
 
-const CHILD_PROJECT_MARKERS = Object.freeze([
+// A child folder holding one of these is a project of a workspace folder.
+export const CHILD_PROJECT_MARKERS = Object.freeze([
   '.git',
   'package.json',
   'pyproject.toml',

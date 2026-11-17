@@ -55,7 +55,8 @@ async function device(label, { tamper = null, wakeAnswer = null } = {}) {
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
-  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+  // Shares name Codex, which takes asks from another computer on macOS and Linux (not Windows: agent-roundtable.test.js).
+  app.roundtable = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
     wake: async (input) => { calls.wakes.push(input); return wakeAnswer ? wakeAnswer(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
   app.projectPathResolver = (path) => path === folder

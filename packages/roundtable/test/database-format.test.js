@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { inspectSqliteStore, openFormattedDatabase, sqliteFormat } from '../src/storage/database-format.js';
+import { applyConfirmedSqliteMigration, previewSqliteMigration, rollbackSqliteMigration } from '../src/storage/database-migration.js';
 
 // Synthetic stores only: a version 1 table, an automatic column (v2) and a
 // backfill of earlier rows (v3), the shapes FULI's stores declare.
@@ -277,4 +278,90 @@ test('a same-named index over other columns is a mismatch', (t) => {
   oldStore(path, `${NOTES_V1}; CREATE INDEX notes_body ON notes(id)`);
 
   assert.match(inspectSqliteStore(path, indexed).steps[0].detail, /index notes_body is \(id\), declared \(body\)/);
+});
+
+// replace-table: a table made again with another key; its rows are dropped, and the step says why.
+const MARKS_V1 = 'CREATE TABLE IF NOT EXISTS marks(id TEXT PRIMARY KEY, note TEXT NOT NULL)';
+const MARKS_V2 = 'CREATE TABLE marks(note TEXT NOT NULL, id TEXT NOT NULL, state TEXT, PRIMARY KEY(note, id))';
+const replaceMarks = (create = MARKS_V2) => ({ id: 'notes/4-marks-per-note', summary: 'marks keyed per note', to: 4,
+  kind: 'replace-table', table: 'marks', create, discardsRows: 'a mark only answers a repeated request' });
+const withMarks = (step = replaceMarks()) => sqliteFormat({ store: 'notes', schema: `${NOTES_V1}; ${MARKS_V1}`,
+  migrations: [...notesFormat().migrations, step] });
+const markColumns = (path) => {
+  const database = new DatabaseSync(path, { readOnly: true });
+  try { return database.prepare('PRAGMA table_info(marks)').all().map((column) => column.name); } finally { database.close(); }
+};
+
+test('a replace-table step needs its CREATE statement and says why nothing needs the rows it drops', () => {
+  const { create: _create, ...noCreate } = replaceMarks();
+  assert.throws(() => withMarks(noCreate), /carries its CREATE statement/);
+  const { discardsRows: _why, ...silent } = replaceMarks();
+  assert.throws(() => withMarks(silent), /says in discardsRows why nothing needs the rows it drops/);
+  assert.throws(() => withMarks({ ...replaceMarks(), discardsRows: ' ' }), /discardsRows/);
+  assert.throws(() => sqliteFormat({ store: 'notes', schema: NOTES_V1, migrations: [{ id: 'notes/2-tags', summary: 'tags',
+    to: 2, kind: 'add-columns', table: 'notes', columns: { tags: 'TEXT' }, discardsRows: 'not a replace' }] }), /discardsRows/);
+});
+
+test('a replace-table step makes the table again, keeps the other tables and records why it dropped the rows', (t) => {
+  const { path } = fixture(t);
+  oldStore(path, `${NOTES_V1}; ${MARKS_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; ALTER TABLE notes ADD COLUMN checked TEXT;
+    INSERT INTO notes VALUES('n1', 'kept', NULL, 'yes'); INSERT INTO marks VALUES('m1', 'n1'); PRAGMA user_version = 3`);
+
+  openFormattedDatabase(path, withMarks()).close();
+
+  const state = inspect(path);
+  assert.equal(state.version, 4);
+  assert.deepEqual(state.rows, [{ id: 'n1', body: 'kept', tags: null, checked: 'yes' }]);
+  assert.deepEqual(markColumns(path), ['note', 'id', 'state']);
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    assert.equal(database.prepare('SELECT COUNT(*) AS count FROM marks').get().count, 0);
+    assert.equal(database.prepare("SELECT detail FROM fuli_format_ledger WHERE migration_id = 'notes/4-marks-per-note'").get().detail,
+      'replaced marks; its earlier rows were not kept (a mark only answers a repeated request)');
+  } finally { database.close(); }
+});
+
+test('a replace-table step whose CREATE fails rolls back: the old table and its rows stay', (t) => {
+  const { path } = fixture(t);
+  oldStore(path, `${NOTES_V1}; ${MARKS_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; ALTER TABLE notes ADD COLUMN checked TEXT;
+    INSERT INTO marks VALUES('m1', 'n1'); PRAGMA user_version = 3`);
+
+  assert.throws(() => openFormattedDatabase(path, withMarks(replaceMarks('CREATE TABLE marks(note TEXT, state TEXT, BROKEN SYNTAX('))));
+
+  assert.equal(inspect(path).version, 3);
+  assert.deepEqual(markColumns(path), ['id', 'note']);
+  const database = new DatabaseSync(path, { readOnly: true });
+  try { assert.equal(database.prepare('SELECT COUNT(*) AS count FROM marks').get().count, 1); } finally { database.close(); }
+});
+
+test('a confirmed migration before a replace-table step can no longer be undone', (t) => {
+  const { path } = fixture(t);
+  oldStore(path, `${NOTES_V1}; ${MARKS_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; INSERT INTO notes VALUES('n1', 'earlier', NULL);
+    PRAGMA user_version = 2`);
+  assert.throws(() => openFormattedDatabase(path, withMarks()), { code: 'data_format_pending' });
+  const plan = previewSqliteMigration(path, withMarks());
+  applyConfirmedSqliteMigration(path, withMarks(), { digest: plan.digest, actor: { entrypoint: 'cli' } });
+  openFormattedDatabase(path, withMarks()).close();
+  assert.equal(inspect(path).version, 4);
+
+  assert.throws(() => rollbackSqliteMigration(path, withMarks(), { migrationId: 'notes/3-checked', actor: { entrypoint: 'cli' } }),
+    { code: 'data_format_undo_blocked' });
+  assert.equal(inspect(path).version, 4);
+});
+
+test('an unversioned store whose table already has the replaced shape is detected; one with the old shape waits for a person', (t) => {
+  const { directory } = fixture(t);
+  const current = join(directory, 'current.sqlite');
+  oldStore(current, `${NOTES_V1}; ALTER TABLE notes ADD COLUMN tags TEXT; ALTER TABLE notes ADD COLUMN checked TEXT;
+    ${MARKS_V2}; INSERT INTO marks VALUES('n1', 'm1', NULL)`);
+  openFormattedDatabase(current, withMarks()).close();
+  assert.equal(inspect(current).version, 4);
+  const database = new DatabaseSync(current, { readOnly: true });
+  try { assert.equal(database.prepare('SELECT COUNT(*) AS count FROM marks').get().count, 1, 'an unversioned store in effect keeps its rows'); }
+  finally { database.close(); }
+
+  const old = join(directory, 'old.sqlite');
+  oldStore(old, `${NOTES_V1}; ${MARKS_V1}; INSERT INTO marks VALUES('m1', 'n1')`);
+  assert.throws(() => openFormattedDatabase(old, withMarks()), { code: 'data_format_pending' });
+  assert.deepEqual(markColumns(old), ['id', 'note'], 'nothing is dropped from a store FULI cannot place');
 });

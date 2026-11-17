@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { claudeCodeWake } from '../packages/roundtable/src/agents/claude-code/wake.js';
-import { parseFinalAnswer, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
+import { parseFinalAnswer, wakeAgent, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
 
 test('Claude Code resumes by forking, so an open window is never written', () => {
   assert.deepEqual(wakeArguments('claude_code', { sessionId: 'cc-session-1' }),
@@ -106,4 +106,30 @@ test('a delegated Claude Code wake binds its named session before the client sta
     env: { FULI_CLAUDE_BIN: '/opt/claude' }, onSession: async () => {},
     run: async (_command, _args, { onEvent }) => { onEvent({ type: 'system', subtype: 'init', session_id: 'another-session-1' }); return { code: 0, stdout: '' }; } }),
   { code: 'session_mismatch' });
+});
+
+test('a wake for an ask from another computer runs restricted: none of the person\'s settings, hooks or plugins load', async (t) => {
+  const entry = { command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] };
+  const args = wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry }, origin: 'runner', plannedSessionId: 'planned-1' });
+  assert.deepEqual(args.slice(0, 5), ['-p', '--output-format', 'stream-json', '--verbose', '--restricted']);
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.equal(wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry } }).includes('--restricted'), false,
+    'a discussion turn of the person\'s own Agents keeps their settings');
+
+  // The settings' env block (model access) goes to the process instead, as for a constrained run.
+  const home = mkdtempSync(join(tmpdir(), 'fuli-claude-restricted-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(join(home, '.claude'));
+  writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://synthetic.invalid' },
+    hooks: { UserPromptSubmit: [] } }));
+  let seen;
+  await wakeAgent({ client: 'claude_code', cwd: '/synthetic', prompt: 'Review', origin: 'runner',
+    env: { FULI_CLAUDE_BIN: '/synthetic/claude', CLAUDE_CONFIG_DIR: join(home, '.claude') },
+    run: async (_command, runArgs, input) => {
+      seen = { args: runArgs, env: input.env };
+      return { code: 0, stdout: JSON.stringify({ type: 'result', result: 'Answer', session_id: 'synthetic-session' }) };
+    } });
+  assert.ok(seen.args.includes('--restricted'));
+  assert.equal(seen.env.ANTHROPIC_BASE_URL, 'https://synthetic.invalid');
+  assert.equal(seen.env.FULI_ROUNDTABLE_ORIGIN, 'runner');
 });

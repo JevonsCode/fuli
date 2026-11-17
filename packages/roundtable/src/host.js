@@ -82,6 +82,13 @@
 //                                               optional, sync, never throws: the host's diagnostics of a failed wake
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
+//   callerRunner()                              optional, sync: the certificate fingerprint of the host's runner (another
+//                                               computer of the person) whose call is being served, or null; such a call
+//                                               wakes read-only with only fuliMcpServer, never in a folder it names, and
+//                                               its asks record it; projectForPath answers null for it
+//   wakeScratchFolder()                         optional, sync: an empty folder the host owns, where a fresh session
+//                                               woken for an ask from another computer starts when nothing names one;
+//                                               without it such a session starts in an empty folder under the OS temp
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([
   'spaceId', 'listAgents', 'recentSessions', 'taskContext', 'listProjects', 'getProject',
   'projectLeadId', 'staffProjectLead', 'projectTeam', 'projectForPath',

@@ -12,3 +12,10 @@ export const WAKE_CLIENTS = Object.freeze(Object.keys(WAKE_ADAPTERS));
 export function wakeAdapter(client) {
   return Object.hasOwn(WAKE_ADAPTERS, client) ? WAKE_ADAPTERS[client] : null;
 }
+
+// The clients that may be woken for an ask from another computer (a runner's,
+// or a paired device's) on this platform: only those whose read-only wake can
+// reach nothing on this computer (adapter isolatedFor), in preference order.
+export function isolatedWakeClients(platform = process.platform) {
+  return WAKE_CLIENTS.filter((client) => WAKE_ADAPTERS[client].isolatedFor(platform));
+}

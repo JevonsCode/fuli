@@ -24,6 +24,8 @@ const REASONS = {
   client_not_allowed: '该 FLA 不允许在这个客户端运行',
   no_client: '没有可启动的客户端',
   no_working_directory: '本机不知道目标项目的目录',
+  no_isolated_client: '来自另一台电脑的请求在本机只能由只读的 Claude Code 接，没有可用的',
+  client_not_isolated: '这个客户端在本机不能接来自另一台电脑的请求',
   sender_without_project: '发起方不在项目任务里，无法签发唤醒授权',
   not_permitted: '团队规则不允许直接联系这个 FLA',
   delegation_not_redeemed: '新会话没有以该 FLA 身份进入',

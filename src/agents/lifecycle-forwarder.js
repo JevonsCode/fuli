@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { checkLocalConsoleHealth } from '../local-runtime/console-health.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
+import { RUNNER_HOOK_CONTEXT, runnerRuntimeConfig } from '../runner/runner-mode.js';
 
 // A thin lifecycle hook entry (rec#132 step 1): the hook process imports only
 // Node built-ins, hands the call to the running FULI console of its data
@@ -89,6 +90,16 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs }) {
   const startedAt = Date.now();
   const deadlineAt = startedAt + timeoutMs;
   const argv = process.argv.slice(2);
+  // A runner's clients enter tasks through FULI's MCP server on the host
+  // (docs/runner.md): nothing loads, and a prompt says so, as the plugin hook does.
+  if (runnerRuntimeConfig(argv)) {
+    if (argv[argv.indexOf('--event') + 1] === 'UserPromptSubmit') {
+      process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
+        additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
+    }
+    process.exitCode = 0;
+    return;
+  }
   const cwd = process.cwd();
   const env = namedEnvironment(process.env, envNames);
   const stdin = await readStdin(process.stdin, Math.min(STDIN_WAIT_MS, timeoutMs));

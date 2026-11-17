@@ -5,14 +5,14 @@ import { homedir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { StringDecoder } from 'node:string_decoder';
 
-import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
+import { isolatedWakeClients, WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 import { findInLoginShellPath, withLoginShellPath } from './login-shell-path.js';
 import { wakeFailure } from './wake-failure.js';
 
 // Wakes the recipient Agent in its own client, headlessly in the given mode, and
 // returns its final answer with that conversation's full context. Each client's
 // command, arguments, session lookup and output format live in its adapter.
-export { WAKE_CLIENTS };
+export { isolatedWakeClients, WAKE_CLIENTS };
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
 const MODEL_LIMIT = 120;
 // The last part of a client's stderr and stdout a failed wake keeps, never more.
@@ -36,14 +36,19 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
 // and a group discussion turn where FULI can name its own entry).
 // Work done for another computer is not a wake: see constrained-run.js.
 export const WAKE_MODES = Object.freeze(['answer', 'read_only']);
+// Where the ask a wake answers came from when it is another computer: a FULI
+// runner's call ('runner') or a paired device's ask ('remote'). The woken
+// session's FULI reads it (ORIGIN_ENV) and holds its own asks the same way.
+export const WAKE_ORIGINS = Object.freeze(['runner', 'remote']);
+export const ORIGIN_ENV = 'FULI_ROUNDTABLE_ORIGIN';
 
 // env, home: where a client's own configuration is read (Codex, to turn off
 // the person's other MCP servers by name).
 export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer',
-  mcpServers = null, env = process.env, home = homedir() } = {}) {
+  mcpServers = null, origin = null, env = process.env, home = homedir() } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
   if (!WAKE_MODES.includes(mode)) throw new TypeError('Invalid wake mode');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers, env, home });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers, origin, env, home });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -61,18 +66,27 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
   delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer',
-  mcpServers = null } = {}) {
+  mcpServers = null, origin = null, platform = process.platform } = {}) {
+  if (origin !== null && !WAKE_ORIGINS.includes(origin)) throw new TypeError('Invalid wake origin');
+  // The last check before a process starts: an ask from another computer wakes only an isolated client.
+  if (origin && !isolatedWakeClients(platform).includes(client)) {
+    throw wakeFailure('client_not_isolated', 'client_not_isolated', `${client} cannot take an ask from another computer here`);
+  }
   const command = resolveClientCommand(client, { env });
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
+  if (origin) {
+    childEnv[ORIGIN_ENV] = origin;
+    Object.assign(childEnv, adapterFor(client).restrictedEnvironment?.({ env, home: homedir() }) ?? {});
+  }
   // A client that names its session up front is bound before it starts, so its
   // first hook already finds the delegation; others are bound when they report it.
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers, env }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers, origin, env }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;

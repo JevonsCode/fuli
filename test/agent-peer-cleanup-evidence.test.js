@@ -32,7 +32,7 @@ function coordinator(store, { wake, bootEvidence } = {}) {
       revokeAgentDelegation: async () => {}
     }
   };
-  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, idFactory: () => `${prefix}-${++id}`,
+  const roundtable = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, idFactory: () => `${prefix}-${++id}`,
     clientAvailable: () => true, locateCwd: () => '/work', ...(bootEvidence ? { bootEvidence } : {}),
     wake: async (input) => { woken.push(input); return wake(woken.length, input); } });
   const ask = (body, to = 'reviewer-1') => roundtable.messageAgent({ taskContextToken: 'token', sourceApplication: 'claude_code',

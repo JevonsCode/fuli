@@ -9,7 +9,7 @@ import { findFile, firstField, lastEntries, listDirectory } from '../session-log
 import { reportedWakeUsage } from '../wake-usage.js';
 
 const TURN_START = 'task_started';
-const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH', 'FULI_ROUNDTABLE_ORIGIN']);
 // A TOML array of strings; JSON's string escapes are valid TOML basic strings.
 const tomlArray = (values) => `[${values.map((value) => JSON.stringify(value)).join(',')}]`;
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
@@ -21,6 +21,13 @@ const DEFAULT_PLUGIN_KEY = '_default';
 // that conversation; Codex refuses while the conversation is open in the app.
 export const codexWake = Object.freeze({
   id: 'codex',
+
+  // Whether a read-only wake can take an ask from another computer here. A
+  // read-only Codex can still run shell commands; its sandbox blocks network
+  // on macOS (Seatbelt) and Linux (Landlock and seccomp), but on Windows that
+  // is not verified, so a command could reach this computer's console on
+  // loopback with the person's authority. Decided 2026-11-18.
+  isolatedFor: (platform) => platform !== 'win32',
 
   resolveCommand({ env, which, platform, fileExists = existsSync }) {
     if (env.FULI_CODEX_BIN) return env.FULI_CODEX_BIN;

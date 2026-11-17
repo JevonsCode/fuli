@@ -18,7 +18,7 @@ function fixture() {
     personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: true }), revokeAgentDelegation: async () => {} },
     peer: { hasSent: () => true, status: async () => { peerCalls.push('status'); return remoteState; }, cancel: async () => { peerCalls.push('cancel'); return { status: 'cancelled' }; } },
   };
-  const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
     wake: async input => { woken.push(input); return { body: 'Synthetic reply', sessionId: 'fixture-session' }; } });
   function ask({ node = 'a', body = 'Allowed remote question', threadId = 'collision-thread', messageId = 'collision-ask' } = {}) {
     return service.answerRemote({
@@ -109,7 +109,7 @@ test('a later wake of a remote ask starts only while its deadline leaves time, a
     listProjectAgents: async () => [{ agentId: 'shared-lead', profile: { name: 'Shared lead', status: 'active', allowedClients: ['codex', 'claude_code'] } }],
     personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: false }), revokeAgentDelegation: async () => {} },
   };
-  const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
     wake: async () => ({ body: 'Synthetic reply', sessionId: 'fixture-session' }) });
   try {
     await assert.rejects(service.answerRemote({
@@ -137,7 +137,7 @@ test('a Provider refusal of the shared lead reaches the receiving thread with it
     personal,
   };
   const host = createFuliRoundtableHost(app);
-  const service = createAgentRoundtable({ host, openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ platform: 'linux', host, openStore: () => store, clientAvailable: () => true,
     wake: async input => { woken.push(input); return { body: 'Synthetic reply', sessionId: 'fixture-session' }; } });
   try {
     await assert.rejects(service.answerRemote({

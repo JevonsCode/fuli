@@ -29,7 +29,8 @@
     "skills/",
     "compose.graphiti.yml",
     "docs/judgment-and-autonomy.md",
-    "docs/client-connections.md"
+    "docs/client-connections.md",
+    "docs/runner.md"
   ],
   "bin": {
     "fl": "src/cli.js",

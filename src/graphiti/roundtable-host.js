@@ -1,8 +1,10 @@
+import { mkdirSync } from 'node:fs';
+
 import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
 import { QUERY_REFUSED } from '../../packages/roundtable/src/peer/query-answer.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
-import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
+import { activeAgentRequestSignal, activeRunnerCaller, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { termsOverlap } from '../standing-assignments/term-match.js';
 import { identityKey } from '../text/name-identity.js';
 import { groupMemberContext } from './group-member-context.js';
@@ -19,7 +21,10 @@ const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
-export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line) } = {}) {
+// wakeFolder: an empty folder FULI owns, where a fresh session woken for an ask
+// from another computer starts when nothing else names one (never the console's
+// own working folder).
+export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line), wakeFolder = null } = {}) {
   const spaceId = () => app.config.personal.spaceId;
   const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
     name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
@@ -94,8 +99,9 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       const root = findRepositoryRoot(folder);
       return root ? localOriginRemoteKey(root) : null;
     },
+    // A folder a runner (docs/runner.md) names is on that computer, never one of this computer's folders.
     async projectForPath(path) {
-      if (!path || !app.projectPathResolver) return null;
+      if (!path || !app.projectPathResolver || activeRunnerCaller()) return null;
       const resolved = app.projectPathResolver(path, await projects());
       return resolved.status === 'matched' ? resolved.personalProjectId : null;
     },
@@ -111,9 +117,9 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // person (the folder is named after a project that claims a repository
     // without its address, while another project records the address), and
     // this project is one of the two; a message that names the project is
-    // settled the same way at a task's entry.
+    // settled the same way at a task's entry. A runner's folder is never one of this computer's.
     async folderBelongsTo(path, projectId) {
-      if (!path || !projectId || !app.projectPathResolver) return false;
+      if (!path || !projectId || !app.projectPathResolver || activeRunnerCaller()) return false;
       const all = await projects();
       const resolved = app.projectPathResolver(path, all);
       if (resolved.status === 'matched' && resolved.personalProjectId === projectId) return true;
@@ -206,6 +212,12 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     recordWakeFailure: failure => recordWakeFailure(app.diagnosticEvents, failure),
     requestSignal: activeAgentRequestSignal,
     inRestrictedWorker: activeSealedWorkerRequest,
+    callerRunner: activeRunnerCaller,
+    wakeScratchFolder: () => {
+      if (!wakeFolder) return null;
+      mkdirSync(wakeFolder, { recursive: true, mode: 0o700 });
+      return wakeFolder;
+    },
     recordMemoryUsage: input => app.personal.recordProjectMemoryUsage
       ? recordProjectMemoryUsage(app, input) : { recorded: false, reason: 'usage_port_unavailable' }
   });

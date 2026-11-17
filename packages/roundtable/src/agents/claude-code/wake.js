@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { firstField, listDirectory } from '../session-log.js';
 import { reportedWakeUsage } from '../wake-usage.js';
+import { claudeCodeConstrainedRun } from './constrained-run.js';
 
 // A read-only wake has only the built-in tools that read. Whatever edits a file, runs a command
 // (Bash, PowerShell), fetches from the web or starts another agent is not there; the edit and
@@ -23,6 +24,9 @@ const MODE_ARGUMENTS = Object.freeze({
 export const claudeCodeWake = Object.freeze({
   id: 'claude_code',
 
+  // A read-only Claude Code wake has no shell (--tools Read,Grep,Glob), on every platform.
+  isolatedFor: () => true,
+
   resolveCommand({ env, which, platform }) {
     return env.FULI_CLAUDE_BIN || which('claude', platform);
   },
@@ -31,6 +35,10 @@ export const claudeCodeWake = Object.freeze({
   // delegated wake names the (forked) session up front and binds it first.
   plansSession: true,
 
+  // Restricted mode skips the settings files, so the model access their env
+  // block names goes to the process environment instead (constrained-run.js).
+  restrictedEnvironment: claudeCodeConstrainedRun.environment,
+
   // mode (roundtable/wake.js WAKE_MODES): answer keeps the person's own rules;
   // read_only (a group discussion turn, an ask from another computer) keeps the
   // same non-interactive mode with the reading tools only, so the woken session
@@ -38,10 +46,13 @@ export const claudeCodeWake = Object.freeze({
   // avoided: headless it may end with a plan or an empty answer instead of the
   // member's view.) mcpServers ({ name: { command, args } }, possibly empty): a
   // read_only wake then loads exactly these MCP servers, none of the person's.
-  args({ sessionId, plannedSessionId = null, mode, mcpServers = null }) {
+  // origin (an ask from another computer): restricted mode as well, as the
+  // constrained run uses it, so none of the person's settings files load: no
+  // hooks, plugins or permission rules of theirs run for text from elsewhere.
+  args({ sessionId, plannedSessionId = null, mode, mcpServers = null, origin = null }) {
     const only = mcpServers && mode === 'read_only' ? ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers:
       Object.fromEntries(Object.entries(mcpServers).map(([name, entry]) => [name, { type: 'stdio', command: entry.command, args: entry.args }])) })] : [];
-    return ['-p', '--output-format', 'stream-json', '--verbose', ...MODE_ARGUMENTS[mode], ...only,
+    return ['-p', '--output-format', 'stream-json', '--verbose', ...(origin ? ['--restricted'] : []), ...MODE_ARGUMENTS[mode], ...only,
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },

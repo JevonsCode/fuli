@@ -29,7 +29,7 @@ import {
   liveSourceConsoleUrl,
   sourceConsoleUrl
 } from './source-marker.js';
-import { resolvePersonalProjectPath } from './project-path-context.js';
+import { resolveCallerProjectPath } from './caller-workspace.js';
 import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
 import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -185,7 +185,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     // Which advanced console areas this installation has used (advanced-areas.js); in memory likewise.
     advancedAreas = createAdvancedAreas(null),
     consoleUrl = sourceConsoleUrl(null),
-    projectPathResolver = resolvePersonalProjectPath,
+    projectPathResolver = resolveCallerProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
     tokenUsageResolver = undefined,

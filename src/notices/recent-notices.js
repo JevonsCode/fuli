@@ -35,7 +35,8 @@ export async function recentNotices({ app, delegation = null, system = null, now
     read(() => teamChanges(context), []),
     read(() => delegatedChanges(context), []),
     read(() => modelProblems(context), []),
-    read(() => versionUpdate(context), [])
+    read(() => versionUpdate(context), []),
+    read(() => runnerPairings(context), [])
   ]);
   const direction = query.sort === 'oldest' ? -1 : 1;
   const matching = lists.flat()
@@ -150,6 +151,17 @@ function versionUpdate({ system }) {
   const status = system?.cachedVersionStatus?.();
   if (!status?.updateAvailable || !status.latestVersion || !status.checkedAt) return [];
   return [notice('update_available', status.latestVersion, status.checkedAt, { version: status.latestVersion }, '/settings?tab=version')];
+}
+
+// Another computer that paired as a runner (docs/runner.md) and can use this
+// FULI: under the name the person gave its invitation and the name it gave
+// itself, so a pairing the person did not make shows. Revoked ones drop out.
+function runnerPairings({ app }) {
+  return (app.runnerHost?.list().runners ?? [])
+    .filter(runner => !runner.revokedAt)
+    .map(runner => notice('runner_paired', `${runner.fingerprint}:${runner.pairedAt}`, runner.pairedAt,
+      { name: runner.name, device: runner.deviceName ?? runner.name, fingerprint: runner.fingerprint.slice(0, 16) },
+      '/settings?tab=clients'));
 }
 
 function notice(kind, key, at, params, href, { projectId, agentId } = {}) {

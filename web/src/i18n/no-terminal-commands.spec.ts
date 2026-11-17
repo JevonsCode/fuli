@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 // plain statement of what happens. This scans every zh-CN and en-US console
 // message for a FULI command, a shell instruction or the word terminal.
 const COMMAND = new RegExp([
-  String.raw`\b(?:fuli|fl) (?:start|stop|restart|status|open|clients|connect|connect-workspace|mcp|setup|peer|remote-mcp|employee|app|models|session|worker|update|uninstall|migrate|graph)\b`,
+  String.raw`\b(?:fuli|fl) (?:start|stop|restart|status|open|clients|connect|connect-workspace|mcp|setup|peer|remote-mcp|employee|app|models|session|worker|update|uninstall|migrate|graph|runner)\b`,
   String.raw`终端`,
   String.raw`\b[Ii]n (?:a|the|your) terminal\b`,
   String.raw`\bnpm (?:install|i|update|run)\b`,
@@ -32,6 +32,10 @@ const ALLOWED = new Map<string, string>([
   ['cli-path.ts:zh-CN.switch', 'names the setting; the step is a switch'],
   ['cli-path.ts:zh-CN.saved', 'names the setting; the step is a switch'],
   ['cli-path.ts:en-US.title', 'names the setting; the step is a switch'],
+  // A computer that paired as a runner: the console has no runner page, so the
+  // notice names the one way to revoke it (decided 2026-11-18).
+  ['overview.ts:zh-CN.notices.kinds.runner_paired', 'revoking a runner has no console control yet'],
+  ['overview.ts:en-US.notices.kinds.runner_paired', 'revoking a runner has no console control yet'],
 ])
 
 const files = import.meta.glob<Record<string, unknown>>('./messages/*.ts', { eager: true })
