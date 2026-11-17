@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
+import { ROLE_AGENT_IDS } from '@/features/agent-profile/fixed-roles'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -17,7 +18,7 @@ import { useAgentNamingStyle } from './use-agent-naming-style'
 // them, then how Bole names new FLAs. Both texts save themselves after a pause
 // in typing, like Settings; the capsule says when, and nothing on the page moves.
 const props = defineProps<{ spaceId: string }>()
-const BOLE = 'employee.bole'
+const BOLE = ROLE_AGENT_IDS.bole
 
 const name = ref('')
 // The read answer becomes the field once; after that the field is the person's.

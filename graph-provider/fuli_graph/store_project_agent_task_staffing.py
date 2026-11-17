@@ -7,20 +7,16 @@ from fastapi import HTTPException
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentParallelPlan
-from .store_project_agents import SYSTEM_HR_AGENT_ID
+from .fixed_roles import SYSTEM_HR_AGENT_ID, SYSTEM_ROLE_AGENT_IDS, system_role_capability
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 from .project_agent_hierarchy import reporting_parent, direct_reports
 from .client_coverage import covers_client
 
 
-IMPLICIT_PEER_AGENT_IDS = frozenset({
-    'employee.jefa',
-    'employee.tonborg',
-    'employee.assistant',
-    SYSTEM_HR_AGENT_ID.casefold(),
-    LEGACY_HR_AGENT_ID.casefold(),
-})
-IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg', 'fuli.employee:assistant'})
+IMPLICIT_PEER_AGENT_IDS = frozenset(
+    agent_id.casefold() for agent_id in (*SYSTEM_ROLE_AGENT_IDS, LEGACY_HR_AGENT_ID)
+)
+IMPLICIT_PEER_CAPABILITIES = frozenset(system_role_capability(agent_id) for agent_id in SYSTEM_ROLE_AGENT_IDS)
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 # Routing reasons produced inside a configured project team roster.
 TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap', 'project_sub_team_lead', 'project_sub_team_gap'})

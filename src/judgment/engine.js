@@ -6,6 +6,7 @@ import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProve
 import { assessRouting } from './routing.js';
 import { assessAcceptance } from './acceptance.js';
 import { recoverInterruptedWrites } from './review-recovery.js';
+import { FIXED_ROLES, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { arraySchema, enumSchema, objectSchema } from '../agent-tools/schema.js';
@@ -67,8 +68,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     evidenceVersion: fingerprint(call.data), policyVersion: policyVersion(call.policy) }));
   async function authorize(input, policy, { ensureAssignment = false } = {}) {
     const agents = await app.listProjectAgents({ personalSpaceId: input.personalSpaceId });
-    const tonborg = agents.find(agent => agent.agentId === 'employee.tonborg');
-    if (tonborg?.profile.status !== 'active' || !tonborg.profile.capabilities?.includes('fuli.employee:tonborg')) {
+    const tonborg = agents.find(agent => agent.agentId === TONBORG_AGENT_ID);
+    if (tonborg?.profile.status !== 'active' || !tonborg.profile.capabilities?.includes(FIXED_ROLES.tonborg.capability)) {
       throw new EmployeeError('Tonborg is unavailable', 403, 'judgment_agent_unavailable');
     }
     if (!coversClient(tonborg.profile.allowedClients, policy.client)) {
@@ -78,7 +79,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
   }
   // taskScope carries only the work kind, session and workflow the caller actually knows.
   const readPreferences = (project, taskScope = {}) => readJudgmentPreferences(app, { personalProjectId: project,
-    projectAgentId: project ? 'employee.tonborg' : null, taskScope });
+    projectAgentId: project ? TONBORG_AGENT_ID : null, taskScope });
   // memory, memoryRevision and feedback are Tonborg's own: its model reads
   // them, a session's work package leaves them out (session-package.js, D-58).
   async function context(service, input, policy = service.store().policy(input.personalSpaceId, input.personalProjectId ?? ''), taskScope = {}) {
@@ -87,7 +88,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const preferences = await readPreferences(project, taskScope);
     let memory = null;
     if (project) {
-      try { memory = await app.inspectProjectAgentMemory({ personalSpaceId: input.personalSpaceId, personalProjectId: project, agentId: 'employee.tonborg', limit: 1 }); }
+      try { memory = await app.inspectProjectAgentMemory({ personalSpaceId: input.personalSpaceId, personalProjectId: project, agentId: TONBORG_AGENT_ID, limit: 1 }); }
       catch (error) { if (![403, 404].includes(error.status)) throw error; }
     }
     return { preferences, memory: memory?.current?.memory ?? null,

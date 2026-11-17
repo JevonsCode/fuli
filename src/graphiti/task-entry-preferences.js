@@ -8,7 +8,7 @@ import { applyAgentAssignment, unassignedMarkers } from './task-agent-assignment
 import { triageCandidates } from './conversation-triage.js';
 import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
 import { AGENT_REPLIES_GUIDANCE, STAND_IN_HANDBACKS_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
 import { captureDecision } from './capture-decision.js';
@@ -255,7 +255,7 @@ export const AUTO_JUDGMENT_GUIDANCE = 'Before choosing a new subagent, session, 
 export async function taskJudgmentContext(application, personalProjectId) {
   const judgmentPolicy = await application.judgment?.policy({ personalSpaceId: application.config.personal.spaceId,
     personalProjectId: personalProjectId ?? null });
-  return judgmentPolicy ? { agentId: 'employee.tonborg', policy: judgmentPolicy,
+  return judgmentPolicy ? { agentId: TONBORG_AGENT_ID, policy: judgmentPolicy,
       guidance: judgmentPolicy.mode === 'manual'
         ? 'Tonborg is available for advice via assess_agent_action; retain human review.'
         : AUTO_JUDGMENT_GUIDANCE } : null;

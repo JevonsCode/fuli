@@ -1,9 +1,14 @@
+import { FIXED_ROLES } from '../employees/fixed-roles.js';
+
 // One authoritative reading of a project's people. The coordination policy
 // owns the explicit hierarchy; active assignments decide who currently works
 // on the exact project. Assigned Agents outside the explicit team are shown as
 // collaborators and peer roles stay peers, never converted into direct reports.
-const PEER_AGENT_IDS = new Set(['employee.jefa', 'employee.bole', 'employee.tonborg', 'fuli-project-hr']);
-const PEER_CAPABILITIES = new Set(['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg']);
+// The roles a project team shows as peers: Jefa, Bole and Tonborg.
+const PEER_ROLES = [FIXED_ROLES.jefa, FIXED_ROLES.bole, FIXED_ROLES.tonborg];
+// 'fuli-project-hr' is the AR identity from before Bole.
+const PEER_AGENT_IDS = new Set([...PEER_ROLES.map(role => role.agentId), 'fuli-project-hr']);
+const PEER_CAPABILITIES = new Set(PEER_ROLES.map(role => role.capability));
 
 export function isPeerRoleAgent({ agentId, agentType, capabilities = [] }) {
   return PEER_AGENT_IDS.has(agentId) || agentType === 'hr'

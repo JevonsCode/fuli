@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES, employeeAgentId, employeeCapability } from './manifest.js';
+import { ASSISTANT_AGENT_ID, FIXED_ROLES } from './fixed-roles.js';
+import { EmployeeError, employeeAgentId, employeeCapability } from './manifest.js';
 import {
   activeEmployeeAssignments, employeeAssignmentsVersion,
   parseEmployeeProjectSelection, resolveEmployeeProjectSelection,
 } from './project-selection.js';
 import { managementFor, managementWithoutRevision, parseEmployeeManagement, policyAllowsProject } from './management-policy.js';
 import { coversClient } from '../agents/source-applications.js';
-import { ASSISTANT_AGENT_ID } from '../graphiti/assistant-identity.js';
 
 // The global assistant (Astro) answers outside projects; it has no project scope.
 const globalOnly = manifest => employeeAgentId(manifest.id) === ASSISTANT_AGENT_ID;
@@ -73,7 +73,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
         runtimeStatus,
         agentId: owned ? agent.agentId : null,
         agentStatus: owned ? agent.profile.status : null,
-        fixed: Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id),
+        fixed: Object.hasOwn(FIXED_ROLES, manifest.id),
         assignmentsVersion: employeeAssignmentsVersion(owned ? agent : null, stored),
         management, managedProjects,
         assignmentCount: owned ? activeEmployeeAssignments(agent).length : 0,
@@ -143,14 +143,14 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       if (!agent || agent.profile.status !== 'active') {
         // A fixed employee's occupation ships with the Provider and is locked there.
         const occupation = input.occupation;
-        if (!agent && !occupation && !Object.hasOwn(FIXED_EMPLOYEE_AGENT_TYPES, manifest.id)) {
+        if (!agent && !occupation && !Object.hasOwn(FIXED_ROLES, manifest.id)) {
           throw new EmployeeError('New employees require occupation.role', 422, 'occupation_required');
         }
         const profile = agent ? { ...agent.profile, status: 'active' } : {
           name: manifest.name,
           occupationEmoji: manifest.occupationEmoji,
           responsibility: `${manifest.role}：${manifest.description}`,
-          agentType: FIXED_EMPLOYEE_AGENT_TYPES[manifest.id] ?? 'durable', status: 'active',
+          agentType: FIXED_ROLES[manifest.id]?.agentType ?? 'durable', status: 'active',
           capabilities: [...manifest.capabilities, employeeCapability(manifest.id)],
           workKinds: manifest.workKinds,
           initialPreferences: manifest.initialPreferences,

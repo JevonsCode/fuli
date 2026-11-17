@@ -1,4 +1,4 @@
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { sha256Bytes } from '../security/digest.js';
 import { singleLine } from '../text/single-line.js';
 

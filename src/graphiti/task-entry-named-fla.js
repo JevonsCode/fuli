@@ -7,7 +7,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
-import { employeeAgentId } from '../employees/manifest.js';
+import { TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 
@@ -40,7 +40,7 @@ const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in
   + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
   + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says #FLA 结束.';
 // What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
-const ROLE_GUIDANCE = Object.freeze({ [employeeAgentId('tonborg')]: TONBORG_EXPLAIN_METHOD });
+const ROLE_GUIDANCE = Object.freeze({ [TONBORG_AGENT_ID]: TONBORG_EXPLAIN_METHOD });
 const UNAVAILABLE_GUIDANCE = 'Tell the person this notice and do no task work: do not act as, or claim the context '
   + 'of, another FLA. They can name another FLA, pick one with #FLA, or end the binding with #FLA 结束.';
 const CHOOSE_GUIDANCE = 'Ask this now with the host native single-choice UI (a numbered list where there is none), '

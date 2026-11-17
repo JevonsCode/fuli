@@ -1,4 +1,5 @@
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { sourceConsoleUrl } from './source-marker.js';
@@ -39,7 +40,7 @@ export async function proposalForTopic(application, topic) {
   const [stats] = await topics(application, { topic, limit: 1 });
   if (!isProposable(stats) || (stats.count - (stats.declined_count ?? 0)) % PROPOSAL_ASK_AGAIN_AFTER !== 0) return null;
   const url = `${application.consoleUrl ?? sourceConsoleUrl(null)}/employees/assistant`;
-  return { status: 'ask_user', proposed_by: 'employee.assistant', ...proposalView(stats), console_url: url,
+  return { status: 'ask_user', proposed_by: ASSISTANT_AGENT_ID, ...proposalView(stats), console_url: url,
     ask_user: `「${stats.topic}」已经聊了 ${stats.count} 次、跨 ${stats.days} 天，还没成立项目。`
       + `要为它成立项目、招人长期维护吗？请在 FULI 控制台决定：${url}`,
     guidance: 'Add ask_user to the end of your reply. Only the person decides, in the console; never form the project yourself.' };
@@ -64,7 +65,7 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
   const formed = await formTopicProject(application, stats, existing, reason, sourceApplication);
   const link = `${receiptConsoleUrl(application)}/employees/assistant?${new URLSearchParams({
     promoted: formed.personal_project_id, topic: stats.topic })}`;
-  return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
+  return { ...formed, status: 'promoted', proposed_by: ASSISTANT_AGENT_ID,
     notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」`
       + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}${teamNotice(formed.team)}。`
       + `${markdownLink('改名、换上级或撤销', link)}`,

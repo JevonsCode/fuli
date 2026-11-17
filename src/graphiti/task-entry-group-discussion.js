@@ -8,7 +8,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry.js';
 import { DEFAULT_ROUND_LIMIT } from '../../packages/roundtable/src/roundtable/group-discussion.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 
 // `#FLG …` (Fuli Agents Group, rec#55): the person invites several of their
 // FLAs to discuss a question in this chat. The entry only prepares it:

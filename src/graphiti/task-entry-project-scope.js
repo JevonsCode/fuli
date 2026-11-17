@@ -5,7 +5,7 @@ import { sessionTaskContext, withStandingOwner } from './task-entry-standing-own
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { sessionOwnerOf } from './task-entry-owner-change.js';
 import { REMOTE_CONFLICT } from './agent-project-resolution.js';
 
