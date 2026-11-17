@@ -20,14 +20,16 @@ const READY = JSON.stringify({ decision: 'propose', payload: { choice: 'ready' }
 
 const connection = (overrides = {}) => ({ protocol: 'openai_chat', endpoint: ENDPOINT, model: 'synthetic-model', secretRef: 'synthetic-ref',
   ...overrides });
-const role = name => ({ enabled: true, connection: name, allowedOperations: ['pick'],
-  egress: { approvedProjects: [], allowUnassigned: false },
-  budget: { maxInputTokens: 4000, maxOutputTokens: 400, timeoutMs: 30_000, windowHours: 24, maxTokensPerWindow: 100_000 },
-  fallbackToSession: true });
+const BUDGET = { maxInputTokens: 4000, maxOutputTokens: 400, timeoutMs: 30_000, windowHours: 24, maxTokensPerWindow: 100_000 };
+const role = (name, budget = BUDGET) => ({ enabled: true, connection: name, allowedOperations: ['pick'],
+  egress: { approvedProjects: [], allowUnassigned: false }, budget, fallbackToSession: true });
 
 // transport: what the fake endpoint does next, per role ('up', 'down' or 'forbidden').
-function harness({ connections = { shared: connection() }, roles = { assistant: 'shared', jefa: 'shared', tonborg: 'shared' } } = {}) {
-  const config = { version: 1, connections, roles: Object.fromEntries(Object.entries(roles).map(([name, use]) => [name, role(use)])) };
+// budget: every role's own limits, when not the usual ones.
+function harness({ connections = { shared: connection() }, roles = { assistant: 'shared', jefa: 'shared', tonborg: 'shared' },
+  budget = BUDGET } = {}) {
+  const config = { version: 1, connections,
+    roles: Object.fromEntries(Object.entries(roles).map(([name, use]) => [name, role(use, budget)])) };
   const transport = {};
   let current = null;
   let at = Date.parse('2026-11-12T08:00:00.000Z');
@@ -48,9 +50,9 @@ function harness({ connections = { shared: connection() }, roles = { assistant: 
     current = name;
     return port.checkConnection(name);
   };
-  // One decision by a role, a minute after the previous one; timeoutMs is the
-  // time limit its caller asks for, as a hot path does.
-  const decide = async (name, mode, timeoutMs = null) => {
+  // One decision by a role, a minute after the previous one; budget is what
+  // its caller asks for ({ timeoutMs, hotPath } on a hot path).
+  const decide = async (name, mode, budget = null) => {
     at += 60_000;
     transport[name] = mode;
     current = name;
@@ -58,7 +60,7 @@ function harness({ connections = { shared: connection() }, roles = { assistant: 
       scope: { personalSpaceId: 'synthetic-space', personalProjectId: null, sessionRef: null },
       versions: { evidence: 'none', policy: 'none' }, instructions: 'Choose the option ready.',
       output: { type: 'choice', options: [{ id: 'ready', description: 'Ready.' }, { id: 'none', description: 'Not ready.' }] },
-      decisions: ['propose'], ...(timeoutMs ? { budget: { timeoutMs } } : {}) });
+      decisions: ['propose'], ...(budget ? { budget } : {}) });
   };
   const health = name => port.health(name, config.roles[name].connection, config.connections[config.roles[name].connection]);
   return { port, config, check, decide, health, ledger };
@@ -104,14 +106,35 @@ test('a role\'s own failure for another reason is not cleared by another role\'s
   assert.deepEqual([health('tonborg').status, health('tonborg').scope], ['ok', 'connection']);
 });
 
-// rec#139: a hot path asks for a few seconds where the role allows far more.
-test('a timeout under a time limit the caller tightened is not the role\'s failure', async () => {
+// rec#139: a hot path asks for a few seconds where the role allows far more,
+// and says it is one (budget.hotPath).
+const HOT_PATH = { timeoutMs: 3000, hotPath: true };
+// A role that sets no time limit of its own has the port's default end.
+const NO_TIME_LIMIT = { ...BUDGET, timeoutMs: null };
+
+test('a timeout under a time limit a hot-path caller tightened is not the role\'s failure', async () => {
   const { check, decide, health } = harness();
   await check('jefa');
-  const skipped = await decide('jefa', 'slow', 3000);
+  const skipped = await decide('jefa', 'slow', HOT_PATH);
   assert.deepEqual([skipped.modelReceipt.status, skipped.modelReceipt.reason], ['failed', 'timeout']);
   // The caller would not wait; the role's answer before it still stands.
   assert.deepEqual([health('jefa').status, health('jefa').scope], ['ok', 'connection']);
+});
+
+test('a hot-path timeout is not the role\'s failure when the role sets no time limit of its own', async () => {
+  const { check, decide, health } = harness({ budget: NO_TIME_LIMIT });
+  await check('jefa');
+  await decide('jefa', 'slow', HOT_PATH);
+  assert.deepEqual([health('jefa').status, health('jefa').scope], ['ok', 'connection']);
+});
+
+// Retrieval terms and retrospectives ask for less than the role allows too,
+// but nobody waits on them: their timeouts stay the role's (rv on rec#139).
+test('a timeout under a tighter limit that is not a hot path is still the role\'s failure', async () => {
+  const { check, decide, health } = harness({ budget: NO_TIME_LIMIT });
+  await check('jefa');
+  await decide('jefa', 'slow', { timeoutMs: 300_000 });
+  assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'timeout']);
 });
 
 test('a timeout within the role\'s own time limit is still the role\'s failure', async () => {
@@ -119,17 +142,28 @@ test('a timeout within the role\'s own time limit is still the role\'s failure',
   await check('jefa');
   await decide('jefa', 'slow');
   assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'timeout']);
-  // A limit no tighter than the role's is the role's own.
+  // A limit no tighter than the role's is the role's own, hot path or not.
   await check('jefa');
-  await decide('jefa', 'slow', 30_000);
+  await decide('jefa', 'slow', { timeoutMs: 30_000, hotPath: true });
   assert.deepEqual([health('jefa').status, health('jefa').scope], ['failing', 'role']);
+});
+
+test('an older attempt that does not say whether its caller tightened the limit still counts', async () => {
+  const { check, decide, health, ledger } = harness();
+  await check('jefa');
+  // Stored as before model-usage format 4: the migration leaves caller_deadline NULL.
+  const record = ledger.record.bind(ledger);
+  ledger.record = attempt => record({ ...attempt, callerDeadline: undefined });
+  await decide('jefa', 'slow', HOT_PATH);
+  assert.equal(ledger.db.prepare('SELECT COUNT(*) AS n FROM model_attempts WHERE caller_deadline IS NOT NULL').get().n, 0);
+  assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'timeout']);
 });
 
 test('another failure under a tightened time limit stays the role\'s, and a caller timeout does not clear it', async () => {
   const { decide, health } = harness();
-  await decide('jefa', 'forbidden', 3000);
+  await decide('jefa', 'forbidden', HOT_PATH);
   assert.deepEqual([health('jefa').status, health('jefa').scope, health('jefa').reason], ['failing', 'role', 'permission_denied']);
-  await decide('jefa', 'slow', 3000);
+  await decide('jefa', 'slow', HOT_PATH);
   assert.deepEqual([health('jefa').status, health('jefa').reason], ['failing', 'permission_denied']);
 });
 

@@ -163,7 +163,7 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
   app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
-  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
+  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total, caller_deadline AS callerDeadline FROM model_attempts ORDER BY attempt_number')
     .all().map(row => ({ ...row }));
   const reservations = () => ledger.db.prepare('SELECT COUNT(*) AS n FROM model_reservations').get().n;
   // The model never binds: no project, triage label, adoption, checkpoint or work package.
@@ -248,8 +248,8 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
   assert.deepEqual(data.evidence, [{ id: 'prompt', text: PROMPT },
     { id: 'project_1', text: JSON.stringify({ name: 'Garden Planner', description: 'Plan watering and planting reminders.' }) },
     { id: 'project_2', text: JSON.stringify({ name: 'Alpha Ledger', description: 'Track household spending.' }) }]);
-  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation }) => [purpose, outcome, role, operation]),
-    [['initial', 'succeeded', 'assistant', 'project_candidate']]);
+  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation, callerDeadline }) => [purpose, outcome, role, operation, callerDeadline]),
+    [['initial', 'succeeded', 'assistant', 'project_candidate', 1]], 'the task-entry hot path says so (rec#139)');
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['project_candidate']);
   run.assertNoAttribution(result);
   const [noted] = run.suggestions();

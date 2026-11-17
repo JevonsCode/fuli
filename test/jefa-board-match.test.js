@@ -209,7 +209,7 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
   app.roleSuggestions = new RoleSuggestionLog();
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: GARDEN_PATH, sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
-  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
+  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total, caller_deadline AS callerDeadline FROM model_attempts ORDER BY attempt_number')
     .all().map(row => ({ ...row }));
   const reservations = () => ledger.db.prepare('SELECT COUNT(*) AS n FROM model_reservations').get().n;
   const reads = () => workbench.calls.filter(call => call.name === 'read_board').length;
@@ -302,8 +302,8 @@ test('Jefa suggests one listed board task as a hint; board tasks are evidence of
   assert.deepEqual(data.evidence, [{ id: 'prompt', text: PROMPT },
     { id: 'task_1', text: JSON.stringify({ title: '浇水提醒推送时间不对', summary: 'Reminders arrive an hour late after the time change.', status: 'active' }) },
     { id: 'task_2', text: JSON.stringify({ title: 'Seed inventory page', summary: 'List seeds with sowing dates.', status: 'planned' }) }]);
-  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation }) => [purpose, outcome, role, operation]),
-    [['initial', 'succeeded', 'jefa', 'board_match']]);
+  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation, callerDeadline }) => [purpose, outcome, role, operation, callerDeadline]),
+    [['initial', 'succeeded', 'jefa', 'board_match', 1]], 'the task-entry hot path says so (rec#139)');
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['board_match']);
   // The entry's read, the evidence read and the recheck: reads only, all in the task's project.
   assert.deepEqual(run.workbench.calls.map(({ name, project }) => [name, project]),

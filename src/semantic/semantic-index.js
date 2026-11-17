@@ -54,12 +54,13 @@ export async function fillSemanticIndex(application, { signal = null, onProgress
 }
 
 // A query's own vector, or null: no model, a project not approved, a failure
-// or too slow. Search then goes on by words alone.
+// or too slow. Search then goes on by words alone. A search waits on it, so
+// the request says hotPath: a timeout under timeoutMs is not the role's failure.
 export async function queryVector(application, { personalProjectId = null, query, timeoutMs }) {
   const model = semanticModel(application);
   if (!model || typeof query !== 'string' || !query.trim()) return null;
   const text = query.slice(0, 2048);
-  const request = embeddingRequest(application.config.personal.spaceId, personalProjectId, [text], timeoutMs);
+  const request = embeddingRequest(application.config.personal.spaceId, personalProjectId, [text], timeoutMs ? { timeoutMs, hotPath: true } : null);
   if (!application.modelBackends.allowsEgress(request)) return null;
   const key = `${model}\n${text}`;
   const kept = queryCache.get(key);
@@ -77,10 +78,10 @@ export async function queryVector(application, { personalProjectId = null, query
   }
 }
 
-function embeddingRequest(personalSpaceId, personalProjectId, texts, timeoutMs = null) {
+function embeddingRequest(personalSpaceId, personalProjectId, texts, budget = null) {
   return { role: SEMANTIC_ROLE, operation: KNOWLEDGE_EMBEDDING_OPERATION, requestId: `semantic:${randomUUID()}`,
     scope: { personalSpaceId, personalProjectId, sessionRef: null }, texts,
-    ...(timeoutMs ? { budget: { timeoutMs } } : {}) };
+    ...(budget ? { budget } : {}) };
 }
 
 function byProject(items) {

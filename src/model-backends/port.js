@@ -378,8 +378,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // supersedes an older network failure, and a newer network failure
     // reaches every role on it. An answer that would not validate still came
     // from a working model, so only a failed call counts as failing. A
-    // timeout under a time limit the caller tightened (a hot path that would
-    // not wait, rec#139) is passed over: the attempt before it decides.
+    // timeout under a time limit a hot-path caller tightened (budget.hotPath:
+    // it would not wait, rec#139) is passed over: the attempt before it decides.
     health(role, connectionId, connection) {
       if (!connection) return null;
       const identity = connectionHealthIdentity(connectionId, connection);

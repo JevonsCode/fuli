@@ -218,8 +218,8 @@ export class ModelUsageLedger {
   // attempts. With connectivityReasons and no role, the latest attempt of any
   // role that says whether the connection answers (rec#122): an answer, valid
   // or not, or a failure for one of those reasons. With
-  // skipCallerTimeouts, a timeout under a time limit the caller tightened is
-  // passed over (rec#139): it says the caller would not wait, nothing more.
+  // skipCallerTimeouts, a timeout under a time limit a hot-path caller
+  // tightened is passed over (rec#139): it says the caller would not wait, nothing more.
   lastAttempt({ healthIdentity, role = null, connectivityReasons = null, skipCallerTimeouts = false }) {
     const reasons = connectivityReasons ? JSON.stringify(connectivityReasons) : null;
     const row = this.db.prepare(`SELECT outcome, failure_class, failure_reason, started_at, duration_ms FROM model_attempts

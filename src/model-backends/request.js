@@ -44,7 +44,9 @@ const requestSchema = z.object({
     .refine(items => new Set(items.map(item => item.id)).size === items.length, 'evidence IDs must be unique'),
   output: outputSchema,
   decisions: z.array(z.enum(DECISIONS)).min(1).max(DECISIONS.length).default([...DEFAULT_DECISIONS]),
-  budget: z.object({ maxOutputTokens: z.number().int().positive(), timeoutMs: z.number().int().positive() })
+  // hotPath: the caller is on a path a person waits on and set timeoutMs for
+  // it; a timeout under it is then not the role's failure (budget.js callLimits).
+  budget: z.object({ maxOutputTokens: z.number().int().positive(), timeoutMs: z.number().int().positive(), hotPath: z.boolean() })
     .partial().strict().default({})
 }).strict();
 
@@ -56,7 +58,7 @@ const embeddingSchema = z.object({
   scope: scopeSchema,
   texts: z.array(z.string().trim().min(1).max(MAX_EMBEDDING_TEXT_CHARS)).min(1).max(MAX_EMBEDDING_TEXTS),
   // A search waits only so long for its query's vector, then goes on by words.
-  budget: z.object({ timeoutMs: z.number().int().positive() }).strict().optional()
+  budget: z.object({ timeoutMs: z.number().int().positive(), hotPath: z.boolean().optional() }).strict().optional()
 }).strict();
 
 const usageQuerySchema = z.object({
