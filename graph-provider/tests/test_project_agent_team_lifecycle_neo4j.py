@@ -35,13 +35,16 @@ async def test_recruitment_grows_a_durable_team_and_respects_manual_policy():
         saved = await policy(client, scope)
         assert saved['team_lead_agent_id'] == lead
         assert saved['team_member_agent_ids'] == []
-        second = await recruit(client, payload, 'synthetic-team-second')
+        # The first hire is a tester and stays idle (its task cannot start without an
+        # executor), so later hires ask for occupations nobody on the project holds.
+        engineering = {**payload, 'work_kind': 'implementation'}
+        second = await recruit(client, engineering, 'synthetic-team-second')
         member = second['task']['lead_agent_id']
         assert member != lead
         saved = await policy(client, scope)
         assert saved['team_lead_agent_id'] == lead
         assert saved['team_member_agent_ids'] == [member]
-        replay = await recruit(client, payload, 'synthetic-team-second')
+        replay = await recruit(client, engineering, 'synthetic-team-second')
         assert replay['task']['task_id'] == second['task']['task_id']
         assert (await policy(client, scope)) == saved
         disabled = await client.put('/v1/project-agent-coordination-policy', json={
@@ -50,9 +53,16 @@ async def test_recruitment_grows_a_durable_team_and_respects_manual_policy():
             'team_lead_agent_id': member, 'team_member_agent_ids': [lead],
         })
         assert disabled.status_code == 200, disabled.text
-        await recruit(client, payload, 'synthetic-team-third')
+        await recruit(client, {**payload, 'work_kind': 'research'}, 'synthetic-team-third')
         unchanged = await policy(client, scope)
         assert unchanged == disabled.json()
+        # Another tester is wanted while the first one is idle: it is reused, nobody is hired.
+        reused = await client.post('/v1/project-agent-tasks', json={
+            **payload, 'idempotency_key': 'synthetic-team-reuse'})
+        assert reused.status_code == 200, reused.text
+        assert reused.json()['recruitment'] is None
+        assert reused.json()['task']['routing_reason'] == 'idle_same_occupation'
+        assert reused.json()['task']['lead_agent_id'] == lead
 
 
 @pytest.mark.asyncio

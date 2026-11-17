@@ -66,9 +66,12 @@ class StoreProjectAgentTaskStaffing:
             row for row in assignment_rows
             if self._agent_client_allowed(row, request.source_application)
         ]
-        if request.staffing_intent == 'new_durable':
-            idle = self._idle_same_occupation(rows, request, await self.get_project_agent_coordination_policy(
+        # A temporary Agent and a project's first lead are always hired, so they need no policy.
+        policy = None if request.staffing_intent in {'temporary', 'default_lead'} else (
+            await self.get_project_agent_coordination_policy(
                 actor, request.personal_space_id, request.personal_project_id))
+        if request.staffing_intent == 'new_durable':
+            idle = self._idle_same_occupation(rows, request, policy)
             if idle:
                 return [idle], rows, 'idle_same_occupation', [
                     f"an idle {idle['occupation_role']} Agent is already on this project; reused instead of recruiting",
@@ -83,11 +86,6 @@ class StoreProjectAgentTaskStaffing:
                 ['project requires an accountable lead' if request.staffing_intent == 'default_lead'
                  else 'user explicitly requested recruitment'],
             )
-        policy = await self.get_project_agent_coordination_policy(
-            actor,
-            request.personal_space_id,
-            request.personal_project_id,
-        )
         if not policy.auto_reuse_previous_agent:
             return [], rows, 'manual_agent_selection', [
                 'project policy requires an explicit @Agent selection',
@@ -308,7 +306,13 @@ class StoreProjectAgentTaskStaffing:
         awaiting-review task and no live session). Never a fixed role, and
         never the Agent that asked. In a team with sub-teams the Agent must
         report to the coordinator of the request, as every task participant does.
+        Nobody is reused when the project wants each Agent picked by name
+        (auto_reuse_previous_agent off), or when the request names the Agent it
+        wants (a recruitment profile or occupation tags): those still hire.
         """
+        if (not policy.auto_reuse_previous_agent or request.recruitment_profile
+                or (request.recruitment_occupation and request.recruitment_occupation.tags)):
+            return None
         try:
             occupation = recruitment_occupation(request).role
         except HTTPException:

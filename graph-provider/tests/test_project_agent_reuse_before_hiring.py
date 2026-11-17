@@ -88,6 +88,29 @@ async def test_without_an_idle_agent_of_the_occupation_a_new_one_is_still_recrui
 
 
 @pytest.mark.asyncio
+async def test_a_project_that_wants_each_agent_picked_by_name_still_hires():
+    # Explicit @Agent selection: Bole never picks an existing Agent by itself.
+    selected, reason, _ = await select(ReuseStore([row('idle-tester')], auto_reuse_previous_agent=False), new_durable())
+
+    assert (selected, reason) == ([], 'explicit_new_agent')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('request_updates', [
+    # The caller described the Agent it wants.
+    {'recruitment_profile': ProjectAgentProfile(
+        name='Release verifier', responsibility='Verify releases.', work_kinds=['verification'],
+        capabilities=['test execution'], allowed_clients=['codex'])},
+    # Tags name abilities the idle Agent was never hired for.
+    {'recruitment_occupation': {'role': 'testing', 'tags': ['frontend']}},
+])
+async def test_a_request_that_names_the_agent_it_wants_still_hires(request_updates):
+    selected, reason, _ = await select(ReuseStore([row('idle-tester')]), new_durable(**request_updates))
+
+    assert (selected, reason) == ([], 'explicit_new_agent')
+
+
+@pytest.mark.asyncio
 async def test_the_occupation_asked_for_decides_not_the_work_kind():
     store = ReuseStore([row('tester'), row('designer', 'design')])
 
