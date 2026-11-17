@@ -59,8 +59,14 @@ jobs:
       # The console's one-time what's-new notice reads these lines (docs/development.md › Release).
       - name: What's-new lines for this version
         run: node scripts/whats-new-lines.js --release
-      - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
+      # The same gate as pull requests: only an advisory in what ships to users
+      # (the production install and the console bundle npm test just built)
+      # blocks a release. A build tool's advisory with no fix yet must not stop it.
+      - name: Audit what ships to users
+        run: |
+          npx --yes npm@11.13.0 audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node scripts/audit-shipped.js "$RUNNER_TEMP/npm-audit.json"
       - run: npm run test:package
       - uses: actions/setup-python@v7
         with:
