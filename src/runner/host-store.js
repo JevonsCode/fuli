@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
-import { INVITATION_TTL_MS, invitationCodeHash, REPLAY_WAIT_MS } from './protocol.js';
+import { randomUUID } from 'node:crypto';
+
+import { CALL_TIMEOUT_MS, INVITATION_TTL_MS, invitationCodeHash } from './protocol.js';
 
 // The host's record of its runners (docs/runner.md): who was invited under
 // which name the person typed, which device certificates paired and what each
@@ -12,10 +14,11 @@ import { INVITATION_TTL_MS, invitationCodeHash, REPLAY_WAIT_MS } from './protoco
 export const RUNNER_HOST_FILE = 'runner/host.sqlite';
 // Replayed ids are kept this long; an outbox entry older than that was delivered long ago.
 const REPLAY_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
-// An id being applied is held this long: past any wait of the runner, so a
-// second delivery meanwhile is told to wait. Only a host that stopped in the
-// middle of an entry leaves one held; after this it is applied again.
-const REPLAY_PENDING_MS = 2 * REPLAY_WAIT_MS;
+// An id being applied is held by the process applying it, for longer than the
+// longest call a runner waits for, so a second delivery meanwhile is told to
+// wait. Only a host that stopped in the middle of an entry leaves one held: the
+// next process applies it again at once, and an id held past this is too.
+const REPLAY_PENDING_MS = CALL_TIMEOUT_MS + 5 * 60_000;
 
 export const RUNNER_HOST_FORMAT = sqliteFormat({
   store: 'runner-host',
@@ -28,7 +31,7 @@ export const RUNNER_HOST_FORMAT = sqliteFormat({
       used_by TEXT);
     CREATE TABLE IF NOT EXISTS replays(
       runner TEXT NOT NULL, id TEXT NOT NULL, tool TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('pending', 'done')), at TEXT NOT NULL, result TEXT,
+      state TEXT NOT NULL CHECK(state IN ('pending', 'done')), at TEXT NOT NULL, result TEXT, holder TEXT,
       PRIMARY KEY(runner, id));
     CREATE INDEX IF NOT EXISTS replays_at ON replays(at);`
 });
@@ -38,6 +41,8 @@ export class RunnerHostStore {
     this.path = path;
     this.now = now;
     this.closed = false;
+    // This store's process: an id pending under another holder was left by a process that stopped.
+    this.holder = randomUUID();
   }
 
   // Closed for good: a call that arrives after close() (a request still in
@@ -126,12 +131,13 @@ export class RunnerHostStore {
   claimReplay({ runner, id, tool }) {
     return immediateTransaction(this.db, () => {
       const at = this.#nowIso();
-      const row = this.db.prepare('SELECT state, at, result FROM replays WHERE runner = ? AND id = ?').get(runner, id);
+      const row = this.db.prepare('SELECT state, at, result, holder FROM replays WHERE runner = ? AND id = ?').get(runner, id);
       if (row?.state === 'done') return { state: 'done', result: JSON.parse(row.result) };
-      if (row && Date.parse(row.at) > this.now() - REPLAY_PENDING_MS) return { state: 'pending' };
-      this.db.prepare(`INSERT INTO replays(runner, id, tool, state, at) VALUES(?, ?, ?, 'pending', ?)
-        ON CONFLICT(runner, id) DO UPDATE SET tool = excluded.tool, state = 'pending', at = excluded.at, result = NULL`)
-        .run(runner, id, tool, at);
+      if (row && row.holder === this.holder && Date.parse(row.at) > this.now() - REPLAY_PENDING_MS) return { state: 'pending' };
+      this.db.prepare(`INSERT INTO replays(runner, id, tool, state, at, holder) VALUES(?, ?, ?, 'pending', ?, ?)
+        ON CONFLICT(runner, id) DO UPDATE SET tool = excluded.tool, state = 'pending', at = excluded.at, result = NULL,
+        holder = excluded.holder`)
+        .run(runner, id, tool, at, this.holder);
       return { state: 'claimed' };
     });
   }

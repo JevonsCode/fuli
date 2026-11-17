@@ -24,7 +24,7 @@ import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, QUEUED_TOOLS, rememberAnswer,
   withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
-import { RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { CALL_TIMEOUT_MS, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -41,22 +41,25 @@ const RETRY_AFTER_MS = 10_000;
 const TOOLS_WAIT_MS = 4000;
 const DELIVER_EVERY_MS = 30_000;
 const DESCRIBED_FOR_MS = 60_000;
-// Roundtable asks wait up to 15 minutes on the host.
-const CALL_TIMEOUT_MS = 16 * 60_000;
+// How long a checkpoint of an offline task waits for its own delivery once the host answers, and how often it looks.
+const CHECKPOINT_WAIT_MS = 20_000;
+const ENTRY_POLL_MS = 200;
 const TOOLS_KEY = 'tools:list';
 
-// lookUp, retryAfterMs and toolsWaitMs: how the host is looked for, how soon
-// after it was away, and how long a tools/list waits for it. Without a
+// lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
+// for, how soon after it was away, how long a tools/list waits for it, and how
+// long a checkpoint of an offline task waits for its own delivery. Without a
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const sessionId = nativeSessionFromEnv(sourceApplication, env) ?? mcpHostSessionId({});
   const server = createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile,
-    ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }) });
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
+    ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
   let closing = null;
   const close = () => closing ??= (async () => {
@@ -77,7 +80,8 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
 }
 
 function createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile = 'chat',
-  describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS, now = Date.now }) {
+  describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
+  checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
     capabilities: { tools: { listChanged: true }, prompts: {}, resources: {} },
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
@@ -87,6 +91,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   let unreachableUntil = 0;
   let delivering = null;
   let closed = false;
+  const stopping = new AbortController();
 
   // Concurrent calls share one connection attempt, so one MCP client is ever open.
   function upstream() {
@@ -109,16 +114,30 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
       await created.connect(http);
     } catch {
       await created.close().catch(() => {});
-      return offline();
+      return helloThenOffline();
     }
     if (closed) {
       await created.close().catch(() => {});
       return null;
     }
-    created.onclose = () => { if (client === created) client = null; };
+    // A session the host ended (revoked, restarted) is opened again through hello, not the old connection.
+    created.onclose = () => {
+      if (client !== created) return;
+      client = null;
+      connection.drop();
+    };
     client = created;
     described.clear();
     return client;
+  }
+
+  // The host refused or dropped the session (it may have revoked this runner
+  // and closed its sessions): ask hello once on a fresh connection, so a
+  // revoked runner says so instead of answering from what it kept.
+  async function helloThenOffline() {
+    connection.drop();
+    if (!closed) await connection.connect();
+    return offline();
   }
 
   function offline() {
@@ -139,7 +158,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     } catch (error) {
       // Only a closed connection or a request the host never answered means it is away.
       if (error instanceof McpError && ![ErrorCode.ConnectionClosed, ErrorCode.RequestTimeout].includes(error.code)) throw error;
-      return offline();
+      return helloThenOffline();
     }
   }
 
@@ -186,14 +205,18 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
 
   // A checkpoint of a task entered offline is queued behind what waits
   // already; when the host answers it is delivered at once, and only a
-  // delivered checkpoint is answered as saved.
+  // delivered checkpoint is answered as saved. The call waits for its own entry
+  // only, at most CHECKPOINT_WAIT_MS; the round goes on without it.
   async function checkpointOffline(call) {
     const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId });
     if (queued.isError || !await upstream()) return queued;
-    await deliverSoon();
     const { outboxId } = queued.structuredContent;
-    const outbox = store.outbox();
-    return outbox.queued || outbox.failed.some((entry) => entry.id === outboxId) ? queued : deliveredAnswer(outboxId);
+    void deliverSoon();
+    const deadline = now() + checkpointWaitMs;
+    while (!closed && store.entryState(outboxId) === 'queued' && now() < deadline) {
+      await delay(ENTRY_POLL_MS, null, { signal: stopping.signal, ref: false }).catch(() => {});
+    }
+    return !closed && store.entryState(outboxId) === null ? deliveredAnswer(outboxId) : queued;
   }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -247,6 +270,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   // A connection still being opened closes itself once it sees closed.
   server.close = async () => {
     closed = true;
+    stopping.abort();
     clearInterval(timer);
     await delivering;
     await client?.close().catch(() => {});

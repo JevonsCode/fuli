@@ -34,7 +34,7 @@ const HOST_TOOLS = ['get_collaboration_preferences', 'checkpoint_task_knowledge'
 
 // serve: false pairs only; the caller starts the runner's MCP server itself.
 // replayHangs: the host takes an outbox entry and never answers it.
-async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, serve = true, replayHangs = false } = {}) {
+async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs, serve = true, replayHangs = false } = {}) {
   const host = deviceIdentity(await createDeviceCertificate());
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-away-')));
   const calls = [];
@@ -64,9 +64,15 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, serve = true, rep
       if (replayHangs) await new Promise(() => {});
       return toolName === 'begin_task_context' ? { taskContextToken: 'host-token-2' } : { status: 'recorded' };
     } });
-  const listen = (port) => startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port, route: routes.handle,
-    sourceAllowed: () => true });
-  const state = { listener: await listen(0) };
+  // The host away: its listener stays bound (no port is closed and taken again)
+  // and drops every request, as a host that went off the network does.
+  const state = { away: false };
+  state.listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
+    route: (request, response, context) => {
+      if (!state.away) return routes.handle(request, response, context);
+      request.socket.destroy();
+      return true;
+    } });
   const port = state.listener.port;
   const code = newInvitationCode();
   store.invite({ code, name: 'Runner B' });
@@ -91,7 +97,7 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, serve = true, rep
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => { listChanged.push(Date.now()); });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide,
-    lookUp: async () => [], retryAfterMs: 0, toolsWaitMs });
+    lookUp: async () => [], retryAfterMs: 0, toolsWaitMs, checkpointWaitMs });
   await client.connect(clientSide);
   // In this order, the folder last: Windows refuses to delete a SQLite file that is still open.
   t.after(async () => {
@@ -99,8 +105,8 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, serve = true, rep
     await served.close();
     await stopHost();
   });
-  return { client, calls, replayed, listChanged, served, state, projectPath, dataDir,
-    hostAway: () => state.listener.close(), hostBack: async () => { state.listener = await listen(port); } };
+  return { client, calls, replayed, listChanged, served, state, projectPath, dataDir, store, routes,
+    hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
 }
 
 test('an offline task entry repeats the folder\'s preferences, not the earlier task\'s receipt or checkpoint duty', async (t) => {
@@ -145,13 +151,14 @@ test('once the host is back, calls under an offline token go to it and a checkpo
 });
 
 test('a host slow to list its tools does not hold up the client: it gets the known list, then a list change', async (t) => {
-  const runner = await pairedRunner(t, { listDelayMs: 1500, toolsWaitMs: 200 });
+  // Wide margins: a loaded CI machine is slow, and only "before the host answered" matters.
+  const runner = await pairedRunner(t, { listDelayMs: 6000, toolsWaitMs: 200 });
   const at = Date.now();
   const listed = await runner.client.listTools();
-  assert.ok(Date.now() - at < 1200, `answered after ${Date.now() - at} ms`);
+  assert.ok(Date.now() - at < 5000, `answered after ${Date.now() - at} ms`);
   assert.ok(listed.tools.some((tool) => tool.name === 'get_collaboration_preferences'));
 
-  for (let waited = 0; !runner.listChanged.length && waited < 5000; waited += 50) await delay(50);
+  for (let waited = 0; !runner.listChanged.length && waited < 20_000; waited += 50) await delay(50);
   assert.equal(runner.listChanged.length, 1, 'the client is told to list again once the host answered');
   assert.deepEqual((await runner.client.listTools()).tools.map((tool) => tool.name), HOST_TOOLS);
 });
@@ -177,7 +184,8 @@ test('the known addresses are tried at once, so one that never answers does not 
   runnerStore.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port,
     addresses: ['127.0.0.2', '127.0.0.1'], lastAddress: '127.0.0.2' });
   const identity = await loadDeviceIdentity(path.join(dataDir, 'peer'));
-  const connection = createHostConnection({ store: runnerStore, identity, lookUp: async () => [], probeMs: 2000 });
+  // A probe budget far above the margin below, so only parallel probing passes.
+  const connection = createHostConnection({ store: runnerStore, identity, lookUp: async () => [], probeMs: 15_000 });
   t.after(async () => {
     connection.close();
     runnerStore.close();
@@ -191,7 +199,7 @@ test('the known addresses are tried at once, so one that never answers does not 
 
   const at = Date.now();
   const reached = await Promise.all([connection.connect(), connection.connect()]);
-  assert.ok(Date.now() - at < 1500, `found after ${Date.now() - at} ms`);
+  assert.ok(Date.now() - at < 10_000, `found after ${Date.now() - at} ms`);
   assert.equal(reached[0].address, '127.0.0.1');
   assert.equal(reached[0], reached[1], 'two callers share one search and one connection');
   assert.equal(runnerStore.host().lastAddress, '127.0.0.1');
@@ -242,9 +250,38 @@ test('closing a runner cuts a delivery in flight at once; the entry stays queued
 
   const at = Date.now();
   await runner.served.close();
-  assert.ok(Date.now() - at < 2000, `closed after ${Date.now() - at} ms`);
+  // The replay wait is three minutes; well under it shows close cut it.
+  assert.ok(Date.now() - at < 20_000, `closed after ${Date.now() - at} ms`);
   const store = new RunnerStore(path.join(runner.dataDir, RUNNER_FILE));
   const { queued } = store.outbox();
   store.close();
   assert.equal(queued, 1);
+});
+
+test('a checkpoint of an offline task waits only for its own delivery, at most its cap', async (t) => {
+  const runner = await pairedRunner(t, { replayHangs: true, checkpointWaitMs: 300 });
+  await runner.hostAway();
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'offline' } });
+  await runner.hostBack();
+  const at = Date.now();
+  const checkpoint = await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: entry.structuredContent.taskContextToken, retain_nothing: true } });
+  // Generous for a loaded machine; the delivery itself never ends here (the host holds it).
+  assert.ok(Date.now() - at < 20_000, `answered after ${Date.now() - at} ms`);
+  assert.equal(checkpoint.structuredContent.status, 'queued_offline', 'not delivered, so not said to be saved');
+});
+
+test('a runner the host revoked, whose session the host closed, says so instead of answering from what it kept', async (t) => {
+  const runner = await pairedRunner(t);
+  const search = { name: 'search_current_project_knowledge', arguments: { query: 'deploy steps' } };
+  assert.equal((await runner.client.callTool(search)).isError, undefined);
+  const [paired] = runner.store.runners();
+  runner.store.revoke(paired.fingerprint);
+  await runner.routes.keepRunners([]);
+
+  const answer = await runner.client.callTool(search);
+  assert.equal(answer.isError, true);
+  assert.equal(JSON.parse(answer.content[0].text).code, 'runner_revoked');
+  assert.ok(runner.served.store.host().revokedAt);
 });

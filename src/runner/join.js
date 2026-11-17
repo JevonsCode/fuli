@@ -47,14 +47,16 @@ export async function joinHost({ dataDir, invitation: text, name = null,
             + '`fuli runner revoke` a computer you do not know.');
       }
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+      let kept;
       try {
-        store.saveHost({ name: displayName(body?.name, host.name), fingerprint: host.fingerprint, certPem: host.certPem,
+        kept = store.saveHost({ name: displayName(body?.name, host.name), fingerprint: host.fingerprint, certPem: host.certPem,
           port: host.port, addresses: host.addresses, lastAddress: address });
       } finally {
         store.close();
       }
+      // outbox: checkpoints a join to another host dropped, or a join to the same host queued again.
       return { host: { name: displayName(body?.name, host.name), fingerprint: host.fingerprint, address, port: host.port },
-        runner: { fingerprint: identity.fingerprint } };
+        runner: { fingerprint: identity.fingerprint }, outbox: kept };
     }
   } finally {
     agent.destroy();

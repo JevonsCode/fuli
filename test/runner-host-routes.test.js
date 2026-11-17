@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -13,7 +16,7 @@ import { createDelegatedConsoleClient } from '../src/agent-delegation/console-cl
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
-import { RUNNER_ENTRY_META, RUNNER_PATHS } from '../src/runner/protocol.js';
+import { CALL_TIMEOUT_MS, RUNNER_ENTRY_META, RUNNER_PATHS } from '../src/runner/protocol.js';
 
 const RUNNER_A = 'a'.repeat(64);
 const RUNNER_B = 'b'.repeat(64);
@@ -188,4 +191,22 @@ test('a runner\'s call stays the runner\'s inside the Agent request it runs, and
   assert.equal(inner, RUNNER_A);
   assert.equal(await runWithAgentRequestContext({}, async () => activeRunnerCaller()), null);
   assert.equal(activeRunnerCaller(), null);
+});
+
+test('a pending entry id is held past the longest call, and freed at once by a host that started again', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-runner-pending-'));
+  const file = join(directory, 'host.sqlite');
+  let now = Date.parse('2026-11-18T00:00:00Z');
+  const first = new RunnerHostStore(file, { now: () => now });
+  const restarted = new RunnerHostStore(file, { now: () => now });
+  t.after(() => { first.close(); restarted.close(); rmSync(directory, { recursive: true, force: true }); });
+  const claim = (store) => store.claimReplay({ runner: RUNNER_A, id: 'entry-x', tool: 'checkpoint_task_knowledge' }).state;
+
+  assert.equal(claim(first), 'claimed');
+  now += CALL_TIMEOUT_MS;
+  assert.equal(claim(first), 'pending', 'still being applied after the longest call a runner waits for');
+  now += 6 * 60_000;
+  assert.equal(claim(first), 'claimed', 'held too long: the process lost it');
+
+  assert.equal(claim(restarted), 'claimed', 'a host that started again applies it again at once');
 });

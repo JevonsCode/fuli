@@ -46,9 +46,10 @@ is the person's own decision on the host (`local_user_only`).
 The host lists a runner under the name the person typed at `invite` (`--name`),
 with the name the joining computer gives itself beside it (`join --name`, else
 its computer name). Each pairing is also a notice in the console's
-「最近你可能需要知道的事」, naming both and the fingerprint, so a pairing the
-person did not make shows; a used invitation's error on the runner points at
-`fuli runner list` and `fuli runner revoke`.
+「最近你可能需要知道的事」, naming both and the command that revokes it
+(`fuli runner revoke <fingerprint>`, as the console has no runner page), so a
+pairing the person did not make shows; a used invitation's error on the runner
+points at `fuli runner list` and `fuli runner revoke`.
 
 `join` then sets up the runner's clients exactly as `fuli setup` does (MCP entry,
 Skills, Codex instructions), without starting a graph runtime. In runner mode the
@@ -121,9 +122,10 @@ refused.
 | Anything else | `host_unreachable`, saying the host must be reachable for it |
 
 A call that carries a runner task token while the host answers again goes to
-the host: a checkpoint is queued behind what waits and delivered at once
-(`status: delivered` only when the host applied it); any other call is sent
-without the token, which the host never knew.
+the host: a checkpoint is queued behind what waits and delivered at once; the
+call waits up to 20 seconds for that entry alone and answers `status:
+delivered` only when the host applied it, `queued_offline` otherwise. Any
+other call is sent without the token, which the host never knew.
 
 The outbox is replayed oldest first whenever the host answers again (each MCP
 process checks every 30 seconds; `fuli runner sync` replays at once); only the
@@ -137,19 +139,44 @@ same id. The host takes an id of that runner in the same transaction that
 checks it, so it is applied once whichever delivery arrives first: a second
 delivery while it is being applied is answered 409 and waits for the next
 round, one after it gets the first answer. A runner waits up to three minutes
-for a replay and never sends it again in the same round. Only a host that
-stopped in the middle of an entry applies it again, six minutes later. Closing
-the runner's MCP process cuts a delivery in flight; its entry stays queued.
+for a replay and never sends it again in the same round. The host holds an id
+it is applying for as long as the longest call a runner waits for, and more (21
+minutes); only a host that stopped in the middle of an entry applies it again,
+as soon as it starts again. Closing the runner's MCP process cuts a delivery in
+flight; its entry stays queued.
 
 ## What a runner keeps
 
 The host's last answers to read-only calls, shown marked offline while the
 host is away and deleted after 30 days; the task tokens it gave out offline
-(30 days); and checkpoints waiting for the host. Pairing with another host
-deletes the answers and tokens of the old one. When the host answers that it
-does not know the runner (revoked, or never paired there), the runner deletes
-all of it, stops looking for the host and answers every call
-`runner_revoked`: join again. `fuli runner leave` deletes it all.
+(30 days); and checkpoints waiting for the host, deleted once delivered (one
+the host refused for good stays listed for 30 days).
+
+When the host answers that it does not know the runner (revoked, or a host
+that lost its records), the runner deletes the answers and tokens, stops
+looking for the host, answers every call `runner_revoked` (join again) and
+keeps its waiting checkpoints, refused with `runner_revoked` and never retried.
+After the host ended the runner's session the runner asks `hello` again
+before it answers anything, so a revoked runner never answers from cache.
+Joining the same host again (same certificate fingerprint) queues those
+checkpoints again and delivers them; joining another host deletes them, and
+`join` says how many were dropped. `fuli runner status` says when something
+answers at the host's address with another certificate: if the host was
+reinstalled, join again.
+
+`fuli runner leave` deletes it all; with checkpoints still waiting or refused
+it says how many and needs `--force`. The clients' MCP entries stay (they then
+answer that this computer is not paired); `fuli uninstall` removes them.
+
+## Data format
+
+Runners add two stores, `runner/host.sqlite` on a host that invited one and
+`runner/runner.sqlite` on a runner, each at version 1. Every host's roundtable
+store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
+start of this version, whether or not it ever invites a runner: messages gain
+`from_runner` (the runner that sent an ask) and `origin` (`runner` or
+`remote` for an ask from another computer). The format backup is taken first,
+as for every migration, and an older FULI then refuses that store.
 
 ## Limits of this beta
 

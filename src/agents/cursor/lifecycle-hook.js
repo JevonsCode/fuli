@@ -3,7 +3,7 @@
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
-import { runnerRuntimeConfig } from '../../runner/runner-mode.js';
+import { RUNNER_HOOK_CONTEXT, runnerRuntimeConfig } from '../../runner/runner-mode.js';
 import { isMainModule } from '../../system/main-module.js';
 import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
@@ -126,9 +126,13 @@ async function main() {
   const args = process.argv.slice(2);
   const event = args[args.indexOf('--event') + 1];
   const startedAt = Date.now();
-  // A runner's Cursor enters tasks through FULI's MCP server on the host (docs/runner.md).
+  // A runner's Cursor enters tasks through FULI's MCP server on the host
+  // (docs/runner.md). Cursor's beforeSubmitPrompt can only show text to the
+  // person, not the model, so the instruction the other clients get at a prompt
+  // goes in at sessionStart, its one model-visible hook output.
   if (runnerRuntimeConfig(args)) {
-    process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt' ? { continue: true } : {})}\n`);
+    process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt' ? { continue: true }
+      : event === 'sessionStart' ? { additional_context: RUNNER_HOOK_CONTEXT } : {})}\n`);
     return;
   }
   try {

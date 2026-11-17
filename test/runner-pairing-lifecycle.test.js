@@ -60,11 +60,14 @@ test('an entry the host is still applying waits for the next round', async () =>
   assert.equal(store.db.prepare("SELECT last_error FROM outbox").get().last_error, "replay_pending");
 });
 
-test('a host that revoked the runner ends what it kept: no cached answer, no offline token, no outbox, and it says to join again', () => {
+test('a host that revoked the runner ends what was read from it; waiting checkpoints stay refused, are not retried, and it says to join again', () => {
   const store = pairedRunner();
   keptSomething(store);
   store.revoked();
-  assert.deepEqual(['answers', 'offline_tasks', 'outbox'].map((table) => count(store, table)), [0, 0, 0]);
+  assert.deepEqual(['answers', 'offline_tasks'].map((table) => count(store, table)), [0, 0]);
+  assert.deepEqual(store.db.prepare('SELECT state, last_error FROM outbox').all().map((row) => ({ ...row })),
+    [{ state: 'failed', last_error: 'runner_revoked' }]);
+  assert.equal(store.claimNext(), null, 'a refused checkpoint is not delivered again');
   const answer = offlineAnswer(store, { tool: 'search_knowledge_graph', input: {}, sourceApplication: 'codex' });
   assert.equal(answer.isError, true);
   assert.equal(text(answer).code, 'runner_revoked');
@@ -82,16 +85,40 @@ test('answers past their keeping time are deleted when the next one is written',
   assert.deepEqual(store.db.prepare('SELECT key FROM answers').all().map((row) => row.key), ['read:new']);
 });
 
-test('pairing with another host drops what was kept for the old one; joining the same host again keeps it', () => {
+test('joining the same host again queues its refused checkpoints again; joining another host drops them and says how many', () => {
   const store = pairedRunner();
   keptSomething(store);
-  store.saveHost({ ...HOST, addresses: ['192.168.1.21'] });
-  assert.deepEqual(['answers', 'offline_tasks'].map((table) => count(store, table)), [1, 1]);
-  store.saveHost({ ...HOST, fingerprint: 'e'.repeat(64) });
-  assert.deepEqual(['answers', 'offline_tasks'].map((table) => count(store, table)), [0, 0]);
+  assert.deepEqual(store.saveHost({ ...HOST, addresses: ['192.168.1.21'] }), { dropped: 0, requeued: 0 });
+  assert.deepEqual(['answers', 'offline_tasks', 'outbox'].map((table) => count(store, table)), [1, 1, 1]);
   store.revoked();
-  store.saveHost({ ...HOST, fingerprint: 'e'.repeat(64) });
+  assert.deepEqual(store.saveHost(HOST), { dropped: 0, requeued: 1 });
   assert.equal(store.host().revokedAt, null, 'a new pairing is not revoked');
+  assert.equal(store.outbox().queued, 1, 'queued again, so the next delivery sends it');
+  keptSomething(store);
+  assert.deepEqual(store.saveHost({ ...HOST, fingerprint: 'e'.repeat(64) }), { dropped: 2, requeued: 0 });
+  assert.deepEqual(['answers', 'offline_tasks', 'outbox'].map((table) => count(store, table)), [0, 0, 0]);
+});
+
+test('a delivered checkpoint is deleted at once; a refused one after 30 days', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const store = pairedRunner({ now: () => now });
+  for (const id of ['delivered', 'refused', 'later']) store.enqueue({ id, tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
+  store.delivered('delivered');
+  store.failed('refused', 'invalid_input');
+  assert.deepEqual([store.entryState('delivered'), store.entryState('refused')], [null, 'failed']);
+  now += 31 * DAY_MS;
+  store.failed('later', 'invalid_input');
+  assert.deepEqual(store.db.prepare('SELECT id FROM outbox').all().map((row) => row.id), ['later']);
+});
+
+test('joining prints how many checkpoints of the previous host were dropped', async (t) => {
+  const dataDir = dataDirectory(t);
+  const lines = [];
+  await runRunnerCommand(['join', 'synthetic-invitation', '--data-dir', dataDir], { write: (line) => lines.push(line),
+    join: async () => ({ host: { name: 'Host B', address: '192.168.1.20', port: 2730 }, runner: { fingerprint: 'c'.repeat(64) },
+      outbox: { dropped: 3, requeued: 0 } }),
+    setupClients: async () => [{ id: 'codex', status: 'connected' }] });
+  assert.match(lines.join('\n'), /3 checkpoint\(s\) kept for the previous host were dropped/);
 });
 
 function dataDirectory(t) {
@@ -100,24 +127,30 @@ function dataDirectory(t) {
   return dataDir;
 }
 
-test('fuli runner leave ends the pairing and deletes the answers and the outbox kept here', async (t) => {
+test('fuli runner leave ends the pairing and deletes what is kept here, with --force when checkpoints still wait', async (t) => {
   const dataDir = dataDirectory(t);
   mkdirSync(path.join(dataDir, 'runner'));
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   store.saveHost(HOST);
   keptSomething(store);
   store.close();
+  const refusedLines = [];
+  const refused = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: (line) => refusedLines.push(line) });
+  assert.equal(refused.exitCode, 1);
+  assert.match(refusedLines.join('\n'), /1 checkpoint\(s\) still wait for Host A and 0 were refused by it; .*--force/);
+  assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), true);
   const lines = [];
 
-  const result = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: (line) => lines.push(line) });
+  const result = await runRunnerCommand(['leave', '--force', '--data-dir', dataDir], { write: (line) => lines.push(line) });
 
   assert.equal(result.exitCode, 0);
+  assert.match(lines.join('\n'), /keep their FULI MCP entry.*`fuli uninstall` removes those entries/s);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false);
   assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here and the outbox are deleted\./);
   assert.match(lines.join('\n'), /fuli runner revoke [0-9a-f]{16}/);
   const usage = [];
   await runRunnerCommand(['--help'], { write: (line) => usage.push(line) });
-  assert.match(usage.join('\n'), /leave +end the pairing here/);
+  assert.match(usage.join('\n'), /leave \[--force\] +end the pairing here/);
 });
 
 test('joining says what the runner keeps and for how long', async (t) => {
@@ -128,7 +161,8 @@ test('joining says what the runner keeps and for how long', async (t) => {
     setupClients: async () => [{ id: 'codex', status: 'connected' }] });
   const said = lines.join('\n');
   assert.doesNotMatch(said, /nothing of FULI's knowledge is kept here/);
-  assert.match(said, /Kept here: the host's last answers .* deleted after 30 days\) and checkpoints waiting for the host/);
+  assert.match(said, /Kept here: the host's last answers .* deleted after 30 days\) and checkpoints waiting for the host \(deleted once delivered; refused ones after 30 days\)/);
+  assert.match(said, /checkpoints wait, refused, until it joins the same host again/);
 });
 
 test('a pairing keeps the name the person typed, shows the device\'s own beside it, and is a notice on the host', async () => {
@@ -228,7 +262,7 @@ test('closing the connection cuts a replay waiting on the host at once, and its 
   const round = deliverOutbox({ store, connection });
   setTimeout(() => connection.close(), 300).unref();
   const result = await round;
-  assert.ok(Date.now() - started < 5000, 'the 3-minute replay wait was cut by close');
+  assert.ok(Date.now() - started < 30_000, 'the 3-minute replay wait was cut by close');
   assert.equal(result.queued, 1);
   assert.equal(store.claimNext().id, 'long-wait');
 });

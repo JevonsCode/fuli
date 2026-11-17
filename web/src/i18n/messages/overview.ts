@@ -14,7 +14,7 @@ export const overviewMessages = {
         delegated_change: 'FLA 替你改了设置：{reason}',
         model_failing: '{role} 的模型没回应',
         update_available: '有新版本 v{version}',
-        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它就撤销（指纹 {fingerprint}）',
+        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它：在本机运行 fuli runner revoke {fingerprint}',
       },
       actions: {
         topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', retrospective_ready: '去确认', tonborg_confirmed: '查看',
@@ -85,7 +85,7 @@ export const overviewMessages = {
         delegated_change: 'An FLA changed a setting for you: {reason}',
         model_failing: 'The {role} model is not answering',
         update_available: 'Version v{version} is out',
-        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Revoke it (fingerprint {fingerprint})',
+        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Run fuli runner revoke {fingerprint} here',
       },
       actions: {
         topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', retrospective_ready: 'Confirm', tonborg_confirmed: 'View',

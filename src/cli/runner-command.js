@@ -25,12 +25,15 @@ const USAGE = `fuli runner <action>  (runners: other computers whose clients use
                                   (NAME: what the host shows for this computer; default its own name)
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
-    leave                         end the pairing here and delete the answers and outbox kept here
+    leave [--force]               end the pairing here and delete what is kept here
+                                  (--force: also when checkpoints never reached the host)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
 const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
-  + 'deleted after 30 days) and checkpoints waiting for the host. Nothing else of FULI\'s knowledge is stored here; '
-  + '`fuli runner leave` deletes it all.';
+  + 'deleted after 30 days) and checkpoints waiting for the host (deleted once delivered; refused ones after 30 days). '
+  + 'If the host revokes this computer, the answers go at once and the checkpoints wait, refused, until it joins the same '
+  + 'host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
+const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
   join: joinRunner = joinHost, setupClients = setUpRunnerClients } = {}) {
@@ -47,6 +50,14 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     const joined = await joinRunner({ dataDir: paths().dataDir, invitation, name: option(rest, '--name') ?? null });
     write(`Paired with ${joined.host.name} (${joined.host.address}:${joined.host.port}).`);
     write(`This runner's fingerprint: ${joined.runner.fingerprint.slice(0, 16)}…`);
+    if (joined.outbox?.dropped) {
+      write(`${joined.outbox.dropped} checkpoint(s) kept for the previous host were dropped: they belonged to its knowledge.`);
+    }
+    if (joined.outbox?.requeued) {
+      const waiting = await deliverQueued(paths().dataDir);
+      write(`${joined.outbox.requeued} checkpoint(s) held while this computer was revoked `
+        + (waiting === null ? 'are queued again and go when the host answers.' : `were delivered (${waiting} still waiting).`));
+    }
     const clients = await setupClients({ dataDir: paths().dataDir, env, write });
     write(clients.length ? 'Clients set up:' : 'No Agent client was found here. After installing one, run `fuli runner join` with a new invitation.');
     for (const client of clients) write(`  ${client.label ?? client.id}: ${client.status}`);
@@ -54,15 +65,16 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     write(KEPT_HERE);
     return { exitCode: clients.every((client) => client.status === 'connected') ? 0 : 1 };
   }
-  if (action === 'leave') return leaveHost(paths().dataDir, write);
+  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
   if (action === 'status' || action === 'sync') {
     const store = new RunnerStore(join(paths().dataDir, RUNNER_FILE));
     try {
       const host = store.host();
       if (!host) return void write('This computer is not a runner. Pair it with `fuli runner join INVITATION`.');
       if (host.revokedAt) {
-        write(`${host.name} revoked this computer or does not know it (${host.revokedAt}); nothing is kept here any more.`);
-        write('Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.');
+        write(`${host.name} revoked this computer or does not know it (${host.revokedAt}).`);
+        write(`${store.outbox().failedCount} checkpoint(s) wait here refused; joining ${host.name} again delivers them.`);
+        write(JOIN_AGAIN);
         return { exitCode: 1 };
       }
       const identity = await loadDeviceIdentity(join(paths().dataDir, 'peer'));
@@ -70,11 +82,15 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
       try {
         const reached = await connection.connect();
         if (store.host()?.revokedAt) {
-          write(`${host.name} answered that it does not know this computer (revoked or not paired there); `
-            + 'what was kept here is deleted. Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.');
+          write(`${host.name} answered that it does not know this computer (revoked, or it lost its records); `
+            + `its answers kept here are deleted and ${store.outbox().failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
           return { exitCode: 1 };
         }
         write(`Host: ${host.name} — ${reached ? `answering at ${reached.address}:${host.port}` : 'not reachable now'}`);
+        if (!reached && connection.pinFailed) {
+          write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
+            + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
+        }
         const outbox = action === 'sync' && reached ? await deliverOutbox({ store, connection }) : store.outbox();
         if (action === 'sync' && reached) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
@@ -92,14 +108,22 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
 
 // Ends this computer's pairing: the store goes (the host, the answers, the
 // offline task tokens and the outbox), so the MCP entry no longer serves as a
-// runner. The host lists the runner until the person revokes it there.
-async function leaveHost(dataDir, write) {
+// runner. Checkpoints that never reached the host are knowledge the person
+// would lose: with any left it only says how many, unless --force. The host
+// lists the runner until the person revokes it there.
+async function leaveHost(dataDir, write, { force = false } = {}) {
   const file = join(dataDir, RUNNER_FILE);
   const store = new RunnerStore(file);
   let host;
   try {
     host = store.host();
-    store.leave();
+    const { queued, failedCount } = store.outbox();
+    if (host && queued + failedCount > 0 && !force) {
+      write(`${queued} checkpoint(s) still wait for ${host.name} and ${failedCount} were refused by it; leaving deletes them. `
+        + 'Deliver them first (`fuli runner sync`, or join the same host again), or leave with --force.');
+      return { exitCode: 1 };
+    }
+    if (host) store.leave();
   } finally {
     store.close();
   }
@@ -115,7 +139,23 @@ async function leaveHost(dataDir, write) {
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(`Left ${host.name}. The pairing, the answers kept here and the outbox are deleted.`);
   write(`On ${host.name}, \`fuli runner revoke ${identity.fingerprint.slice(0, 16)}\` removes this computer from its list.`);
+  write('The clients set up here keep their FULI MCP entry (it now answers that this computer is not paired); '
+    + '`fuli uninstall` removes those entries.');
   return { exitCode: 0 };
+}
+
+// Delivers what waits in the outbox once, right after a join: the number still
+// waiting, or null when the host did not answer.
+async function deliverQueued(dataDir) {
+  const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+  const connection = createHostConnection({ store, identity: await loadDeviceIdentity(join(dataDir, 'peer')) });
+  try {
+    if (!await connection.connect()) return null;
+    return (await deliverOutbox({ store, connection })).queued;
+  } finally {
+    connection.close();
+    store.close();
+  }
 }
 
 // The clients `fuli setup` would set up here, written with the same entries;

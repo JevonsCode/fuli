@@ -30,6 +30,8 @@ const NOT_PAIRED = 'runner_unknown';
 export function createHostConnection({ store, identity, lookUp = lookUpHost, probeMs = PROBE_MS }) {
   let current = null;
   let finding = null;
+  // Whether the last search reached an address whose certificate is not the paired one.
+  let pinFailed = false;
   let closed = false;
   // Aborts every request in flight at close(); an outbox entry it cut stays queued and is retried.
   const closing = new AbortController();
@@ -44,6 +46,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   async function find() {
     const host = store.host();
     if (!host || host.revokedAt) return null;
+    pinFailed = false;
     const known = [...new Set([host.lastAddress, ...host.addresses].filter(Boolean))];
     if (await reachFirst(host, known)) return current;
     if (closed || store.host()?.revokedAt) return null;
@@ -81,6 +84,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       return candidate;
     } catch (error) {
       agent.destroy();
+      if (isPinFailure(error)) pinFailed = true;
       throw error;
     }
   }
@@ -130,7 +134,14 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     drop();
   }
 
-  return { connect, drop, postJson, get current() { return current; }, close };
+  return { connect, drop, postJson, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
+}
+
+// Something answered at the address with another certificate than the paired one
+// (a host reinstalled with a new identity, or another device there).
+function isPinFailure(error) {
+  const code = String(error?.code ?? error?.cause?.code ?? '');
+  return code === 'fingerprint_mismatch' || /CERT|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code);
 }
 
 // fetch() over one pinned agent, enough for the MCP client's Streamable HTTP

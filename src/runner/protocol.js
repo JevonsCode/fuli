@@ -31,6 +31,8 @@ export const ENTRY_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 // How long a runner waits for the host to answer one replayed entry before it
 // gives up for this round; the host holds an id it is applying longer than this.
 export const REPLAY_WAIT_MS = 3 * 60_000;
+// The longest a runner waits for one MCP call (roundtable asks wait up to 15 minutes on the host).
+export const CALL_TIMEOUT_MS = 16 * 60_000;
 export const INVITATION_TTL_MS = 10 * 60 * 1000;
 const INVITATION_PREFIX = 'fuli-runner-invite:1:';
 const MAX_NAME = 64;

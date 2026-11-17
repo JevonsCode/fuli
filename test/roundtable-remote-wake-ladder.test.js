@@ -129,6 +129,7 @@ test('an ask from another computer loads only FULI\'s own MCP server where FULI 
   const f = fixture(t, { fuliMcp: entry, wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
   await f.ask();
   assert.deepEqual([f.woken[0].mode, f.woken[0].mcpServers], ['read_only', { fuli: entry(f.woken[0].client) }]);
+  assert.equal(f.woken[0].origin, 'remote', 'the woken session holds its own asks as one from another computer');
   const bare = fixture(t, { wake: () => ({ body: 'Synthetic answer', sessionId: 'synthetic-codex-session' }) });
   await bare.ask();
   assert.deepEqual(bare.woken[0].mcpServers, {}, 'without the entry no MCP server at all, never the person\'s');

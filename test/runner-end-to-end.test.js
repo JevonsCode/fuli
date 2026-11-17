@@ -74,9 +74,14 @@ test('a runner pairs once, works through its host, and delivers what it queued w
         resolution: input.projectPath ? resolveCallerProjectPath(input.projectPath, PROJECTS) : null });
       return toolName === 'begin_task_context' ? { taskContextToken: 'host-token-2' } : { status: 'recorded' };
     } });
-  const listen = (port) => startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port, route: routes.handle,
-    sourceAllowed: () => true });
-  let listener = await listen(0);
+  // The host away: the listener stays bound (no port is closed and taken again) and drops every request.
+  let away = false;
+  const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
+    route: (request, response, context) => {
+      if (!away) return routes.handle(request, response, context);
+      request.socket.destroy();
+      return true;
+    } });
   const port = listener.port;
   let client = null;
   let served = null;
@@ -116,7 +121,7 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   assert.equal(calls[0].sourceApplication, 'codex');
   assert.equal(calls[0].hostSessionId, CODEX_THREAD, 'the host sees the Codex conversation a local client would name');
 
-  await listener.close();
+  away = true;
   const offline = await client.callTool({ name: 'get_collaboration_preferences',
     arguments: { projectPath: root, taskPrompt: 'and the cart' } });
   assert.equal(offline.structuredContent.runner.offline, true);
@@ -128,7 +133,7 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   assert.equal(queued.structuredContent.status, 'queued_offline');
   assert.equal(runnerStore.outbox().queued, 1);
 
-  listener = await listen(port);
+  away = false;
   const delivered = await deliverOutbox({ store: runnerStore, connection });
   assert.equal(delivered.delivered, 1);
   assert.equal(delivered.queued, 0);
