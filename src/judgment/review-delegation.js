@@ -38,12 +38,16 @@ const ROLE = 'tonborg';
 
 // Whether Tonborg has a model of its own for knowledge review, and whether its
 // answers apply by themselves now (the trust gate as the settings page reads it).
+// sessionStandsIn: no model is configured for Tonborg at all, so with the switch
+// on the current session confirms for it; a configured model that is off or not
+// allowed the review keeps the session's answers suggestions.
 function tonborgModel(modelTrust) {
-  if (!modelTrust) return { connected: false, status: 'suggestion', reason: 'not_configured' };
+  if (!modelTrust) return { connected: false, sessionStandsIn: false, status: 'suggestion', reason: 'not_configured' };
   const view = modelTrust.view(ROLE, TONBORG_OPERATIONS.review);
   // Without a configured connection the view reads as a session's answer.
   const connected = !['not_configured', 'session_answer'].includes(view.reason);
-  return { connected, status: view.status, reason: connected ? view.reason : 'not_configured' };
+  return { connected, sessionStandsIn: modelTrust.sessionMayStandIn(ROLE), status: view.status,
+    reason: connected ? view.reason : 'not_configured' };
 }
 
 // The switch as the console reads it: its state, Tonborg's model, and which

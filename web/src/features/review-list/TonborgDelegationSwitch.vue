@@ -49,12 +49,16 @@ const settingsTarget = modelDetailsLink('tonborg', 'delegation')
 // Which projects Tonborg's model may read is set in its details (编辑 → the approved projects).
 const approveTarget = modelDetailsLink('tonborg')
 const connected = computed(() => state.value?.model?.connected === true)
+// No model configured for Tonborg at all: the current session confirms for it.
+// A configured model that is off keeps the session's answers suggestions.
+const standsIn = computed(() => !connected.value && state.value?.model?.sessionStandsIn === true)
 // rec issue 124: on, it still confirms nothing its model may not read; then the line says so instead of 「正在替你确认」.
 const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach) : null))
 const hint = computed(() => {
   if (!state.value) return ''
   // Without a model of its own the current session confirms for Tonborg.
-  if (!connected.value) return t(state.value.enabled ? 'reviewList.delegation.sessionOnHint' : 'reviewList.delegation.sessionOffHint')
+  if (standsIn.value) return t(state.value.enabled ? 'reviewList.delegation.sessionOnHint' : 'reviewList.delegation.sessionOffHint')
+  if (!connected.value) return t('reviewList.delegation.modelOffHint')
   return t(state.value.enabled ? 'reviewList.delegation.onHint' : 'reviewList.delegation.offHint')
 })
 
@@ -100,7 +104,7 @@ async function change(enabled: boolean) {
       <RouterLink v-else-if="settingsLink" :to="settingsTarget" class="tonborg-delegation__link" :title="t('reviewList.delegation.settingsTitle')"
         data-tonborg-settings-link>{{ t('reviewList.delegation.settings') }}</RouterLink>
     </p>
-    <p v-if="state && !connected" class="tonborg-delegation__hint" data-tonborg-acceptance>
+    <p v-if="state && standsIn" class="tonborg-delegation__hint" data-tonborg-acceptance>
       {{ t('reviewList.delegation.sessionAcceptance') }}
     </p>
   </div>

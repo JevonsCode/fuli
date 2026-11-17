@@ -341,7 +341,7 @@ describe('交给 Tonborg 确认', () => {
   })
 
   it('turns on without Tonborg\'s own model, says the current session confirms for it, and still links to connecting one', async () => {
-    const noModel = { connected: false, status: 'suggestion', reason: 'not_configured' }
+    const noModel = { connected: false, sessionStandsIn: true, status: 'suggestion', reason: 'not_configured' }
     getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: noModel })
     putJson.mockResolvedValue({ enabled: true, changedAt: '2026-11-17T00:00:00Z', revision: 1, model: noModel })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
@@ -357,6 +357,16 @@ describe('交给 Tonborg 确认', () => {
     expect(wrapper.get('[data-tonborg-acceptance]').text()).toBe('也包括验收：另一个助手验证通过后，负责的会话可以验收自己的任务。')
   })
 
+  it('with a model of Tonborg configured but off, says the session only suggests and names no acceptance', async () => {
+    const modelOff = { connected: false, sessionStandsIn: false, status: 'suggestion', reason: 'not_configured' }
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: modelOff })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Tonborg 的模型没开：会话的回答只当建议')
+    expect(wrapper.text()).not.toContain('替它确认')
+    expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
+  })
+
   it('says nothing about acceptance while Tonborg has its own model', async () => {
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: { connected: true, status: 'automatic', reason: null } })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
@@ -368,7 +378,7 @@ describe('交给 Tonborg 确认', () => {
     for (const locale of ['zh-CN', 'en-US'] as const) {
       const lines = Object.entries(reviewListMessages[locale].delegation)
         .filter(([key, text]) => typeof text === 'string' && /Hint$|Acceptance$/.test(key))
-      expect(lines.length).toBe(5)
+      expect(lines.length).toBe(6)
       for (const [key, text] of lines) {
         const shown = (text as string).replace("@:{'roleNames.tonborg'}", 'Tonborg')
         expect([...shown].length, `${locale} ${key}`).toBeLessThanOrEqual(100)
