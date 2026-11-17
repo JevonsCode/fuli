@@ -10,8 +10,9 @@ import '../ports.dart';
 /// 打开 FULI · (what FULI is doing) · 启动/停止 · (Windows: 换一个端口) · 导出诊断包… ·
 /// (Windows: 开机时启动) · 退出.
 const _lineKey = 'line:';
-// A line with a page is keyed by its link, not its place: a check can rebuild
-// the menu while it is open, and a click then opens the row it was on.
+// A line with a page is keyed by its link, not its place, so the lookup never
+// depends on the order of the rows (a click from a replaced menu is dropped by
+// the plugin itself).
 const _linkKey = 'link:';
 
 class SystemTray with TrayListener implements TrayController {

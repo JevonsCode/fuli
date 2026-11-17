@@ -74,8 +74,7 @@ void main() {
     tray.onTrayMenuItemClick(MenuItem(key: keys[3] as String, label: ''));
     expect(calls, ['link fuli://agents/s/lead']);
 
-    // A check rebuilds the open menu with the rows in another order: the click
-    // still opens the row it was on.
+    // The rows come back in another order: a line's key still names its own page.
     await tray.show(const TrayView(icon: TrayIcon.ok, tooltip: 'FULI', toggleLabel: '停止 FULI', toggleEnabled: true, lines: [
       TrayLine('近 24 小时干过活的助手'),
       TrayLine('Synthetic Other：进行中', link: 'fuli://agents/s/other'),
