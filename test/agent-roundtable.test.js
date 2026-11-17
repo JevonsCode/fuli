@@ -9,6 +9,7 @@ import { createProcessInspector } from '../src/agent-services/process-identity.j
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { parseFinalAnswer, runProcess, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
+import { runAsRunnerCall } from '../src/app/agent-request-context.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
 
@@ -722,4 +723,53 @@ test('an Agent with no project answers only an ask of its own space (rec#110 rev
     /No such message for this Agent/);
   await reply(foreign.messageId, '同空间回复');
   assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-global', sourceApplication: 'claude_code', messageId: foreign.messageId })).status, 'answered');
+});
+
+test('an ask a runner sent wakes read-only with only FULI\'s MCP server, never in the folder it named, and records the runner', async () => {
+  const { app, roundtable, woken } = fixture();
+  app.fuliMcpServer = () => ({ command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] });
+  const ask = { taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: 'hello', projectPath: '/work/app' };
+
+  const local = await roundtable.messageAgent(ask);
+  const fromRunner = await runAsRunnerCall('runner-fingerprint-1', () => roundtable.messageAgent(ask));
+
+  assert.equal(local.status, 'answered');
+  assert.deepEqual([woken[0].mode, woken[0].cwd, 'mcpServers' in woken[0]], ['answer', '/work/app', false]);
+  assert.equal(fromRunner.status, 'answered');
+  assert.equal(woken[1].mode, 'read_only');
+  assert.deepEqual(woken[1].mcpServers, { fuli: { command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] } });
+  assert.notEqual(woken[1].cwd, '/work/app');
+  const [ask1] = roundtable.thread({ threadId: local.threadId }).messages;
+  const [ask2] = roundtable.thread({ threadId: fromRunner.threadId }).messages;
+  assert.equal('runner' in ask1.from, false);
+  assert.equal(ask2.from.runner, 'runner-fingerprint-1');
+});
+
+test('a runner\'s folder is never one of this computer\'s, for a session or a visit request', async () => {
+  const { app } = fixture();
+  app.projectPathResolver = () => ({ status: 'matched', personalProjectId: 'app' });
+  const host = createFuliRoundtableHost(app);
+  assert.equal(await host.projectForPath('/work/app'), 'app');
+  assert.equal(await host.folderBelongsTo('/work/app', 'app'), true);
+  await runAsRunnerCall('runner-fingerprint-1', async () => {
+    assert.equal(host.callerRunner(), 'runner-fingerprint-1');
+    assert.equal(await host.projectForPath('/work/app'), null);
+    assert.equal(await host.folderBelongsTo('/work/app', 'app'), false);
+  });
+  assert.equal(host.callerRunner(), null);
+});
+
+test('a chat message a runner sent wakes its member as the runner\'s ask: read-only, only FULI\'s MCP server', async t => {
+  const { app, roundtable, woken } = fixture();
+  app.fuliMcpServer = () => ({ command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] });
+  t.after(() => roundtable.close());
+  const chat = (action, data = {}) => roundtable.chat({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', action, ...data });
+  const { chatId } = await runAsRunnerCall('runner-fingerprint-1',
+    () => chat('create', { requestId: 'runner-room', kind: 'direct', members: ['local:reviewer-1'] }));
+  await runAsRunnerCall('runner-fingerprint-1', () => chat('send', { chatId, requestId: 'runner-message', body: 'synthetic note' }));
+  const { scheduler } = await import('node:timers/promises');
+  for (let turn = 0; turn < 5 && !woken.length; turn += 1) await scheduler.yield();
+  assert.equal(woken.length, 1);
+  assert.equal(woken[0].mode, 'read_only');
+  assert.deepEqual(Object.keys(woken[0].mcpServers), ['fuli']);
 });

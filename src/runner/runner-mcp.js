@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -19,9 +20,9 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { effectiveCall, offlineAnswer, OFFLINE_TOKEN_PREFIX, rememberAnswer } from './offline-calls.js';
+import { effectiveCall, isQueuedTool, offlineAnswer, OFFLINE_TOKEN_PREFIX, rememberAnswer } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
-import { RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -154,12 +155,16 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'invalid_input', message: error.message }) }] };
     }
+    // A checkpoint carries an id online too: when its outcome is unknown it is queued under that
+    // same id, and the host applies the id once whichever delivery reaches it first.
+    const entryId = isQueuedTool(call.tool) ? randomUUID() : null;
     const answer = offlineToken ? null : await withHost(async (host) => {
       await sendFolders(facts);
-      return host.callTool({ name, arguments: args }, undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
+      return host.callTool({ name, arguments: args, ...(entryId ? { _meta: { [RUNNER_ENTRY_META]: entryId } } : {}) },
+        undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
     });
     if (!answer) {
-      const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId });
+      const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
       // A task entered offline whose host is back: its checkpoint goes now, behind what was queued first.
       if (offlineToken && client) void deliverSoon();
       return queued;

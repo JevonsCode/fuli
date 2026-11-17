@@ -17,11 +17,17 @@ const HEADERS_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 5 * 60_000;
 const KEEP_ALIVE_TIMEOUT_MS = 30_000;
 const MAX_CONNECTIONS = 64;
+// One address cannot hold more than this many of them (a runner's MCP
+// processes each keep a few), and a connection that does not finish its TLS
+// handshake in HANDSHAKE_TIMEOUT_MS is closed.
+const MAX_CONNECTIONS_PER_ADDRESS = 24;
+const HANDSHAKE_TIMEOUT_MS = 10_000;
 const MAX_HEADERS_COUNT = 50;
 
 export async function startRunnerListener({ identity, addresses, port, route, sourceAllowed = isGuestSourceAddress,
   createServer = createHttpsServer }) {
-  const tls = { ...identity.tlsOptions, requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3' };
+  const tls = { ...identity.tlsOptions, requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3',
+    handshakeTimeout: HANDSHAKE_TIMEOUT_MS };
   const handler = (request, response) => {
     response.setHeader('cache-control', 'no-store');
     handle(request, response).catch(() => {
@@ -72,6 +78,21 @@ function runnerServer(createServer, tls, handler) {
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.maxConnections = MAX_CONNECTIONS;
   server.maxHeadersCount = MAX_HEADERS_COUNT;
+  const open = new Map();
+  server.on('connection', (socket) => {
+    const address = socket.remoteAddress ?? '';
+    const count = (open.get(address) ?? 0) + 1;
+    if (count > MAX_CONNECTIONS_PER_ADDRESS) {
+      socket.destroy();
+      return;
+    }
+    open.set(address, count);
+    socket.once('close', () => {
+      const left = open.get(address) - 1;
+      if (left > 0) open.set(address, left);
+      else open.delete(address);
+    });
+  });
   server.on('error', () => {});
   server.on('tlsClientError', () => {});
   return server;

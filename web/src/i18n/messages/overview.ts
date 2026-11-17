@@ -14,10 +14,12 @@ export const overviewMessages = {
         delegated_change: 'FLA 替你改了设置：{reason}',
         model_failing: '{role} 的模型没回应',
         update_available: '有新版本 v{version}',
+        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它就撤销（指纹 {fingerprint}）',
       },
       actions: {
         topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', retrospective_ready: '去确认', tonborg_confirmed: '查看',
         fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
+        runner_paired: '查看接入',
       },
     },
     lists: {
@@ -40,6 +42,7 @@ export const overviewMessages = {
       kinds: {
         topic_promoted: '话题升级', dreaming_found: "@:{'roleNames.astro'} 整理", dreaming_stopped: "@:{'roleNames.astro'} 没跑完", retrospective_ready: '复盘',
         tonborg_confirmed: "@:{'roleNames.tonborg'} 确认", fla_joined: 'FLA 加入', fla_left: 'FLA 离开', delegated_change: '代改设置', model_failing: '模型没回应', update_available: '新版本',
+        runner_paired: '运行机配对',
       },
       sort: {
         label: '排序',
@@ -82,10 +85,12 @@ export const overviewMessages = {
         delegated_change: 'An FLA changed a setting for you: {reason}',
         model_failing: 'The {role} model is not answering',
         update_available: 'Version v{version} is out',
+        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Revoke it (fingerprint {fingerprint})',
       },
       actions: {
         topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', retrospective_ready: 'Confirm', tonborg_confirmed: 'View',
         fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
+        runner_paired: 'View clients',
       },
     },
     lists: {
@@ -108,6 +113,7 @@ export const overviewMessages = {
       kinds: {
         topic_promoted: 'Topic promoted', dreaming_found: "@:{'roleNames.astro'} found", dreaming_stopped: "@:{'roleNames.astro'} stopped", retrospective_ready: 'Retrospective',
         tonborg_confirmed: "@:{'roleNames.tonborg'} confirmed", fla_joined: 'FLA joined', fla_left: 'FLA left', delegated_change: 'Setting changed', model_failing: 'Model not answering', update_available: 'New version',
+        runner_paired: 'Runner paired',
       },
       sort: {
         label: 'Sort',

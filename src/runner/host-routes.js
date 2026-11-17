@@ -1,4 +1,6 @@
 import { callAgentTool } from '../agent-tools.js';
+import { runAsRunnerCall } from '../app/agent-request-context.js';
+import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { mapHttpError } from '../http/error-mapping.js';
 import { readJson, sendJson } from '../http/response.js';
 import { createFailedBearerLimit } from '../guest-access/failed-bearer-limit.js';
@@ -9,15 +11,20 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { displayName, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { displayName, ENTRY_ID, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER,
+  TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
 // unpaired device, with a live invitation's code; every other route needs a
 // paired, unrevoked runner. Its MCP sessions get the whole chat tool set, as a
-// local client's do; for the length of each call the folders it names are
-// answered from the facts that runner sent (caller-workspace.js). An outbox
-// entry is replayed once per id; a second delivery gets the first answer.
+// local client's do, but every call runs as that runner's: it wakes the
+// person's Agents only read-only with FULI's MCP server, names no folder of
+// this computer and makes no console change (runAsRunnerCall). For the length
+// of each call the folders it names are answered from the facts that runner
+// sent (caller-workspace.js). A checkpoint carrying an entry id, online or
+// replayed from the outbox, is applied once per runner and id; a second
+// delivery waits while it is applied (409) and gets the first answer after.
 const MCP_MAX_SESSIONS = 32;
 const MCP_SESSIONS_PER_RUNNER = 16;
 const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
@@ -32,7 +39,9 @@ const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge']);
 // A task a runner entered while its host was away is entered again here at
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
-const SESSION_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+const SESSION_ID = ENTRY_ID;
+// The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
+const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
   createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
@@ -44,8 +53,35 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     sessionSweepIntervalMs: MCP_SWEEP_MS, now });
 
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
-  const inWorkspace = (fingerprint) => (owner, operation, context) =>
-    runWithCallerWorkspaces(lookup(fingerprint), () => withLease(owner, operation, context));
+  // Every call of a runner runs as that runner's (agent-request-context.js), with the folders it described.
+  // An online checkpoint that carries its entry id is applied once per id, as its replay would be.
+  const inWorkspace = (fingerprint) => (owner, operation, context) => {
+    const work = () => runAsRunnerCall(fingerprint,
+      () => runWithCallerWorkspaces(lookup(fingerprint), () => withLease(owner, operation, context)));
+    const id = owner === ONLINE_CHECKPOINT ? context?._meta?.[RUNNER_ENTRY_META] : undefined;
+    if (id === undefined) return work();
+    if (typeof id !== 'string' || !ENTRY_ID.test(id)) throw new InvalidInputError(`_meta.${RUNNER_ENTRY_META} must be an entry id`);
+    return once(fingerprint, id, 'checkpoint_task_knowledge', work).then(({ result }) => result);
+  };
+
+  // Applies one entry id of a runner once: a second delivery while it is being
+  // applied is told to wait (409), one after gets the first answer.
+  async function once(fingerprint, id, tool, apply) {
+    const claim = store.claimReplay({ runner: fingerprint, id, tool });
+    if (claim.state === 'done') return { result: claim.result, replayedBefore: true };
+    if (claim.state === 'pending') {
+      throw new ApplicationError('replay_pending', 'The host is still applying this entry; deliver it again later.', { status: 409 });
+    }
+    let result;
+    try {
+      result = await apply();
+    } catch (error) {
+      store.releaseReplay({ runner: fingerprint, id });
+      throw error;
+    }
+    store.finishReplay({ runner: fingerprint, id, result });
+    return { result, replayedBefore: false };
+  }
 
   async function handle(request, response, { fingerprint, pathname, address }) {
     if (pathname === RUNNER_PATHS.pair) return pair(request, response, { fingerprint, address });
@@ -78,8 +114,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const sourceApplication = normalizeMcpSourceApplication(request.headers[SOURCE_APPLICATION_HEADER] ?? 'other');
       const sessionId = runnerSession(request.headers[RUNNER_SESSION_HEADER]);
       const toolProfile = request.headers[TOOL_PROFILE_HEADER] === 'full' ? 'full' : 'chat';
+      // env {}: the console's own environment names no session or setting of the runner's client.
       await sessions.handle(request, response, { owner: fingerprint, createMcp: () => createMcp(app, {
-        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true,
+        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env: {},
         withRuntimeLease: inWorkspace(fingerprint) }) });
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
@@ -96,7 +133,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     }
     const body = await readJson(request);
     const runner = typeof body?.code === 'string'
-      ? store.pair({ code: body.code, fingerprint, name: displayName(body.name, '') }) : null;
+      ? store.pair({ code: body.code, fingerprint, deviceName: displayName(body.name, '') }) : null;
     if (!runner) {
       failedPairs.fail(address);
       sendJson(response, 403, { error: 'invitation_invalid' });
@@ -117,27 +154,26 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
 
   // One outbox entry: { id, tool, input, sourceApplication, sessionId, offlineTask: { projectPath } | null }.
   async function replay(fingerprint, entry) {
-    if (typeof entry?.id !== 'string' || !SESSION_ID.test(entry.id) || !REPLAYABLE_TOOLS.has(entry.tool)
+    if (typeof entry?.id !== 'string' || !ENTRY_ID.test(entry.id) || !REPLAYABLE_TOOLS.has(entry.tool)
       || !entry.input || typeof entry.input !== 'object') {
       return { status: 400, body: { error: 'entry_invalid' } };
     }
-    const earlier = store.replayed(entry.id);
-    if (earlier) return { status: 200, body: { ...earlier, replayedBefore: true } };
     const sourceApplication = normalizeMcpSourceApplication(entry.sourceApplication ?? 'other');
     // Both calls of one replay belong to one session, so the entered task's token holds for its checkpoint.
     const hostSessionId = runnerSession(entry.sessionId) ?? mcpHostSessionId({});
     const run = (toolName, input) => inWorkspace(fingerprint)(`runner-replay:${toolName}`,
       () => runTool(app, toolName, input, { sourceApplication, hostSessionId }));
     try {
-      let input = entry.input;
-      if (entry.offlineTask) {
-        const entered = await run('begin_task_context', { sessionId: hostSessionId,
-          projectPath: entry.offlineTask.projectPath, taskPrompt: OFFLINE_TASK_PROMPT });
-        input = { ...input, taskContextToken: entered.taskContextToken ?? entered.task_context_token };
-      }
-      const outcome = { result: await run(entry.tool, input) };
-      store.recordReplay({ id: entry.id, runner: fingerprint, tool: entry.tool, result: outcome });
-      return { status: 200, body: outcome };
+      const outcome = await once(fingerprint, entry.id, entry.tool, async () => {
+        let input = entry.input;
+        if (entry.offlineTask) {
+          const entered = await run('begin_task_context', { sessionId: hostSessionId,
+            projectPath: entry.offlineTask.projectPath, taskPrompt: OFFLINE_TASK_PROMPT });
+          input = { ...input, taskContextToken: entered.taskContextToken ?? entered.task_context_token };
+        }
+        return run(entry.tool, input);
+      });
+      return { status: 200, body: outcome.replayedBefore ? outcome : { result: outcome.result } };
     } catch (error) {
       const mapped = mapHttpError(error);
       // A refusal the entry cannot outlive is the runner's to record; anything else is tried again.

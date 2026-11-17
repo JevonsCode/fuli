@@ -280,7 +280,9 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const watching = new AbortController();
     waitForChatChange(() => fresh(discussion)?.status, { store: store.chat, signal: watching.signal,
       ready: status => status === 'ended' }).then(() => controller.abort(), () => {});
-    const context = { taskContextToken: input.taskContextToken, sourceApplication: input.sourceApplication ?? 'other' };
+    // Every turn of a discussion a runner started is woken as that runner's ask (service.js messageAgent).
+    const context = { taskContextToken: input.taskContextToken, sourceApplication: input.sourceApplication ?? 'other',
+      callerRunner: host.callerRunner?.() ?? null };
     const work = runRound(discussion, round, kind, targets.filter(id => !settled[id]), prompt, context,
       AbortSignal.any([controller.signal, closing.signal]), responses)
       .catch(error => abandon(discussion, error instanceof DataFormatError || controller.signal.aborted

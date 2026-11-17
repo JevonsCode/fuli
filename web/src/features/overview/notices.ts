@@ -15,6 +15,7 @@ export type Notice = z.infer<typeof notice>
 export const NOTICE_ICONS: Record<string, IconName> = {
   topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', retrospective_ready: 'memory', tonborg_confirmed: 'check',
   fla_joined: 'agents', fla_left: 'agents', delegated_change: 'settings', model_failing: 'error', update_available: 'refresh',
+  runner_paired: 'external',
 }
 export const NOTICE_KINDS = Object.keys(NOTICE_ICONS)
 

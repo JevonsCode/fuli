@@ -9,7 +9,8 @@ import { sha256Bytes } from '../security/digest.js';
 // entry gets the last entry for that folder under a token of the runner's own;
 // a checkpoint is queued; another read-only call gets the last answer to the
 // same call. Everything else says the host must be reachable. Every offline
-// answer says it is one, and when the answer it repeats was given.
+// answer says it is one, and when the answer it repeats was given. A runner
+// that is not paired, or whose host revoked it, answers nothing from cache.
 export const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
 const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
@@ -27,7 +28,10 @@ export function rememberAnswer(store, { tool, input }, result) {
   if (key) store.rememberAnswer(key, tool, result);
 }
 
-export function offlineAnswer(store, { tool, input, sourceApplication, sessionId }) {
+// entryId: the id a checkpoint already carried online, whose outcome is unknown; it is queued under that id.
+export function offlineAnswer(store, { tool, input, sourceApplication, sessionId, entryId = null }) {
+  const host = store.host();
+  if (!host || host.revokedAt) return notPaired(host);
   if (TASK_ENTRY_TOOLS.has(tool)) {
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
     store.beginOfflineTask({ token, projectPath: input.projectPath ?? null, sourceApplication });
@@ -38,7 +42,7 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
       'Your FULI host is unreachable. These are the preferences it last gave for this folder; a checkpoint is queued and delivered when it answers again.') });
   }
   if (QUEUED_TOOLS.has(tool)) {
-    const id = randomUUID();
+    const id = entryId ?? randomUUID();
     const token = typeof input.taskContextToken === 'string' ? input.taskContextToken : null;
     const offlineTask = token?.startsWith(OFFLINE_TOKEN_PREFIX) ? store.offlineTask(token) : null;
     store.enqueue({ id, tool, input, sourceApplication, sessionId, offlineProjectPath: offlineTask?.projectPath ?? null });
@@ -52,8 +56,26 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
       ? { ...value, runner: offlineNote(earlier.at, 'Your FULI host is unreachable; this is its earlier answer.') }
       : { answer: value, runner: offlineNote(earlier.at, 'Your FULI host is unreachable; this is its earlier answer.') });
   }
-  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'host_unreachable',
-    message: 'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.' }) }] };
+  return failure('host_unreachable',
+    'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.');
+}
+
+// Whether this computer's checkpoints go to the host queued under an id (offline, or online with the same id).
+export function isQueuedTool(tool) {
+  return QUEUED_TOOLS.has(tool);
+}
+
+// No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.
+function notPaired(host) {
+  return host?.revokedAt
+    ? failure('runner_revoked', 'This computer\'s pairing was revoked on its FULI host or is not known there. '
+      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.')
+    : failure('runner_not_paired', 'This computer is not paired with a FULI host. '
+      + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
+}
+
+function failure(code, message) {
+  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message }) }] };
 }
 
 // Task entry is kept per folder (its request differs every time); other

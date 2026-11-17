@@ -340,7 +340,10 @@ lead) loads only FULI's own MCP server, from the entry FULI's installer writes
 for that client, and no MCP server at all when FULI cannot name it; never the
 person's others. Without that entry FULI's own hooks do not load either, so
 such an ask fails safely (`delegation_not_redeemed`) instead of loading the
-person's other servers. A group discussion turn, whose text comes from the
+person's other servers. An ask, chat message or group discussion started by a
+runner (another computer of the person using this FULI, `docs/runner.md`) is
+woken the same way: read-only, only FULI's own MCP server, never in a folder
+the runner named; the ask records the runner's fingerprint. A group discussion turn, whose text comes from the
 person's own Agents, loads only FULI's own server too where FULI can name that
 entry, and keeps the client's own servers where it cannot, so a discussion
 never fails for the lack of it. The entry is the one FULI's installer writes,

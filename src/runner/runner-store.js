@@ -1,16 +1,20 @@
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { REPLAY_WAIT_MS } from './protocol.js';
 
 // A runner's own record (docs/runner.md): the host it paired with, the last
 // answer it read for each read-only call (shown, marked offline, while the host
-// is away), the task tokens it gave out while offline, and its outbox: writes
-// made while the host was away, replayed in order, each delivered once.
-// Nothing here is the person's knowledge of record; the host holds that.
+// is away, for at most ANSWER_KEEP_MS), the task tokens it gave out while
+// offline, and its outbox: checkpoints made while the host was away, or whose
+// online delivery has no known outcome, replayed oldest first, each applied
+// once. Nothing here is the person's knowledge of record; the host holds that.
+// A host that says this runner is revoked or unknown, a pairing with another
+// host, and `fuli runner leave` end what was kept for the old pairing.
 export const RUNNER_FILE = 'runner/runner.sqlite';
-// An outbox entry another process claimed is its own for this long.
-const CLAIM_MS = 60 * 1000;
-// Answers older than this are not shown even offline.
+// An outbox entry a process claimed is its own for this long: past its wait for the host.
+const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
+// Answers and offline task tokens older than this are deleted.
 const ANSWER_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const RUNNER_FORMAT = sqliteFormat({
@@ -18,7 +22,7 @@ export const RUNNER_FORMAT = sqliteFormat({
   schema: `
     CREATE TABLE IF NOT EXISTS host(
       id INTEGER PRIMARY KEY CHECK(id = 1), name TEXT NOT NULL, fingerprint TEXT NOT NULL, cert_pem TEXT NOT NULL,
-      port INTEGER NOT NULL, addresses TEXT NOT NULL, last_address TEXT, paired_at TEXT NOT NULL);
+      port INTEGER NOT NULL, addresses TEXT NOT NULL, last_address TEXT, paired_at TEXT NOT NULL, revoked_at TEXT);
     CREATE TABLE IF NOT EXISTS answers(
       key TEXT PRIMARY KEY, tool TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS offline_tasks(
@@ -41,20 +45,49 @@ export class RunnerStore {
     return this.database;
   }
 
-  // The paired host, or null before `fuli runner join`.
+  // The paired host, or null before `fuli runner join`; revokedAt is set once it refused this runner.
   host() {
     if (this.#missing()) return null;
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
-      addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at } : null;
+      addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
+      revokedAt: row.revoked_at } : null;
   }
 
+  // A pairing. With another host, what was kept of the old one (answers, offline task tokens) goes.
   saveHost({ name, fingerprint, certPem, port, addresses, lastAddress = null }) {
-    this.db.prepare(`INSERT INTO host(id, name, fingerprint, cert_pem, port, addresses, last_address, paired_at)
-      VALUES(1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name,
-      fingerprint = excluded.fingerprint, cert_pem = excluded.cert_pem, port = excluded.port,
-      addresses = excluded.addresses, last_address = excluded.last_address, paired_at = excluded.paired_at`)
-      .run(name, fingerprint, certPem, port, JSON.stringify(addresses), lastAddress, this.#nowIso());
+    immediateTransaction(this.db, () => {
+      const earlier = this.db.prepare('SELECT fingerprint FROM host WHERE id = 1').get();
+      if (earlier && earlier.fingerprint !== fingerprint) {
+        this.db.prepare('DELETE FROM answers').run();
+        this.db.prepare('DELETE FROM offline_tasks').run();
+      }
+      this.db.prepare(`INSERT INTO host(id, name, fingerprint, cert_pem, port, addresses, last_address, paired_at)
+        VALUES(1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name,
+        fingerprint = excluded.fingerprint, cert_pem = excluded.cert_pem, port = excluded.port,
+        addresses = excluded.addresses, last_address = excluded.last_address, paired_at = excluded.paired_at,
+        revoked_at = NULL`)
+        .run(name, fingerprint, certPem, port, JSON.stringify(addresses), lastAddress, this.#nowIso());
+    });
+  }
+
+  // The host said this runner is not paired (revoked, or never known there):
+  // nothing kept for it is shown or sent again. The host stays named, so
+  // the runner can say why, until it joins again or leaves.
+  revoked() {
+    immediateTransaction(this.db, () => {
+      this.db.prepare('UPDATE host SET revoked_at = coalesce(revoked_at, ?) WHERE id = 1').run(this.#nowIso());
+      this.#forget();
+    });
+  }
+
+  // `fuli runner leave`: the pairing, the answers, the offline tokens and the outbox.
+  leave() {
+    if (this.#missing()) return;
+    immediateTransaction(this.db, () => {
+      this.db.prepare('DELETE FROM host').run();
+      this.#forget();
+    });
   }
 
   // The address the host last answered on, first in line next time.
@@ -66,22 +99,27 @@ export class RunnerStore {
   }
 
   rememberAnswer(key, tool, body) {
-    this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
-      .run(key, tool, this.#nowIso(), JSON.stringify(body));
+    immediateTransaction(this.db, () => {
+      this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
+        .run(key, tool, this.#nowIso(), JSON.stringify(body));
+      this.db.prepare('DELETE FROM answers WHERE at <= ?').run(this.#keptSince());
+    });
   }
 
   // { at, body } of the last answer to this call, or null.
   answer(key) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ?')
-      .get(key, new Date(this.now() - ANSWER_KEEP_MS).toISOString());
+    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ?').get(key, this.#keptSince());
     return row ? { at: row.at, body: JSON.parse(row.body) } : null;
   }
 
   beginOfflineTask({ token, projectPath, sourceApplication }) {
-    this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
-      VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
+    immediateTransaction(this.db, () => {
+      this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
+        VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
+      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#keptSince());
+    });
   }
 
   offlineTask(token) {
@@ -98,14 +136,13 @@ export class RunnerStore {
       sessionId, offlineProjectPath, this.#nowIso());
   }
 
-  // The oldest queued entry no other process holds, now held by this one; null when none.
+  // The oldest queued entry, now held by this process; null when there is none
+  // or another process holds it, so entries reach the host in the order queued.
   claimNext() {
     if (this.#missing()) return null;
     return immediateTransaction(this.db, () => {
-      const at = this.#nowIso();
-      const row = this.db.prepare(`SELECT * FROM outbox WHERE state = 'queued'
-        AND (claimed_until IS NULL OR claimed_until < ?) ORDER BY seq LIMIT 1`).get(at);
-      if (!row) return null;
+      const row = this.db.prepare(`SELECT * FROM outbox WHERE state = 'queued' ORDER BY seq LIMIT 1`).get();
+      if (!row || (row.claimed_until && row.claimed_until >= this.#nowIso())) return null;
       this.db.prepare('UPDATE outbox SET claimed_until = ?, attempts = attempts + 1 WHERE id = ?')
         .run(new Date(this.now() + CLAIM_MS).toISOString(), row.id);
       return { id: row.id, tool: row.tool, input: JSON.parse(row.input), sourceApplication: row.source_application,
@@ -125,7 +162,7 @@ export class RunnerStore {
       WHERE id = ?`).run(this.#nowIso(), reason, id);
   }
 
-  // The host could not be reached: the entry waits for the next attempt.
+  // The host could not be reached, or is still applying it: the entry waits for the next attempt.
   release(id, reason) {
     this.db.prepare('UPDATE outbox SET claimed_until = NULL, last_error = ? WHERE id = ?').run(reason, id);
   }
@@ -137,6 +174,14 @@ export class RunnerStore {
       ORDER BY seq DESC LIMIT 20`).all().map((row) => ({ id: row.id, tool: row.tool, queuedAt: row.queued_at,
       reason: row.last_error }));
     return { queued, failed };
+  }
+
+  #forget() {
+    for (const table of ['answers', 'offline_tasks', 'outbox']) this.db.prepare(`DELETE FROM ${table}`).run();
+  }
+
+  #keptSince() {
+    return new Date(this.now() - ANSWER_KEEP_MS).toISOString();
   }
 
   #nowIso() {

@@ -53,8 +53,8 @@
       "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"
     },
     "roundtable": {
-      "version": 11,
-      "fingerprint": "5b4238b628905e8d073403ae8891eda185b92bfdef2cf9bd1e712c8487e52014"
+      "version": 12,
+      "fingerprint": "a161854004db329cbd8d3f09e6029a38b7f95b72885be9bcc00d37d5e9f4a55a"
     },
     "recall-impressions": {
       "version": 4,
@@ -98,11 +98,11 @@
     },
     "runner-host": {
       "version": 1,
-      "fingerprint": "507b94db7bc91d526bc4a692a5ff64d9fb48d6d00e02f3a38ff03d2b32bf57cb"
+      "fingerprint": "c933a2ac50df9d428da8fa4e9bafdcdc82b318233deddbd20b0ab71c5f458cde"
     },
     "runner": {
       "version": 1,
-      "fingerprint": "438cba5fbe1e4cecb058e22575bf91a52a3cf7950259eef4c884dd4865372f50"
+      "fingerprint": "6611053b063bf15cb865a3f319b2dc9be39dd7219145ddaabb3d55e6d24287bb"
     }
   }
 }

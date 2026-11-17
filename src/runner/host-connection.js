@@ -1,5 +1,4 @@
 import { Agent, request as httpsRequest } from 'node:https';
-import { isIPv4 } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -7,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
+import { isGuestSourceAddress } from '../server/lan-access.js';
 import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 
 // A runner's way to its host (docs/runner.md). Every request is TLS 1.3 to
@@ -14,25 +14,36 @@ import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 // looked for at the address that answered last, then the others it was known
 // by, then by its fingerprint over mDNS; an address counts only when the
 // pinned host answers there. fetch() is what the MCP client and the outbox use.
+// The pinned host answering that it does not know this runner (revoked, or
+// never paired there) ends the pairing here (runner-store.js revoked): nothing
+// is looked for, shown from cache or sent again until the runner joins again.
 const PROBE_MS = 2500;
 const LOOK_MS = 3000;
 const REQUEST_MS = 15_000;
+// The host's answer to a runner it does not know (host-routes.js).
+const NOT_PAIRED = 'runner_unknown';
 
 export function createHostConnection({ store, identity, lookUp = lookUpHost, probeMs = PROBE_MS }) {
   let current = null;
 
   async function connect() {
     const host = store.host();
-    if (!host) return null;
+    if (!host || host.revokedAt) return null;
     if (current) return current;
     const known = [host.lastAddress, ...host.addresses].filter(Boolean);
-    for (const address of new Set(known)) if (await reach(host, address)) return current;
+    for (const address of new Set(known)) {
+      const reached = await reach(host, address);
+      if (reached !== false) return reached;
+    }
     for (const address of await lookUp(host.fingerprint)) {
-      if (!known.includes(address) && await reach(host, address)) return current;
+      if (known.includes(address)) continue;
+      const reached = await reach(host, address);
+      if (reached !== false) return reached;
     }
     return null;
   }
 
+  // The connection at this address, null when the pinned host there refused this runner, or false.
   async function reach(host, address) {
     const tls = pinnedTls(identity, { certPem: host.certPem, fingerprint: host.fingerprint });
     const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16 });
@@ -40,7 +51,12 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`,
         { signal: AbortSignal.timeout(probeMs) });
-      await answer.body?.cancel();
+      const body = answer.status === 403 ? await answer.json().catch(() => null) : await answer.body?.cancel();
+      if (body?.error === NOT_PAIRED) {
+        agent.destroy();
+        store.revoked();
+        return null;
+      }
       if (answer.status !== 200) throw new Error(`hello ${answer.status}`);
     } catch {
       agent.destroy();
@@ -48,7 +64,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     }
     current = candidate;
     store.hostAnsweredAt(address);
-    return true;
+    return current;
   }
 
   // A request that failed for the network forgets the address; the next one looks again.
@@ -58,20 +74,30 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   }
 
   // A request on a connection that went stale (the host restarted, the
-  // network changed) is made once more after looking for the host again.
-  async function postJson(path, body) {
+  // network changed) is made once more after looking for the host again. One
+  // that timed out may have reached the host and is not sent again here: its
+  // caller decides (an outbox entry is delivered again later, under its id).
+  // revoked: the host does not know this runner any more.
+  async function postJson(path, body, { timeoutMs = REQUEST_MS } = {}) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const connection = await connect();
-      if (!connection) return { reachable: false };
+      if (!connection) return { reachable: false, revoked: Boolean(store.host()?.revokedAt) };
+      const signal = AbortSignal.timeout(timeoutMs);
       try {
         const answer = await connection.fetch(`${connection.origin}${path}`, { method: 'POST',
-          headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(REQUEST_MS) });
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal });
         const text = await answer.text();
         let value = null;
         try { value = text ? JSON.parse(text) : null; } catch { value = null; }
+        if (answer.status === 403 && value?.error === NOT_PAIRED) {
+          drop();
+          store.revoked();
+          return { reachable: true, status: 403, body: value, revoked: true };
+        }
         return { reachable: true, status: answer.status, body: value };
       } catch {
         drop();
+        if (signal.aborted) return { reachable: false, timedOut: true };
       }
     }
     return { reachable: false };
@@ -108,9 +134,11 @@ async function lookUpHost(fingerprint, { waitMs = LOOK_MS,
   let discovery = null;
   try {
     discovery = createDiscovery({ serviceType: RUNNER_SERVICE_TYPE, adapters: () => discoveryAdapters(networkInterfaces) });
+    // Only an address the host's listener can serve (a private one): a pinned
+    // certificate is checked there anyway, but no request goes anywhere else.
     discovery.browse({ onUp: (service) => {
       if (service.txt?.fp !== fingerprint) return;
-      for (const address of service.addresses ?? []) if (isIPv4(address)) found.add(address);
+      for (const address of service.addresses ?? []) if (isGuestSourceAddress(address)) found.add(address);
     }, onDown: () => {} });
     await delay(waitMs);
   } catch {

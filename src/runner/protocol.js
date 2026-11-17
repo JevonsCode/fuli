@@ -23,6 +23,14 @@ export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
 export const RUNNER_SESSION_HEADER = 'x-fuli-runner-session';
 // The tool profile the client's FULI entry names (chat unless it asks for full).
 export const TOOL_PROFILE_HEADER = 'x-fuli-tool-profile';
+// The id a runner gives each checkpoint, online in the call's _meta and the
+// same id in its outbox when that call's outcome is unknown; the host applies
+// one id once (host-store.js claimReplay).
+export const RUNNER_ENTRY_META = 'fuli/runner-entry';
+export const ENTRY_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+// How long a runner waits for the host to answer one replayed entry before it
+// gives up for this round; the host holds an id it is applying longer than this.
+export const REPLAY_WAIT_MS = 3 * 60_000;
 export const INVITATION_TTL_MS = 10 * 60 * 1000;
 const INVITATION_PREFIX = 'fuli-runner-invite:1:';
 const MAX_NAME = 64;

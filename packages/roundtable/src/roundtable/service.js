@@ -334,11 +334,17 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
     conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null,
     // wakeMode: read_only for a group discussion turn, woken where it can change nothing (wake adapters).
-    wakeMode = 'answer' } = {}) {
+    wakeMode = 'answer',
+    // The host's runner (another computer of the person) that sent it, or null (host.callerRunner).
+    // Such an ask is woken as one from another computer: read-only, only FULI's MCP server, and
+    // never in a folder it names, which is on that computer.
+    callerRunner = host.callerRunner?.() ?? null } = {}) {
     const readOnly = wakeMode === 'read_only';
+    if (callerRunner) projectPath = null;
     if (roundtableProjectId && peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (peer?.isRemoteAddress(to)) {
-      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
+      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal,
+        callerRunner });
     }
     const from = await sender({ taskContextToken, sourceApplication });
     const address = projectAddress(to);
@@ -360,7 +366,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { thread, history } = openThread(threadId, from.projectId, body, label(target));
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued',
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
-        client: from.client, session: from.session },
+        client: from.client, session: from.session, runner: callerRunner },
       to: { agentId: target.agentId, name: label(target) }, targetProjectId,
       sourceContextHash: taskContextToken ? taskContextHash(taskContextToken) : null });
     // The source token never enters the communication log.
@@ -369,7 +375,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (!taskContextToken) return queued(thread, ask, target, 'task_context_required');
     const ladder = createWakeLadder();
     // A task outside every project holds no authority the Provider can pass on.
-    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, wakeMode, ladder,
+    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder,
+      ...(callerRunner ? { wakeMode: 'read_only', onlyFuliMcp: true } : { wakeMode }),
       timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
       targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
         { preferClient: from.client, ladder,
@@ -412,7 +419,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // verified answer becomes its reply. An ask that is not answered stays queued
   // with the reason, so the recipient still sees it when it next works.
   async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
-    chatWakeChatId = null, wakeMode = 'answer', ladder = null }) {
+    chatWakeChatId = null, wakeMode = 'answer', onlyFuliMcp = false, ladder = null }) {
     await wakeClaims.release(spaceId(), target.agentId);
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) {
@@ -434,7 +441,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder });
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder,
-        preferFuliMcp: wakeMode === 'read_only' });
+        onlyFuliMcp, preferFuliMcp: wakeMode === 'read_only' });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
@@ -527,7 +534,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // A remote ask is signed by this device for one verified local task. The task
   // token itself never leaves this computer.
-  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal }) {
+  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal,
+    callerRunner = null }) {
     if (!['auto', 'new'].includes(conversation ?? 'auto')) throw validation('Remote Agents accept conversation "auto" or "new"');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A remote message must come from an active project task of a FULI Agent; pass taskContextToken');
@@ -535,7 +543,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { thread } = openThread(threadId, from.projectId, body, target.name);
     if (thread.project_id !== from.projectId) throw validation('This thread belongs to another project');
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'sent', via: 'peer',
-      from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session },
+      from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session, runner: callerRunner },
       to: { agentId: target.address, name: `${target.name} · ${target.deviceName}` } });
     if (chatWake) {
       const claim = store.claimExecution(spaceId(), target.address, ask.id);
@@ -867,7 +875,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       messages: page.map((message) => ({ id: message.id, seq: message.seq, kind: message.kind, status: message.status,
         body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
         ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
-        from: { agentId: message.from_agent, name: message.from_name, client: message.from_client },
+        from: { agentId: message.from_agent, name: message.from_name, client: message.from_client,
+          ...(message.from_runner ? { runner: message.from_runner } : {}) },
         to: { agentId: message.to_agent, name: message.to_name, client: message.to_client } })) };
   }
 

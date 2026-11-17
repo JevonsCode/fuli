@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { Agent } from 'node:https';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
@@ -32,7 +33,8 @@ export async function joinHost({ dataDir, invitation: text, name = null,
       try {
         answer = await fetch(`https://${address}:${host.port}${RUNNER_PATHS.pair}`, { method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ code: host.code, name: displayName(name, '') }), signal: AbortSignal.timeout(PAIR_TIMEOUT_MS) });
+          // What this computer calls itself; the host shows it beside the name the person gave the invitation.
+          body: JSON.stringify({ code: host.code, name: displayName(name ?? hostname(), '') }), signal: AbortSignal.timeout(PAIR_TIMEOUT_MS) });
       } catch {
         continue;
       }
@@ -40,7 +42,9 @@ export async function joinHost({ dataDir, invitation: text, name = null,
       if (answer.status !== 200) {
         throw new ApplicationError('invitation_invalid', answer.status === 429
           ? 'The host refused too many attempts from this computer; wait ten minutes and ask it for a new invitation.'
-          : 'The host did not accept this invitation: it was used, expired or not this host\'s. Run `fuli runner invite` on the host again.');
+          : 'The host did not accept this invitation: it was used, expired or not this host\'s. Run `fuli runner invite` on the host '
+            + 'again. If you did not use it, someone else may have: check `fuli runner list` on the host and '
+            + '`fuli runner revoke` a computer you do not know.');
       }
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       try {

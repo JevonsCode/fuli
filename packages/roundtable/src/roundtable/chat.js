@@ -60,13 +60,15 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
           throw new PeerError('chat_task_required', 'Chat requires an active current Agent project task', 409);
         }
       };
+      // A wake a runner's chat starts is held as that runner's, even in a wake loop another caller began.
+      const callerRunner = host.callerRunner?.() ?? null;
       const remote = transport === 'peer' || request.chatId?.startsWith('peer:') || request.members?.some(a => a.startsWith('peer:'));
       if (remote) {
         if (!peer?.chat) throw new PeerError('chat_peer_unavailable', 'Cross-device chat requires paired devices', 409);
         const identity = { taskContextToken, sourceApplication, agentId: sender.agentId,
           projectId: task.personalProjectId, name: sender.profile.displayName || sender.profile.name || sender.agentId };
         const result = await peer.chat({ request, ...identity, ...options,
-          onMessage: delivery => wakes.dispatch(delivery, { taskContextToken, sourceApplication, authorize,
+          onMessage: delivery => wakes.dispatch(delivery, { taskContextToken, sourceApplication, authorize, callerRunner,
             remoteSnapshot: (chatId, to, signal) => peer.chatWakeSnapshot({ ...identity, signal,
               request: { action: 'wake_snapshot', chatId, to } }) }) });
         await authorize();
@@ -75,7 +77,8 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
       const result = await local({ address: `local:${sender.agentId}` }, localAddresses(request), { ...options, authorize,
         inbox: attentionInbox.forWait(sender.agentId, task.personalProjectId),
         onMessage: delivery => wakes.dispatch({ ...delivery, targets: delivery.targets.filter(address =>
-          currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) }, { taskContextToken, sourceApplication, authorize }) })
+          currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) },
+          { taskContextToken, sourceApplication, authorize, callerRunner }) })
         .catch(error => {
           if (error.code !== 'chat_not_found' || !request.chatId || !isThread(request.chatId)) throw error;
           throw new PeerError('chat_not_found', `${request.chatId} is a message_agent thread, not a chat: read it with read_agent_thread`, 404);

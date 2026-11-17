@@ -86,7 +86,8 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   const runner = joined.runner;
   assert.equal(joined.host.name, 'Host A');
   assert.equal(store.isPaired(runner.fingerprint), true);
-  assert.equal(store.runners()[0].name, 'Office laptop');
+  // Listed under the name the person typed at the invitation, with the device's own beside it.
+  assert.deepEqual([store.runners()[0].name, store.runners()[0].deviceName], ['Runner B', 'Office laptop']);
   assert.equal(runnerRuntimeConfig(['--runtime-config', path.join(dataDir, 'graph-runtime.json')]), true);
   await assert.rejects(joinHost({ dataDir: path.join(base, 'other'), invitation }),
     /did not accept this invitation/);
@@ -135,6 +136,12 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   store.revoke(runner.fingerprint);
   const refused = await connection.postJson(RUNNER_PATHS.workspace, { facts: null });
   assert.equal(refused.status, 403);
+  // Revoked: the runner says so and answers nothing from what it kept.
+  assert.equal(refused.revoked, true);
+  assert.ok(runnerStore.host().revokedAt);
+  const afterRevoke = await client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: root, taskPrompt: 'one more' } });
+  assert.equal(JSON.parse(afterRevoke.content[0].text).code, 'runner_revoked');
 });
 
 test('a device without an invitation reaches nothing on the host', async (t) => {

@@ -27,7 +27,7 @@ const DONE_STATUSES = ['completed', 'cancelled'] satisfies ProjectAgentTaskStatu
 // 最近你可能需要知道的事 splits into what asks the person to act and what only lets them know.
 const NOTICE_NEEDS: Record<string, readonly string[]> = {
   act: ['topic_promoted', 'dreaming_found', 'dreaming_stopped', 'retrospective_ready', 'model_failing', 'update_available'],
-  info: ['tonborg_confirmed', 'fla_joined', 'fla_left', 'delegated_change'],
+  info: ['tonborg_confirmed', 'fla_joined', 'fla_left', 'delegated_change', 'runner_paired'],
 }
 const QUIET_DAYS: Record<string, number> = { '1d': 1, '3d': 3, '7d': 7 }
 const HOUR_S = 60 * 60
