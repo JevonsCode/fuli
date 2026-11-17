@@ -28,13 +28,16 @@ LEGACY_HR_RESPONSIBILITIES = (
     'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
 )
 LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
+# Jefa's built-in copy while it still claimed choosing who does each task: the
+# project's lead and Bole choose the people, Tonborg the client and model.
+LEGACY_COORDINATOR_RESPONSIBILITY = '项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。'
 
 
 def coordinator_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
         name='Jefa',
         occupation_emoji='🧭',
-        responsibility='项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。',
+        responsibility='项目经理：拆解目标、维护看板与进展。',
         agent_type='coordinator',
         work_kinds=['project_management', 'planning', 'review', 'task-coordination'],
         capabilities=['项目规划', '任务拆解', '看板读写', 'Agent 路由', system_role_capability(SYSTEM_COORDINATOR_AGENT_ID)],
@@ -123,6 +126,8 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
              and stored.get('responsibility') in LEGACY_HR_RESPONSIBILITIES)
             or (agent_id == SYSTEM_JUDGMENT_AGENT_ID
                 and stored.get('responsibility') == LEGACY_JUDGMENT_RESPONSIBILITY)
+            or (agent_id == SYSTEM_COORDINATOR_AGENT_ID
+                and stored.get('responsibility') == LEGACY_COORDINATOR_RESPONSIBILITY)
         )
         if upgrade_responsibility:
             stored['responsibility'] = default.responsibility

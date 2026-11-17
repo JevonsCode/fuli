@@ -4,8 +4,8 @@ import { FIXED_ROLES } from '../employees/fixed-roles.js';
 // owns the explicit hierarchy; active assignments decide who currently works
 // on the exact project. Assigned Agents outside the explicit team are shown as
 // collaborators and peer roles stay peers, never converted into direct reports.
-// The roles a project team shows as peers: Jefa, Bole and Tonborg.
-const PEER_ROLES = [FIXED_ROLES.jefa, FIXED_ROLES.bole, FIXED_ROLES.tonborg];
+// FULI's own roles are peers of a project team, never its members.
+const PEER_ROLES = Object.values(FIXED_ROLES);
 // 'fuli-project-hr' is the AR identity from before Bole.
 const PEER_AGENT_IDS = new Set([...PEER_ROLES.map(role => role.agentId), 'fuli-project-hr']);
 const PEER_CAPABILITIES = new Set(PEER_ROLES.map(role => role.capability));

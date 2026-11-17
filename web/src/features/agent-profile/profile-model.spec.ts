@@ -6,7 +6,7 @@ import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 describe('Agent profile model', () => {
   afterEach(() => setLocale('zh-CN', { persist: false }))
   it('shows a built-in Agent default responsibility in the console language, and an edited one as written', () => {
-    const jefa = { agentId: 'employee.jefa', profile: { responsibility: '项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。' } }
+    const jefa = { agentId: 'employee.jefa', profile: { responsibility: '项目经理：拆解目标、维护看板与进展。' } }
     setLocale('en-US', { persist: false })
     expect(agentResponsibility(jefa)).toMatch(/^Project manager: breaks goals into tasks/)
     expect(agentResponsibility({ ...jefa, profile: { responsibility: '我自己写的说明' } })).toBe('我自己写的说明')
@@ -36,7 +36,8 @@ describe('Agent profile model', () => {
       ({ agentId, profile: { name: 'r', status: 'active', capabilities: [], ...profile } }) as unknown as ProjectAgentRecord
     expect(isMentionableFla(fla('lyra'))).toBe(true)
     for (const agent of [fla('lyra', { status: 'inactive' }), fla('lyra', { agentType: 'temporary' }), fla('lyra', { agentType: 'hr' }),
-      fla('employee.jefa'), fla('employee.assistant'), fla('custom', { capabilities: ['FULI.employee:tonborg'] })]) {
+      fla('employee.jefa'), fla('employee.assistant'), fla('custom', { capabilities: ['FULI.employee:tonborg'] }),
+      fla('custom', { capabilities: ['fuli.employee:assistant'] })]) {
       expect(isMentionableFla(agent)).toBe(false)
     }
   })

@@ -43,6 +43,34 @@ async def test_tonborg_role_copy_upgrade_preserves_custom_profile(responsibility
     assert assignment_upgrade['space_id'] == 'test-space'
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('responsibility, expected, upgraded', [
+    ('项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。', '项目经理：拆解目标、维护看板与进展。', True),
+    ('项目经理：这是用户自定义的职责。', '项目经理：这是用户自定义的职责。', False),
+    ('项目经理：拆解目标、维护看板与进展。', '项目经理：拆解目标、维护看板与进展。', False),
+])
+async def test_jefa_role_copy_upgrade_preserves_custom_profile(responsibility, expected, upgraded):
+    from fuli_graph.system_agents import SYSTEM_COORDINATOR_AGENT_ID, coordinator_profile
+    profile = coordinator_profile().model_dump()
+    profile.update(responsibility=responsibility, expectations='Keep the custom expectation.')
+    driver = AsyncMock()
+    driver.execute_query.side_effect = [([{'profile_json': json.dumps(profile)}], None, None), ([], None, None)]
+
+    await ensure_system_identity(driver, 'test-provider', 'test-space', SYSTEM_COORDINATOR_AGENT_ID)
+
+    written = driver.execute_query.call_args_list[1].kwargs
+    assert written['responsibility'] == expected
+    assert written['upgrade_responsibility'] is upgraded
+    stored = json.loads(written['profile_json'])
+    assert stored['responsibility'] == expected
+    assert stored['expectations'] == profile['expectations']
+
+
+def test_new_jefa_no_longer_claims_choosing_who_does_a_task():
+    from fuli_graph.system_agents import coordinator_profile
+    assert coordinator_profile().responsibility == '项目经理：拆解目标、维护看板与进展。'
+
+
 def test_new_tonborg_uses_decision_specialist_role():
     assert judgment_profile().responsibility.startswith('决策员：')
 
