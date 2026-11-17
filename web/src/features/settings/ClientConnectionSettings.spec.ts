@@ -22,7 +22,7 @@ beforeEach(() => { setActivePinia(createPinia()) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
-  since: string | null, changes: { from: string, to: string, detectedAt: string, components?: Record<string, string> }[], lastKnownStatus?: string | null,
+  since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
   manualOnly?: boolean, manualUrl?: string, restartSessions?: number, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
@@ -493,6 +493,9 @@ it('shows on each tile what FULI put into that client, and says when it has no h
   const tile = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).element.closest('li.client-row')!
   expect(tile('claude-code').querySelector('[data-client-no-lifecycle]')).toBeNull()
   expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('不会自动记录对话')
+  // Each part is explained by the glossary's 「?」 and by its hover title.
+  expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('data-term')).toBe('setting.clientPart.skills')
+  expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('title')).toBe('需更新：教客户端里的 Agent 怎么用 FULI。')
   wrapper.unmount()
 })
 

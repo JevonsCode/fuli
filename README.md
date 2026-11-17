@@ -171,6 +171,7 @@ FULI; the rest makes it automatic. Each client's tile in Settings › Clients li
 | Codex | ✓ | ✓ | ✓ | instructions, `/fla` menu |
 | Cursor | ✓ | ✓ (completion reminder only) | ✓ | |
 | OpenCode 2.x | ✓ | plugin | ✓ | |
+| OpenCode without the plugin | ✓ | | ✓ | |
 | DeepSeek Harness | in its bundle | plugin | ✓ | |
 | Claude Desktop, Gemini CLI, Qwen Code, Kiro, Antigravity | ✓ | | | |
 | A client you add yourself | ✓ | | | |

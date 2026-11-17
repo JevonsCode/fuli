@@ -80,6 +80,11 @@ describe('what FULI puts into a client', () => {
     expect(withoutLifecycle(claudeCode)).toBe(false)
     expect(withoutLifecycle({ components: { mcp: 'current' } })).toBe(true)
     expect(withoutLifecycle({ components: { plugin: 'missing', skills: 'missing' } })).toBe(false)
+    // A client FULI is not in at all lists no parts and no note: its tile says so already.
+    expect(clientParts({ components: { mcp: 'missing', hooks: 'missing', skills: 'missing' } })).toEqual([])
+    expect(withoutLifecycle({ components: { mcp: 'missing' } })).toBe(false)
+    expect(clientParts({ components: { mcp: 'conflict' } })).toEqual([])
+    expect(clientParts({ components: { mcp: 'current', skills: 'missing' } })).toEqual([{ part: 'mcp', state: 'current' }, { part: 'skills', state: 'missing' }])
     // Nothing known says nothing.
     expect(clientParts({})).toEqual([])
     expect(withoutLifecycle({})).toBe(false)

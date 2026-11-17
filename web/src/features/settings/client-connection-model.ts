@@ -69,11 +69,14 @@ export type ClientPart = typeof CLIENT_PARTS[number]
 export type PartState = 'current' | 'outdated' | 'missing' | 'conflict'
 
 // A tile's parts and each one's state; a part the client takes none of is left out.
+// A client FULI is not in at all (every part missing or unreadable) lists none:
+// its tile's own sentence and 接入 already say so, and a row of 「未装」 says nothing more.
 export function clientParts(client: Pick<ClientTile, 'components'>): { part: ClientPart, state: PartState }[] {
   const components = client.components ?? {}
   const states: readonly string[] = ['current', 'outdated', 'missing', 'conflict']
-  return CLIENT_PARTS.filter((part) => states.includes(components[part] ?? ''))
+  const parts = CLIENT_PARTS.filter((part) => states.includes(components[part] ?? ''))
     .map((part) => ({ part, state: components[part] as PartState }))
+  return parts.some(({ state }) => state === 'current' || state === 'outdated') ? parts : []
 }
 
 // Neither hooks nor a plugin: task entry and its close depend on the Agent, and nothing is captured by itself.

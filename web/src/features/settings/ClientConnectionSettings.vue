@@ -200,7 +200,8 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
               <!-- What FULI puts into this client, each part with its state (README: what each part gives you). -->
               <ul v-if="clientParts(client).length" class="client-parts" :data-client-parts="client.id">
                 <li v-for="{ part, state } in clientParts(client)" :key="part" :data-part="part" :data-part-state="state"
-                  :title="t(`settings.connection.parts.state.${state}`)">
+                  :data-term="`setting.clientPart.${part}`"
+                  :title="`${t(`settings.connection.parts.state.${state}`)}：${t(`glossary.setting.clientPart.${part}`)}`">
                   <UiIcon v-if="state === 'current'" name="check" :size="11" />
                   {{ t(`settings.connection.parts.name.${part}`) }}<template v-if="state !== 'current'"> · {{ t(`settings.connection.parts.state.${state}`) }}</template>
                 </li>

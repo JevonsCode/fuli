@@ -163,6 +163,7 @@ FULI 往一个客户端里装哪些东西、各管什么。只有 MCP 也能用 
 | Codex | ✓ | ✓ | ✓ | 全局说明、`/fla` 菜单 |
 | Cursor | ✓ | ✓（只有完成提醒） | ✓ | |
 | OpenCode 2.x | ✓ | 插件 | ✓ | |
+| OpenCode（没装上插件时） | ✓ | | ✓ | |
 | DeepSeek Harness | 在它的 bundle 里 | 插件 | ✓ | |
 | Claude 桌面版、Gemini CLI、Qwen Code、Kiro、Antigravity | ✓ | | | |
 | 你自己添加的客户端 | ✓ | | | |

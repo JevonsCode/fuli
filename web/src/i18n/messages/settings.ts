@@ -103,7 +103,7 @@ export const settingsMessages = {
       parts: {
         name: { mcp: 'MCP', hooks: '自动进入与收尾', plugin: '插件', skills: 'Skills', instructions: '全局说明', permissions: '权限白名单', prompts: '/fla 菜单' },
         state: { current: '已装好', outdated: '需更新', missing: '未装', conflict: '无法确认' },
-        noLifecycle: '没有钩子：任务入口和收尾靠 Agent 按说明做，不会自动记录对话。',
+        noLifecycle: '不会自动进入与收尾：靠 Agent 按 FULI 的说明做，也不会自动记录对话。',
       },
       custom: {
         title: '手动接入',
@@ -583,7 +583,7 @@ export const settingsMessages = {
       parts: {
         name: { mcp: 'MCP', hooks: 'Auto start and close', plugin: 'Plugin', skills: 'Skills', instructions: 'Instructions', permissions: 'Allowlist', prompts: '/fla menu' },
         state: { current: 'Installed', outdated: 'Needs update', missing: 'Not installed', conflict: 'Cannot confirm' },
-        noLifecycle: 'No hooks: the Agent starts and closes tasks by FULI\'s instructions, and nothing is captured by itself.',
+        noLifecycle: 'No auto start and close: the Agent follows FULI\'s instructions, and nothing is recorded by itself.',
       },
       custom: {
         title: 'Connect by hand',
