@@ -497,6 +497,48 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('keeps the resource numbers in place while 刷新 reads them again', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true } }
+    const snapshot = (usedBytes: number) => ({ sampledAt: '2026-08-01T10:00:00.000Z', status: 'ready',
+      memory: { usedBytes, hostTotalBytes: 16_000_000_000, hostFreeBytes: 8_000_000_000, complete: true,
+        components: [{ id: 'console', label: 'Management service', status: 'ready', bytes: 40_000_000 }] },
+      disk: { usedBytes: 2_700_000_000, hostTotalBytes: 500_000_000_000, hostFreeBytes: 200_000_000_000, complete: true,
+        measuredAt: '2026-08-01T10:00:00.000Z', components: [] }, exclusions: ['browser-tab-memory'] })
+    let reads = 0
+    let release: (value: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      if (url === '/api/system/resources') {
+        reads += 1
+        if (reads === 1) return Response.json(snapshot(1_073_741_824))
+        return new Promise<Response>((resolve) => { release = resolve })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = () => wrapper.get('.resource-card')
+    expect(card().text()).toContain('1 GB')
+
+    await card().get('[data-resources-refresh]').trigger('click')
+    await flushPromises()
+    // Read again: the numbers stay, no loading line is inserted above them, and the button turns.
+    expect(card().text()).toContain('1 GB')
+    expect(card().findAll('.growth-loading').filter((node) => !node.element.closest('[data-resources-refresh]'))).toHaveLength(0)
+    expect(card().get('[data-resources-refresh]').attributes('aria-busy')).toBe('true')
+    release(Response.json(snapshot(2_147_483_648)))
+    await flushPromises()
+    expect(card().text()).toContain('2 GB')
+    expect(card().get('[data-resources-refresh]').attributes('aria-busy')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('offers no migration once the install already runs native', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
