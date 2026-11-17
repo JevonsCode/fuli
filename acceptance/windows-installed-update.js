@@ -21,12 +21,16 @@ const TIMEOUT = 15 * 60_000;
 const REPO = 'JevonsCode/fuli';
 let smokeLog;
 
-export function previousRelease(pages) {
+// The newest published release with a tray, prereleases included, that is not
+// newer than the checkout (when given): the release a person would update from.
+// A newer release on another line (a 0.29 beta while main is 0.27.x) is not one.
+export function previousRelease(pages, checkout = null) {
   const releases = pages.flat().filter(release => !release.draft && release.published_at)
     .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
   for (const release of releases) {
     const version = release.tag_name?.replace(/^v/, '');
     try { parseSemanticVersion(version); } catch { continue; }
+    if (checkout && compareSemanticVersions(version, checkout) > 0) continue;
     const archive = `fuli-windows-tray-${version}.zip`;
     if (release.assets.some(asset => asset.name === archive)) return { tag: release.tag_name, version, archive };
   }
@@ -90,8 +94,8 @@ async function main() {
     await mkdir(home);
     await mkdir(join(root, 'tmp'));
     const releases = JSON.parse(await run('gh.exe', ['api', '--paginate', '--slurp', `repos/${REPO}/releases?per_page=100`], { env: process.env }));
-    const previous = previousRelease(releases);
     const version = (await json(resolve('package.json'))).version;
+    const previous = previousRelease(releases, version);
     const comparison = compareSemanticVersions(version, previous.version);
     if (comparison === 0) {
       await log(`Skipped: checkout and latest published tray are both ${version}; an update requires a newer version.`);

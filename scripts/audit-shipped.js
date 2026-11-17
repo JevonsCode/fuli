@@ -39,13 +39,24 @@ const ships = (node) => bundled.has(node) || (packages[node] !== undefined && pa
 const advisories = Object.values(report.vulnerabilities)
   .filter(({ severity }) => BLOCKING.has(severity))
   .sort((a, b) => a.name.localeCompare(b.name));
-const blocking = advisories.filter(({ nodes = [] }) => nodes.some(ships));
-const devOnly = advisories.filter((entry) => !blocking.includes(entry));
+// npm audit also lists every package that depends on a vulnerable one, with only
+// names in `via`. Such an entry blocks only through the package that carries the
+// advisory itself: when that package ships it blocks on its own, and when it does
+// not (a build tool's dependency that a bundled package names), its code is not in
+// what people install.
+const ownAdvisory = ({ via = [] }) => via.some((item) => typeof item === 'object' && item !== null);
+const blocking = advisories.filter((entry) => ownAdvisory(entry) && (entry.nodes ?? []).some(ships));
+const inherited = advisories.filter((entry) => !blocking.includes(entry) && !ownAdvisory(entry) && (entry.nodes ?? []).some(ships));
+const devOnly = advisories.filter((entry) => !blocking.includes(entry) && !inherited.includes(entry));
 
 if (blocking.length) {
   console.error('Advisories in what ships to users (fix before merging):');
   for (const entry of blocking) console.error(`  ${describe(entry)}`);
   process.exitCode = 1;
+}
+if (inherited.length) {
+  console.log('Shipped packages that only depend on a flagged development tool (its code does not ship):');
+  for (const entry of inherited) console.log(`  ${describe(entry)}`);
 }
 if (devOnly.length) {
   console.log('Advisories only in development tools (the daily dependency audit opens a fix):');
