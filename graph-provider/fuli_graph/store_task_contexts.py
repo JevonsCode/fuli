@@ -58,6 +58,8 @@ def shown_task_title(board_title, work_log_json):
     except ValueError:
         log = None
     summary = log.get('summary') if isinstance(log, dict) else None
+    if not isinstance(summary, str):
+        summary = None
     for text in (board_title, summary):
         line = next((part.strip() for part in (text or '').splitlines() if part.strip()), '')
         if line:
@@ -267,12 +269,14 @@ class StoreTaskContexts:
             MATCH (task:FuliTaskContext {personal_space_id: $space_id})
             WHERE task.project_agent_id IS NOT NULL AND task.created_at >= $since
             MATCH (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task)
-            WITH task, task.token = session.current_token AND NOT coalesce(task.completed, false) AS under_way
+            WITH task, coalesce(task.token = session.current_token, false)
+                       AND NOT coalesce(task.completed, false) AS under_way
             ORDER BY under_way DESC, task.created_at DESC
             WITH task.project_agent_id AS agent_id, max(task.created_at) AS last_active,
                  sum(CASE WHEN under_way THEN 1 ELSE 0 END) > 0 AS working, collect(task)[0] AS shown
             RETURN agent_id, last_active, working, shown.personal_project_id AS project_id,
-                   head([(shown)-[:COORDINATES_TASK]->(linked:FuliProjectAgentTask) | linked.title]) AS board_title,
+                   CASE WHEN shown.scrubbed_by IS NULL THEN head([(shown)-[:COORDINATES_TASK]->
+                       (linked:FuliProjectAgentTask) | linked.title]) END AS board_title,
                    CASE WHEN shown.scrubbed_by IS NULL THEN shown.work_log_json END AS work_log_json
             ORDER BY last_active DESC, agent_id
             ''', space_id=space_id, since=since, routing_='r',

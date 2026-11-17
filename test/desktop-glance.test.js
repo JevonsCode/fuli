@@ -91,6 +91,19 @@ test('projects that cannot be read leave each row its name and task', async () =
   assert.deepEqual(assistants.rows.map((row) => [row.name, row.project, row.task]), [['Synthetic Lead', null, 'Synthetic task']]);
 });
 
+test('a task the Stop hook closed shows no task text, only the boilerplate is dropped', async () => {
+  const app = syntheticApp({
+    agents: [
+      worked('closed', 1, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed by the Stop hook: the Agent recorded no checkpoint for this task.'.slice(0, 60) }),
+      worked('kept', 2, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed by the Stop hook: the Agent recorded no checkpoint; FULI kept' }),
+      worked('real', 3, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed tray wording' })],
+    names: { closed: { name: 'Synthetic Closed' }, kept: { name: 'Synthetic Kept' }, real: { name: 'Synthetic Real' } }
+  });
+  const { assistants } = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(assistants.rows.map((row) => [row.name, row.task]),
+    [['Synthetic Closed', null], ['Synthetic Kept', null], ['Synthetic Real', 'Auto-closed tray wording']]);
+});
+
 test('no assistant at work reads no projects', async () => {
   const app = syntheticApp();
   await desktopGlance({ app, now: () => NOW });

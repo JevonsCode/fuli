@@ -1,3 +1,4 @@
+import { AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON } from '../conversations/stop-auto-close.js';
 import { withoutControls } from '../text/control-characters.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 
@@ -77,6 +78,12 @@ const section = (rows, more, link) => ({ rows, more, link });
 // A menu label is one short line a person can read: names come from profiles an
 // Agent wrote and from paired computers, so line breaks, tabs (a shortcut column
 // on Windows), hidden or reordering characters and length are taken out here.
+// A task the Stop hook closed has its English boilerplate as its summary: that
+// says nothing of what the assistant did, so the row shows no task text. The
+// Provider cuts a title to 60 characters, so a cut copy is caught too.
+const BOILERPLATE = [AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON];
+const taskTitle = (title) => (typeof title === 'string' && BOILERPLATE.some((text) => text.startsWith(title.trim())) ? null : title);
+
 const shownText = (value, limit) => singleLineExcerpt(withoutControls(value), limit);
 
 // Who a thread waits for: the first names and how many more.
@@ -101,7 +108,7 @@ async function named(app, personalSpaceId, agents) {
     batch.forEach((agent, index) => {
       const profile = records[index].status === 'fulfilled' ? records[index].value.profile : null;
       const name = shownText(profile?.displayName || profile?.name, NAME_CHARS);
-      if (name) rows.push({ name, projectId: agent.personal_project_id ?? null, task: shownText(agent.title, SUBJECT_CHARS) || null,
+      if (name) rows.push({ name, projectId: agent.personal_project_id ?? null, task: shownText(taskTitle(agent.title), SUBJECT_CHARS) || null,
         working: agent.working, at: agent.last_active,
         link: `fuli://agents/${encodeURIComponent(personalSpaceId)}/${encodeURIComponent(agent.agent_id)}` });
     });
