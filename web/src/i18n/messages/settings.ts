@@ -567,7 +567,7 @@ export const settingsMessages = {
         title: 'Connect by hand',
         add: 'Add client',
         addHint: 'For a client that is not listed',
-        addMeta: 'Give its name and MCP configuration file. FULI then connects it like the other clients and keeps it up to date with them.',
+        addMeta: 'Give its name and MCP configuration file; FULI connects it and keeps it updated like the others.',
         notConnected: 'Not connected yet. Choose Connect and FULI writes its entry into the file below.',
         name: 'Name',
         namePlaceholder: 'For example: our team agent',

@@ -17,13 +17,23 @@ test('one-click connection applies a client agent-installer found and self-check
 });
 
 test('a client described by hand connects like a built-in one, even before its file exists', async () => {
+  const customClients = { removable: () => new Set(['acme-agent']) };
   const installer = fakeClientInstaller([{ id: 'acme-agent', builtin: false, detected: false }]);
-  const connect = createClientInstaller({ installer });
+  const connect = createClientInstaller({ installer, customClients });
   assert.deepEqual(await connect({ clientId: 'acme-agent' }), { id: 'acme-agent', status: 'connected', restartRequired: true });
   assert.deepEqual(installer.calls, [['apply', ['acme-agent']]]);
   // An update's self-check reads the same client: one agent-installer still finds outdated is partial.
-  const outdated = createClientInstaller({ installer: fakeClientInstaller([{ id: 'acme-agent', builtin: false }], { afterApply: 'update_available' }) });
+  const outdated = createClientInstaller({ customClients,
+    installer: fakeClientInstaller([{ id: 'acme-agent', builtin: false }], { afterApply: 'update_available' }) });
   assert.equal((await outdated({ clientId: 'acme-agent' })).status, 'partial');
+});
+
+test('a client that is not built in and was not added here, such as another product\'s extension, is never written', async () => {
+  const installer = fakeClientInstaller([{ id: 'acme-agent', builtin: false, detected: true }, { id: 'other-tool', builtin: false, detected: true }]);
+  const connect = createClientInstaller({ installer, customClients: { removable: () => new Set(['acme-agent']) },
+    install: () => assert.fail('no writes') });
+  await assert.rejects(() => connect({ clientId: 'other-tool' }), /unavailable/);
+  await assert.rejects(() => createClientInstaller({ installer, install: () => assert.fail('no writes') })({ clientId: 'acme-agent' }), /unavailable/);
 });
 
 test('the self-check reads agent-installer: a write it does not see as connected is partial', async () => {

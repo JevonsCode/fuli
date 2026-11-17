@@ -14,7 +14,9 @@ export const CLIENT_RUNNING = '客户端正在运行，会把旧配置写回：�
 // agent-installer nothing is written and the answer says why. apps: the
 // client apps that write their cached configuration back (src/agents/client-apps.js):
 // one of them is written only when it is known to be closed (rec#106).
-export function createClientInstaller({ installer, install = installAgent, apps = {} }) {
+// customClients: the custom-client store (custom-clients.js); a client that is
+// not built in is written only when the person added it here.
+export function createClientInstaller({ installer, install = installAgent, apps = {}, customClients = NO_CUSTOM_CLIENTS }) {
   let busy = false;
   return async (input) => {
     assertJsonObject(input, 'Client connection');
@@ -30,7 +32,7 @@ export function createClientInstaller({ installer, install = installAgent, apps 
       }
       const detected = await detectClients(installer);
       const result = detected.status === 'available'
-        ? await install(installer, connectable(detected.clients, input.clientId))
+        ? await install(installer, connectable(detected.clients, input.clientId, customClients.removable()))
         : { status: 'failed', reason: 'client_component_unavailable', message: CLIENT_COMPONENT_UNAVAILABLE };
       // Do not expose config/backup paths or raw filesystem diagnostics over HTTP.
       return { id: input.clientId, status: result.status, restartRequired: result.status === 'connected',
@@ -39,10 +41,13 @@ export function createClientInstaller({ installer, install = installAgent, apps 
   };
 }
 
-function connectable(clients, clientId) {
+const NO_CUSTOM_CLIENTS = Object.freeze({ removable: () => new Set() });
+
+function connectable(clients, clientId, added) {
   const client = clients.find(({ id }) => id === clientId);
-  // A built-in client must be on this machine; the person said where a client of their own keeps its file.
-  if (!client || client.manual || (client.builtin && !client.detected)) {
+  // A built-in client must be on this machine; the person said where a client they added here keeps its file.
+  // Another product's extension in the shared directory is not FULI's to write.
+  if (!client || client.manual || (client.builtin ? !client.detected : !added.has(client.id))) {
     throw new TypeError('Client is unavailable for automatic connection');
   }
   return { id: client.id, label: client.label };

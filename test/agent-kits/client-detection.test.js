@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -59,14 +59,31 @@ test('a client described by hand is written as an install-only extension, checke
   mkdirSync(extensionsDir, { recursive: true });
   // A launcher-only file of the same ID is never replaced, nor removable.
   writeFileSync(join(extensionsDir, 'acme-agent.json'), JSON.stringify({ schemaVersion: 1, name: 'Acme', launch: { command: ['acme'] } }));
-  // The installer lists the built-in Codex and whatever install-only files are there.
+  // The installer lists the built-in Codex and whatever install-only files are there; it takes FULI's
+  // entry out of a client's file unless told to refuse.
+  const removals = [];
+  let refuseRemoval = false;
   const installer = { status: async () => ({ status: 'available', extensionErrors: [],
-    clients: [{ id: 'codex' }, ...[...store.removable()].map((id) => ({ id }))] }) };
+    clients: [{ id: 'codex', componentStates: [{ component: 'mcp', state: 'missing', paths: ['~/.codex/config.toml'] }] },
+      ...[...store.removable()].map((id) => ({ id }))] }),
+    remove: async (ids) => { removals.push(ids); return { status: 'available', partial: refuseRemoval, extensionErrors: [], clients: [],
+      problems: refuseRemoval ? [{ client: ids[0], message: 'The file could not be written.' }] : [] }; } };
   const clients = createCustomClients({ installer, store });
   for (const input of [{}, { name: 'X', mcpFile: '/elsewhere/mcp.json' }, { name: 'X', mcpFile: '~/a.json', format: 'yaml' },
-    { name: 'two\nlines', mcpFile: '~/a.json' }]) {
+    { name: 'two\nlines', mcpFile: '~/a.json' }, { name: 'X', mcpFile: '~' }]) {
     await assert.rejects(() => clients.addCustomClient(input), { code: 'invalid_input' });
   }
+  // `..` is refused in both forms and with either separator, before anything is written.
+  for (const mcpFile of ['~/../outside.json', '~\\..\\outside.json', '~/a/../../outside.json', '~/a/../b.json',
+    `${home}/../outside.json`, `${home}\\a\\..\\b.json`]) {
+    await assert.rejects(() => clients.addCustomClient({ name: 'X', mcpFile }), { code: 'invalid_input', message: /home folder/ }, mcpFile);
+  }
+  // A listed client's own file is never named for another, in any spelling of it.
+  for (const mcpFile of ['~/.codex/config.toml', '~\\.codex\\config.toml', join(home, '.codex', 'config.toml')]) {
+    await assert.rejects(() => clients.addCustomClient({ name: 'My Codex', mcpFile }),
+      { code: 'invalid_input', message: /configuration file of a client already listed/ }, mcpFile);
+  }
+  assert.deepEqual(readdirSync(extensionsDir), ['acme-agent.json']);
   const added = await clients.addCustomClient({ name: 'Acme Agent', mcpFile: join(home, '.acme', 'mcp.json') });
   assert.deepEqual(added, { id: 'acme-agent-2' });
   assert.deepEqual(JSON.parse(readFileSync(join(extensionsDir, 'acme-agent-2.json'), 'utf8')), { schemaVersion: 1, name: 'Acme Agent',
@@ -78,8 +95,15 @@ test('a client described by hand is written as an install-only extension, checke
   await assert.rejects(() => refusing.addCustomClient({ name: '公司客户端', mcpFile: '~/公司/mcp.json' }),
     { code: 'invalid_input', message: '$.install.mcp.file is not a plain path.' });
   assert.deepEqual([...store.removable()], ['acme-agent-2']);
-  assert.throws(() => clients.removeCustomClient('acme-agent'), { code: 'invalid_input' });
-  assert.deepEqual(clients.removeCustomClient('acme-agent-2'), { id: 'acme-agent-2' });
+  // Removing one takes FULI's entry out of its file first; a client whose entry stays is not forgotten.
+  await assert.rejects(() => clients.removeCustomClient('acme-agent'), { code: 'invalid_input' });
+  assert.deepEqual(removals, []);
+  refuseRemoval = true;
+  await assert.rejects(() => clients.removeCustomClient('acme-agent-2'), { code: 'invalid_input', message: 'The file could not be written.' });
+  assert.deepEqual([...store.removable()], ['acme-agent-2']);
+  refuseRemoval = false;
+  assert.deepEqual(await clients.removeCustomClient('acme-agent-2'), { id: 'acme-agent-2' });
+  assert.deepEqual(removals, [['acme-agent-2'], ['acme-agent-2']]);
   assert.deepEqual([...store.removable()], []);
 });
 
@@ -150,6 +174,15 @@ test('every built-in client connects through agent-installer and then reads as c
   const written = await installAgent(installer, { id: 'acme-agent', label: 'Acme Agent' });
   assert.deepEqual([written.status, written.selfCheck.status], ['connected', 'passed'], written.message);
   assert.equal(JSON.parse(readFileSync(join(home, '.acme', 'mcp.json'), 'utf8')).mcpServers.fuli.args.includes('--runtime-config'), true);
+  // FULI refuses a file outside the home folder or a built-in client's own file before agent-installer sees it.
+  for (const mcpFile of ['~/../outside.json', '~/.codex/config.toml']) {
+    await assert.rejects(() => custom.addCustomClient({ name: 'Other', mcpFile }), { code: 'invalid_input' }, mcpFile);
+  }
+  // Removing it takes FULI's entry out first (agent-installer deletes the file it created for FULI alone),
+  // then forgets the client.
+  assert.deepEqual(await custom.removeCustomClient('acme-agent'), { id: 'acme-agent' });
+  assert.equal(existsSync(join(home, '.acme', 'mcp.json')), false);
+  assert.equal((await detectClients(installer)).clients.some(({ id }) => id === 'acme-agent'), false);
   const removed = await installer.remove(builtIn.map(({ id }) => id));
   assert.deepEqual(removed.problems, []);
   const after = (await detectAgents(installer)).agents.filter(({ id }) => builtIn.some((agent) => agent.id === id));

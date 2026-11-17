@@ -80,7 +80,9 @@ computer only (`local_user_only`); the doctor's automatic repair leaves such a c
 
 **Add client** (the large plus that closes the client grid) describes a client agent-installer does
 not know, such as a company's own agent client: a name, the MCP configuration file under the home
-folder (`~/.acme/mcp.json`) and its format. FULI writes it as `<client-id>.json` with only an
+folder (`~/.acme/mcp.json`, no `..`) and its format; a file a listed client already uses is
+refused. Adding one is the person's own step (`local_user_only`), since FULI then writes into that
+file. FULI writes it as `<client-id>.json` with only an
 `install` section into the shared `agent-clients` extension directory
 (`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions` elsewhere), so
 agent-installer treats it like a built-in client; the session launcher ignores such a file.
@@ -89,7 +91,10 @@ reason. The client then has a tile of its own: **Connect** writes FULI's standar
 `other`, chat profile) into the file the person named, creating it when it is not there yet and
 backing up one that is, and **Update connection** and **Connect all** keep it current with the other
 clients. `fuli setup` and `fuli clients update` still cover the built-in clients only. Only this
-computer can add, connect or remove one, and FULI removes only files of that shape. **Connect by
+computer can add, connect or remove one, and FULI removes only files of that shape. Connect writes
+only a client added here, never another product's extension. Removing one first takes FULI's entry
+out of its file (a file agent-installer created for FULI alone goes); when that fails, the client
+stays and the reason answers. **Connect by
 hand**, further down the page, keeps the configuration to copy into a client FULI should not write.
 
 ## 2. First actual tool call and verification

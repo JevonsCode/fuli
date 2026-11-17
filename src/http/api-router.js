@@ -170,7 +170,7 @@ export async function handleApiRequest({
     }
     sendJson(response, 200, request.method === 'POST'
       ? await system.addCustomClient(await readJson(request))
-      : system.removeCustomClient(customClient[1]));
+      : await system.removeCustomClient(customClient[1]));
     return true;
   }
 

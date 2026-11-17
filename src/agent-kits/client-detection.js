@@ -30,6 +30,11 @@ export async function detectClients(installer) {
   return { status: 'available', clients: answer.clients.filter((client) => client.platformSupported).map(clientOf) };
 }
 
+// The MCP files of every client in an installer status answer, on this
+// platform or not: the files a client described by hand may not name.
+export const listedMcpFiles = (clients) => clients.flatMap((client) => (client.componentStates ?? [])
+  .filter(({ component }) => component === 'mcp').flatMap(({ paths }) => paths ?? []));
+
 function clientOf(client) {
   const states = client.componentStates.filter(({ state }) => state !== 'unsupported');
   const components = Object.fromEntries(states.map(({ component, state }) => [component, state]));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { awaitsFirstConnection, canConnect, changedExplanation, changesNewestFirst, clientTiles, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
+import { settingsMessages } from '../../i18n/messages/settings'
 
 const client = (id: string, status: ClientObservation['status']): ClientObservation =>
   ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
@@ -56,5 +57,17 @@ describe('an outdated entry explained (rec#106)', () => {
     const shown = outdated({ changes: [...changes] })
     expect(changesNewestFirst(shown).map(({ detectedAt }) => detectedAt)).toEqual([changes[1].detectedAt, changes[0].detectedAt])
     expect(shown.changes[0]!.detectedAt).toBe(changes[0].detectedAt)
+  })
+})
+
+describe('client connection copy', () => {
+  it('keeps every 手动接入 / Add client string within 100 characters in both languages', () => {
+    const strings = (value: unknown, key: string): [string, string][] => typeof value === 'string' ? [[key, value]]
+      : Object.entries(value as Record<string, unknown>).flatMap(([name, inner]) => strings(inner, `${key}.${name}`))
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      for (const [key, text] of strings(settingsMessages[locale].connection.custom, locale)) {
+        expect([...text].length, key).toBeLessThanOrEqual(100)
+      }
+    }
   })
 })

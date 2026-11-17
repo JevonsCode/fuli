@@ -89,8 +89,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/session-launch/new-session', 'Opening a new session starts a program (a terminal window) on this computer, so it happens only on the person\'s own click in the console; an Agent that wants another client to take over gives the person the one-sentence prompt instead.'),
   delegable('settings', 'POST /api/system/client-connection/connect', 'Run it again with the opposite action for that client.'),
   local('POST /api/system/client-connection/restart', 'Restarting a client quits that app and ends its open sessions, so it happens only on the person\'s own click in the console on this computer; an Agent tells the person to quit the client, update the connection, then reopen it.'),
-  delegable('settings', 'POST /api/system/client-connection/custom-clients','Remove it with DELETE /api/system/client-connection/custom-clients/:clientId.'),
-  delegable('settings', 'DELETE /api/system/client-connection/custom-clients/:clientId', 'Describe it again with POST /api/system/client-connection/custom-clients.'),
+  local('POST /api/system/client-connection/custom-clients', 'Adding a client names a file in the person\'s home folder that FULI then writes its entry into, so the person chooses it themself in Settings › 客户端 on this computer; an Agent tells them where.'),
+  delegable('settings', 'DELETE /api/system/client-connection/custom-clients/:clientId', 'The person adds it again in Settings › 客户端 (添加客户端).'),
   local('POST /api/system/graph-migration', 'Moving an older install\'s Docker graph into the built-in graph stops and restarts FULI; the person starts it from Settings. An Agent can read GET /api/system/doctor, and when the click cannot finish, follow the guide the doctor item links (data.guideUrl) with the person.'),
   delegable('settings', 'POST /api/system/doctor/repair', 'Not undone; it rewrites client configuration to what setup writes.'),
   // An npm copy beside the desktop app: removing it changes the person's own computer, so it takes their words.
