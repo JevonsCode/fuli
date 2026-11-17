@@ -19,6 +19,7 @@ export const ASTRO_OPERATION = 'project_candidate';
 const OPERATION = ASTRO_OPERATION;
 // One logical decision on the task-entry hot path, retry, repair and backoff
 // included; the port's shared deadline enforces it and aborts the request.
+// It is sent as hotPath: a timeout under it is not the role's failure (rec#139).
 const HOT_PATH_TIMEOUT_MS = 3000;
 const PROMPT_OPENING_CHARS = 600;
 const DESCRIPTION_CHARS = 240;
@@ -116,7 +117,7 @@ function candidateRequest(task, personalSpaceId, taskPrompt, candidates) {
     requestId: `${OPERATION}:${contentHash({ scope, evidenceVersion, promptVersion: PROMPT_VERSION })}`,
     scope, versions: { evidence: evidenceVersion, policy: PROMPT_VERSION }, instructions: INSTRUCTIONS, evidence,
     output: { type: 'choice', options: [...ids.map(id => ({ id, description: `The task belongs to the project in evidence ${id}.` })), NONE_OPTION] },
-    decisions: ['propose'], budget: { timeoutMs: HOT_PATH_TIMEOUT_MS }
+    decisions: ['propose'], budget: { timeoutMs: HOT_PATH_TIMEOUT_MS, hotPath: true }
   };
 }
 

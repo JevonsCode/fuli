@@ -22,6 +22,8 @@ const STRUCTURED_OUTPUT_SIGNAL = /response_format|json_schema|output_config|outp
 // output, key use, permission, budget, egress or task) and stays the role's
 // until the role itself answers. A timeout is the role's too: the time limit is
 // the role's own budget, so a long request of one role says nothing of the rest.
+// A time limit a hot-path caller tightened below the role's is not that
+// budget: such a timeout is passed over when health is read (rec#139, port.js health).
 export const CONNECTIVITY_REASONS = Object.freeze(['network']);
 
 export function modelFailure(failureClass, reason, { retryAfterMs = null } = {}) {

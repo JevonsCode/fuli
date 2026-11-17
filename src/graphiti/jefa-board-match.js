@@ -22,6 +22,7 @@ export const JEFA_OPERATION = 'board_match';
 const OPERATION = JEFA_OPERATION;
 // One logical decision on the task-entry hot path, retry, repair and backoff
 // included; the port's shared deadline enforces it and aborts the request.
+// It is sent as hotPath: a timeout under it is not the role's failure (rec#139).
 const HOT_PATH_TIMEOUT_MS = 3000;
 const PROMPT_OPENING_CHARS = 600;
 const SUMMARY_CHARS = 240;
@@ -144,7 +145,7 @@ function matchRequest(task, personalSpaceId, taskPrompt, listed) {
     requestId: `${OPERATION}:${contentHash({ scope, evidenceVersion, promptVersion: PROMPT_VERSION })}`,
     scope, versions: { evidence: evidenceVersion, policy: PROMPT_VERSION }, instructions: INSTRUCTIONS, evidence,
     output: { type: 'choice', options: [...ids.map(id => ({ id, description: `The task continues the board task in evidence ${id}.` })), NONE_OPTION] },
-    decisions: ['propose'], budget: { timeoutMs: HOT_PATH_TIMEOUT_MS }
+    decisions: ['propose'], budget: { timeoutMs: HOT_PATH_TIMEOUT_MS, hotPath: true }
   };
 }
 

@@ -66,6 +66,7 @@ test('a query is embedded once for its project, kept a while, and not at all for
   const first = await queryVector(application, { personalProjectId: 'alpha', query: 'how do we ship', timeoutMs: 1500 });
   assert.deepEqual(first, { model: 'synthetic-embed', vector: [1, 0.5] });
   assert.equal(calls.embedded[0].budget.timeoutMs, 1500);
+  assert.equal(calls.embedded[0].budget.hotPath, true, 'a search waits on it');
   await queryVector(application, { personalProjectId: 'alpha', query: 'how do we ship', timeoutMs: 1500 });
   assert.equal(calls.embedded.length, 1, 'the second ask is served from the cache');
   assert.equal(await queryVector(application, { personalProjectId: 'beta', query: 'secret plan' }), null);

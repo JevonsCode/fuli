@@ -110,7 +110,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
   // An attempt as the ledger keeps it before it goes out: metadata only,
   // never prompt text, texts or vectors. Reserves its ceiling in the role's
   // window and answers the reason it may not start, or null.
-  function reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens, remainingMs }) {
+  function reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens, remainingMs, callerDeadline = false }) {
     const { target, roleConfig } = call;
     const attemptStarted = now();
     const pending = {
@@ -120,7 +120,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       healthIdentity: connectionHealthIdentity(target.id, target), protocol: target.protocol,
       endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: call.mode,
       startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + maxOutputTokens,
-      costCurrency: target.pricing?.currency ?? null
+      costCurrency: target.pricing?.currency ?? null, callerDeadline
     };
     const blocked = ledger.reserve({ attempt: pending, ceilingCost: ceilingCost(target.pricing, inputTokens, maxOutputTokens),
       expiresAt: new Date(attemptStarted.getTime() + remainingMs + RESERVATION_GRACE_MS).toISOString(),
@@ -161,7 +161,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
 
       const { pending, attemptStarted, blocked } = reserveAttempt(request, call,
-        { purpose, inputTokens, maxOutputTokens: outputTokens, remainingMs });
+        { purpose, inputTokens, maxOutputTokens: outputTokens, remainingMs, callerDeadline: limits.callerDeadline });
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
@@ -255,7 +255,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     for (;;) {
       const remainingMs = deadline - now().getTime();
       if (remainingMs < MIN_ATTEMPT_MS) return stop('transient', 'timeout');
-      const { pending, attemptStarted, blocked } = reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens: 0, remainingMs });
+      const { pending, attemptStarted, blocked } = reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens: 0, remainingMs,
+        callerDeadline: limits.callerDeadline });
       if (blocked) return stop('budget_exhausted', blocked);
       let result;
       try {
@@ -376,11 +377,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // that says whether it answers (scope 'connection'): a newer answer
     // supersedes an older network failure, and a newer network failure
     // reaches every role on it. An answer that would not validate still came
-    // from a working model, so only a failed call counts as failing.
+    // from a working model, so only a failed call counts as failing. A
+    // timeout under a time limit a hot-path caller tightened (budget.hotPath:
+    // it would not wait, rec#139) is passed over: the attempt before it decides.
     health(role, connectionId, connection) {
       if (!connection) return null;
       const identity = connectionHealthIdentity(connectionId, connection);
-      const own = ledger.lastAttempt({ healthIdentity: identity, role });
+      const own = ledger.lastAttempt({ healthIdentity: identity, role, skipCallerTimeouts: true });
       if (own?.outcome === 'failed' && !CONNECTIVITY_REASONS.includes(own.failureReason)) return failingHealth(own, 'role');
       const shared = ledger.lastAttempt({ healthIdentity: identity, connectivityReasons: CONNECTIVITY_REASONS });
       if (!shared) return { status: 'unknown', at: null, reason: null, scope: null };
