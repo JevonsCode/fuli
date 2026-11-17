@@ -342,13 +342,14 @@
       <section class="preview-changes" data-preview-baseline="0.27.16" aria-labelledby="changes-title" id="changes">
         <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.27.16 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.27.16 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
         <div><h3 data-i18n="next.c.features">新功能</h3><ul>
-          <li data-i18n="next.c.features.1">下一个预览版的新功能会列在这里。</li>
+          <li data-i18n="next.c.features.1">另一台电脑可以当「运行机」：上面的客户端都用这台电脑的 FULI，知识和记忆只存一份。</li>
+          <li data-i18n="next.c.features.2">主机不在时运行机约 5 秒内应答，任务记录先排队，连上后补交、只记一次；不想用了就 fuli runner leave。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.changes">变化</h3><ul>
-          <li data-i18n="next.c.changes.1">相对稳定版改了什么、去掉了什么，会列在这里。</li>
+          <li data-i18n="next.c.changes.1">运行机发起的请求在这台电脑上一律只读；被撤销就立刻停用。没配对运行机的电脑什么都不多做。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
-          <li data-i18n="next.c.upgrade.1">数据格式有没有变化、怎么退回，会写在这里。</li>
+          <li data-i18n="next.c.upgrade.1">圆桌数据第一次启动时从第 11 版升到第 12 版，先自动备份；之后 0.27.16 及更早的 FULI 打不开它，退回要用备份。</li>
         </ul></div>
       </section>
 
