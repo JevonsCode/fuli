@@ -362,7 +362,7 @@ describe('交给 Tonborg 确认', () => {
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: modelOff })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
-    expect(wrapper.text()).toContain('Tonborg 的模型没开：会话的回答只当建议')
+    expect(wrapper.text()).toContain('Tonborg 配了模型，但现在不能用来确认：会话的回答只当建议')
     expect(wrapper.text()).not.toContain('替它确认')
     expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
   })
