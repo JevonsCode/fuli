@@ -15,8 +15,8 @@ import { markdownLink } from '../text/markdown-link.js';
 // triage counts; no model is called. Forming also moves what the topic's
 // sessions held in their temporary projects into it, and an undo moves back
 // what nobody changed since (the Provider's topic_knowledge_migration). Then
-// Bole hires the project's first team and Astro hands the topic over to each
-// of them as a task of their own (topic-team-handoff.js).
+// Astro hands the topic over to the project's lead as a task of its own
+// (topic-team-handoff.js); Bole hires anyone else when a task needs them.
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
 const PROPOSAL_MIN_DAYS = 2;
 const PROPOSAL_ASK_AGAIN_AFTER = 3;
@@ -75,20 +75,20 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
         ? ' Then ask start_question with the native choice of the host; only the person answers it.' : '') };
 }
 
-// Whether the team starts now is the person's call at that moment (Jevons
-// 11-11): one click, with 其他 for their own words. Each handover is a
-// backlog task, so "yes" is setting those tasks to queued.
+// Whether the lead starts now is the person's call at that moment (Jevons
+// 11-11): one click, with 其他 for their own words. The handover is a
+// backlog task, so "yes" is setting it to queued.
 function startQuestion(formed) {
   // Only a task waiting in the backlog can be started; a blocked one says why in the task itself.
   const tasks = (formed.team?.handoffs ?? []).filter(item => item.task_id && item.status === 'backlog').map(item => item.task_id);
   if (!tasks.length) return {};
-  return { start_question: { ask: `「${formed.topic}」的团队现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
+  return { start_question: { ask: `「${formed.topic}」的负责人现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
     on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', summary: '你说马上开工',
       personal_project_id: formed.personal_project_id, task_ids: tasks } } };
 }
 
 // The person said yes: an AI-draft brief, a lead staffed through AR, every
-// open conversation of the topic attached, and the team hired and briefed.
+// open conversation of the topic attached, and the lead briefed.
 // People can rename, merge or split it afterwards.
 export async function acceptTopicProposal(application, { topic, sourceApplication = 'other' }) {
   const stats = await openTopic(application, topic);
