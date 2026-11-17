@@ -1,37 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
-import { CAPTURE_CLIENTS, captureSourceFor, shownCaptureClients } from './capture-clients'
+import { CAPTURE_SOURCES, captureSourceFor, shownCaptureClients } from './capture-clients'
 
-const sources = (clients: ReturnType<typeof shownCaptureClients>) => clients.map(([source]) => source)
-const detection = (clients: Array<[string, string]>) => ({ clients: clients.map(([id, status]) => ({ id, status })) })
+const sources = (clients: ReturnType<typeof shownCaptureClients>) => clients.map(({ source }) => source)
+type Listed = [id: string, status: string, sourceApplication: string | null, label?: string]
+const detection = (clients: Listed[], customClients: { id: string, label: string }[] = []) => ({
+  clients: clients.map(([id, status, sourceApplication, label]) => ({ id, status, sourceApplication, label: label ?? id })), customClients })
 
 describe('capture clients', () => {
-  it('maps agent-installer client ids to capture sources, and nothing for a client FULI does not capture from', () => {
-    expect(captureSourceFor('claude-code')).toBe('claude_code')
-    expect(captureSourceFor('codex')).toBe('codex')
-    expect(captureSourceFor('cursor')).toBe('cursor')
-    expect(captureSourceFor('opencode')).toBe('opencode')
-    expect(captureSourceFor('dsh')).toBe('dsh')
-    expect(captureSourceFor('claude-desktop')).toBeNull()
-    expect(captureSourceFor('kiro')).toBeNull()
+  it('records a client under its own source, and one without a source of its own under other', () => {
+    expect(captureSourceFor({ sourceApplication: 'claude_code' })).toBe('claude_code')
+    expect(captureSourceFor({ sourceApplication: 'claude' })).toBe('claude')
+    expect(captureSourceFor({ sourceApplication: 'kiro' })).toBe('kiro')
+    expect(captureSourceFor({ sourceApplication: null })).toBe('other')
+    expect(captureSourceFor({})).toBe('other')
   })
 
-  it('lists only the capturable clients this machine has', () => {
-    const shown = shownCaptureClients(detection([['claude-code', 'connected'], ['codex', 'not_detected'],
-      ['cursor', 'not_connected'], ['claude-desktop', 'connected']]), {})
-    expect(sources(shown)).toEqual(['claude_code', 'cursor'])
+  it('lists a switch for every client the client card lists, the ones without a capture adapter included', () => {
+    const shown = shownCaptureClients(detection([['claude-code', 'connected', 'claude_code', 'Claude Code'], ['codex', 'not_detected', 'codex'],
+      ['cursor', 'not_connected', 'cursor', 'Cursor'], ['claude-desktop', 'connected', 'claude', 'Claude Desktop'], ['kiro', 'connected', 'kiro', 'Kiro'],
+      ['gemini', 'connected', null, 'Gemini CLI']], [{ id: 'acme-agent', label: 'Acme Agent' }]), {})
+    expect(sources(shown)).toEqual(['claude_code', 'cursor', 'claude', 'kiro', 'other'])
+    expect(shown.find(({ source }) => source === 'claude')!.label).toBe('Claude Desktop')
+    // `other` names the clients it stands for on this machine.
+    expect(shown.at(-1)!.covers).toEqual(['Gemini CLI', 'Acme Agent'])
   })
 
   it('keeps a client that is turned off even when it is no longer detected', () => {
-    const shown = shownCaptureClients(detection([['claude-code', 'connected'], ['codex', 'not_detected']]),
+    const shown = shownCaptureClients(detection([['claude-code', 'connected', 'claude_code'], ['codex', 'not_detected', 'codex']]),
       { disabledSources: ['codex', 'other'] })
-    // `other` turned off is a legacy OpenCode and DeepSeek Harness off (rec#11 D-64), so both can be turned back on.
-    expect(sources(shown)).toEqual(['claude_code', 'codex', 'opencode', 'dsh'])
-    expect(sources(shownCaptureClients(detection([]), { disabledSources: ['other'], capturedSources: ['opencode', 'dsh'] }))).toEqual([])
+    // `other` turned off is also a legacy OpenCode, Antigravity and DeepSeek Harness off (rec#11 D-64), so each can be turned back on.
+    expect(sources(shown)).toEqual(['claude_code', 'codex', 'opencode', 'dsh', 'antigravity', 'other'])
+    expect(sources(shownCaptureClients(detection([]), { disabledSources: ['other'], capturedSources: ['opencode', 'dsh', 'antigravity'] })))
+      .toEqual(['other'])
   })
 
-  it('falls back to every capturable client when the clients cannot be read', () => {
-    expect(shownCaptureClients(null, {})).toBe(CAPTURE_CLIENTS)
-    expect(shownCaptureClients({ available: false, clients: [] }, {})).toBe(CAPTURE_CLIENTS)
+  it('falls back to every source when the clients cannot be read', () => {
+    expect(sources(shownCaptureClients(null, {}))).toEqual([...CAPTURE_SOURCES])
+    expect(sources(shownCaptureClients({ available: false, clients: [] }, {}))).toEqual([...CAPTURE_SOURCES])
+    expect(shownCaptureClients(null, {}).find(({ source }) => source === 'kiro')!.label).toBe('Kiro')
   })
 })

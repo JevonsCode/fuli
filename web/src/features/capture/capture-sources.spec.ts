@@ -31,4 +31,11 @@ describe('capture sources (rec#11 D-64)', () => {
     expect(withCaptureSource({ disabledSources: ['codex', 'cursor'] }, 'cursor', true))
       .toEqual({ disabledSources: ['codex'], capturedSources: ['cursor'] })
   })
+
+  it('turning other off keeps on the clients it used to stand for (rec#11 D-64)', () => {
+    expect(withCaptureSource({ disabledSources: ['dsh'] }, 'other', false))
+      .toEqual({ disabledSources: ['dsh', 'other'], capturedSources: ['opencode', 'antigravity'] })
+    expect(withCaptureSource({ disabledSources: ['other', 'dsh'], capturedSources: ['opencode'] }, 'other', true))
+      .toEqual({ disabledSources: ['dsh'], capturedSources: ['opencode', 'other'] })
+  })
 })
