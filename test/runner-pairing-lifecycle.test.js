@@ -212,3 +212,23 @@ test('one address cannot hold more than its share of the runner listener\'s conn
   assert.equal(closed, true);
   assert.equal(sockets.slice(0, 24).filter((socket) => socket.destroyed).length, 0);
 });
+
+test('closing the connection cuts a replay waiting on the host at once, and its entry stays queued', async (t) => {
+  const { store, connection } = await tlsPair(t, async (request, response, { pathname }) => {
+    if (pathname === RUNNER_PATHS.hello) {
+      response.writeHead(200, { 'content-type': 'application/json' }).end('{}');
+      return true;
+    }
+    request.resume();
+    response.on('close', () => {});
+    return true;
+  });
+  store.enqueue({ id: 'long-wait', tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
+  const started = Date.now();
+  const round = deliverOutbox({ store, connection });
+  setTimeout(() => connection.close(), 300).unref();
+  const result = await round;
+  assert.ok(Date.now() - started < 5000, 'the 3-minute replay wait was cut by close');
+  assert.equal(result.queued, 1);
+  assert.equal(store.claimNext().id, 'long-wait');
+});
