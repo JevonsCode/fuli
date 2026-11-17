@@ -195,7 +195,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
     'previous_checkpoint_missing', 'effective_preferences', 'deferred_conflicts', 'active_conflicts', 'application_guidance',
     'task_knowledge_recall', 'context', 'project_agent_context', 'triage_candidates', 'agent_receipt', 'task_guidance']);
   assert.deepEqual(baseline.triage_candidates, { projects: ['Garden Planner', 'Alpha Ledger', 'Hidden Orchard'], topics: [],
-    label_with: 'checkpoint_task_knowledge.triage' });
+    label_with: 'checkpoint_task_knowledge.triage', continue_with: 'list_agent_conversations.topic' });
 
   for (const role of [null, astroRole({ enabled: false }), astroRole({ allowedOperations: ['other_operation'] })]) {
     const run = harness({ role, replies: [answer()] });

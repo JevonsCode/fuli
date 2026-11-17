@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beginConversation, checkpointConversation, resumeConversation } from '../src/graphiti/agent-conversations.js';
+import { beginConversation, checkpointConversation, queryConversations, resumeConversation } from '../src/graphiti/agent-conversations.js';
+import { AGENT_CONVERSATION_DEFINITIONS } from '../src/agent-tools/agent-conversation-definitions.js';
 import { withCaptureBudget } from '../src/conversations/capture-window.js';
 
 const task = { token: 'fuli-task-example', sessionId: 'native-session', personalProjectId: 'sample', projectAgentId: 'engineer', sourceApplication: 'codex' };
@@ -216,4 +217,25 @@ test('compact hook preserves full instructions but does not duplicate history', 
   assert.equal(view.project_agent_context.memory.revision, 4);
   assert.equal(view.project_agent_context.memory.requiresFullReadBeforeWrite, true);
   assert.ok(JSON.stringify(view).length < JSON.stringify(source).length / 2);
+});
+
+test('a list asks for one topic only when a topic is named, so a conversation about it finds the earlier ones', async () => {
+  const calls = [];
+  const app = { config: { personal: { spaceId: 'personal' } },
+    personal: { conversation: async (operation, input) => { calls.push({ operation, input });
+      return { conversations: [{ id: 'c1', summary: 'Picked raised beds', triage: { kind: 'topic', topic: 'Garden' } }] }; } } };
+  const astro = { personalSpaceId: 'personal', agentId: 'employee.assistant', sourceApplication: 'codex', mode: 'list' };
+
+  const listed = await queryConversations(app, { ...astro, topic: 'Garden' });
+  assert.deepEqual(calls[0], { operation: 'query', input: { personal_space_id: 'personal', personal_project_id: null,
+    agent_id: 'employee.assistant', source_application: 'codex', mode: 'list', topic: 'Garden', after: 0, limit: 10 } });
+  // Each one can be continued, as in any list.
+  assert.match(listed.conversations[0].continuation_prompt, /c1/);
+  await queryConversations(app, astro);
+  assert.equal(Object.hasOwn(calls[1].input, 'topic'), false);
+
+  // The tool offers it, and nothing requires it.
+  const tool = AGENT_CONVERSATION_DEFINITIONS.find(definition => definition.name === 'list_agent_conversations');
+  assert.deepEqual([tool.inputSchema.properties.topic.type, tool.inputSchema.properties.topic.maxLength], ['string', 80]);
+  assert.equal(tool.inputSchema.required.includes('topic'), false);
 });
