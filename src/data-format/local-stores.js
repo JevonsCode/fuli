@@ -17,6 +17,8 @@ import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { VISITOR_ACCESS_FORMAT } from '../visitor-access/store.js';
+import { RUNNER_HOST_FILE, RUNNER_HOST_FORMAT } from '../runner/host-store.js';
+import { RUNNER_FILE, RUNNER_FORMAT } from '../runner/runner-store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
@@ -106,6 +108,10 @@ const sqliteStores = () => [
   ['agent-delegation.sqlite', AGENT_DELEGATION_FORMAT],
   // Each visiting requester's mode and every read a visitor made of a shared project; reads kept 90 days.
   ['visitor-access.sqlite', VISITOR_ACCESS_FORMAT],
+  // The runners a host invited and paired, and the outbox entries each replayed (docs/runner.md).
+  [RUNNER_HOST_FILE, RUNNER_HOST_FORMAT],
+  // A runner's host, its last answers, offline task tokens and outbox (docs/runner.md).
+  [RUNNER_FILE, RUNNER_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
   ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],

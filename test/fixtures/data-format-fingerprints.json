@@ -95,6 +95,14 @@
     "visitor-access": {
       "version": 4,
       "fingerprint": "b8f1fc810949b0a53a22a3243daa74e963b4aa938006b1f216756b108be2cf2c"
+    },
+    "runner-host": {
+      "version": 1,
+      "fingerprint": "507b94db7bc91d526bc4a692a5ff64d9fb48d6d00e02f3a38ff03d2b32bf57cb"
+    },
+    "runner": {
+      "version": 1,
+      "fingerprint": "438cba5fbe1e4cecb058e22575bf91a52a3cf7950259eef4c884dd4865372f50"
     }
   }
 }

@@ -20,8 +20,9 @@ export const NEARBY_SERVICE_TYPE = 'fuli-peer';
 // left the error goes to onFailure and the caller turns nearby pairing off.
 // Sending into a network that went away (an interface down, sleep and wake) is
 // only a warning; mDNS retries itself.
+// serviceType: the DNS-SD type to announce and look for; FULI's runners use their own.
 export function createBonjourDiscovery({ onFailure = () => {}, options = undefined, adapters = () => [],
-  create = (target) => new Bonjour(target, () => {}) } = {}) {
+  serviceType = NEARBY_SERVICE_TYPE, create = (target) => new Bonjour(target, () => {}) } = {}) {
   let endpoints = null;
   let opened = '';
   let advert = null;
@@ -63,7 +64,7 @@ export function createBonjourDiscovery({ onFailure = () => {}, options = undefin
     open().forEach((endpoint, index) => {
       const suffix = index ? `-${index + 1}` : '';
       const service = endpoint.bonjour.publish({ name: `${advert.name}${suffix}`, host: advert.host.replace(/(\.local)?$/, `${suffix}$1`),
-        port: advert.port, txt: advert.txt, type: NEARBY_SERVICE_TYPE, disableIPv6: true });
+        port: advert.port, txt: advert.txt, type: serviceType, disableIPv6: true });
       if (advert.addresses) {
         const allowed = new Set(advert.addresses);
         const records = service.records.bind(service);
@@ -84,7 +85,7 @@ export function createBonjourDiscovery({ onFailure = () => {}, options = undefin
   const look = () => {
     if (!watch) return;
     for (const endpoint of open()) {
-      const browser = endpoint.bonjour.find({ type: NEARBY_SERVICE_TYPE });
+      const browser = endpoint.bonjour.find({ type: serviceType });
       browser.on('up', (service) => watch.onUp(view(service)));
       browser.on('txt-update', (service) => watch.onUp(view(service)));
       browser.on('srv-update', (service) => watch.onUp(view(service)));

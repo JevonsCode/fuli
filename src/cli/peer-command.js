@@ -1,14 +1,9 @@
-import { resolveSetupPaths } from '../setup/paths.js';
-import { DEFAULT_RUNTIME_SETTINGS, readRuntimeSettings } from '../system/runtime-settings.js';
+import { localConsoleUrl } from './console-url.js';
 import { runPeerControlCommand } from '../../packages/roundtable/src/peer/control-cli.js';
 
 // `fuli peer` drives the Roundtable package's peer controls on FULI's local console.
 export function runPeerCommand(args, { env = process.env, fetchImpl = fetch, write = console.log } = {}) {
-  const baseUrl = () => {
-    const paths = resolveSetupPaths({ dataDir: option(args, '--data-dir'), env });
-    const settings = paths.runtimeSettingsPath ? readRuntimeSettings(paths.runtimeSettingsPath) : DEFAULT_RUNTIME_SETTINGS;
-    return `http://127.0.0.1:${settings.ports.console}`;
-  };
+  const baseUrl = () => localConsoleUrl({ dataDir: option(args, '--data-dir'), env });
   return runPeerControlCommand(args, { baseUrl, command: 'fuli', fetchImpl, write,
     notRunning: 'The local FULI console is not running; start it with `fuli start`.' });
 }
