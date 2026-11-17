@@ -181,6 +181,12 @@ GRAPH_MIGRATIONS = (
         'an optional marker on entities and relationships that a private or restricted source of theirs was deleted',
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/21-confirm-before-hiring', 21, 'schema',
+        "whether a project asks the person before Bole hires, stored anew (confirm_before_hiring): "
+        'the earlier value was saved as on by default and is no longer read',
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

@@ -65,6 +65,10 @@ async def test_temporary_scope_preserves_hr_gate_then_adopts_task_only_agent_and
         scope = {'personal_space_id': space_id, 'personal_project_id': project.json()['project_id']}
         hr = await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space_id})
         assert hr.status_code == 200, hr.text
+        # A project asks before a hire only once the person turned asking on.
+        policy = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'ask_before_recruitment': True, 'auto_reuse_previous_agent': True})
+        assert policy.status_code == 200, policy.text
         payload = {**scope, 'idempotency_key': 'synthetic-temporary-staffing',
             'title': 'Synthetic temporary verification', 'objective': 'Verify isolated task lifecycle.',
             'work_kind': 'verification', 'source_application': 'codex', 'source_session_id': 'synthetic-session',

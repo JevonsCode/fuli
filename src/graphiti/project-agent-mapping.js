@@ -852,7 +852,7 @@ export function projectAgentCoordinationPolicyRecord(value = {}) {
   return {
     personalSpaceId: value.personal_space_id,
     personalProjectId: value.personal_project_id,
-    askBeforeRecruitment: value.ask_before_recruitment ?? true,
+    askBeforeRecruitment: value.ask_before_recruitment ?? false,
     autoReusePreviousAgent: value.auto_reuse_previous_agent ?? true,
     autoGrowTeam: value.auto_grow_team ?? true,
     teamLeadAgentId: value.team_lead_agent_id ?? null,
@@ -869,7 +869,7 @@ export function providerProjectAgentCoordinationPolicy(input) {
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
     ask_before_recruitment:
-      input.askBeforeRecruitment ?? input.ask_before_recruitment ?? true,
+      input.askBeforeRecruitment ?? input.ask_before_recruitment ?? false,
     auto_reuse_previous_agent:
       input.autoReusePreviousAgent ?? input.auto_reuse_previous_agent ?? true,
     ...(Object.hasOwn(input, 'autoGrowTeam') || Object.hasOwn(input, 'auto_grow_team')

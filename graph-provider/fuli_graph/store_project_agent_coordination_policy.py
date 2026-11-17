@@ -53,7 +53,12 @@ class StoreProjectAgentCoordinationPolicy:
         return ProjectAgentCoordinationPolicyRecord(
             personal_space_id=personal_space_id,
             personal_project_id=personal_project_id,
-            ask_before_recruitment=raw.get('ask_before_recruitment', True),
+            # Stored as confirm_before_hiring since graph 21. The earlier
+            # ask_before_recruitment property was written with every policy
+            # save and on unless the save said otherwise, so it cannot tell a
+            # choice from a default and is not read: a project asks only once
+            # the person turns asking on.
+            ask_before_recruitment=raw.get('confirm_before_hiring', False),
             auto_reuse_previous_agent=raw.get(
                 'auto_reuse_previous_agent',
                 True,
@@ -156,7 +161,7 @@ class StoreProjectAgentCoordinationPolicy:
             WHERE ($expected_updated_at IS NULL AND policy.updated_at IS NULL)
                OR (policy.updated_at.epochSeconds = $expected_updated_at.epochSeconds
                    AND policy.updated_at.nanosecond = $expected_updated_at.nanosecond)
-            SET policy.ask_before_recruitment = $ask_before_recruitment,
+            SET policy.confirm_before_hiring = $ask_before_recruitment,
                 policy.auto_reuse_previous_agent = $auto_reuse_previous_agent,
                 policy.auto_grow_team = $auto_grow_team,
                 policy.team_lead_agent_id = $team_lead_agent_id,

@@ -188,7 +188,7 @@ function defaultPolicy(): ProjectAgentCoordinationPolicy {
   return {
     personalSpaceId: props.personalSpaceId,
     personalProjectId: props.personalProjectId,
-    askBeforeRecruitment: true,
+    askBeforeRecruitment: false,
     autoReusePreviousAgent: true,
     autoGrowTeam: true,
     updatedAt: null,
@@ -208,7 +208,7 @@ function normalizePolicy(value: unknown): ProjectAgentCoordinationPolicy {
       || props.personalProjectId,
     askBeforeRecruitment: booleanValue(
       record.askBeforeRecruitment ?? record.ask_before_recruitment,
-      true,
+      false,
     ),
     autoReusePreviousAgent: booleanValue(
       record.autoReusePreviousAgent ?? record.auto_reuse_previous_agent,
