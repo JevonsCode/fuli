@@ -16,7 +16,6 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
 import { decodeWorkerDescriptor, WORKER_DESCRIPTOR_ENV } from '../graphiti/worker-descriptor.js';
-import { runRunnerMcp } from '../runner/runner-mcp.js';
 import { runnerRuntimeConfig } from '../runner/runner-mode.js';
 import { dirname } from 'node:path';
 
@@ -66,7 +65,9 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
   // A config without a profile gets the small chat set; full must be asked for.
   const toolProfile = args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat';
   // A runner serves through its host (docs/runner.md); the same entry, so setup writes nothing else.
+  // Loaded only here: a host's MCP start (relay and server) never loads the runner's modules.
   if (runnerRuntimeConfig(['--runtime-config', runtimeConfigPath])) {
+    const { runRunnerMcp } = await import('../runner/runner-mcp.js');
     await runRunnerMcp({ dataDir: dirname(runtimeConfigPath), sourceApplication: sourceApplication ?? 'other', toolProfile, env });
     return;
   }

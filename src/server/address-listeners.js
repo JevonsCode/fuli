@@ -45,10 +45,15 @@ export function createAddressListeners({ port, createServer, isBlockedPort = isF
   };
 }
 
+// Connections still busy after SHUTDOWN_GRACE_MS are ended; the timer goes with the server.
 function closeServer(server) {
   return new Promise((resolve) => {
-    server.close(() => resolve());
+    const force = setTimeout(() => server.closeAllConnections?.(), SHUTDOWN_GRACE_MS);
+    force.unref();
+    server.close(() => {
+      clearTimeout(force);
+      resolve();
+    });
     server.closeIdleConnections?.();
-    setTimeout(() => server.closeAllConnections?.(), SHUTDOWN_GRACE_MS).unref();
   });
 }

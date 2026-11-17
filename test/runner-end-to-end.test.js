@@ -50,9 +50,10 @@ async function identity() {
   return deviceIdentity(await createDeviceCertificate());
 }
 
-function checkout(t) {
+// The caller removes base after closing every store in it: Windows refuses to
+// delete a SQLite file that is still open.
+function checkout() {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-e2e-')));
-  t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'my-clone');
   mkdirSync(path.join(root, '.git'), { recursive: true });
   writeFileSync(path.join(root, '.git', 'config'), '[remote "origin"]\n\turl = git@example.test:team/widgets.git\n');
@@ -61,7 +62,7 @@ function checkout(t) {
 
 test('a runner pairs once, works through its host, and delivers what it queued while the host was away', async (t) => {
   const host = await identity();
-  const { base, root } = checkout(t);
+  const { base, root } = checkout();
   const dataDir = path.join(base, 'runner-data');
   const calls = [];
   const replayed = [];
@@ -77,7 +78,17 @@ test('a runner pairs once, works through its host, and delivers what it queued w
     sourceAllowed: () => true });
   let listener = await listen(0);
   const port = listener.port;
-  t.after(async () => { await listener.close(); await routes.close(); });
+  let client = null;
+  let served = null;
+  // In this order: after hooks run first to last, and a failing one skips the rest.
+  t.after(async () => {
+    await client?.close();
+    await served?.close();
+    await listener.close();
+    await routes.close();
+    store.close();
+    rmSync(base, { recursive: true, force: true });
+  });
 
   const code = newInvitationCode();
   store.invite({ code, name: 'Runner B' });
@@ -92,12 +103,11 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   await assert.rejects(joinHost({ dataDir: path.join(base, 'other'), invitation }),
     /did not accept this invitation/);
 
-  const client = new Client({ name: 'codex', version: 'test' });
+  client = new Client({ name: 'codex', version: 'test' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', env: { CODEX_THREAD_ID: CODEX_THREAD },
+  served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', env: { CODEX_THREAD_ID: CODEX_THREAD },
     transport: serverSide, lookUp: async () => [], retryAfterMs: 0 });
   await client.connect(clientSide);
-  t.after(() => client.close());
   const { store: runnerStore, connection } = served;
 
   const entry = await client.callTool({ name: 'get_collaboration_preferences',
@@ -151,8 +161,8 @@ test('a device without an invitation reaches nothing on the host', async (t) => 
     withLease: (_owner, operation) => operation() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, route: routes.handle,
     sourceAllowed: () => true });
-  t.after(async () => { await listener.close(); await routes.close(); });
   const strangerStore = new RunnerStore(':memory:');
+  t.after(async () => { await listener.close(); await routes.close(); strangerStore.close(); store.close(); });
   strangerStore.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port,
     addresses: ['127.0.0.1'] });
   const connection = createHostConnection({ store: strangerStore, identity: stranger, lookUp: async () => [] });

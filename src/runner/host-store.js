@@ -37,9 +37,14 @@ export class RunnerHostStore {
   constructor(path = ':memory:', { now = Date.now } = {}) {
     this.path = path;
     this.now = now;
+    this.closed = false;
   }
 
+  // Closed for good: a call that arrives after close() (a request still in
+  // flight at shutdown) fails instead of opening the file again, which would
+  // keep it locked on Windows (updates, uninstall).
   get db() {
+    if (this.closed) throw new Error('The runner host store is closed');
     this.database ??= openFormattedDatabase(this.path, RUNNER_HOST_FORMAT);
     return this.database;
   }
@@ -54,11 +59,13 @@ export class RunnerHostStore {
 
   // True while an invitation can still be used: the listener must run for it.
   hasLiveInvitation() {
+    if (this.#missing()) return false;
     return Boolean(this.db.prepare('SELECT 1 FROM invitations WHERE used_by IS NULL AND expires_at > ? LIMIT 1')
       .get(this.#nowIso()));
   }
 
   nextInvitationExpiry() {
+    if (this.#missing()) return null;
     return this.db.prepare('SELECT MIN(expires_at) AS at FROM invitations WHERE used_by IS NULL AND expires_at > ?')
       .get(this.#nowIso()).at ?? null;
   }
@@ -151,6 +158,7 @@ export class RunnerHostStore {
   }
 
   close() {
+    this.closed = true;
     this.database?.close();
     this.database = null;
   }

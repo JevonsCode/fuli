@@ -10,6 +10,7 @@ import { callAgentTool } from '../agent-tools.js';
 import { createRuntimeLeaseClient } from '../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
+import { runnerRuntimeConfig } from '../runner/runner-mode.js';
 import { platformPath, wslCallerPath } from '../system/platform-path.js';
 import { readHookInput } from './lifecycle-input.js';
 import { unavailableNotice } from './plugin-hook-process.js';
@@ -30,6 +31,11 @@ const PLUGIN_EVENTS = Object.freeze(['prompt', 'stop']);
 const STOP_TIMEOUT_MS = 5_000;
 // As Codex's entry (codex/lifecycle-hook.js): a cold first entry runs past 5 s.
 const DEFAULT_PROMPT_TIMEOUT_MS = 15_000;
+
+// A runner (docs/runner.md) has no FULI of its own to enter a task in: the
+// model enters it through FULI's MCP server, which reaches the host.
+const RUNNER_ENTRY = 'This computer is a FULI runner, so this hook loaded nothing. Before answering, call FULI\'s '
+  + 'get_collaboration_preferences with projectPath=current directory and taskPrompt=current request; it reaches the FULI host.';
 
 const entryLabel = (client) => `Fuli task context (${client.name} plugin). Apply effective_preferences. `;
 
@@ -117,6 +123,11 @@ function deadlineOutput(event, budget, cause) {
 // never prints prompts, paths or exception text.
 export async function runPluginLifecycleCommand(client, args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
+  if (runnerRuntimeConfig(args)) {
+    (dependencies.write ?? (value => process.stdout.write(value)))(
+      `${JSON.stringify(event === 'prompt' ? { context: RUNNER_ENTRY } : {})}\n`);
+    return { timedOut: false };
+  }
   const timeoutMs = hookTimeoutMs(args);
   const controller = new AbortController();
   let emitted = false;

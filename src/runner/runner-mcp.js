@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -20,7 +21,8 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { effectiveCall, isQueuedTool, offlineAnswer, OFFLINE_TOKEN_PREFIX, rememberAnswer } from './offline-calls.js';
+import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, QUEUED_TOOLS, rememberAnswer,
+  withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
@@ -31,48 +33,73 @@ import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 // it; while the host is away they are answered by offline-calls.js. The outbox
 // is delivered whenever the host answers again. The client's own session id
 // travels with the session, so the host sees the same session a local client
-// would name.
+// would name. A client gives its MCP server a few seconds to list its tools:
+// when the host has not answered within TOOLS_WAIT_MS the list it last gave
+// (or this version's) is the answer, and the client is told to list again
+// once the host's differs.
 const RETRY_AFTER_MS = 10_000;
+const TOOLS_WAIT_MS = 4000;
 const DELIVER_EVERY_MS = 30_000;
 const DESCRIBED_FOR_MS = 60_000;
 // Roundtable asks wait up to 15 minutes on the host.
 const CALL_TIMEOUT_MS = 16 * 60_000;
 const TOOLS_KEY = 'tools:list';
 
-// lookUp and retryAfterMs: how the host is looked for, and how soon after it was away.
+// lookUp, retryAfterMs and toolsWaitMs: how the host is looked for, how soon
+// after it was away, and how long a tools/list waits for it. Without a
+// transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
+// so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport = new StdioServerTransport(), lookUp, retryAfterMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const sessionId = nativeSessionFromEnv(sourceApplication, env) ?? mcpHostSessionId({});
   const server = createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile,
-    ...(retryAfterMs === undefined ? {} : { retryAfterMs }) });
-  const close = async () => {
-    await server.close();
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }) });
+  const stdio = !transport;
+  let closing = null;
+  const close = () => closing ??= (async () => {
+    if (stdio) for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, close);
+    // First: a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
     connection.close();
+    await server.close();
     store.close();
-  };
-  transport.onclose = () => void close();
-  await server.connect(transport);
+  })();
+  const served = transport ?? new StdioServerTransport();
+  served.onclose = () => void close();
+  if (stdio) {
+    process.stdin.once('end', close);
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, close);
+  }
+  await server.connect(served);
   return { close, store, connection };
 }
 
 function createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile = 'chat',
-  describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, now = Date.now }) {
+  describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
     capabilities: { tools: { listChanged: true }, prompts: {}, resources: {} },
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
   const described = new Map();
   let client = null;
+  let connecting = null;
   let unreachableUntil = 0;
   let delivering = null;
+  let closed = false;
 
-  async function upstream() {
-    if (client) return client;
-    if (now() < unreachableUntil) return null;
+  // Concurrent calls share one connection attempt, so one MCP client is ever open.
+  function upstream() {
+    if (closed) return Promise.resolve(null);
+    if (client) return Promise.resolve(client);
+    if (now() < unreachableUntil) return Promise.resolve(null);
+    connecting ??= openUpstream().finally(() => { connecting = null; });
+    return connecting;
+  }
+
+  async function openUpstream() {
     const host = await connection.connect();
-    if (!host) return offline();
+    if (!host || closed) return offline();
     const created = new Client({ name: 'fuli-runner', version: FULI_VERSION });
     created.setNotificationHandler(ToolListChangedNotificationSchema, () => void server.sendToolListChanged().catch(() => {}));
     const http = new StreamableHTTPClientTransport(new URL(`${host.origin}${RUNNER_PATHS.mcp}`), { fetch: host.fetch,
@@ -83,6 +110,10 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     } catch {
       await created.close().catch(() => {});
       return offline();
+    }
+    if (closed) {
+      await created.close().catch(() => {});
+      return null;
     }
     created.onclose = () => { if (client === created) client = null; };
     client = created;
@@ -136,39 +167,58 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const listed = await withHost((host) => host.listTools());
-    if (listed) {
-      store.rememberAnswer(TOOLS_KEY, 'tools/list', listed);
+    const listing = withHost((host) => host.listTools()).then((listed) => {
+      if (listed && !closed) store.rememberAnswer(TOOLS_KEY, 'tools/list', listed);
       return listed;
-    }
-    return store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) };
+    });
+    const waited = new AbortController();
+    const listed = await Promise.race([listing,
+      delay(toolsWaitMs, null, { signal: waited.signal, ref: false }).catch(() => null)]);
+    waited.abort();
+    if (listed) return listed;
+    const known = store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) };
+    // The host answered after the client was given the known list: it lists again when they differ.
+    void listing.then((late) => {
+      if (late && !closed && JSON.stringify(late) !== JSON.stringify(known)) return server.sendToolListChanged();
+    }).catch(() => {});
+    return known;
   });
+
+  // A checkpoint of a task entered offline is queued behind what waits
+  // already; when the host answers it is delivered at once, and only a
+  // delivered checkpoint is answered as saved.
+  async function checkpointOffline(call) {
+    const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId });
+    if (queued.isError || !await upstream()) return queued;
+    await deliverSoon();
+    const { outboxId } = queued.structuredContent;
+    const outbox = store.outbox();
+    return outbox.queued || outbox.failed.some((entry) => entry.id === outboxId) ? queued : deliveredAnswer(outboxId);
+  }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
-    const call = effectiveCall(name, args);
-    const offlineToken = typeof call.input.taskContextToken === 'string'
-      && call.input.taskContextToken.startsWith(OFFLINE_TOKEN_PREFIX);
+    const asked = effectiveCall(name, args);
+    const offlineTask = isOfflineToken(asked.input.taskContextToken);
+    if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
+    // The host does not know a runner's offline token: other calls go without it.
+    const sent = offlineTask ? withoutOfflineToken(name, args) : args;
+    const call = effectiveCall(name, sent);
     let facts;
     try {
-      facts = await folderFacts([args.projectPath, args.input?.projectPath].filter((value) => typeof value === 'string'));
+      facts = await folderFacts([sent.projectPath, sent.input?.projectPath].filter((value) => typeof value === 'string'));
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'invalid_input', message: error.message }) }] };
     }
     // A checkpoint carries an id online too: when its outcome is unknown it is queued under that
     // same id, and the host applies the id once whichever delivery reaches it first.
-    const entryId = isQueuedTool(call.tool) ? randomUUID() : null;
-    const answer = offlineToken ? null : await withHost(async (host) => {
+    const entryId = QUEUED_TOOLS.has(call.tool) ? randomUUID() : null;
+    const answer = await withHost(async (host) => {
       await sendFolders(facts);
-      return host.callTool({ name, arguments: args, ...(entryId ? { _meta: { [RUNNER_ENTRY_META]: entryId } } : {}) },
+      return host.callTool({ name, arguments: sent, ...(entryId ? { _meta: { [RUNNER_ENTRY_META]: entryId } } : {}) },
         undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
     });
-    if (!answer) {
-      const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
-      // A task entered offline whose host is back: its checkpoint goes now, behind what was queued first.
-      if (offlineToken && client) void deliverSoon();
-      return queued;
-    }
+    if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
     if (store.outbox().queued) void deliverSoon();
     return answer;
@@ -194,10 +244,13 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   const timer = setInterval(() => { if (store.outbox().queued) void deliverSoon(); }, DELIVER_EVERY_MS);
   timer.unref?.();
   const close = server.close.bind(server);
+  // A connection still being opened closes itself once it sees closed.
   server.close = async () => {
+    closed = true;
     clearInterval(timer);
     await delivering;
     await client?.close().catch(() => {});
+    client = null;
     await close();
   };
   return server;
