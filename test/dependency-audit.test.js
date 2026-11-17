@@ -73,6 +73,20 @@ test('an advisory in a runtime dependency or a bundled package fails the gate', 
   assert.match(info.stdout, /No advisories\./);
 });
 
+test('a shipped package that only depends on a flagged build tool does not fail the gate; the tool shipping does', (t) => {
+  const root = fixture(t);
+  // npm lists the bundled package by name only (`via` holds names): its own code is not the advisory's.
+  const inherited = { name: 'vue', severity: 'high', range: '>=3.0.0', nodes: ['node_modules/vue'], via: ['glob'] };
+  const quiet = gate(root, { vulnerabilities: { glob: advisory('glob', ['node_modules/glob'], 'high'), vue: inherited } });
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.match(quiet.stdout, /only depend on a flagged development tool[\s\S]*vue >=3\.0\.0 \(high\) via glob/);
+  // When the flagged tool's own code is bundled, it blocks.
+  const shipped = gate(fixture(t, { bundled: ['node_modules/vue', 'node_modules/glob'] }),
+    { vulnerabilities: { glob: advisory('glob', ['node_modules/glob'], 'high'), vue: inherited } });
+  assert.equal(shipped.status, 1);
+  assert.match(shipped.stderr, /what ships to users[\s\S]*glob <9\.9\.9 \(high\)/);
+});
+
 test('the gate refuses a failed audit or a missing bundle record instead of passing', (t) => {
   const failed = gate(fixture(t), { error: { code: 'ENOTFOUND', summary: 'request to the registry failed' } });
   assert.equal(failed.status, 2);
