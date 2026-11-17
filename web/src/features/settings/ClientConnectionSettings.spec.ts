@@ -494,7 +494,8 @@ it('a client\'s add link opens the dialog filled in; adding stays the person\'s 
   await flushPromises()
   // Nothing is written by opening the link.
   expect(calls.some(([url, options]) => url.endsWith('/custom-clients') && options?.method === 'POST')).toBe(false)
-  expect(document.querySelector('[data-custom-client-dialog]')!.textContent).toContain('这三项是那个客户端自己填的')
+  // Any page may open the link, so the dialog says the link filled it, not which client.
+  expect(document.querySelector('[data-custom-client-dialog]')!.textContent).toContain('添加链接填好了这三项，核对文件路径后再点「添加并接入」。')
   expect(document.querySelector('[data-add-client-prompt]')).toBeNull()
   expect(document.querySelector<HTMLInputElement>('#custom-client-name')!.value).toBe('Acme Agent')
   expect(document.querySelector<HTMLInputElement>('#custom-client-file')!.value).toBe('~/.acme/mcp.json')
@@ -505,5 +506,42 @@ it('a client\'s add link opens the dialog filled in; adding stays the person\'s 
   expect(JSON.parse(post[1]!.body as string)).toEqual({ name: 'Acme Agent', mcpFile: '~/.acme/mcp.json', format: 'codex-toml' })
   expect(JSON.parse(calls.find(([url]) => url.endsWith('/connect'))![1]!.body as string)).toEqual({ clientId: 'acme-agent' })
   expect(document.querySelector('[data-custom-client-dialog]')).toBeNull()
+  wrapper.unmount()
+})
+
+it('a client just added that cannot be connected says why on its tile, and the dialog opens fresh again', async () => {
+  let custom: Custom[] = []
+  routed(() => Response.json(statusOf([{}], new Date().toISOString(), custom)), (url, options) => {
+    if (url.endsWith('/custom-clients') && options?.method === 'POST') {
+      custom = [{ id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'not_connected', mcpPaths: ['~/.acme/mcp.json'], removable: true }]
+      return Response.json({ id: 'acme-agent' })
+    }
+    if (url.endsWith('/connect')) return Response.json({ id: 'acme-agent', status: 'failed', restartRequired: false, reason: 'client_running' })
+    return Response.json(configuration)
+  })
+  vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async (_text: string) => {}) } })
+  const wrapper = mount(ClientCards, { attachTo: document.body })
+  await flushPromises()
+  await wrapper.get('[data-add-custom-client]').trigger('click')
+  ;(document.querySelector('[data-copy-add-client-prompt]') as HTMLElement).click()
+  await flushPromises()
+  ;(document.querySelector('[data-add-client-by-hand]') as HTMLElement).click()
+  await flushPromises()
+  for (const [selector, value] of [['#custom-client-name', 'Acme Agent'], ['#custom-client-file', '~/.acme/mcp.json']]) {
+    document.querySelector<HTMLInputElement>(selector!)!.value = value!
+    document.querySelector<HTMLInputElement>(selector!)!.dispatchEvent(new Event('input'))
+  }
+  await flushPromises()
+  document.querySelector('[data-custom-client-form]')!.dispatchEvent(new Event('submit', { cancelable: true }))
+  await flushPromises()
+  // The same answer a click on its tile's 接入 gives.
+  expect(wrapper.get('[data-custom-client="acme-agent"] [role="alert"]').text()).toBe('它正在运行，会把旧配置写回，所以没写。先完全退出它，或点「重启并更新」。')
+  expect(wrapper.get('[data-connect-client="acme-agent"]').attributes('disabled')).toBeUndefined()
+  // Opened again, it starts on the prompt, not copied, with the form behind its link.
+  await wrapper.get('[data-add-custom-client]').trigger('click')
+  await flushPromises()
+  expect(document.querySelector('[data-add-client-prompt]')).not.toBeNull()
+  expect(document.querySelector('[data-copy-add-client-prompt]')!.textContent).toBe('复制')
+  expect(document.querySelector('[data-custom-client-form]')).toBeNull()
   wrapper.unmount()
 })

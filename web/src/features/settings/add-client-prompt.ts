@@ -8,7 +8,10 @@
 //
 // No imports: the node test loads this file as it is.
 
-/** The MCP file formats a client described by hand can name (agent-installer's write formats). */
+/**
+ * The MCP file formats a client described by hand can name (agent-installer's write formats):
+ * the console's one list, for the prompt and the add dialog's choices.
+ */
 export const ADD_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'codex-toml'] as const
 export type AddClientFormat = typeof ADD_CLIENT_FORMATS[number]
 

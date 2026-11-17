@@ -108,8 +108,9 @@ test('「添加客户端」\'s prompt opens this console\'s add link, never the 
   const source = readFileSync(join(WEB, 'features/settings/add-client-prompt.ts'), 'utf8');
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
   const { addClientPrompt, addClientDraft, ADD_CLIENT_FORMATS } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
-  const model = readFileSync(join(WEB, 'features/settings/client-connection-model.ts'), 'utf8');
-  assert.match(model, new RegExp(`CUSTOM_CLIENT_FORMATS = \\[${ADD_CLIENT_FORMATS.map((format) => `'${format}'`).join(', ')}\\]`));
+  // The console's one list of formats is the one the add route accepts.
+  const server = readFileSync(new URL('../src/agent-kits/custom-clients.js', import.meta.url), 'utf8');
+  assert.match(server, new RegExp(`CUSTOM_CLIENT_FORMATS = Object\\.freeze\\(\\[${ADD_CLIENT_FORMATS.map((format) => `'${format}'`).join(', ')}\\]\\)`));
   // Adding a client is the person's own step (rec: 884e3b50).
   assert.equal(interfaceForRoute('POST /api/system/client-connection/custom-clients').access, 'local_user_only');
   for (const locale of ['zh-CN', 'en-US']) {

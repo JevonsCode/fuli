@@ -78,24 +78,24 @@ async function removeCustom(client: ClientTile) {
   })
 }
 
-// One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
-async function connectOne(client: ClientObservation) {
-  connecting.value = client.id
-  delete connectionFeedback.value[client.id]
+// One client's write, shared by its own 接入, 一键接入 and a client just added; its result shows on its tile.
+async function connectOne(clientId: string) {
+  connecting.value = clientId
+  delete connectionFeedback.value[clientId]
   await writing(async () => {
     try {
-      const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
-      if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart'
+      const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId })
+      if (!unmounted) connectionFeedback.value[clientId] = result.status === 'connected' ? 'restart'
         : result.reason === 'client_component_unavailable' ? 'componentUnavailable'
           : result.reason === 'client_running' ? 'clientRunning' : 'connectError'
     } catch {
-      if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
+      if (!unmounted) connectionFeedback.value[clientId] = 'connectError'
     } finally { connecting.value = '' }
   })
 }
 async function connect(client: ClientObservation) {
   if (busy.value || !canConnect(client)) return
-  await connectOne(client)
+  await connectOne(client.id)
 }
 // Quits the client, updates its entry while it is closed, reopens it (client-restart.ts).
 async function restart(client: ClientObservation) {
@@ -119,7 +119,7 @@ async function connectAll() {
   try {
     for (const [index, client] of queue.entries()) {
       bulk.value = { client: client.label, index: index + 1, count: queue.length }
-      await connectOne(client)
+      await connectOne(client.id)
     }
   } finally {
     connectingAll.value = false
@@ -247,7 +247,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       </section>
     </div>
     <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
-    <CustomClientDialog v-model:open="adding" :prefill="prefill" @update:open="(value: boolean) => { if (!value) prefill = null }" />
+    <CustomClientDialog v-model:open="adding" :prefill="prefill" @added="connectOne" @update:open="(value: boolean) => { if (!value) prefill = null }" />
     <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
       <DialogContent v-if="details" size="md" data-connection-details>
         <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />

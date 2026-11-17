@@ -7,18 +7,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { OptionSelect } from '@/components/ui/select'
 import { currentLocale, t } from '@/i18n'
 import UiNotice from '@/ui/UiNotice.vue'
-import { CUSTOM_CLIENT_FORMATS, type CustomClientFormat } from './client-connection-model'
-import { addClientPrompt, type AddClientDraft } from './add-client-prompt'
+import { ADD_CLIENT_FORMATS, addClientPrompt, type AddClientDraft, type AddClientFormat } from './add-client-prompt'
 import { injectClientConnectionStatus } from './client-connection-status'
 
 // 「添加客户端」: a client FULI does not know. First a prompt the person sends
 // as it is to that client; its own Agent opens this console's add link, which
 // fills the form here (`prefill`, add-client-prompt.ts). The person checks it
 // and clicks 添加并接入: adding stays their own step on this computer. A
-// client that cannot run a command is filled in by hand. FULI writes its entry
-// right after adding it, and its tile then updates with the other clients.
+// client that cannot run a command is filled in by hand. Once added, the parent
+// connects it as its tile's 接入 would, and the tile shows how that went.
 const open = defineModel<boolean>('open', { required: true })
 const props = defineProps<{ prefill?: AddClientDraft | null }>()
+// The added client's id: the parent connects it with its tiles' own connectOne,
+// so the person gets the same answer a tile click gives.
+const emit = defineEmits<{ added: [clientId: string] }>()
 const prompt = addClientPrompt(currentLocale(), window.location.origin)
 const copied = ref(false)
 const copyFailed = ref(false)
@@ -34,42 +36,46 @@ async function copy() {
 const { busy, writing } = injectClientConnectionStatus()
 const pending = ref(false)
 const error = ref('')
-const draft = reactive<{ name: string, mcpFile: string, format: CustomClientFormat }>({ name: '', mcpFile: '', format: 'mcp-servers-json' })
-const formatOptions = CUSTOM_CLIENT_FORMATS.map((value) => ({ value, label: t(`settings.connection.custom.formats.${value}`) }))
+const draft = reactive<{ name: string, mcpFile: string, format: AddClientFormat }>({ name: '', mcpFile: '', format: 'mcp-servers-json' })
+const formatOptions = ADD_CLIENT_FORMATS.map((value) => ({ value, label: t(`settings.connection.custom.formats.${value}`) }))
 // What the add link carries opens the form with it, for the person to check.
-const filledByClient = ref(false)
+// Any page may open that link, so the dialog says the link filled it, never who.
+const filledByLink = ref(false)
 watch(() => [open.value, props.prefill] as const, ([isOpen, prefill]) => {
   if (!isOpen || !prefill) return
   Object.assign(draft, prefill)
   byHand.value = true
-  filledByClient.value = true
+  filledByLink.value = true
 }, { immediate: true })
 
-function close() {
-  if (pending.value) return
+// The next opening starts on the prompt again.
+function hide() {
   open.value = false
   error.value = ''
   copied.value = false
+  copyFailed.value = false
   byHand.value = false
-  filledByClient.value = false
+  filledByLink.value = false
+}
+function close() {
+  if (!pending.value) hide()
 }
 function selectFormat(value: string) {
-  const known = CUSTOM_CLIENT_FORMATS.find((candidate) => candidate === value)
+  const known = ADD_CLIENT_FORMATS.find((candidate) => candidate === value)
   if (known) draft.format = known
 }
 async function add() {
   if (busy.value || !draft.name.trim() || !draft.mcpFile.trim()) return
   pending.value = true
   error.value = ''
+  let addedId = ''
   await writing(async () => {
     try {
       const added = await postJson<{ id: string }>('/api/system/client-connection/custom-clients',
         { name: draft.name.trim(), mcpFile: draft.mcpFile.trim(), format: draft.format })
       Object.assign(draft, { name: '', mcpFile: '', format: 'mcp-servers-json' })
-      open.value = false
-      filledByClient.value = false
-      // 接入 at once: the client's tile shows how it went, with its own 接入 to try again.
-      try { await postJson('/api/system/client-connection/connect', { clientId: added.id }) } catch { /* its tile offers 接入 */ }
+      addedId = added.id
+      hide()
     } catch (reason) {
       // A refusal of what was typed is worded here: its own text is the JSON an Agent reads.
       error.value = reason instanceof ApiError && reason.status === 400
@@ -77,6 +83,8 @@ async function add() {
         : t('settings.connection.custom.addError', { reason: reason instanceof Error ? reason.message : String(reason) })
     } finally { pending.value = false }
   })
+  // After the write ends, so its tile is listed before it is connected.
+  if (addedId) emit('added', addedId)
 }
 </script>
 
@@ -85,9 +93,9 @@ async function add() {
     <DialogContent v-if="open" size="md" data-custom-client-dialog>
       <DialogHeader>
         <DialogTitle>{{ t('settings.connection.custom.add') }}</DialogTitle>
-        <DialogDescription>{{ t(filledByClient ? 'settings.connection.custom.filledByClient' : 'settings.connection.custom.addMeta') }}</DialogDescription>
+        <DialogDescription>{{ t(filledByLink ? 'settings.connection.custom.filledByLink' : 'settings.connection.custom.addMeta') }}</DialogDescription>
       </DialogHeader>
-      <section v-if="!filledByClient" class="add-prompt" data-add-client-prompt>
+      <section v-if="!filledByLink" class="add-prompt" data-add-client-prompt>
         <div class="add-prompt__head">
           <strong>{{ t('settings.connection.custom.promptTitle') }}</strong>
           <Button size="sm" data-copy-add-client-prompt @click="copy">{{ copied ? t('settings.connection.custom.promptCopied') : t('settings.connection.custom.promptCopy') }}</Button>
