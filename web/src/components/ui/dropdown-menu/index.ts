@@ -5,7 +5,7 @@
 // Local changes:
 // - `cn` comes from @/lib/class-names; the check mark is FULI's (UiIcon).
 // - FULI popover look: card surface, hairline border, popover shadow, the
-//   control radius, and --z-popover stacking instead of z-50.
+//   control radius, and --z-dialog stacking (as popover: one opened inside a dialog shows above it) instead of z-50.
 // - tw-animate-css is not used: the menu fades in (animate-popover-in), which
 //   reduced motion zeroes.
 // - Items use a pointer cursor and the FULI hover surface; destructive items

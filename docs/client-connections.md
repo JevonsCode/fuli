@@ -78,7 +78,12 @@ asks Claude Desktop to quit (never kills it), writes the entry once it has close
 the entry again. If it does not quit, nothing is written. This restart is the person's click on this
 computer only (`local_user_only`); the doctor's automatic repair leaves such a client to them.
 
-**Add client** (the large plus that closes the client grid) describes a client agent-installer does
+**Add client** (the large plus that closes the client grid) opens on a prompt to send, as it is, to
+the client being added. That client's own Agent finds the file it reads MCP servers from and opens
+this console's add link (`/settings?tab=clients&addClient=…&mcpFile=…&format=…`), which only fills
+the dialog: the person checks the values and clicks **Add and connect** on this computer, so adding
+stays their own step. A client that cannot run a command is filled in by hand behind the dialog's
+link. Either way it describes a client agent-installer does
 not know, such as a company's own agent client: a name, the MCP configuration file under the home
 folder (`~/.acme/mcp.json`, no `..`) and its format; a file a listed client already uses is
 refused. Adding one is the person's own step (`local_user_only`), since FULI then writes into that
@@ -87,10 +92,13 @@ file. FULI writes it as `<client-id>.json` with only an
 (`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions` elsewhere), so
 agent-installer treats it like a built-in client; the session launcher ignores such a file.
 agent-installer checks the file first, and one it cannot read as a client is removed again with its
-reason. The client then has a tile of its own: **Connect** writes FULI's standard MCP entry (source
-`other`, chat profile) into the file the person named, creating it when it is not there yet and
-backing up one that is, and **Update connection** and **Connect all** keep it current with the other
-clients. `fuli setup` and `fuli clients update` still cover the built-in clients only. Only this
+reason. The client then has a tile of its own, and **Add and connect** connects it at once, as
+that tile's **Connect** would: FULI's standard MCP entry (source `other`, chat profile) goes into the
+file the person named, creating it when it is not there yet and backing up one that is, and the tile
+says how that went (a running client that would write its old entry back, a restart to pick it up).
+**Connect** on the tile tries again, and **Update connection** and **Connect all** keep it current
+with the other clients. The add link can be opened by any page, so the dialog says only that the link
+filled the values, not which client did. `fuli setup` and `fuli clients update` still cover the built-in clients only. Only this
 computer can add, connect or remove one, and FULI removes only files of that shape. Connect writes
 only a client added here, never another product's extension. Removing one first takes FULI's entry
 out of its file (a file agent-installer created for FULI alone goes); when that fails, the client
@@ -378,7 +386,7 @@ service. See the [remote connector setup](agent-tools.md#remote-claude--cowork-c
 
 ## 自动发现与一键接入
 
-在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；列表里没有的客户端（例如公司内部的 Agent 客户端）点列表最后那个大加号“添加客户端”，填名称和 MCP 配置文件；添加后它和其他客户端一样点“接入”，FULI 把通用 MCP 配置写进那个文件（没有就新建），以后“更新接入”“一键接入”也带上它。只想自己粘贴配置的，用页面下方的“手动接入”。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
+在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；列表里没有的客户端（例如公司内部的 Agent 客户端）点列表最后那个大加号“添加客户端”，把里面那段提示词原样发给要接入的客户端：它会自己找到 MCP 配置文件，打开 FULI 已填好的添加窗口，你核对后点“添加并接入”；不能运行命令的客户端点“手动填写”。添加后 FULI 把通用 MCP 配置写进那个文件（没有就新建），以后“更新接入”“一键接入”也带上它。只想自己粘贴配置的，用页面下方的“手动接入”。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
 
 “一键接入”逐个写入还没接好的客户端（包括“需要更新”的），每写完一个就重新读一次状态，摘要行显示正在接入的客户端和进度。接过 FULI 的客户端需要更新时（体检的 `client_outdated`），右上角“设置”按钮有个小红点，点它直接打开“客户端”；都更新后红点消失。
 

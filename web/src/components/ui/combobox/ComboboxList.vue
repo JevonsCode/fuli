@@ -28,7 +28,7 @@ const popupTarget = usePopupTarget()
     <ComboboxContent
       data-slot="combobox-list"
       v-bind="{ ...$attrs, ...forwarded }"
-      :class="cn('z-(--z-popover) w-[200px] max-h-(--reka-combobox-content-available-height) origin-(--reka-combobox-content-transform-origin) flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-(--shadow-popover) outline-none data-[state=open]:animate-popover-in', props.class)"
+      :class="cn('z-(--z-dialog) w-[200px] max-h-(--reka-combobox-content-available-height) origin-(--reka-combobox-content-transform-origin) flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-(--shadow-popover) outline-none data-[state=open]:animate-popover-in', props.class)"
     >
       <slot />
     </ComboboxContent>
