@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { AgentIntroductionStore } from '../src/agent-introductions/store.js';
@@ -12,10 +15,20 @@ import { introductionEntry } from '../src/graphiti/task-entry-introduction.js';
 
 const SPACE = 'synthetic-space';
 const PROJECTS = { 'project-a': 'Alpha', 'project-b': 'Beta' };
+// Introductions began (the store was created) between an existing FLA's creation and a new one's.
+const BEGAN = '2026-11-17T08:00:00.000Z';
+const EXISTING = '2026-10-01T00:00:00Z';
+const NEW = '2026-11-17T09:00:00Z';
+
+function begunStore(path = ':memory:') {
+  const store = new AgentIntroductionStore(path);
+  store.begin(BEGAN);
+  return store;
+}
 
 function fla(agentId, name, projectIds) {
   return { agent_id: agentId, personal_space_id: SPACE, personal_project_id: null, memory_scope: 'reviewed_agent',
-    updated_at: '2026-10-01T00:00:00Z',
+    created_at: NEW, updated_at: '2026-10-01T00:00:00Z',
     assignments: projectIds.map(id => ({ personal_project_id: id, status: 'active', updated_at: '2026-10-01T00:00:00Z' })),
     profile: { name: '开发', display_name: name, responsibility: '负责构建和交付，保持主干可发布', status: 'active',
       allowed_clients: ['codex', 'claude_code'], work_kinds: ['project_context'], capabilities: [], agent_type: 'durable' } };
@@ -25,10 +38,12 @@ const ADA = fla('ada', 'Ada Lead', ['project-a']);
 const JADE = fla('jade', 'Jade Lin', ['project-a', 'project-b']);
 const JAMIE = fla('jamie', 'Jamie Ash', ['project-a', 'project-b']);
 
-// leads: the Agent each project's own routing selects; holdBy: a project whose
-// lead holds a named member as the requested Agent (a helper, not the owner).
-function fixture({ leads = { 'project-a': 'ada', 'project-b': 'jade' }, holdBy = {} } = {}) {
-  const roster = [ADA, JADE, JAMIE];
+// leads: the Agent each project's own routing selects, and reasons why
+// (default: the project's lead); holdBy: a project whose lead holds a named
+// member as the requested Agent (a helper, not the owner); existing: FLAs
+// created before introductions began.
+function fixture({ leads = { 'project-a': 'ada', 'project-b': 'jade' }, reasons = {}, holdBy = {}, existing = [] } = {}) {
+  const roster = [ADA, JADE, JAMIE].map(agent => existing.includes(agent.agent_id) ? { ...agent, created_at: EXISTING } : agent);
   const tasks = [];
   let folder = 'project-a';
   const find = id => structuredClone(roster.find(agent => agent.agent_id === id));
@@ -37,7 +52,7 @@ function fixture({ leads = { 'project-a': 'ada', 'project-b': 'jade' }, holdBy =
     accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: SPACE }, workspaces: [] },
   { projectPathResolver: () => ({ status: 'matched', basis: 'repository_root', personalProjectId: folder }),
     fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
-  app.agentIntroductions = new AgentIntroductionStore();
+  app.agentIntroductions = begunStore();
   app.taskContextRegistry = {
     current: async (session, source) => tasks.findLast(task => task.sessionId === session
       && task.sourceApplication === source) ?? null,
@@ -55,7 +70,8 @@ function fixture({ leads = { 'project-a': 'ada', 'project-b': 'jade' }, holdBy =
       return agent;
     },
     resolveProjectAgentContext: async input => {
-      if (!input.agent_id) return { status: 'ready', reason: 'project_team_lead', agent: find(leads[input.personal_project_id]) };
+      if (!input.agent_id) return { status: 'ready', reason: reasons[input.personal_project_id] ?? 'project_team_lead',
+        agent: find(leads[input.personal_project_id]) };
       const agent = find(input.agent_id);
       if (!assigned(agent, input.personal_project_id)) return { status: 'agent_unavailable', reason: 'agent_unavailable' };
       const lead = holdBy[input.personal_project_id];
@@ -178,10 +194,10 @@ test('the checkpoint receipt that replaces the entry\'s carries the same introdu
 
 // The pure line, through the entry's own decision with an in-memory store.
 function introduce({ agentId = 'agent', name = 'Lyra North', responsibility = '负责 fuli 的开发和交付，还有发布',
-  project = 'fuli', projectId = 'project', store = new AgentIntroductionStore() } = {}) {
+  project = 'fuli', projectId = 'project', store = begunStore() } = {}) {
   const application = { config: { personal: { spaceId: SPACE } }, agentIntroductions: store };
   return introductionEntry(application, { resolution: { personalProjectId: projectId },
-    selection: { agent: { agentId } }, context: { role: { name, responsibility }, project_brief: project ? { name: project } : null },
+    selection: { agent: { agentId, createdAt: NEW }, reason: 'project_team_lead' }, context: { role: { name, responsibility }, project_brief: project ? { name: project } : null },
     input: { agentInvocation: true, agentToolName: 'begin_task_context' } })?.line ?? null;
 }
 
@@ -199,7 +215,7 @@ test('every variant stays one line within 100 characters, escaped, and the same 
     assert.doesNotMatch(first, /\n/);
     assert.match(first, /消息开头写 #FLA。$/, 'a name too long to show whole is addressed by the picker');
     firsts.add(first);
-    const store = new AgentIntroductionStore();
+    const store = begunStore();
     introduce({ agentId: 'earlier', name: long, store });
     const handoff = introduce({ agentId, name: long, project: long, store });
     assert.ok([...visible(handoff)].length <= 100, `${[...visible(handoff)].length}: ${handoff}`);
@@ -222,4 +238,87 @@ test('an owner outside any project is introduced for what is not in a project ye
   assert.match(line, /还没归项目的事/);
   assert.match(line, /（会话助理）/);
   assert.match(line, /#FLA Astro。$/);
+});
+
+// Review of PR 1031, item 1: Codex runs its prompt hook again in the same turn
+// for input arriving mid-turn, and an Agent may call get_collaboration_preferences
+// after the hook; the newer receipt is the one the reply copies.
+test('a second entry of the same turn repeats the introduction; the next turn signs plainly', async () => {
+  const { app } = fixture();
+  const entry = (taskPrompt, turnId) => app.beginTaskContext({ projectPath: '/synthetic/folder', sessionId: 'synthetic-turns',
+    sourceApplication: 'codex', taskPrompt, turnId });
+  const first = introduction(await entry('看看构建', 'turn-1'));
+  assert.match(first, /Ada Lead/);
+  assert.equal(introduction(await entry('补充一句', 'turn-1')), first, 'the hook run again in the same turn');
+  const asked = await app.getCollaborationPreferences({ projectPath: '/synthetic/folder', sessionId: 'synthetic-turns',
+    sourceApplication: 'codex', taskPrompt: '看看构建', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
+  assert.equal(introduction(asked), first, 'the Agent\'s own entry after the hook');
+  assert.equal(introduction(await entry('下一件事', 'turn-2')), null);
+});
+
+// Item 2: only a new FLA meets the person; the ones they had keep quiet, but
+// a project passing between two of them still says so.
+test('an FLA created before introductions began is not introduced; a hand-off between such FLAs still is', async () => {
+  const leads = { 'project-a': 'ada', 'project-b': 'jade' };
+  const { hook } = fixture({ leads, existing: ['ada', 'jade'] });
+  assert.equal(introduction(await hook('看看构建')), null);
+  leads['project-a'] = 'jade';
+  const handed = introduction(await hook('继续'));
+  assert.match(handed, /Ada Lead/);
+  assert.match(handed, /#FLA Jade Lin。$/);
+  assert.equal(introduction(await hook('再继续')), null);
+  // The moment is kept from the first begin: a later one does not move it.
+  const store = begunStore();
+  store.begin('2030-01-01T00:00:00.000Z');
+  assert.match(introduce({ agentId: 'created-after-the-first-begin', store }), /Lyra North/);
+});
+
+// Item 3: the session's owner-change notice already names both FLAs.
+test('a session continuing into a project whose lead changed says it once, in the owner-change notice', async () => {
+  const leads = { 'project-a': 'ada', 'project-b': 'jade' };
+  const { hook } = fixture({ leads, existing: ['ada', 'jade'] });
+  await hook('看看构建', 'synthetic-same-session');
+  leads['project-a'] = 'jade';
+  const moved = await hook('继续', 'synthetic-same-session');
+  assert.equal(moved.owner_change.from_agent_id, 'ada');
+  assert.match(moved.agent_receipt.markdown, /上一个任务由 Ada Lead 负责，这次起由 Jade Lin 负责/);
+  assert.equal(introduction(moved), null);
+  // The project's new owner was still recorded: another session hears nothing more.
+  assert.equal(introduction(await hook('别的会话')), null);
+
+  // A new FLA taking over that way still meets the person, without a hand-off line.
+  const freshLeads = { 'project-a': 'ada', 'project-b': 'jade' };
+  const fresh = fixture({ leads: freshLeads, existing: ['ada'] });
+  await fresh.hook('看看构建', 'synthetic-same-session');
+  freshLeads['project-a'] = 'jade';
+  const met = introduction(await fresh.hook('继续', 'synthetic-same-session'));
+  assert.match(met, /Jade Lin/);
+  assert.doesNotMatch(met, /Ada Lead/);
+});
+
+// Item 4: a member routed for its work kind does not take the project over.
+test('members picked by work kind alternating in one project get no hand-off line', async () => {
+  const leads = { 'project-a': 'jade', 'project-b': 'jade' };
+  const { hook } = fixture({ leads, reasons: { 'project-a': 'project_team_member' }, existing: ['ada', 'jade', 'jamie'] });
+  for (const member of ['jade', 'jamie', 'jade', 'jamie']) {
+    leads['project-a'] = member;
+    const entry = await hook('改一处');
+    assert.equal(entry.context.project_agent_id, member);
+    assert.equal(introduction(entry), null, member);
+  }
+});
+
+// Item 6: a store that cannot be opened introduces nobody and fails nothing.
+test('an entry completes without an introduction when the store cannot be opened', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-introductions-'));
+  try {
+    const f = fixture();
+    f.app.agentIntroductions = new AgentIntroductionStore(directory);
+    const entry = await f.hook('看看构建');
+    assert.match(entry.taskContextToken, /^fuli-task-synthetic-/);
+    assert.match(entry.agent_receipt.markdown, /^FULI Agent：\[Ada Lead/);
+    assert.equal(introduction(entry), null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

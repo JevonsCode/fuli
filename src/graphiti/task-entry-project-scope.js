@@ -7,6 +7,7 @@ import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { sessionOwnerOf } from './task-entry-owner-change.js';
+import { sameTurnIntroduction } from './task-entry-introduction.js';
 import { REMOTE_CONFLICT } from './agent-project-resolution.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
@@ -25,14 +26,17 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   let sessionTask = null;
   try { sessionTask = await readSessionTask(); } catch { /* no stored member choice can be proven */ }
   const group = groupDiscussionRequest(application, input, sessionTask);
+  // A second entry of the same turn repeats that turn's introduction (task-entry-introduction.js).
+  const turnIntroduction = sameTurnIntroduction(sessionTask, input);
+  const carried = turnIntroduction ? { turnIntroduction } : {};
   const named = fla && namedFlaResolution(fla);
-  if (named) return group ? { ...named, group } : named;
+  if (named) return { ...named, ...(group ? { group } : {}), ...carried };
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
   const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
   // Whose the session's last task was, so the entry can say when that changes (task-entry-owner-change.js).
   const sessionOwner = sessionOwnerOf(sessionTask);
-  return fla || group || sessionOwner ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),
-    ...(sessionOwner ? { sessionOwner } : {}) } : routed;
+  return fla || group || sessionOwner || turnIntroduction ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),
+    ...(sessionOwner ? { sessionOwner } : {}), ...carried } : routed;
 }
 
 // The session's current task, read at most once per entry, and not at all

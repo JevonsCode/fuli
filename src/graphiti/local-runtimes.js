@@ -103,8 +103,11 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
   // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recall reads it as a ranking prior.
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
-  // Which FLAs introduced themselves and who last owned each project's tasks; created by the first task entry.
+  // Which FLAs the person knows and who last owned each project's tasks. Created
+  // when FULI first opens this data directory with it, so FLAs that already
+  // exist then are not introduced as new.
   app.agentIntroductions = new AgentIntroductionStore(join(dataDir, 'agent-introductions.sqlite'));
+  try { app.agentIntroductions.begin(new Date().toISOString()); } catch { /* no introductions; entries go on */ }
   // Read here only for the compounding statement's count of changes made for the person;
   // the console's delegation port alone records them. A missing file reads as none.
   app.delegatedOperations = new DelegatedOperationLog(join(dataDir, DELEGATION_LOG_FILE));
