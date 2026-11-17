@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { createGuestAccess } from './guest-access/runtime.js';
+import { createRunnerHost } from './runner/host-service.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
 import { createLifecycleHookCalls } from './agents/lifecycle-hook-calls.js';
@@ -188,10 +189,11 @@ export async function createServer(options = {}) {
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
   let guestAccess = null;
+  let runnerHost = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => guestAccess?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => guestAccess?.close(), () => runnerHost?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -368,6 +370,14 @@ export async function createServer(options = {}) {
       onError: (error) => console.error(`Guest links: ${error.code ?? error.message}`) });
     application.guestAccess = guestAccess;
     void guestAccess.start();
+  }
+  // Runners (docs/runner.md): their own TLS listener on port 2730 while one is paired or invited.
+  if (localOptions.runtimeConfigPath && options.runners !== false) {
+    runnerHost = createRunnerHost({ app: application, dataDir: dirname(localOptions.runtimeConfigPath),
+      ...(system?.withGraphRuntimeLease ? { withLease: (owner, work) => system.withGraphRuntimeLease(owner, work) } : {}),
+      onError: (error) => console.error(`Runners: ${error.code ?? error.message}`) });
+    application.runnerHost = runnerHost;
+    void runnerHost.start();
   }
 
   let closing = null;

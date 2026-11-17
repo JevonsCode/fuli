@@ -103,7 +103,9 @@ for (const client of Object.keys(CLIENTS)) {
     const { entry } = CLIENTS[client];
     const graph = [...reachableModules(entry, { dynamicImports: false })].map(path => resolve(path));
     assert.deepEqual(graph.sort(), [entry, resolve(entry, '..', 'hook-contract.js'), resolve('src/agents/lifecycle-forwarder.js'),
-      resolve('src/local-runtime/processes.js'), resolve('src/local-runtime/console-health.js')].sort());
+      resolve('src/local-runtime/processes.js'), resolve('src/local-runtime/console-health.js'),
+      // A runner's hooks do nothing, decided before anything else loads (docs/runner.md).
+      resolve('src/runner/runner-mode.js')].sort());
     for (const path of graph) {
       const specifiers = [...readFileSync(path, 'utf8').matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gm)].map(match => match[1]);
       assert.ok(specifiers.every(specifier => specifier.startsWith('node:') || specifier.startsWith('.')), path);

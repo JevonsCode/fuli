@@ -370,6 +370,17 @@ the values it was given) and the FULI version the hook ran, for example
 a refusal from the graph service shows only its HTTP status.
 `FULI_CONSOLE_AUTOSTART=off` in a client's environment turns it off for that client's sessions.
 
+## Clients on another computer (runners)
+
+Another computer of yours can run Codex, Cursor or any MCP client while FULI and all its
+knowledge stay on this one. On this computer run `fuli runner invite`; on the other, with the
+`fuli-context` package installed (no `fuli setup` and no graph runtime), run the printed
+`fuli runner join <invitation>`. Join pairs the two computers (mutual TLS, both certificates
+pinned) and sets up that computer's clients exactly as `fuli setup` would; their FULI tools then
+answer through this computer. Lifecycle hooks do nothing on a runner, so its clients enter tasks
+through FULI's MCP tools. See [docs/runner.md](runner.md) for how folders are matched and what a
+runner does while this computer is away.
+
 ## Remote clients
 
 Fuli includes a project-bound Streamable HTTP MCP upstream via `fuli remote-mcp`. It is separate

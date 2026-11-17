@@ -2,8 +2,8 @@ import { createServer as createHttpServer } from 'node:http';
 
 import { sendJson } from '../http/response.js';
 import { isFetchBlockedPort } from '../server/blocked-ports.js';
+import { createAddressListeners } from '../server/address-listeners.js';
 import { isGuestSourceAddress } from '../server/lan-access.js';
-import { listenFetchableServer } from '../server/listen.js';
 import { createFailedBearerLimit } from './failed-bearer-limit.js';
 
 // The guest link listener: its own HTTP servers on this computer's private
@@ -17,7 +17,6 @@ import { createFailedBearerLimit } from './failed-bearer-limit.js';
 // failed tokens is refused until they age out; onRefused hears of each of
 // those refusals. rebind follows the computer's addresses as they change.
 const GUEST_PREFIX = '/guest/1/';
-const SHUTDOWN_GRACE_MS = 2000;
 // A client gets this long to send its headers, so a slow sender cannot hold a socket.
 const HEADERS_TIMEOUT_MS = 10_000;
 // A whole request (a search or an MCP call) arrives well within this.
@@ -32,10 +31,6 @@ const MAX_HEADERS_COUNT = 50;
 export async function startGuestListener({ addresses, port, authenticate, route, sourceAllowed = isGuestSourceAddress,
   onRefused = () => {}, isBlockedPort = isFetchBlockedPort, failedBearers = createFailedBearerLimit(),
   createServer = createHttpServer }) {
-  const bound = new Map();
-  let order = [];
-  let boundPort = port;
-
   const handler = (request, response) => {
     response.setHeader('cache-control', 'no-store');
     handleGuestRequest(request, response).catch(() => {
@@ -47,7 +42,7 @@ export async function startGuestListener({ addresses, port, authenticate, route,
   async function handleGuestRequest(request, response) {
     const plain = (address) => String(address ?? '').replace(/^::ffff:/i, '');
     const source = plain(request.socket?.remoteAddress);
-    const authorities = new Set([...bound.keys()].map((address) => `${address}:${boundPort}`));
+    const authorities = new Set(listeners.authorities);
     if (!sourceAllowed(source, plain(request.socket?.localAddress))
       || !authorities.has(String(request.headers.host ?? '').toLowerCase()) || request.headers.origin !== undefined) {
       sendJson(response, 403, { error: 'forbidden' });
@@ -92,38 +87,14 @@ export async function startGuestListener({ addresses, port, authenticate, route,
     }
   }
 
-  // Serves exactly addresses (in that order): closes the servers of addresses
-  // that are gone and opens the new ones on the same port. Answers how many
-  // addresses are bound; an address that cannot be bound is left out.
-  async function rebind(next) {
-    order = [...next];
-    await Promise.all([...bound].filter(([address]) => !order.includes(address)).map(([address, server]) => {
-      bound.delete(address);
-      return closeServer(server);
-    }));
-    let firstError = null;
-    for (const address of order.filter((candidate) => !bound.has(candidate))) {
-      const server = guestServer(createServer, handler);
-      try {
-        await listenFetchableServer(server, boundPort, address, { isBlockedPort });
-      } catch (error) {
-        firstError ??= error;
-        continue;
-      }
-      boundPort = server.address().port;
-      bound.set(address, server);
-    }
-    if (!bound.size) throw firstError ?? new Error('The guest listener has no address to bind');
-    return bound.size;
-  }
-
-  await rebind(addresses);
+  // Serves exactly addresses (in that order) and follows them as they change.
+  const listeners = createAddressListeners({ port, isBlockedPort, createServer: () => guestServer(createServer, handler) });
+  await listeners.rebind(addresses);
   return {
-    get port() { return boundPort; },
-    // The bound addresses with the port, in the order they were given.
-    get authorities() { return order.filter((address) => bound.has(address)).map((address) => `${address}:${boundPort}`); },
-    rebind,
-    close: () => Promise.all([...bound.values()].map(closeServer)).then(() => bound.clear())
+    get port() { return listeners.port; },
+    get authorities() { return listeners.authorities; },
+    rebind: listeners.rebind,
+    close: listeners.close
   };
 }
 
@@ -141,12 +112,4 @@ function guestServer(createServer, handler) {
 function bearerToken(header) {
   const match = typeof header === 'string' ? /^Bearer[ \t]+(\S+)$/i.exec(header) : null;
   return match ? match[1] : null;
-}
-
-function closeServer(server) {
-  return new Promise((resolve) => {
-    server.close(() => resolve());
-    server.closeIdleConnections?.();
-    setTimeout(() => server.closeAllConnections?.(), SHUTDOWN_GRACE_MS).unref();
-  });
 }

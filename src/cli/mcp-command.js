@@ -16,6 +16,9 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
 import { decodeWorkerDescriptor, WORKER_DESCRIPTOR_ENV } from '../graphiti/worker-descriptor.js';
+import { runRunnerMcp } from '../runner/runner-mcp.js';
+import { runnerRuntimeConfig } from '../runner/runner-mode.js';
+import { dirname } from 'node:path';
 
 export async function runMcpCommand(args, { env = process.env } = {}) {
   if (args.includes('--worker') || args.some(arg => arg.startsWith('--worker='))) {
@@ -57,14 +60,17 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     runStdioRelay({ target: mcpServerTarget(args) });
     return;
   }
-  await runStdio({
-    runtimeConfigPath,
-    sourceApplication: configuredSourceApplication
-      ? normalizeMcpSourceApplication(configuredSourceApplication)
-      : undefined,
-    // A config without a profile gets the small chat set; full must be asked for.
-    toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat'
-  });
+  const sourceApplication = configuredSourceApplication
+    ? normalizeMcpSourceApplication(configuredSourceApplication)
+    : undefined;
+  // A config without a profile gets the small chat set; full must be asked for.
+  const toolProfile = args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat';
+  // A runner serves through its host (docs/runner.md); the same entry, so setup writes nothing else.
+  if (runnerRuntimeConfig(['--runtime-config', runtimeConfigPath])) {
+    await runRunnerMcp({ dataDir: dirname(runtimeConfigPath), sourceApplication: sourceApplication ?? 'other', toolProfile, env });
+    return;
+  }
+  await runStdio({ runtimeConfigPath, sourceApplication, toolProfile });
 }
 
 function workerRuntimeArguments(args) {

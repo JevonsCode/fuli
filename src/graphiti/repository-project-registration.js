@@ -1,3 +1,4 @@
+import { callerRepository } from './caller-workspace.js';
 import { repositoryProjectDraft } from './project-brief.js';
 import { findRepositoryRoot } from './project-path-context.js';
 import { originRemoteSource } from './repository-remote.js';
@@ -13,9 +14,11 @@ export async function registerRepositoryProject(application, resolution, { sessi
   if (hostInternalActivity(application, { sessionId })) return { ...resolution, reason: 'internal_activity' };
   const projectId = resolution.repositoryProjectId;
   try {
-    const draft = await repositoryProjectDraft({ projectPath });
+    // A runner's folder (docs/runner.md) comes with its README draft and origin.
+    const remote = callerRepository(projectPath);
+    const draft = remote ? remote.draft : await repositoryProjectDraft({ projectPath });
     if (!draft) return resolution;
-    const source = originRemoteSource(findRepositoryRoot(projectPath));
+    const source = remote ? remote.source : originRemoteSource(findRepositoryRoot(projectPath));
     await application.upsertPersonalProject({
       personalSpaceId: application.config.personal.spaceId,
       projectId,

@@ -35,6 +35,7 @@ import { handleWorkSurfacesRequest } from './work-surfaces-api-router.js';
 import { handleAgentDelegationRequest } from './agent-delegation-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
+import { handleRunnersRequest } from './runner-api-router.js';
 import { handleVisitorAccessRequest } from './visitor-access-api-router.js';
 import { handleVisitRequestsApiRequest } from '../visit-requests/http.js';
 import { handleLifecycleHookRequest } from './lifecycle-hooks-api-router.js';
@@ -94,6 +95,7 @@ export async function handleApiRequest({
   if (await handleModelListRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
   if (await handleGuestLinksRequest({ request, response, url, guestAccess: app.guestAccess ?? null })) return true;
+  if (await handleRunnersRequest({ request, response, url, runnerHost: app.runnerHost ?? null })) return true;
   if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;

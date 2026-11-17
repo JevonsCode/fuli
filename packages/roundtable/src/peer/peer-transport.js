@@ -74,7 +74,8 @@ function peerCertificate({ identity, host, port, timeoutMs }) {
   });
 }
 
-function pinnedTls(identity, coordinator) {
+// TLS options that accept only the paired certificate, presenting this device's own; FULI's runners use it too.
+export function pinnedTls(identity, coordinator) {
   return {
     ...identity.tlsOptions,
     ca: [coordinator.certPem],
