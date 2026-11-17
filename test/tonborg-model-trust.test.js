@@ -195,7 +195,7 @@ test('an unconfigured role, a disabled role and a session fallback keep today\'s
   assert.deepEqual(pick(h.trust.view('tonborg', 'knowledge_review'), ['status', 'reason']), { status: 'suggestion', reason: 'session_answer' });
 });
 
-test('a session stands in only for a role with no model, and only where the person handed the operation over', t => {
+test('a session stands in only for a role with no model configured at all, and only where the person handed the operation over', t => {
   const key = { role: 'tonborg', operation: 'knowledge_review', connection: null, model: null, scope: { personalSpaceId: 's', personalProjectId: 'p' } };
   const reason = (h, extra = {}) => { const gate = h.trust.status({ ...key, ...extra }); return [gate.status, gate.reason]; };
 
@@ -203,8 +203,14 @@ test('a session stands in only for a role with no model, and only where the pers
   assert.deepEqual(reason(none), ['not_passed', 'session_answer']);
   assert.deepEqual(reason(none, { handedOver: true }), ['passed', null]);
   assert.equal(none.trust.commit({ ...key, handedOver: true }, () => 'written'), 'written');
-  // A disabled role has no model for the operation either.
-  assert.deepEqual(reason(harness(t, { roles: { tonborg: tonborg('local', { enabled: false }) } }), { handedOver: true }), ['passed', null]);
+  assert.equal(none.trust.sessionMayStandIn('tonborg'), true);
+  // A role configured but disabled, or not allowed the operation, fails closed: an Agent may change
+  // those settings for the person (model_settings), so the session's answer stays a suggestion.
+  const disabled = harness(t, { roles: { tonborg: tonborg('local', { enabled: false }) } });
+  assert.deepEqual(reason(disabled, { handedOver: true }), ['not_passed', 'session_answer']);
+  assert.equal(disabled.trust.sessionMayStandIn('tonborg'), false);
+  assert.deepEqual(reason(harness(t, { roles: { tonborg: tonborg('local', { allowedOperations: ['executor_routing'] }) } }),
+    { handedOver: true }), ['not_passed', 'session_answer']);
   // A model configured since the session answered takes the operation back.
   const configured = harness(t);
   assert.deepEqual(reason(configured, { handedOver: true }), ['not_passed', 'session_answer']);
@@ -214,8 +220,21 @@ test('a session stands in only for a role with no model, and only where the pers
   const suggesting = harness(t, { roles: {} });
   suggesting.trust.setSuggestionsOnly('tonborg', true, suggesting.trust.revision('tonborg'));
   assert.deepEqual(reason(suggesting, { handedOver: true }), ['not_passed', 'suggestions_only']);
-  // The settings page still reads a role without a model as a session's answer.
+  // The settings page reads a role without a model as a session's answer, and with the switch on
+  // as the session executing for it; a disabled role stays a suggestion either way.
   assert.deepEqual(pick(none.trust.view('tonborg', 'knowledge_review'), ['status', 'reason']), { status: 'suggestion', reason: 'session_answer' });
+  assert.deepEqual(pick(none.trust.view('tonborg', 'knowledge_review', { handedOver: true }), ['status', 'reason']),
+    { status: 'automatic', reason: null });
+  assert.deepEqual(pick(disabled.trust.view('tonborg', 'knowledge_review', { handedOver: true }), ['status', 'reason']),
+    { status: 'suggestion', reason: 'session_answer' });
+});
+
+test('the model page\'s 执行方式 for Tonborg without a model follows 「交给 Tonborg 确认」', async t => {
+  const h = harness(t, { roles: {} });
+  const shown = async handedOver => pick((await call(h, 'GET', '/api/model-backends/roles', null, '127.0.0.1',
+    { handedOver: { tonborg: async () => handedOver } })).body.roles.find(role => role.role === 'tonborg').trust, ['status', 'reason']);
+  assert.deepEqual(await shown(false), { status: 'suggestion', reason: 'session_answer' });
+  assert.deepEqual(await shown(true), { status: 'automatic', reason: null });
 });
 
 test('an upgrade resets no choice: a stored 「只给建议」, a manual policy and the model settings stay as they were', async t => {

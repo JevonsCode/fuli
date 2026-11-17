@@ -41,8 +41,10 @@ const SESSIONS = {
 };
 // These tests are about who answers and how a write survives retries and
 // restarts, so the trust gate (rec#10 D-36, test/tonborg-model-trust.test.js)
-// lets every answer apply unless a test asks for the production gate.
-const UNGATED = () => ({ status: key => ({ status: 'passed', reason: null, modelId: key.model }), commit: (key, write) => write() });
+// lets every answer apply unless a test asks for the production gate. Whether
+// the session stands in for Tonborg is still read from the harness's port.
+const UNGATED = port => ({ status: key => ({ status: 'passed', reason: null, modelId: key.model }), commit: (key, write) => write(),
+  sessionMayStandIn: role => !port.hasModel(role) });
 // The production gate over the harness's model port; acknowledged: the person saw the warning.
 const productionTrust = ({ acknowledged }) => port => {
   const trust = createRoleTrust({ modelBackends: port });
@@ -294,12 +296,15 @@ test('C2 and C13: a failing model falls back to the exact session; both usages a
 test('with no model behind Tonborg and 「交给 Tonborg 确认」 on, the session\'s review applies under the production gate; every other session answer is a suggestion', async t => {
   const noModel = { bole: { ...tonborg(), allowedOperations: ['staffing_review'] } };
   // made: the gate the harness built, to change the person's choice on it.
-  const reviewed = async ({ roles = noModel, replies, delegated = true, acknowledged = true, suggestionsOnly = false } = {}) => {
+  // beforeAnswer: what changes between the package and the session's answer.
+  const reviewed = async ({ roles = noModel, replies, delegated = true, acknowledged = true, suggestionsOnly = false,
+    beforeAnswer = () => {} } = {}) => {
     let made;
     const h = harness(t, { roles, ...(replies ? { replies } : {}), trust: port => (made = productionTrust({ acknowledged })(port)) });
     if (delegated) h.app.judgment.store().setDelegation('s', true, 0);
     if (suggestionsOnly) made.setSuggestionsOnly('tonborg', true, made.revision('tonborg'));
     assert.equal((await h.app.judgment.review(reviewInput)).records[0].outcome, 'pending');
+    beforeAnswer(h);
     const [record] = (await claimAndSubmit(h, 'token-a', { decisions: [verdict()] })).result.result.records;
     return { h, record, gate: [record.aiReview.state, record.aiReview.gate.status, record.aiReview.gate.reason] };
   };
@@ -318,7 +323,11 @@ test('with no model behind Tonborg and 「交给 Tonborg 确认」 on, the sessi
     [await reviewed({ acknowledged: false }), 'warning_not_seen'],
     [await reviewed({ suggestionsOnly: true }), 'suggestions_only'],
     // A model that failed handed its work to the session: that answer never applies by itself.
-    [await reviewed({ roles: { tonborg: tonborg() }, replies: () => new Response('{"error":{"message":"busy"}}', { status: 503 }) }), 'session_answer']
+    [await reviewed({ roles: { tonborg: tonborg() }, replies: () => new Response('{"error":{"message":"busy"}}', { status: 503 }) }), 'session_answer'],
+    // A model the person configured after the package was made takes the operation back.
+    [await reviewed({ beforeAnswer: h => { h.config.roles = { ...h.config.roles, tonborg: tonborg() }; } }), 'session_answer'],
+    // A configured but disabled role (an Agent may switch it off for the person) is not "no model".
+    [await reviewed({ roles: { tonborg: tonborg({ enabled: false }) } }), 'session_answer']
   ];
   for (const [{ h, record, gate }, reason] of refusals) {
     assert.deepEqual(gate, ['ai_suggested', 'not_passed', reason]);
@@ -357,6 +366,21 @@ test('with no model behind Tonborg and 「交给 Tonborg 确认」 on, the lead\
   const escalated = (await claimAndSubmit(unsure, 'token-a', { ...approve, confidence: 0.6 }, ['gate'])).result.result;
   assert.equal(escalated.outcome, 'escalate');
   assert.equal(unsure.completions.length, 0);
+
+  // A model configured after the package was made, or a configured but disabled role: a person decides.
+  const configuredSince = harness(t, noModel);
+  configuredSince.app.judgment.store().setDelegation('s', true, 0);
+  await configuredSince.app.judgment.accept(acceptance);
+  configuredSince.config.roles = { ...configuredSince.config.roles, tonborg: tonborg() };
+  const held = (await claimAndSubmit(configuredSince, 'token-a', approve, ['gate'])).result.result;
+  assert.deepEqual([held.outcome, held.proposedOutcome], ['escalate', 'approve']);
+  assert.equal(configuredSince.completions.length, 0);
+  const disabled = harness(t, { roles: { tonborg: tonborg({ enabled: false }) } });
+  disabled.app.judgment.store().setDelegation('s', true, 0);
+  await disabled.app.judgment.accept(acceptance);
+  const proposedOnly = (await claimAndSubmit(disabled, 'token-a', approve, ['gate'])).result.result;
+  assert.deepEqual([proposedOnly.outcome, proposedOnly.proposedOutcome], ['escalate', 'approve']);
+  assert.equal(disabled.completions.length, 0);
 });
 
 test('a session answering after Tonborg\'s model failed never accepts by itself, whatever the switch says', async t => {

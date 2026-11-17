@@ -18,9 +18,11 @@ import { visibleKnowledgeKeys } from './visible-items.js';
 // With a model connected it spends that model's tokens. Without one the
 // reviews wait as work packages for the current session, which answers them
 // as Tonborg with its own model (Jevons 11-17); nothing runs in between.
-// Turning it on is the person's say-so for Tonborg to act by itself: the same
-// click clears 「只给建议」 and acknowledges the trust warning (role-trust.js),
-// each recorded in that role's settings history.
+// The session stands in only while no model is configured for Tonborg at all
+// (role-trust.js). Turning it on is the person's say-so for Tonborg to act by
+// itself: the same click clears 「只给建议」 and acknowledges the trust warning,
+// each recorded in that role's settings history. An FLA turns it on only by
+// relaying the person's words (agent_relayed in the interface catalog).
 
 const id = z.string().trim().min(1).max(256);
 const readInput = z.object({ personalSpaceId: id }).strict();
@@ -59,6 +61,19 @@ export async function reviewDelegation({ judgment, modelTrust, modelBackends = n
   const { personalSpaceId } = parse(readInput, input);
   await judgment.scope({ personalSpaceId });
   return delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, judgment.store().delegation(personalSpaceId));
+}
+
+// Whether the switch is on, for the model page's 执行方式 line. A judgment
+// store that cannot be read yet reads as off: the line then says only what
+// holds without the switch.
+export async function reviewHandedOver(judgment, personalSpaceId) {
+  if (!judgment || !personalSpaceId) return false;
+  try {
+    await judgment.scope({ personalSpaceId });
+    return judgment.store().delegation(personalSpaceId).enabled;
+  } catch {
+    return false;
+  }
 }
 
 export async function setReviewDelegation({ judgment, modelTrust, modelBackends = null, input }) {

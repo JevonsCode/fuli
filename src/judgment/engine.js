@@ -50,8 +50,9 @@ const reviewPolicy = (store, space, project) => {
 };
 
 // trust: whether Tonborg's configured model may apply a review by itself
-// (src/model-backends/role-trust.js, rec#10 D-36); without one, every review
-// is a suggestion.
+// (src/model-backends/role-trust.js, rec#10 D-36), and whether the current
+// session may stand in for Tonborg; without one, every review is a suggestion
+// and no session stands in.
 export function createJudgmentEngine({ app, judge = createJudgmentBackend(), trust = null } = {}) {
   // The capture switch is part of the gate (rec#10 D-36.7): while recording is
   // off for the review's scope, a trusted model's approval is a suggestion too.
@@ -276,7 +277,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const input = parse(reviewInput, raw); await service.scope(input);
     return reviewAcrossScopes(service, input, true);
   }, assess: (service, input) => assessRouting({ app, decide, context, service, input }),
-  accept: (service, input) => assessAcceptance({ app, decide, context, service, input }),
+  accept: (service, input) => assessAcceptance({ app, decide, context, service, trust, input }),
   // A session answered a handed-off judgment: rerun the same operation, which
   // uses that answer only while its evidence and policy are unchanged.
   // execution names the role_work execution that may use the answer.
@@ -285,7 +286,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     if (operation === TONBORG_OPERATIONS.review) return review(service, input, { localOnly: true, execution });
     if (operation === TONBORG_OPERATIONS.routing) return assessRouting({ app, decide: executing, context, service, input });
     if (operation === TONBORG_OPERATIONS.acceptance) {
-      return assessAcceptance({ app, decide: executing, context, service, input: { ...input, taskContextToken: session.taskContextToken } });
+      return assessAcceptance({ app, decide: executing, context, service, trust,
+        input: { ...input, taskContextToken: session.taskContextToken } });
     }
     throw new TypeError(`Unknown Tonborg operation: ${operation}`);
   } };

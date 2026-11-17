@@ -15,8 +15,10 @@ import { reachNotice } from './delegation-reach'
 import { readDelegation, saveDelegation, type ReviewDelegation } from './review-api'
 
 // 「交给 Tonborg 确认」 (rec#96), the same switch on the 待决策 list and in
-// Tonborg's model settings. It runs on Tonborg's own model, so without one it
-// cannot be turned on and says where to connect one. On the list it also links
+// Tonborg's model settings. It runs on Tonborg's own model; without one the
+// current session confirms for Tonborg, and also accepts its own task after
+// another assistant's check passed, so it says so and where to connect a
+// model. On the list it also links
 // to where it is set up (settingsLink): Tonborg's details on 模型与用量, with
 // its model and how it runs.
 const props = defineProps<{ personalSpaceId: string; settingsLink?: boolean }>()
@@ -97,6 +99,9 @@ async function change(enabled: boolean) {
       <RouterLink v-if="state && !connected" to="/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
       <RouterLink v-else-if="settingsLink" :to="settingsTarget" class="tonborg-delegation__link" :title="t('reviewList.delegation.settingsTitle')"
         data-tonborg-settings-link>{{ t('reviewList.delegation.settings') }}</RouterLink>
+    </p>
+    <p v-if="state && !connected" class="tonborg-delegation__hint" data-tonborg-acceptance>
+      {{ t('reviewList.delegation.sessionAcceptance') }}
     </p>
   </div>
 </template>

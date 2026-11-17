@@ -227,6 +227,17 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
   })
 
+  it('says the session executes for Tonborg without a model once 「交给 Tonborg 确认」 is on', async () => {
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { role: 'tonborg', state: 'not_configured', answeredBy: 'current_session',
+      trust: trust({ status: 'automatic', reason: null }) } as never
+    const wrapper = await mountPage()
+    const row = (await openDetails(wrapper, 'tonborg')).get('[data-model-fact="execution"]').text()
+    expect(row).toContain('由你当时的 AI 会话自动执行（已打开「交给 Tonborg 确认」）')
+    expect(row).not.toContain('只给建议')
+    expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
+  })
+
   it('shows the local build observed after the latest answer beside the model: 12 characters, the full build and a caveat in a title', async () => {
     const digest = '0123456789abcdef'.repeat(4)
     ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'observed', digest, completedAt: '2026-10-24T08:00:00.000Z' }
