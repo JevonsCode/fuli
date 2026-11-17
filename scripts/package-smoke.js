@@ -96,6 +96,7 @@ try {
     'docs/agent-roundtable.md',
     'docs/judgment-and-autonomy.md',
     'docs/client-connections.md',
+    'docs/runner.md',
     'packages/roundtable/package.json',
     'packages/roundtable/src/roundtable/service.js',
     'examples/external-knowledge/markdown-folder.mjs',
@@ -124,7 +125,8 @@ try {
         'docs/agent-roundtable.md',
         'docs/judgment-and-autonomy.md',
         'docs/client-connections.md',
-        'docs/client-links.md'
+        'docs/client-links.md',
+        'docs/runner.md'
       ].includes(path), `unexpected published documentation file ${path}`);
     }
     assert.doesNotMatch(path, /^(?:AGENTS|CLAUDE)\.md$/);
