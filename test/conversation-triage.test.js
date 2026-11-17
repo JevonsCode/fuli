@@ -43,7 +43,7 @@ test('candidates carry names only and leave out fallbacks and archives', async (
     project('old', { name: 'Old', lifecycle: 'archived' }),
     project('conversation-abc', { name: '会话项目' }), { project_id: 't', scope_type: 'temporary' }] });
   assert.deepEqual(await triageCandidates(app), { projects: ['Fuli'], topics: ['Garden Planning'],
-    label_with: 'checkpoint_task_knowledge.triage' });
+    label_with: 'checkpoint_task_knowledge.triage', continue_with: 'list_agent_conversations.topic' });
   delete app.personal.conversationTriage;
   assert.deepEqual((await triageCandidates(app)).topics, []);
 });
