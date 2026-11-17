@@ -42,12 +42,22 @@ function withProjects(record, projects) {
 // Waits by the clock, not by a count of reads: on a slow Windows CI runner 200 reads of the status were not
 // enough for a listener to move (it failed twice on 2026-11-15 with nothing wrong in the product).
 async function until(runtime, matches, label) {
+  let status;
   for (const deadline = Date.now() + 30_000; Date.now() < deadline;) {
-    const status = await runtime.status();
+    status = await runtime.status();
     if (matches(status)) return status;
     await delay(25);
   }
-  throw new Error(`Timed out waiting for ${label}`);
+  // The state it stopped in: a time-out on CI that no local run repeats (2026-11-17) said nothing about why.
+  throw new Error(`Timed out waiting for ${label}; stopped at ${JSON.stringify(stoppedAt(status))}`);
+}
+
+// What a pairing share depends on, from the last status read.
+function stoppedAt(status) {
+  return { role: status.role, listening: status.coordinator?.listening, listenFailure: status.coordinator?.listenFailure,
+    nearbyOn: status.nearby?.on, pairing: status.nearby?.pairing?.state, groupSize: status.groupSize,
+    shares: status.shares.map((share) => share.projectId), autoShared: status.autoShared,
+    autoSharePending: status.autoSharePending, lastPublish: status.lastPublish };
 }
 
 const fillers = (prefix, count) => Array.from({ length: count }, (_, index) =>
