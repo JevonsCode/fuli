@@ -10,6 +10,7 @@ import { handleNpmCopiesRequest } from './npm-copies-api-router.js';
 import { handleCliPathRequest } from './cli-path-api-router.js';
 import { handleWhatsNewRequest } from './whats-new-api-router.js';
 import { handleDesktopClientRequest } from './desktop-client-api-router.js';
+import { handleDesktopGlanceRequest } from './desktop-glance-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
 import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.js';
@@ -318,6 +319,7 @@ export async function handleApiRequest({
     await handleAgentWorkflowsRequest({ request, response, url, app }) ||
     await handleAgentAvatarsRequest({ request, response, url, app }) ||
     await handleWorkSurfacesRequest({ request, response, url, app }) ||
+    await handleDesktopGlanceRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (

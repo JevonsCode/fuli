@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../api/fuli_api.dart';
+import '../api/glance.dart';
 import '../api/migration_plan.dart';
 import '../doctor/doctor_report.dart';
 import '../l10n/strings.dart';
@@ -68,6 +69,8 @@ class FuliController extends ChangeNotifier {
   final _attention = AttentionWatch();
 
   FuliSnapshot? _snapshot;
+  Glance? _glance;
+  int _waitingRequests = 0;
   String? _pending;
   // The label of a start or port change, kept until the check after it.
   String? _bringingUp;
@@ -91,6 +94,14 @@ class FuliController extends ChangeNotifier {
 
   /// Null until the first check finished.
   FuliSnapshot? get snapshot => _snapshot;
+
+  /// The work the tray menu shows, as of the latest check; null while FULI
+  /// does not answer or has no glance yet.
+  Glance? get glance => _glance;
+
+  /// How many requests Agents left for the person are open, up to
+  /// [openAttentionLimit].
+  int get waitingRequests => _waitingRequests;
 
   /// The label of the operation running now; one at a time.
   String? get pending => _pending;
@@ -134,7 +145,7 @@ class FuliController extends ChangeNotifier {
     final snapshot = await _inspect();
     if (_disposed) return;
     _show(snapshot);
-    if (snapshot.reached && snapshot.running) await _announceAttention(apiFor(snapshot.port));
+    await _readWork(snapshot.reached && snapshot.running ? apiFor(snapshot.port) : null);
     _schedule();
     _startIfWanted(snapshot);
   }
@@ -158,20 +169,39 @@ class FuliController extends ChangeNotifier {
     unawaited(start());
   }
 
+  // What the tray menu shows besides FULI's condition: the open requests and
+  // the glance, read from a FULI that answers ([api] null: it does not). Either
+  // read that fails, an older FULI without the route included, shows nothing.
+  Future<void> _readWork(FuliApi? api) async {
+    final open = api == null ? null : await _announceAttention(api);
+    Glance? glance;
+    try {
+      glance = await api?.glance();
+    } on Object {
+      glance = null;
+    }
+    if (_disposed) return;
+    _waitingRequests = open ?? 0;
+    _glance = glance;
+    notifyListeners();
+  }
+
   // Each new request an Agent leaves for the person is one notification; a
-  // burst becomes one. An older FULI without the route says nothing.
-  Future<void> _announceAttention(FuliApi api) async {
+  // burst becomes one. Answers how many are open; an older FULI without the
+  // route says nothing and answers null.
+  Future<int?> _announceAttention(FuliApi api) async {
     final List<AttentionNotice> open;
     try {
       open = await api.openAttention();
     } on Object {
-      return;
+      return null;
     }
     final fresh = _attention.observe(open);
-    if (_disposed || fresh.isEmpty) return;
+    if (_disposed || fresh.isEmpty) return open.length;
     unawaited(fresh.length == 1
         ? notifier.notify(strings.attentionTitle, fresh.single.title)
         : notifier.notify(strings.attentionTitle, strings.attentionMany(fresh.length)));
+    return open.length;
   }
 
   void _show(FuliSnapshot snapshot) {

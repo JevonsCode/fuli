@@ -11,7 +11,7 @@ from neo4j.exceptions import ConstraintError
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
-from .provider_values import now_utc, stable_uuid
+from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_memory_models import ProjectAgentMemoryWrite
 from .store_transactions import query_store_transaction
 from .task_context_adoption import adopt_task_agent
@@ -229,6 +229,28 @@ class StoreTaskContexts:
                     'last_active': str(row['created_at']),
                 }
         return list(sessions.values())[:limit]
+
+    async def recent_working_agents(self, actor, space_id, since):
+        """Each Agent that began a task since `since`, the latest first: when its
+        latest task began and whether one of them is under way (its session's
+        current task, not yet closed). The tray menu asks every few seconds, so
+        the read starts from the space's task index and looks up a session only
+        for the tasks in the window."""
+        self._require_personal()
+        await self.authorize(actor, space_id, 'reader')
+        rows, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (task:FuliTaskContext {personal_space_id: $space_id})
+            WHERE task.project_agent_id IS NOT NULL AND task.created_at >= $since
+            MATCH (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task)
+            RETURN task.project_agent_id AS agent_id, max(task.created_at) AS last_active,
+                   sum(CASE WHEN task.token = session.current_token
+                                 AND NOT coalesce(task.completed, false) THEN 1 ELSE 0 END) > 0 AS working
+            ORDER BY last_active DESC, agent_id
+            ''', space_id=space_id, since=since, routing_='r',
+        )
+        return [{'agent_id': row['agent_id'], 'working': row['working'],
+                 'last_active': native_datetime(row['last_active']).isoformat()} for row in rows]
 
     async def get_task_context(self, actor, space_id, token, source_application):
         self._require_personal()
