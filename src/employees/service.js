@@ -68,7 +68,9 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
   async function managedProjectsFor(context, input) {
     if (context.templateId !== 'jefa' || input.tool !== 'summarize_projects') return {};
     const { managedProjects } = (await recruitment.list()).templates.find((entry) => entry.id === context.templateId);
-    return { managedProjects };
+    // A temporary project is one session's or task's scope, not a project the
+    // person manages: listing each as an empty project only spends tokens.
+    return { managedProjects: managedProjects.filter((entry) => !entry.temporary).map(({ id, name }) => ({ id, name })) };
   }
 
   async function callTool(input) {

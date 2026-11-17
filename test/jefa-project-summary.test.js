@@ -90,9 +90,12 @@ test('with selected projects, only those Jefa was given are summarized', async (
 });
 
 test('a temporary session project can ask, but is never summarized as a project', async (t) => {
-  const { call } = await jefa(t);
+  const { app, call } = await jefa(t);
   const { projects } = await call('summarize_projects', {}, TEMPORARY);
   assert.deepEqual(projects.map((project) => project.id).sort(), [HOME, DESIGN, RESEARCH]);
+  // The console's board still lists it, so tasks Jefa keeps there stay in view.
+  const listed = (await app.employees.list()).templates.find((template) => template.id === 'jefa');
+  assert.deepEqual(listed.managedProjects.find((project) => project.id === TEMPORARY), { id: TEMPORARY, name: '临时会话（测试）', temporary: true });
 });
 
 test('the summary names a few tasks per project and says when more are waiting', async (t) => {
