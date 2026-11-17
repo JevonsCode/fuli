@@ -74,6 +74,41 @@ test('the glance lists roundtable threads with an ask still open that moved in t
   assert.equal(roundtables.link, 'fuli://roundtables');
 });
 
+test('an assistant that cannot be read gives its row to the next one, and only the unread ones count as more', async () => {
+  const leads = ['a', 'gone', 'b', 'c', 'd', 'e', 'f'];
+  const app = syntheticApp({
+    agents: leads.map((lead, index) => worked(lead, index + 1)),
+    names: Object.fromEntries(leads.filter((lead) => lead !== 'gone').map((lead) => [lead, { name: `Synthetic ${lead}` }]))
+  });
+  const { assistants } = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(assistants.rows.map((row) => row.name), ['a', 'b', 'c', 'd', 'e'].map((lead) => `Synthetic ${lead}`));
+  assert.equal(assistants.more, 1);
+});
+
+test('names and subjects reach the menu as one short readable line', async () => {
+  const long = 'Synthetic'.repeat(10);
+  const app = syntheticApp({
+    agents: [worked('lead', 1, true)],
+    names: { lead: { name: 'Synthetic\nLead\twith‮turned​text' } },
+    threads: [thread('wide', 1, { subject: `Sub‮ject\nline`, waitingFor: [`${long}\n`, 'Synthetic B', 'Synthetic C', 'Synthetic D'] })]
+  });
+  const glance = await desktopGlance({ app, now: () => NOW });
+  assert.equal(glance.assistants.rows[0].name, 'Synthetic Lead with turned text');
+  const [row] = glance.roundtables.rows;
+  assert.equal(row.subject, 'Sub ject line');
+  assert.equal(row.waitingFor.length, 3);
+  assert.ok(row.waitingFor[0].length <= 32 && row.waitingFor[0].endsWith('…'), row.waitingFor[0]);
+  assert.deepEqual(row.waitingFor.slice(1), ['Synthetic B', '+2']);
+});
+
+test('a Provider that fails empties only the assistants; the roundtable still shows', async () => {
+  const app = syntheticApp({ threads: [thread('open', 1)] });
+  app.personal.recentWorkingAgents = async () => { throw new Error('synthetic: Provider down'); };
+  const glance = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual([glance.assistants.rows, glance.assistants.more], [[], 0]);
+  assert.deepEqual(glance.roundtables.rows.map((row) => row.link), ['fuli://roundtables/open']);
+});
+
 test('a console without a personal space or a roundtable answers empty sections', async () => {
   const none = await desktopGlance({ app: { config: {} }, now: () => NOW });
   assert.deepEqual([none.assistants.rows, none.assistants.more, none.roundtables.rows], [[], 0, []]);

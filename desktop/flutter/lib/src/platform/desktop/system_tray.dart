@@ -10,6 +10,9 @@ import '../ports.dart';
 /// 打开 FULI · (what FULI is doing) · 启动/停止 · (Windows: 换一个端口) · 导出诊断包… ·
 /// (Windows: 开机时启动) · 退出.
 const _lineKey = 'line:';
+// A line with a page is keyed by its link, not its place: a check can rebuild
+// the menu while it is open, and a click then opens the row it was on.
+const _linkKey = 'link:';
 
 class SystemTray with TrayListener implements TrayController {
   SystemTray({
@@ -47,7 +50,7 @@ class SystemTray with TrayListener implements TrayController {
       MenuItem(key: 'open', label: strings.openFuli),
       for (final (index, line) in view.lines.indexed) ...[
         if (line.link == null) MenuItem.separator(),
-        MenuItem(key: '$_lineKey$index', label: _menuText(line.label), disabled: line.link == null),
+        MenuItem(key: line.link == null ? '$_lineKey$index' : '$_linkKey${line.link}', label: _menuText(line.label), disabled: line.link == null),
       ],
       if (view.lines.isNotEmpty) MenuItem.separator(),
       MenuItem(key: 'toggle', label: view.toggleLabel, disabled: !view.toggleEnabled),
@@ -92,11 +95,11 @@ class SystemTray with TrayListener implements TrayController {
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
     final key = menuItem.key ?? '';
-    if (key.startsWith(_lineKey)) {
-      final link = _shown?.lines.elementAtOrNull(int.parse(key.substring(_lineKey.length)))?.link;
-      if (link != null) onOpenLink(link);
+    if (key.startsWith(_linkKey)) {
+      onOpenLink(key.substring(_linkKey.length));
       return;
     }
+    if (key.startsWith(_lineKey)) return;
     switch (key) {
       case 'open':
         onOpen();

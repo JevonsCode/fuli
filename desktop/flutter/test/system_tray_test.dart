@@ -74,6 +74,16 @@ void main() {
     tray.onTrayMenuItemClick(MenuItem(key: keys[3] as String, label: ''));
     expect(calls, ['link fuli://agents/s/lead']);
 
+    // A check rebuilds the open menu with the rows in another order: the click
+    // still opens the row it was on.
+    await tray.show(const TrayView(icon: TrayIcon.ok, tooltip: 'FULI', toggleLabel: '停止 FULI', toggleEnabled: true, lines: [
+      TrayLine('近 24 小时干过活的助手'),
+      TrayLine('Synthetic Other：进行中', link: 'fuli://agents/s/other'),
+      TrayLine('Synthetic Lead：R&D · 进行中', link: 'fuli://agents/s/lead'),
+    ]));
+    tray.onTrayMenuItemClick(MenuItem(key: keys[4] as String, label: ''));
+    expect(calls.last, 'link fuli://agents/s/lead');
+
     await tray.show(const TrayView(icon: TrayIcon.ok, tooltip: 'FULI', toggleLabel: '停止 FULI', toggleEnabled: true));
     expect([for (final item in menus.last) item['type'] == 'separator' ? '—' : item['label']], ['打开 FULI', '停止 FULI', '导出诊断包…', '—', '退出'],
         reason: 'without lines the menu is the one it was');
