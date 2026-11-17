@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { deleteJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import CustomClientDialog from './CustomClientDialog.vue'
+import { ADD_CLIENT_QUERY_KEYS, addClientDraft, type AddClientDraft } from './add-client-prompt'
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
 
@@ -45,6 +47,21 @@ const connectable = computed(() => clients.value.filter(client => canConnect(cli
 
 // 添加客户端: the dialog, and removing a client the person added here.
 const adding = ref(false)
+// A client's add link (add-client-prompt.ts) opens the dialog filled in, once: its values leave the address.
+const route = useRoute()
+const router = useRouter()
+const prefill = ref<AddClientDraft | null>(null)
+onMounted(() => {
+  // Mounted without the console's router (a card on its own) there is no link to read.
+  if (!route) return
+  const draft = addClientDraft(route.query)
+  if (!draft) return
+  prefill.value = draft
+  adding.value = true
+  const query = { ...route.query }
+  for (const key of ADD_CLIENT_QUERY_KEYS) delete query[key]
+  void router.replace({ query })
+})
 const removing = ref('')
 const removeError = ref(false)
 
@@ -61,24 +78,24 @@ async function removeCustom(client: ClientTile) {
   })
 }
 
-// One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
-async function connectOne(client: ClientObservation) {
-  connecting.value = client.id
-  delete connectionFeedback.value[client.id]
+// One client's write, shared by its own 接入, 一键接入 and a client just added; its result shows on its tile.
+async function connectOne(clientId: string) {
+  connecting.value = clientId
+  delete connectionFeedback.value[clientId]
   await writing(async () => {
     try {
-      const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
-      if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart'
+      const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId })
+      if (!unmounted) connectionFeedback.value[clientId] = result.status === 'connected' ? 'restart'
         : result.reason === 'client_component_unavailable' ? 'componentUnavailable'
           : result.reason === 'client_running' ? 'clientRunning' : 'connectError'
     } catch {
-      if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
+      if (!unmounted) connectionFeedback.value[clientId] = 'connectError'
     } finally { connecting.value = '' }
   })
 }
 async function connect(client: ClientObservation) {
   if (busy.value || !canConnect(client)) return
-  await connectOne(client)
+  await connectOne(client.id)
 }
 // Quits the client, updates its entry while it is closed, reopens it (client-restart.ts).
 async function restart(client: ClientObservation) {
@@ -102,7 +119,7 @@ async function connectAll() {
   try {
     for (const [index, client] of queue.entries()) {
       bulk.value = { client: client.label, index: index + 1, count: queue.length }
-      await connectOne(client)
+      await connectOne(client.id)
     }
   } finally {
     connectingAll.value = false
@@ -239,7 +256,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       </section>
     </div>
     <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
-    <CustomClientDialog v-model:open="adding" />
+    <CustomClientDialog v-model:open="adding" :prefill="prefill" @added="connectOne" @update:open="(value: boolean) => { if (!value) prefill = null }" />
     <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
       <DialogContent v-if="details" size="md" data-connection-details>
         <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />

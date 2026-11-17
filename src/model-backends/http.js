@@ -20,7 +20,10 @@ import { RETENTION } from './suggestion-log.js';
 // operations: the task types each role already sends to its model.
 // automaticOperations: the one operation per role that may apply its model's
 // answer by itself (rec#10 D-36); modelTrust (src/model-backends/role-trust.js)
-// says whether it does now. readEvaluation(key): the latest evaluation of that
+// says whether it does now. handedOver[role](): whether the person handed that
+// operation to the role with its own switch (for Tonborg 「交给 Tonborg
+// 确认」), so a role without a model reads as the session standing in for it.
+// readEvaluation(key): the latest evaluation of that
 // role's model on this computer (evaluation-record.js), or null.
 // localBuild: what a local Ollama listed for each role's configured model at
 // its latest answer (rec#10 D-32), read-only: an observation, never proof.
@@ -66,8 +69,8 @@ async function handleConnectionCheck({ request, response, modelBackends, role })
 
 export async function handleModelBackendApiRequest({
   request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {},
-  automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null, ownerReads = null,
-  personalSpaceId = null
+  automaticOperations = {}, handedOver = {}, modelTrust = null, settingsHistory = null, readEvaluation = null,
+  ownerReads = null, personalSpaceId = null
 }) {
   const checked = CHECK_ROUTE.exec(url.pathname)?.[1] ?? null;
   if (checked) return handleConnectionCheck({ request, response, modelBackends, role: checked });
@@ -114,8 +117,11 @@ export async function handleModelBackendApiRequest({
   }
   if (roleEdit || trustEdit || url.pathname === '/api/model-backends/roles') {
     const settings = modelBackends.roles();
+    const handed = Object.fromEntries(await Promise.all(Object.entries(handedOver)
+      .map(async ([role, read]) => [role, await read()])));
     sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role,
-      trust: trustView(role, settings.connections, { automaticOperations, modelTrust, readEvaluation }),
+      trust: trustView(role, settings.connections, { automaticOperations, modelTrust, readEvaluation,
+        handedOver: handed[role.role] === true }),
       localBuild: modelBackends.localBuild(role.role, role.connection?.id ?? null,
         role.connection ? settings.connections[role.connection.id] : null),
       health: modelBackends.health?.(role.role, role.connection?.id ?? null,
@@ -143,10 +149,10 @@ function historyQuery(params) {
 // operation by itself now, the person's 「只给建议」 choice and warning
 // acknowledgement, and the latest local evaluation of the configured model.
 // null for a role with no such operation: everything it does is a suggestion.
-function trustView(role, connections, { automaticOperations, modelTrust, readEvaluation }) {
+function trustView(role, connections, { automaticOperations, modelTrust, readEvaluation, handedOver }) {
   const operation = automaticOperations[role.role];
   if (!operation || !modelTrust) return null;
   const served = role.answeredBy === 'model_api' ? connections[role.connection.id] : null;
-  return { operation, ...modelTrust.view(role.role, operation), evaluation: served && readEvaluation
+  return { operation, ...modelTrust.view(role.role, operation, { handedOver }), evaluation: served && readEvaluation
     ? readEvaluation({ role: role.role, operation, model: served.model, endpoint: served.endpoint }) : null };
 }

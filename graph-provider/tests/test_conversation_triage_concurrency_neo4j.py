@@ -182,3 +182,48 @@ async def test_a_read_returns_the_current_label_and_a_correction_changes_its_ver
                 personal_space_id='synthetic-other', conversation_id=conversation)) == {'triage': None}
         finally:
             await driver.execute_query('MATCH (n) WHERE n.id = $id DETACH DELETE n', id=conversation)
+
+
+
+@pytest.mark.asyncio
+async def test_a_topic_lists_its_open_conversations_only_newest_first():
+    from neo4j import AsyncGraphDatabase
+    from fuli_graph.agent_conversation_models import ConversationPolicy
+    from fuli_graph.store_agent_conversations import StoreAgentConversations
+    from fuli_graph.store_conversation_triage import topic_key
+
+    space = 'synthetic-topic-list-' + uuid4().hex
+    scope = stable_uuid('global-conversation-scope', space, SYSTEM_ASSISTANT_AGENT_ID)
+    # Two Garden conversations, one of another topic, one never labelled.
+    names = {name: f'synthetic-topic-list-{name}-' + uuid4().hex for name in ('old', 'new', 'other', 'plain')}
+    password = os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass')
+    async with AsyncGraphDatabase.driver(disposable_uri(), auth=('neo4j', password)) as driver:
+        triage = store(driver, space)
+        conversations = StoreAgentConversations()
+        conversations.runtime = SimpleNamespace(driver=SessionDriver(driver))
+        listed = lambda topic=None: conversations._latest_conversations(
+            scope, ConversationPolicy(), 10, topic_key(topic) if topic else None)
+        try:
+            for name, day in (('old', '01'), ('new', '03'), ('other', '02'), ('plain', '04')):
+                await driver.execute_query(
+                    'CREATE (:FuliConversation {id: $id, scope: $scope, summary: $name, revision: 1, last_activity: $at})',
+                    id=names[name], scope=scope, name=name, at=f'2026-11-{day}T08:00:00+00:00')
+            for name, topic in (('old', 'Garden'), ('new', 'garden'), ('other', 'Kitchen')):
+                await triage.record_conversation_triage({}, ConversationTriageWrite(
+                    personal_space_id=space, conversation_id=names[name], kind='topic', topic=topic))
+
+            assert [row['summary'] for row in await listed()] == ['plain', 'new', 'other', 'old']
+            garden = await listed(' GARDEN ')
+            assert [row['summary'] for row in garden] == ['new', 'old']
+            assert {row['triage']['topic'] for row in garden} == {'Garden', 'garden'}
+            assert await listed('Balcony') == []
+
+            # Formed into a project, the topic's conversations belong to it and are no longer listed.
+            await driver.execute_query(
+                'MATCH (t:FuliConversationTriage {space_id: $space, topic_key: $key}) SET t.formed_project_id = $project',
+                space=space, key=topic_key('Garden'), project='garden')
+            assert await listed('Garden') == []
+            assert [row['summary'] for row in await listed()] == ['plain', 'new', 'other', 'old']
+        finally:
+            await driver.execute_query('MATCH (n) WHERE n.id IN $ids OR n.space_id = $space DETACH DELETE n',
+                                       ids=list(names.values()), space=space)

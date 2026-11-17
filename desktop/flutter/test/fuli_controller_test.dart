@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/api/fuli_api.dart';
+import 'package:fuli_desktop/src/api/glance.dart';
 import 'package:fuli_desktop/src/app/check_log.dart';
 import 'package:fuli_desktop/src/app/fuli_condition.dart';
 import 'package:fuli_desktop/src/app/fuli_controller.dart';
@@ -76,6 +77,37 @@ void main() {
     expect(notifier.bodies.last, zh.attentionMany(2));
   });
 
+  test('reads the work the tray shows at each check, and none from a FULI without a glance or one that stopped', () async {
+    const work = Glance(
+        assistants: GlanceSection([AssistantAtWork(name: 'Synthetic Lead', working: true, link: 'fuli://agents/s/lead')]),
+        roundtables: GlanceSection([]));
+    final api = DemoFuliApi()
+      ..attention = [const AttentionNotice(id: 'r1', title: 'Pick a staging host')]
+      ..work = work;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    final controller = controllerFor(api, runtime);
+    var notified = 0;
+    controller.addListener(() => notified += 1);
+
+    await controller.refresh();
+    expect(controller.glance, same(work));
+    expect(controller.waitingRequests, 1);
+    expect(notified, greaterThan(1), reason: 'the tray is told again once the work was read');
+
+    api.work = null; // a FULI from before the glance answers 404
+    await controller.refresh();
+    expect(controller.glance, isNull);
+    expect(controller.waitingRequests, 1);
+
+    api
+      ..work = work
+      ..reachable = false;
+    runtime.report = const RuntimeReport(RuntimeState.stopped);
+    await controller.refresh();
+    expect(controller.glance, isNull);
+    expect(controller.waitingRequests, 0);
+  });
+
   test('reads the doctor at the port the runtime resolved', () async {
     final api = DemoFuliApi(items: [codexOutdated]);
     final ports = <int>[];
@@ -101,7 +133,7 @@ void main() {
     expect(snapshot.version, '0.22.0');
     expect(snapshot.items.single.kind, 'update_available');
     expect(snapshot.items.single.data['latest'], '0.23.0');
-    expect(api.requests, ['doctor', 'health', 'version', 'attention']);
+    expect(api.requests, ['doctor', 'health', 'version', 'attention', 'glance']);
   });
 
   test('an unreachable console is told apart by the runtime', () async {

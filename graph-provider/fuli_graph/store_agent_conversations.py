@@ -12,7 +12,7 @@ from .conversation_context import (
 from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
 from .provider_values import now_utc, stable_uuid
-from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage
+from .store_conversation_triage import ASSISTANT_AGENT_ID, StoreConversationTriage, topic_key
 from .store_transactions import query_store_transaction
 from .store_transcript_recovery import recover_fallback_boundary
 from .knowledge_versions import lock_knowledge
@@ -77,7 +77,8 @@ class StoreAgentConversations:
         if request.mode == 'session':
             return await self._session_binding(scope, request)
         if request.mode == 'list':
-            return {'conversations': await self._latest_conversations(scope, policy, request.limit)}
+            return {'conversations': await self._latest_conversations(
+                scope, policy, request.limit, topic_key(request.topic) if request.topic else None)}
         record = await self._scoped_conversation(scope, request.conversation_id)
         if request.mode == 'context':
             return await self._recovery_context(record, policy, request, after=request.after)
@@ -135,14 +136,19 @@ class StoreAgentConversations:
             id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
         return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
 
-    async def _latest_conversations(self, scope, policy, limit):
+    async def _latest_conversations(self, scope, policy, limit, topic=None):
         # Jefa's triage label travels with each conversation so a list can
-        # show what is still unclaimed without a second read per row.
+        # show what is still unclaimed without a second read per row. topic
+        # (a topic_key): only that topic's conversations still open, so the
+        # next conversation about it finds the earlier ones; one formed into a
+        # project belongs to that project and is no longer listed here.
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {scope: $scope}) '
             'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
+            'WITH c, t WHERE $topic IS NULL '
+            "OR (t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL) "
             'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
-            scope=scope, limit=limit)
+            scope=scope, limit=limit, topic=topic)
         return [{**self._conversation_view(dict(r['c']), policy),
             'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]
 

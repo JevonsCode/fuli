@@ -55,6 +55,13 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   link of the page it shows, without its hash (`web/src/features/open-in-app`).
 - 「导出诊断包…」 in the tray menu follows `fuli://settings?tab=system&setting=diagnostics`: the
   settings page's 诊断包 card, where the person previews the redacted bundle and exports it.
+- Under 「打开 FULI」 the tray menu shows what FULI is doing, read at each check
+  (`GET /api/desktop/glance`, `src/desktop-glance/glance.js`; `lib/src/app/tray_view.dart` words the
+  lines): how many requests wait for the person, the assistants that began a task in the last 24
+  hours (at most five, the ones at work now first, each with 「进行中」 or the time its latest task
+  began) and the roundtable threads with an ask still open (at most three). A line opens its console
+  page through its `fuli://` link; a section with nothing says nothing, and a FULI from before the
+  glance keeps the plain menu. The menu is as fresh as the last check, so it can lag by that long.
 - Checks every 15 s while the window is visible and every 120 s while hidden, backing off when the
   console does not answer. One OS notification when FULI gets worse; closing the window hides it.
 

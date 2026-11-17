@@ -683,14 +683,24 @@ describe('SettingsPage', () => {
     const card = wrapper.get('.behavior-card')
     expect(card.find('[data-capture-source]').exists()).toBe(false)
     expect(card.get('.growth-loading').attributes('aria-label')).toBe('正在查找本机的客户端…')
-    const client = (id: string, status: string) => ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
+    const client = (id: string, label: string, status: string, sourceApplication: string | null) =>
+      ({ id, label, status, sourceApplication, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
     for (const answer of answers) answer(Response.json({ observedAt: '2026-11-02T08:00:00.000Z', historySaved: true, clients: [
-      client('claude-code', 'connected'), client('codex', 'not_connected'),
-      client('cursor', 'not_detected'), client('opencode', 'not_detected'), client('claude-desktop', 'connected')] }))
+      client('claude-code', 'Claude Code', 'connected', 'claude_code'), client('codex', 'Codex', 'not_connected', 'codex'),
+      client('cursor', 'Cursor', 'not_detected', 'cursor'), client('opencode', 'OpenCode', 'not_detected', 'opencode'),
+      client('claude-desktop', 'Claude Desktop', 'connected', 'claude'), client('gemini', 'Gemini CLI', 'connected', null)],
+    customClients: [{ id: 'acme-agent', label: 'Acme Agent', status: 'not_detected' }] }))
     await flushPromises()
     expect(card.find('.growth-loading').exists()).toBe(false)
-    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor'])
+    // The same clients as the client card: one without a capture adapter switches what its Agent writes.
+    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor', 'claude', 'other'])
     expect(card.get('[data-capture-source="cursor"] [role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(card.get('[data-capture-source="claude"] strong').text()).toBe('Claude')
+    expect(card.get('[data-capture-source="claude"]').text()).toContain('包括 Claude Desktop 和 claude.ai / Cowork 远程连接器')
+    expect(card.get('[data-capture-source="claude"]').text()).toContain('不读取对话')
+    expect(card.get('[data-capture-source="claude_code"]').text()).not.toContain('不读取对话')
+    expect(card.get('[data-capture-source="other"]').text()).toContain('其他客户端')
+    expect(card.get('[data-capture-source="other"]').text()).toContain('包括 Gemini CLI、Acme Agent')
     wrapper.unmount()
   })
 
@@ -710,7 +720,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     const card = wrapper.get('.behavior-card')
     expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source')))
-      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh'])
+      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh', 'claude', 'kiro', 'antigravity', 'other'])
     expect(card.find('.ui-notice').exists()).toBe(false)
     expect(card.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()

@@ -10,6 +10,7 @@ import { handleNpmCopiesRequest } from './npm-copies-api-router.js';
 import { handleCliPathRequest } from './cli-path-api-router.js';
 import { handleWhatsNewRequest } from './whats-new-api-router.js';
 import { handleDesktopClientRequest } from './desktop-client-api-router.js';
+import { handleDesktopGlanceRequest } from './desktop-glance-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
 import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.js';
@@ -43,6 +44,7 @@ import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { handleModelListRequest } from '../model-backends/models-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
+import { reviewHandedOver } from '../judgment/review-delegation.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
@@ -100,6 +102,7 @@ export async function handleApiRequest({
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION, RETRIEVAL_TERMS_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
       semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
+    handedOver: { tonborg: () => reviewHandedOver(app.judgment, app.config?.personal?.spaceId ?? null) },
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
     ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
   // The suggestion log's owner proof is confirmed with the Provider, so that
@@ -318,6 +321,7 @@ export async function handleApiRequest({
     await handleAgentWorkflowsRequest({ request, response, url, app }) ||
     await handleAgentAvatarsRequest({ request, response, url, app }) ||
     await handleWorkSurfacesRequest({ request, response, url, app }) ||
+    await handleDesktopGlanceRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (

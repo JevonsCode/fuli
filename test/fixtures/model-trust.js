@@ -16,7 +16,7 @@ export const MODEL_ANSWER = Object.freeze({ status: 'answered', mode: 'model_api
 
 // A stand-in port where Tonborg sends knowledge_review to that model and every egress check passes.
 export function trustedTonborg() {
-  const trust = createRoleTrust({ modelBackends: { allowsEgress: () => true,
+  const trust = createRoleTrust({ modelBackends: { allowsEgress: () => true, hasModel: role => role === 'tonborg',
     operationSettings: (role, operation) => role === 'tonborg' && operation === 'knowledge_review'
       ? { connection: { model: FIXTURE_MODEL, identity: FIXTURE_CONNECTION } } : null } });
   trust.acknowledgeWarning('tonborg', WARNING_VERSION, 0);

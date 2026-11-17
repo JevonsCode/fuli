@@ -53,6 +53,26 @@ class Strings {
   String get quit => _t('退出', 'Quit');
   String get exportDiagnostics => _t('导出诊断包…', 'Export diagnostics bundle…');
   String get installPage => _t('打开安装页', 'Open the install page');
+  // Tray menu: what FULI is doing. [orMore]: the count is the most this client reads.
+  String requestsWaiting(int count, {required bool orMore}) => _t(
+      '${orMore ? '$count+' : count} 个请求等你处理',
+      orMore || count != 1 ? '$count${orMore ? '+' : ''} requests are waiting for you' : '1 request is waiting for you');
+  String get assistantsAtWork => _t('近 24 小时干过活的助手', 'Assistants at work in the last 24 hours');
+  String get workingNow => _t('进行中', 'working now');
+  String yesterdayAt(String clock) => _t('昨天 $clock', 'yesterday $clock');
+  // [when] is empty when the time is not known.
+  String assistantAtWork(String name, String when) => when.isEmpty ? name : '$name · $when';
+  String get roundtablesUnderWay => _t('圆桌讨论中', 'Roundtables under way');
+  String roundtableUnderWay(String subject, bool replying, List<String> waitingFor) {
+    final state = replying
+        ? _t('回复中', 'replying')
+        : waitingFor.isEmpty
+            ? _t('等回复', 'waiting for a reply')
+            : _t('等 ${waitingFor.join('、')}', 'waiting for ${waitingFor.join(', ')}');
+    return '$subject · $state';
+  }
+
+  String moreRows(int count) => _t('还有 $count 个…', '$count more…');
   // Windows tray menu only
   String get changePort => _t('换一个端口', 'Use another port');
   String get launchAtLogin => _t('开机时启动', 'Launch at login');

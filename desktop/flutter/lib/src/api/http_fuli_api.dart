@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../doctor/doctor_report.dart';
 import 'fuli_api.dart';
+import 'glance.dart';
 import 'migration_plan.dart';
 
 const _readTimeout = Duration(seconds: 10);
@@ -58,7 +59,10 @@ class HttpFuliApi implements FuliApi {
 
   @override
   Future<List<AttentionNotice>> openAttention() async => AttentionNotice.listFromJson(
-      await _get('/api/agent-attention', const {'status': 'open', 'limit': '20'}));
+      await _get('/api/agent-attention', const {'status': 'open', 'limit': '$openAttentionLimit'}));
+
+  @override
+  Future<Glance> glance() async => Glance.fromJson(await _get('/api/desktop/glance'));
 
   Future<Object?> _get(String path, [Map<String, String>? query]) =>
       _send(() => _client.get(Uri.http(_authority, path, query), headers: {'host': _authority}), _readTimeout);

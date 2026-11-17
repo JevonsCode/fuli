@@ -343,6 +343,23 @@ test('the gate runs a relayed decision only with the words in its header and rec
   assert.deepEqual([off.ran, off.sent.body.code], [false, 'delegation_category_off']);
 });
 
+test('an FLA turns 「交给 Tonborg 确认」 on only with the person\'s words, never on its own', async (t) => {
+  // It hands Tonborg's confirmations (and with no model, the session's) over: the person's say-so.
+  const { app, reads } = relayApp(async () => assert.fail('nothing is sent without the person\'s words'), ['先看看待决策']);
+  const turnOn = (input) => callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'PUT /api/judgment/delegation', body: { personalSpaceId: 'space-a', enabled: true, expectedRevision: 0 },
+    reason: 'Tonborg has no model, so the session can confirm', ...input });
+  await assert.rejects(turnOn({}), { code: 'person_words_required' });
+  await assert.rejects(turnOn({ personWords: '交给 Tonborg 确认吧' }), { code: 'person_words_not_found' });
+  assert.equal(reads.length, 1);
+  // The console's gate refuses the same change sent without words, with model settings on.
+  const port = delegation(t);
+  const bare = await gate(port, 'PUT', '/api/judgment/delegation');
+  assert.deepEqual([bare.ran, bare.sent.statusCode, bare.sent.body.code], [false, 400, 'person_words_required']);
+  const relayed = await gate(port, 'PUT', '/api/judgment/delegation', { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
+  assert.equal(relayed.ran, true);
+});
+
 test('the real console keeps a relayed batch confirmation as the person\'s, relayed by the FLA', async (t) => {
   const port = delegation(t);
   const confirmed = [];

@@ -180,7 +180,10 @@ test('rec#80: secrets stay unread, and what limits an Agent goes back only by th
   const started = [];
   const restore = { describe: () => ({ currentDigest: 'd' }), start: (input) => { started.push(input.label); return { status: 'started' }; } };
   const console = (item) => createOldDataConsole({ shelf: { find: async () => item, forgetMeasurement() {} }, restore });
-  for (const store of [AGENT_DELEGATION_FORMAT.store, AGENT_DELEGATION_POLICY_FORMAT.store, AGENT_ACCESS_POLICY_FORMAT.store, MODEL_SECRETS_FORMAT.store]) {
+  const { JUDGMENT_FORMAT } = await import('../src/judgment/store.js');
+  const { MODEL_TRUST_FORMAT } = await import('../src/model-backends/role-trust.js');
+  for (const store of [AGENT_DELEGATION_FORMAT.store, AGENT_DELEGATION_POLICY_FORMAT.store, AGENT_ACCESS_POLICY_FORMAT.store, MODEL_SECRETS_FORMAT.store,
+    JUDGMENT_FORMAT.store, MODEL_TRUST_FORMAT.store]) {
     assert.equal(personOnlyRestore(backup(store)), true, store);
     await assert.rejects(console(backup(store)).restore('id', { delegated: true }), (error) => error.code === 'old_data_restore_person_only', store);
   }

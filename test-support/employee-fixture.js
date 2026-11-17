@@ -16,6 +16,9 @@ export function createEmployeeFixture({ runtimeConfigPath }) {
   }, {
     project_id: 'employee-qa-archive', personal_space_id: 'employee-test-space',
     profile: { name: '已归档（测试）', purpose: '合成测试项目', lifecycle: 'archived', sources: [], boundaries: [] }
+  }, {
+    project_id: 'temporary-employee-qa-session', personal_space_id: 'employee-test-space', scope_type: 'temporary',
+    profile: { name: '临时会话（测试）', purpose: '合成测试项目', lifecycle: 'active', sources: [], boundaries: [] }
   }];
   const app = {
     config: { personal: { spaceId: 'employee-test-space' } },

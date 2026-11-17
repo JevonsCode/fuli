@@ -83,6 +83,7 @@ export const modelSettingsMessages = {
       label: '执行方式',
       suggestionsOnly: '只给建议',
       automatic: '由 {model} 自动执行',
+      sessionStandsIn: "由你当时的 AI 会话自动执行（已打开「交给 @:{'roleNames.tonborg'} 确认」）",
       reasons: {
         suggestions_only: '只给建议',
         warning_not_seen: '看过下面的提示后自动执行',
@@ -454,6 +455,7 @@ export const modelSettingsMessages = {
       label: 'Execution',
       suggestionsOnly: 'Suggestions only',
       automatic: 'Executed automatically by {model}',
+      sessionStandsIn: "Executed automatically by your AI session (“Let @:{'roleNames.tonborg'} confirm” is on)",
       reasons: {
         suggestions_only: 'Suggestions only',
         warning_not_seen: 'Executes automatically once you have read the note below',

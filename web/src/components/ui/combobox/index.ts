@@ -18,7 +18,7 @@
 // - `cn` comes from @/lib/class-names; the chevron and check mark are FULI's
 //   (UiIcon), not lucide.
 // - ComboboxList has the FULI popover look, as Select and DropdownMenu: card
-//   surface, hairline border, popover shadow, the control radius, --z-popover
+//   surface, hairline border, popover shadow, the control radius, --z-dialog (above a dialog it opens in)
 //   stacking, the available-height cap, column layout for a footer, and start
 //   alignment under the field. tw-animate-css is not used: it opens on the
 //   shared spring (animate-popover-in), which both reduced-motion switches zero.

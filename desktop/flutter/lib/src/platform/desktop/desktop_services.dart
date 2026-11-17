@@ -79,7 +79,9 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
       busy: controller.pending != null,
       strings: strings,
       canChangePort: runtime.canChangePort,
-      launchAtLogin: launchAtLogin));
+      launchAtLogin: launchAtLogin,
+      glance: controller.glance,
+      waitingRequests: controller.waitingRequests));
   Future<void> quit() async {
     await tray.remove();
     instance?.release();
@@ -112,6 +114,10 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   tray = SystemTray(
     strings: strings,
     onOpen: window.show,
+    onOpenLink: (link) {
+      final page = FuliLink.parse(link);
+      if (page != null) unawaited(follow(page));
+    },
     onToggle: () => controller.snapshot?.running == true ? controller.stop() : controller.start(),
     onExportDiagnostics: () => unawaited(follow(FuliLink.parse(diagnosticsLink)!)),
     onQuit: quit,

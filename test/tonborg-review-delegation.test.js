@@ -134,20 +134,29 @@ test('an Agent sees the batch without Tonborg\'s words, and only fixed guess val
   assert.equal(view.human_interaction.question, 'Tonborg 有 1 件事拿不准，想问你。现在过一遍吗？');
 });
 
-test('the switch needs Tonborg\'s own model, then clears 「只给建议」 and acknowledges the warning in the same click', async t => {
-  const none = fixture(t, { trust: createRoleTrust({ modelBackends: { allowsEgress: () => true, operationSettings: () => null } }) });
+test('the switch turns on with or without a model of Tonborg\'s own, clearing 「只给建议」 and acknowledging the warning in the same click', async t => {
+  // No model: the current session will stand in for Tonborg, and the same say-so is stored.
+  const noModel = createRoleTrust({ modelBackends: { allowsEgress: () => true, operationSettings: () => null, hasModel: () => false } });
+  noModel.setSuggestionsOnly('tonborg', true, 0);
+  const none = fixture(t, { trust: noModel });
   assert.deepEqual((await reviewDelegation({ judgment: none.service, modelTrust: none.app.modelTrust, input: { personalSpaceId: 's' } })).model,
-    { connected: false, status: 'suggestion', reason: 'not_configured' });
-  await assert.rejects(turnOn(none), error => error.code === 'tonborg_model_required');
-  assert.equal(none.service.store().delegation('s').enabled, false);
+    { connected: false, sessionStandsIn: true, status: 'suggestion', reason: 'not_configured' });
+  const handed = await turnOn(none);
+  assert.deepEqual([handed.enabled, handed.model.connected], [true, false]);
+  assert.deepEqual([noModel.view('tonborg', 'knowledge_review').suggestionsOnly, noModel.view('tonborg', 'knowledge_review').warningSeen], [false, true]);
+  // Nothing can hold the say-so without the trust store.
+  const storeless = fixture(t, { trust: null });
+  await assert.rejects(setReviewDelegation({ judgment: storeless.service, modelTrust: null,
+    input: { personalSpaceId: 's', enabled: true, expectedRevision: 0 } }), error => error.code === 'tonborg_model_required');
+  assert.equal(storeless.service.store().delegation('s').enabled, false);
 
-  const trust = createRoleTrust({ modelBackends: { allowsEgress: () => true, operationSettings: () =>
+  const trust = createRoleTrust({ modelBackends: { allowsEgress: () => true, hasModel: () => true, operationSettings: () =>
     ({ connection: { model: 'fixture-model', identity: 'fixture-connection-identity' } }) } });
   trust.setSuggestionsOnly('tonborg', true, 0);
   const f = fixture(t, { trust });
   const saved = await turnOn(f);
   assert.equal(saved.enabled, true);
-  assert.deepEqual(saved.model, { connected: true, status: 'automatic', reason: null });
+  assert.deepEqual(saved.model, { connected: true, sessionStandsIn: false, status: 'automatic', reason: null });
   const view = trust.view('tonborg', 'knowledge_review');
   assert.equal(view.suggestionsOnly, false);
   assert.equal(view.warningSeen, true);
