@@ -102,13 +102,22 @@ function linkDownloads(document, version) {
   for (const link of document.querySelectorAll('[data-download-macos]')) link.href = release + `fuli-macos-arm64-${version}.dmg`;
 }
 
-function homePages(template, version, files) {
+// The stable release a prerelease is measured against: /next/'s data-preview-baseline,
+// which every release sets. Stable pages download it, so a person who did not ask
+// for a beta never gets one.
+export function stableBaseline(previewTemplate) {
+  const match = /data-preview-baseline="([^"]+)"/.exec(previewTemplate);
+  if (!match || match[1].includes('-')) throw new Error('The preview page names no stable baseline (data-preview-baseline).');
+  return match[1];
+}
+
+function homePages(template, version, files, stable = version) {
   for (const [route, locale] of languageRoutes) {
     const { document, pageUrl } = renderPage(template, '', route, locale);
     add(document, 'link', { rel: 'alternate', type: 'text/markdown', href: pageUrl + 'index.md' });
     add(document, 'link', { rel: 'describedby', type: 'text/plain', href: SITE_URL + 'llms.txt' });
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
-    linkDownloads(document, version);
+    linkDownloads(document, stable);
     stampVersion(document, version);
     add(document, 'script', { id: 'site-schema', type: 'application/ld+json' }, JSON.stringify(structuredData(locale, pageUrl)).replace(/</g, '\\u003c'));
     files.set(route + 'index.html', document.toString());
@@ -177,7 +186,7 @@ export function createSitePages({ home, preview, models, tech, guide, report, ve
   const files = new Map();
   // A prerelease version (0.23.0-beta.1) is a preview; a stable one has none ahead of it.
   const hasPreview = version.includes('-');
-  homePages(home, version, files);
+  homePages(home, version, files, hasPreview ? stableBaseline(preview) : version);
   if (hasPreview) previewPages(preview, version, files);
   else noPreviewPages(version, files);
   guidePages(models, MODELS_BASE, modelsCatalog, files, version);

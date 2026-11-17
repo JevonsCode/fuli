@@ -120,13 +120,19 @@ test('a stable version has no newer preview, so /next/ says so and links home in
   assert.doesNotMatch(site.get('sitemap.xml'), /\/next\//);
 });
 
-test('the client downloads on both pages are the Windows setup and macOS image of the packaged version', () => {
-  const release = `https://github.com/JevonsCode/fuli/releases/download/v${version}/`;
-  for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
+test('during a prerelease the stable pages download the stable release and /next/ the packaged preview', () => {
+  const download = (v) => `https://github.com/JevonsCode/fuli/releases/download/v${v}/`;
+  const stable = /data-preview-baseline="([^"]+)"/.exec(readFileSync(new URL('../site/next/index.html', import.meta.url), 'utf8'))[1];
+  assert.doesNotMatch(stable, /-/, 'the baseline is a stable version');
+  for (const [path, v] of [['index.html', stable], ['en/index.html', stable], ['next/index.html', version], ['next/en/index.html', version]]) {
     const { document } = parseHTML(files.get(path));
-    assert.equal(document.querySelector('[data-download-windows]').href, release + `FULI-Setup-${version}.exe`, path);
-    assert.equal(document.querySelector('[data-download-macos]').href, release + `fuli-macos-arm64-${version}.dmg`, path);
+    assert.equal(document.querySelector('[data-download-windows]').href, download(v) + `FULI-Setup-${v}.exe`, path);
+    assert.equal(document.querySelector('[data-download-macos]').href, download(v) + `fuli-macos-arm64-${v}.dmg`, path);
   }
+  // A stable build downloads itself.
+  const released = pages('0.27.15');
+  const { document } = parseHTML(released.get('index.html'));
+  assert.equal(document.querySelector('[data-download-windows]').href, download('0.27.15') + 'FULI-Setup-0.27.15.exe');
 });
 
 test('every header shows the brand wordmark and the version the client shows: released on the stable pages, the preview on /next/', () => {
