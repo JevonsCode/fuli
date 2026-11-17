@@ -31,6 +31,8 @@ class ConversationQuery(ConversationScope):
     conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
     mode: Literal['list', 'context', 'events', 'session', 'policy'] = 'list'
+    # list only: the open conversations of one unclaimed-conversation topic.
+    topic: str | None = Field(default=None, min_length=1, max_length=80)
     after: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=50)
 

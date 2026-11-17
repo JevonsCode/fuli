@@ -122,6 +122,7 @@ export async function taskAgentIdentity(application, task) {
 export async function queryConversations(application, input) {
   const result = await application.personal.conversation('query', { ...conversationScope(application, input),
     mode: input.mode ?? 'list', ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
+    ...(input.topic ? { topic: input.topic } : {}),
     after: input.after ?? 0, limit: input.limit ?? (input.mode === 'events' ? 3 : 10) });
   if (!Array.isArray(result.conversations)) return result;
   return { ...result, conversations: result.conversations.map(conversation => ({ ...conversation,
