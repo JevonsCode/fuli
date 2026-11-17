@@ -8,7 +8,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
-import { clientDetectionShape, shownCaptureClients, type ClientDetection } from '@/features/capture/capture-clients'
+import { CONVERSATION_SOURCES, clientDetectionShape, shownCaptureClients, type CaptureClient, type ClientDetection } from '@/features/capture/capture-clients'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
 import { t } from '@/i18n'
 import { usePageRefresh } from '@/layouts/page-refresh'
@@ -34,6 +34,20 @@ async function detectClients() {
   try { clientDetection.value = await getJson('/api/system/client-connection/status', clientDetectionShape, { signal: reading.signal }) }
   catch { clientDetection.value = null }
   finally { detectingClients.value = false }
+}
+
+// `other` is every client without a source of its own: it names the ones on this machine.
+function captureLabel(client: CaptureClient) {
+  return client.source === 'other' ? t('settings.behavior.captureOther') : client.label
+}
+// What a switch covers (`claude` is Claude Desktop and the remote connector), and for a
+// client whose conversations FULI does not read, that it only governs what its Agent writes.
+// One line each, so each stays short.
+function captureNotes(client: CaptureClient) {
+  const covers = client.source === 'claude' ? t('settings.behavior.captureClaudeCovers')
+    : client.covers.length ? t('settings.behavior.captureOtherCovers', { clients: client.covers.join('、') }) : ''
+  const toolsOnly = CONVERSATION_SOURCES.has(client.source) ? '' : t('settings.behavior.captureToolsOnly')
+  return [covers, toolsOnly].filter(Boolean)
 }
 
 function toggleClientCapture(source: string, capture: boolean) {
@@ -63,9 +77,10 @@ usePageRefresh(detectClients)
           <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
           <GrowthLoading v-if="detectingClients" variant="inline" class="setting-note" :label="t('settings.behavior.captureClientsLoading')" />
           <template v-else>
-            <label v-for="[source, label] in captureClients" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
-              <span><strong>{{ label }}</strong></span>
-              <Switch :model-value="!captureSourceOff(captureSources, source)" :aria-label="label" @update:model-value="toggleClientCapture(source, $event)" />
+            <label v-for="client in captureClients" :key="client.source" class="setting-row setting-row-nested" :data-capture-source="client.source">
+              <span><strong>{{ captureLabel(client) }}</strong><small v-for="note in captureNotes(client)" :key="note">{{ note }}</small></span>
+              <Switch :model-value="!captureSourceOff(captureSources, client.source)" :aria-label="captureLabel(client)"
+                @update:model-value="toggleClientCapture(client.source, $event)" />
             </label>
           </template>
         </template>
