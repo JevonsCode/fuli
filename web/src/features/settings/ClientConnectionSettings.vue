@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { deleteJson, postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import CustomClientDialog from './CustomClientDialog.vue'
+import { ADD_CLIENT_QUERY_KEYS, addClientDraft, type AddClientDraft } from './add-client-prompt'
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
 
@@ -45,6 +47,21 @@ const connectable = computed(() => clients.value.filter(client => canConnect(cli
 
 // 添加客户端: the dialog, and removing a client the person added here.
 const adding = ref(false)
+// A client's add link (add-client-prompt.ts) opens the dialog filled in, once: its values leave the address.
+const route = useRoute()
+const router = useRouter()
+const prefill = ref<AddClientDraft | null>(null)
+onMounted(() => {
+  // Mounted without the console's router (a card on its own) there is no link to read.
+  if (!route) return
+  const draft = addClientDraft(route.query)
+  if (!draft) return
+  prefill.value = draft
+  adding.value = true
+  const query = { ...route.query }
+  for (const key of ADD_CLIENT_QUERY_KEYS) delete query[key]
+  void router.replace({ query })
+})
 const removing = ref('')
 const removeError = ref(false)
 
@@ -230,7 +247,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       </section>
     </div>
     <ClientRestartConfirm v-model:client="confirming" @confirm="restart" />
-    <CustomClientDialog v-model:open="adding" />
+    <CustomClientDialog v-model:open="adding" :prefill="prefill" @update:open="(value: boolean) => { if (!value) prefill = null }" />
     <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
       <DialogContent v-if="details" size="md" data-connection-details>
         <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />
