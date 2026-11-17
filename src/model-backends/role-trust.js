@@ -11,8 +11,12 @@ import { scopeEgress } from './egress.js';
 // operations (today Tonborg's knowledge review write-back) apply what that
 // model answered, unless the person switched the role to 「只给建议」, or has
 // not yet acknowledged the one-line warning on the settings page. An answer
-// from the current session (no model, a disabled role, or a fallback after
-// the model failed) is always a suggestion, as before.
+// from the current session is a suggestion, with one exception (Jevons
+// 11-17): a role with no model for the operation, to which the person handed
+// that operation over (key.handedOver, set by the role's own switch), has
+// the session stand in for it under the same choice and warning. A session
+// answering after the role's model failed stays a suggestion: a fallback
+// never applies by itself.
 //
 // Trust relaxes nothing else: permission, egress, the person's own policy and
 // safety rules, the capture switch, injection isolation and the hard-delete
@@ -68,16 +72,23 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
       warningSeen: row.warning_version === TRUST_WARNING_VERSION, warningSeenAt: row.warning_seen_at, revision: row.revision };
   }
 
-  // key: { role, operation, connection, model, scope }. connection: the
-  // identity of the configured connection that answered (config.js
-  // connectionIdentity), null for a current-session answer; model names it in
-  // receipts. scope: the answer's { personalSpaceId, personalProjectId },
-  // checked against the role's egress approval as it is now; omitted for the
-  // settings view, which has no answer.
+  // key: { role, operation, connection, model, scope, handedOver }.
+  // connection: the identity of the configured connection that answered
+  // (config.js connectionIdentity), null for a current-session answer; model
+  // names it in receipts. scope: the answer's { personalSpaceId,
+  // personalProjectId }, checked against the role's egress approval as it is
+  // now; omitted for the settings view, which has no answer. handedOver: the
+  // person handed this operation to the role, and no model answered or failed.
   function verdict(key, current) {
     const refuse = reason => ({ status: 'not_passed', reason, modelId: key.model ?? null });
-    if (!key.connection) return refuse('session_answer');
     const settings = modelBackends.operationSettings(key.role, key.operation);
+    if (!key.connection) {
+      // A model configured since the session answered takes the operation back.
+      if (!key.handedOver || settings) return refuse('session_answer');
+      if (current.suggestionsOnly) return refuse('suggestions_only');
+      if (!current.warningSeen) return refuse('warning_not_seen');
+      return { status: 'passed', reason: null, modelId: null };
+    }
     if (!settings) return refuse('not_configured');
     // Another connection, endpoint, protocol or model than the one that answered.
     if (settings.connection.identity !== key.connection) return refuse('connection_changed');

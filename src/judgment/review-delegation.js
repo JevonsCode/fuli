@@ -15,10 +15,12 @@ import { visibleKnowledgeKeys } from './visible-items.js';
 // as its best guess. Every such decision is a judgment record marked
 // delegated, with its reason, undone through /api/judgment/undo.
 //
-// It spends the tokens of Tonborg's own model, so it can be turned on only
-// while one is connected. Turning it on is the person's say-so for Tonborg to
-// act by itself: the same click clears 「只给建议」 and acknowledges the trust
-// warning (role-trust.js), each recorded in that role's settings history.
+// With a model connected it spends that model's tokens. Without one the
+// reviews wait as work packages for the current session, which answers them
+// as Tonborg with its own model (Jevons 11-17); nothing runs in between.
+// Turning it on is the person's say-so for Tonborg to act by itself: the same
+// click clears 「只给建议」 and acknowledges the trust warning (role-trust.js),
+// each recorded in that role's settings history.
 
 const id = z.string().trim().min(1).max(256);
 const readInput = z.object({ personalSpaceId: id }).strict();
@@ -64,8 +66,11 @@ export async function setReviewDelegation({ judgment, modelTrust, modelBackends 
   await judgment.scope({ personalSpaceId });
   // Only turning it on is the say-so; saving it on again (a new language) changes no trust setting.
   if (enabled && !judgment.store().delegation(personalSpaceId).enabled) {
-    if (!tonborgModel(modelTrust).connected) {
-      throw new EmployeeError('Connect a model for Tonborg first: delegated review runs on Tonborg\'s own model.', 409,
+    // Without a model of its own Tonborg's reviews go to the current session,
+    // which then confirms as Tonborg (Jevons 11-17). The say-so is kept in the
+    // trust store either way; without that store nothing could hold it.
+    if (!modelTrust) {
+      throw new EmployeeError('Delegated review needs the model trust store, which is unavailable here.', 409,
         'tonborg_model_required');
     }
     let trust = modelTrust.view(ROLE, TONBORG_OPERATIONS.review);

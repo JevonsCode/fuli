@@ -195,6 +195,29 @@ test('an unconfigured role, a disabled role and a session fallback keep today\'s
   assert.deepEqual(pick(h.trust.view('tonborg', 'knowledge_review'), ['status', 'reason']), { status: 'suggestion', reason: 'session_answer' });
 });
 
+test('a session stands in only for a role with no model, and only where the person handed the operation over', t => {
+  const key = { role: 'tonborg', operation: 'knowledge_review', connection: null, model: null, scope: { personalSpaceId: 's', personalProjectId: 'p' } };
+  const reason = (h, extra = {}) => { const gate = h.trust.status({ ...key, ...extra }); return [gate.status, gate.reason]; };
+
+  const none = harness(t, { roles: {} });
+  assert.deepEqual(reason(none), ['not_passed', 'session_answer']);
+  assert.deepEqual(reason(none, { handedOver: true }), ['passed', null]);
+  assert.equal(none.trust.commit({ ...key, handedOver: true }, () => 'written'), 'written');
+  // A disabled role has no model for the operation either.
+  assert.deepEqual(reason(harness(t, { roles: { tonborg: tonborg('local', { enabled: false }) } }), { handedOver: true }), ['passed', null]);
+  // A model configured since the session answered takes the operation back.
+  const configured = harness(t);
+  assert.deepEqual(reason(configured, { handedOver: true }), ['not_passed', 'session_answer']);
+  assert.throws(() => configured.trust.commit({ ...key, handedOver: true }, () => assert.fail('never written')), error => error.gate.reason === 'session_answer');
+  // The person's choice and the warning hold for a session as for a model.
+  assert.deepEqual(reason(harness(t, { roles: {}, acknowledged: false }), { handedOver: true }), ['not_passed', 'warning_not_seen']);
+  const suggesting = harness(t, { roles: {} });
+  suggesting.trust.setSuggestionsOnly('tonborg', true, suggesting.trust.revision('tonborg'));
+  assert.deepEqual(reason(suggesting, { handedOver: true }), ['not_passed', 'suggestions_only']);
+  // The settings page still reads a role without a model as a session's answer.
+  assert.deepEqual(pick(none.trust.view('tonborg', 'knowledge_review'), ['status', 'reason']), { status: 'suggestion', reason: 'session_answer' });
+});
+
 test('an upgrade resets no choice: a stored 「只给建议」, a manual policy and the model settings stay as they were', async t => {
   const h = harness(t, { mode: 'manual' });
   const settingsBefore = structuredClone(h.config);

@@ -6,7 +6,7 @@ import { fingerprint } from './engine.js';
 import { VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
 import { objectSchema } from '../agent-tools/schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
-import { failureProvenance, judgmentProvenance, pendingRecord, TONBORG_OPERATIONS } from './backend.js';
+import { failureProvenance, judgmentProvenance, pendingRecord, sessionStandsIn, TONBORG_OPERATIONS } from './backend.js';
 import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } from './preference-receipt.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { taskKeyFor } from '../knowledge-impressions/store.js';
@@ -73,8 +73,13 @@ export async function assessAcceptance({ app, decide, context, service, input: r
       outcome: 'escalate', summary: 'This artifact needs a passed verification from another Agent before automatic acceptance.',
       evidence: [gate.status], confidence: 0 } : { outcome: 'escalate', summary: hold.summary, evidence: hold.evidence, confidence: 0 };
     // C13: the lead's session judging its own task is not an independent
-    // verification. Its verdict is kept, and a person decides.
-    const selfAssessed = answer?.judgedBy?.independent === false;
+    // verification, and is recorded as such. With no model behind Tonborg and
+    // 「交给 Tonborg 确认」 on, the session stands in for it and its verdict
+    // counts (Jevons 11-17), after the passed verification from another Agent
+    // that every automatic acceptance needs. Otherwise, and after Tonborg's
+    // model failed, the verdict is kept as a proposal and a person decides.
+    const standsIn = sessionStandsIn(answer) && store.delegation(space).enabled;
+    const selfAssessed = answer?.judgedBy?.independent === false && !standsIn;
     const evaluationId = randomUUID();
     // agentId names whose work was assessed, so Bole's score card can count it.
     record = store.record(space, { personalProjectId: project, kind: 'acceptance', target: input.taskId, evaluationId,

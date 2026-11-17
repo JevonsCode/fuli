@@ -51,7 +51,8 @@ const connected = computed(() => state.value?.model?.connected === true)
 const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach) : null))
 const hint = computed(() => {
   if (!state.value) return ''
-  if (!connected.value) return t('reviewList.delegation.needsModel')
+  // Without a model of its own the current session confirms for Tonborg.
+  if (!connected.value) return t(state.value.enabled ? 'reviewList.delegation.sessionOnHint' : 'reviewList.delegation.sessionOffHint')
   return t(state.value.enabled ? 'reviewList.delegation.onHint' : 'reviewList.delegation.offHint')
 })
 
@@ -78,7 +79,7 @@ async function change(enabled: boolean) {
       <span class="tonborg-delegation__busy" :class="{ 'is-shown': saving }">
         <GrowthLoading v-if="saving" variant="inline" :label="t('reviewList.delegation.saving')" />
       </span>
-      <Switch :id="id" :model-value="state?.enabled === true" :disabled="!state || !connected || saving"
+      <Switch :id="id" :model-value="state?.enabled === true" :disabled="!state || saving"
         @update:model-value="change(Boolean($event))" />
     </div>
     <UiNotice v-if="reach" tone="warning" class="tonborg-delegation__reach" data-tonborg-reach>

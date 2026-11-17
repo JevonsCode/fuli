@@ -291,6 +291,84 @@ test('C2 and C13: a failing model falls back to the exact session; both usages a
   assert.equal(groups.find(group => group.channel === 'session').tokens.input.reported, 900);
 });
 
+test('with no model behind Tonborg and 「交给 Tonborg 确认」 on, the session\'s review applies under the production gate; every other session answer is a suggestion', async t => {
+  const noModel = { bole: { ...tonborg(), allowedOperations: ['staffing_review'] } };
+  // made: the gate the harness built, to change the person's choice on it.
+  const reviewed = async ({ roles = noModel, replies, delegated = true, acknowledged = true, suggestionsOnly = false } = {}) => {
+    let made;
+    const h = harness(t, { roles, ...(replies ? { replies } : {}), trust: port => (made = productionTrust({ acknowledged })(port)) });
+    if (delegated) h.app.judgment.store().setDelegation('s', true, 0);
+    if (suggestionsOnly) made.setSuggestionsOnly('tonborg', true, made.revision('tonborg'));
+    assert.equal((await h.app.judgment.review(reviewInput)).records[0].outcome, 'pending');
+    const [record] = (await claimAndSubmit(h, 'token-a', { decisions: [verdict()] })).result.result.records;
+    return { h, record, gate: [record.aiReview.state, record.aiReview.gate.status, record.aiReview.gate.reason] };
+  };
+
+  const stoodIn = await reviewed();
+  assert.deepEqual(stoodIn.gate, ['ai_reviewed', 'passed', null]);
+  assert.equal(stoodIn.record.execution.status, 'applied');
+  assert.equal(stoodIn.h.writes.length, 1);
+  // Still recorded as what it was: a session's answer, named by its client, with no model.
+  assert.deepEqual(stoodIn.record.judgedBy, { mode: 'current_session', independent: false });
+  assert.deepEqual([stoodIn.record.aiReview.gate.modelId, stoodIn.h.writes[0].aiAssessment.client], [null, 'claude_code']);
+  assert.equal(stoodIn.h.calls.length + stoodIn.h.legacyRuns.length, 0);
+
+  const refusals = [
+    [await reviewed({ delegated: false }), 'session_answer'],
+    [await reviewed({ acknowledged: false }), 'warning_not_seen'],
+    [await reviewed({ suggestionsOnly: true }), 'suggestions_only'],
+    // A model that failed handed its work to the session: that answer never applies by itself.
+    [await reviewed({ roles: { tonborg: tonborg() }, replies: () => new Response('{"error":{"message":"busy"}}', { status: 503 }) }), 'session_answer']
+  ];
+  for (const [{ h, record, gate }, reason] of refusals) {
+    assert.deepEqual(gate, ['ai_suggested', 'not_passed', reason]);
+    assert.equal(record.execution.status, 'not_applied');
+    assert.equal(h.writes.length, 0);
+  }
+});
+
+test('with no model behind Tonborg and 「交给 Tonborg 确认」 on, the lead\'s own session accepts its task; without the switch a person decides', async t => {
+  const acceptance = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'accept-own', taskId: 't', taskContextToken: 'token-a',
+    artifactRevision: 'artifact-a', expectedRevision: 2, sourceApplication: 'claude_code' };
+  const approve = { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.97 };
+  const noModel = { roles: { bole: { ...tonborg(), allowedOperations: ['staffing_review'] } } };
+
+  const off = harness(t, noModel);
+  assert.equal((await off.app.judgment.accept(acceptance)).workPackage.reason, 'role_not_configured');
+  const proposed = (await claimAndSubmit(off, 'token-a', approve, ['gate'])).result.result;
+  assert.deepEqual([proposed.outcome, proposed.proposedOutcome], ['escalate', 'approve']);
+  assert.equal(off.completions.length, 0);
+
+  const on = harness(t, noModel);
+  on.app.judgment.store().setDelegation('s', true, 0);
+  await on.app.judgment.accept(acceptance);
+  const accepted = (await claimAndSubmit(on, 'token-a', approve, ['gate'])).result.result;
+  assert.deepEqual([accepted.outcome, accepted.proposedOutcome], ['approve', undefined]);
+  // Recorded as a session's own judgment, so it is no review fact for the score card.
+  assert.deepEqual(accepted.judgedBy, { mode: 'current_session', independent: false });
+  assert.equal(on.completions.length, 1);
+  assert.deepEqual(await on.app.judgment.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
+  assert.equal(on.calls.length + on.legacyRuns.length, 0);
+
+  // An unsure verdict still goes to the person.
+  const unsure = harness(t, noModel);
+  unsure.app.judgment.store().setDelegation('s', true, 0);
+  await unsure.app.judgment.accept(acceptance);
+  const escalated = (await claimAndSubmit(unsure, 'token-a', { ...approve, confidence: 0.6 }, ['gate'])).result.result;
+  assert.equal(escalated.outcome, 'escalate');
+  assert.equal(unsure.completions.length, 0);
+});
+
+test('a session answering after Tonborg\'s model failed never accepts by itself, whatever the switch says', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, replies: () => new Response('{"error":{"message":"busy"}}', { status: 503 }) });
+  h.app.judgment.store().setDelegation('s', true, 0);
+  await h.app.judgment.accept({ personalSpaceId: 's', personalProjectId: 'p', requestId: 'accept-fallback', taskId: 't', taskContextToken: 'token-a',
+    artifactRevision: 'artifact-a', expectedRevision: 2, sourceApplication: 'claude_code' });
+  const record = (await claimAndSubmit(h, 'token-a', { outcome: 'approve', summary: 'Verified', evidence: ['report'], confidence: 0.97 }, ['gate'])).result.result;
+  assert.deepEqual([record.outcome, record.proposedOutcome, record.modelReceipt.status], ['escalate', 'approve', 'failed']);
+  assert.equal(h.completions.length, 0);
+});
+
 test('C4 and C7: a permission refusal or unapproved egress stops; no package and no other model', async t => {
   const refused = harness(t, { roles: { tonborg: tonborg() },
     replies: () => new Response('{"error":{"message":"organization policy denies this request"}}', { status: 403 }) });

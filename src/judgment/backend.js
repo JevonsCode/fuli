@@ -47,6 +47,11 @@ export function judgmentAnswer(response) {
     modelReceipt: response.modelReceipt ?? null };
 }
 
+// Whether the current session answered with no model behind Tonborg: then
+// it stands in for Tonborg (Jevons 11-17). A session that answered after
+// Tonborg's model failed carries that model's receipt and does not.
+export const sessionStandsIn = answer => answer?.judgedBy?.mode === 'current_session' && !answer.modelReceipt;
+
 // What a judgment record keeps about who judged; null when nobody did. C13:
 // a current-session answer is recorded as such, never as independent.
 export function judgmentProvenance(answer) {

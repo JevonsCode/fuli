@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { parse, parseAnswer } from './service.js';
 import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProvenance, pendingRecord,
-  TONBORG_OPERATIONS } from './backend.js';
+  sessionStandsIn, TONBORG_OPERATIONS } from './backend.js';
 import { assessRouting } from './routing.js';
 import { assessAcceptance } from './acceptance.js';
 import { recoverInterruptedWrites } from './review-recovery.js';
@@ -144,7 +144,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           records.push(store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', title: 'Tonborg review',
             ...pendingRecord(answer), policy }, `pending:${answer.pending.packageId}`));
         }
-        const trustKey = answer.pending ? null : reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null });
+        const trustKey = answer.pending ? null : reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null }, policy);
         const gate = trustKey && gateOf(trustKey);
         // rec#26: one model request judges the whole batch, so injected text in
         // any candidate may have steered every verdict of that answer.
@@ -306,12 +306,17 @@ function reviewDecisions(value, candidates, delegated) {
 }
 
 // What the trust gate asks about an answer: the configured connection and
-// model that gave it, or none when the current session or a legacy CLI answered.
-function reviewTrustKey(answer, scope) {
+// model that gave it, or none when the current session or a legacy CLI
+// answered. handedOver: 「交给 Tonborg 确认」 is on and the session answered
+// with no model behind Tonborg (a session answer after a model failed carries
+// that model's receipt, and stays a suggestion).
+function reviewTrustKey(answer, scope, policy) {
   const byModel = answer.judgedBy?.mode === 'model_api';
+  const handedOver = Boolean(policy.delegated) && sessionStandsIn(answer);
   return { role: 'tonborg', operation: TONBORG_OPERATIONS.review, scope,
     connection: byModel ? answer.modelReceipt?.connectionIdentity ?? null : null,
-    model: byModel ? answer.modelReceipt?.requestedModel ?? null : null };
+    model: byModel ? answer.modelReceipt?.requestedModel ?? null : null,
+    ...(handedOver ? { handedOver: true } : {}) };
 }
 
 // rec#10 D-24, D-36: what the host does with one review verdict. The model's own
