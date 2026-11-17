@@ -8,6 +8,7 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // introductions began (introductions_since, the moment this store was
 // created) is known without one. IDs and the owner's display name only; no
 // task content.
+export const AGENT_INTRODUCTIONS_FILE = 'agent-introductions.sqlite';
 export const AGENT_INTRODUCTIONS_FORMAT = sqliteFormat({
   store: 'agent-introductions',
   schema: `
@@ -32,11 +33,11 @@ export class AgentIntroductionStore {
   }
 
   // Creates the store the first time FULI opens this data directory with it,
-  // keeping that moment: only an FLA created after it is new to the person.
-  // An existing file is not opened.
-  begin(at) {
+  // keeping when introductions began (since(), asked only then): only an FLA
+  // created after it is new to the person. An existing file is not opened.
+  begin(since) {
     if (this.path !== ':memory:' && existsSync(this.path)) return;
-    this.db.prepare('INSERT OR IGNORE INTO introductions_since VALUES(1, ?)').run(at);
+    this.db.prepare('INSERT OR IGNORE INTO introductions_since VALUES(1, ?)').run(since());
   }
 
   // This entry's owner meets the person: whether it is new to them (created

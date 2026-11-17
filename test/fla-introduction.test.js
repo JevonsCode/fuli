@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { AgentIntroductionStore } from '../src/agent-introductions/store.js';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
-import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
+import { FederatedGraphApplication, openFederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { introductionEntry } from '../src/graphiti/task-entry-introduction.js';
 
 // 11-17: a new FLA introduces itself once under its name in the receipt, and
@@ -22,7 +22,7 @@ const NEW = '2026-11-17T09:00:00Z';
 
 function begunStore(path = ':memory:') {
   const store = new AgentIntroductionStore(path);
-  store.begin(BEGAN);
+  store.begin(() => BEGAN);
   return store;
 }
 
@@ -251,7 +251,7 @@ test('a second entry of the same turn repeats the introduction; the next turn si
   assert.match(first, /Ada Lead/);
   assert.equal(introduction(await entry('补充一句', 'turn-1')), first, 'the hook run again in the same turn');
   const asked = await app.getCollaborationPreferences({ projectPath: '/synthetic/folder', sessionId: 'synthetic-turns',
-    sourceApplication: 'codex', taskPrompt: '看看构建', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
+    sourceApplication: 'codex', taskPrompt: '补充一句', agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
   assert.equal(introduction(asked), first, 'the Agent\'s own entry after the hook');
   assert.equal(introduction(await entry('下一件事', 'turn-2')), null);
 });
@@ -269,7 +269,7 @@ test('an FLA created before introductions began is not introduced; a hand-off be
   assert.equal(introduction(await hook('再继续')), null);
   // The moment is kept from the first begin: a later one does not move it.
   const store = begunStore();
-  store.begin('2030-01-01T00:00:00.000Z');
+  store.begin(() => '2030-01-01T00:00:00.000Z');
   assert.match(introduce({ agentId: 'created-after-the-first-begin', store }), /Lyra North/);
 });
 
@@ -320,5 +320,57 @@ test('an entry completes without an introduction when the store cannot be opened
     assert.equal(introduction(entry), null);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// Second review, item 1: without a turn ID only the same task prompt is the
+// same turn, so a client whose turns are never checkpointed does not carry
+// the line on.
+test('without a turn ID, only the same prompt repeats the introduction of an unfinished task', async () => {
+  const { app } = fixture();
+  const ask = (sessionId, taskPrompt) => app.getCollaborationPreferences({ projectPath: '/synthetic/folder', sessionId,
+    sourceApplication: 'codex', taskPrompt, agentInvocation: true, agentToolName: 'get_collaboration_preferences' });
+  const first = introduction(await ask('synthetic-hookless', '看看构建'));
+  assert.match(first, /Ada Lead/);
+  assert.equal(introduction(await ask('synthetic-hookless', '下一件事')), null, 'a new prompt is a new turn');
+  assert.equal(introduction(await ask('synthetic-hookless', '再下一件事')), null);
+
+  const again = fixture();
+  const repeatAsk = taskPrompt => again.app.getCollaborationPreferences({ projectPath: '/synthetic/folder',
+    sessionId: 'synthetic-repeat', sourceApplication: 'codex', taskPrompt, agentInvocation: true,
+    agentToolName: 'get_collaboration_preferences' });
+  const said = introduction(await repeatAsk('看看构建'));
+  assert.match(said, /Ada Lead/);
+  assert.equal(introduction(await repeatAsk('  看看构建\n')), said, 'the same prompt is the same turn');
+  assert.doesNotMatch(again.tasks.at(-1).agentAssignment.match_basis.join('\n'), /看看/, 'the marker keeps a hash, not the prompt');
+});
+
+// Second review, item 2: a new installation meets every FLA, built-in ones
+// included; an upgraded one keeps the FLAs it had quiet.
+test('a new data directory introduces an FLA created before the store; one with earlier FULI data does not', async () => {
+  const config = { version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
+    accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: SPACE } };
+  const meetAstro = async dataDir => {
+    const app = openFederatedGraphApplication({ runtimeConfigPath: join(dataDir, 'graph-runtime.json'), env: {}, config,
+      fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
+    try {
+      return introductionEntry(app, { resolution: { personalProjectId: null },
+        selection: { agent: { agentId: 'employee.astro', createdAt: EXISTING } },
+        context: { role: { name: 'Astro', responsibility: '会话助理：先接住还没归项目的会话' } },
+        input: { agentInvocation: true, agentToolName: 'begin_task_context', taskPrompt: '你好' } })?.line ?? null;
+    } finally {
+      await app.close();
+    }
+  };
+  const fresh = await mkdtemp(join(tmpdir(), 'fuli-introductions-fresh-'));
+  const upgraded = await mkdtemp(join(tmpdir(), 'fuli-introductions-upgraded-'));
+  try {
+    assert.match(await meetAstro(fresh), /Astro/);
+    // An earlier FULI kept per-session records here.
+    await mkdir(join(upgraded, 'preference-delivery'));
+    assert.equal(await meetAstro(upgraded), null);
+  } finally {
+    await rm(fresh, { recursive: true, force: true });
+    await rm(upgraded, { recursive: true, force: true });
   }
 });

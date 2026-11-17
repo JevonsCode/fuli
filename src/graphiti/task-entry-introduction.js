@@ -14,7 +14,9 @@ import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 // entry's (checkpoint, roundtable, pause, recovery) carries it the same turn,
 // and so does a second entry of the same turn.
 
-const MARKER = /^fla_introduction (.+)$/su;
+// "fla_introduction <prompt hash or -> <line>"
+const MARKER = /^fla_introduction (\S+) (.+)$/su;
+const NO_PROMPT = '-';
 // Code points each value may take in the line; with the longest template the
 // line stays within 100 characters (test/fla-introduction.test.js measures it).
 const LIMITS = Object.freeze({ name: 14, project: 14, previous: 14, duty: 16 });
@@ -58,7 +60,7 @@ export function introductionEntry(application, { resolution, selection, context,
     || !TASK_ENTRY_TOOLS.has(input.agentToolName)
     || hostInternalActivity(application, { sessionId: input.sessionId ?? input.sourceSessionId ?? null })) return null;
   const carried = resolution.turnIntroduction;
-  if (carried?.agentId === agentId) return entryOf(carried.line);
+  if (carried?.agentId === agentId) return entryOf(carried.line, input.taskPrompt);
   const projectId = resolution.personalProjectId ?? null;
   const led = LEAD_REASONS.has(selection.reason) || context.team?.lead_agent_id === agentId;
   const routed = projectId && led && !resolution.fla && !resolution.group && !input.projectAgentId;
@@ -75,27 +77,43 @@ export function introductionEntry(application, { resolution, selection, context,
   const line = introductionLine({ agentId, name: context.role.name ?? agentId,
     responsibility: context.role.responsibility, project: projectId ? context.project_brief?.name || '这个项目' : null,
     previous: previous ? previous.name ?? previous.agentId : null, firstMeeting: met.firstMeeting });
-  return line ? entryOf(line) : null;
+  return line ? entryOf(line, input.taskPrompt) : null;
 }
 
 // The introduction the session's current task gave, when this entry is a
-// second one of the same turn: the client's prompt hook run again with the
-// same turn ID (Codex, for input arriving mid-turn), or the Agent's own
-// get_collaboration_preferences while that task has no completed checkpoint.
-export function sameTurnIntroduction(sessionTask, { turnId = null, agentToolName = null } = {}) {
+// second one of the same turn and that task has no completed checkpoint: the
+// client's prompt hook run again with the same turn ID (Codex, for input
+// arriving mid-turn), or, without a turn ID, the Agent's own
+// get_collaboration_preferences for the same task prompt. A different prompt
+// is a new turn, so a client whose turns are never checkpointed does not carry
+// the line on.
+export function sameTurnIntroduction(sessionTask, { turnId = null, agentToolName = null, taskPrompt = null } = {}) {
   if (!sessionTask?.projectAgentId || sessionTask.checkpoint?.phase === 'complete') return null;
-  const sameTurn = turnId ? sessionTask.turnId === turnId : agentToolName === 'get_collaboration_preferences';
-  const line = sameTurn ? introductionReceiptLine(sessionTask) : null;
-  return line ? { agentId: sessionTask.projectAgentId, line } : null;
+  const stored = storedIntroduction(sessionTask);
+  if (!stored) return null;
+  const sameTurn = turnId ? sessionTask.turnId === turnId
+    : agentToolName === 'get_collaboration_preferences' && stored.prompt !== NO_PROMPT && stored.prompt === promptKey(taskPrompt);
+  return sameTurn ? { agentId: sessionTask.projectAgentId, line: stored.line } : null;
 }
 
 // The receipt line a task's entry introduced its owner with, or null.
 export function introductionReceiptLine(task) {
-  return (task?.agentAssignment?.match_basis ?? []).map(item => MARKER.exec(item)).find(Boolean)?.[1] ?? null;
+  return storedIntroduction(task)?.line ?? null;
 }
 
-function entryOf(line) {
-  return { line, marker: `fla_introduction ${line}` };
+function storedIntroduction(task) {
+  const match = (task?.agentAssignment?.match_basis ?? []).map(item => MARKER.exec(item)).find(Boolean);
+  return match ? { prompt: match[1], line: match[2] } : null;
+}
+
+// The marker keeps a short hash of the entry's task prompt, never its text.
+function entryOf(line, taskPrompt) {
+  return { line, marker: `fla_introduction ${promptKey(taskPrompt)} ${line}` };
+}
+
+function promptKey(taskPrompt) {
+  const text = typeof taskPrompt === 'string' ? taskPrompt.replace(/\s+/g, ' ').trim() : '';
+  return text ? sha256Bytes(text).slice(0, 16) : NO_PROMPT;
 }
 
 // One Markdown line of receipt text, every value escaped. A name too long to

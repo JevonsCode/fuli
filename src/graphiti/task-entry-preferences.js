@@ -210,7 +210,7 @@ async function entryPreferences(application, projectResolution, {
   const ownerChange = ownerFrom && ownerChangeEntry(ownerFrom, ownerFromName, projectResolution, selection.agent.agentId, context?.role?.name);
   // A worker run (includeMessages false) never introduces its Agent to the person.
   const introduction = includeMessages ? introductionEntry(application, { resolution: projectResolution, selection,
-    context, input: { projectAgentId, sessionId, sourceSessionId, agentInvocation, agentToolName },
+    context, input: { projectAgentId, sessionId, sourceSessionId, agentInvocation, agentToolName, taskPrompt },
     sessionOwnerFrom: ownerChange ? ownerFrom.agentId : null }) : null;
   const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection),
     ...(ownerChange ? [ownerChange.marker] : []), ...(introduction ? [introduction.marker] : [])];
