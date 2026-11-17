@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { awaitsFirstConnection, canConnect, changedExplanation, changesNewestFirst, clientTiles, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
+import { awaitsFirstConnection, canConnect, clientParts, withoutLifecycle, changedExplanation, changesNewestFirst, clientTiles, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
 import { settingsMessages } from '../../i18n/messages/settings'
 
 const client = (id: string, status: ClientObservation['status']): ClientObservation =>
@@ -69,5 +69,19 @@ describe('client connection copy', () => {
         expect([...text].length, key).toBeLessThanOrEqual(100)
       }
     }
+  })
+})
+
+describe('what FULI puts into a client', () => {
+  it('lists each part a client takes, MCP first, with its state, and says when nothing starts or closes a task by itself', () => {
+    const claudeCode = { components: { skills: 'current', permissions: 'current', hooks: 'outdated', mcp: 'current', prompts: 'unsupported' } }
+    expect(clientParts(claudeCode)).toEqual([{ part: 'mcp', state: 'current' }, { part: 'hooks', state: 'outdated' },
+      { part: 'skills', state: 'current' }, { part: 'permissions', state: 'current' }])
+    expect(withoutLifecycle(claudeCode)).toBe(false)
+    expect(withoutLifecycle({ components: { mcp: 'current' } })).toBe(true)
+    expect(withoutLifecycle({ components: { plugin: 'missing', skills: 'missing' } })).toBe(false)
+    // Nothing known says nothing.
+    expect(clientParts({})).toEqual([])
+    expect(withoutLifecycle({})).toBe(false)
   })
 })

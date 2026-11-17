@@ -21,9 +21,9 @@ beforeEach(() => { setActivePinia(createPinia()) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
-  since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number }
-type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean }
+  since: string | null, changes: { from: string, to: string, detectedAt: string, components?: Record<string, string> }[], lastKnownStatus?: string | null,
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, components?: Record<string, string> }
+type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
     clients: clients.map((client) => ({ id: 'codex', label: 'Codex', detected: true, status: 'connected',
@@ -467,5 +467,23 @@ it('restarts a running client only after the person confirms, in the same place 
   finish!(Response.json({ id: 'claude-desktop', status: 'quit_failed' }))
   await flushPromises()
   expect(wrapper.get('[data-restart-result]').text()).toBe('没能确认 Claude Desktop 已退出，配置没改。请手动退出后再试。')
+  wrapper.unmount()
+})
+
+it('shows on each tile what FULI put into that client, and says when it has no hooks', async () => {
+  routed(() => Response.json(statusOf([
+    { id: 'claude-code', label: 'Claude Code', status: 'connected', components: { mcp: 'current', hooks: 'current', skills: 'outdated', permissions: 'current' } },
+    { id: 'kiro', label: 'Kiro', status: 'connected', components: { mcp: 'current' } },
+  ], undefined, [{ id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true,
+    components: { mcp: 'current' } }])))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const parts = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).findAll('[data-part]').map((part) => part.text())
+  expect(parts('claude-code')).toEqual(['MCP', '自动进入与收尾', 'Skills · 需更新', '权限白名单'])
+  expect(parts('kiro')).toEqual(['MCP'])
+  expect(parts('acme-agent')).toEqual(['MCP'])
+  const tile = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).element.closest('li.client-row')!
+  expect(tile('claude-code').querySelector('[data-client-no-lifecycle]')).toBeNull()
+  expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('不会自动记录对话')
   wrapper.unmount()
 })

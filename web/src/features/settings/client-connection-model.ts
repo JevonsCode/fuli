@@ -15,9 +15,12 @@ export type ClientObservation = { id: string, label: string, status: ClientStatu
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
   overwritten?: boolean, configuredInstall?: ConfiguredInstall,
   // Present for a client FULI can quit and reopen here; running is null when that could not be read.
-  restart?: { running: boolean | null } }
+  restart?: { running: boolean | null },
+  // What FULI installs into this client and each part's state (agent-installer's components).
+  components?: Record<string, string> }
 // A client the person described by hand (an agent-clients extension file).
-export type CustomClient = { id: string, label: string, detected: boolean, status: ClientStatus, mcpPaths: string[], removable: boolean }
+export type CustomClient = { id: string, label: string, detected: boolean, status: ClientStatus, mcpPaths: string[], removable: boolean,
+  components?: Record<string, string> }
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] } }
@@ -58,7 +61,28 @@ export type ClientTile = ClientObservation & { custom?: { mcpPaths: string[], re
 export function clientTiles(observation: ConnectionStatus | null): ClientTile[] {
   return [...shownClients(observation), ...(observation?.customClients ?? []).map((client): ClientTile => ({
     id: client.id, label: client.label, status: client.status, detected: client.detected, previouslyConnected: false, changes: [],
+    ...(client.components ? { components: client.components } : {}),
     custom: { mcpPaths: client.mcpPaths, removable: client.removable } }))]
+}
+
+// The parts FULI installs into a client, in the order a person reads them: the
+// MCP entry first, then what makes it automatic, then the client's extras.
+export const CLIENT_PARTS = ['mcp', 'hooks', 'plugin', 'skills', 'instructions', 'permissions', 'prompts'] as const
+export type ClientPart = typeof CLIENT_PARTS[number]
+export type PartState = 'current' | 'outdated' | 'missing' | 'conflict'
+
+// A tile's parts and each one's state; a part the client takes none of is left out.
+export function clientParts(client: Pick<ClientTile, 'components'>): { part: ClientPart, state: PartState }[] {
+  const components = client.components ?? {}
+  const states: readonly string[] = ['current', 'outdated', 'missing', 'conflict']
+  return CLIENT_PARTS.filter((part) => states.includes(components[part] ?? ''))
+    .map((part) => ({ part, state: components[part] as PartState }))
+}
+
+// Neither hooks nor a plugin: task entry and its close depend on the Agent, and nothing is captured by itself.
+export function withoutLifecycle(client: Pick<ClientTile, 'components'>): boolean {
+  const parts = clientParts(client).map(({ part }) => part)
+  return parts.length > 0 && !parts.includes('hooks') && !parts.includes('plugin')
 }
 
 // Whether FULI can write this client's configuration itself (「接入」), as opposed to the person by hand.

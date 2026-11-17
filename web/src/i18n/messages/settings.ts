@@ -100,6 +100,11 @@ export const settingsMessages = {
           unknown: '配置文件无法读取或格式有误，暂不判断是否已移除。',
         },
       },
+      parts: {
+        name: { mcp: 'MCP', hooks: '自动进入与收尾', plugin: '插件', skills: 'Skills', instructions: '全局说明', permissions: '权限白名单', prompts: '/fla 菜单' },
+        state: { current: '已装好', outdated: '需更新', missing: '未装', conflict: '无法确认' },
+        noLifecycle: '没有钩子：任务入口和收尾靠 Agent 按说明做，不会自动记录对话。',
+      },
       custom: {
         title: '手动接入',
         add: '添加客户端',
@@ -563,6 +568,11 @@ export const settingsMessages = {
           not_detected: 'This client was not found on this computer.',
           unknown: 'The configuration cannot be read or is malformed, so removal is not concluded.',
         },
+      },
+      parts: {
+        name: { mcp: 'MCP', hooks: 'Auto start and close', plugin: 'Plugin', skills: 'Skills', instructions: 'Instructions', permissions: 'Allowlist', prompts: '/fla menu' },
+        state: { current: 'Installed', outdated: 'Needs update', missing: 'Not installed', conflict: 'Cannot confirm' },
+        noLifecycle: 'No hooks: the Agent starts and closes tasks by FULI\'s instructions, and nothing is captured by itself.',
       },
       custom: {
         title: 'Connect by hand',
