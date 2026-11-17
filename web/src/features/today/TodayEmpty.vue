@@ -36,6 +36,8 @@ function done(notice: string) {
 </template>
 
 <style scoped>
-.today-empty { display: grid; justify-items: center; gap: 16px; padding: clamp(48px, 12vh, 120px) 0; text-align: center; }
+/* It sits in the page's flex row (or the feed's column): it takes the width, and its
+   rows keep their own height, so the button never stretches to fill the page. */
+.today-empty { display: grid; flex: 1; align-content: center; justify-items: center; gap: 16px; padding: clamp(48px, 12vh, 120px) 0; text-align: center; }
 .today-empty-text { margin: 0; color: var(--color-ink-soft); font-size: var(--text-body); }
 </style>
