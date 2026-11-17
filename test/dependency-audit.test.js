@@ -128,7 +128,7 @@ test('pull request CI blocks only on what ships, after the build that records th
 
 test('a release blocks only on what ships, after npm test builds the console', () => {
   const release = read('.github/workflows/release.yml');
-  assert.doesNotMatch(release, /npm@[d.]+ audit --audit-level/, 'no whole-tree audit blocks a release (11-18: an unfixed build-tool advisory stopped 0.27.16)');
+  assert.doesNotMatch(release, /npm@[\d.]+ audit --audit-level/, 'no whole-tree audit blocks a release (11-18: an unfixed build-tool advisory stopped 0.27.16)');
   const audit = release.indexOf('node scripts/audit-shipped.js "$RUNNER_TEMP/npm-audit.json"');
   assert.ok(audit > release.indexOf('- run: npm test'), 'npm test builds the console first');
   assert.ok(audit < release.indexOf('npm@11.13.0 publish'), 'the audit runs before publishing');
