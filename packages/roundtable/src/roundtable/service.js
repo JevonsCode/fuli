@@ -1,7 +1,7 @@
 import { waitForChatChange } from './chat-wait.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
@@ -20,7 +20,7 @@ import { visitView } from '../peer/query-answer.js';
 import { isOpaqueId, PeerError, validVisitRequest } from '../peer/protocol.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
-import { ORIGIN_ENV, WAKE_CLIENTS, WAKE_ORIGINS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
+import { isolatedWakeClients, ORIGIN_ENV, WAKE_CLIENTS, WAKE_ORIGINS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
 import { REMOTE_WAKE_ATTEMPTS, createWakeLadder, standInAllowed } from './wake-ladder.js';
 import { outwardFailureView, wakeAttemptRecord } from './wake-failure.js';
 import { enterStandIn, recordStandInReply, standInState } from './stand-in.js';
@@ -36,17 +36,17 @@ const RECORDED_REFUSALS = new Set(['execution_claimed', 'cleanup_unconfirmed']);
 const MIN_REMOTE_WAKE_MS = 30_000;
 
 // Where a fresh session for an ask from another computer starts when the host
-// names no folder of its own: empty, and never the process's working folder.
+// names no folder of its own: a new empty folder only this user can write to
+// (mkdtemp, so nobody can have put files there first), never the process's
+// working folder.
 function emptyWakeFolder() {
-  const folder = join(tmpdir(), 'fuli-roundtable-wake');
-  mkdirSync(folder, { recursive: true, mode: 0o700 });
-  return folder;
+  return mkdtempSync(join(tmpdir(), 'fuli-roundtable-wake-'));
 }
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
 export function createAgentRoundtable({ host, peer = null, openStore, wake = wakeAgent, idFactory = randomUUID,
-  env = process.env, locateCwd = sessionWorkingDirectory, turnRunning = sessionTurnRunning, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
+  env = process.env, platform = process.platform, locateCwd = sessionWorkingDirectory, turnRunning = sessionTurnRunning, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
   bootEvidence = async () => null, now = Date.now,
@@ -403,10 +403,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       wakeMode, ...(origin ? { onlyFuliMcp: true, origin } : {}),
       timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
       targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
-        { preferClient: from.client, ladder, ...(origin ? { lastCwd: host.wakeScratchFolder?.() ?? emptyWakeFolder() } : {}),
+        { preferClient: from.client, ladder,
+          ...(origin ? { lastCwd: host.wakeScratchFolder?.() ?? emptyWakeFolder(), clients: isolatedWakeClients(platform) } : {}),
           ...(crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}) }),
-      noTargets: () => crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
-        ? 'no_working_directory' : 'no_client',
+      noTargets: () => origin && !isolatedWakeClients(platform).some(client => target.profile.allowedClients.includes(client)
+          && clientAvailable(client)) ? 'no_isolated_client'
+        : crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
+          ? 'no_working_directory' : 'no_client',
       prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
         targetProjectId: crossProject ? targetProjectId : null }),
       issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
@@ -681,14 +684,18 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     let attempts;
     try {
       attempts = await deliveryTargets(target, assertion.conversation, share.projectId, null,
-        { clients: share.clients, freshCwd: share.workingDirectory ?? null, strictCwd: true });
+        { clients: share.clients.filter((client) => isolatedWakeClients(platform).includes(client)),
+          freshCwd: share.workingDirectory ?? null, strictCwd: true });
     } catch (error) { finishWake(ask); throw error; }
     if (!attempts.length) {
       finishWake(ask);
-      const code = share.clients.some((client) => clientAvailable(client)) ? 'no_working_directory' : 'no_client';
+      const isolated = share.clients.filter((client) => isolatedWakeClients(platform).includes(client));
+      const code = isolated.some((client) => clientAvailable(client)) ? 'no_working_directory'
+        : share.clients.some((client) => clientAvailable(client)) ? 'no_isolated_client' : 'no_client';
       store.updateMessage(ask.id, { status: 'failed', error: code });
       throw Object.assign(new Error(code === 'no_working_directory'
         ? 'This shared project has no known folder on this device; the owner sets one in Settings'
+        : code === 'no_isolated_client' ? 'On this device an ask from another computer is answered only by a read-only Claude Code session, and none can run'
         : 'No shared client can run on this device'), { code });
     }
     const prompt = promptOverride ?? wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: ask.from_client });

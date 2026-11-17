@@ -8,7 +8,7 @@ import { createWakeClaimRelease, processGroupAlive } from '../packages/roundtabl
 import { createProcessInspector } from '../src/agent-services/process-identity.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { parseFinalAnswer, runProcess, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
+import { isolatedWakeClients, parseFinalAnswer, runProcess, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
 import { runAsRunnerCall } from '../src/app/agent-request-context.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
@@ -18,7 +18,7 @@ const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ a
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
 function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null, peer = undefined,
-  clientAvailable = () => true, now = undefined, inspectProcess = undefined, groupAlive = () => false } = {}) {
+  clientAvailable = () => true, now = undefined, inspectProcess = undefined, groupAlive = () => false, platform = undefined } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -48,7 +48,7 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
   let id = 0;
   if (peer) app.peer = peer;
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
-    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable, now, inspectProcess, groupAlive,
+    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable, now, inspectProcess, groupAlive, platform,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
   return { app, roundtable, woken, grants, revoked, verified };
 }
@@ -760,7 +760,8 @@ test('a runner\'s folder is never one of this computer\'s, for a session or a vi
 });
 
 test('a chat message a runner sent wakes its member as the runner\'s ask: read-only, only FULI\'s MCP server', async t => {
-  const { app, roundtable, woken } = fixture();
+  // Its member runs only in Codex, which takes asks from another computer on macOS and Linux.
+  const { app, roundtable, woken } = fixture({ platform: 'darwin' });
   app.fuliMcpServer = () => ({ command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] });
   t.after(() => roundtable.close());
   const chat = (action, data = {}) => roundtable.chat({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', action, ...data });
@@ -816,7 +817,33 @@ test('a wake passes its origin to the woken client\'s environment and drops one 
       { type: 'item.completed', item: { type: 'agent_message', text: 'Answer' } }, { type: 'turn.completed' }].map(JSON.stringify).join('\n') };
   };
   const env = { FULI_CODEX_BIN: '/synthetic/codex', FULI_ROUNDTABLE_ORIGIN: 'remote' };
-  await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'grant', origin: 'runner', env, run });
+  await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'grant', origin: 'runner', env, run,
+    platform: 'linux' });
   await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'grant', env, run });
   assert.deepEqual(seen, ['runner', undefined]);
+});
+
+test('on Windows an ask from another computer never wakes Codex: Claude Code takes it, or it is refused with the reason', async () => {
+  assert.deepEqual(isolatedWakeClients('win32'), ['claude_code']);
+  assert.deepEqual(isolatedWakeClients('darwin'), ['claude_code', 'codex']);
+  assert.deepEqual(isolatedWakeClients('linux'), ['claude_code', 'codex']);
+  const toNova = { taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'synthetic ask' };
+  const toMilo = { taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: 'synthetic ask' };
+
+  const windows = fixture({ platform: 'win32' });
+  const refused = await runAsRunnerCall('runner-fingerprint-1', () => windows.roundtable.messageAgent(toNova));
+  assert.equal(refused.status, 'queued');
+  assert.equal(refused.reason, 'no_isolated_client');
+  assert.match(refused.guidance, /only a read-only Claude Code session can take one/);
+  await runAsRunnerCall('runner-fingerprint-1', () => windows.roundtable.messageAgent(toMilo));
+  assert.deepEqual(windows.woken.map((input) => input.client), ['claude_code'], 'Milo is woken in Claude Code, never Codex');
+  await windows.roundtable.messageAgent(toNova);
+  assert.equal(windows.woken.at(-1).client, 'codex', 'a local ask still wakes Codex on Windows');
+
+  const mac = fixture({ platform: 'darwin' });
+  await runAsRunnerCall('runner-fingerprint-1', () => mac.roundtable.messageAgent(toNova));
+  assert.deepEqual(mac.woken.map((input) => [input.client, input.mode]), [['codex', 'read_only']]);
+
+  await assert.rejects(wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', origin: 'runner', platform: 'win32',
+    env: { FULI_CODEX_BIN: '/synthetic/codex' }, run: async () => assert.fail('no process starts') }), { code: 'client_not_isolated' });
 });

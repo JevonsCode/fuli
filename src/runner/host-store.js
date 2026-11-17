@@ -24,16 +24,30 @@ export const RUNNER_HOST_FORMAT = sqliteFormat({
   store: 'runner-host',
   schema: `
     CREATE TABLE IF NOT EXISTS runners(
-      fingerprint TEXT PRIMARY KEY, name TEXT NOT NULL, device_name TEXT, paired_at TEXT NOT NULL,
+      fingerprint TEXT PRIMARY KEY, name TEXT NOT NULL, paired_at TEXT NOT NULL,
       last_seen_at TEXT, last_address TEXT, revoked_at TEXT);
     CREATE TABLE IF NOT EXISTS invitations(
       code_hash TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
       used_by TEXT);
     CREATE TABLE IF NOT EXISTS replays(
+      id TEXT PRIMARY KEY, runner TEXT NOT NULL, tool TEXT NOT NULL, at TEXT NOT NULL, result TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS replays_at ON replays(at);`,
+  // Version 1 is what 0.29.0-beta.1 shipped; every beta.1 host has it.
+  migrations: [{
+    id: 'runner-host/2-runner-device-name', to: 2, kind: 'add-columns', table: 'runners',
+    summary: 'the name each runner gives itself, shown beside the name the person typed at its invitation',
+    columns: { device_name: 'TEXT' }
+  }, {
+    // An id is a runner's own (key runner, id), held pending while it is applied.
+    id: 'runner-host/3-replays-per-runner', to: 3, kind: 'replace-table', table: 'replays',
+    summary: 'checkpoint ids kept per runner and held while applied; the replays table is made again and the '
+      + 'beta.1 replay records are not kept (a runner delivers an entry again under its id only while it waits)',
+    create: `CREATE TABLE replays(
       runner TEXT NOT NULL, id TEXT NOT NULL, tool TEXT NOT NULL,
       state TEXT NOT NULL CHECK(state IN ('pending', 'done')), at TEXT NOT NULL, result TEXT, holder TEXT,
       PRIMARY KEY(runner, id));
     CREATE INDEX IF NOT EXISTS replays_at ON replays(at);`
+  }]
 });
 
 export class RunnerHostStore {

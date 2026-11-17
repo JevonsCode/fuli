@@ -5,14 +5,14 @@ import { homedir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { StringDecoder } from 'node:string_decoder';
 
-import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
+import { isolatedWakeClients, WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 import { findInLoginShellPath, withLoginShellPath } from './login-shell-path.js';
 import { wakeFailure } from './wake-failure.js';
 
 // Wakes the recipient Agent in its own client, headlessly in the given mode, and
 // returns its final answer with that conversation's full context. Each client's
 // command, arguments, session lookup and output format live in its adapter.
-export { WAKE_CLIENTS };
+export { isolatedWakeClients, WAKE_CLIENTS };
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
 const MODEL_LIMIT = 120;
 // The last part of a client's stderr and stdout a failed wake keeps, never more.
@@ -66,8 +66,12 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
   delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer',
-  mcpServers = null, origin = null } = {}) {
+  mcpServers = null, origin = null, platform = process.platform } = {}) {
   if (origin !== null && !WAKE_ORIGINS.includes(origin)) throw new TypeError('Invalid wake origin');
+  // The last check before a process starts: an ask from another computer wakes only an isolated client.
+  if (origin && !isolatedWakeClients(platform).includes(client)) {
+    throw wakeFailure('client_not_isolated', 'client_not_isolated', `${client} cannot take an ask from another computer here`);
+  }
   const command = resolveClientCommand(client, { env });
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));

@@ -170,10 +170,21 @@ test('the known addresses are tried at once, so one that never answers does not 
     withLease: (_owner, operation) => operation() });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, route: routes.handle,
     sourceAllowed: () => true });
-  // An address that takes the connection and never says a word, first in line as the last that answered.
+  // An address that takes the connection and never says a word, first in line as the last that answered:
+  // the IPv6 loopback on the same port (macOS has no 127.0.0.2; every supported system has ::1).
   const held = new Set();
   const silent = createNetServer((socket) => held.add(socket));
-  await new Promise((resolve) => silent.listen(listener.port, '127.0.0.2', resolve));
+  const bound = await new Promise((resolve) => {
+    silent.once('error', () => resolve(false));
+    silent.listen(listener.port, '::1', () => resolve(true));
+  });
+  if (!bound) {
+    await listener.close();
+    await routes.close();
+    store.close();
+    t.skip('this machine has no IPv6 loopback');
+    return;
+  }
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-probe-')));
   const code = newInvitationCode();
   store.invite({ code, name: 'Runner B' });
@@ -182,7 +193,7 @@ test('the known addresses are tried at once, so one that never answers does not 
     certPem: host.certPem, code }) });
   const runnerStore = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   runnerStore.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port,
-    addresses: ['127.0.0.2', '127.0.0.1'], lastAddress: '127.0.0.2' });
+    addresses: ['[::1]', '127.0.0.1'], lastAddress: '[::1]' });
   const identity = await loadDeviceIdentity(path.join(dataDir, 'peer'));
   // A probe budget far above the margin below, so only parallel probing passes.
   const connection = createHostConnection({ store: runnerStore, identity, lookUp: async () => [], probeMs: 15_000 });
@@ -203,6 +214,7 @@ test('the known addresses are tried at once, so one that never answers does not 
   assert.equal(reached[0].address, '127.0.0.1');
   assert.equal(reached[0], reached[1], 'two callers share one search and one connection');
   assert.equal(runnerStore.host().lastAddress, '127.0.0.1');
+  assert.ok(held.size > 0, 'the silent address was tried too');
 });
 
 test('the runner\'s MCP process ends on its own when its client closes stdin, with the host connected', async (t) => {
@@ -284,4 +296,18 @@ test('a runner the host revoked, whose session the host closed, says so instead 
   assert.equal(answer.isError, true);
   assert.equal(JSON.parse(answer.content[0].text).code, 'runner_revoked');
   assert.ok(runner.served.store.host().revokedAt);
+});
+
+test('a host that only restarted gets the call again on a fresh session, not an offline answer', async (t) => {
+  const runner = await pairedRunner(t);
+  const search = { name: 'search_current_project_knowledge', arguments: { query: 'deploy steps' } };
+  await runner.client.callTool(search);
+  // As a restart does: every session of this runner ends, and the host answers hello again.
+  await runner.routes.keepRunners([]);
+
+  const answer = await runner.client.callTool({ ...search, arguments: { query: 'after restart' } });
+
+  assert.equal(answer.isError, undefined);
+  assert.equal(answer.structuredContent?.runner?.offline, undefined, 'not an answer from cache');
+  assert.deepEqual(runner.calls.at(-1), { name: 'search_current_project_knowledge', input: { query: 'after restart' } });
 });

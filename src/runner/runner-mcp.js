@@ -54,6 +54,7 @@ const TOOLS_KEY = 'tools:list';
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
   transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+  store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const sessionId = nativeSessionFromEnv(sourceApplication, env) ?? mcpHostSessionId({});
@@ -132,11 +133,18 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   }
 
   // The host refused or dropped the session (it may have revoked this runner
-  // and closed its sessions): ask hello once on a fresh connection, so a
-  // revoked runner says so instead of answering from what it kept.
-  async function helloThenOffline() {
+  // and closed its sessions, or only restarted): ask hello once at the known
+  // addresses on a fresh connection, without mDNS. A revoked runner then says
+  // so instead of answering from what it kept; true means the host answers.
+  async function helloAgain() {
+    await client?.close().catch(() => {});
+    client = null;
     connection.drop();
-    if (!closed) await connection.connect();
+    return !closed && Boolean(await connection.connect({ knownOnly: true }));
+  }
+
+  async function helloThenOffline() {
+    await helloAgain();
     return offline();
   }
 
@@ -150,24 +158,31 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
 
   // work(client) with the host, or null when it is away. An answer the host
   // gave, an error included, is the host's; a failed request is not.
+  // A session the host dropped while it answers hello again (it restarted) is
+  // opened afresh and the call made once more there. A call that timed out may
+  // have run on the host and is not made again.
   async function withHost(work) {
-    const host = await upstream();
-    if (!host) return null;
-    try {
-      return await work(host);
-    } catch (error) {
-      // Only a closed connection or a request the host never answered means it is away.
-      if (error instanceof McpError && ![ErrorCode.ConnectionClosed, ErrorCode.RequestTimeout].includes(error.code)) throw error;
-      return helloThenOffline();
+    for (let attempt = 0; ; attempt += 1) {
+      const host = await upstream();
+      if (!host) return null;
+      try {
+        return await work(host);
+      } catch (error) {
+        // Only a closed connection or a request the host never answered means it is away.
+        if (error instanceof McpError && ![ErrorCode.ConnectionClosed, ErrorCode.RequestTimeout].includes(error.code)) throw error;
+        const timedOut = error instanceof McpError && error.code === ErrorCode.RequestTimeout;
+        if (attempt > 0 || timedOut || !await helloAgain()) return offline();
+      }
     }
   }
 
   // The facts of each folder a call names, read here; a folder that is not one is the caller's error.
-  async function folderFacts(paths) {
+  // read: facts already read for this call, used again instead of reading the folder twice.
+  async function folderFacts(paths, read = []) {
     const facts = [];
     for (const projectPath of paths) {
       if ((described.get(projectPath) ?? 0) > now() - DESCRIBED_FOR_MS) continue;
-      facts.push(await describe(projectPath));
+      facts.push(read.find((fact) => fact.requestedPath === projectPath) ?? await describe(projectPath));
     }
     return facts;
   }
@@ -227,9 +242,10 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     // The host does not know a runner's offline token: other calls go without it.
     const sent = offlineTask ? withoutOfflineToken(name, args) : args;
     const call = effectiveCall(name, sent);
+    const paths = [sent.projectPath, sent.input?.projectPath].filter((value) => typeof value === 'string');
     let facts;
     try {
-      facts = await folderFacts([sent.projectPath, sent.input?.projectPath].filter((value) => typeof value === 'string'));
+      facts = await folderFacts(paths, []);
     } catch (error) {
       return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'invalid_input', message: error.message }) }] };
     }
@@ -237,7 +253,8 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     // same id, and the host applies the id once whichever delivery reaches it first.
     const entryId = QUEUED_TOOLS.has(call.tool) ? randomUUID() : null;
     const answer = await withHost(async (host) => {
-      await sendFolders(facts);
+      // A session opened meanwhile (the host came back or restarted) has none of them yet.
+      await sendFolders(await folderFacts(paths, facts));
       return host.callTool({ name, arguments: sent, ...(entryId ? { _meta: { [RUNNER_ENTRY_META]: entryId } } : {}) },
         undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
     });

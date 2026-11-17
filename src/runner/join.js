@@ -17,13 +17,17 @@ import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 // host only when the host said so.
 const PAIR_TIMEOUT_MS = 8000;
 
-export async function joinHost({ dataDir, invitation: text, name = null,
+// force: join another host although checkpoints for the current one still wait
+// or were refused; joining drops them (runner-store.js saveHost).
+export async function joinHost({ dataDir, invitation: text, name = null, force = false,
   loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')) }) {
   if (existsSync(join(dataDir, 'graph-runtime.json'))) {
     throw new ApplicationError('runner_has_own_fuli', 'This data directory runs its own FULI. '
       + 'A runner keeps nothing of its own; join from a computer (or --data-dir) without a FULI setup.');
   }
   const host = parseInvitation(text);
+  // Before the one-use invitation is spent: a join that would drop checkpoints needs --force.
+  if (!force) refuseDroppingCheckpoints(dataDir, host.fingerprint);
   const identity = await loadIdentity();
   const agent = new Agent({ ...pinnedTls(identity, host), keepAlive: false });
   const fetch = pinnedFetch(agent);
@@ -63,4 +67,21 @@ export async function joinHost({ dataDir, invitation: text, name = null,
   }
   throw new ApplicationError('host_unreachable', 'The host did not answer at any address in the invitation. '
     + 'Both computers must share a network (the same Wi-Fi or a cable), and the host\'s FULI console must be running.');
+}
+
+function refuseDroppingCheckpoints(dataDir, fingerprint) {
+  const file = join(dataDir, RUNNER_FILE);
+  if (!existsSync(file)) return;
+  const store = new RunnerStore(file);
+  try {
+    const current = store.host();
+    if (!current || current.fingerprint === fingerprint) return;
+    const { queued, failedCount } = store.outbox();
+    if (queued + failedCount === 0) return;
+    throw new ApplicationError('runner_checkpoints_waiting', `${queued} checkpoint(s) still wait for ${current.name} and `
+      + `${failedCount} were refused by it; joining another host deletes them. Deliver them first (\`fuli runner sync\`, `
+      + 'or join the same host again), or join with --force. The invitation was not used.');
+  } finally {
+    store.close();
+  }
 }

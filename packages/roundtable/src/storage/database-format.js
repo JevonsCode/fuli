@@ -37,8 +37,13 @@ const BACKUP_PROCESS = fileURLToPath(new URL('./database-backup-process.js', imp
 // default, and a new table (given by its own CREATE statement), which no
 // existing row can conflict with. A backfill of existing rows runs only when
 // no row needs it; any other kind always waits for a person.
-const AUTOMATIC_KINDS = new Set(['add-columns', 'add-table']);
-const KINDS = new Set(['add-columns', 'add-table', 'backfill']);
+// replace-table drops one table and creates it again from its CREATE
+// statement (a changed key SQLite cannot alter). Its rows are discarded, so a
+// store declares it only for a table whose rows nothing needs (its summary
+// says so); the format backup before every upgrade still holds them.
+const AUTOMATIC_KINDS = new Set(['add-columns', 'add-table', 'replace-table']);
+const KINDS = new Set(['add-columns', 'add-table', 'backfill', 'replace-table']);
+const CREATES_TABLE = new Set(['add-table', 'replace-table']);
 // How a step that has not run yet is reported by inspectSqliteStore.
 const INSPECTED_STATES = Object.freeze({ baseline_detected: 'detected', applied: 'automatic',
   pending_confirmation: 'pending_confirmation' });
@@ -57,8 +62,8 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
     if (migration.kind === 'backfill' && !(migration.backfillKeys && migration.backfill)) {
       throw new TypeError(`${migration.id} must name and fill the rows it backfills`);
     }
-    if ((migration.kind === 'add-table') !== (typeof migration.create === 'string')) {
-      throw new TypeError(`${migration.id}: an add-table step, and only one, carries its CREATE statement`);
+    if (CREATES_TABLE.has(migration.kind) !== (typeof migration.create === 'string')) {
+      throw new TypeError(`${migration.id}: an add-table or replace-table step, and only one, carries its CREATE statement`);
     }
     for (const type of Object.values(migration.columns ?? {})) {
       if (/\bNOT NULL\b/i.test(type) && !/\bDEFAULT\b/i.test(type)) {
@@ -66,8 +71,8 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
       }
     }
   });
-  // An added table has no columns to add: its CREATE statement holds them.
-  const declared = migrations.map((migration) => (migration.kind === 'add-table' ? { ...migration, columns: {} } : migration));
+  // An added or replaced table has no columns to add: its CREATE statement holds them.
+  const declared = migrations.map((migration) => (CREATES_TABLE.has(migration.kind) ? { ...migration, columns: {} } : migration));
   return Object.freeze({ store, schema, migrations: Object.freeze(declared), pragmas,
     readableVersions: Object.freeze([...readableVersions]), version: migrations.length + 1 });
 }
@@ -309,6 +314,7 @@ function classifyMigrations(database, format, version, reached) {
 function appliedDetail(migration) {
   if (migration.kind === 'backfill') return 'added columns; no existing row needed a backfill';
   if (migration.kind === 'add-table') return `created ${migration.table}`;
+  if (migration.kind === 'replace-table') return `replaced ${migration.table}; its earlier rows were not kept`;
   return `added ${Object.keys(migration.columns).join(', ')}`;
 }
 
@@ -419,6 +425,7 @@ function schemaMismatches(database, format) {
     declared.exec(format.schema);
     for (const migration of format.migrations) {
       if (migration.kind === 'add-table') declared.exec(migration.create);
+      if (migration.kind === 'replace-table') declared.exec(`DROP TABLE ${migration.table}; ${migration.create}`);
       for (const [name, type] of Object.entries(migration.columns)) {
         declared.exec(`ALTER TABLE ${migration.table} ADD COLUMN ${name} ${type}`);
       }
@@ -494,6 +501,12 @@ function newerAccess(format, version) {
 function applyMigration(database, migration) {
   if (migration.kind === 'add-table') {
     if (missingColumns(database, migration).length) database.exec(migration.create);
+    return;
+  }
+  if (migration.kind === 'replace-table') {
+    if (missingColumns(database, migration).length) {
+      database.exec(`DROP TABLE IF EXISTS ${migration.table}; ${migration.create}`);
+    }
     return;
   }
   for (const name of missingColumns(database, migration)) {
@@ -575,6 +588,16 @@ function schemaNames(database) {
 // For an added table, the table itself while it does not exist.
 function missingColumns(database, migration) {
   if (migration.kind === 'add-table') return userTables(database).includes(migration.table) ? [] : [migration.table];
+  // A replaced table is in effect once it has the columns its CREATE statement declares.
+  if (migration.kind === 'replace-table') {
+    const existing = new Set(database.prepare(`PRAGMA table_info(${migration.table})`).all().map((column) => column.name));
+    const target = new DatabaseSync(':memory:');
+    try {
+      target.exec(migration.create);
+      const wanted = target.prepare(`PRAGMA table_info(${migration.table})`).all().map((column) => column.name);
+      return wanted.filter((name) => !existing.has(name));
+    } finally { target.close(); }
+  }
   const existing = new Set(database.prepare(`PRAGMA table_info(${migration.table})`).all().map((column) => column.name));
   return Object.keys(migration.columns).filter((name) => !existing.has(name));
 }

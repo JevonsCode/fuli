@@ -22,6 +22,13 @@ const DEFAULT_PLUGIN_KEY = '_default';
 export const codexWake = Object.freeze({
   id: 'codex',
 
+  // Whether a read-only wake can take an ask from another computer here. A
+  // read-only Codex can still run shell commands; its sandbox blocks network
+  // on macOS (Seatbelt) and Linux (Landlock and seccomp), but on Windows that
+  // is not verified, so a command could reach this computer's console on
+  // loopback with the person's authority. Decided 2026-11-18.
+  isolatedFor: (platform) => platform !== 'win32',
+
   resolveCommand({ env, which, platform, fileExists = existsSync }) {
     if (env.FULI_CODEX_BIN) return env.FULI_CODEX_BIN;
     const found = which('codex', platform);

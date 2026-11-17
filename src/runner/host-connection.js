@@ -37,19 +37,21 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   const closing = new AbortController();
 
   // Concurrent callers share one search, so one agent is ever kept.
-  function connect() {
+  // knownOnly: probe the addresses already known and skip mDNS, for a quick
+  // re-check (a search already under way is shared as it is).
+  function connect({ knownOnly = false } = {}) {
     if (current || closed) return Promise.resolve(current);
-    finding ??= find().finally(() => { finding = null; });
+    finding ??= find({ knownOnly }).finally(() => { finding = null; });
     return finding;
   }
 
-  async function find() {
+  async function find({ knownOnly }) {
     const host = store.host();
     if (!host || host.revokedAt) return null;
     pinFailed = false;
     const known = [...new Set([host.lastAddress, ...host.addresses].filter(Boolean))];
     if (await reachFirst(host, known)) return current;
-    if (closed || store.host()?.revokedAt) return null;
+    if (closed || knownOnly || store.host()?.revokedAt) return null;
     const announced = (await lookUp(host.fingerprint)).filter((address) => !known.includes(address));
     return await reachFirst(host, announced) ? current : null;
   }

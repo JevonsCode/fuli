@@ -27,7 +27,7 @@ export const RUNNER_FORMAT = sqliteFormat({
   schema: `
     CREATE TABLE IF NOT EXISTS host(
       id INTEGER PRIMARY KEY CHECK(id = 1), name TEXT NOT NULL, fingerprint TEXT NOT NULL, cert_pem TEXT NOT NULL,
-      port INTEGER NOT NULL, addresses TEXT NOT NULL, last_address TEXT, paired_at TEXT NOT NULL, revoked_at TEXT);
+      port INTEGER NOT NULL, addresses TEXT NOT NULL, last_address TEXT, paired_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS answers(
       key TEXT PRIMARY KEY, tool TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS offline_tasks(
@@ -36,7 +36,13 @@ export const RUNNER_FORMAT = sqliteFormat({
       seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, tool TEXT NOT NULL, input TEXT NOT NULL,
       source_application TEXT NOT NULL, session_id TEXT, offline_project_path TEXT, queued_at TEXT NOT NULL,
       state TEXT NOT NULL CHECK(state IN ('queued', 'delivered', 'failed')), attempts INTEGER NOT NULL DEFAULT 0,
-      claimed_until TEXT, last_error TEXT, settled_at TEXT);`
+      claimed_until TEXT, last_error TEXT, settled_at TEXT);`,
+  // Version 1 is what 0.29.0-beta.1 shipped.
+  migrations: [{
+    id: 'runner/2-host-revoked', to: 2, kind: 'add-columns', table: 'host',
+    summary: 'when the host answered that it does not know this runner (revoked), so nothing kept is shown again',
+    columns: { revoked_at: 'TEXT' }
+  }]
 });
 
 export class RunnerStore {
@@ -102,6 +108,7 @@ export class RunnerStore {
       this.#forget();
       this.db.prepare(`UPDATE outbox SET state = 'failed', last_error = ?, settled_at = ?, claimed_until = NULL
         WHERE state = 'queued'`).run(REVOKED, at);
+      this.#pruneRefused();
     });
   }
 
@@ -186,9 +193,19 @@ export class RunnerStore {
     immediateTransaction(this.db, () => {
       this.db.prepare(`UPDATE outbox SET state = 'failed', claimed_until = NULL, settled_at = ?, last_error = ?
         WHERE id = ?`).run(this.#nowIso(), reason, id);
-      this.db.prepare(`DELETE FROM outbox WHERE state <> 'queued' AND settled_at <= ?`)
-        .run(new Date(this.now() - FAILED_KEEP_MS).toISOString());
+      this.#pruneRefused();
     });
+  }
+
+  // Deletes refused entries past FAILED_KEEP_MS; the runner's MCP process calls it at start too.
+  pruneRefused() {
+    if (this.#missing()) return;
+    this.#pruneRefused();
+  }
+
+  #pruneRefused() {
+    this.db.prepare(`DELETE FROM outbox WHERE state <> 'queued' AND settled_at <= ?`)
+      .run(new Date(this.now() - FAILED_KEEP_MS).toISOString());
   }
 
   // Where one entry stands: 'queued', 'failed', or null once delivered (or never queued here).

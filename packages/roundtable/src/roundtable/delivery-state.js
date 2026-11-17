@@ -20,6 +20,8 @@ const NOT_STARTED = {
     ? `FULI started no session: none of ${name}'s clients (${clients.map(clientName).join(', ')}) can be started on this computer.`
     : `FULI started no session: ${name} allows no client this computer can wake.`,
   no_working_directory: () => 'FULI started no session: no verified folder of the target project is known on this computer.',
+  no_isolated_client: ({ name }) => `FULI started no session: this ask came from another computer, and on this computer only a `
+    + `read-only Claude Code session can take one (a Codex session could run commands here). ${name} has no Claude Code it can start.`,
   not_waiting: () => 'Sent without waiting, so FULI started no session.',
   nested_limit: () => 'FULI started no session: this thread already has asks waiting on each other.',
   task_context_required: ({ name }) => `FULI started no session: without the current taskContextToken it cannot wake ${name}.`

@@ -34,7 +34,7 @@ function fixture(t, { wake, fuliMcp = null, shareClients = ['codex', 'claude_cod
     }
   };
   if (fuliMcp) app.fuliMcpServer = fuliMcp;
-  const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), openStore: () => store, clientAvailable: () => true,
+  const service = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), openStore: () => store, clientAvailable: () => true,
     locateCwd: () => folder, turnRunning: () => false,
     wake: async input => { woken.push(input); return wake(input, woken.length); } });
   t.after(() => service.close());

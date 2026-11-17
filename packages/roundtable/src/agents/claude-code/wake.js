@@ -23,6 +23,9 @@ const MODE_ARGUMENTS = Object.freeze({
 export const claudeCodeWake = Object.freeze({
   id: 'claude_code',
 
+  // A read-only Claude Code wake has no shell (--tools Read,Grep,Glob), on every platform.
+  isolatedFor: () => true,
+
   resolveCommand({ env, which, platform }) {
     return env.FULI_CLAUDE_BIN || which('claude', platform);
   },

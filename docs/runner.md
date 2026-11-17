@@ -67,7 +67,7 @@ fingerprint (`src/app/agent-request-context.js` `runAsRunnerCall`), and is held 
 what a call from another computer may do:
 
 - A wake of the person's Agents (`message_agent`, `agent_chat`, a group
-  discussion) is read-only and loads only FULI's own MCP server, as a LAN
+  discussion) is read-only, never in Codex on Windows, and loads only FULI's own MCP server, as a LAN
   roundtable ask from another computer is; it never goes to a desktop app
   conversation and gets no stand-in. A fresh session for it starts in an empty
   folder FULI owns (`roundtable-wake` in the host's data directory), never in
@@ -142,8 +142,15 @@ round, one after it gets the first answer. A runner waits up to three minutes
 for a replay and never sends it again in the same round. The host holds an id
 it is applying for as long as the longest call a runner waits for, and more (21
 minutes); only a host that stopped in the middle of an entry applies it again,
-as soon as it starts again. Closing the runner's MCP process cuts a delivery in
-flight; its entry stays queued.
+as soon as it starts again. So a host process that crashed after applying a
+checkpoint but before recording it applies that checkpoint twice; one console
+per data directory makes this rare. Closing the runner's MCP process cuts a
+delivery in flight; its entry stays queued.
+
+When a call fails because the host ended the session, the runner asks `hello`
+at the addresses it knows (not over mDNS). If the host answers (it only
+restarted), the call is made once more on a fresh session; a call that timed
+out is not, as it may have run.
 
 ## What a runner keeps
 
@@ -165,13 +172,21 @@ answers at the host's address with another certificate: if the host was
 reinstalled, join again.
 
 `fuli runner leave` deletes it all; with checkpoints still waiting or refused
-it says how many and needs `--force`. The clients' MCP entries stay (they then
+it says how many and needs `--force`, and so does a `join` to another host,
+which would drop them (checked before the invitation is used). The clients' MCP entries stay (they then
 answer that this computer is not paired); `fuli uninstall` removes them.
 
 ## Data format
 
-Runners add two stores, `runner/host.sqlite` on a host that invited one and
-`runner/runner.sqlite` on a runner, each at version 1. Every host's roundtable
+Runners add two stores: `runner/host.sqlite`, which every 0.29.0-beta.1 host
+created at console start, and `runner/runner.sqlite` on a runner. Version 1 is
+what beta.1 shipped; this version migrates them on open, after the format
+backup: `runner-host` 1 → 2 adds `runners.device_name`, 2 → 3 makes the
+`replays` table again with its key per runner and the pending state (a
+`replace-table` step: beta.1's replay records are not kept, as only an entry
+still waiting on a runner is delivered again under its id); `runner` 1 → 2
+adds `host.revoked_at`. Runners, pairings, invitations, answers and the outbox
+are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or
@@ -184,8 +199,15 @@ as for every migration, and an older FULI then refuses that store.
   both are on).
 - Lifecycle hooks (automatic task entry and Stop checkpoints) do not run on a
   runner, and neither does the session switch (`/fuli start|stop|status`,
-  `fuli session`): it needs a FULI on the same computer. An OpenCode or
-  DeepSeek Harness hook tells the model to enter the task through MCP instead.
+  `fuli session`): it needs a FULI on the same computer. Every client's hook
+  tells the model instead to enter the task through FULI's MCP server: Claude
+  Code, Codex, OpenCode and DeepSeek Harness at each prompt, Cursor at session
+  start (its prompt hook can only show text to the person).
+- On Windows an ask from another computer (a runner's, or a paired device's)
+  wakes only Claude Code, whose read-only wake has no shell; it never wakes
+  Codex there, whose read-only sandbox is not verified to block the network on
+  Windows. With no Claude Code to start, the ask is refused
+  (`no_isolated_client`). On macOS and Linux both are woken.
 - A runner on Windows has not been tried on a real second computer yet.
 - A host that never invited a runner opens nothing for runners: no store, no
   listener, no mDNS, no timer. Closing either side releases its files, so

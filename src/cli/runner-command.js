@@ -21,7 +21,9 @@ const USAGE = `fuli runner <action>  (runners: other computers whose clients use
     list                          paired runners and where the host listens
     revoke FINGERPRINT            end a runner's access (8 or more characters of its fingerprint)
   On a runner:
-    join INVITATION [--name NAME] pair with the host and set up this computer's clients
+    join INVITATION [--name NAME] [--force]
+                                  pair with the host and set up this computer's clients
+                                  (--force: also when checkpoints for another host would be dropped)
                                   (NAME: what the host shows for this computer; default its own name)
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
@@ -47,7 +49,8 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   if (action === 'join') {
     const invitation = rest.find((value, index) => !value.startsWith('--') && !['--name', '--data-dir'].includes(rest[index - 1]));
     if (!invitation) throw new TypeError(`Missing invitation\n${USAGE}`);
-    const joined = await joinRunner({ dataDir: paths().dataDir, invitation, name: option(rest, '--name') ?? null });
+    const joined = await joinRunner({ dataDir: paths().dataDir, invitation, name: option(rest, '--name') ?? null,
+      force: rest.includes('--force') });
     write(`Paired with ${joined.host.name} (${joined.host.address}:${joined.host.port}).`);
     write(`This runner's fingerprint: ${joined.runner.fingerprint.slice(0, 16)}…`);
     if (joined.outbox?.dropped) {

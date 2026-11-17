@@ -132,7 +132,8 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
   }
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
   const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });
-  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+  // Shares name Codex, which takes asks from another computer on macOS and Linux; Windows is tested in agent-roundtable.test.js.
+  app.roundtable = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
     ...(sessionFolder ? { locateCwd: () => sessionFolder } : {}),
     wake: async (input) => { calls.wakes.push(input);
       return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });

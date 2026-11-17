@@ -13,7 +13,8 @@ import { startRunnerListener } from '../src/runner/host-listener.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { offlineAnswer } from '../src/runner/offline-calls.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
-import { RUNNER_PATHS } from '../src/runner/protocol.js';
+import { joinHost } from '../src/runner/join.js';
+import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 const HOST = { name: 'Host A', fingerprint: 'f'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] };
@@ -265,4 +266,40 @@ test('closing the connection cuts a replay waiting on the host at once, and its 
   assert.ok(Date.now() - started < 30_000, 'the 3-minute replay wait was cut by close');
   assert.equal(result.queued, 1);
   assert.equal(store.claimNext().id, 'long-wait');
+});
+
+test('joining another host while checkpoints wait for the current one needs --force, and spends no invitation without it', async (t) => {
+  const dataDir = dataDirectory(t);
+  mkdirSync(path.join(dataDir, 'runner'));
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  store.saveHost(HOST);
+  keptSomething(store);
+  store.close();
+  const other = deviceIdentity(await createDeviceCertificate());
+  // An address nothing listens on: refused before any request is sent.
+  const invitation = encodeInvitation({ name: 'Host B', addresses: ['192.0.2.1'], port: 2730, certPem: other.certPem,
+    code: newInvitationCode() });
+  let loaded = false;
+
+  await assert.rejects(joinHost({ dataDir, invitation, loadIdentity: async () => { loaded = true; return other; } }),
+    { code: 'runner_checkpoints_waiting', message: /1 checkpoint\(s\) still wait for Host A .*--force\. The invitation was not used\./ });
+  assert.equal(loaded, false, 'nothing was sent to the other host');
+});
+
+test('refused checkpoints past 30 days go when the runner is revoked and when its MCP process starts', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const store = pairedRunner({ now: () => now });
+  for (const id of ['old-1', 'old-2']) {
+    store.enqueue({ id, tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
+    store.failed(id, 'invalid_input');
+  }
+  now += 31 * DAY_MS;
+  store.enqueue({ id: 'waiting', tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
+  store.pruneRefused();
+  assert.deepEqual(store.db.prepare('SELECT id FROM outbox').all().map((row) => row.id), ['waiting']);
+  store.enqueue({ id: 'old-3', tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
+  store.db.prepare(`UPDATE outbox SET state = 'failed', settled_at = '2026-10-01T00:00:00.000Z' WHERE id = 'old-3'`).run();
+  store.revoked();
+  assert.deepEqual(store.db.prepare('SELECT id, last_error FROM outbox').all().map((row) => [row.id, row.last_error]),
+    [['waiting', 'runner_revoked']]);
 });
