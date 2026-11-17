@@ -1,0 +1,13 @@
+{
+  "version": "0.27.16",
+  "zh": [
+    "托盘每一行写着「名字 · 项目：在做的事」，一眼看出谁在哪个项目干活。",
+    "新来的 FLA 第一次替你干活、或接手一个项目时，会在回复末尾自我介绍一句。",
+    "添加客户端最后会自己验收：回复末尾要出现「FULI Agent：…」，否则会告诉你。"
+  ],
+  "en": [
+    "Each tray row reads name · project: task, so you see who works where at a glance.",
+    "A new FLA introduces itself under its name the first time it works for you or takes over a project.",
+    "Adding a client ends with a check: its reply must end with the 「FULI Agent：…」 line, or it tells you."
+  ]
+}
