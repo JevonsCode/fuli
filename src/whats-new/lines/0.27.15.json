@@ -1,0 +1,13 @@
+{
+  "version": "0.27.15",
+  "zh": [
+    "托盘菜单能看到近 24 小时在干活的助手和还在讨论的圆桌，点一下就打开。",
+    "Tonborg 没有自己的模型也能用：你打开「交给 Tonborg 确认」后，由当前会话替它确认。",
+    "添加客户端只要把一段话发给它；「让 AI 来做」的提示也不用再填空了。"
+  ],
+  "en": [
+    "The tray menu shows who worked in the last day and the roundtables still talking; click to open.",
+    "Tonborg works without its own model: once you turn its switch on, your session confirms for it.",
+    "Add a client by sending it one message; 「让 AI 来做」 prompts need nothing filled in."
+  ]
+}
