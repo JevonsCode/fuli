@@ -51,14 +51,30 @@ export function shownClients(observation: ConnectionStatus | null): ClientObserv
   return (observation?.clients ?? []).filter((client) => client.status !== 'not_detected')
 }
 
+// One tile of the client grid: a detected client, or one the person described by hand (`custom`).
+export type ClientTile = ClientObservation & { custom?: { mcpPaths: string[], removable: boolean } }
+
+// The grid's tiles: the shown clients, then every client described by hand, whatever its status.
+export function clientTiles(observation: ConnectionStatus | null): ClientTile[] {
+  return [...shownClients(observation), ...(observation?.customClients ?? []).map((client): ClientTile => ({
+    id: client.id, label: client.label, status: client.status, detected: client.detected, previouslyConnected: false, changes: [],
+    custom: { mcpPaths: client.mcpPaths, removable: client.removable } }))]
+}
+
 // Whether FULI can write this client's configuration itself (「接入」), as opposed to the person by hand.
-export function canConnect(client: ClientObservation): boolean {
-  return client.detected && !client.manualOnly && client.status !== 'unknown'
+// A client described by hand need not be found first: FULI creates the file the person named.
+export function canConnect(client: ClientTile): boolean {
+  return (client.detected || Boolean(client.custom)) && !client.manualOnly && client.status !== 'unknown'
+}
+
+// A client described by hand that FULI is not in yet: its tile says where the entry will go.
+export function awaitsFirstConnection(client: ClientTile): boolean {
+  return Boolean(client.custom) && (client.status === 'not_detected' || client.status === 'not_connected')
 }
 
 // 「已接入 X/Y 个客户端」: the shown clients and every client described by hand.
 export function connectionSummary(observation: ConnectionStatus | null): { connected: number, total: number } {
-  const clients = [...shownClients(observation), ...(observation?.customClients ?? [])]
+  const clients = clientTiles(observation)
   return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length }
 }
 

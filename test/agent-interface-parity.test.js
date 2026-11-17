@@ -100,6 +100,8 @@ const REQUIRED_LOCAL_USER_BOUNDARIES = new Set([
   'POST /api/agent-apps/:appId/confirm',
   'POST /api/system/graph-migration',
   'POST /api/visitor-access/guest-links',
+  // A client added by hand names a file FULI writes into: the person picks it.
+  'POST /api/system/client-connection/custom-clients',
 ]);
 
 // rec#80: the person's own decisions, which an FLA relays only in their words.
@@ -174,7 +176,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [59, 15, 18, 37]);
+    catalog.coverage.localUserOnly], [58, 15, 18, 38]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {

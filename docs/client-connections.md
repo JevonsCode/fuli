@@ -17,8 +17,8 @@ process, that a Hook delivered context, or that a tool call succeeded.**
    you only want local Fuli services without editing any client). Setup can finish even when no
    known client is installed.
 2. Prefer automatic setup when Codex, Claude Code, Cursor, or Claude Desktop is detected. For any
-   other MCP client, run `fuli connect`, or open **Settings → Client connection** in the console and
-   add it under **Connect by hand**.
+   other MCP client, open **Settings → Client connection** in the console and choose **Add client**,
+   the last tile of the client grid, or run `fuli connect` and paste the entry yourself.
 3. Merge the generated `fuli` entry into the client's MCP settings while keeping its other servers.
    Reload and trust the connection as required by that client. Quit and reopen apps that read MCP
    configuration only at launch, then open a new task so the new MCP process loads.
@@ -44,7 +44,8 @@ Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PA
 ### Client status in Settings
 
 **Settings → Client connection** is always open. Its summary counts the clients FULI is in (「已接入
-4/6 个客户端」), the detected clients on the left and the ones described by hand on the right. Which
+4/6 个客户端」), the detected clients and the ones described by hand, in one grid that ends with the
+**Add client** tile. Which
 clients are on this computer, and whether FULI is in each, is
 [agent-installer](https://github.com/JevonsCode/agent-installer)'s `status` for FULI's product manifest
 (see [Shared client components](#shared-client-components)); FULI no longer probes clients itself. The
@@ -77,14 +78,24 @@ asks Claude Desktop to quit (never kills it), writes the entry once it has close
 the entry again. If it does not quit, nothing is written. This restart is the person's click on this
 computer only (`local_user_only`); the doctor's automatic repair leaves such a client to them.
 
-**Connect by hand** describes a client agent-installer does not know, such as a company's own agent client:
-a name, the MCP configuration file under the home folder (`~/.acme/mcp.json`) and its format. FULI
-writes it as `<client-id>.json` with only an `install` section into the shared `agent-clients`
-extension directory (`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions`
-elsewhere), so agent-installer detects FULI in it like a built-in client; the session launcher ignores
-such a file. agent-installer checks the file first, and one it cannot read as a client is removed
-again with its reason. The card shows where the entry goes; paste the standard MCP configuration
-there. Only this computer can add or remove one, and FULI removes only files of that shape.
+**Add client** (the large plus that closes the client grid) describes a client agent-installer does
+not know, such as a company's own agent client: a name, the MCP configuration file under the home
+folder (`~/.acme/mcp.json`, no `..`) and its format; a file a listed client already uses is
+refused. Adding one is the person's own step (`local_user_only`), since FULI then writes into that
+file. FULI writes it as `<client-id>.json` with only an
+`install` section into the shared `agent-clients` extension directory
+(`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions` elsewhere), so
+agent-installer treats it like a built-in client; the session launcher ignores such a file.
+agent-installer checks the file first, and one it cannot read as a client is removed again with its
+reason. The client then has a tile of its own: **Connect** writes FULI's standard MCP entry (source
+`other`, chat profile) into the file the person named, creating it when it is not there yet and
+backing up one that is, and **Update connection** and **Connect all** keep it current with the other
+clients. `fuli setup` and `fuli clients update` still cover the built-in clients only. Only this
+computer can add, connect or remove one, and FULI removes only files of that shape. Connect writes
+only a client added here, never another product's extension. Removing one first takes FULI's entry
+out of its file (a file agent-installer created for FULI alone goes); when that fails, the client
+stays and the reason answers. **Connect by
+hand**, further down the page, keeps the configuration to copy into a client FULI should not write.
 
 ## 2. First actual tool call and verification
 
@@ -365,7 +376,7 @@ service. See the [remote connector setup](agent-tools.md#remote-claude--cowork-c
 
 ## 自动发现与一键接入
 
-在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；没有自动接入的客户端（例如公司内部的 Agent 客户端）在右侧“手动接入”里添加，按显示的位置粘贴通用 MCP 配置。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
+在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；列表里没有的客户端（例如公司内部的 Agent 客户端）点列表最后那个大加号“添加客户端”，填名称和 MCP 配置文件；添加后它和其他客户端一样点“接入”，FULI 把通用 MCP 配置写进那个文件（没有就新建），以后“更新接入”“一键接入”也带上它。只想自己粘贴配置的，用页面下方的“手动接入”。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
 
 “一键接入”逐个写入还没接好的客户端（包括“需要更新”的），每写完一个就重新读一次状态，摘要行显示正在接入的客户端和进度。接过 FULI 的客户端需要更新时（体检的 `client_outdated`），右上角“设置”按钮有个小红点，点它直接打开“客户端”；都更新后红点消失。
 

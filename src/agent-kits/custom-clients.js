@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { InvalidInputError } from '../app/application-error.js';
 import { writeJsonFileAtomic } from '../storage/json-file.js';
@@ -37,14 +37,20 @@ export function customClientStore({ extensionsDir, home = homedir() }) {
     return new Set(fileIds().filter((id) => CLIENT_ID.test(id) && ownShape(read(id))));
   }
   // takenIds: client IDs the installer already lists, built-in or not. A file
-  // already in the directory is never replaced.
-  function add(input, takenIds) {
+  // already in the directory is never replaced. takenFiles: the MCP files of
+  // the clients it lists (`~/…` or absolute); another client's file is never
+  // named again, so two writers never take turns in it.
+  function add(input, takenIds, takenFiles = []) {
     if (!extensionsDir) throw new TypeError('This machine has no shared agent-clients directory');
     const name = requiredString(input?.name, 'name', MAX_NAME).trim();
     if (/[\r\n]/.test(name)) throw new InvalidInputError('name must be one line');
     const format = input?.format ?? CUSTOM_CLIENT_FORMATS[0];
     if (!CUSTOM_CLIENT_FORMATS.includes(format)) throw new InvalidInputError(`format must be one of ${CUSTOM_CLIENT_FORMATS.join(', ')}`);
     const file = homePath(requiredString(input?.mcpFile, 'mcpFile').trim(), home);
+    const key = comparable(file, home);
+    if (takenFiles.some((taken) => comparable(taken, home) === key)) {
+      throw new InvalidInputError('mcpFile is the configuration file of a client already listed; name the file of the client you are adding');
+    }
     const id = uniqueId(slug(name), new Set([...takenIds, ...fileIds()]));
     writeJsonFileAtomic(fileOf(id), { schemaVersion: 1, name,
       install: { detect: [{ path: file }], mcp: { file, format } } });
@@ -62,14 +68,25 @@ function ownShape(value) {
     && Object.keys(value).every((key) => FILE_KEYS.has(key)) && Object.hasOwn(value, 'install');
 }
 
-// The installer takes paths under the home directory as `~/…` with `/`.
+// The installer takes paths under the home directory as `~/…` with `/`, and
+// refuses `..`; so does FULI, in both forms and with either separator, and the
+// resolved file must be inside the home folder.
+const TILDE = /^~(?:[\\/]|$)/;
+
 function homePath(path, home) {
-  if (path === '~' || path.startsWith('~/') || path.startsWith('~\\')) return path.replaceAll('\\', '/');
-  const inside = isAbsolute(path) ? relative(home, path) : null;
-  if (!inside || inside.startsWith('..') || isAbsolute(inside)) {
+  const resolved = TILDE.test(path) ? join(home, path.slice(1).replaceAll('\\', '/')) : isAbsolute(path) ? path : null;
+  const inside = resolved === null ? null : relative(home, resolved);
+  if (!inside || path.split(/[\\/]/).includes('..') || inside.split(sep)[0] === '..' || isAbsolute(inside)) {
     throw new InvalidInputError('mcpFile must be a file in your home folder, such as ~/.acme/mcp.json');
   }
   return `~/${inside.split(sep).join('/')}`;
+}
+
+// One file's path in a form two spellings of it share; null when it is not
+// one FULI can place (an installer path with another root).
+function comparable(path, home) {
+  const absolute = TILDE.test(path) ? join(home, path.slice(1)) : isAbsolute(path) ? resolve(path) : null;
+  return absolute && (process.platform === 'linux' ? absolute : absolute.toLowerCase());
 }
 
 function slug(name) {

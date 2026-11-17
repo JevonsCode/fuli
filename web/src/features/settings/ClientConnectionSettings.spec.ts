@@ -100,7 +100,9 @@ it('sums the detected and hand-described clients FULI is in, and keeps the summa
   await flushPromises()
   expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端')
   expect(wrapper.findAll('[data-client-status]').map((row) => row.attributes('data-client-status'))).toEqual(['connected', 'not_connected', 'connected'])
-  expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('在 ~/.acme/mcp.json 加入下方配置')
+  expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('配置文件：~/.acme/mcp.json')
+  // The add tile closes the grid, after every client.
+  expect(wrapper.get('.client-grid').element.lastElementChild?.querySelector('[data-add-custom-client]')).not.toBeNull()
   wrapper.unmount()
 })
 
@@ -132,7 +134,7 @@ it('says when agent-installer could not detect anything instead of listing no cl
   expect(wrapper.find('[data-detection-unavailable]').exists()).toBe(true)
   expect(wrapper.find('[data-client-status]').exists()).toBe(false)
   expect(wrapper.get('[data-connection-summary]').text()).toBe('')
-  expect(wrapper.get('[data-add-custom-client]').attributes('disabled')).toBeDefined()
+  expect(wrapper.find('[data-add-custom-client]').exists()).toBe(false)
   wrapper.unmount()
 })
 
@@ -273,37 +275,56 @@ it('says the client component could not be downloaded when agent-installer is mi
   wrapper.unmount()
 })
 
-it('adds a client by hand, shows why one was refused, and removes one FULI added', async () => {
+it('adds a client from the grid\'s last tile, connects it like the others, and removes one FULI added', async () => {
   let custom: Custom[] = []
   const replies: Record<string, () => Response> = {}
   const calls = routed(() => Response.json(statusOf([{}], new Date().toISOString(), custom)), (url, options) => {
     if (url.endsWith('/custom-clients') && options?.method === 'POST') return replies.add!()
     if (url.includes('/custom-clients/') && options?.method === 'DELETE') { custom = []; return Response.json({ id: 'acme-agent' }) }
+    if (url.endsWith('/connect')) {
+      custom = custom.map((client) => ({ ...client, detected: true, status: 'connected' }))
+      return Response.json({ id: 'acme-agent', status: 'connected', restartRequired: true })
+    }
     return Response.json(configuration)
   })
-  const wrapper = mount(ClientCards)
+  const wrapper = mount(ClientCards, { attachTo: document.body })
   await flushPromises()
-  const add = wrapper.get('[data-add-custom-client]')
-  await add.trigger('click')
-  expect(wrapper.find('[data-add-custom-client]').exists()).toBe(false)
-  await wrapper.get('#custom-client-name').setValue('Acme Agent')
-  await wrapper.get('#custom-client-file').setValue('~/公司/mcp.json')
+  await wrapper.get('[data-add-custom-client]').trigger('click')
+  const field = (selector: string) => document.querySelector<HTMLInputElement>(selector)!
+  const fill = async (selector: string, value: string) => {
+    field(selector).value = value
+    field(selector).dispatchEvent(new Event('input'))
+    await flushPromises()
+  }
+  const submit = async () => {
+    document.querySelector('[data-custom-client-form]')!.dispatchEvent(new Event('submit', { cancelable: true }))
+    await flushPromises()
+  }
+  await fill('#custom-client-name', 'Acme Agent')
+  await fill('#custom-client-file', '~/公司/mcp.json')
   replies.add = () => Response.json({ error: { code: 'invalid_input', message: 'the path is not plain' } }, { status: 400 })
-  await wrapper.get('[data-custom-client-form]').trigger('submit')
-  await flushPromises()
-  expect(wrapper.text()).toContain('没有添加')
-  await wrapper.get('#custom-client-file').setValue('~/.acme/mcp.json')
+  await submit()
+  expect(document.querySelector('[data-custom-client-dialog]')!.textContent).toContain('没有添加')
+  await fill('#custom-client-file', '~/.acme/mcp.json')
   replies.add = () => {
     custom = [{ id: 'acme-agent', label: 'Acme Agent', detected: false, status: 'not_detected', mcpPaths: ['~/.acme/mcp.json'], removable: true }]
     return Response.json({ id: 'acme-agent' })
   }
-  await wrapper.get('[data-custom-client-form]').trigger('submit')
-  await flushPromises()
+  await submit()
   const posts = calls.filter(([url, options]) => url.endsWith('/custom-clients') && options?.method === 'POST')
   expect(JSON.parse(posts.at(-1)![1]!.body as string)).toEqual({ name: 'Acme Agent', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' })
-  expect(wrapper.find('[data-custom-client-form]').exists()).toBe(false)
-  expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('~/.acme/mcp.json')
+  expect(document.querySelector('[data-custom-client-dialog]')).toBeNull()
+  const tile = () => wrapper.get('[data-custom-client="acme-agent"]')
+  expect(tile().text()).toContain('配置文件：~/.acme/mcp.json')
+  expect(tile().text()).toContain('FULI 把配置写进下面这个文件')
   expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端')
+  // Its file need not exist yet: 一键接入 writes it with the rest.
+  expect(wrapper.get('[data-connect-all]').attributes('disabled')).toBeUndefined()
+  await wrapper.get('[data-connect-client="acme-agent"]').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(calls.find(([url]) => url.endsWith('/connect'))![1]!.body as string)).toEqual({ clientId: 'acme-agent' })
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/2 个客户端')
+  expect(wrapper.find('[data-connect-client="acme-agent"]').exists()).toBe(false)
   await wrapper.get('[data-remove-custom-client="acme-agent"]').trigger('click')
   await flushPromises()
   expect(calls.some(([url, options]) => url.endsWith('/custom-clients/acme-agent') && options?.method === 'DELETE')).toBe(true)
