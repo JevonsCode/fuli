@@ -45,10 +45,10 @@ export const ORIGIN_ENV = 'FULI_ROUNDTABLE_ORIGIN';
 // env, home: where a client's own configuration is read (Codex, to turn off
 // the person's other MCP servers by name).
 export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer',
-  mcpServers = null, env = process.env, home = homedir() } = {}) {
+  mcpServers = null, origin = null, env = process.env, home = homedir() } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
   if (!WAKE_MODES.includes(mode)) throw new TypeError('Invalid wake mode');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers, env, home });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServers, origin, env, home });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -77,13 +77,16 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
-  if (origin) childEnv[ORIGIN_ENV] = origin;
+  if (origin) {
+    childEnv[ORIGIN_ENV] = origin;
+    Object.assign(childEnv, adapterFor(client).restrictedEnvironment?.({ env, home: homedir() }) ?? {});
+  }
   // A client that names its session up front is bound before it starts, so its
   // first hook already finds the delegation; others are bound when they report it.
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers, env }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServers, origin, env }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;

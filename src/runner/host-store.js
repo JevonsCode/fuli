@@ -41,7 +41,9 @@ export const RUNNER_HOST_FORMAT = sqliteFormat({
     // An id is a runner's own (key runner, id), held pending while it is applied.
     id: 'runner-host/3-replays-per-runner', to: 3, kind: 'replace-table', table: 'replays',
     summary: 'checkpoint ids kept per runner and held while applied; the replays table is made again and the '
-      + 'beta.1 replay records are not kept (a runner delivers an entry again under its id only while it waits)',
+      + 'beta.1 replay records are not kept',
+    discardsRows: 'a replay record only answers a runner that delivers the same entry again; an entry still waiting '
+      + 'is delivered again and applied once more at most, which beta.1 already allowed',
     create: `CREATE TABLE replays(
       runner TEXT NOT NULL, id TEXT NOT NULL, tool TEXT NOT NULL,
       state TEXT NOT NULL CHECK(state IN ('pending', 'done')), at TEXT NOT NULL, result TEXT, holder TEXT,

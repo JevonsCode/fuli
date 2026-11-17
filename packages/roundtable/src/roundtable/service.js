@@ -1,7 +1,7 @@
 import { waitForChatChange } from './chat-wait.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
@@ -41,6 +41,11 @@ const MIN_REMOTE_WAKE_MS = 30_000;
 // working folder.
 function emptyWakeFolder() {
   return mkdtempSync(join(tmpdir(), 'fuli-roundtable-wake-'));
+}
+
+// A process still running in it may hold it (Windows): it stays then, empty, under the OS temp.
+function removeWakeFolder(folder) {
+  try { rmSync(folder, { recursive: true, force: true }); } catch { /* left for the OS temp cleanup */ }
 }
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
@@ -399,25 +404,33 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (!taskContextToken) return queued(thread, ask, target, 'task_context_required');
     const ladder = createWakeLadder();
     // A task outside every project holds no authority the Provider can pass on.
-    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder,
-      wakeMode, ...(origin ? { onlyFuliMcp: true, origin } : {}),
-      timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
-      targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
-        { preferClient: from.client, ladder,
-          ...(origin ? { lastCwd: host.wakeScratchFolder?.() ?? emptyWakeFolder(), clients: isolatedWakeClients(platform) } : {}),
-          ...(crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}) }),
-      noTargets: () => origin && !isolatedWakeClients(platform).some(client => target.profile.allowedClients.includes(client)
-          && clientAvailable(client)) ? 'no_isolated_client'
-        : crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
-          ? 'no_working_directory' : 'no_client',
-      prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
-        targetProjectId: crossProject ? targetProjectId : null }),
-      issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
-        agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
-        // Claude resumes into a fork with a new ID. Only Codex resumes in place.
-        targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
-        lifetimeSeconds: lifetime }),
-      replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+    // A fallback folder made for this wake (no host folder of its own) goes once the wake is over.
+    let temporaryFolder = null;
+    let woken;
+    try {
+      woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder,
+        wakeMode, ...(origin ? { onlyFuliMcp: true, origin } : {}),
+        timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
+        targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
+          { preferClient: from.client, ladder,
+            ...(origin ? { lastCwd: host.wakeScratchFolder?.() ?? (temporaryFolder ??= emptyWakeFolder()),
+              clients: isolatedWakeClients(platform) } : {}),
+            ...(crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}) }),
+        noTargets: () => origin && !isolatedWakeClients(platform).some(client => target.profile.allowedClients.includes(client)
+            && clientAvailable(client)) ? 'no_isolated_client'
+          : crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
+            ? 'no_working_directory' : 'no_client',
+        prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
+          targetProjectId: crossProject ? targetProjectId : null }),
+        issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
+          agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
+          // Claude resumes into a fork with a new ID. Only Codex resumes in place.
+          targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
+          lifetimeSeconds: lifetime }),
+        replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+    } finally {
+      if (temporaryFolder) removeWakeFolder(temporaryFolder);
+    }
     if (woken.status !== 'answered') {
       // Nobody could come: the sender's own session takes the recipient on, unless
       // the recipient may still be running, the rules refused it, or this is a woken session.

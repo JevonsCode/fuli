@@ -21,8 +21,8 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, QUEUED_TOOLS, rememberAnswer,
-  withoutOfflineToken } from './offline-calls.js';
+import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+  rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
@@ -45,6 +45,10 @@ const DESCRIBED_FOR_MS = 60_000;
 const CHECKPOINT_WAIT_MS = 20_000;
 const ENTRY_POLL_MS = 200;
 const TOOLS_KEY = 'tools:list';
+// What the MCP client reports when a response stream broke and nothing will resume it.
+const STREAM_LOST = /SSE stream disconnected|Failed to reconnect|Maximum reconnection attempts/;
+// withHost's answer for a call that changes something whose connection dropped after it was sent.
+const OUTCOME_UNKNOWN = Symbol('outcome unknown');
 
 // lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
 // for, how soon after it was away, how long a tools/list waits for it, and how
@@ -127,6 +131,12 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
       client = null;
       connection.drop();
     };
+    // A response stream that broke (the connection dropped with a call in
+    // flight) leaves that call waiting for an answer that cannot come: the
+    // client is closed, so the call ends as ConnectionClosed (withHost).
+    created.onerror = (error) => {
+      if (client === created && STREAM_LOST.test(String(error?.message ?? ''))) void created.close().catch(() => {});
+    };
     client = created;
     described.clear();
     return client;
@@ -158,10 +168,14 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
 
   // work(client) with the host, or null when it is away. An answer the host
   // gave, an error included, is the host's; a failed request is not.
-  // A session the host dropped while it answers hello again (it restarted) is
-  // opened afresh and the call made once more there. A call that timed out may
-  // have run on the host and is not made again.
-  async function withHost(work) {
+  // work(client) with the host: its answer, null when the host is away (or a
+  // repeatable call's outcome is unknown, which its offline answer covers), or
+  // OUTCOME_UNKNOWN when a call that changes something was sent before the
+  // connection dropped. A session the host dropped while it answers hello
+  // again (it restarted) is opened afresh, and a repeatable call (a read, a
+  // checkpoint under its entry id) is made once more there; one that timed out
+  // may still be running on the host and is not.
+  async function withHost(work, { repeat = true } = {}) {
     for (let attempt = 0; ; attempt += 1) {
       const host = await upstream();
       if (!host) return null;
@@ -171,7 +185,13 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
         // Only a closed connection or a request the host never answered means it is away.
         if (error instanceof McpError && ![ErrorCode.ConnectionClosed, ErrorCode.RequestTimeout].includes(error.code)) throw error;
         const timedOut = error instanceof McpError && error.code === ErrorCode.RequestTimeout;
-        if (attempt > 0 || timedOut || !await helloAgain()) return offline();
+        // A folder the host did not take: the call itself was never sent.
+        const safe = repeat || error?.notSent === true;
+        const answers = !timedOut && await helloAgain();
+        if (safe && attempt === 0 && answers) continue;
+        if (!answers) offline();
+        // A revoked runner says so; anything else that was sent and changes something is unknown.
+        return safe || store.host()?.revokedAt ? null : OUTCOME_UNKNOWN;
       }
     }
   }
@@ -190,7 +210,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
   async function sendFolders(facts) {
     for (const folder of facts) {
       const sent = await connection.postJson(RUNNER_PATHS.workspace, { facts: folder });
-      if (!sent.reachable || sent.status !== 204) throw new Error('The host did not take the folder');
+      if (!sent.reachable || sent.status !== 204) throw Object.assign(new Error('The host did not take the folder'), { notSent: true });
       described.set(folder.requestedPath, now());
     }
   }
@@ -257,7 +277,8 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
       await sendFolders(await folderFacts(paths, facts));
       return host.callTool({ name, arguments: sent, ...(entryId ? { _meta: { [RUNNER_ENTRY_META]: entryId } } : {}) },
         undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
-    });
+    }, { repeat: repeatable(call.tool) });
+    if (answer === OUTCOME_UNKNOWN) return outcomeUnknownAnswer(call.tool);
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
     if (store.outbox().queued) void deliverSoon();

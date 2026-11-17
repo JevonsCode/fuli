@@ -91,6 +91,21 @@ function failure(code, message) {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message }) }] };
 }
 
+// Whether a call may be made again after its connection dropped: a read; a
+// checkpoint, which carries an entry id the host applies once; or task entry,
+// whose second task supersedes the first in that session (and which has its
+// own offline answer).
+export function repeatable(tool) {
+  return readOnly(tool) || QUEUED_TOOLS.has(tool) || TASK_ENTRY_TOOLS.has(tool);
+}
+
+// A call that changes something, sent before the connection to the host
+// dropped: it may or may not have run there, and it is not made again.
+export function outcomeUnknownAnswer(tool) {
+  return failure('outcome_unknown', `The connection to your FULI host dropped while ${tool} was running; it may or may not `
+    + 'have been applied there, and it was not sent again. Check with a read before you repeat it.');
+}
+
 // A queued checkpoint the host has now applied.
 export function deliveredAnswer(outboxId) {
   return envelope({ status: 'delivered', outboxId, runner: { offline: false,

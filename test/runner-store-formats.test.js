@@ -48,13 +48,16 @@ function beta1Store(path, format, records) {
   try { database.exec(records); } finally { database.close(); }
 }
 
+// Layout of the CREATE text does not matter, its content does (data-format-inventory.test.js).
+const statement = (sql) => String(sql ?? '').replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim();
+
 // The schema SQLite holds, without the ledger the engine owns, as the inventory test compares it.
 function schema(path) {
   const database = new DatabaseSync(path, { readOnly: true });
   try {
     return database.prepare(`SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'
       AND tbl_name <> 'fuli_format_ledger' ORDER BY type, name`).all()
-      .map((row) => [row.type, row.name, String(row.sql ?? '').replace(/s+/g, ' ').replace(/s*([(),])s*/g, '$1').trim()]);
+      .map((row) => [row.type, row.name, statement(row.sql)]);
   } finally { database.close(); }
 }
 
@@ -113,4 +116,17 @@ test('a beta.1 runner store reaches the current version with its pairing, answer
   store.close();
   assert.equal(version(path), RUNNER_FORMAT.version);
   assert.deepEqual(schema(path), freshSchema(t, RunnerStore), 'the upgraded store has exactly a fresh store schema');
+});
+
+test('the schema comparison above sees a store that differs from a fresh one', (t) => {
+  const path = join(directory(t), 'different.sqlite');
+  const store = new RunnerHostStore(path);
+  void store.db;
+  store.close();
+  assert.deepEqual(schema(path), freshSchema(t, RunnerHostStore));
+  const database = new DatabaseSync(path);
+  try { database.exec('ALTER TABLE runners ADD COLUMN synthetic_extra TEXT'); } finally { database.close(); }
+  assert.notDeepEqual(schema(path), freshSchema(t, RunnerHostStore));
+  // Layout alone is not a difference.
+  assert.equal(statement('CREATE TABLE a( x TEXT ,\n y TEXT )'), statement('CREATE TABLE a(x TEXT,y TEXT)'));
 });

@@ -34,7 +34,10 @@ const HOST_TOOLS = ['get_collaboration_preferences', 'checkpoint_task_knowledge'
 
 // serve: false pairs only; the caller starts the runner's MCP server itself.
 // replayHangs: the host takes an outbox entry and never answers it.
-async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs, serve = true, replayHangs = false } = {}) {
+// dropFirst: tool names whose first call the host takes and then drops with the session, as a restart does.
+async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs, serve = true, replayHangs = false,
+  dropFirst = [] } = {}) {
+  const drop = new Set(dropFirst);
   const host = deviceIdentity(await createDeviceCertificate());
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-away-')));
   const calls = [];
@@ -51,6 +54,14 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
       server.setRequestHandler(CallToolRequestSchema, (request) => {
         const { name, arguments: input } = request.params;
         calls.push({ name, input });
+        if (drop.delete(name)) {
+          // The connection drops with the call in flight: every socket goes, then the sessions.
+          setImmediate(() => {
+            for (const socket of state.sockets) socket.destroy();
+            void routes.keepRunners([]);
+          });
+          return new Promise(() => {});
+        }
         const value = name === 'get_collaboration_preferences'
           ? { effective_preferences: ['short answers'], taskContextToken: 'host-token-1', checkpoint_required: true,
             agent_receipt: { required: true, markdown: 'earlier task receipt' } }
@@ -66,9 +77,11 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
     } });
   // The host away: its listener stays bound (no port is closed and taken again)
   // and drops every request, as a host that went off the network does.
-  const state = { away: false };
+  const state = { away: false, sockets: new Set() };
   state.listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: (request, response, context) => {
+      state.sockets.add(request.socket);
+      request.socket.once('close', () => state.sockets.delete(request.socket));
       if (!state.away) return routes.handle(request, response, context);
       request.socket.destroy();
       return true;
@@ -310,4 +323,17 @@ test('a host that only restarted gets the call again on a fresh session, not an 
   assert.equal(answer.isError, undefined);
   assert.equal(answer.structuredContent?.runner?.offline, undefined, 'not an answer from cache');
   assert.deepEqual(runner.calls.at(-1), { name: 'search_current_project_knowledge', input: { query: 'after restart' } });
+});
+
+test('after a dropped session a read is made again on a fresh one; a call that changes something is not', async (t) => {
+  const runner = await pairedRunner(t, { dropFirst: ['search_current_project_knowledge', 'message_agent'] });
+
+  const read = await runner.client.callTool({ name: 'search_current_project_knowledge', arguments: { query: 'deploy steps' } });
+  assert.equal(read.isError, undefined);
+  assert.deepEqual(runner.calls.filter((call) => call.name === 'search_current_project_knowledge').length, 2, 'the read ran again');
+
+  const write = await runner.client.callTool({ name: 'message_agent', arguments: { to: 'synthetic-agent', body: 'synthetic ask' } });
+  assert.equal(write.isError, true);
+  assert.equal(JSON.parse(write.content[0].text).code, 'outcome_unknown');
+  assert.equal(runner.calls.filter((call) => call.name === 'message_agent').length, 1, 'the write was not repeated');
 });

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
@@ -784,6 +785,8 @@ test('a session woken for a runner\'s ask holds its own asks the same way, one h
   await runAsRunnerCall('runner-fingerprint-1', () => fromRunner.roundtable.messageAgent(ask));
   assert.equal(fromRunner.woken[0].origin, 'runner', 'the wake carries where its ask came from');
   assert.notEqual(fromRunner.woken[0].cwd, process.cwd(), 'a fresh session for a runner never starts in the console\'s folder');
+  assert.match(fromRunner.woken[0].cwd, /fuli-roundtable-wake-/);
+  assert.equal(existsSync(fromRunner.woken[0].cwd), false, 'the fallback folder made for that wake is gone after it');
 
   // The FLA woken above runs its own FULI with the origin its wake carried, and asks its report.
   const woken = fixture({ env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-grant', FULI_ROUNDTABLE_ORIGIN: 'runner' } });

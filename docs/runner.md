@@ -147,10 +147,14 @@ checkpoint but before recording it applies that checkpoint twice; one console
 per data directory makes this rare. Closing the runner's MCP process cuts a
 delivery in flight; its entry stays queued.
 
-When a call fails because the host ended the session, the runner asks `hello`
-at the addresses it knows (not over mDNS). If the host answers (it only
-restarted), the call is made once more on a fresh session; a call that timed
-out is not, as it may have run.
+When a call fails because the host ended the session or the connection
+dropped, the runner asks `hello` at the addresses it knows (not over mDNS). If
+the host answers (it only restarted), a read, a task entry (a second one only
+supersedes the first) or a checkpoint (applied once under its entry id) is made
+once more on a fresh session. A call that changes
+something else is not repeated, since the host may already have run it: it
+answers `outcome_unknown`, so the Agent checks with a read before trying again.
+A call that timed out is never repeated.
 
 ## What a runner keeps
 

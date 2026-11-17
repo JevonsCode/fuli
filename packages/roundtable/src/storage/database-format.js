@@ -39,8 +39,9 @@ const BACKUP_PROCESS = fileURLToPath(new URL('./database-backup-process.js', imp
 // no row needs it; any other kind always waits for a person.
 // replace-table drops one table and creates it again from its CREATE
 // statement (a changed key SQLite cannot alter). Its rows are discarded, so a
-// store declares it only for a table whose rows nothing needs (its summary
-// says so); the format backup before every upgrade still holds them.
+// store declares it only for a table whose rows nothing needs and says why in
+// discardsRows; the format backup before every upgrade still holds them, and
+// no confirmed migration before it can be undone.
 const AUTOMATIC_KINDS = new Set(['add-columns', 'add-table', 'replace-table']);
 const KINDS = new Set(['add-columns', 'add-table', 'backfill', 'replace-table']);
 const CREATES_TABLE = new Set(['add-table', 'replace-table']);
@@ -64,6 +65,9 @@ export function sqliteFormat({ store, schema, migrations = [], pragmas = '', rea
     }
     if (CREATES_TABLE.has(migration.kind) !== (typeof migration.create === 'string')) {
       throw new TypeError(`${migration.id}: an add-table or replace-table step, and only one, carries its CREATE statement`);
+    }
+    if ((migration.kind === 'replace-table') !== (typeof migration.discardsRows === 'string' && migration.discardsRows.trim() !== '')) {
+      throw new TypeError(`${migration.id}: a replace-table step, and only one, says in discardsRows why nothing needs the rows it drops`);
     }
     for (const type of Object.values(migration.columns ?? {})) {
       if (/\bNOT NULL\b/i.test(type) && !/\bDEFAULT\b/i.test(type)) {
@@ -314,7 +318,7 @@ function classifyMigrations(database, format, version, reached) {
 function appliedDetail(migration) {
   if (migration.kind === 'backfill') return 'added columns; no existing row needed a backfill';
   if (migration.kind === 'add-table') return `created ${migration.table}`;
-  if (migration.kind === 'replace-table') return `replaced ${migration.table}; its earlier rows were not kept`;
+  if (migration.kind === 'replace-table') return `replaced ${migration.table}; its earlier rows were not kept (${migration.discardsRows})`;
   return `added ${Object.keys(migration.columns).join(', ')}`;
 }
 
