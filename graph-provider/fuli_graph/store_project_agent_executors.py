@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
 from .personal_project_access import authorize_personal_project
 from .project_agent_executor_models import (
     ProjectAgentExecutorActualReport,
@@ -1057,6 +1058,7 @@ class StoreProjectAgentExecutors(
                   (agent:FuliProjectAgent)
             WHERE agent.test_source = $test_source
               AND coalesce(agent.cleanup_eligible, false) = true
+              AND NOT agent.agent_id IN $fixed_roles
             WITH space, agent
             ORDER BY agent.agent_id
             SET agent._task_lifecycle_lock = true
@@ -1101,6 +1103,8 @@ class StoreProjectAgentExecutors(
             ''',
             personal_space_id=personal_space_id,
             test_source=test_source,
+            # A fixed role is never a test identity, whatever its profile was given.
+            fixed_roles=list(SYSTEM_ROLE_AGENT_IDS),
             updated_at=now_utc(),
         )
         return int(records[0].get('archived_count', 0)) if records else 0
