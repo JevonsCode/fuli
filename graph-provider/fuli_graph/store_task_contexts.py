@@ -51,7 +51,13 @@ def shown_task_title(board_title, work_log_json):
 
     A task context keeps no prompt, so a task without either has no title.
     """
-    summary = (json.loads(work_log_json or 'null') or {}).get('summary')
+    # A work log that does not read leaves the title to the board alone: the
+    # tray read must not fail on one task's record.
+    try:
+        log = json.loads(work_log_json or 'null')
+    except ValueError:
+        log = None
+    summary = log.get('summary') if isinstance(log, dict) else None
     for text in (board_title, summary):
         line = next((part.strip() for part in (text or '').splitlines() if part.strip()), '')
         if line:
