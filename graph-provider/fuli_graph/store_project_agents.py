@@ -25,6 +25,7 @@ from .project_agent_names import agent_display_name
 from .store_transactions import query_store_transaction
 from .store_project_agent_naming import with_person_name, with_rename_suggestion
 from .store_project_agent_occupation import occupation_from_agent_node
+from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import active_occupation_predicate, occupation_error, require_active_occupations
 from .system_agents import (
@@ -117,13 +118,12 @@ class StoreProjectAgents:
                 status_code=422,
                 detail='the system AR identity cannot change Agent type',
             )
-        if (
-            request.agent_id in (SYSTEM_HR_AGENT_ID, SYSTEM_COORDINATOR_AGENT_ID)
-            and request.profile.status != 'active'
-        ):
+        # None of the four can be switched off through its profile: a stored
+        # inactive Tonborg answers no judgment until the roles are ensured again.
+        if request.agent_id in SYSTEM_ROLE_AGENT_IDS and request.profile.status != 'active':
             raise HTTPException(
                 status_code=422,
-                detail='the project manager and AR must remain active',
+                detail='the fixed roles must remain active',
             )
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         if request.personal_project_id:
