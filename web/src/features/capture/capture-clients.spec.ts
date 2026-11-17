@@ -21,7 +21,9 @@ describe('capture clients', () => {
       ['cursor', 'not_connected', 'cursor', 'Cursor'], ['claude-desktop', 'connected', 'claude', 'Claude Desktop'], ['kiro', 'connected', 'kiro', 'Kiro'],
       ['gemini', 'connected', null, 'Gemini CLI']], [{ id: 'acme-agent', label: 'Acme Agent' }]), {})
     expect(sources(shown)).toEqual(['claude_code', 'cursor', 'claude', 'kiro', 'other'])
-    expect(shown.find(({ source }) => source === 'claude')!.label).toBe('Claude Desktop')
+    // `claude` also records the claude.ai / Cowork remote connector, so its switch is not named Claude Desktop alone.
+    expect(shown.find(({ source }) => source === 'claude')!.label).toBe('Claude')
+    expect(shown.find(({ source }) => source === 'kiro')!.label).toBe('Kiro')
     // `other` names the clients it stands for on this machine.
     expect(shown.at(-1)!.covers).toEqual(['Gemini CLI', 'Acme Agent'])
   })

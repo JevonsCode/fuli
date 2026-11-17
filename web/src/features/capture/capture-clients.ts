@@ -18,7 +18,12 @@ export const CONVERSATION_SOURCES: ReadonlySet<CaptureSource> = new Set(['claude
 
 // A source's name when no client on this machine names it.
 const DEFAULT_LABELS: Readonly<Record<CaptureSource, string>> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor',
-  opencode: 'OpenCode', dsh: 'DeepSeek Harness', claude: 'Claude Desktop', kiro: 'Kiro', antigravity: 'Antigravity', other: '' }
+  opencode: 'OpenCode', dsh: 'DeepSeek Harness', claude: 'Claude', kiro: 'Kiro', antigravity: 'Antigravity', other: '' }
+
+// `claude` records Claude Desktop and the claude.ai / Cowork remote connector
+// (src/cli/remote-mcp-command.js, src/mcp/remote-http-server.js), so its switch
+// is always named Claude and its note names both (settings.behavior.captureClaudeCovers).
+const ALWAYS_DEFAULT_LABEL: ReadonlySet<CaptureSource> = new Set(['claude'])
 
 // One switch: its source, its name, and for `other` the clients it covers here.
 export type CaptureClient = { source: CaptureSource, label: string, covers: string[] }
@@ -60,6 +65,6 @@ export function shownCaptureClients(detection: ClientDetection | null,
       const labels = [...new Set(names.get(source) ?? [])]
       return source === 'other'
         ? { source, label: '', covers: labels }
-        : { source, label: labels.length === 1 ? labels[0]! : DEFAULT_LABELS[source], covers: [] }
+        : { source, label: labels.length === 1 && !ALWAYS_DEFAULT_LABEL.has(source) ? labels[0]! : DEFAULT_LABELS[source], covers: [] }
     })
 }

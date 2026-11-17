@@ -40,11 +40,14 @@ async function detectClients() {
 function captureLabel(client: CaptureClient) {
   return client.source === 'other' ? t('settings.behavior.captureOther') : client.label
 }
-// A client whose conversations FULI does not read: the switch only governs what its Agent writes.
-function captureNote(client: CaptureClient) {
-  const covers = client.covers.length ? t('settings.behavior.captureOtherCovers', { clients: client.covers.join('、') }) : ''
+// What a switch covers (`claude` is Claude Desktop and the remote connector), and for a
+// client whose conversations FULI does not read, that it only governs what its Agent writes.
+// One line each, so each stays short.
+function captureNotes(client: CaptureClient) {
+  const covers = client.source === 'claude' ? t('settings.behavior.captureClaudeCovers')
+    : client.covers.length ? t('settings.behavior.captureOtherCovers', { clients: client.covers.join('、') }) : ''
   const toolsOnly = CONVERSATION_SOURCES.has(client.source) ? '' : t('settings.behavior.captureToolsOnly')
-  return [covers, toolsOnly].filter(Boolean).join(' · ')
+  return [covers, toolsOnly].filter(Boolean)
 }
 
 function toggleClientCapture(source: string, capture: boolean) {
@@ -75,7 +78,7 @@ usePageRefresh(detectClients)
           <GrowthLoading v-if="detectingClients" variant="inline" class="setting-note" :label="t('settings.behavior.captureClientsLoading')" />
           <template v-else>
             <label v-for="client in captureClients" :key="client.source" class="setting-row setting-row-nested" :data-capture-source="client.source">
-              <span><strong>{{ captureLabel(client) }}</strong><small v-if="captureNote(client)">{{ captureNote(client) }}</small></span>
+              <span><strong>{{ captureLabel(client) }}</strong><small v-for="note in captureNotes(client)" :key="note">{{ note }}</small></span>
               <Switch :model-value="!captureSourceOff(captureSources, client.source)" :aria-label="captureLabel(client)"
                 @update:model-value="toggleClientCapture(client.source, $event)" />
             </label>

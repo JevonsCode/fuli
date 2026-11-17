@@ -695,7 +695,8 @@ describe('SettingsPage', () => {
     // The same clients as the client card: one without a capture adapter switches what its Agent writes.
     expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor', 'claude', 'other'])
     expect(card.get('[data-capture-source="cursor"] [role="switch"]').attributes('aria-checked')).toBe('false')
-    expect(card.get('[data-capture-source="claude"]').text()).toContain('Claude Desktop')
+    expect(card.get('[data-capture-source="claude"] strong').text()).toBe('Claude')
+    expect(card.get('[data-capture-source="claude"]').text()).toContain('包括 Claude Desktop 和 claude.ai / Cowork 远程连接器')
     expect(card.get('[data-capture-source="claude"]').text()).toContain('不读取对话')
     expect(card.get('[data-capture-source="claude_code"]').text()).not.toContain('不读取对话')
     expect(card.get('[data-capture-source="other"]').text()).toContain('其他客户端')

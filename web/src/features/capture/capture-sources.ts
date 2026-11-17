@@ -13,14 +13,16 @@ const OTHER_ALIASES = ['opencode', 'antigravity', 'dsh']
 // An explicit on overrides a legacy alias without enabling its other clients.
 // An explicit off removes that override and names the client in disabledSources.
 // Turning `other` off keeps on the clients it used to stand for that are on now,
-// so its own switch never turns OpenCode, Antigravity or DeepSeek Harness off.
+// and turning it on keeps off the ones that are off now, so its own switch never
+// turns OpenCode, Antigravity or DeepSeek Harness off or on.
 export function withCaptureSource(policy: CaptureSources, source: string, capture: boolean) {
   const disabled = (policy.disabledSources ?? []).filter(value => value !== source)
   const captured = (policy.capturedSources ?? []).filter(value => value !== source)
-  const keptOn = source === 'other' && !capture
-    ? OTHER_ALIASES.filter(alias => !captured.includes(alias) && !captureSourceOff(policy, alias)) : []
+  const aliases = source === 'other' ? OTHER_ALIASES : []
+  const keptOn = capture ? [] : aliases.filter(alias => !captured.includes(alias) && !captureSourceOff(policy, alias))
+  const keptOff = capture ? aliases.filter(alias => !disabled.includes(alias) && captureSourceOff(policy, alias)) : []
   return {
-    disabledSources: capture ? disabled : [...disabled, source],
+    disabledSources: capture ? [...disabled, ...keptOff] : [...disabled, source],
     capturedSources: capture ? [...captured, source] : [...captured, ...keptOn],
   }
 }
