@@ -66,6 +66,32 @@ void main() {
     ]);
   });
 
+  test('an assistant line reads name · project：task · when, each cut to fit', () {
+    final glance = Glance(
+      assistants: GlanceSection([
+        const AssistantAtWork(
+            name: 'Synthetic Lead', working: true, project: 'synthetic', task: 'Fix the tray wording', link: 'fuli://agents/s/lead'),
+        AssistantAtWork(
+            name: 'Synthetic Tester',
+            working: false,
+            at: DateTime(2026, 11, 16, 9, 5),
+            project: 'A synthetic project with a long name',
+            task: 'Check every line of the synthetic menu on both systems',
+            link: 'fuli://agents/s/tester'),
+        const AssistantAtWork(name: 'Synthetic Solo', working: true, project: 'synthetic', link: 'fuli://agents/s/solo'),
+        const AssistantAtWork(name: 'Synthetic Errand', working: true, task: 'An errand', link: 'fuli://agents/s/errand'),
+      ]),
+      roundtables: const GlanceSection([]),
+    );
+    expect(lines(zh, glance: glance).skip(1).map((line) => line.$1), [
+      'Synthetic Lead · synthetic：Fix the tray wording · 进行中',
+      'Synthetic Tester · A synthetic…：Check every line of the… · 09:05',
+      'Synthetic Solo · synthetic · 进行中',
+      'Synthetic Errand · An errand · 进行中',
+    ]);
+    expect(lines(en, glance: glance).elementAt(1).$1, 'Synthetic Lead · synthetic: Fix the tray wording · working now');
+  });
+
   test('as many open requests as the client reads are shown as that many or more', () {
     expect(lines(zh, waitingRequests: 19).single.$1, '19 个请求等你处理');
     expect(lines(zh, waitingRequests: 20).single.$1, '20+ 个请求等你处理');

@@ -7,8 +7,10 @@ import { singleLineExcerpt } from '../text/single-line.js';
 // works wherever a client session begins a task as it, so the rows come from
 // the task entries, not from the task board. A day is dozens of entries, so the
 // menu gets the few rows it can hold and how many more there are, never the
-// history, and no prompt or summary text. Each row names the console page it
-// opens as a fuli:// link.
+// history. An assistant's row also names the project of the task it is on and
+// a short title of it (its board task's, else the first line of its work
+// summary; no prompt is kept), shown only in this computer's own menu, never
+// logged. Each row names the console page it opens as a fuli:// link.
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const THREADS_READ = 30;
@@ -37,8 +39,25 @@ async function assistantsSection(app, personalSpaceId, since) {
   const worked = await app.personal.recentWorkingAgents({ personalSpaceId, since });
   // At work now first; within each, the latest first as the Provider sent them.
   const ordered = [...worked.filter((agent) => agent.working), ...worked.filter((agent) => !agent.working)];
-  const { rows, read } = await named(app, personalSpaceId, ordered);
-  return section(rows, ordered.length - read, ALL_ASSISTANTS);
+  // One read names every row's project; without it the rows keep their names.
+  const [{ rows, read }, projectName] = await Promise.all([
+    named(app, personalSpaceId, ordered),
+    ordered.length ? projectNames(app, personalSpaceId) : () => null
+  ]);
+  return section(rows.map(({ projectId, ...row }) => ({ ...row, project: projectName(projectId) })),
+    ordered.length - read, ALL_ASSISTANTS);
+}
+
+// A project's shown name by its id; null for one that cannot be read.
+async function projectNames(app, personalSpaceId) {
+  let projects = [];
+  try {
+    projects = await app.listPersonalProjects({ personalSpaceId });
+  } catch {
+    // The rows keep their names and tasks.
+  }
+  const names = new Map(projects.map((project) => [project.project_id, shownText(project.profile?.name, NAME_CHARS)]));
+  return (projectId) => names.get(projectId) || null;
 }
 
 async function roundtablesSection(app, since) {
@@ -82,7 +101,8 @@ async function named(app, personalSpaceId, agents) {
     batch.forEach((agent, index) => {
       const profile = records[index].status === 'fulfilled' ? records[index].value.profile : null;
       const name = shownText(profile?.displayName || profile?.name, NAME_CHARS);
-      if (name) rows.push({ name, working: agent.working, at: agent.last_active,
+      if (name) rows.push({ name, projectId: agent.personal_project_id ?? null, task: shownText(agent.title, SUBJECT_CHARS) || null,
+        working: agent.working, at: agent.last_active,
         link: `fuli://agents/${encodeURIComponent(personalSpaceId)}/${encodeURIComponent(agent.agent_id)}` });
     });
   }

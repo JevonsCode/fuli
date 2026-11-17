@@ -60,8 +60,12 @@ class Strings {
   String get assistantsAtWork => _t('近 24 小时干过活的助手', 'Assistants at work in the last 24 hours');
   String get workingNow => _t('进行中', 'working now');
   String yesterdayAt(String clock) => _t('昨天 $clock', 'yesterday $clock');
-  // [when] is empty when the time is not known.
-  String assistantAtWork(String name, String when) => when.isEmpty ? name : '$name · $when';
+  // Name · project：task · when. [project] and [task] are null and [when] is
+  // empty when not known; what is not known is left out.
+  String assistantAtWork(String name, String when, {String? project, String? task}) {
+    final work = project != null && task != null ? '$project${_t('：', ': ')}$task' : project ?? task;
+    return [name, ?work, if (when.isNotEmpty) when].join(' · ');
+  }
   String get roundtablesUnderWay => _t('圆桌讨论中', 'Roundtables under way');
   String roundtableUnderWay(String subject, bool replying, List<String> waitingFor) {
     final state = replying
