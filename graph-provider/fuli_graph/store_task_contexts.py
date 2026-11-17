@@ -42,6 +42,31 @@ def foreign_client_detail(begun_in, used_in):
         'including checkpoint_task_knowledge.')
 
 
+# What the tray menu holds of a task's title; it cuts further to fit.
+TASK_TITLE_CHARS = 60
+
+
+def shown_task_title(board_title, work_log_json):
+    """A task's board title, else the first line of its work summary, cut short.
+
+    A task context keeps no prompt, so a task without either has no title.
+    """
+    # A work log that does not read leaves the title to the board alone: the
+    # tray read must not fail on one task's record.
+    try:
+        log = json.loads(work_log_json or 'null')
+    except ValueError:
+        log = None
+    summary = log.get('summary') if isinstance(log, dict) else None
+    if not isinstance(summary, str):
+        summary = None
+    for text in (board_title, summary):
+        line = next((part.strip() for part in (text or '').splitlines() if part.strip()), '')
+        if line:
+            return line[:TASK_TITLE_CHARS]
+    return None
+
+
 class StoreTaskContexts:
     async def adopt_task_context_agent(self, actor, token, request):
         async with query_store_transaction(self) as scoped:
@@ -232,10 +257,11 @@ class StoreTaskContexts:
 
     async def recent_working_agents(self, actor, space_id, since):
         """Each Agent that began a task since `since`, the latest first: when its
-        latest task began and whether one of them is under way (its session's
-        current task, not yet closed). The tray menu asks every few seconds, so
-        the read starts from the space's task index and looks up a session only
-        for the tasks in the window."""
+        latest task began, whether one of them is under way (its session's
+        current task, not yet closed), and the project and a short title of the
+        task it is on (the latest under way, else the latest). The tray menu
+        asks every few seconds, so the read starts from the space's task index
+        and looks up a session only for the tasks in the window."""
         self._require_personal()
         await self.authorize(actor, space_id, 'reader')
         rows, _, _ = await self.runtime.driver.execute_query(
@@ -243,14 +269,22 @@ class StoreTaskContexts:
             MATCH (task:FuliTaskContext {personal_space_id: $space_id})
             WHERE task.project_agent_id IS NOT NULL AND task.created_at >= $since
             MATCH (session:FuliTaskContextSession)-[:HAS_CONTEXT]->(task)
-            RETURN task.project_agent_id AS agent_id, max(task.created_at) AS last_active,
-                   sum(CASE WHEN task.token = session.current_token
-                                 AND NOT coalesce(task.completed, false) THEN 1 ELSE 0 END) > 0 AS working
+            WITH task, coalesce(task.token = session.current_token, false)
+                       AND NOT coalesce(task.completed, false) AS under_way
+            ORDER BY under_way DESC, task.created_at DESC
+            WITH task.project_agent_id AS agent_id, max(task.created_at) AS last_active,
+                 sum(CASE WHEN under_way THEN 1 ELSE 0 END) > 0 AS working, collect(task)[0] AS shown
+            RETURN agent_id, last_active, working, shown.personal_project_id AS project_id,
+                   CASE WHEN shown.scrubbed_by IS NULL THEN head([(shown)-[:COORDINATES_TASK]->
+                       (linked:FuliProjectAgentTask) | linked.title]) END AS board_title,
+                   CASE WHEN shown.scrubbed_by IS NULL THEN shown.work_log_json END AS work_log_json
             ORDER BY last_active DESC, agent_id
             ''', space_id=space_id, since=since, routing_='r',
         )
         return [{'agent_id': row['agent_id'], 'working': row['working'],
-                 'last_active': native_datetime(row['last_active']).isoformat()} for row in rows]
+                 'last_active': native_datetime(row['last_active']).isoformat(),
+                 'personal_project_id': row['project_id'],
+                 'title': shown_task_title(row['board_title'], row['work_log_json'])} for row in rows]
 
     async def get_task_context(self, actor, space_id, token, source_application):
         self._require_personal()

@@ -8,17 +8,24 @@ import { handleDesktopGlanceRequest } from '../src/http/desktop-glance-api-route
 const NOW = Date.parse('2026-11-16T12:00:00.000Z');
 const SPACE = 'synthetic space';
 const ago = (hours) => new Date(NOW - hours * 60 * 60 * 1000).toISOString();
-const worked = (agentId, hours, working = false) => ({ agent_id: agentId, last_active: ago(hours), working });
+const worked = (agentId, hours, working = false, task = {}) =>
+  ({ agent_id: agentId, last_active: ago(hours), working, personal_project_id: null, title: null, ...task });
 const thread = (id, hours, state = {}) =>
   ({ id, subject: `Subject of ${id}`, updatedAt: ago(hours), waiting: true, replying: false, waitingFor: [], ...state });
 
-// `agents`: what the Provider answers, the latest first; `names`: the assistants that can be read.
-function syntheticApp({ agents = [], threads = [], names = {} } = {}) {
+// `agents`: what the Provider answers, the latest first; `names`: the assistants that can be read;
+// `projects`: the space's projects, or null when they cannot be read.
+function syntheticApp({ agents = [], threads = [], names = {}, projects = [] } = {}) {
   const asked = [];
   return {
     asked,
     config: { personal: { spaceId: SPACE } },
     personal: { recentWorkingAgents: async (input) => { asked.push(input); return agents; } },
+    listPersonalProjects: async (input) => {
+      asked.push({ projects: input });
+      if (!projects) throw new Error('synthetic: projects unreadable');
+      return projects;
+    },
     getProjectAgent: async ({ agentId }) => {
       if (!names[agentId]) throw new Error('synthetic: no such assistant');
       return { agentId, profile: names[agentId] };
@@ -35,9 +42,9 @@ test('the glance names each assistant that began a task in the last day, the one
   const glance = await desktopGlance({ app, now: () => NOW });
 
   assert.deepEqual(glance.assistants.rows, [
-    { name: 'Synthetic Busy', working: true, at: ago(2), link: 'fuli://agents/synthetic%20space/busy%2Flead' },
-    { name: 'Synthetic Late', working: true, at: ago(20), link: 'fuli://agents/synthetic%20space/late-lead' },
-    { name: 'Synthetic Done', working: false, at: ago(1), link: 'fuli://agents/synthetic%20space/done-lead' }
+    { name: 'Synthetic Busy', task: null, working: true, at: ago(2), link: 'fuli://agents/synthetic%20space/busy%2Flead', project: null },
+    { name: 'Synthetic Late', task: null, working: true, at: ago(20), link: 'fuli://agents/synthetic%20space/late-lead', project: null },
+    { name: 'Synthetic Done', task: null, working: false, at: ago(1), link: 'fuli://agents/synthetic%20space/done-lead', project: null }
   ], 'the assistant that cannot be read has no row');
   assert.equal(glance.assistants.more, 0);
   assert.equal(glance.assistants.link, 'fuli://project-agents');
@@ -53,6 +60,54 @@ test('the glance holds five assistants and says how many more worked', async () 
   const { assistants } = await desktopGlance({ app, now: () => NOW });
   assert.deepEqual(assistants.rows.map((row) => row.name), ['a', 'b', 'c', 'd', 'e'].map((lead) => `Synthetic ${lead}`));
   assert.equal(assistants.more, 2);
+});
+
+test('each assistant row names its project with one project read and a short clean title of its task', async () => {
+  const app = syntheticApp({
+    agents: [
+      worked('lead', 1, true, { personal_project_id: 'synthetic-app', title: 'Fix\nthe\ttray\u202e wording\u0007 now' }),
+      worked('tester', 2, false, { personal_project_id: 'synthetic-app', title: 'Long '.repeat(20) }),
+      worked('stray', 3, false, { personal_project_id: 'gone-project', title: '   ' })
+    ],
+    names: { lead: { name: 'Synthetic Lead' }, tester: { name: 'Synthetic Tester' }, stray: { name: 'Synthetic Stray' } },
+    projects: [{ project_id: 'synthetic-app', profile: { name: 'Synthetic\nApp' } }, { project_id: 'other', profile: { name: 'Other' } }]
+  });
+  const { assistants } = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(app.asked.filter((input) => input.projects), [{ projects: { personalSpaceId: SPACE } }], 'one project read for all rows');
+  const [lead, tester, stray] = assistants.rows;
+  assert.deepEqual([lead.name, lead.project, lead.task], ['Synthetic Lead', 'Synthetic App', 'Fix the tray wording now']);
+  assert.equal(tester.project, 'Synthetic App');
+  assert.ok(tester.task.length <= 60 && tester.task.endsWith('…'), tester.task);
+  assert.deepEqual([stray.name, stray.project, stray.task], ['Synthetic Stray', null, null], 'an unknown project and a blank title leave the name');
+});
+
+test('projects that cannot be read leave each row its name and task', async () => {
+  const app = syntheticApp({
+    agents: [worked('lead', 1, true, { personal_project_id: 'synthetic-app', title: 'Synthetic task' })],
+    names: { lead: { name: 'Synthetic Lead' } },
+    projects: null
+  });
+  const { assistants } = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(assistants.rows.map((row) => [row.name, row.project, row.task]), [['Synthetic Lead', null, 'Synthetic task']]);
+});
+
+test('a task the Stop hook closed shows no task text, only the boilerplate is dropped', async () => {
+  const app = syntheticApp({
+    agents: [
+      worked('closed', 1, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed by the Stop hook: the Agent recorded no checkpoint for this task.'.slice(0, 60) }),
+      worked('kept', 2, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed by the Stop hook: the Agent recorded no checkpoint; FULI kept' }),
+      worked('real', 3, false, { personal_project_id: 'synthetic-app', title: 'Auto-closed tray wording' })],
+    names: { closed: { name: 'Synthetic Closed' }, kept: { name: 'Synthetic Kept' }, real: { name: 'Synthetic Real' } }
+  });
+  const { assistants } = await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(assistants.rows.map((row) => [row.name, row.task]),
+    [['Synthetic Closed', null], ['Synthetic Kept', null], ['Synthetic Real', 'Auto-closed tray wording']]);
+});
+
+test('no assistant at work reads no projects', async () => {
+  const app = syntheticApp();
+  await desktopGlance({ app, now: () => NOW });
+  assert.deepEqual(app.asked.filter((input) => input.projects), []);
 });
 
 test('the glance lists roundtable threads with an ask still open that moved in the last day', async () => {

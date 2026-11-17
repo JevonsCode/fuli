@@ -41,8 +41,12 @@ class GlanceSection<Row> {
 }
 
 class AssistantAtWork {
-  const AssistantAtWork({required this.name, required this.working, required this.link, this.at});
+  const AssistantAtWork({required this.name, required this.working, required this.link, this.at, this.project, this.task});
   final String name;
+
+  /// The project of the task it is on, and a short title of that task; null when not known.
+  final String? project;
+  final String? task;
 
   /// A task it began is under way.
   final bool working;
@@ -61,9 +65,13 @@ class AssistantAtWork {
       working: row['working'] == true,
       link: link,
       at: at is String ? DateTime.tryParse(at) : null,
+      project: _text(row['project']),
+      task: _text(row['task']),
     );
   }
 }
+
+String? _text(Object? value) => value is String && value.isNotEmpty ? value : null;
 
 class RoundtableUnderWay {
   const RoundtableUnderWay({required this.subject, required this.replying, required this.waitingFor, required this.link});

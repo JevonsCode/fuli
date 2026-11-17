@@ -51,9 +51,16 @@ void main() {
     final api = apiAnswering((_) => json({
           'assistants': {
             'rows': [
-              {'name': 'Synthetic Lead', 'working': true, 'at': '2026-11-16T04:00:00.000Z', 'link': 'fuli://agents/s/lead'},
+              {
+                'name': 'Synthetic Lead',
+                'working': true,
+                'at': '2026-11-16T04:00:00.000Z',
+                'project': 'Synthetic App',
+                'task': 'Synthetic task',
+                'link': 'fuli://agents/s/lead',
+              },
               {'working': true, 'link': 'fuli://agents/s/nameless'},
-              {'name': 'Synthetic Tester', 'link': 'fuli://agents/s/tester'},
+              {'name': 'Synthetic Tester', 'project': null, 'task': '', 'link': 'fuli://agents/s/tester'},
               'not a row',
             ],
             'more': 3,
@@ -68,9 +75,9 @@ void main() {
         }));
     final glance = await api.glance();
     expect(requests.single.url.toString(), 'http://127.0.0.1:$port/api/desktop/glance');
-    expect(glance.assistants.rows.map((row) => (row.name, row.working, row.at?.toUtc().hour, row.link)), [
-      ('Synthetic Lead', true, 4, 'fuli://agents/s/lead'),
-      ('Synthetic Tester', false, null, 'fuli://agents/s/tester'),
+    expect(glance.assistants.rows.map((row) => (row.name, row.working, row.at?.toUtc().hour, row.project, row.task, row.link)), [
+      ('Synthetic Lead', true, 4, 'Synthetic App', 'Synthetic task', 'fuli://agents/s/lead'),
+      ('Synthetic Tester', false, null, null, null, 'fuli://agents/s/tester'),
     ]);
     expect((glance.assistants.more, glance.assistants.link), (3, 'fuli://project-agents'));
     expect(glance.roundtables.rows.map((row) => (row.subject, row.replying, row.waitingFor.join('+'), row.link)), [

@@ -58,8 +58,11 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
 - Under 「打开 FULI」 the tray menu shows what FULI is doing, read at each check
   (`GET /api/desktop/glance`, `src/desktop-glance/glance.js`; `lib/src/app/tray_view.dart` words the
   lines): how many requests wait for the person, the assistants that began a task in the last 24
-  hours (at most five, the ones at work now first, each with 「进行中」 or the time its latest task
-  began) and the roundtable threads with an ask still open (at most three). A line opens its console
+  hours (at most five, the ones at work now first, each as 「名字 · 项目：在做的事」 with 「进行中」
+  or the time its latest task began; the task is its board task's title, else the first line of its
+  work summary, since FULI keeps no prompt) and the roundtable threads with an ask still open (at
+  most three). The rows carry no avatar: tray_manager 0.5.3 passes only a menu item's label, type,
+  checked and enabled state to the Windows and macOS menus. A line opens its console
   page through its `fuli://` link; a section with nothing says nothing, and a FULI from before the
   glance keeps the plain menu. The menu is as fresh as the last check, so it can lag by that long.
 - Checks every 15 s while the window is visible and every 120 s while hidden, backing off when the

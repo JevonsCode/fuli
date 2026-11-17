@@ -1,3 +1,4 @@
+import { AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON } from '../conversations/stop-auto-close.js';
 import { withoutControls } from '../text/control-characters.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 
@@ -7,8 +8,10 @@ import { singleLineExcerpt } from '../text/single-line.js';
 // works wherever a client session begins a task as it, so the rows come from
 // the task entries, not from the task board. A day is dozens of entries, so the
 // menu gets the few rows it can hold and how many more there are, never the
-// history, and no prompt or summary text. Each row names the console page it
-// opens as a fuli:// link.
+// history. An assistant's row also names the project of the task it is on and
+// a short title of it (its board task's, else the first line of its work
+// summary; no prompt is kept), shown only in this computer's own menu, never
+// logged. Each row names the console page it opens as a fuli:// link.
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const THREADS_READ = 30;
@@ -37,8 +40,25 @@ async function assistantsSection(app, personalSpaceId, since) {
   const worked = await app.personal.recentWorkingAgents({ personalSpaceId, since });
   // At work now first; within each, the latest first as the Provider sent them.
   const ordered = [...worked.filter((agent) => agent.working), ...worked.filter((agent) => !agent.working)];
-  const { rows, read } = await named(app, personalSpaceId, ordered);
-  return section(rows, ordered.length - read, ALL_ASSISTANTS);
+  // One read names every row's project; without it the rows keep their names.
+  const [{ rows, read }, projectName] = await Promise.all([
+    named(app, personalSpaceId, ordered),
+    ordered.length ? projectNames(app, personalSpaceId) : () => null
+  ]);
+  return section(rows.map(({ projectId, ...row }) => ({ ...row, project: projectName(projectId) })),
+    ordered.length - read, ALL_ASSISTANTS);
+}
+
+// A project's shown name by its id; null for one that cannot be read.
+async function projectNames(app, personalSpaceId) {
+  let projects = [];
+  try {
+    projects = await app.listPersonalProjects({ personalSpaceId });
+  } catch {
+    // The rows keep their names and tasks.
+  }
+  const names = new Map(projects.map((project) => [project.project_id, shownText(project.profile?.name, NAME_CHARS)]));
+  return (projectId) => names.get(projectId) || null;
 }
 
 async function roundtablesSection(app, since) {
@@ -58,6 +78,12 @@ const section = (rows, more, link) => ({ rows, more, link });
 // A menu label is one short line a person can read: names come from profiles an
 // Agent wrote and from paired computers, so line breaks, tabs (a shortcut column
 // on Windows), hidden or reordering characters and length are taken out here.
+// A task the Stop hook closed has its English boilerplate as its summary: that
+// says nothing of what the assistant did, so the row shows no task text. The
+// Provider cuts a title to 60 characters, so a cut copy is caught too.
+const BOILERPLATE = [AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON];
+const taskTitle = (title) => (typeof title === 'string' && BOILERPLATE.some((text) => text.startsWith(title.trim())) ? null : title);
+
 const shownText = (value, limit) => singleLineExcerpt(withoutControls(value), limit);
 
 // Who a thread waits for: the first names and how many more.
@@ -82,7 +108,8 @@ async function named(app, personalSpaceId, agents) {
     batch.forEach((agent, index) => {
       const profile = records[index].status === 'fulfilled' ? records[index].value.profile : null;
       const name = shownText(profile?.displayName || profile?.name, NAME_CHARS);
-      if (name) rows.push({ name, working: agent.working, at: agent.last_active,
+      if (name) rows.push({ name, projectId: agent.personal_project_id ?? null, task: shownText(taskTitle(agent.title), SUBJECT_CHARS) || null,
+        working: agent.working, at: agent.last_active,
         link: `fuli://agents/${encodeURIComponent(personalSpaceId)}/${encodeURIComponent(agent.agent_id)}` });
     });
   }

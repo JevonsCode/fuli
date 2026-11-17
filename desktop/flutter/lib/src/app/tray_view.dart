@@ -6,8 +6,10 @@ import 'fuli_condition.dart';
 
 // 今天, where 等你拍板 lists the open requests (the console sends /workbench there).
 const _todayLink = 'fuli://workbench';
-// A menu line stays short: a subject past this many characters is cut.
+// A menu line stays short: a subject or task title past this many characters
+// is cut, and a project name past its own.
 const _subjectChars = 24;
+const _projectChars = 12;
 
 /// The tray icon and its menu entries for the latest check. [canChangePort]
 /// and [launchAtLogin] (null: not offered) come from the platform; [glance]
@@ -47,9 +49,12 @@ List<TrayLine> _workLines(Glance? glance, int waitingRequests, Strings strings, 
         TrayLine(strings.requestsWaiting(waitingRequests, orMore: waitingRequests >= openAttentionLimit), link: _todayLink),
       if (glance != null) ...[
         ..._section(strings.assistantsAtWork, glance.assistants, strings,
-            (row) => TrayLine(strings.assistantAtWork(row.name, _when(row, strings, now)), link: row.link)),
+            (row) => TrayLine(
+                strings.assistantAtWork(row.name, _when(row, strings, now),
+                    project: _cut(row.project, _projectChars), task: _cut(row.task, _subjectChars)),
+                link: row.link)),
         ..._section(strings.roundtablesUnderWay, glance.roundtables, strings,
-            (row) => TrayLine(strings.roundtableUnderWay(_cut(row.subject), row.replying, row.waitingFor), link: row.link)),
+            (row) => TrayLine(strings.roundtableUnderWay(_cut(row.subject, _subjectChars)!, row.replying, row.waitingFor), link: row.link)),
       ],
     ];
 
@@ -70,7 +75,8 @@ String _when(AssistantAtWork row, Strings strings, DateTime now) {
   return at.day == now.day ? clock : strings.yesterdayAt(clock);
 }
 
-String _cut(String text) {
+String? _cut(String? text, int chars) {
+  if (text == null) return null;
   final runes = text.runes.toList();
-  return runes.length > _subjectChars ? '${String.fromCharCodes(runes.take(_subjectChars - 1)).trimRight()}…' : text;
+  return runes.length > chars ? '${String.fromCharCodes(runes.take(chars - 1)).trimRight()}…' : text;
 }
