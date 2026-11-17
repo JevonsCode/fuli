@@ -174,8 +174,12 @@ export interface ModelEvaluation {
 const TRUST_REASONS = ['suggestions_only', 'warning_not_seen', 'session_answer', 'not_configured'] as const
 
 // What the 执行方式 line says: who executes now, or why it only suggests.
+// Automatic without a model: the role has none, and its own switch (「交给
+// Tonborg 确认」) has the current session stand in for it.
 export function trustStatusText(trust: RoleTrust, model: string | null): string {
-  if (trust.status === 'automatic') return t('modelSettings.trust.automatic', { model: model ?? '' })
+  if (trust.status === 'automatic') {
+    return model ? t('modelSettings.trust.automatic', { model }) : t('modelSettings.trust.sessionStandsIn')
+  }
   const reason = TRUST_REASONS.find(known => known === trust.reason) ?? 'other'
   return t(`modelSettings.trust.reasons.${reason}`)
 }

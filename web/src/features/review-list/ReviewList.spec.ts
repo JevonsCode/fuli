@@ -11,6 +11,7 @@ vi.mock('vue-router', async importOriginal => ({ ...await importOriginal<typeof 
 import { useConsoleStore } from '@/stores/console'
 import ReviewList from './ReviewList.vue'
 import TonborgDelegationSwitch from './TonborgDelegationSwitch.vue'
+import { reviewListMessages } from '@/i18n/messages/review-list'
 
 // rec#96, synthetic data only.
 const basis = { existence_reason: 'Synthetic.', quadrant_reason: 'Synthetic.', proposed_by: { kind: 'agent', label: 'Synthetic Agent' } }
@@ -339,13 +340,50 @@ describe('交给 Tonborg 确认', () => {
     expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
   })
 
-  it('cannot be turned on without Tonborg\'s own model and says where to connect one', async () => {
-    getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: { connected: false, status: 'suggestion', reason: 'not_configured' } })
+  it('turns on without Tonborg\'s own model, says the current session confirms for it, and still links to connecting one', async () => {
+    const noModel = { connected: false, sessionStandsIn: true, status: 'suggestion', reason: 'not_configured' }
+    getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: noModel })
+    putJson.mockResolvedValue({ enabled: true, changedAt: '2026-11-17T00:00:00Z', revision: 1, model: noModel })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
-    expect(wrapper.get('[data-slot=switch]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('需要先给 Tonborg 接一个模型')
+    expect(wrapper.get('[data-slot=switch]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Tonborg 还没接模型：打开后，由你当时的 AI 会话替它确认')
     expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/models')
+    await wrapper.get('[data-slot=switch]').trigger('click'); await flushPromises()
+    expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 0,
+      language: 'zh-CN' }, expect.anything())
+    expect(wrapper.text()).toContain('Tonborg 没接模型：由你当时的 AI 会话替它确认，没有会话时不会进行')
+    // The same switch hands over the lead session's acceptance of its own task.
+    expect(wrapper.get('[data-tonborg-acceptance]').text()).toBe('也包括验收：另一个助手验证通过后，负责的会话可以验收自己的任务。')
+  })
+
+  it('with a model of Tonborg configured but off, says the session only suggests and names no acceptance', async () => {
+    const modelOff = { connected: false, sessionStandsIn: false, status: 'suggestion', reason: 'not_configured' }
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: modelOff })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Tonborg 配了模型，但现在不能用来确认：会话的回答只当建议')
+    expect(wrapper.text()).not.toContain('替它确认')
+    expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
+  })
+
+  it('says nothing about acceptance while Tonborg has its own model', async () => {
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: { connected: true, status: 'automatic', reason: null } })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
+  })
+
+  it('keeps every switch line within 100 characters in both languages', () => {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      const lines = Object.entries(reviewListMessages[locale].delegation)
+        .filter(([key, text]) => typeof text === 'string' && /Hint$|Acceptance$/.test(key))
+      expect(lines.length).toBe(6)
+      for (const [key, text] of lines) {
+        const shown = (text as string).replace("@:{'roleNames.tonborg'}", 'Tonborg')
+        expect([...shown].length, `${locale} ${key}`).toBeLessThanOrEqual(100)
+      }
+    }
   })
 
   it('turns on with the revision it read and reports the change', async () => {

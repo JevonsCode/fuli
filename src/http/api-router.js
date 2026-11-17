@@ -44,6 +44,7 @@ import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { handleModelListRequest } from '../model-backends/models-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
+import { reviewHandedOver } from '../judgment/review-delegation.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
@@ -101,6 +102,7 @@ export async function handleApiRequest({
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION, RETRIEVAL_TERMS_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
       semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
+    handedOver: { tonborg: () => reviewHandedOver(app.judgment, app.config?.personal?.spaceId ?? null) },
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
     ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
   // The suggestion log's owner proof is confirmed with the Provider, so that

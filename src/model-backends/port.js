@@ -348,6 +348,12 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       const settings = this.roles().roles.find(entry => entry.role === role);
       return settings?.state === 'enabled' && settings.allowedOperations.includes(operation) ? settings : null;
     },
+    // Whether the person configured a model for the role at all: enabled or
+    // disabled, whatever operations it allows. A file that does not validate
+    // counts as configured, so nothing reads it as having no model.
+    hasModel(role) {
+      return this.roles().roles.find(entry => entry.role === role)?.state !== 'not_configured';
+    },
     // Whether the whole request would still be allowed out now, for a role
     // that rechecks before it shows a late answer. A role that is gone,
     // disabled or no longer allowed the operation allows nothing.

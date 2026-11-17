@@ -15,10 +15,14 @@ import { visibleKnowledgeKeys } from './visible-items.js';
 // as its best guess. Every such decision is a judgment record marked
 // delegated, with its reason, undone through /api/judgment/undo.
 //
-// It spends the tokens of Tonborg's own model, so it can be turned on only
-// while one is connected. Turning it on is the person's say-so for Tonborg to
-// act by itself: the same click clears 「只给建议」 and acknowledges the trust
-// warning (role-trust.js), each recorded in that role's settings history.
+// With a model connected it spends that model's tokens. Without one the
+// reviews wait as work packages for the current session, which answers them
+// as Tonborg with its own model (Jevons 11-17); nothing runs in between.
+// The session stands in only while no model is configured for Tonborg at all
+// (role-trust.js). Turning it on is the person's say-so for Tonborg to act by
+// itself: the same click clears 「只给建议」 and acknowledges the trust warning,
+// each recorded in that role's settings history. An FLA turns it on only by
+// relaying the person's words (agent_relayed in the interface catalog).
 
 const id = z.string().trim().min(1).max(256);
 const readInput = z.object({ personalSpaceId: id }).strict();
@@ -34,12 +38,16 @@ const ROLE = 'tonborg';
 
 // Whether Tonborg has a model of its own for knowledge review, and whether its
 // answers apply by themselves now (the trust gate as the settings page reads it).
+// sessionStandsIn: no model is configured for Tonborg at all, so with the switch
+// on the current session confirms for it; a configured model that is off or not
+// allowed the review keeps the session's answers suggestions.
 function tonborgModel(modelTrust) {
-  if (!modelTrust) return { connected: false, status: 'suggestion', reason: 'not_configured' };
+  if (!modelTrust) return { connected: false, sessionStandsIn: false, status: 'suggestion', reason: 'not_configured' };
   const view = modelTrust.view(ROLE, TONBORG_OPERATIONS.review);
   // Without a configured connection the view reads as a session's answer.
   const connected = !['not_configured', 'session_answer'].includes(view.reason);
-  return { connected, status: view.status, reason: connected ? view.reason : 'not_configured' };
+  return { connected, sessionStandsIn: modelTrust.sessionMayStandIn(ROLE), status: view.status,
+    reason: connected ? view.reason : 'not_configured' };
 }
 
 // The switch as the console reads it: its state, Tonborg's model, and which
@@ -59,13 +67,29 @@ export async function reviewDelegation({ judgment, modelTrust, modelBackends = n
   return delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, judgment.store().delegation(personalSpaceId));
 }
 
+// Whether the switch is on, for the model page's 执行方式 line. A judgment
+// store that cannot be read yet reads as off: the line then says only what
+// holds without the switch.
+export async function reviewHandedOver(judgment, personalSpaceId) {
+  if (!judgment || !personalSpaceId) return false;
+  try {
+    await judgment.scope({ personalSpaceId });
+    return judgment.store().delegation(personalSpaceId).enabled;
+  } catch {
+    return false;
+  }
+}
+
 export async function setReviewDelegation({ judgment, modelTrust, modelBackends = null, input }) {
   const { personalSpaceId, enabled, expectedRevision, language } = parse(writeInput, input);
   await judgment.scope({ personalSpaceId });
   // Only turning it on is the say-so; saving it on again (a new language) changes no trust setting.
   if (enabled && !judgment.store().delegation(personalSpaceId).enabled) {
-    if (!tonborgModel(modelTrust).connected) {
-      throw new EmployeeError('Connect a model for Tonborg first: delegated review runs on Tonborg\'s own model.', 409,
+    // Without a model of its own Tonborg's reviews go to the current session,
+    // which then confirms as Tonborg (Jevons 11-17). The say-so is kept in the
+    // trust store either way; without that store nothing could hold it.
+    if (!modelTrust) {
+      throw new EmployeeError('Delegated review needs the model trust store, which is unavailable here.', 409,
         'tonborg_model_required');
     }
     let trust = modelTrust.view(ROLE, TONBORG_OPERATIONS.review);

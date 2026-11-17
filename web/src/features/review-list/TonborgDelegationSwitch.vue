@@ -15,8 +15,10 @@ import { reachNotice } from './delegation-reach'
 import { readDelegation, saveDelegation, type ReviewDelegation } from './review-api'
 
 // 「交给 Tonborg 确认」 (rec#96), the same switch on the 待决策 list and in
-// Tonborg's model settings. It runs on Tonborg's own model, so without one it
-// cannot be turned on and says where to connect one. On the list it also links
+// Tonborg's model settings. It runs on Tonborg's own model; without one the
+// current session confirms for Tonborg, and also accepts its own task after
+// another assistant's check passed, so it says so and where to connect a
+// model. On the list it also links
 // to where it is set up (settingsLink): Tonborg's details on 模型与用量, with
 // its model and how it runs.
 const props = defineProps<{ personalSpaceId: string; settingsLink?: boolean }>()
@@ -47,11 +49,16 @@ const settingsTarget = modelDetailsLink('tonborg', 'delegation')
 // Which projects Tonborg's model may read is set in its details (编辑 → the approved projects).
 const approveTarget = modelDetailsLink('tonborg')
 const connected = computed(() => state.value?.model?.connected === true)
+// No model configured for Tonborg at all: the current session confirms for it.
+// A configured model that is off keeps the session's answers suggestions.
+const standsIn = computed(() => !connected.value && state.value?.model?.sessionStandsIn === true)
 // rec issue 124: on, it still confirms nothing its model may not read; then the line says so instead of 「正在替你确认」.
 const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach) : null))
 const hint = computed(() => {
   if (!state.value) return ''
-  if (!connected.value) return t('reviewList.delegation.needsModel')
+  // Without a model of its own the current session confirms for Tonborg.
+  if (standsIn.value) return t(state.value.enabled ? 'reviewList.delegation.sessionOnHint' : 'reviewList.delegation.sessionOffHint')
+  if (!connected.value) return t('reviewList.delegation.modelOffHint')
   return t(state.value.enabled ? 'reviewList.delegation.onHint' : 'reviewList.delegation.offHint')
 })
 
@@ -78,7 +85,7 @@ async function change(enabled: boolean) {
       <span class="tonborg-delegation__busy" :class="{ 'is-shown': saving }">
         <GrowthLoading v-if="saving" variant="inline" :label="t('reviewList.delegation.saving')" />
       </span>
-      <Switch :id="id" :model-value="state?.enabled === true" :disabled="!state || !connected || saving"
+      <Switch :id="id" :model-value="state?.enabled === true" :disabled="!state || saving"
         @update:model-value="change(Boolean($event))" />
     </div>
     <UiNotice v-if="reach" tone="warning" class="tonborg-delegation__reach" data-tonborg-reach>
@@ -96,6 +103,9 @@ async function change(enabled: boolean) {
       <RouterLink v-if="state && !connected" to="/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
       <RouterLink v-else-if="settingsLink" :to="settingsTarget" class="tonborg-delegation__link" :title="t('reviewList.delegation.settingsTitle')"
         data-tonborg-settings-link>{{ t('reviewList.delegation.settings') }}</RouterLink>
+    </p>
+    <p v-if="state && standsIn" class="tonborg-delegation__hint" data-tonborg-acceptance>
+      {{ t('reviewList.delegation.sessionAcceptance') }}
     </p>
   </div>
 </template>

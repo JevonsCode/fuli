@@ -42,7 +42,10 @@ export const reviewListMessages = {
     },
     delegation: {
       label: "交给 @:{'roleNames.tonborg'} 确认", saving: "正在保存「交给 @:{'roleNames.tonborg'} 确认」…",
-      needsModel: "需要先给 @:{'roleNames.tonborg'} 接一个模型，会用掉它的 token。", connect: '去接模型',
+      sessionOffHint: "@:{'roleNames.tonborg'} 还没接模型：打开后，由你当时的 AI 会话替它确认，没有会话时不会进行。",
+      sessionOnHint: "@:{'roleNames.tonborg'} 没接模型：由你当时的 AI 会话替它确认，没有会话时不会进行。", connect: '去接模型',
+      sessionAcceptance: '也包括验收：另一个助手验证通过后，负责的会话可以验收自己的任务。',
+      modelOffHint: "@:{'roleNames.tonborg'} 配了模型，但现在不能用来确认：会话的回答只当建议。到模型页看看。",
       settings: '设置', settingsTitle: "在模型与用量里打开 @:{'roleNames.tonborg'} 的确认设置",
       offHint: "打开后，@:{'roleNames.tonborg'} 按你的偏好替你确认清楚的知识，拿不准的一次问你。",
       onHint: "@:{'roleNames.tonborg'} 正在替你确认；它做的每个决定都写着理由，可撤销。",
@@ -100,7 +103,10 @@ export const reviewListMessages = {
     },
     delegation: {
       label: "Let @:{'roleNames.tonborg'} confirm", saving: "Saving “Let @:{'roleNames.tonborg'} confirm”…",
-      needsModel: "Connect a model for @:{'roleNames.tonborg'} first; it spends that model’s tokens.", connect: 'Connect a model',
+      sessionOffHint: "@:{'roleNames.tonborg'} has no model: when on, your AI session confirms for it. No session, nothing runs.",
+      sessionOnHint: "@:{'roleNames.tonborg'} has no model: your AI session confirms for it. No session, nothing runs.", connect: 'Connect a model',
+      sessionAcceptance: 'Acceptance too: after another assistant’s check passes, the lead’s session may accept its task.',
+      modelOffHint: "@:{'roleNames.tonborg'} has a model that cannot confirm now: session answers stay suggestions. See Models.",
       settings: 'Settings', settingsTitle: "Open @:{'roleNames.tonborg'}’s confirmation settings in Models and usage",
       offHint: "When on, @:{'roleNames.tonborg'} confirms the clear items your way and asks about the rest at once.",
       onHint: "@:{'roleNames.tonborg'} confirms for you; every decision shows its reason and can be undone.",
