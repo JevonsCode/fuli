@@ -11,6 +11,7 @@ import { createEmployeeFixture } from '../test-support/employee-fixture.js';
 const HOME = 'employee-qa';
 const DESIGN = 'employee-qa-design';
 const RESEARCH = 'employee-qa-research';
+const TEMPORARY = 'temporary-employee-qa-session';
 
 async function jefa(t) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-jefa-summary-'));
@@ -30,9 +31,10 @@ test('the summary counts every project Jefa manages, and says which ones need th
     { title: 'Synthetic home review', status: 'review' }]);
   await seed(DESIGN, [{ title: 'Synthetic design first' }, { title: 'Synthetic design second' }]);
 
-  const { projects, truncated } = await call('summarize_projects', {});
+  const { projects, projectCount, truncated } = await call('summarize_projects', {});
   assert.equal(truncated, false);
-  assert.deepEqual(projects.map((project) => project.id).sort(), [HOME, DESIGN, RESEARCH], 'the archived project is not listed');
+  assert.equal(projectCount, 3);
+  assert.deepEqual(projects.map((project) => project.id).sort(), [HOME, DESIGN, RESEARCH], 'neither the archived nor the temporary project is listed');
   const home = projects.find((project) => project.id === HOME);
   assert.equal(home.name, '员工招募验收（测试）');
   assert.deepEqual(home.counts, { planned: 0, active: 1, blocked: 1, review: 1, done: 0 });
@@ -75,19 +77,38 @@ test('a project the person excluded from Jefa is not in the summary, and cannot 
   await assert.rejects(call('summarize_projects', {}, RESEARCH), { code: 'assignment_required' });
 });
 
+test('with selected projects, only those Jefa was given are summarized', async (t) => {
+  const { app, call, seed, hired } = await jefa(t);
+  await seed(HOME, [{ title: 'Synthetic home blocked', status: 'blocked' }]);
+  await app.employees.recruit({ templateId: 'jefa', management: { mode: 'selected', projectIds: [DESIGN, RESEARCH], titleMode: 'auto' },
+    replaceAssignments: true, expectedAssignmentsVersion: hired.assignmentsVersion });
+
+  const { projects, projectCount } = await call('summarize_projects', {}, DESIGN);
+  assert.equal(projectCount, 2);
+  assert.deepEqual(projects.map((project) => project.id).sort(), [DESIGN, RESEARCH]);
+  assert.equal(JSON.stringify(projects).includes('Synthetic home blocked'), false);
+});
+
+test('a temporary session project can ask, but is never summarized as a project', async (t) => {
+  const { call } = await jefa(t);
+  const { projects } = await call('summarize_projects', {}, TEMPORARY);
+  assert.deepEqual(projects.map((project) => project.id).sort(), [HOME, DESIGN, RESEARCH]);
+});
+
 test('the summary names a few tasks per project and says when more are waiting', async (t) => {
   const { call, seed } = await jefa(t);
-  await seed(HOME, ['one', 'two', 'three'].map((name) => ({ title: `Synthetic blocked ${name}`, status: 'blocked' })));
+  await seed(HOME, ['one', 'two', 'three', 'four'].map((name) => ({ title: `Synthetic blocked ${name}`, status: 'blocked' })));
 
   const [home] = (await call('summarize_projects', { perProject: 2 })).projects;
   assert.equal(home.id, HOME);
-  assert.equal(home.counts.blocked, 3, 'the count is whole');
+  assert.equal(home.counts.blocked, 4, 'the count is whole');
   assert.equal(home.blocked.length, 2);
-  assert.equal(home.blockedMore, 1);
+  assert.equal(home.blockedMore, 2);
   assert.equal(home.awaitingAcceptanceMore, 0);
 
   const defaulted = (await call('summarize_projects', {})).projects[0];
-  assert.equal(defaulted.blocked.length, 3, 'five tasks per project unless asked for fewer');
+  assert.equal(defaulted.blocked.length, 3, 'three tasks per project unless asked otherwise');
+  assert.equal(defaulted.blockedMore, 1);
   await assert.rejects(call('summarize_projects', { perProject: 11 }), { code: 'invalid_input' });
   await assert.rejects(call('summarize_projects', { projectIds: [HOME] }), { code: 'invalid_input' }, 'no project can be named: the host decides which');
 });

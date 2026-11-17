@@ -63,8 +63,10 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       const owned = agent?.profile.capabilities.includes(employeeCapability(manifest.id));
       const stored = managementStore.read(spaceId, manifest.id);
       const management = managementFor(manifest, owned ? agent : null, stored);
+      // Session- and task-scoped temporary projects are not projects a person
+      // manages: they stay out of the console's scope and Jefa's summary.
       const managedProjects = !globalOnly(manifest) && owned && agent.profile.status === 'active' ? projects
-        .filter(entry => entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
+        .filter(entry => entry.scope_type !== 'temporary' && entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
           && (management.mode === 'all' || activeEmployeeAssignments(agent).some(a => a.personalProjectId === entry.project_id)))
         .map(entry => ({ id: entry.project_id, name: entry.profile.name })) : [];
       return {

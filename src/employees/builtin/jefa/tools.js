@@ -12,9 +12,10 @@ import { prepareSessionTitle, reportSessionTitle } from './session-titles.js';
 const BOARD_LIMIT_DEFAULT = 50;
 const BOARD_LIMIT_MAX = 200;
 const STATUS_LIST_LIMIT = 20;
-const SUMMARY_PER_PROJECT_DEFAULT = 5;
+const SUMMARY_PER_PROJECT_DEFAULT = 3;
 const SUMMARY_PER_PROJECT_MAX = 10;
-const SUMMARY_PROJECT_LIMIT = 50;
+// An MCP result keeps at most 20 items per list (src/mcp/tool-result.js).
+const SUMMARY_PROJECT_LIMIT = 20;
 const AGENT_STATUSES = TASK_STATUSES.filter((status) => status !== 'done');
 const ALL_STATUSES = TASK_STATUSES;
 
@@ -53,7 +54,7 @@ const DEFINITIONS = [
   tool('answer_status_question', 'board.read', 'Answer a status question from the board alone: counts per status, tasks waiting for the person\'s acceptance (review), blocked tasks, and the named tasks. Starts no model and changes nothing.',
     objectSchema({ workItemIds: arraySchema(id, { maxItems: STATUS_LIST_LIMIT }) }),
     (store, scope, input) => statusAnswer(store, scope, input)),
-  tool('summarize_projects', 'board.read', 'Where every project Jefa manages stands, from the boards alone: per project the task count in each status, the blocked tasks and the tasks waiting for the person\'s acceptance (perProject of each, with blockedMore and awaitingAcceptanceMore counting the rest), when anything last changed, and board external when the project is tracked at its own link, not here. Projects with something stuck or waiting come first. The host decides which projects are listed (the person\'s scope for Jefa); none can be named. Ask only when a question spans projects. Starts no model and changes nothing.',
+  tool('summarize_projects', 'board.read', 'Where every project Jefa manages stands, from the boards alone: per project the count in each status, the blocked tasks and those waiting for the person\'s acceptance (perProject of each; blockedMore and awaitingAcceptanceMore count the rest), lastChangedAt, and board external when tracked at its own link. Stuck or waiting projects first, at most 20: projectCount is the whole number, truncated says some were left out. The host picks the projects; none can be named. Ask only when a question spans projects. Starts no model, changes nothing.',
     objectSchema({ perProject: integerSchema({ minimum: 1, maximum: SUMMARY_PER_PROJECT_MAX }) }),
     (store, scope, input, context) => summarizeProjects(store, context, input)),
   tool('prepare_session_title', 'session.title', 'Prepare this session\'s title from only its linked task IDs. In auto mode with canRename, execution client_required returns an action the current client performs natively, then reports with report_session_title. Otherwise the title is only a suggestion. A locked or person-changed title is never replaced, and another session is never renamed.',
@@ -97,15 +98,13 @@ function configureProjectBoard(store, scope, { requestId, ...request }) {
 }
 
 // context.managedProjects is the host's answer to "which projects does the
-// person let Jefa manage": excluded, unassigned and archived ones are not in it.
-// Without it (a caller that is not the host) only the authorized project is read,
-// so the tool can never reach further than the call itself was authorized.
+// person let Jefa manage" (src/employees/service.js, always set for this tool):
+// excluded, unassigned, archived and temporary projects are not in it.
 function summarizeProjects(store, context, input) {
-  const managed = context.managedProjects ?? [{ id: context.project.id, name: context.project.name }];
   const perProject = input.perProject ?? SUMMARY_PER_PROJECT_DEFAULT;
   const attention = ({ counts }) => (counts.blocked ? 2 : 0) + (counts.review ? 1 : 0);
   const brief = ({ id: itemId, title, status, priority, updatedAt }) => ({ id: itemId, title, status, priority, updatedAt });
-  const projects = managed.map(({ id: projectId, name }) => {
+  const projects = context.managedProjects.map(({ id: projectId, name }) => {
     const scope = { spaceId: context.personalSpaceId, projectId };
     const { counts, blocked, awaitingAcceptance, lastChangedAt } = store.summary(scope, perProject);
     return { id: projectId, name, total: Object.values(counts).reduce((sum, count) => sum + count, 0), counts,
