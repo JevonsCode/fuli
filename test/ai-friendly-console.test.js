@@ -119,6 +119,8 @@ test('「添加客户端」\'s prompt opens this console\'s add link, never the 
     assert.ok(prompt.includes(`${CONTEXT.console}/settings?tab=clients&addClient=`), `${locale} opens the add link`);
     assert.doesNotMatch(prompt, /\/api\//, `${locale} calls no console route`);
     for (const format of ADD_CLIENT_FORMATS) assert.ok(prompt.includes(format), `${locale} names ${format}`);
+    // Tools showing up is not the end: the client proves it reaches FULI's task entry by its receipt (11-17).
+    assert.ok(prompt.includes('get_collaboration_preferences') && prompt.includes('agent_receipt.markdown'), `${locale} checks the receipt`);
   }
   assert.deepEqual(addClientDraft({ tab: 'clients', addClient: ' Acme ', mcpFile: '~/.acme/mcp.json', format: 'nope' }),
     { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' });

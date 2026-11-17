@@ -34,6 +34,7 @@ export function addClientPrompt(locale: string, console: string): string {
       `1. Find the global configuration file you read MCP servers from at start (under my home folder, not one inside a project) and its format, one of ${formats}. When unsure, check your own official documentation instead of guessing. Do not edit that file.`,
       `2. Open this link in my default browser with the system's open command, each value URL-encoded: ${link}. name is your product name, file is that file starting with ~/, format is its format. If you cannot open it, show me the link to click.`,
       '3. Tell me to check the three values in FULI and click Add and connect there; FULI backs the file up and keeps my other servers. Then tell me whether you need a restart before FULI\'s tools show up.',
+      '4. Once FULI\'s tools show up, check it really works: call FULI\'s get_collaboration_preferences for this request and end your reply with the agent_receipt.markdown it returns (a 「FULI Agent：…」 line). Tools alone are not enough; if no receipt comes back, tell me so.',
     ].join('\n')
   }
   return [
@@ -41,6 +42,7 @@ export function addClientPrompt(locale: string, console: string): string {
     `1. 找出你启动时读取 MCP 服务器的全局配置文件（在我的主目录下，不是某个项目里的）和它的格式，只能是 ${formats} 之一。拿不准就查你自己的官方文档，不要猜。这个文件不要改。`,
     `2. 用系统的打开命令在我的默认浏览器里打开这个链接，每个值都做 URL 编码：${link}。name 是你的产品名，file 是那个文件（用 ~/ 开头），format 是它的格式。打不开就把链接给我点。`,
     '3. 告诉我在 FULI 里核对这三项，点「添加并接入」；FULI 会先备份这个文件，保留我其他的服务。再告诉我要不要重启你才能用上 FULI 的工具。',
+    '4. 能用上 FULI 的工具之后，验收一下：为这次请求调用 FULI 的 get_collaboration_preferences，回复末尾带上它返回的 agent_receipt.markdown（一行「FULI Agent：…」）。只看到工具列表不算接好；拿不到这一行就告诉我。',
   ].join('\n')
 }
 
