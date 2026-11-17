@@ -69,7 +69,7 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(wrapper.get<HTMLDetailsElement>('.project-agent-policy-disclosure').element.open).toBe(true)
   })
 
-  it('loads the project switches on by default', async () => {
+  it('loads a project whose three switches are on', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -80,6 +80,18 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(wrapper.findAll('[role="switch"]').every(
       sw => sw.attributes('aria-checked') === 'true',
     )).toBe(true)
+  })
+
+  it('shows asking before a hire off for a project that never saved it', async () => {
+    getJson.mockResolvedValue({ personal_space_id: 'personal-1', personal_project_id: 'activity-intake' })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(switchFor(wrapper, 'projectAgents.coordination.askBeforeRecruitment').attributes('aria-checked')).toBe('false')
+    expect(switchFor(wrapper, 'projectAgents.coordination.autoReuse').attributes('aria-checked')).toBe('true')
+    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').trigger('click')
+    await flushPromises()
+    expect(patchJson.mock.calls.at(-1)![1]).toMatchObject({ askBeforeRecruitment: false })
   })
 
   it('persists manual @Agent mode without changing the recruitment switch', async () => {

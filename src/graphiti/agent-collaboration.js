@@ -133,7 +133,7 @@ export async function planAgentCollaboration(application, input) {
       // Bole hires by the occupation the workstream asked for, not by guessing from its work kind.
       ...(stream.occupation ? { recruitmentOccupation: { role: stream.occupation, tags: [] } } : {}) },
     requires: ['idempotencyKey', 'title', 'objective', 'routingReason', 'contextQueries'],
-    coordinatorAgentId: policy.team_lead_agent_id ?? null, askBeforeRecruitment: policy.ask_before_recruitment !== false,
+    coordinatorAgentId: policy.team_lead_agent_id ?? null, askBeforeRecruitment: policy.ask_before_recruitment === true,
     guidance: 'Reuse one stable idempotencyKey for this staffing need so a retry reuses the same recruitment. When askBeforeRecruitment is true, AR only proposes a hire; confirm with the user before it is staffed. Recruiting executes nothing.' });
   const subTeamCoordinator = subLeads.has(coordinatorAgentId) || memberOwner;
   const recruitment = shown.length || unavailableCandidates.length || subTeamCoordinator ? null : recruit(input);

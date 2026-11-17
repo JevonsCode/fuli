@@ -332,7 +332,7 @@ NODE_FIELDS = {
     },
     'FuliProjectAgentCoordinationPolicy': {
         'ask_before_recruitment': 'boolean?', 'auto_grow_team': 'boolean?',
-        'auto_reuse_previous_agent': 'boolean?', 'created_at': 'datetime?',
+        'auto_reuse_previous_agent': 'boolean?', 'confirm_before_hiring': 'boolean?', 'created_at': 'datetime?',
         'personal_project_id': 'string?', 'personal_space_id': 'string?', 'policy_id': 'string?',
         'sub_team_suggestion_threshold': 'integer?', 'sub_teams_json': 'string?',
         'team_lead_agent_id': 'string?', 'team_member_agent_ids': 'string[]?',

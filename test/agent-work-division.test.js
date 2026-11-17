@@ -95,7 +95,12 @@ test('verification excludes known implementers and opens existing HR flow on a r
   assert.equal(qa.dispatch.arguments.staffingIntent, 'new_durable');
   assert.equal(qa.dispatch.arguments.personalProjectId, 'sample');
   assert.equal(qa.dispatch.arguments.leadAgentId, undefined);
-  assert.equal(qa.dispatch.askBeforeRecruitment, true);
+  // A project hires without asking unless the person turned asking on.
+  assert.equal(qa.dispatch.askBeforeRecruitment, false);
+  const asking = fixture(team().slice(0, 2));
+  asking.personal.getProjectAgentCoordinationPolicy = async () => ({ team_lead_agent_id: 'lead', ask_before_recruitment: true });
+  const asked = await planAgentCollaboration(asking, { ...input, implementationAgentIds: ['developer'] });
+  assert.equal(asked.divisionPlan.workstreams.at(-1).dispatch.askBeforeRecruitment, true);
 });
 
 test('a verification request never recursively recruits a verifier for its verifier', async () => {
