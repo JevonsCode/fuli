@@ -82,6 +82,18 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     )).toBe(true)
   })
 
+  it('shows asking before a hire off for a project that never saved it', async () => {
+    getJson.mockResolvedValue({ personal_space_id: 'personal-1', personal_project_id: 'activity-intake' })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const asking = wrapper.findAll('[role="switch"]').map(sw => sw.attributes('aria-checked'))
+    expect(asking.filter(checked => checked === 'false')).toHaveLength(1)
+    await wrapper.findAll('[role="switch"]').find(sw => sw.attributes('aria-checked') === 'true')!.trigger('click')
+    await flushPromises()
+    expect(patchJson.mock.calls.at(-1)![1]).toMatchObject({ askBeforeRecruitment: false })
+  })
+
   it('persists manual @Agent mode without changing the recruitment switch', async () => {
     const wrapper = mountPanel()
     await flushPromises()

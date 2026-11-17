@@ -19,6 +19,10 @@ test('policy maps the exact project-local layout both ways without sending omitt
   assert.equal(write.sub_team_suggestion_threshold, 8);
   const legacy = providerProjectAgentCoordinationPolicy({ personalSpaceId: 'space', personalProjectId: 'project' });
   assert.equal(Object.hasOwn(legacy, 'sub_teams'), false);
+  // The hiring switch is sent only when stated, so the Provider keeps a person's stored choice otherwise.
+  assert.equal(Object.hasOwn(legacy, 'ask_before_recruitment'), false);
+  assert.equal(providerProjectAgentCoordinationPolicy({ personalSpaceId: 'space', personalProjectId: 'project',
+    askBeforeRecruitment: false }).ask_before_recruitment, false);
 });
 
 test('team projection and entry context preserve immediate parents and one user-facing owner', async () => {

@@ -103,6 +103,10 @@ class StoreProjectAgentCoordinationPolicy:
         members = (request.team_member_agent_ids if 'team_member_agent_ids' in request.model_fields_set
                    else current.team_member_agent_ids)
         auto_grow = current.auto_grow_team if request.auto_grow_team is None else request.auto_grow_team
+        # Kept when the save does not state it, like the team: off is the
+        # default, so a save that left it out would switch a person's asking off.
+        asks = (request.ask_before_recruitment if 'ask_before_recruitment' in request.model_fields_set
+                else current.ask_before_recruitment)
         groups = request.sub_teams if 'sub_teams' in request.model_fields_set else current.sub_teams
         threshold = (request.sub_team_suggestion_threshold if 'sub_team_suggestion_threshold' in request.model_fields_set
                      else current.sub_team_suggestion_threshold)
@@ -175,7 +179,7 @@ class StoreProjectAgentCoordinationPolicy:
             policy_id=policy_id,
             personal_space_id=request.personal_space_id,
             personal_project_id=request.personal_project_id,
-            ask_before_recruitment=request.ask_before_recruitment,
+            ask_before_recruitment=asks,
             auto_reuse_previous_agent=request.auto_reuse_previous_agent,
             auto_grow_team=auto_grow,
             team_lead_agent_id=lead,
@@ -191,7 +195,7 @@ class StoreProjectAgentCoordinationPolicy:
         return ProjectAgentCoordinationPolicyRecord(
             personal_space_id=request.personal_space_id,
             personal_project_id=request.personal_project_id,
-            ask_before_recruitment=request.ask_before_recruitment,
+            ask_before_recruitment=asks,
             auto_reuse_previous_agent=request.auto_reuse_previous_agent,
             auto_grow_team=auto_grow,
             team_lead_agent_id=lead,

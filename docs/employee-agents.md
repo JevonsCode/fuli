@@ -34,7 +34,8 @@ automatic directory matching and do not inherit another project's private contex
 
 The scope is marked `type: temporary`, `lifetime: task`, `persisted: true`: its audit history
 is retained after the task, rather than deleted. Agent staffing defaults to temporary and still
-follows recruitment confirmation, allowed-client and executor policies. A request may therefore
+follows the project's ask-before-hiring switch (off by default, so a hire waits for the person only
+in a project that turned it on), allowed-client and executor policies. A request may therefore
 be `awaiting_recruitment` or blocked before execution. Fuli returns a worker plan; the authorized
 host starts and reports actual workers. Creating the scope or assigning an Agent does not create
 an execution-summary row.

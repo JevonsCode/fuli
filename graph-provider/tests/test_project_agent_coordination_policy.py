@@ -95,6 +95,20 @@ async def test_turning_asking_on_is_saved_where_it_is_read_and_leaves_the_earlie
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('stored, kept', [({'confirm_before_hiring': True}, True), ({'ask_before_recruitment': True}, False), (None, False)])
+async def test_a_save_that_does_not_state_the_switch_keeps_the_stored_one(stored, kept):
+    store = PolicyStore(stored)
+
+    saved = await store.update_project_agent_coordination_policy({'id': 'principal'}, ProjectAgentCoordinationPolicyUpdate(
+        personal_space_id='personal-space', personal_project_id='activity-intake', auto_reuse_previous_agent=False))
+
+    write = next(parameters for query, parameters in store.runtime.driver.calls
+                 if 'SET policy.confirm_before_hiring' in query)
+    assert write['ask_before_recruitment'] is kept
+    assert saved.ask_before_recruitment is kept
+
+
+@pytest.mark.asyncio
 async def test_project_coordination_policy_persists_both_switches_together():
     store = PolicyStore()
 
