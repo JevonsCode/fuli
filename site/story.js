@@ -1,10 +1,12 @@
 // The scroll story shared by the stable home page and the preview page, which
 // differ only in their copy. Progressive enhancement: each page is complete without it.
+import { preferDownloadForThisComputer } from './download-choice.js'
 import { createScrollScene } from './scene.js'
 import { createInstallStory } from './install-story.js'
 import { createLanguageController } from './i18n.js'
 
 export function startStory(catalog) {
+  preferDownloadForThisComputer(document, navigator)
   const language = createLanguageController({
     document,
     languages: navigator.languages?.length ? navigator.languages : [navigator.language],
