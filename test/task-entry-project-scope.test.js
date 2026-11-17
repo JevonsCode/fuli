@@ -94,7 +94,7 @@ test('the fixed assistant receives an unclaimed conversation in its global scope
   assert.equal(result.agent_receipt.owner.agent_id, 'employee.assistant');
   assert.deepEqual([writes.length, hires.length], [0, 0]);
   assert.deepEqual(result.triage_candidates, { projects: [], topics: [],
-    label_with: 'checkpoint_task_knowledge.triage' });
+    label_with: 'checkpoint_task_knowledge.triage', continue_with: 'list_agent_conversations.topic' });
 });
 
 test('a registered project named at the start of the prompt is matched', async () => {

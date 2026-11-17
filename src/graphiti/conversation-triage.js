@@ -14,6 +14,8 @@ function isUnclaimedTask(task) {
 }
 
 // Names only, one per line in spirit: the entry stays small and details stay queryable.
+// continue_with: how a conversation about one of the topics finds that topic's
+// earlier conversations, which is all the memory Astro keeps of a topic.
 export async function triageCandidates(application) {
   const [projects, topics] = await Promise.all([
     projectNames(application, PROJECT_CANDIDATES).catch(() => []),
@@ -21,7 +23,8 @@ export async function triageCandidates(application) {
       personal_space_id: application.config.personal.spaceId, limit: TOPIC_CANDIDATES
     })).then(value => value.topics.map(item => item.topic)).catch(() => [])
   ]);
-  return { projects, topics, label_with: 'checkpoint_task_knowledge.triage' };
+  return { projects, topics, label_with: 'checkpoint_task_knowledge.triage',
+    continue_with: 'list_agent_conversations.topic' };
 }
 
 export function validateTriage(triage) {
