@@ -304,7 +304,12 @@ it('adds a client from the grid\'s last tile, connects it like the others, and r
   await fill('#custom-client-file', '~/公司/mcp.json')
   replies.add = () => Response.json({ error: { code: 'invalid_input', message: 'the path is not plain' } }, { status: 400 })
   await submit()
-  expect(document.querySelector('[data-custom-client-dialog]')!.textContent).toContain('没有添加')
+  const refused = document.querySelector('[data-custom-client-dialog]')!.textContent!
+  expect(refused).toContain('没有添加：配置文件要在你的用户目录里')
+  expect(refused, 'the answer\'s JSON is not shown to a person').not.toContain('invalid_input')
+  replies.add = () => new Response('upstream stopped', { status: 502 })
+  await submit()
+  expect(document.querySelector('[data-custom-client-dialog]')!.textContent, 'another failure keeps its own reason').not.toContain('配置文件要在')
   await fill('#custom-client-file', '~/.acme/mcp.json')
   replies.add = () => {
     custom = [{ id: 'acme-agent', label: 'Acme Agent', detected: false, status: 'not_detected', mcpPaths: ['~/.acme/mcp.json'], removable: true }]

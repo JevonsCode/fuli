@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { postJson } from '@/api/client'
+import { ApiError, postJson } from '@/api/client'
 import TextField from '@/components/TextField.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -39,7 +39,10 @@ async function add() {
       Object.assign(draft, { name: '', mcpFile: '', format: 'mcp-servers-json' })
       open.value = false
     } catch (reason) {
-      error.value = t('settings.connection.custom.addError', { reason: reason instanceof Error ? reason.message : String(reason) })
+      // A refusal of what was typed is worded here: its own text is the JSON an Agent reads.
+      error.value = reason instanceof ApiError && reason.status === 400
+        ? t('settings.connection.custom.addRefused')
+        : t('settings.connection.custom.addError', { reason: reason instanceof Error ? reason.message : String(reason) })
     } finally { pending.value = false }
   })
 }
