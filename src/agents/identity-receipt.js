@@ -71,12 +71,14 @@ export function roundtableThreadUrl(application, threadId) {
 // One FLA signs 「FULI Agent：A」; with others, 「FULI Agents：A & B」. roundtable
 // ({ threads, peers }) is what this turn used of the roundtable: the FLAs that
 // took part join the line and each conversation gets a 「圆桌对话详情」 link.
+// introduction is the owner's own line under it, the turn it introduces
+// itself (task-entry-introduction.js), already Markdown-escaped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null,
-  roundtable = null }) {
+  roundtable = null, introduction = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
@@ -90,7 +92,8 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[agentLink(application, agentId, name, role),
       ...helpers.map(item => collaboratorLink(application, item)),
       ...peers.map(peer => agentLink(application, peer.agentId, peer.name))].join(' & ')}`
-    : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · '), owner,
+    : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · ')
+      + (owner && introduction ? `\n${introduction}` : ''), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),

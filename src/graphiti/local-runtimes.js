@@ -22,6 +22,7 @@ import {
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
 import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
+import { AgentIntroductionStore } from '../agent-introductions/store.js';
 import { DELEGATION_LOG_FILE, DelegatedOperationLog } from '../agent-delegation/operation-log.js';
 import { createAgentAvatars } from '../agent-avatars/port.js';
 import { createProjectChangeLog } from '../project-change-log/port.js';
@@ -102,6 +103,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
   // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recall reads it as a ranking prior.
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
+  // Which FLAs introduced themselves and who last owned each project's tasks; created by the first task entry.
+  app.agentIntroductions = new AgentIntroductionStore(join(dataDir, 'agent-introductions.sqlite'));
   // Read here only for the compounding statement's count of changes made for the person;
   // the console's delegation port alone records them. A missing file reads as none.
   app.delegatedOperations = new DelegatedOperationLog(join(dataDir, DELEGATION_LOG_FILE));
@@ -164,6 +167,7 @@ export function closeLocalRuntimes(app) {
   app.standingAssignments?.close();
   app.agentWorkflows?.close();
   app.recallImpressions?.close();
+  app.agentIntroductions?.close();
   app.delegatedOperations?.close();
   app.agentAvatars?.close();
   app.visitorAccess?.close();

@@ -4,6 +4,7 @@ import { taskAgentIdentity } from './agent-conversations.js';
 import { captureDecision, captureSettingsVersion, taskCaptureScope } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 import { storedHabitsLine } from './turn-receipt-delivery.js';
+import { introductionReceiptLine } from './task-entry-introduction.js';
 
 // "这次别记" / "继续记" (rec#5 C3, C4-3): an Agent pauses or resumes automatic
 // recording of the session it works in, on the person's word and without a
@@ -35,7 +36,8 @@ export async function setSessionCapturePause(application, { taskContextToken, se
     // It replaces the entry receipt, so the first task of a new conversation keeps its habits line.
     agent_receipt: withReceiptLines(taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId ?? null, ...await taskAgentIdentity(application, task),
-      sourceApplication: task.sourceApplication, notices: receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }) }),
+      sourceApplication: task.sourceApplication, notices: receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }),
+      introduction: introductionReceiptLine(task) }),
     [storedHabitsLine(application, task)].filter(Boolean)),
     guidance: !state ? UNSAVED_GUIDANCE : sessionPaused ? PAUSED_GUIDANCE : RESUMED_GUIDANCE };
 }

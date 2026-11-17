@@ -332,3 +332,23 @@ test('the conversation rule reference and latest checkpoint are skeleton parts; 
   assert.deepEqual(next.frame.conversation, { status: 'saved', conversation_id: 'conversation-1', revision: 2,
     recovery: { messages_omitted: 2, omitted_reason: 'seen_in_session' } });
 }));
+
+// 11-17: the turn an FLA introduces itself has a receipt of two lines; that
+// turn sends it whole, and the next turn's plain receipt is sent again rather
+// than named from a frame before the introduction.
+test('a receipt that carries an introduction is sent that turn, and the plain one is sent again the turn after', () => fixture(async f => {
+  const plain = 'FULI Agent：Synthetic owner';
+  const introduced = `${plain}\n👋 初次见面，我是 Synthetic owner。以后 project 的事找我，消息开头写 #FLA Synthetic owner。`;
+  const first = await f.turn(entry(f.sessionId, 'task-a', { receipt: plain }), 'Synthetic prompt 1');
+  const second = await f.turn(entry(f.sessionId, 'task-b', { receipt: introduced }), 'Synthetic prompt 2');
+  const third = await f.turn(entry(f.sessionId, 'task-c', { receipt: plain }), 'Synthetic prompt 3');
+  assert.equal(first.frame.agent_receipt.markdown, plain);
+  assert.equal(second.frame.skeleton_unchanged, first.frame.skeleton_revision, 'the rest of the skeleton is named');
+  assert.deepEqual(second.frame.agent_receipt, { required: true, markdown: introduced });
+  assert.equal(third.frame.skeleton_unchanged, second.frame.skeleton_revision);
+  assert.deepEqual(third.frame.agent_receipt, { required: true, markdown: plain }, 'never left to the introducing frame');
+  // From then on the plain receipt is named like any unchanged part.
+  const fourth = await f.turn(entry(f.sessionId, 'task-d', { receipt: plain }), 'Synthetic prompt 4');
+  assert.equal(Object.hasOwn(fourth.frame, 'agent_receipt'), false);
+  assert.equal(fourth.frame.skeleton_unchanged, third.frame.skeleton_revision);
+}));

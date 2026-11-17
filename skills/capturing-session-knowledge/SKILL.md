@@ -70,6 +70,8 @@ Every final user-visible reply MUST include the current task’s `agent_receipt.
 
 A `FULI 习惯：…` line is part of `agent_receipt.markdown`: copy it unchanged. Never count habits yourself, reword it, or add it to a receipt that lacks it.
 
+The line under the owner's name in which an FLA introduces itself (the first task it owns for the person, or a project passing to it from another FLA) is part of `agent_receipt.markdown` too, once: copy it unchanged, never write one yourself or repeat it on a later turn. A checkpoint or roundtable receipt of the same task carries it.
+
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
 listed as conflicts, and do not borrow preferences from a related, similarly named, or guessed
