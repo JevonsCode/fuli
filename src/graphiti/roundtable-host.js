@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+
 import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
 import { QUERY_REFUSED } from '../../packages/roundtable/src/peer/query-answer.js';
 import { loadProjectTeam } from './project-team-view.js';
@@ -19,7 +21,10 @@ const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
-export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line) } = {}) {
+// wakeFolder: an empty folder FULI owns, where a fresh session woken for an ask
+// from another computer starts when nothing else names one (never the console's
+// own working folder).
+export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line), wakeFolder = null } = {}) {
   const spaceId = () => app.config.personal.spaceId;
   const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
     name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
@@ -208,6 +213,11 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     requestSignal: activeAgentRequestSignal,
     inRestrictedWorker: activeSealedWorkerRequest,
     callerRunner: activeRunnerCaller,
+    wakeScratchFolder: () => {
+      if (!wakeFolder) return null;
+      mkdirSync(wakeFolder, { recursive: true, mode: 0o700 });
+      return wakeFolder;
+    },
     recordMemoryUsage: input => app.personal.recordProjectMemoryUsage
       ? recordProjectMemoryUsage(app, input) : { recorded: false, reason: 'usage_port_unavailable' }
   });

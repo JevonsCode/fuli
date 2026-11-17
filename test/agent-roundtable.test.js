@@ -773,3 +773,50 @@ test('a chat message a runner sent wakes its member as the runner\'s ask: read-o
   assert.equal(woken[0].mode, 'read_only');
   assert.deepEqual(Object.keys(woken[0].mcpServers), ['fuli']);
 });
+
+test('a session woken for a runner\'s ask holds its own asks the same way, one hop on; a local ask\'s report wake is unchanged', async () => {
+  const fuliEntry = () => ({ command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] });
+  const ask = { taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: 'synthetic follow-up', projectPath: '/work/app' };
+
+  const fromRunner = fixture();
+  fromRunner.app.fuliMcpServer = fuliEntry;
+  await runAsRunnerCall('runner-fingerprint-1', () => fromRunner.roundtable.messageAgent(ask));
+  assert.equal(fromRunner.woken[0].origin, 'runner', 'the wake carries where its ask came from');
+  assert.notEqual(fromRunner.woken[0].cwd, process.cwd(), 'a fresh session for a runner never starts in the console\'s folder');
+
+  // The FLA woken above runs its own FULI with the origin its wake carried, and asks its report.
+  const woken = fixture({ env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-grant', FULI_ROUNDTABLE_ORIGIN: 'runner' } });
+  woken.app.fuliMcpServer = fuliEntry;
+  const report = await woken.roundtable.messageAgent(ask);
+  assert.equal(report.status, 'answered');
+  assert.deepEqual([woken.woken[0].mode, woken.woken[0].origin, Object.keys(woken.woken[0].mcpServers)], ['read_only', 'runner', ['fuli']]);
+  assert.notEqual(woken.woken[0].cwd, '/work/app');
+  assert.equal(woken.roundtable.thread({ threadId: report.threadId }).messages[0].origin, 'runner');
+
+  const local = fixture({ env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-grant' } });
+  local.app.fuliMcpServer = fuliEntry;
+  await local.roundtable.messageAgent(ask);
+  assert.deepEqual([local.woken[0].mode, 'origin' in local.woken[0], 'mcpServers' in local.woken[0], local.woken[0].cwd],
+    ['answer', false, false, '/work/app']);
+});
+
+test('a runner\'s ask nobody could answer gets no stand-in', async () => {
+  const { roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
+  const ask = { taskContextToken: 'token-nova', sourceApplication: 'codex', to: 'Milo Reed', body: 'synthetic ask' };
+  const fromRunner = await runAsRunnerCall('runner-fingerprint-1', () => roundtable.messageAgent(ask));
+  assert.equal(fromRunner.status, 'queued');
+  assert.equal((await roundtable.messageAgent(ask)).status, 'stand_in', 'a local ask still gets one');
+});
+
+test('a wake passes its origin to the woken client\'s environment and drops one it inherited', async () => {
+  const seen = [];
+  const run = async (_command, _args, input) => {
+    seen.push(input.env.FULI_ROUNDTABLE_ORIGIN);
+    return { code: 0, stdout: [{ type: 'thread.started', thread_id: 'synthetic-session' },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'Answer' } }, { type: 'turn.completed' }].map(JSON.stringify).join('\n') };
+  };
+  const env = { FULI_CODEX_BIN: '/synthetic/codex', FULI_ROUNDTABLE_ORIGIN: 'remote' };
+  await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'grant', origin: 'runner', env, run });
+  await wakeAgent({ client: 'codex', cwd: '/synthetic', prompt: 'Review', delegationToken: 'grant', env, run });
+  assert.deepEqual(seen, ['runner', undefined]);
+});

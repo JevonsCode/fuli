@@ -68,7 +68,13 @@ what a call from another computer may do:
 - A wake of the person's Agents (`message_agent`, `agent_chat`, a group
   discussion) is read-only and loads only FULI's own MCP server, as a LAN
   roundtable ask from another computer is; it never goes to a desktop app
-  conversation. The ask records the runner's fingerprint.
+  conversation and gets no stand-in. A fresh session for it starts in an empty
+  folder FULI owns (`roundtable-wake` in the host's data directory), never in
+  the console's own. The ask records the runner's fingerprint and its origin.
+- The wake carries that origin to the woken session (`FULI_ROUNDTABLE_ORIGIN`),
+  so every ask that session makes in turn is held the same way, one hop on and
+  further; a paired device's ask (origin `remote`) is carried the same way.
+  Asks between the person's own Agents on the host keep their full wakes.
 - A folder the runner names is on the runner: it is never used as a working
   folder on the host, nor accepted as one of the host's folders for a project.
 - `run_delegated_action` is refused (`local_user_only`): a console change is the

@@ -36,6 +36,11 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
 // and a group discussion turn where FULI can name its own entry).
 // Work done for another computer is not a wake: see constrained-run.js.
 export const WAKE_MODES = Object.freeze(['answer', 'read_only']);
+// Where the ask a wake answers came from when it is another computer: a FULI
+// runner's call ('runner') or a paired device's ask ('remote'). The woken
+// session's FULI reads it (ORIGIN_ENV) and holds its own asks the same way.
+export const WAKE_ORIGINS = Object.freeze(['runner', 'remote']);
+export const ORIGIN_ENV = 'FULI_ROUNDTABLE_ORIGIN';
 
 // env, home: where a client's own configuration is read (Codex, to turn off
 // the person's other MCP servers by name).
@@ -61,12 +66,14 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
   delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer',
-  mcpServers = null } = {}) {
+  mcpServers = null, origin = null } = {}) {
+  if (origin !== null && !WAKE_ORIGINS.includes(origin)) throw new TypeError('Invalid wake origin');
   const command = resolveClientCommand(client, { env });
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
+  if (origin) childEnv[ORIGIN_ENV] = origin;
   // A client that names its session up front is bound before it starts, so its
   // first hook already finds the delegation; others are bound when they report it.
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;

@@ -9,7 +9,7 @@ import { findFile, firstField, lastEntries, listDirectory } from '../session-log
 import { reportedWakeUsage } from '../wake-usage.js';
 
 const TURN_START = 'task_started';
-const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+const DELEGATION_VARIABLES = Object.freeze(['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH', 'FULI_ROUNDTABLE_ORIGIN']);
 // A TOML array of strings; JSON's string escapes are valid TOML basic strings.
 const tomlArray = (values) => `[${values.map((value) => JSON.stringify(value)).join(',')}]`;
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);

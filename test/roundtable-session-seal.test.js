@@ -56,7 +56,7 @@ test('a delegated Codex wake forwards only the private roundtable variable names
     const args = wakeArguments('codex', { cwd: '/synthetic', sessionId, delegated: true });
     const setting = args.find(arg => arg.startsWith('mcp_servers.fuli.env_vars='));
     assert.deepEqual(JSON.parse(setting?.split('=')[1] ?? 'null'),
-      ['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH']);
+      ['FULI_ROUNDTABLE_DELEGATION', 'FULI_ROUNDTABLE_PEER_DEPTH', 'FULI_ROUNDTABLE_ORIGIN']);
     assert.equal(args.some(arg => arg.includes('private-grant-value')), false);
   }
   assert.equal(wakeArguments('codex', { cwd: '/synthetic' }).some(arg => arg.includes('env_vars')), false);

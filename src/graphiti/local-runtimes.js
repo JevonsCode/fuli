@@ -156,7 +156,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // Each occupation's starter kit and what the person enabled per FLA; the choices file is created by the first answer.
   app.occupationPlugins = createOccupationPlugins({ statePath: join(dataDir, 'occupation-plugins.json'),
     choicesPath: join(dataDir, 'occupation-kit-choices.sqlite'), fetchImpl });
-  app.roundtableHost = createFuliRoundtableHost(app);
+  app.roundtableHost = createFuliRoundtableHost(app, { wakeFolder: join(dataDir, 'roundtable-wake') });
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({
     host: app.roundtableHost,

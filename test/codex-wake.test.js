@@ -49,7 +49,7 @@ test('an ask from another computer loads FULI\'s own server and turns off every 
   const args = wakeArguments('codex', { ...config, mode: 'read_only', delegated: true, mcpServers: { fuli: entry } });
   assert.deepEqual(args, ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', config.cwd,
     '-c', `mcp_servers={ ${fuli}, ${others} }`, ...plugins, ...APPS_OFF,
-    '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]', '-']);
+    '-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH","FULI_ROUNDTABLE_ORIGIN"]', '-']);
   // Resuming in the session's folder carries the same overrides.
   assert.deepEqual(wakeArguments('codex', { ...config, sessionId: 'cx-session-1', mode: 'read_only', mcpServers: { fuli: entry } }),
     ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...args.slice(7, 13), 'cx-session-1', '-']);

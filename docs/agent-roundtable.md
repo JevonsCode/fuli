@@ -343,7 +343,11 @@ such an ask fails safely (`delegation_not_redeemed`) instead of loading the
 person's other servers. An ask, chat message or group discussion started by a
 runner (another computer of the person using this FULI, `docs/runner.md`) is
 woken the same way: read-only, only FULI's own MCP server, never in a folder
-the runner named; the ask records the runner's fingerprint. A group discussion turn, whose text comes from the
+the runner named (a fresh session starts in an empty folder FULI owns), and
+with no stand-in; the ask records the runner's fingerprint. Such a wake, and
+the wake of a paired device's ask, carries its origin in
+`FULI_ROUNDTABLE_ORIGIN`, and the woken session's own asks are held the same
+way, so no later hop reaches a full wake. A group discussion turn, whose text comes from the
 person's own Agents, loads only FULI's own server too where FULI can name that
 entry, and keeps the client's own servers where it cannot, so a discussion
 never fails for the lack of it. The entry is the one FULI's installer writes,
