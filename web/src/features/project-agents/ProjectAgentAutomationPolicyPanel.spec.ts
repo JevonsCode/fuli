@@ -69,7 +69,7 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     expect(wrapper.get<HTMLDetailsElement>('.project-agent-policy-disclosure').element.open).toBe(true)
   })
 
-  it('loads the project switches on by default', async () => {
+  it('loads a project whose three switches are on', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
@@ -87,9 +87,9 @@ describe('ProjectAgentAutomationPolicyPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    const asking = wrapper.findAll('[role="switch"]').map(sw => sw.attributes('aria-checked'))
-    expect(asking.filter(checked => checked === 'false')).toHaveLength(1)
-    await wrapper.findAll('[role="switch"]').find(sw => sw.attributes('aria-checked') === 'true')!.trigger('click')
+    expect(switchFor(wrapper, 'projectAgents.coordination.askBeforeRecruitment').attributes('aria-checked')).toBe('false')
+    expect(switchFor(wrapper, 'projectAgents.coordination.autoReuse').attributes('aria-checked')).toBe('true')
+    await switchFor(wrapper, 'projectAgents.coordination.autoReuse').trigger('click')
     await flushPromises()
     expect(patchJson.mock.calls.at(-1)![1]).toMatchObject({ askBeforeRecruitment: false })
   })

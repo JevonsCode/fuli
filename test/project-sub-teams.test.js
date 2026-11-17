@@ -23,6 +23,8 @@ test('policy maps the exact project-local layout both ways without sending omitt
   assert.equal(Object.hasOwn(legacy, 'ask_before_recruitment'), false);
   assert.equal(providerProjectAgentCoordinationPolicy({ personalSpaceId: 'space', personalProjectId: 'project',
     askBeforeRecruitment: false }).ask_before_recruitment, false);
+  assert.equal(providerProjectAgentCoordinationPolicy({ personal_space_id: 'space', personal_project_id: 'project',
+    ask_before_recruitment: true }).ask_before_recruitment, true);
 });
 
 test('team projection and entry context preserve immediate parents and one user-facing owner', async () => {

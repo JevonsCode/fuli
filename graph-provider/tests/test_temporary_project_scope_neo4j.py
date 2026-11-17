@@ -71,7 +71,9 @@ async def test_a_project_with_no_saved_policy_hires_without_asking_and_a_save_wi
             'staffing_intent': 'temporary', 'duration': 'one_off', 'routing_reason': 'Synthetic acceptance.'}
         route = await client.post('/v1/project-agent-tasks', json=payload)
         assert route.status_code == 200, route.text
-        assert route.json()['task']['status'] != 'awaiting_recruitment'
+        # Hired, not only unasked: executor authorization can still block the work itself.
+        assert route.json()['task']['status'] in {'queued', 'blocked'}
+        assert route.json()['task']['lead_agent_id']
         assert route.json()['recruitment']['confirmation_mode'] == 'automatic'
 
         # The person turns asking on; a later save that does not state the switch keeps it.
