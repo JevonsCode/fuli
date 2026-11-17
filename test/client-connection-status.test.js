@@ -139,7 +139,7 @@ test('an observation that cannot be saved is kept for this observer and reported
   assert.equal(byId(removed, 'codex').status, 'removed', 'the just-observed connection is not forgotten');
 });
 
-test('clients described by hand are listed apart, with where their MCP entry goes', async (t) => {
+test('clients described by hand are listed apart, with where their MCP entry goes and what FULI put in them', async (t) => {
   const { make, answer } = fixture(t);
   answer([
     installerClient('codex'),
@@ -151,8 +151,11 @@ test('clients described by hand are listed apart, with where their MCP entry goe
   const result = await make().observe();
   assert.deepEqual(result.clients.map(({ id }) => id), ['codex']);
   assert.deepEqual(result.customClients, [
-    { id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true },
-    { id: 'team-client', label: 'Team', detected: false, status: 'not_detected', mcpPaths: ['~/.team/mcp.json'], removable: false }
+    { id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true,
+      components: { mcp: 'current' } },
+    { id: 'team-client', label: 'Team', detected: false, status: 'not_detected', mcpPaths: ['~/.team/mcp.json'], removable: false,
+      // A part the client takes none of is not listed.
+      components: { mcp: 'missing' } }
   ]);
 });
 

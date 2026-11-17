@@ -111,7 +111,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
         id: client.id, label: client.label, detected: client.detected,
         status: entryState(client.components) === 'conflict' ? 'unknown' : statusOf(client, false),
         // Where the person puts FULI's MCP entry by hand, relative to home.
-        mcpPaths: client.mcpPaths, removable: removable.has(client.id) })) };
+        mcpPaths: client.mcpPaths, removable: removable.has(client.id), components: client.components })) };
   }
   return { observe };
 }

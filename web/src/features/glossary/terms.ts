@@ -92,6 +92,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   term('setting', 'agentNamingStyle', 'preferences.home.naming.title', 'glossary.setting.agentNamingStyle'),
   term('setting', 'topicPromotion', 'settings.topicPromotion.title', 'glossary.setting.topicPromotion'),
   term('setting', 'diagnostics', 'settings.diagnostics.title', 'glossary.setting.diagnostics'),
+  // The parts FULI installs into a client (Settings › 客户端 tiles); their names are common words, so tagged.
+  ...['mcp', 'hooks', 'plugin', 'skills', 'instructions', 'permissions', 'prompts'].map(part =>
+    taggedTerm('setting', `clientPart.${part}`, `settings.connection.parts.name.${part}`, `glossary.setting.clientPart.${part}`)),
   // Each card's and page area's 「?」: what it is for and how the person's own Agent does it.
   ...AI_HELP_TOPICS.map(([key, labelKey, aiTask]) =>
     ({ ...taggedTerm('task', key, labelKey, `aiHelp.topics.${key}`), ...(aiTask ? { aiTask } : {}) })),
