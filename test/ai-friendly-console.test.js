@@ -77,8 +77,8 @@ async function promptsModule() {
 }
 
 const CONTEXT = { console: 'http://127.0.0.1:2999', area: 'Synthetic card', guide: 'https://example.test/models/' };
-// Words in the prompts that look like tool names but are protocol or field names.
-const NOT_TOOLS = new Set(['openai_embeddings', 'openai_chat']);
+// Words in the prompts that look like tool names but are protocol or field names, or a refusal's reason.
+const NOT_TOOLS = new Set(['openai_embeddings', 'openai_chat', 'client_running']);
 
 test('「让 AI 来做」 prompts name only real Agent tools and run_delegated_action routes, in both languages', async () => {
   const { AI_TASK_IDS, aiTaskPrompt } = await promptsModule();
@@ -123,6 +123,18 @@ test('「添加客户端」\'s prompt opens this console\'s add link, never the 
   assert.deepEqual(addClientDraft({ tab: 'clients', addClient: ' Acme ', mcpFile: '~/.acme/mcp.json', format: 'nope' }),
     { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' });
   assert.equal(addClientDraft({ tab: 'clients' }), null);
+});
+
+test('「让 AI 来做」 prompts are sent as they are: nothing in them is for the person to fill in', async () => {
+  const { AI_TASK_IDS, aiTaskPrompt } = await promptsModule();
+  for (const task of AI_TASK_IDS) {
+    for (const locale of ['zh-CN', 'en-US']) {
+      const prompt = aiTaskPrompt(task, locale, CONTEXT);
+      // The opening line states the whole request; a <placeholder> there would be the person's to replace.
+      assert.doesNotMatch(prompt.split('\n')[0], /[<>]/, `${task}/${locale} opens with a placeholder`);
+      assert.doesNotMatch(prompt, /<[^>]*[\u4e00-\u9fff][^>]*>|<(?:what|the|your|projects|clients)\b/i, `${task}/${locale} asks the person to fill something in`);
+    }
+  }
 });
 
 test('the model prompt keeps a key out of every tool and output, and the catalog says how keys arrive', async () => {
