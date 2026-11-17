@@ -63,10 +63,14 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
       const owned = agent?.profile.capabilities.includes(employeeCapability(manifest.id));
       const stored = managementStore.read(spaceId, manifest.id);
       const management = managementFor(manifest, owned ? agent : null, stored);
+      // A temporary (session- or task-scoped) project stays listed, so the
+      // console's board still shows the tasks an employee keeps there; it is
+      // marked, and Jefa's cross-project summary leaves it out.
       const managedProjects = !globalOnly(manifest) && owned && agent.profile.status === 'active' ? projects
         .filter(entry => entry.profile?.lifecycle !== 'archived' && policyAllowsProject(management, entry.project_id)
           && (management.mode === 'all' || activeEmployeeAssignments(agent).some(a => a.personalProjectId === entry.project_id)))
-        .map(entry => ({ id: entry.project_id, name: entry.profile.name })) : [];
+        .map(entry => ({ id: entry.project_id, name: entry.profile.name,
+          ...(entry.scope_type === 'temporary' ? { temporary: true } : {}) })) : [];
       return {
         ...manifest,
         runtime: manifest.runtime ? { apiVersion: manifest.runtime.apiVersion } : null,
