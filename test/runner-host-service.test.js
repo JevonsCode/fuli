@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -8,9 +8,10 @@ import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/
 import { createRunnerHost } from '../src/runner/host-service.js';
 import { parseInvitation } from '../src/runner/protocol.js';
 
+// The host closes before its folder is removed: Windows refuses to delete a
+// SQLite file that is still open, so a host that kept one would fail here.
 function hostFixture(t, { addresses = ['192.168.1.20'] } = {}) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-runner-host-'));
-  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const listeners = [];
   const host = createRunnerHost({ app: {}, dataDir, discoverAddresses: () => addresses,
     loadIdentity: async () => deviceIdentity(await createDeviceCertificate()),
@@ -21,8 +22,11 @@ function hostFixture(t, { addresses = ['192.168.1.20'] } = {}) {
       return listener;
     },
     createDiscovery: () => ({ advertise: () => ({ stop: () => {} }), close: () => {} }) });
-  t.after(() => host.close());
-  return { host, listeners };
+  t.after(async () => {
+    await host.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+  return { host, listeners, dataDir };
 }
 
 test('an invitation starts the listener and names where the host is and how it proves itself', async (t) => {
@@ -49,4 +53,24 @@ test('revoking needs a fingerprint that names exactly one paired runner', async 
   const { host } = hostFixture(t);
   assert.deepEqual(await host.revoke('abc'), { ok: false, code: 'runner_unknown' });
   assert.deepEqual(await host.revoke('0123456789abcdef'), { ok: false, code: 'runner_unknown' });
+});
+
+test('a host that never invited opens no store and no listener', async (t) => {
+  const { host, listeners, dataDir } = hostFixture(t);
+  await host.start();
+  assert.equal(host.list().runners.length, 0);
+  assert.equal(existsSync(path.join(dataDir, 'runner')), false);
+  assert.equal(listeners.length, 0);
+});
+
+test('closing the host ends its listener and releases its files', async (t) => {
+  const { host, listeners, dataDir } = hostFixture(t);
+  await host.invite({ name: 'Office laptop' });
+  assert.equal(existsSync(path.join(dataDir, 'runner', 'host.sqlite')), true);
+
+  await host.close();
+  assert.equal(listeners[0].closed, true);
+  rmSync(path.join(dataDir, 'runner'), { recursive: true });
+  host.list();
+  assert.equal(existsSync(path.join(dataDir, 'runner')), false, 'nothing opens the store again after close');
 });

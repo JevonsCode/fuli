@@ -12,12 +12,14 @@ import { displayName, encodeInvitation, newInvitationCode, RUNNER_PORT, RUNNER_S
 
 // This computer as a host of runners (docs/runner.md). The listener runs
 // exactly while a runner is paired or an invitation is live. Every change, an
-// invitation's expiry and, while it runs, a check every REDISCOVER_MS settle it
-// again, one settle at a time: it looks up this computer's addresses and
-// rebinds when they changed, ends the sessions of revoked runners, and retries
-// after no network or a busy port. While a runner is paired the host announces
-// its certificate fingerprint over mDNS, so a runner on a network that gave the
-// host another address finds it again.
+// invitation's expiry and, while one of them holds, a check every REDISCOVER_MS
+// settle it again, one settle at a time: it looks up this computer's addresses
+// and rebinds when they changed, ends the sessions of revoked runners, and
+// retries after no network or a busy port. A host that never invited opens no
+// store, no socket and no timer. While a runner is paired the host announces
+// its certificate fingerprint over mDNS (the multicast sockets are open only
+// then), so a runner on a network that gave the host another address finds it
+// again. close() releases all of it: listener, sessions, mDNS, timer, store.
 const REDISCOVER_MS = 60 * 1000;
 const DEFAULT_HOST_NAME = 'FULI host';
 
@@ -39,13 +41,16 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
 
   async function settleNow() {
     clearTimeout(timer);
+    timer = null;
+    let wanted = true;
     try {
-      await settleListener();
+      wanted = await settleListener();
     } catch (error) {
       problem = 'unavailable';
       onError(error);
     }
-    if (closed) return;
+    // Nothing to follow without a runner or an invitation: invite() and pairing settle again.
+    if (closed || !wanted) return;
     const expiry = Date.parse(store.nextInvitationExpiry() ?? '');
     const wait = Number.isFinite(expiry) ? Math.min(Math.max(expiry - now(), 0) + 1, REDISCOVER_MS) : REDISCOVER_MS;
     timer = setTimeout(settle, wait);
@@ -57,13 +62,13 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     if (!wanted) {
       await stopServing();
       problem = null;
-      return;
+      return false;
     }
     const addresses = discoverAddresses();
     if (!addresses.length) {
       await stopServing();
       problem = 'no_network';
-      return;
+      return true;
     }
     identity ??= await loadIdentity();
     if (serving) {
@@ -73,7 +78,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         await serving.listener.rebind(addresses);
       } catch (error) {
         await stopServing();
-        return refused(error);
+        refused(error);
+        return true;
       }
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
@@ -82,17 +88,21 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle }) };
       } catch (error) {
         await routes.close();
-        return refused(error);
+        refused(error);
+        return true;
       }
     }
     problem = null;
     announce(store.hasRunners());
+    return true;
   }
 
   function announce(wanted) {
     if (!wanted || !serving) {
       advert?.stop();
       advert = null;
+      discovery?.close();
+      discovery = null;
       return;
     }
     if (advert) return;
@@ -148,7 +158,6 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
     async close() {
       closed = true;
       await settle();
-      discovery?.close();
       store.close();
     }
   };

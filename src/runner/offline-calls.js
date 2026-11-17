@@ -9,10 +9,28 @@ import { sha256Bytes } from '../security/digest.js';
 // entry gets the last entry for that folder under a token of the runner's own;
 // a checkpoint is queued; another read-only call gets the last answer to the
 // same call. Everything else says the host must be reachable. Every offline
-// answer says it is one, and when the answer it repeats was given.
-export const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
+// answer says it is one, and when the answer it repeats was given. An offline
+// task entry repeats only the folder's preferences: what belonged to the
+// earlier task (its token, receipt, checkpoint duty, recall) is not its own.
+const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
 const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
-const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
+export const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
+// What an earlier task entry said about the folder rather than about its task.
+const FOLDER_ENTRY_FIELDS = ['effective_preferences', 'active_conflicts', 'deferred_conflicts', 'context', 'project_scope'];
+const OFFLINE_CHECKPOINT_GUIDANCE = 'Offline task: checkpoint only when there are capture candidates or a meaningful workLog. '
+  + 'It is queued on this computer (status queued_offline) and saved only once the host answers again; '
+  + 'never say it was saved before then. There is no agent_receipt for this task.';
+
+export function isOfflineToken(value) {
+  return typeof value === 'string' && value.startsWith(OFFLINE_TOKEN_PREFIX);
+}
+
+// The call's arguments without a runner's offline task token, for the host,
+// which never knew it; through fuli_call the token is in its input.
+export function withoutOfflineToken(name, args) {
+  const strip = ({ taskContextToken: _token, ...rest }) => rest;
+  return name === 'fuli_call' && typeof args?.toolName === 'string' ? { ...args, input: strip(args.input ?? {}) } : strip(args);
+}
 
 // The tool a call runs and its input, through the chat profile's fuli_call too.
 export function effectiveCall(name, args) {
@@ -32,15 +50,15 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
     store.beginOfflineTask({ token, projectPath: input.projectPath ?? null, sourceApplication });
     const earlier = store.answer(answerKey(tool, input));
-    const body = { ...(earlier ? resultValue(earlier.body) : { effective_preferences: [] }),
-      taskContextToken: token, task_context_token: token };
-    return envelope({ ...body, runner: offlineNote(earlier?.at,
-      'Your FULI host is unreachable. These are the preferences it last gave for this folder; a checkpoint is queued and delivered when it answers again.') });
+    return envelope({ effective_preferences: [], ...folderEntry(earlier ? resultValue(earlier.body) : null),
+      taskContextToken: token, task_context_token: token, checkpoint_required: false,
+      checkpoint_guidance: OFFLINE_CHECKPOINT_GUIDANCE, runner: offlineNote(earlier?.at,
+        'Your FULI host is unreachable. These are the preferences it last gave for this folder; a checkpoint is queued and delivered when it answers again.') });
   }
   if (QUEUED_TOOLS.has(tool)) {
     const id = randomUUID();
     const token = typeof input.taskContextToken === 'string' ? input.taskContextToken : null;
-    const offlineTask = token?.startsWith(OFFLINE_TOKEN_PREFIX) ? store.offlineTask(token) : null;
+    const offlineTask = isOfflineToken(token) ? store.offlineTask(token) : null;
     store.enqueue({ id, tool, input, sourceApplication, sessionId, offlineProjectPath: offlineTask?.projectPath ?? null });
     return envelope({ status: 'queued_offline', outboxId: id, runner: offlineNote(null,
       'Your FULI host is unreachable. The checkpoint is queued on this computer and delivered when the host answers again.') });
@@ -54,6 +72,18 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
   }
   return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code: 'host_unreachable',
     message: 'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.' }) }] };
+}
+
+// A queued checkpoint the host has now applied.
+export function deliveredAnswer(outboxId) {
+  return envelope({ status: 'delivered', outboxId, runner: { offline: false,
+    message: 'The host answered again; this checkpoint was delivered to it and saved.' } });
+}
+
+function folderEntry(value) {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(FOLDER_ENTRY_FIELDS.filter((field) => value[field] !== undefined)
+    .map((field) => [field, value[field]]));
 }
 
 // Task entry is kept per folder (its request differs every time); other

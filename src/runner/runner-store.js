@@ -34,9 +34,14 @@ export class RunnerStore {
   constructor(path = ':memory:', { now = Date.now } = {}) {
     this.path = path;
     this.now = now;
+    this.closed = false;
   }
 
+  // Closed for good: a call that arrives after close() (a request still in
+  // flight at shutdown) fails instead of opening the file again, which would
+  // keep it locked on Windows (updates, uninstall).
   get db() {
+    if (this.closed) throw new Error('The runner store is closed');
     this.database ??= openFormattedDatabase(this.path, RUNNER_FORMAT);
     return this.database;
   }
@@ -148,6 +153,7 @@ export class RunnerStore {
   }
 
   close() {
+    this.closed = true;
     this.database?.close();
     this.database = null;
   }
