@@ -148,6 +148,21 @@ export class JefaBoardStore {
     });
   }
 
+  // Where one project stands, from its tasks alone: the count in every status,
+  // the blocked tasks and the ones waiting for the person's acceptance (at most
+  // perStatus each, in board order) with how many more there are, and when
+  // anything last changed. Reads only; no revision is touched.
+  summary(scope, perStatus) {
+    const parameters = [scope.spaceId, scope.projectId];
+    const counts = Object.fromEntries(STATUS_ORDER.map((status) => [status, 0]));
+    for (const { status, count } of this.database.prepare(`SELECT status, count(*) AS count FROM jefa_work_items
+      WHERE space_id = ? AND project_id = ? GROUP BY status`).all(...parameters)) counts[status] = count;
+    const named = (status) => this.database.prepare(`SELECT * FROM jefa_work_items WHERE space_id = ? AND project_id = ? AND status = ?
+      ${BOARD_ORDER} LIMIT ?`).all(...parameters, status, perStatus).map(itemFromRow);
+    const { at } = this.database.prepare('SELECT max(updated_at) AS at FROM jefa_work_items WHERE space_id = ? AND project_id = ?').get(...parameters);
+    return { counts, blocked: named('blocked'), awaitingAcceptance: named('review'), lastChangedAt: at };
+  }
+
   items(scope) {
     return this.database.prepare(`SELECT * FROM jefa_work_items WHERE space_id = ? AND project_id = ? ${BOARD_ORDER}`)
       .all(scope.spaceId, scope.projectId).map(itemFromRow);

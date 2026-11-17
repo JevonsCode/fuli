@@ -62,6 +62,15 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     } catch { return false; }
   }
 
+  // Jefa's cross-project summary reads every project the person lets her manage.
+  // The host names them from the same scope the console shows (never an argument),
+  // so the package needs no way to ask the Provider for projects itself.
+  async function managedProjectsFor(context, input) {
+    if (context.templateId !== 'jefa' || input.tool !== 'summarize_projects') return {};
+    const { managedProjects } = (await recruitment.list()).templates.find((entry) => entry.id === context.templateId);
+    return { managedProjects };
+  }
+
   async function callTool(input) {
     const context = await workspace({ ...input, readOnly: await readsOnly(input) });
     const runtime = await registry.runtime(context.templateId);
@@ -82,7 +91,7 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
       verified: input.sourceSessionVerified === true,
     } : null;
     try {
-      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session });
+      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session, ...await managedProjectsFor(context, input) });
       if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
       return { ...result, ...(context.templateId === 'jefa' && input.tool === 'get_task' ? await keptChecks(app, context) : {}),
         collaboration_receipt: employeeCollaborationReceipt(app, context, {
