@@ -25,7 +25,7 @@ export interface EmployeeTemplate {
   defaultProjectScope?: 'all' | 'selected'
   workbench?: { kind: 'native'; view: 'people' | 'judgment' | 'unclaimed' }
   management?: EmployeeManagement
-  managedProjects?: { id: string; name: string }[]
+  managedProjects?: { id: string; name: string; temporary?: boolean }[]
 }
 
 export interface EmployeeManagement {
