@@ -1,0 +1,13 @@
+{
+  "version": "0.29.0-beta.1",
+  "zh": [
+    "另一台电脑可以当「运行机」：上面的 Codex、Cursor 等客户端都用这台电脑的 FULI，记忆只存一份。",
+    "运行机连不上主机时照常干活：任务记录先排队，连上后自动补交，同一条只记一次。",
+    "主机换了网络地址，运行机会按证书指纹自己再找到它。"
+  ],
+  "en": [
+    "Another computer can be a runner: its Codex, Cursor and other clients use this computer's FULI.",
+    "A runner keeps working while the host is away; checkpoints queue and are delivered once, later.",
+    "When the host's address changes, its runners find it again by its certificate fingerprint."
+  ]
+}
