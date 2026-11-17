@@ -19,6 +19,7 @@ import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
+import { introductionEntry } from './task-entry-introduction.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
 import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
@@ -207,8 +208,12 @@ async function entryPreferences(application, projectResolution, {
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
   const ownerChange = ownerFrom && ownerChangeEntry(ownerFrom, ownerFromName, projectResolution, selection.agent.agentId, context?.role?.name);
+  // A worker run (includeMessages false) never introduces its Agent to the person.
+  const introduction = includeMessages ? introductionEntry(application, { resolution: projectResolution, selection,
+    context, input: { projectAgentId, sessionId, sourceSessionId, agentInvocation, agentToolName, taskPrompt },
+    sessionOwnerFrom: ownerChange ? ownerFrom.agentId : null }) : null;
   const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection),
-    ...(ownerChange ? [ownerChange.marker] : [])];
+    ...(ownerChange ? [ownerChange.marker] : []), ...(introduction ? [introduction.marker] : [])];
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
@@ -243,7 +248,8 @@ async function entryPreferences(application, projectResolution, {
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,
-      assignmentStatus: selection?.status, assignmentReason: selection?.reason, notices
+      assignmentStatus: selection?.status, assignmentReason: selection?.reason, notices,
+      introduction: introduction?.line
     }) };
 }
 

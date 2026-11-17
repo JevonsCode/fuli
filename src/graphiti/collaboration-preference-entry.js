@@ -46,7 +46,7 @@ async function collaborationPreferences(application, {
   }
   projectResolution = await resolveTaskEntryProject(application, projectResolution, {
     sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt, sessionTask,
-    clientModel
+    clientModel, turnId
   });
   const preferences = await taskEntryPreferences(application, projectResolution, {
     personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,

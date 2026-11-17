@@ -1,5 +1,5 @@
 import { CLIENT_PACK_FORMAT } from '../setup/agents/client-pack-store.js';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { COORDINATOR_FORMAT } from '../../packages/roundtable/src/peer/coordinator-store.js';
@@ -12,6 +12,7 @@ import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
 import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
 import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
+import { AGENT_INTRODUCTIONS_FILE, AGENT_INTRODUCTIONS_FORMAT } from '../agent-introductions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
@@ -91,6 +92,8 @@ const sqliteStores = () => [
   ['agent-workflows.sqlite', AGENT_WORKFLOWS_FORMAT],
   // Which knowledge items the automatic task-entry recall showed and which the Agent reported using (rec#63); ids only.
   ['recall-impressions.sqlite', RECALL_IMPRESSIONS_FORMAT],
+  // Which FLAs introduced themselves to the person and who last owned each project's tasks; ids and names only.
+  [AGENT_INTRODUCTIONS_FILE, AGENT_INTRODUCTIONS_FORMAT],
   // Each Agent's look as the person chose it, every earlier choice kept (rec#11 D-89).
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
   // Which recommended Skills and MCP servers of its occupation kit each FLA uses, every answer kept.
@@ -195,6 +198,15 @@ const logStores = () => [
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
   'unreadable', 'upgrade_on_open', 'unversioned', 'current', 'empty', 'absent'];
+
+// Whether FULI already kept data in this directory: one of its SQLite stores
+// or per-session record directories other than `except`, all created by use.
+// The JSON files setup writes (settings, runtime configuration) do not count,
+// so a new installation reads as one that kept nothing yet.
+export function keptDataBefore(dataDir, except = []) {
+  return [...sqliteStores(), ...jsonDirectories()].some(([label]) => !except.includes(label)
+    && existsSync(join(dataDir, label)));
+}
 
 // The single-file stores of one data directory: each kind's engine can
 // preview, apply, undo and restore them (migration-plan.js).

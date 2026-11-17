@@ -16,6 +16,7 @@ import { receiptNotices } from './capture-notice.js';
 import { standingReceiptNotices } from './task-entry-standing-owner.js';
 import { namedFlaReceiptNotices } from './task-entry-named-fla.js';
 import { ownerChangeReceiptNotices } from './task-entry-owner-change.js';
+import { introductionReceiptLine } from './task-entry-introduction.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
@@ -121,7 +122,7 @@ export async function checkpointTaskKnowledge(application, {
         assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        roundtable: roundtableTurn(task.token),
+        roundtable: roundtableTurn(task.token), introduction: introductionReceiptLine(task),
         notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application),
           unsavedRemember: decision.allowed ? null : remember }), ...await receiptFormatNotices(application, { taskId: task.token })],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),

@@ -6,6 +6,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
 import { taskKnowledgeGuidance } from './task-knowledge-guidance.js';
 import { taskJudgmentContext } from './task-entry-preferences.js';
+import { introductionReceiptLine } from './task-entry-introduction.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
 import { blockedPreferenceRecovery } from '../mcp/preference-delivery.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
@@ -95,7 +96,8 @@ export async function readTaskPreferences(application, {
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.display_name ?? null, role: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
       notices: [...receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
-        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })] }),
+        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
+      introduction: introductionReceiptLine(task) }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };
