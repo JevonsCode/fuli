@@ -86,6 +86,14 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/12-message-runner', to: 12, kind: 'add-columns', table: 'messages',
     summary: 'which runner (another computer of the person) sent each ask, and whether it came from another computer',
     columns: { from_runner: 'TEXT', origin: 'TEXT' }
+  }, {
+    // The native session an ask named (message_agent conversation): only that
+    // client and session, or one FULI handed it to, see and answer it. Apart
+    // from to_client/to_session (where it was delivered) and the reply's
+    // from_client/from_session (who answered). Null for an ask that named none.
+    id: 'roundtable/13-message-target-session', to: 13, kind: 'add-columns', table: 'messages',
+    summary: 'the client and native session an ask named, apart from where it was delivered and who answered',
+    columns: { target_client: 'TEXT', target_session: 'TEXT' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -145,13 +153,15 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         const seq = (database.prepare('SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ?').get(threadId).seq) + 1;
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
-          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status, from_runner, origin)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status, from_runner, origin,
+          target_client, target_session)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
           message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
-          message.delivery ?? null, message.from?.runner ?? null, message.origin ?? null);
+          message.delivery ?? null, message.from?.runner ?? null, message.origin ?? null,
+          message.target?.client ?? null, message.target?.session ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });

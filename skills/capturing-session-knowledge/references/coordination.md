@@ -154,6 +154,14 @@ The same FLA in another session is another instance. Address it by `conversation
 session's `sessionId` from `find_agents` `recentConversations`; naming your own FLA without it
 returns the sessions to choose from.
 
+An ask that names a session (`conversation` is a `sessionId`) belongs to that client and native
+session: only it, or a session FULI delivered the ask to, sees it in `read_agent_messages` and
+task-entry `agent_messages` and may answer it with `reply_agent_message`. The same FLA in another
+client or session is refused even with the `messageId`, and the named session can still answer it
+once. `read_agent_thread` shows `target` (the named client and session), `to` (where it was
+delivered) and `from` (who wrote each message), each with client and session. An ask that names no
+session stays the FLA's: any of its sessions in the project sees and answers it.
+
 ## Ask Another Project's Lead
 
 When the person asks about another project ("去看看 X 项目", "问问 X 项目", "ask the X project"), the
