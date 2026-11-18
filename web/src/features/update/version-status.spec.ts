@@ -62,5 +62,10 @@ describe('useChannelVersionStatus', () => {
     await refreshVersionStatus(undefined, { fresh: true })
     expect(getJson).toHaveBeenLastCalledWith('/api/system/version?fresh=1', expect.anything())
     expect(offeredVersion.value).toBe('0.27.17')
+
+    // npm unreachable for a moment on the same channel keeps the release found.
+    getJson.mockResolvedValueOnce({ status: 'unavailable', channel: 'stable', currentVersion: '0.27.16', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '2026-11-18T11:29:00.000Z' })
+    await refreshVersionStatus(undefined, { fresh: true })
+    expect(offeredVersion.value).toBe('0.27.17')
   })
 })

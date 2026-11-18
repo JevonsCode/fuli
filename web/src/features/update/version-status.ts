@@ -36,10 +36,12 @@ const lastAnswer = ref<PackageVersionStatus | null>(null)
 export const offeredVersion = computed(() => offersUpdate(lastAnswer.value) ? lastAnswer.value.latestVersion : null)
 
 // An answer checked earlier than the one kept (a slow start-up read landing after
-// 「检查更新」) never replaces it.
+// 「检查更新」) never replaces it, and npm being unreachable for a moment does not
+// hide a release already found on the same channel.
 function keep(answer: PackageVersionStatus) {
-  const kept = Date.parse(lastAnswer.value?.checkedAt ?? '')
-  if (Date.parse(answer.checkedAt) < kept) return
+  const held = lastAnswer.value
+  if (held && Date.parse(answer.checkedAt) < Date.parse(held.checkedAt)) return
+  if (held?.status === 'ready' && answer.status !== 'ready' && answer.channel === held.channel) return
   lastAnswer.value = answer
 }
 
@@ -82,7 +84,8 @@ export function useChannelVersionStatus(channel: Ref<UpdateChannel | undefined>)
         return
       }
       status.value = answer
-      keep(answer)
+      // The last try may show another channel's answer here; the dot never takes it.
+      if (!answer.channel || answer.channel === channel.value) keep(answer)
     } catch (error) {
       if ((error as Error)?.name !== 'AbortError') failed.value = true
     } finally {
