@@ -24,7 +24,7 @@ import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
-import { CALL_TIMEOUT_MS, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -61,8 +61,9 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
-  const sessionId = nativeSessionFromEnv(sourceApplication, env) ?? mcpHostSessionId({});
-  const server = createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile,
+  const nativeSession = nativeSessionFromEnv(sourceApplication, env);
+  const sessionId = nativeSession ?? mcpHostSessionId({});
+  const server = createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -84,7 +85,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, connection };
 }
 
-function createRunnerServer({ store, connection, sourceApplication, sessionId, toolProfile = 'chat',
+function createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -114,6 +115,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, t
     created.setNotificationHandler(ToolListChangedNotificationSchema, () => void server.sendToolListChanged().catch(() => {}));
     const http = new StreamableHTTPClientTransport(new URL(`${host.origin}${RUNNER_PATHS.mcp}`), { fetch: host.fetch,
       requestInit: { headers: { [SOURCE_APPLICATION_HEADER]: sourceApplication, [RUNNER_SESSION_HEADER]: sessionId,
+        ...(nativeSession ? { [NATIVE_SESSION_HEADER]: '1' } : {}),
         [TOOL_PROFILE_HEADER]: toolProfile } } });
     try {
       await created.connect(http);

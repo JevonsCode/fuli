@@ -10,6 +10,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { nativeSessionFromEnv } from '../src/agents/native-session-env.js';
 import { resolveCallerProjectPath } from '../src/graphiti/caller-workspace.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -28,14 +29,14 @@ const PROJECTS = [{ project_id: 'widgets', profile: { sources: [{ kind: 'reposit
 // The host's MCP server, reduced to the two calls a runner's task makes. It
 // resolves folders through the caller workspace exactly as task entry does.
 function hostTools(calls) {
-  return (_app, { sourceApplication, hostSessionId, withRuntimeLease }) => {
+  return (_app, { sourceApplication, hostSessionId, env, withRuntimeLease }) => {
     const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [
       { name: 'get_collaboration_preferences', inputSchema: { type: 'object' } },
       { name: 'checkpoint_task_knowledge', inputSchema: { type: 'object' } }] }));
     server.setRequestHandler(CallToolRequestSchema, (request) => withRuntimeLease('test', () => {
       const { name, arguments: input } = request.params;
-      calls.push({ name, input, sourceApplication, hostSessionId });
+      calls.push({ name, input, sourceApplication, hostSessionId, env });
       const value = name === 'get_collaboration_preferences'
         ? { resolution: resolveCallerProjectPath(input.projectPath, PROJECTS), effective_preferences: ['short answers'],
           taskContextToken: 'host-token-1' }
@@ -120,6 +121,8 @@ test('a runner pairs once, works through its host, and delivers what it queued w
   assert.deepEqual(entry.structuredContent.resolution, { status: 'matched', basis: 'git_remote', personalProjectId: 'widgets' });
   assert.equal(calls[0].sourceApplication, 'codex');
   assert.equal(calls[0].hostSessionId, CODEX_THREAD, 'the host sees the Codex conversation a local client would name');
+  // As the client's own session, so task entry gives it a task token (a runner without it got native_session_required).
+  assert.equal(nativeSessionFromEnv('codex', calls[0].env), CODEX_THREAD);
 
   away = true;
   const offline = await client.callTool({ name: 'get_collaboration_preferences',

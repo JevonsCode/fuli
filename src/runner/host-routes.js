@@ -1,4 +1,5 @@
 import { callAgentTool } from '../agent-tools.js';
+import { nativeSessionEnv } from '../agents/native-session-env.js';
 import { runAsRunnerCall } from '../app/agent-request-context.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { mapHttpError } from '../http/error-mapping.js';
@@ -12,8 +13,8 @@ import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
-import { displayName, ENTRY_ID, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER,
-  TOOL_PROFILE_HEADER } from './protocol.js';
+import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
+  SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -119,9 +120,11 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const sourceApplication = normalizeMcpSourceApplication(request.headers[SOURCE_APPLICATION_HEADER] ?? 'other');
       const sessionId = runnerSession(request.headers[RUNNER_SESSION_HEADER]);
       const toolProfile = request.headers[TOOL_PROFILE_HEADER] === 'full' ? 'full' : 'chat';
-      // env {}: the console's own environment names no session or setting of the runner's client.
+      // The console's own environment names no session or setting of the runner's client. A session the
+      // runner read from its client's environment is the client's own, as on the client's computer.
+      const env = request.headers[NATIVE_SESSION_HEADER] === '1' ? nativeSessionEnv(sourceApplication, sessionId) : {};
       await sessions.handle(request, response, { owner: fingerprint, createMcp: () => createMcp(app, {
-        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env: {},
+        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env,
         withRuntimeLease: inWorkspace(fingerprint) }) });
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);

@@ -23,6 +23,8 @@ export const RUNNER_PATHS = Object.freeze({
 export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
 // The client session that process serves, as a local client's MCP process names it.
 export const RUNNER_SESSION_HEADER = 'x-fuli-runner-session';
+// '1' when that session is the client's own, read from the environment the client gave the runner's MCP process.
+export const NATIVE_SESSION_HEADER = 'x-fuli-runner-native-session';
 // The tool profile the client's FULI entry names (chat unless it asks for full).
 export const TOOL_PROFILE_HEADER = 'x-fuli-tool-profile';
 // A runner's console entry sets it when the browser sent an Origin the entry checked was its own (console-relay.js).
