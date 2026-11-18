@@ -35,6 +35,9 @@ class ConversationQuery(ConversationScope):
     topic: str | None = Field(default=None, min_length=1, max_length=80)
     after: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=50)
+    # list only: each conversation's last few task results (at, status, summary, and
+    # source when recorded) for a progress view; summaries are cut to 400 bytes.
+    with_progress: bool = False
 
 
 class ConversationEvent(StrictModel):

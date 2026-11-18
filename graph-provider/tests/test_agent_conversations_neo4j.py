@@ -457,3 +457,46 @@ def test_one_conversation_written_by_claude_then_codex_names_each_events_client_
             assert row['title'] == 'Write A'
             assert row['title_source'] == {'client': 'claude_code', 'session_id': 'synthetic-claude-a'}
     asyncio.run(scenario())
+
+
+def test_a_progress_list_pages_past_twenty_and_carries_each_conversations_task_results():
+    """11-19 (Jefa's list_project_conversations): a list asked with_progress names each
+    conversation's last task results, and after passes over the newest for a page."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name': 'Synthetic progress', 'kind': 'personal'})).json()['id']
+            project = 'progress-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            scope = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer')
+
+            async def post(path, body):
+                r = await client.post(path, json={**scope, **body})
+                assert r.status_code == 200, r.text
+                return r.json()
+
+            for n in range(22):
+                session = f'synthetic-session-{n:02d}'
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id='engineer', session_id=session, source_application='codex', token=token))
+                assert r.status_code == 200, r.text
+                await post('/v1/agent-conversations/begin', {'source_application': 'codex', 'session_id': session,
+                    'task_context_token': token})
+                if n % 2 == 0:
+                    await post('/v1/agent-conversations/append', {'source_application': 'codex', 'session_id': session,
+                        'task_context_token': token, 'summary': f'Result {n}', 'status': 'completed',
+                        'events': [dict(event_id=f'task-{n}:summary', role='summary', kind='checkpoint', content=f'Result {n}')]})
+
+            async def page(after, limit=20, **extra):
+                return (await post('/v1/agent-conversations/query', {'mode': 'list', 'after': after, 'limit': limit,
+                    **extra}))['conversations']
+
+            first, second = await page(0, with_progress=True), await page(20, with_progress=True)
+            ids = [row['id'] for row in first + second]
+            assert len(ids) == 22 and len(set(ids)) == 22, 'two pages, no repeat and no gap'
+            assert all('recent_tasks' in row for row in first + second)
+            reported = [row for row in first + second if row['recent_tasks']]
+            assert len(reported) == 11
+            assert all(row['recent_tasks'][-1]['summary'].startswith('Result ') for row in reported)
+            assert all('recent_tasks' not in row for row in await page(0, limit=3)), 'only when asked'
+    asyncio.run(scenario())

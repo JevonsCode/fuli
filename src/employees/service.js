@@ -7,6 +7,10 @@ import { employeeTaskEntry } from './task-entry.js';
 import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
 import { isPeerRoleAgent } from '../graphiti/project-team-view.js';
 import { briefAcceptanceChecks } from '../acceptance-checks/port.js';
+import { projectConversationProgress } from './project-conversation-progress.js';
+
+// Jefa tools that read across the projects she manages; the host names them.
+const CROSS_PROJECT_TOOLS = new Set(['summarize_projects', 'list_project_conversations']);
 
 export function createEmployeeService({ app, runtimeConfigPath, registry: configuredRegistry, managementStore: configuredManagementStore }) {
   const registry = configuredRegistry ?? createEmployeePackageRegistry(employeeDirectories(runtimeConfigPath));
@@ -66,11 +70,16 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
   // The host names them from the same scope the console shows (never an argument),
   // so the package needs no way to ask the Provider for projects itself.
   async function managedProjectsFor(context, input) {
-    if (context.templateId !== 'jefa' || input.tool !== 'summarize_projects') return {};
+    if (context.templateId !== 'jefa' || !CROSS_PROJECT_TOOLS.has(input.tool)) return {};
     const { managedProjects } = (await recruitment.list()).templates.find((entry) => entry.id === context.templateId);
     // A temporary project is one session's or task's scope, not a project the
     // person manages: listing each as an empty project only spends tokens.
-    return { managedProjects: managedProjects.filter((entry) => !entry.temporary).map(({ id, name }) => ({ id, name })) };
+    const projects = managedProjects.filter((entry) => !entry.temporary).map(({ id, name }) => ({ id, name }));
+    if (input.tool !== 'list_project_conversations') return { managedProjects: projects };
+    // The conversations are read here, over the same projects, so the package needs no
+    // Provider access of its own (project-conversation-progress.js).
+    return { projectConversations: await projectConversationProgress(app, { spaceId: context.personalSpaceId,
+      managedProjects: projects, args: input.arguments ?? {} }) };
   }
 
   async function callTool(input) {

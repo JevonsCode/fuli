@@ -30,6 +30,24 @@ SESSIONS_ELSEWHERE = 3
 ELSEWHERE_WINDOW = timedelta(hours=6)
 
 
+PROGRESS_TASKS = 3
+PROGRESS_SUMMARY_BYTES = 400
+
+
+def _recent_tasks(digest):
+    """The last task results a checkpoint wrote, newest last: when, status, a bounded
+    summary and, when the write recorded it, the checkpoint event it came from."""
+    try:
+        tasks = json.loads(digest or '{}').get('tasks') or []
+    except ValueError:
+        return []
+    def bounded(text):
+        raw = str(text or '').encode()
+        return raw[:PROGRESS_SUMMARY_BYTES].decode(errors='ignore') + ('…' if len(raw) > PROGRESS_SUMMARY_BYTES else '')
+    return [{'at': task.get('at'), 'status': task.get('status'), 'summary': bounded(task.get('summary')),
+             'source': task.get('source')} for task in tasks[-PROGRESS_TASKS:]]
+
+
 def _iso(value):
     return value.iso_format() if hasattr(value, 'iso_format') else (value.isoformat() if value else None)
 
@@ -87,8 +105,16 @@ class StoreAgentConversations:
         if request.mode == 'session':
             return await self._session_binding(scope, request)
         if request.mode == 'list':
-            return {'conversations': await self._latest_conversations(
-                scope, policy, request.limit, topic_key(request.topic) if request.topic else None)}
+            # after: in a list, how many of the newest conversations to pass over (a page).
+            rows = await self._latest_conversations(
+                scope, policy, request.limit, topic_key(request.topic) if request.topic else None, skip=request.after)
+            if request.with_progress and rows:
+                digests, _, _ = await self.runtime.driver.execute_query(
+                    'MATCH (c:FuliConversation {scope: $scope}) WHERE c.id IN $ids RETURN c.id AS id, c.digest AS digest',
+                    scope=scope, ids=[row['id'] for row in rows])
+                by_id = {row['id']: row['digest'] for row in digests}
+                rows = [{**row, 'recent_tasks': _recent_tasks(by_id.get(row['id']))} for row in rows]
+            return {'conversations': rows}
         record = await self._scoped_conversation(scope, request.conversation_id)
         if request.mode == 'context':
             return await self._recovery_context(record, policy, request, after=request.after)
@@ -153,7 +179,7 @@ class StoreAgentConversations:
             id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
         return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
 
-    async def _latest_conversations(self, scope, policy, limit, topic=None, *, sessions=True):
+    async def _latest_conversations(self, scope, policy, limit, topic=None, *, sessions=True, skip=0):
         # Jefa's triage label travels with each conversation so a list can
         # show what is still unclaimed without a second read per row. topic
         # (a topic_key): only that topic's conversations still open, so the
@@ -164,8 +190,8 @@ class StoreAgentConversations:
             'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
             'WITH c, t WHERE $topic IS NULL '
             "OR (t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL) "
-            'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
-            scope=scope, limit=limit, topic=topic)
+            'RETURN c, t ORDER BY c.last_activity DESC, c.id SKIP $skip LIMIT $limit',
+            scope=scope, limit=limit, topic=topic, skip=skip)
         # A list names where each conversation was written from; a new session's
         # pointer (begin_conversation) carries only the latest conversation's title.
         found = await self._conversation_sessions([r['c']['id'] for r in rows]) if sessions else {}

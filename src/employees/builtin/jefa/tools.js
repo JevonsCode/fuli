@@ -4,7 +4,7 @@ import { jsonSchemaToZod } from '../../../mcp/tool-schema.js';
 import { DUE_DATE_SCHEMA, parseProjectBoard, projectBoardSchema, TASK_STATUSES } from './project-board.js';
 import { prepareSessionTitle, reportSessionTitle } from './session-titles.js';
 
-// Jefa's ten workbench tools (docs/employee-agents.md). Each runs in the
+// Jefa's eleven workbench tools (docs/employee-agents.md). Each runs in the
 // project FULI authorized (context.project), never one named in arguments;
 // summarize_projects alone reads further, over the projects the host lists.
 // An Agent cannot mark a task done: completion goes to review and the person
@@ -57,6 +57,9 @@ const DEFINITIONS = [
   tool('summarize_projects', 'board.read', 'Where every project Jefa manages stands, from the boards alone: per project the count in each status, the blocked tasks and those waiting for the person\'s acceptance (perProject of each; blockedMore and awaitingAcceptanceMore count the rest), lastChangedAt, and board external when tracked at its own link. Stuck or waiting projects first, at most 20: projectCount is the whole number, truncated says some were left out. The host picks the projects; none can be named. Ask only when a question spans projects. Starts no model, changes nothing.',
     objectSchema({ perProject: integerSchema({ minimum: 1, maximum: SUMMARY_PER_PROJECT_MAX }) }),
     (store, scope, input, context) => summarizeProjects(store, context, input)),
+  tool('list_project_conversations', 'conversations.read', 'Where each conversation of the projects Jefa manages stands: project, lead, the FLA that held it, clients and native sessions, last activity, and its latest task result a checkpoint reported (when, status, summary, source to read back; null when none: an automatic close is not progress). Without projectId: a page of projects (cursor) with their latest conversations; with projectId: the conversations of that project (cursor). The host picks the projects. Reads no memory or conversation text; changes nothing.',
+    objectSchema({ projectId: id, cursor: boundedString(16), limit: integerSchema({ minimum: 1, maximum: 20 }), perProject: integerSchema({ minimum: 1, maximum: 10 }) }),
+    (store, scope, input, context) => context.projectConversations),
   tool('prepare_session_title', 'session.title', 'Prepare this session\'s title from only its linked task IDs. In auto mode with canRename, execution client_required returns an action the current client performs natively, then reports with report_session_title. Otherwise the title is only a suggestion. A locked or person-changed title is never replaced, and another session is never renamed.',
     objectSchema({ requestId, sourceApplication: boundedString(64), sessionId: boundedString(256),
       workItemIds: arraySchema(id, { minItems: 1, maxItems: 8 }), currentTitle: { type: 'string', maxLength: 500 },
