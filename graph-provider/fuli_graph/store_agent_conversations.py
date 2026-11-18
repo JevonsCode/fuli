@@ -3,6 +3,7 @@ import base64
 import gzip
 import hashlib
 import json
+from datetime import timedelta
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy, ConversationWrite
 from .conversation_context import (
@@ -22,6 +23,15 @@ from .client_coverage import covers_client
 CONTEXT_PAGE_EVENTS = 50
 CONTEXT_SCAN_EVENTS = 1000
 CONTEXT_DECODE_BYTES = 512 * 1024
+# A conversation list names each conversation's latest host sessions.
+SESSIONS_PER_CONVERSATION = 5
+# A task entry names the Agent's other sessions active in the last hours.
+SESSIONS_ELSEWHERE = 3
+ELSEWHERE_WINDOW = timedelta(hours=6)
+
+
+def _iso(value):
+    return value.iso_format() if hasattr(value, 'iso_format') else (value.isoformat() if value else None)
 
 
 def encode_event(event):
@@ -86,21 +96,26 @@ class StoreAgentConversations:
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
-            'RETURN e.payload AS payload, e.sequence AS sequence '
+            'RETURN e.payload AS payload, e.sequence AS sequence, '
+            'e.source_application AS source_application, e.session_id AS session_id '
             'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
             revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
         for event in events[:request.limit]:
-            value = decode_event(event)
+            # Each event names the client and native session that wrote it.
+            value = {**decode_event(event), 'client': event.get('source_application'),
+                     'session_id': event.get('session_id')}
             total += len(json.dumps(value, ensure_ascii=False).encode())
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
         cursor = decoded[-1]['sequence'] if decoded else request.after
+        sources = await self._event_sources(record['id'], decoded)
         # Deletion leaves gaps and advances revision without adding an event.
         # Only a retained event beyond this page proves there is another page.
-        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': len(events) > len(decoded)}
+        page = {**view, 'events': decoded, 'sources': sources, 'next_cursor': cursor,
+                'has_more': len(events) > len(decoded)}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = await self._current_digest(record)
@@ -122,9 +137,11 @@ class StoreAgentConversations:
             previous_id = (await store._session_binding(scope, request))['conversation_id']
             previous = await store._recovery_context(await store._scoped_conversation(scope, previous_id),
                 policy, request) if previous_id else None
-            recent = None if previous_id else next(iter(await store._latest_conversations(scope, policy, 1)), None)
+            recent = None if previous_id else next(iter(await store._latest_conversations(scope, policy, 1, sessions=False)), None)
             saved = await store.append_conversation(actor, ConversationWrite(**request.model_dump()))
-            return {**saved, 'recovered_from': previous_id, 'previous': previous, 'recent': recent}
+            elsewhere = await store._sessions_elsewhere(scope, request, (now_utc() - ELSEWHERE_WINDOW).isoformat())
+            return {**saved, 'recovered_from': previous_id, 'previous': previous, 'recent': recent,
+                    'elsewhere': elsewhere}
 
     async def _session_binding(self, scope, request):
         rows, _, _ = await self.runtime.driver.execute_query(
@@ -136,7 +153,7 @@ class StoreAgentConversations:
             id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
         return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
 
-    async def _latest_conversations(self, scope, policy, limit, topic=None):
+    async def _latest_conversations(self, scope, policy, limit, topic=None, *, sessions=True):
         # Jefa's triage label travels with each conversation so a list can
         # show what is still unclaimed without a second read per row. topic
         # (a topic_key): only that topic's conversations still open, so the
@@ -149,7 +166,11 @@ class StoreAgentConversations:
             "OR (t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL) "
             'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
             scope=scope, limit=limit, topic=topic)
+        # A list names where each conversation was written from; a new session's
+        # pointer (begin_conversation) carries only the latest conversation's title.
+        found = await self._conversation_sessions([r['c']['id'] for r in rows]) if sessions else {}
         return [{**self._conversation_view(dict(r['c']), policy),
+            **({'sessions': found.get(r['c']['id'], [])} if sessions else {}),
             'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]
 
     async def _scoped_conversation(self, scope, conversation_id):
@@ -240,9 +261,12 @@ class StoreAgentConversations:
         return list(reversed(decoded)), before - 1, True
 
     def _conversation_view(self, record, policy):
-        return {key: record.get(key) for key in ('id', 'summary', 'status', 'revision', 'last_activity')} | {
+        return {key: record.get(key) for key in ('id', 'summary', 'title', 'status', 'revision', 'last_activity')} | {
             'compacted_through': record.get('compacted_through') or 0,
             'unfolded_bytes': record.get('unfolded_bytes') or 0,
+            # Which client and native session wrote the opening words the title holds.
+            'title_source': ({'client': record.get('title_source_application'), 'session_id': record.get('title_session_id')}
+                             if record.get('title_session_id') else None),
             'policy': policy.model_dump(), 'raw_retained': True}
 
     async def _compact_conversation(self, conversation_id, policy):
@@ -309,10 +333,17 @@ class StoreAgentConversations:
                 raise HTTPException(409, 'Transcript cursor changed; reload before retrying')
             created_at = now_utc()
             now = created_at.isoformat()
+            provenance = request.provenance
+            # A conversation is titled once, when it opens: a later task's words never name an earlier one.
             await store.runtime.driver.execute_query(
                 'MERGE (c:FuliConversation {id: $id}) ON CREATE SET c.scope=$scope, c.revision=0, '
-                "c.last_activity=$now, c.summary='', c.status='reported' "
-                'SET c.serial=coalesce(c.serial,0)+1', id=conversation_id, scope=scope, now=now)
+                "c.last_activity=$now, c.summary='', c.status='reported', c.title=$title, "
+                'c.title_source_application=CASE WHEN $title IS NULL THEN null ELSE $source END, '
+                'c.title_session_id=CASE WHEN $title IS NULL THEN null ELSE $session END '
+                'SET c.serial=coalesce(c.serial,0)+1',
+                id=conversation_id, scope=scope, now=now, title=provenance.title if provenance else None,
+                source=request.source_application, session=request.session_id)
+            await store._note_session(scope, conversation_id, request, now)
             new_summary = False
             compaction = None
             unfolded = 0
@@ -381,7 +412,100 @@ class StoreAgentConversations:
                 'SET b.conversation_id=$conversation_id',
                 id=conversation_binding_id(scope, request.source_application, request.session_id),
                 conversation_id=request.conversation_id)
+            # The resumed conversation gains this session; the one it left keeps its record.
+            await store._note_session(scope, request.conversation_id, request, now_utc().isoformat())
             return {'status': 'resumed', 'conversation_id': request.conversation_id}
+
+    async def _note_session(self, scope, conversation_id, request, now):
+        """Where this host session worked on this conversation: its client and
+        session, when it was first and last seen here, and the folder and model
+        its entry reported (kept until a later entry reports another). One
+        record per conversation and session, so a resume elsewhere never
+        rewrites where an earlier conversation was written from."""
+        provenance = getattr(request, 'provenance', None)
+        # A session that joins a conversation by resume reports no folder or model
+        # itself: it brings what its latest record elsewhere in this scope knows.
+        await self.runtime.driver.execute_query(
+            'OPTIONAL MATCH (o:FuliConversationSession {scope: $scope}) '
+            'WHERE o.source_application = $source AND o.session_id = $session AND o.id <> $id '
+            'WITH o ORDER BY o.last_seen DESC LIMIT 1 '
+            'MERGE (s:FuliConversationSession {id: $id}) '
+            'ON CREATE SET s.conversation_id=$conversation_id, s.scope=$scope, s.source_application=$source, '
+            's.session_id=$session, s.first_seen=$now '
+            'SET s.last_seen=$now, s.working_directory=coalesce($folder, s.working_directory, o.working_directory), '
+            's.model=coalesce($model, s.model, o.model), s.branch=coalesce($branch, s.branch, o.branch)',
+            id=stable_uuid('conversation-session', conversation_id, request.source_application, request.session_id),
+            conversation_id=conversation_id, scope=scope, source=request.source_application, session=request.session_id,
+            now=now, folder=provenance.working_directory if provenance else None,
+            model=provenance.model if provenance else None, branch=provenance.branch if provenance else None)
+
+    async def _event_sources(self, conversation_id, events):
+        """Where the sessions on a history page worked (model, folder, branch),
+        once per session, from their records; a session written before graph
+        22 is named by client and session only."""
+        pairs = sorted({(e['client'], e['session_id']) for e in events if e.get('client') and e.get('session_id')})
+        if not pairs:
+            return []
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliConversationSession {conversation_id: $id}) '
+            'RETURN s.source_application AS client, s.session_id AS session_id, s.model AS model, '
+            's.working_directory AS working_directory, s.branch AS branch', id=conversation_id)
+        known = {(row['client'], row['session_id']): row for row in rows}
+        return [{key: value for key, value in dict(known.get(pair, {'client': pair[0], 'session_id': pair[1]})).items()
+                 if value is not None} for pair in pairs]
+
+    async def _conversation_sessions(self, conversation_ids, limit=SESSIONS_PER_CONVERSATION):
+        """The host sessions each conversation was written from, newest first.
+        A conversation written before graph 22 has no such records: its
+        journal events name the client and session, with their times."""
+        if not conversation_ids:
+            return {}
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliConversationSession) WHERE s.conversation_id IN $ids '
+            'RETURN s.conversation_id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
+            's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.first_seen AS first_seen, '
+            's.last_seen AS last_seen ORDER BY s.last_seen DESC', ids=list(conversation_ids))
+        sessions = {}
+        for row in rows:
+            sessions.setdefault(row['conversation_id'], []).append(
+                {key: value for key, value in dict(row).items() if key != 'conversation_id' and value is not None})
+        older = [cid for cid in conversation_ids if cid not in sessions]
+        if older:
+            rows, _, _ = await self.runtime.driver.execute_query(
+                'MATCH (c:FuliConversation)-[:HAS_EVENT]->(e:FuliConversationEvent) WHERE c.id IN $ids '
+                'WITH c.id AS conversation_id, e.source_application AS client, e.session_id AS session_id, '
+                'min(e.created_at) AS first_seen, max(e.created_at) AS last_seen '
+                'RETURN conversation_id, client, session_id, first_seen, last_seen ORDER BY last_seen DESC', ids=older)
+            for row in rows:
+                sessions.setdefault(row['conversation_id'], []).append({
+                    'client': row['client'], 'session_id': row['session_id'],
+                    'first_seen': _iso(row['first_seen']), 'last_seen': _iso(row['last_seen'])})
+        return {cid: found[:limit] for cid, found in sessions.items()}
+
+    async def _sessions_elsewhere(self, scope, request, since):
+        """Other host sessions of this Agent in this scope seen since `since`,
+        newest first and one row each, with the conversation it last worked on
+        and that conversation's summary or title: where else the same Agent
+        works right now. Read through the (scope, last_seen) index."""
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliConversationSession {scope: $scope}) '
+            'WHERE s.last_seen >= $since AND NOT (s.source_application = $source AND s.session_id = $session) '
+            'WITH s ORDER BY s.last_seen DESC LIMIT $scan '
+            'MATCH (c:FuliConversation {id: s.conversation_id}) '
+            'RETURN c.id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
+            's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.last_seen AS last_seen, '
+            "CASE WHEN c.summary <> '' THEN c.summary ELSE c.title END AS title "
+            'ORDER BY s.last_seen DESC',
+            scope=scope, since=since, source=request.source_application, session=request.session_id,
+            scan=SESSIONS_ELSEWHERE * 4)
+        seen, found = set(), []
+        for row in rows:
+            key = (row['client'], row['session_id'])
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append({key: value for key, value in dict(row).items() if value is not None})
+        return found[:SESSIONS_ELSEWHERE]
 
     async def claim_conversation_boundary(self, actor, request):
         if request.fallback_recovery:

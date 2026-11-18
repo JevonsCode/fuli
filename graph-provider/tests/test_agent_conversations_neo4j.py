@@ -281,7 +281,9 @@ def test_begin_returns_the_three_steps_in_one_request_and_keeps_their_privacy_ru
             listed = (await client.post('/v1/agent-conversations/query', json={**codex, 'mode': 'list', 'limit': 1})).json()
             fresh = (await begin(codex, 'native-b', await task('native-b'))).json()
             assert fresh['previous'] is None and fresh['recovered_from'] is None
-            assert fresh['recent'] == listed['conversations'][0] and fresh['recent']['id'] == opened['conversation_id']
+            # The pointer carries the list row without where it was written from (a list names its sessions).
+            assert fresh['recent'] == {key: value for key, value in listed['conversations'][0].items() if key != 'sessions'}
+            assert fresh['recent']['id'] == opened['conversation_id']
             assert fresh['conversation_id'] != opened['conversation_id']
             # Another client's session with the same native ID is not this session: nothing is recovered for it.
             claude = {**codex, 'source_application': 'claude_code'}
@@ -313,4 +315,145 @@ def test_begin_returns_the_three_steps_in_one_request_and_keeps_their_privacy_ru
             assert disabled['recovered_from'] == opened['conversation_id']
             off = (await begin(codex, 'native-f', await task('native-f'))).json()
             assert off['status'] == 'capture_disabled' and await bound(codex, 'native-f') is None
+    asyncio.run(scenario())
+
+
+def test_a_conversation_names_where_it_was_written_and_an_entry_names_the_agents_other_sessions():
+    """11-18: an FLA can trace each of its conversations to the client,
+    session, folder and model, and an entry says where else it works now."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name':'Synthetic provenance', 'kind':'personal'})).json()['id']
+            project = 'trace-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            await seed_agent(client, space, project=project, agent='specialist', allowed_clients=['codex'])
+            scope = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer')
+
+            async def begin(source, session, provenance=None, agent='engineer'):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id=agent, session_id=session, source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                r = await client.post('/v1/agent-conversations/begin', json={**scope, 'agent_id': agent,
+                    'source_application': source, 'session_id': session, 'task_context_token': token,
+                    **({'provenance': provenance} if provenance else {})})
+                assert r.status_code == 200, r.text
+                return r.json()
+
+            codex = await begin('codex', 'synthetic-codex-1', {'working_directory': 'T:/synthetic/repo',
+                'model': 'synthetic-model-a', 'title': 'Add the synthetic export'})
+            assert 'elsewhere' in codex and codex['elsewhere'] == []
+            # The same session's next entry keeps the first title and the folder; a newly reported model replaces the old.
+            await begin('codex', 'synthetic-codex-1', {'model': 'synthetic-model-b', 'title': 'A later prompt'})
+            claude = await begin('claude_code', 'synthetic-claude-1', {'working_directory': 'T:/synthetic/other',
+                'title': 'Review the synthetic export'})
+            # Claude's entry names the Agent's Codex session, with what it is about; never its own session.
+            assert [(row['client'], row['session_id'], row['model'], row['working_directory'], row['title'])
+                    for row in claude['elsewhere']] == [
+                ('codex', 'synthetic-codex-1', 'synthetic-model-b', 'T:/synthetic/repo', 'Add the synthetic export')]
+            assert claude['elsewhere'][0]['conversation_id'] == codex['conversation_id']
+            # Another FLA of the project sees none of it.
+            other = await begin('codex', 'synthetic-codex-2', agent='specialist')
+            assert other['elsewhere'] == []
+            listed = (await client.post('/v1/agent-conversations/query', json={**scope, 'source_application': 'codex',
+                'mode': 'list'})).json()['conversations']
+            rows = {row['id']: row for row in listed}
+            traced = rows[codex['conversation_id']]
+            assert traced['title'] == 'Add the synthetic export'
+            assert [(s['client'], s['session_id'], s['model'], s['working_directory']) for s in traced['sessions']] == [
+                ('codex', 'synthetic-codex-1', 'synthetic-model-b', 'T:/synthetic/repo')]
+            assert traced['sessions'][0]['first_seen'] <= traced['sessions'][0]['last_seen']
+            assert [s['client'] for s in rows[claude['conversation_id']]['sessions']] == ['claude_code']
+            # A credential never becomes a title, and never refuses the entry.
+            secret = await begin('codex', 'synthetic-codex-3', {'title': 'fix access_token=abc', 'model': 'synthetic-model-c'})
+            listed = (await client.post('/v1/agent-conversations/query', json={**scope, 'source_application': 'codex',
+                'mode': 'list'})).json()['conversations']
+            assert [row.get('title') for row in listed if row['id'] == secret['conversation_id']] == [None]
+            # Resuming the Codex conversation from Claude adds Claude's session to it; the conversation Claude
+            # left still names Claude's session (history is kept), and Claude's next entry no longer lists itself.
+            token = 'fuli-task-' + uuid4().hex
+            await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                project_agent_id='engineer', session_id='synthetic-claude-1', source_application='claude_code', token=token))
+            resumed = await client.post('/v1/agent-conversations/resume', json={**scope, 'source_application': 'claude_code',
+                'session_id': 'synthetic-claude-1', 'task_context_token': token, 'conversation_id': codex['conversation_id']})
+            assert resumed.status_code == 200, resumed.text
+            listed = (await client.post('/v1/agent-conversations/query', json={**scope, 'source_application': 'codex',
+                'mode': 'list'})).json()['conversations']
+            rows = {row['id']: row for row in listed}
+            assert {s['client'] for s in rows[codex['conversation_id']]['sessions']} == {'codex', 'claude_code'}
+            assert [s['client'] for s in rows[claude['conversation_id']]['sessions']] == ['claude_code']
+            again = await begin('claude_code', 'synthetic-claude-1')
+            assert [(row['client'], row['session_id']) for row in again['elsewhere']] == [
+                ('codex', 'synthetic-codex-3'), ('codex', 'synthetic-codex-1')], 'one row per session, newest first'
+    asyncio.run(scenario())
+
+
+def test_one_conversation_written_by_claude_then_codex_names_each_events_client_and_session():
+    """11-18 acceptance: Claude writes A in a FULI conversation, Codex resumes it
+    and writes B; every event, and the checkpoint summary, can be traced to the
+    client and native session that wrote it, with that session's model, folder and branch."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name': 'Synthetic handoff', 'kind': 'personal'})).json()['id']
+            project = 'handoff-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            scope = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer')
+
+            async def task(source, session):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id='engineer', session_id=session, source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                return token
+
+            async def post(path, body):
+                r = await client.post(path, json={**scope, **body})
+                assert r.status_code == 200, r.text
+                return r.json()
+
+            claude_token = await task('claude_code', 'synthetic-claude-a')
+            opened = await post('/v1/agent-conversations/begin', {'source_application': 'claude_code',
+                'session_id': 'synthetic-claude-a', 'task_context_token': claude_token,
+                'provenance': {'working_directory': 'T:/synthetic/a', 'model': 'synthetic-claude-model',
+                               'branch': 'JVS/synthetic-a', 'title': 'Write A'}})
+            conversation = opened['conversation_id']
+            await post('/v1/agent-conversations/append', {'source_application': 'claude_code',
+                'session_id': 'synthetic-claude-a', 'task_context_token': claude_token,
+                'events': [dict(event_id='a', role='assistant', content='SYNTHETIC_A')]})
+            codex_token = await task('codex', 'synthetic-codex-b')
+            await post('/v1/agent-conversations/begin', {'source_application': 'codex',
+                'session_id': 'synthetic-codex-b', 'task_context_token': codex_token,
+                'provenance': {'working_directory': 'T:/synthetic/b', 'model': 'synthetic-codex-model',
+                               'branch': 'JVS/synthetic-b'}})
+            await post('/v1/agent-conversations/resume', {'source_application': 'codex',
+                'session_id': 'synthetic-codex-b', 'task_context_token': codex_token, 'conversation_id': conversation})
+            await post('/v1/agent-conversations/append', {'source_application': 'codex',
+                'session_id': 'synthetic-codex-b', 'task_context_token': codex_token, 'summary': 'Wrote B',
+                'status': 'completed', 'events': [dict(event_id='b', role='assistant', content='SYNTHETIC_B'),
+                    dict(event_id='b-summary', role='summary', kind='checkpoint', content='Wrote B')]})
+            page = await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'events',
+                'conversation_id': conversation, 'limit': 10})
+            by_content = {event['content']: (event['client'], event['session_id']) for event in page['events']}
+            assert by_content == {'SYNTHETIC_A': ('claude_code', 'synthetic-claude-a'),
+                                  'SYNTHETIC_B': ('codex', 'synthetic-codex-b'),
+                                  'Wrote B': ('codex', 'synthetic-codex-b')}
+            sources = {(s['client'], s['session_id']): s for s in page['sources']}
+            claude = sources[('claude_code', 'synthetic-claude-a')]
+            assert (claude['model'], claude['working_directory'], claude['branch']) == (
+                'synthetic-claude-model', 'T:/synthetic/a', 'JVS/synthetic-a')
+            # Codex joined this conversation by its resume and brings what its own entry reported.
+            codex = sources[('codex', 'synthetic-codex-b')]
+            assert (codex['model'], codex['working_directory'], codex['branch']) == (
+                'synthetic-codex-model', 'T:/synthetic/b', 'JVS/synthetic-b')
+            # One summary event read by its sequence still names its writer.
+            summary = next(event for event in page['events'] if event['content'] == 'Wrote B')
+            one = await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'events',
+                'conversation_id': conversation, 'after': summary['sequence'] - 1, 'limit': 1})
+            assert (one['events'][0]['client'], one['events'][0]['session_id']) == ('codex', 'synthetic-codex-b')
+            # The title's opening words name where they came from.
+            listed = (await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'list'}))[
+                'conversations']
+            row = next(row for row in listed if row['id'] == conversation)
+            assert row['title'] == 'Write A'
+            assert row['title_source'] == {'client': 'claude_code', 'session_id': 'synthetic-claude-a'}
     asyncio.run(scenario())

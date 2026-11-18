@@ -15,6 +15,8 @@ from .graph_format_schema import (
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
+    CONVERSATION_SESSION_LABELS,
+    CONVERSATION_SESSION_RULES,
     KNOWLEDGE_TAG_LABELS,
     KNOWLEDGE_TAG_RULES,
     SOURCE_DELETE_RULES,
@@ -186,6 +188,12 @@ GRAPH_MIGRATIONS = (
         "whether a project asks the person before Bole hires, stored anew (confirm_before_hiring): "
         'the earlier value was saved as on by default and is no longer read',
         fields_only=True,
+    ),
+    GraphMigration(
+        'graph/22-conversation-provenance', 22, 'schema',
+        'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
+        "and a new conversation's opening words as its title; earlier conversations name client and session from their journal",
+        rules=CONVERSATION_SESSION_RULES, labels=CONVERSATION_SESSION_LABELS,
     ),
 )
 

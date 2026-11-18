@@ -2,7 +2,7 @@
 from typing import Literal
 from pydantic import Field, model_validator
 from .models import StrictModel, SourceApplication
-from .model_validation import reject_credentials
+from .model_validation import contains_credentials, reject_credentials
 
 
 class ConversationPolicy(StrictModel):
@@ -50,6 +50,25 @@ class ConversationEvent(StrictModel):
         return self
 
 
+class ConversationProvenance(StrictModel):
+    """Where a host session works, so a conversation can be traced to it: the
+    folder its client ran in, the model the client reported, and the person's
+    opening words (the conversation's title until a checkpoint summarises it)."""
+    working_directory: str | None = Field(default=None, min_length=1, max_length=1024)
+    model: str | None = Field(default=None, min_length=1, max_length=120)
+    branch: str | None = Field(default=None, min_length=1, max_length=255)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode='after')
+    def drop_secrets(self):
+        # Where a session works is a note, never a reason to refuse its task
+        # entry: a value that looks like a credential is left out instead.
+        for field in ('working_directory', 'model', 'branch', 'title'):
+            if contains_credentials(getattr(self, field)):
+                setattr(self, field, None)
+        return self
+
+
 class ConversationWrite(ConversationScope):
     source_application: SourceApplication
     session_id: str = Field(min_length=1, max_length=256)
@@ -62,6 +81,7 @@ class ConversationWrite(ConversationScope):
     expected_cursor: int | None = Field(default=None, ge=0)
     initialize_cursor: bool = False
     fallback_recovery: bool = False
+    provenance: ConversationProvenance | None = None
 
     @model_validator(mode='after')
     def bounded_batch(self):
@@ -79,6 +99,7 @@ class ConversationBegin(ConversationScope):
     source_application: SourceApplication
     session_id: str = Field(min_length=1, max_length=256)
     task_context_token: str = Field(min_length=1, max_length=160)
+    provenance: ConversationProvenance | None = None
 
 
 class ConversationResume(ConversationScope):
