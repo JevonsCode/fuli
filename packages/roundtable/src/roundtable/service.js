@@ -392,8 +392,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         && (['auto', 'new'].includes(conversation ?? 'auto') || conversation === from.session)) {
       throw validation(await sameAgentGuidance(target, from));
     }
+    // A named native session (conversation) is kept on the ask apart from where it is delivered:
+    // only that client and session, or one FULI hands it to, see and answer it.
+    const named = conversation && !['auto', 'new'].includes(conversation)
+      ? { client: (await conversations(target, null)).find(session => session.sessionId === conversation)?.client ?? null,
+        session: conversation } : null;
     const { thread, history } = openThread(threadId, from.projectId, body, label(target));
-    const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued',
+    const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued', target: named,
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
         client: from.client, session: from.session, runner: callerRunner }, origin,
       to: { agentId: target.agentId, name: label(target) }, targetProjectId,
@@ -807,7 +812,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { replies, more } = me.projectId ? replyInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     return { messages: store.pendingFor(spaceId(), me.agent.agentId)
-      .filter(message => messageProject(message) === me.projectId).map(inboxItem),
+      .filter(message => messageProject(message) === me.projectId && forViewer(message, me)).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
       ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
         ? ' More are waiting: call read_agent_messages again.' : ''}` } : {}),
@@ -838,6 +843,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? { agentId: me.agent.agentId, name: label(me.agent) } : { agentId: ask.to_agent, name: ask.to_name };
     if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
       if (await host.projectLeadId(ask.target_project_id) !== answering.agentId) throw validation('The target project lead changed');
+    }
+    // An ask that named a native session is that session's (or the one FULI handed it to):
+    // the same FLA in another client or session cannot close it, even with its ID.
+    if (!forViewer(ask, me)) {
+      throw validation(`This message is for another session of this FLA (${CLIENT_LABELS[ask.target_client] ?? ask.target_client ?? 'a named session'}); only that session answers it`);
     }
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
@@ -921,9 +931,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
         ...(message.origin ? { origin: message.origin } : {}),
         ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
+        // Who wrote it, the session an ask named, and where it was delivered: client and native session each.
         from: { agentId: message.from_agent, name: message.from_name, client: message.from_client,
+          ...(message.from_session ? { session: message.from_session } : {}),
           ...(message.from_runner ? { runner: message.from_runner } : {}) },
-        to: { agentId: message.to_agent, name: message.to_name, client: message.to_client } })) };
+        ...(message.target_session ? { target: { client: message.target_client, session: message.target_session } } : {}),
+        to: { agentId: message.to_agent, name: message.to_name, client: message.to_client,
+          ...(message.to_session ? { session: message.to_session } : {}) } })) };
   }
 
   function taskEntryDelegation({ sessionId }) {
@@ -932,6 +946,13 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     return env.FULI_ROUNDTABLE_DELEGATION
       ? { token: env.FULI_ROUNDTABLE_DELEGATION, sessionId: sessionId ?? null } : null;
   }
+
+  // Whether a session may see and answer an ask: one that named no native
+  // session is its FLA's (older records have none); one that named a session is
+  // that client and session's, or the one FULI delivered it to.
+  const forViewer = (message, viewer) => !message.target_session || (Boolean(viewer?.session)
+    && ((message.target_session === viewer.session && (!message.target_client || message.target_client === viewer.client))
+      || (message.to_session === viewer.session && message.to_client === viewer.client)));
 
   // A task with no project (a global assistant) reaches the messages of no project.
   const sameProject = (left, right) => (left ?? null) === (right ?? null);
@@ -996,8 +1017,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     },
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
-    pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
-      .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
+    // viewer: the entering session ({ client, session }); an ask that named another session is not its.
+    pending: (agentId, projectId = undefined, viewer = null) => store.pendingFor(spaceId(), agentId)
+      .filter(message => (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer)).map(inboxItem),
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     agentReplies: replyInbox.announce,
