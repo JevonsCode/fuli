@@ -182,6 +182,7 @@ test('the entry answers only to this computer under its own name, and says when 
   assert.equal(awayPage.status, 503);
   assert.match(awayPage.text, /Host A/);
   assert.match(awayPage.text, /outbox: <b>0<\/b>/);
+  assert.match(awayPage.text, /<span class="beta"[^>]*>Beta<\/span>/, 'runners are in testing and say so');
   const awayApi = await get(`${entry.url}/api/tasks`);
   assert.equal(JSON.parse(awayApi.text).error, 'host_unreachable');
 });

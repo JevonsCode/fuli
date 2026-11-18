@@ -114,6 +114,7 @@ function awayPage({ hostName, queued }) {
   return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <meta http-equiv="refresh" content="15"><title>FULI</title>
 <style>body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222}
-@media (prefers-color-scheme:dark){body{background:#111;color:#ddd}}</style></head>
-<body><h1 style="font-size:20px">${title}</h1>${body}</body></html>`;
+.beta{display:inline-block;margin-left:8px;padding:0 6px;border-radius:999px;font-size:11px;font-weight:600;line-height:18px;vertical-align:middle;color:#3b5bdb;background:#e8edff}
+@media (prefers-color-scheme:dark){body{background:#111;color:#ddd}.beta{color:#a5b8ff;background:#1f2a4d}}</style></head>
+<body><h1 style="font-size:20px">${title}<span class="beta" title="测试中的功能 · In testing">Beta</span></h1>${body}</body></html>`;
 }
