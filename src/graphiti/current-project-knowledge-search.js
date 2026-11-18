@@ -51,7 +51,8 @@ export async function searchCurrentProjectKnowledge(
         includeHistorical,
         includePending, sourceApplication,
         agentInvocation: true,
-        agentToolName: 'search_current_project_knowledge'
+        agentToolName: 'search_current_project_knowledge',
+        relatedProjects: false
       })
     )),
     loadRelatedProjectSuggestions(application, resolution.personalProjectId)

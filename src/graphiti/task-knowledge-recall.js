@@ -264,7 +264,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       includePending: true,
       sourceApplication, sourceSessionId: sessionId,
       agentInvocation: true,
-      agentToolName: 'automatic_task_knowledge_recall'
+      agentToolName: 'automatic_task_knowledge_recall',
+      relatedProjects: false
     })
   ));
   // A personal preference reaches a task only through its scoped
@@ -430,7 +431,8 @@ export async function projectKnowledgeIndex(application, personalProjectId, text
     includePending: true,
     sourceApplication, sourceSessionId: sessionId,
     agentInvocation: true,
-    agentToolName
+    agentToolName,
+    relatedProjects: false
   });
   const exact = (items, itemKind) => withoutPreferences(items)
     .filter(item => item.defined_project_id === personalProjectId && !item.inherited_from_project_id
