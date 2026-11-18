@@ -45,6 +45,8 @@ const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was awa
 const SESSION_ID = ENTRY_ID;
 // A forwarded prompt hook gets what a client's hook process would: the clients wait 30 s.
 const HOOK_TIMEOUT_MS = 25_000;
+// The hooks a runner forwards: task entry at each prompt, and the turn's end, which closes it.
+const FORWARDED_EVENTS = new Set(['UserPromptSubmit', 'Stop']);
 // The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
 const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
@@ -116,7 +118,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       relayToConsole(request, response, { consoleOrigin: consoleOrigin(), prefix: RUNNER_PATHS.console, fingerprint });
     } else if (pathname === RUNNER_PATHS.hook) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
-      const answer = await promptHook(fingerprint, await readJson(request));
+      const answer = await forwardedHook(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION });
@@ -143,9 +145,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
 
   // A runner client's prompt hook (hook-forwarding.js), entered here as the console enters a local
   // hook's: for the client's own session, in the folder the runner described, without its transcript.
-  async function promptHook(fingerprint, body) {
+  async function forwardedHook(fingerprint, body) {
     const client = lifecycleHookClient(body?.client);
-    if (!client || body.event !== 'UserPromptSubmit' || !runtimeConfigPath || !body.payload
+    if (!client || !FORWARDED_EVENTS.has(body.event) || !runtimeConfigPath || !body.payload
       || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
       return { status: 400, body: { error: 'hook_invalid' } };
     }
@@ -154,7 +156,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     const env = Object.fromEntries(client.envNames.filter((name) => typeof body.env?.[name] === 'string')
       .map((name) => [name, body.env[name]]));
     const result = await runAsRunnerCall(fingerprint, () => runWithCallerWorkspaces(lookup(fingerprint), () => runHook({
-      client: body.client, argv: ['--fuli-lifecycle', '--runtime-config', runtimeConfigPath, '--event', 'UserPromptSubmit'],
+      client: body.client, argv: ['--fuli-lifecycle', '--runtime-config', runtimeConfigPath, '--event', body.event],
       env, cwd: process.cwd(), stdin: [Buffer.from(JSON.stringify(payload))], timeoutMs: HOOK_TIMEOUT_MS },
     { baseEnv: process.env })));
     return { status: 200, body: { stdout: String(result.stdout ?? ''), exitCode: result.exitCode ?? 0 } };

@@ -230,8 +230,11 @@ as for every migration, and an older FULI then refuses that store.
 
 - Runner and host must reach each other directly (same LAN, cable, or a network
   both are on).
-- Only the prompt hook reaches the host (above). Stop checkpoints and the other
-  lifecycle hooks do not run on a runner, and neither does the session switch
+- The prompt hook and the turn's end (Stop) reach the host: the host enters the
+  task at each prompt and, at the turn's end, checks its checkpoint and closes
+  it, as a local hook would. The conversation's own text stays on the runner, so
+  the host records no transcript of a runner's turns. The other lifecycle hooks
+  do not run on a runner, and neither does the session switch
   (`/fuli start|stop|status`, `fuli session`): it needs a FULI on the same
   computer. While the host is away, every client's hook tells the model to
   enter the task through FULI's MCP server: Claude Code, Codex, OpenCode and
