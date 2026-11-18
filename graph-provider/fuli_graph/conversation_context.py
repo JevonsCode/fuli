@@ -39,8 +39,13 @@ def bounded_text(text, limit=ENTRY_BYTES):
     return raw[:limit - len('…'.encode())].decode(errors='ignore') + '…', True
 
 
-def add_task_result(digest, at, status, summary):
-    tasks = [*digest.get('tasks', []), {'at': at, 'status': status, 'summary': summary}]
+def add_task_result(digest, at, status, summary, source=None):
+    """One task result; source points at the checkpoint event that wrote it
+    (sequence, event_id, client, session_id), read back with read_agent_conversation
+    mode events after sequence - 1, limit 1. No source when it is not certain."""
+    # source None: written with this field, but no single checkpoint event matched.
+    task = {'at': at, 'status': status, 'summary': summary, 'source': source}
+    tasks = [*digest.get('tasks', []), task]
     return {**digest, 'tasks': tasks[-DIGEST_TASKS:]}
 
 

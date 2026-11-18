@@ -30,6 +30,18 @@ SESSIONS_ELSEWHERE = 3
 ELSEWHERE_WINDOW = timedelta(hours=6)
 
 
+def _summary_source(record):
+    """The recorded source of the task result the summary is, or None (unknown)."""
+    try:
+        tasks = json.loads(record.get('digest') or '{}').get('tasks') or []
+    except ValueError:
+        return None
+    latest = tasks[-1] if tasks else None
+    if not latest or latest.get('summary') != record.get('summary'):
+        return None
+    return latest.get('source')
+
+
 def _iso(value):
     return value.iso_format() if hasattr(value, 'iso_format') else (value.isoformat() if value else None)
 
@@ -41,6 +53,17 @@ def encode_event(event):
 
 def decode_event(row):
     return {**json.loads(gzip.decompress(base64.b64decode(row['payload']))), 'sequence': row['sequence']}
+
+
+def checkpoint_source(checkpoints, request):
+    """The one checkpoint event of this write whose text is the task result, or
+    None when there is none or more than one: a source is never guessed."""
+    matching = [(sequence, event_id) for sequence, event_id, content in checkpoints if content == request.summary]
+    if len(matching) != 1:
+        return None
+    sequence, event_id = matching[0]
+    return {'sequence': sequence, 'event_id': event_id, 'client': request.source_application,
+            'session_id': request.session_id}
 
 
 class StoreAgentConversations:
@@ -93,6 +116,8 @@ class StoreAgentConversations:
         if request.mode == 'context':
             return await self._recovery_context(record, policy, request, after=request.after)
         view = self._conversation_view(record, policy)
+        if request.event_id is not None:
+            return {**view, **await self._source_event(record, request.after + 1, request.event_id)}
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
@@ -210,7 +235,7 @@ class StoreAgentConversations:
         digest = json.loads(record['digest'])
         through = record.get('compacted_through') or 0
         if digest.get('version') == DIGEST_VERSION or not through:
-            return digest
+            return await self._with_task_sources(record['id'], digest)
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
@@ -221,7 +246,33 @@ class StoreAgentConversations:
         await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest = $digest',
             id=record['id'], old=record['digest'], digest=json.dumps(rebuilt, ensure_ascii=False))
-        return rebuilt
+        return await self._with_task_sources(record['id'], rebuilt)
+
+    async def _source_event(self, record, sequence, event_id):
+        """Exactly the event at this sequence when it is the one with this event_id
+        (a digest task's source checkpoint), with the client and native session that
+        wrote it; otherwise unavailable, never the event that now comes next."""
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
+            'WHERE e.sequence = $sequence AND e.sequence <= $revision '
+            'RETURN e.payload AS payload, e.sequence AS sequence, '
+            'e.source_application AS source_application, e.session_id AS session_id',
+            id=record['id'], sequence=sequence, revision=record['revision'])
+        event = {**decode_event(rows[0]), 'client': rows[0].get('source_application'),
+                 'session_id': rows[0].get('session_id')} if rows else None
+        if not event or event.get('event_id') != event_id:
+            return {'events': [], 'source_check': 'unavailable', 'next_cursor': sequence - 1, 'has_more': False}
+        return {'events': [event], 'source_check': 'verified', 'next_cursor': sequence, 'has_more': False}
+
+    async def _with_task_sources(self, conversation_id, digest):
+        """Each task result with the checkpoint event its write recorded. A result
+        written before results kept their source has none recorded and reads
+        as unknown (None): its time and words do not prove which write it was,
+        so it is never linked by them, the text or the latest client."""
+        tasks = digest.get('tasks') or []
+        if all('source' in task for task in tasks):
+            return digest
+        return {**digest, 'tasks': [task if 'source' in task else {**task, 'source': None} for task in tasks]}
 
     async def _context_events(self, record, after):
         """Read a fixed revision backwards; folding never deletes raw recovery.
@@ -267,6 +318,8 @@ class StoreAgentConversations:
             # Which client and native session wrote the opening words the title holds.
             'title_source': ({'client': record.get('title_source_application'), 'session_id': record.get('title_session_id')}
                              if record.get('title_session_id') else None),
+            # The checkpoint event the summary came from, when the write recorded it.
+            'summary_source': _summary_source(record),
             'policy': policy.model_dump(), 'raw_retained': True}
 
     async def _compact_conversation(self, conversation_id, policy):
@@ -345,6 +398,8 @@ class StoreAgentConversations:
                 source=request.source_application, session=request.session_id)
             await store._note_session(scope, conversation_id, request, now)
             new_summary = False
+            # The checkpoint events this write created, for the task result's source.
+            checkpoints = []
             compaction = None
             unfolded = 0
             for event in request.events:
@@ -369,6 +424,8 @@ class StoreAgentConversations:
                     task=request.task_context_token, session=request.session_id, created_at=created_at)
                 if event.kind == COMPACTION_KIND:
                     compaction = (created[0]['sequence'], len(event.content.encode()))
+                if event.kind == 'checkpoint':
+                    checkpoints.append((created[0]['sequence'], event.event_id, event.content))
             if unfolded:
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) '
@@ -385,7 +442,8 @@ class StoreAgentConversations:
                 rows, _, _ = await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest', id=conversation_id)
                 digest = json.loads(rows[0]['digest']) if rows[0]['digest'] else {}
-                digest = add_task_result(digest, now, request.status or 'reported', request.summary)
+                digest = add_task_result(digest, now, request.status or 'reported', request.summary,
+                                         checkpoint_source(checkpoints, request))
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) SET c.summary=$summary, c.status=$status, c.digest=$digest',
                     id=conversation_id, summary=request.summary, status=request.status or 'reported',
