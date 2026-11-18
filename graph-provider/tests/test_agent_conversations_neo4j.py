@@ -441,9 +441,10 @@ def test_one_conversation_written_by_claude_then_codex_names_each_events_client_
             claude = sources[('claude_code', 'synthetic-claude-a')]
             assert (claude['model'], claude['working_directory'], claude['branch']) == (
                 'synthetic-claude-model', 'T:/synthetic/a', 'JVS/synthetic-a')
-            # Codex joined this conversation by its resume; its record here names the session, and the
-            # model and folder it reported stay with the conversation its own entry opened.
-            assert ('codex', 'synthetic-codex-b') in sources
+            # Codex joined this conversation by its resume and brings what its own entry reported.
+            codex = sources[('codex', 'synthetic-codex-b')]
+            assert (codex['model'], codex['working_directory'], codex['branch']) == (
+                'synthetic-codex-model', 'T:/synthetic/b', 'JVS/synthetic-b')
             # One summary event read by its sequence still names its writer.
             summary = next(event for event in page['events'] if event['content'] == 'Wrote B')
             one = await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'events',

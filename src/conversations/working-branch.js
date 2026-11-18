@@ -7,13 +7,22 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 // `gitdir:` file), then its HEAD. A detached HEAD, a folder outside Git or
 // anything unreadable is unknown (null), never a guess.
 const MAX_LEVELS = 12;
+// A slow or offline drive never holds up a task entry: past this the branch is unknown.
+const TIME_LIMIT_MS = 250;
 
-export async function workingBranch(folder) {
-  if (typeof folder !== 'string' || !folder.trim()) return null;
+export function workingBranch(folder, { timeLimitMs = TIME_LIMIT_MS } = {}) {
+  if (typeof folder !== 'string' || !folder.trim()) return Promise.resolve(null);
+  let timer;
+  const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), timeLimitMs); timer.unref?.(); });
+  return Promise.race([readBranch(folder), late]).finally(() => clearTimeout(timer));
+}
+
+async function readBranch(folder) {
   try {
     let current = resolve(folder);
     for (let level = 0; level < MAX_LEVELS; level += 1) {
       const gitDir = await gitDirectory(join(current, '.git'));
+      if (gitDir === BROKEN) return null;
       if (gitDir) return branchOf(await readFile(join(gitDir, 'HEAD'), 'utf8'));
       const parent = dirname(current);
       if (parent === current) return null;
@@ -25,12 +34,15 @@ export async function workingBranch(folder) {
   return null;
 }
 
+const BROKEN = Symbol('broken .git file');
+
 async function gitDirectory(path) {
   let info;
   try { info = await stat(path); } catch { return null; }
   if (info.isDirectory()) return path;
   const pointer = /^gitdir:\s*(.+)\s*$/m.exec(await readFile(path, 'utf8'))?.[1]?.trim();
-  if (!pointer) return null;
+  // A .git file that points nowhere ends the walk: a parent repository's branch is not this folder's.
+  if (!pointer) return BROKEN;
   return isAbsolute(pointer) ? pointer : resolve(dirname(path), pointer);
 }
 

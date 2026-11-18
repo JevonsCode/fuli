@@ -129,7 +129,8 @@ export async function beginTaskFromPreferences(application, preferences, {
     }
   }
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
-    branch: await workingBranch(projectPath), taskPrompt, resumed: Boolean(resumed || existingTask) }));
+    // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
+    branch: task.projectAgentId ? await workingBranch(projectPath) : null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;

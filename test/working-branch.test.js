@@ -22,6 +22,13 @@ test('the branch comes from the nearest .git up the folder, a worktree file incl
 
     await writeFile(join(root, 'gitdirs', 'wt', 'HEAD'), '0123456789abcdef0123456789abcdef01234567\n');
     assert.equal(await workingBranch(join(root, 'wt')), null, 'a detached HEAD is unknown, not a guess');
+
+    // A .git file pointing nowhere inside the repository is unknown, never the parent's branch.
+    await mkdir(join(root, 'repo', 'nested'), { recursive: true });
+    await writeFile(join(root, 'repo', 'nested', '.git'), 'not a pointer\n');
+    assert.equal(await workingBranch(join(root, 'repo', 'nested')), null);
+    // Past its time limit the branch is unknown rather than late.
+    assert.equal(await workingBranch(join(root, 'repo'), { timeLimitMs: 0 }), null);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

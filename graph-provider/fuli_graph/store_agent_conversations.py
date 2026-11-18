@@ -423,12 +423,17 @@ class StoreAgentConversations:
         record per conversation and session, so a resume elsewhere never
         rewrites where an earlier conversation was written from."""
         provenance = getattr(request, 'provenance', None)
+        # A session that joins a conversation by resume reports no folder or model
+        # itself: it brings what its latest record elsewhere in this scope knows.
         await self.runtime.driver.execute_query(
+            'OPTIONAL MATCH (o:FuliConversationSession {scope: $scope}) '
+            'WHERE o.source_application = $source AND o.session_id = $session AND o.id <> $id '
+            'WITH o ORDER BY o.last_seen DESC LIMIT 1 '
             'MERGE (s:FuliConversationSession {id: $id}) '
             'ON CREATE SET s.conversation_id=$conversation_id, s.scope=$scope, s.source_application=$source, '
             's.session_id=$session, s.first_seen=$now '
-            'SET s.last_seen=$now, s.working_directory=coalesce($folder, s.working_directory), '
-            's.model=coalesce($model, s.model), s.branch=coalesce($branch, s.branch)',
+            'SET s.last_seen=$now, s.working_directory=coalesce($folder, s.working_directory, o.working_directory), '
+            's.model=coalesce($model, s.model, o.model), s.branch=coalesce($branch, s.branch, o.branch)',
             id=stable_uuid('conversation-session', conversation_id, request.source_application, request.session_id),
             conversation_id=conversation_id, scope=scope, source=request.source_application, session=request.session_id,
             now=now, folder=provenance.working_directory if provenance else None,
