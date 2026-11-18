@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createDeviceCertificate, deviceIdentity, loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
-import { CODEX_RUNNER_PROMPT_TIMEOUT_MS, codexHookTimeoutMs } from '../src/agents/codex/hook-contract.js';
+import { CODEX_RUNNER_PROMPT_TIMEOUT_MS, CODEX_RUNNER_STOP_TIMEOUT_MS, codexHookTimeoutMs } from '../src/agents/codex/hook-contract.js';
 import { resolveCallerProjectPath } from '../src/graphiti/caller-workspace.js';
 import { forwardHookToHost } from '../src/runner/hook-forwarding.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -80,4 +80,21 @@ test('a runner\'s Codex prompt hook waits for the host\'s whole entry and the tr
   // The host enters the task under this limit; the runner gets it plus the hop and its own margin.
   assert.ok(CODEX_RUNNER_PROMPT_TIMEOUT_MS - 2_000 > entry);
   assert.ok(CODEX_RUNNER_PROMPT_TIMEOUT_MS < 30_000, 'Codex stops a hook at 30 s');
+});
+
+test('a runner client\'s turn end closes its task on the host; other hooks stay on the runner', async (t) => {
+  const calls = [];
+  const { dataDir, root } = await pairedRunner(t, { runHook: async (call) => {
+    calls.push(call.argv.at(-1));
+    return { stdout: '{}\n', exitCode: 0 };
+  } });
+  const stop = await forwardHookToHost({ dataDir, client: 'codex', event: 'Stop', env: {},
+    stdin: [Buffer.from(JSON.stringify({ session_id: SESSION, turn_id: 't1', cwd: root, hook_event_name: 'Stop',
+      transcript_path: '/runner/only/transcript.jsonl', last_assistant_message: 'done' }))], deadlineAt: Date.now() + 20_000 });
+  assert.equal(stop.stdout, '{}\n');
+  assert.equal(await forwardHookToHost({ dataDir, client: 'codex', event: 'SessionStart', env: {},
+    stdin: hookStdin(root), deadlineAt: Date.now() + 20_000 }), null);
+  assert.deepEqual(calls, ['Stop']);
+  // The host's Codex Stop runs within its 5 s; the runner waits for that and the trip.
+  assert.ok(CODEX_RUNNER_STOP_TIMEOUT_MS > codexHookTimeoutMs(['--event', 'Stop']) + 2_000);
 });

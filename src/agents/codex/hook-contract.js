@@ -8,10 +8,15 @@
 // stay well inside the host's 30 s hook timeout.
 const ENTRY_TIMEOUT_MS = 15_000;
 const OTHER_TIMEOUT_MS = 5_000;
-// On a runner the prompt goes to the host (docs/runner.md), whose entry keeps
-// its own limit above: the runner waits for that and the trip there, inside
-// Codex's 30 s hook timeout.
+// On a runner the prompt and the turn's end go to the host (docs/runner.md),
+// whose hook keeps its own limit above: the runner waits for that and the trip
+// there, inside Codex's 30 s hook timeout.
 export const CODEX_RUNNER_PROMPT_TIMEOUT_MS = 28_000;
+export const CODEX_RUNNER_STOP_TIMEOUT_MS = 10_000;
+
+export function codexRunnerTimeoutMs(event) {
+  return event === 'UserPromptSubmit' ? CODEX_RUNNER_PROMPT_TIMEOUT_MS : CODEX_RUNNER_STOP_TIMEOUT_MS;
+}
 
 export function codexHookTimeoutMs(args) {
   const event = args[args.indexOf('--event') + 1];
