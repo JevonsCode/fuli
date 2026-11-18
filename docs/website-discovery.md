@@ -2,6 +2,8 @@
 
 Run `npm run build:site` and serve `dist/site` to preview the complete website. GitHub Pages publishes that same directory after the website tests pass.
 
+The stable pages name and download the newest GitHub release that is public, not a prerelease, no newer than the build's version and carries both installers (`FULI-Setup-<v>.exe`, `fuli-macos-arm64-<v>.dmg`). The deploy reads the release list first (`FULI_SITE_RELEASES`), so a draft, a beta or a release still uploading keeps the last complete one, and runs again when the publish workflow ends, so the site switches once both installers are attached. A local build without that list names its own version.
+
 The original homepage detects the browser language or uses the reader's saved choice. `/zh/` and `/en/` always serve their named language, including without JavaScript. The language links preserve the current chapter. All pages share one source template and translation dictionary.
 
 The build adds descriptive metadata, canonical URLs, reciprocal `hreflang` links, a sitemap, and JSON-LD for the software and its pages. It also generates Markdown versions from the visible product copy and an `llms.txt` index. These do not add visible page sections. They describe existing capabilities; no fabricated reviews, ratings, or hidden keyword content are included.

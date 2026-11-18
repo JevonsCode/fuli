@@ -10,6 +10,7 @@ import * as reportCatalog from '../site/report/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { stampAssetVersions } from './site-asset-versions.js';
+import { publishedStable, readReleases } from './site-published-release.js';
 import { writeSiteAvatars } from './site-avatars.js';
 
 // Each page is published at its template's own route (Chinese by default) and
@@ -182,17 +183,26 @@ function noPreviewPages(version, files) {
   }
 }
 
-export function createSitePages({ home, preview, models, tech, guide, report, version }) {
+// releases: GitHub's release list when the deploy read it (FULI_SITE_RELEASES). With it the
+// stable pages name and download the newest public, complete stable release no newer than
+// this build's own (publishedStable); a draft, a beta or one still building its installers
+// leaves the last complete one. Without it (a local or offline build) they name this build's.
+export function createSitePages({ home, preview, models, tech, guide, report, version, releases = null }) {
   const files = new Map();
   // A prerelease version (0.23.0-beta.1) is a preview; a stable one has none ahead of it.
   const hasPreview = version.includes('-');
-  homePages(home, version, files, hasPreview ? stableBaseline(preview) : version);
+  const candidate = hasPreview ? stableBaseline(preview) : version;
+  const stable = releases ? publishedStable(releases, candidate) : candidate;
+  if (!stable) throw new Error(`No public stable release up to ${candidate} has both installers; the site is left as it is.`);
+  // The header names the stable release on the stable pages; during a prerelease they name none.
+  const shown = hasPreview ? version : stable;
+  homePages(home, shown, files, stable);
   if (hasPreview) previewPages(preview, version, files);
-  else noPreviewPages(version, files);
-  guidePages(models, MODELS_BASE, modelsCatalog, files, version);
-  guidePages(tech, TECH_BASE, techCatalog, files, version);
-  guidePages(guide, GUIDE_BASE, guideCatalog, files, version);
-  guidePages(report, REPORT_BASE, reportCatalog, files, version);
+  else noPreviewPages(stable, files);
+  guidePages(models, MODELS_BASE, modelsCatalog, files, shown);
+  guidePages(tech, TECH_BASE, techCatalog, files, shown);
+  guidePages(guide, GUIDE_BASE, guideCatalog, files, shown);
+  guidePages(report, REPORT_BASE, reportCatalog, files, shown);
 
   const urls = (hasPreview ? ['', PREVIEW_BASE, GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE] : ['', GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE]).flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
   files.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);
@@ -213,6 +223,7 @@ export async function buildSite(output = new URL('../dist/site/', import.meta.ur
     guide: await readFile(new URL(GUIDE_BASE + 'index.html', source), 'utf8'),
     report: await readFile(new URL(REPORT_BASE + 'index.html', source), 'utf8'),
     version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
+    releases: process.env.FULI_SITE_RELEASES ? await readReleases(process.env.FULI_SITE_RELEASES) : null,
   });
   for (const [path, content] of files) {
     const destination = new URL(path, output);
