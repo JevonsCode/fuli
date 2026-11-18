@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { workingBranch } from '../src/conversations/working-branch.js';
+import { withinTimeLimit, workingBranch } from '../src/conversations/working-branch.js';
 
 // Synthetic repositories only: a .git folder, a worktree's gitdir file, a detached HEAD.
 test('the branch comes from the nearest .git up the folder, a worktree file included', async () => {
@@ -27,8 +27,7 @@ test('the branch comes from the nearest .git up the folder, a worktree file incl
     await mkdir(join(root, 'repo', 'nested'), { recursive: true });
     await writeFile(join(root, 'repo', 'nested', '.git'), 'not a pointer\n');
     assert.equal(await workingBranch(join(root, 'repo', 'nested')), null);
-    // Past its time limit the branch is unknown rather than late.
-    assert.equal(await workingBranch(join(root, 'repo'), { timeLimitMs: 0 }), null);
+
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -39,4 +38,9 @@ test('a folder outside Git, a missing folder or no folder has no branch', async 
     assert.equal(await workingBranch(''), null);
     assert.equal(await workingBranch(null), null);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('a read that never answers is unknown once the time limit passes', async () => {
+  assert.equal(await withinTimeLimit(new Promise(() => {}), 5), null);
+  assert.equal(await withinTimeLimit(Promise.resolve('synthetic'), 1000), 'synthetic');
 });

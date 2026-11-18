@@ -12,9 +12,14 @@ const TIME_LIMIT_MS = 250;
 
 export function workingBranch(folder, { timeLimitMs = TIME_LIMIT_MS } = {}) {
   if (typeof folder !== 'string' || !folder.trim()) return Promise.resolve(null);
+  return withinTimeLimit(readBranch(folder), timeLimitMs);
+}
+
+// The answer, or null once the time limit passes first.
+export function withinTimeLimit(answer, timeLimitMs) {
   let timer;
   const late = new Promise(resolve => { timer = setTimeout(() => resolve(null), timeLimitMs); timer.unref?.(); });
-  return Promise.race([readBranch(folder), late]).finally(() => clearTimeout(timer));
+  return Promise.race([answer, late]).finally(() => clearTimeout(timer));
 }
 
 async function readBranch(folder) {
