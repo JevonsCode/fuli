@@ -6,17 +6,16 @@ import { compareSemanticVersions, parseSemanticVersion } from '../src/semantic-v
 // (The same names for a beta: build-site.js links a preview's installers the same way.)
 export const stableInstallers = version => [`FULI-Setup-${version}.exe`, `fuli-macos-arm64-${version}.dmg`];
 
-// The stable release the website may link to: the newest GitHub release that
-// is public (not a draft), not a prerelease, has a stable version no newer
-// than `ceiling` (what this build would otherwise name) and carries both
-// installers. A release made but still building its installers, a draft or a
+// The stable release the website links to: the newest GitHub release that is
+// public (not a draft), not a prerelease and carries both installers, whatever
+// version the build itself has (a release published after this commit still
+// switches the site; only a build without the list names its own version). A release made but still building its installers, a draft or a
 // beta never replaces the last complete one (11-19: the pages linked a draft
 // 0.27.17 and Windows downloads answered 404). Null when none qualifies.
-export function publishedStable(releases, ceiling) {
+export function publishedStable(releases) {
   return newest(releases.flatMap(release => {
     const version = completeRelease(release);
-    return version && release.prerelease === false && !version.includes('-')
-      && compareSemanticVersions(version, ceiling) <= 0 ? [version] : [];
+    return version && release.prerelease === false && !version.includes('-') ? [version] : [];
   }));
 }
 

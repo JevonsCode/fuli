@@ -44,7 +44,11 @@ jobs:
       - name: Read published releases
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" --jq '.[] | {tag_name, draft, prerelease, assets: [.assets[] | {name, state, size}]}' > "$RUNNER_TEMP/releases.jsonl"
+        # A block scalar: the jq filter's braces and colons would otherwise end the YAML value.
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" \
+            --jq '.[] | {tag_name, draft, prerelease, assets: [.assets[] | {name, state, size}]}' \
+            > "$RUNNER_TEMP/releases.jsonl"
       - run: npm run build:site
         env:
           FULI_SITE_RELEASES: ${{ runner.temp }}/releases.jsonl

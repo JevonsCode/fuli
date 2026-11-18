@@ -215,16 +215,16 @@ function noPreviewPages(version, files) {
 }
 
 // releases: GitHub's release list when the deploy read it (FULI_SITE_RELEASES). With it the
-// stable pages name and download the newest public, complete stable release no newer than
-// this build's own (publishedStable); a draft, a beta or one still building its installers
+// stable pages name and download the newest public, complete stable release (publishedStable),
+// whatever this build's own version; a draft, a beta or one still building its installers
 // leaves the last complete one. Without it (a local or offline build) they name this build's.
 export function createSitePages({ home, preview, models, tech, guide, report, version, releases = null }) {
   const files = new Map();
   // A prerelease version (0.23.0-beta.1) packages a preview; a stable one has none ahead of it.
   const packaged = version.includes('-');
   const candidate = packaged ? stableBaseline(preview) : version;
-  const stable = releases ? publishedStable(releases, candidate) : candidate;
-  if (!stable) throw new Error(`No public stable release up to ${candidate} has both installers; the site is left as it is.`);
+  const stable = releases ? publishedStable(releases) : candidate;
+  if (!stable) throw new Error('No public stable release has both installers; the site is left as it is.');
   // With the release list, /next/ shows the newest complete public beta ahead of that stable
   // release, whichever build this is; without it, the beta this build packages, if any.
   const previewVersion = releases ? publishedPreview(releases, stable) : (packaged ? version : null);
