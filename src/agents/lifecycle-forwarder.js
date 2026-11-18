@@ -86,7 +86,9 @@ const PACKAGE_JSON = new URL('../../package.json', import.meta.url);
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
 
 // The process entry: stdin in, the answer out, this process's exit code.
-export async function runThinLifecycleHook({ client, envNames, timeoutMs }) {
+// runnerPromptTimeoutMs: how long a runner's prompt hook waits for the host,
+// which enters the task under its own deadline (src/runner/hook-forwarding.js).
+export async function runThinLifecycleHook({ client, envNames, timeoutMs, runnerPromptTimeoutMs = timeoutMs }) {
   const startedAt = Date.now();
   const deadlineAt = startedAt + timeoutMs;
   const argv = process.argv.slice(2);
@@ -99,7 +101,8 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs }) {
       const configPath = argv[argv.indexOf('--runtime-config') + 1];
       const { forwardHookToHost } = await import('../runner/hook-forwarding.js');
       const answer = stdin.complete ? await forwardHookToHost({ dataDir: dirname(resolve(configPath)), client,
-        event: 'UserPromptSubmit', env: namedEnvironment(process.env, envNames), stdin: stdin.chunks, deadlineAt })
+        event: 'UserPromptSubmit', env: namedEnvironment(process.env, envNames), stdin: stdin.chunks,
+        deadlineAt: startedAt + runnerPromptTimeoutMs })
         .catch(() => null) : null;
       process.stdout.write(answer ? answer.stdout : `${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
         additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
