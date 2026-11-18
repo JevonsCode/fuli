@@ -35,6 +35,20 @@ class ConversationQuery(ConversationScope):
     topic: str | None = Field(default=None, min_length=1, max_length=80)
     after: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=50)
+    # list only: for a progress view, each conversation's latest task result with
+    # evidence (a checkpoint that is not an automatic close) and its latest task-activity
+    # receipt from a native session certainly bound to it; summaries cut to 400 bytes.
+    with_progress: bool = False
+    # list only: a keyset page, starting after this position of the newest-first order
+    # (last_activity descending, then id), so a deep page costs what the first one does.
+    after_activity: str | None = Field(default=None, min_length=1, max_length=64)
+    after_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode='after')
+    def position_is_whole(self):
+        if (self.after_activity is None) != (self.after_id is None):
+            raise ValueError('after_activity and after_id are given together')
+        return self
     # events only: read exactly the event at sequence after + 1 with this event_id
     # (a digest task's source), or nothing; never the next event in its place.
     event_id: str | None = Field(default=None, min_length=1, max_length=256)

@@ -39,14 +39,39 @@ def bounded_text(text, limit=ENTRY_BYTES):
     return raw[:limit - len('…'.encode())].decode(errors='ignore') + '…', True
 
 
+# What FULI's Stop hook writes when it closes a task the Agent left without a
+# checkpoint: activity, never progress. The same texts as AUTO_CLOSE_SUMMARY and
+# AUTO_KEEP_REASON in src/conversations/stop-auto-close.js;
+# test/jefa-conversation-progress.test.js keeps the two in step.
+AUTOMATIC_CLOSE_SUMMARIES = frozenset({
+    'Auto-closed by the Stop hook: the Agent recorded no checkpoint for this task.',
+    'Auto-closed by the Stop hook: the Agent recorded no checkpoint; FULI kept what the turn itself showed, pending review.',
+})
+
+
+def is_progress(summary):
+    """A task result with evidence: a nonempty summary that is not an automatic close."""
+    text = (summary or '').strip()
+    return bool(text) and text not in AUTOMATIC_CLOSE_SUMMARIES
+
+
 def add_task_result(digest, at, status, summary, source=None):
     """One task result; source points at the checkpoint event that wrote it
     (sequence, event_id, client, session_id), read back with read_agent_conversation
     mode events after sequence - 1, limit 1. No source when it is not certain."""
     # source None: written with this field, but no single checkpoint event matched.
-    task = {'at': at, 'status': status, 'summary': summary, 'source': source}
-    tasks = [*digest.get('tasks', []), task]
-    return {**digest, 'tasks': tasks[-DIGEST_TASKS:]}
+    result = {'at': at, 'status': status, 'summary': summary, 'source': source}
+    tasks = [*digest.get('tasks', []), result]
+    # The latest result with evidence is kept beside the window, so automatic closes
+    # after it, however many, never push it out.
+    return {**digest, 'tasks': tasks[-DIGEST_TASKS:], **({'progress': result} if is_progress(summary) else {})}
+
+
+def latest_progress(digest):
+    """The latest task result with evidence, or None. A digest written before
+    progress was kept beside the window falls back to the window itself."""
+    return digest.get('progress') or next(
+        (task for task in reversed(digest.get('tasks', [])) if is_progress(task.get('summary'))), None)
 
 
 def note_compaction(digest, sequence, size):
@@ -126,10 +151,10 @@ def fold_messages(digest, events):
 def refold_digest(digest, events):
     """Rebuild extracted entries with the current rules from the raw events they came from.
 
-    Task results come from checkpoints and the compaction pointer from appends,
-    not from the folded events, so both are kept.
+    Task results (and the latest one with evidence) come from checkpoints and the
+    compaction pointer from appends, not from the folded events, so they are kept.
     """
-    kept = {key: digest[key] for key in ('tasks', 'compaction') if key in digest}
+    kept = {key: digest[key] for key in ('tasks', 'progress', 'compaction') if key in digest}
     return fold_messages(kept, events)
 
 
