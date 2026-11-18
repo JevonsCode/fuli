@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
@@ -80,7 +81,9 @@ export async function runTrayAction(action, context, {
   let hold = null;
   let adopted = null;
   try {
-    if (['start', 'start-open', 'stop', 'change-port'].includes(action)) assertNativeSelection(context);
+    if (['start', 'start-open', 'stop', 'change-port'].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
+      assertNativeSelection(context);
+    }
     if (action === 'change-port') {
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
         throw new Error('Fuli 尚未设置，请先「启动并打开」。 / Fuli is not set up yet; use Start and open first.');
@@ -97,7 +100,10 @@ export async function runTrayAction(action, context, {
     }
     if (action === 'start' || action === 'start-open') {
       starting = true;
-      if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+      if (isRunnerDataDirectory(context.dataDir)) {
+        // A runner (docs/runner.md) starts only its console entry; it never sets up a FULI of its own.
+        if ((await inspect()).status !== 'running') await command(['start']);
+      } else if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
         const setup = await invoke(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
         // A setup that failed names its error on stderr. One that finished but
         // reports "partial" exits 1 silently: right after the first start its

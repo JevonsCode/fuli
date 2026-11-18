@@ -88,6 +88,13 @@ test('a client described by hand is written as an install-only extension, checke
   assert.deepEqual(added, { id: 'acme-agent-2' });
   assert.deepEqual(JSON.parse(readFileSync(join(extensionsDir, 'acme-agent-2.json'), 'utf8')), { schemaVersion: 1, name: 'Acme Agent',
     install: { detect: [{ path: '~/.acme/mcp.json' }], mcp: { file: '~/.acme/mcp.json', format: 'mcp-servers-json' } } });
+  // A client with Skills names its folder, so FULI's Skills are installed there too; it stays in the home folder.
+  await assert.rejects(() => clients.addCustomClient({ name: 'Beta', mcpFile: '~/.beta/mcp.json', skillsDir: '~/../skills' }),
+    { code: 'invalid_input', message: /skillsDir must be in your home folder/ });
+  const withSkills = await clients.addCustomClient({ name: 'Beta', mcpFile: '~/.beta/mcp.json', skillsDir: join(home, '.beta', 'skills') });
+  assert.deepEqual(JSON.parse(readFileSync(join(extensionsDir, `${withSkills.id}.json`), 'utf8')).install.skills, { dir: '~/.beta/skills' });
+  await clients.removeCustomClient(withSkills.id);
+  removals.length = 0;
   assert.deepEqual([...store.removable()], ['acme-agent-2']);
   // A file the installer cannot read as a client is taken back, with its reason.
   const refusing = createCustomClients({ store, installer: { status: async () => ({ status: 'available', clients: [],

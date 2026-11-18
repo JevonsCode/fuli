@@ -14,7 +14,8 @@ const RUNNER_STORE = join('runner', 'runner.sqlite');
 export const RUNNER_HOOK_CONTEXT = 'This computer is a FULI runner, so this hook loaded nothing. Before answering, call FULI\'s '
   + 'get_collaboration_preferences with projectPath=current directory and taskPrompt=current request; it reaches the FULI host.';
 
-function isRunnerDataDirectory(dataDir) {
+// Start, setup and FULI.app ask it too: on a runner they never set up a graph runtime.
+export function isRunnerDataDirectory(dataDir) {
   return existsSync(join(dataDir, RUNNER_STORE)) && !existsSync(join(dataDir, 'graph-runtime.json'));
 }
 

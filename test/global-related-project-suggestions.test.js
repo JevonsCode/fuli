@@ -109,3 +109,21 @@ test('optional global relation lookup failure does not suppress search results',
   assert.equal(result.relatedProjectSuggestionsStatus, 'not_applicable');
   assert.deepEqual(result.relatedProjectSuggestions, []);
 });
+
+test('a search that never shows related projects does not read the whole graph for them (task entry, rec#126)', async () => {
+  const app = new FederatedGraphApplication({
+    version: 1,
+    personal: { providerUrl: 'http://127.0.0.1:8787', accessToken: 'synthetic-token', principalId: 'synthetic-principal', spaceId: 'personal-space' },
+    workspaces: []
+  }, { fetchImpl: async () => { throw new Error('unexpected HTTP'); } });
+  app.personal.listPersonalProjects = async () => [{ project_id: 'related-c' }];
+  app.personal.search = async () => ({ facts: [{ id: 'fact-c', source_entity: 'C', target_entity: 'marker', relationship: 'HAS_MARKER',
+    fact: 'matched C', defined_project_id: 'related-c', scope_distance: 0 }], entities: [] });
+  let graphReads = 0;
+  app.personal.graph = async () => { graphReads += 1; return { nodes: [], edges: [] }; };
+  const result = await app.searchKnowledge({ personalSpaceId: 'personal-space', personalProjectScope: 'all_local_confirmed',
+    query: 'global query', relatedProjects: false });
+  assert.equal(graphReads, 0);
+  assert.equal(result.relatedProjectSuggestionsStatus, 'not_requested');
+  assert.equal(result.facts.length, 1);
+});

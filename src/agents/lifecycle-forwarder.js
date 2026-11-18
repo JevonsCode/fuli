@@ -50,6 +50,7 @@ import { RUNNER_HOOK_CONTEXT, runnerRuntimeConfig } from '../runner/runner-mode.
 // Hosts close stdin as soon as they wrote the payload; one that does not is
 // left to the hook's own deadline, which the fallback keeps.
 const STDIN_WAIT_MS = 500;
+const RUNNER_FORWARDED_EVENTS = new Set(['UserPromptSubmit', 'Stop']);
 // Above the hook's own input limit (lifecycle-input.js, 256 KiB), so the
 // console refuses an oversized payload with the hook's own answer.
 const FORWARDED_STDIN_LIMIT = 512 * 1024;
@@ -86,16 +87,32 @@ const PACKAGE_JSON = new URL('../../package.json', import.meta.url);
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
 
 // The process entry: stdin in, the answer out, this process's exit code.
-export async function runThinLifecycleHook({ client, envNames, timeoutMs }) {
+// runnerTimeoutMs(event): how long a runner's forwarded hook waits for the
+// host, which runs it under its own deadline (src/runner/hook-forwarding.js).
+export async function runThinLifecycleHook({ client, envNames, timeoutMs, runnerTimeoutMs = () => timeoutMs }) {
   const startedAt = Date.now();
   const deadlineAt = startedAt + timeoutMs;
   const argv = process.argv.slice(2);
-  // A runner's clients enter tasks through FULI's MCP server on the host
-  // (docs/runner.md): nothing loads, and a prompt says so, as the plugin hook does.
+  // A runner has no FULI of its own (docs/runner.md): its prompt and its turn's
+  // end go to the host, which enters and closes the task for the client's own
+  // session; the other hooks do nothing here.
   if (runnerRuntimeConfig(argv)) {
-    if (argv[argv.indexOf('--event') + 1] === 'UserPromptSubmit') {
-      process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
-        additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
+    const event = argv[argv.indexOf('--event') + 1];
+    if (RUNNER_FORWARDED_EVENTS.has(event)) {
+      // Loaded only now (src/runner/hook-forwarding.js).
+      const stdin = await readStdin(process.stdin, Math.min(STDIN_WAIT_MS, timeoutMs));
+      const configPath = argv[argv.indexOf('--runtime-config') + 1];
+      const { forwardHookToHost } = await import('../runner/hook-forwarding.js');
+      const answer = stdin.complete ? await forwardHookToHost({ dataDir: dirname(resolve(configPath)), client,
+        event, env: namedEnvironment(process.env, envNames), stdin: stdin.chunks,
+        deadlineAt: startedAt + runnerTimeoutMs(event) })
+        .catch(() => null) : null;
+      // Without the host a prompt says how to enter the task through MCP; a turn's end says nothing.
+      if (answer) process.stdout.write(answer.stdout);
+      else if (event === 'UserPromptSubmit') {
+        process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
+          additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
+      }
     }
     process.exitCode = 0;
     return;

@@ -478,7 +478,7 @@ it('restarts a running client only after the person confirms, in the same place 
   wrapper.unmount()
 })
 
-it('shows on each tile what FULI put into that client, and says when it has no hooks', async () => {
+it('shows every capability on each tile: installed, needing an update, or not supported with what that costs', async () => {
   routed(() => Response.json(statusOf([
     { id: 'claude-code', label: 'Claude Code', status: 'connected', components: { mcp: 'current', hooks: 'current', skills: 'outdated', permissions: 'current' } },
     { id: 'kiro', label: 'Kiro', status: 'connected', components: { mcp: 'current' } },
@@ -487,9 +487,16 @@ it('shows on each tile what FULI put into that client, and says when it has no h
   const wrapper = mount(ClientCards)
   await flushPromises()
   const parts = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).findAll('[data-part]').map((part) => part.text())
-  expect(parts('claude-code')).toEqual(['MCP', '自动进入与收尾', 'Skills · 需更新', '权限白名单'])
-  expect(parts('kiro')).toEqual(['MCP'])
-  expect(parts('acme-agent')).toEqual(['MCP'])
+  const ALL = ['MCP', '自动进入与收尾', 'Skills', '全局说明', '权限白名单', '/fla 菜单']
+  expect(parts('claude-code')).toEqual(['MCP', '自动进入与收尾', 'Skills · 需更新', '全局说明', '权限白名单', '/fla 菜单'])
+  expect(parts('kiro')).toEqual(ALL)
+  expect(parts('acme-agent')).toEqual(ALL)
+  const state = (id: string, part: string) => wrapper.get(`[data-client-parts="${id}"] [data-part="${part}"]`).attributes('data-part-state')
+  expect([state('claude-code', 'hooks'), state('claude-code', 'skills'), state('claude-code', 'prompts')]).toEqual(['current', 'outdated', 'unsupported'])
+  expect(state('kiro', 'skills')).toBe('unsupported')
+  // A capability the client does not take says what is missing without it.
+  expect(wrapper.get('[data-client-parts="kiro"] [data-part="hooks"]').attributes('title'))
+    .toBe('这个客户端不支持：不会自动开任务和收尾，要靠 Agent 按 FULI 的说明调用，也不会自动记录对话。')
   const tile = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).element.closest('li.client-row')!
   expect(tile('claude-code').querySelector('[data-client-no-lifecycle]')).toBeNull()
   expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('不会自动记录对话')
