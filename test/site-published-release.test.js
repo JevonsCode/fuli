@@ -14,8 +14,11 @@ import { publishedStable, readReleases, stableInstallers } from '../scripts/site
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const templates = { home: read('../site/index.html'), preview: read('../site/next/index.html'), models: read('../site/models/index.html'),
   tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), report: read('../site/report/index.html') };
-const release = (version, { draft = false, prerelease = version.includes('-'), assets = stableInstallers(version) } = {}) =>
-  ({ tag_name: `v${version}`, draft, prerelease, assets: assets.map(name => ({ name })) });
+// GitHub's release shape: each asset carries its upload state and size.
+const uploaded = name => ({ name, state: 'uploaded', size: 255_000_000 });
+const release = (version, { draft = false, prerelease = version.includes('-'), assets = stableInstallers(version),
+  tag = `v${version}` } = {}) =>
+  ({ tag_name: tag, draft, prerelease, assets: assets.map(asset => (typeof asset === 'string' ? uploaded(asset) : asset)) });
 const download = version => [`https://github.com/JevonsCode/fuli/releases/download/v${version}/FULI-Setup-${version}.exe`,
   `https://github.com/JevonsCode/fuli/releases/download/v${version}/fuli-macos-arm64-${version}.dmg`];
 const links = (files, path) => {
@@ -33,7 +36,17 @@ test('a draft, a beta, or a release still missing an installer never replaces th
   assert.equal(publishedStable([release('0.27.17', { prerelease: true }), shipped], '0.27.17'), '0.27.16', 'marked prerelease');
   assert.equal(publishedStable([release('0.27.18'), shipped], '0.27.17'), '0.27.16', 'never newer than the build');
   assert.equal(publishedStable([release('0.27.17', { draft: true })], '0.27.17'), null);
-  // Public with both installers: the site switches to it.
+  // Review 11-19: installers still being attached (state starter, size 0), uploaded but empty,
+  // or a tag without its v (whose /v0.27.17/ path does not exist) never count.
+  const attaching = stableInstallers('0.27.17').map(name => ({ name, state: 'starter', size: 0 }));
+  assert.equal(publishedStable([release('0.27.17', { assets: attaching }), shipped], '0.27.17'), '0.27.16');
+  const empty = stableInstallers('0.27.17').map(name => ({ name, state: 'uploaded', size: 0 }));
+  assert.equal(publishedStable([release('0.27.17', { assets: empty }), shipped], '0.27.17'), '0.27.16');
+  assert.equal(publishedStable([release('0.27.17', { tag: '0.27.17' }), shipped], '0.27.17'), '0.27.16');
+  assert.equal(publishedStable([release('0.27.17', { tag: 'vnot-a-version' }), shipped], '0.27.17'), '0.27.16');
+  assert.equal(publishedStable([{ ...release('0.27.17'), draft: undefined }, shipped], '0.27.17'), '0.27.16',
+    'a release that does not say it is public is not');
+  // Public with both installers uploaded and non-empty: the site switches to it.
   assert.equal(publishedStable([release('0.27.17'), shipped], '0.27.17'), '0.27.17');
 });
 
@@ -69,19 +82,33 @@ test('a build that read no release list (offline, local) names its own version, 
   const folder = mkdtempSync(join(tmpdir(), 'fuli-site-releases-'));
   try {
     const lines = join(folder, 'releases.jsonl');
-    writeFileSync(lines, [release('0.27.17', { draft: true }), release('0.27.16')].map(item =>
-      JSON.stringify({ ...item, assets: item.assets.map(asset => asset.name) })).join('\n') + '\n');
-    assert.equal(publishedStable(await readReleases(lines), '0.27.17'), '0.27.16', 'gh api --jq lines with asset names');
+    writeFileSync(lines, [release('0.27.17', { draft: true }), release('0.27.16')].map(item => JSON.stringify(item)).join('\n') + '\n');
+    assert.equal(publishedStable(await readReleases(lines), '0.27.17'), '0.27.16', 'gh api --jq lines with name, state and size');
   } finally { rmSync(folder, { recursive: true, force: true }); }
 });
 
 test('the deploy reads the release list, uses it, and runs again when a publish ends, on main', () => {
   const workflow = read('../.github/workflows/pages.yml');
   assert.match(workflow, /gh api --paginate "repos\/\$\{\{ github\.repository \}\}\/releases\?per_page=100"/);
-  assert.match(workflow, /select\(\.state == "uploaded"\)/, 'only installers that finished uploading count');
+  assert.match(workflow, /assets: \[\.assets\[\] \| \{name, state, size\}\]/, 'each installer keeps its upload state and size');
   assert.match(workflow, /FULI_SITE_RELEASES: \$\{\{ runner\.temp \}\}\/releases\.jsonl/);
   assert.ok(workflow.indexOf('Read published releases') < workflow.indexOf('npm run build:site'));
   assert.match(workflow, /workflow_run:\n\s+workflows: \["Publish npm package"\]\n\s+types: \[completed\]/);
   assert.match(workflow, /ref: \$\{\{ github\.event_name == 'workflow_run' && 'main' \|\| github\.sha \}\}/);
   assert.doesNotMatch(workflow, /^\s+release:/m, 'a release event runs on its tag, which Pages does not deploy');
+});
+
+// The redeploy waits for both installers: they are uploaded by jobs of the workflow the
+// deploy listens to, after its publish job, so its completion comes after both uploads.
+test('both installers are uploaded inside "Publish npm package", after publishing, so its end redeploys the site', () => {
+  const release = read('../.github/workflows/release.yml');
+  assert.match(release, /^name: Publish npm package$/m);
+  assert.match(release, /^on:\n\s+release:\n\s+types:/m);
+  // Each job is the block from its two-space key to the next one.
+  const jobs = Object.fromEntries(release.split(/\n(?=  [a-z][a-z-]*:\n)/).map(block => [/^ {2}([a-z][a-z-]*):/.exec(block)?.[1], block]));
+  for (const [name, upload] of [['windows-tray', /gh release upload "\$env:GITHUB_REF_NAME"/], ['macos-dmg', /gh release upload "\$GITHUB_REF_NAME"/]]) {
+    const body = jobs[name] ?? '';
+    assert.match(body, /needs: publish/, `${name} runs after publishing`);
+    assert.match(body, upload, `${name} uploads its installer to the release`);
+  }
 });

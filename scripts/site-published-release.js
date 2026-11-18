@@ -13,13 +13,22 @@ export const stableInstallers = version => [`FULI-Setup-${version}.exe`, `fuli-m
 // 0.27.17 and Windows downloads answered 404). Null when none qualifies.
 export function publishedStable(releases, ceiling) {
   const candidates = releases.flatMap(release => {
-    const version = String(release?.tag_name ?? '').replace(/^v/, '');
-    if (release?.draft || release?.prerelease || version.includes('-') || !parseSemanticVersion(version)) return [];
-    if (compareSemanticVersions(version, ceiling) > 0) return [];
-    const assets = new Set((release.assets ?? []).map(asset => (typeof asset === 'string' ? asset : asset?.name)));
-    return stableInstallers(version).every(name => assets.has(name)) ? [version] : [];
+    // The links are /releases/download/v<version>/: only a tag of exactly that form names one.
+    const tag = String(release?.tag_name ?? '');
+    const version = tag.startsWith('v') ? tag.slice(1) : '';
+    if (release?.draft !== false || release?.prerelease !== false || version.includes('-') || !isVersion(version)) return [];
+    if (`v${version}` !== tag || compareSemanticVersions(version, ceiling) > 0) return [];
+    // An installer counts once GitHub says it finished uploading and it has bytes; one
+    // still being attached (state starter, size 0) does not.
+    const uploaded = new Set((release.assets ?? []).filter(asset => asset?.state === 'uploaded'
+      && Number.isInteger(asset.size) && asset.size > 0).map(asset => asset.name));
+    return stableInstallers(version).every(name => uploaded.has(name)) ? [version] : [];
   });
   return candidates.sort(compareSemanticVersions).at(-1) ?? null;
+}
+
+function isVersion(text) {
+  try { return Boolean(parseSemanticVersion(text)); } catch { return false; }
 }
 
 // GitHub's release list as the Pages workflow saved it (FULI_SITE_RELEASES):
