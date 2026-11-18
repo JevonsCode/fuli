@@ -278,10 +278,17 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     },
     // Questions waiting for this Agent that no delivery is currently answering
     // (one a sender's session stands in for still waits: the Agent may answer first).
-    pendingFor(spaceId, agentId, limit = 5) {
+    // viewer ({ client, session }): an ask that named another native session is
+    // left out before the limit, so others' named asks never crowd this one's out.
+    pendingFor(spaceId, agentId, limit = 5, viewer = null) {
+      const client = viewer?.client ?? null;
+      const session = viewer?.session ?? null;
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
         WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
-        ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, limit);
+          AND (m.target_session IS NULL OR (? IS NOT NULL AND (
+            (m.target_session = ? AND (m.target_client IS NULL OR m.target_client = ?))
+            OR (m.to_session = ? AND m.to_client = ?))))
+        ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, session, session, client, session, client, limit);
     },
     // Replies (or stand-in handbacks) addressed to this Agent in one project, in
     // one of the given delivery states. A handback names its project itself.

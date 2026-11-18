@@ -117,3 +117,22 @@ test('an ask that names no session stays the FLA\'s: any of its sessions sees an
   const ask = f.roundtable.thread({ threadId: f.store.getMessage(messageId).thread_id }).messages.find(m => m.id === messageId);
   assert.equal(ask.target, undefined);
 });
+
+test('asks named to other sessions never crowd out the asks of this session in the inbox or task entry', async () => {
+  const f = fixture();
+  for (let n = 0; n < 6; n += 1) await namedAsk(f, CODEX_OTHER);
+  const own = await namedAsk(f, CODEX);
+  assert.deepEqual((await f.roundtable.readMessages(f.as('token-nova-codex', 'codex'))).messages.map(m => m.messageId), [own]);
+  assert.deepEqual(f.roundtable.pending('reviewer-1', 'app', { client: 'codex', session: CODEX }).map(m => m.messageId), [own]);
+});
+
+test('a named session missing from the recent list is matched by its session alone', async () => {
+  const f = fixture();
+  const sent = await f.roundtable.messageAgent({ ...f.as('token-milo', 'claude_code'), to: 'Nova Lane', body: '旧会话',
+    conversation: 'synthetic-unlisted-session', wait: false });
+  const ask = f.store.getMessage(sent.messageId);
+  assert.deepEqual([ask.target_client, ask.target_session], [null, 'synthetic-unlisted-session']);
+  assert.deepEqual(f.roundtable.pending('reviewer-1', 'app', { client: 'codex', session: CODEX }), []);
+  assert.deepEqual(f.roundtable.pending('reviewer-1', 'app', { client: 'codex', session: 'synthetic-unlisted-session' })
+    .map(m => m.messageId), [sent.messageId]);
+});

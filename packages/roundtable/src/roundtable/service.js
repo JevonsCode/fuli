@@ -811,7 +811,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const attentionReplies = me.projectId ? attentionInbox.read(me.agent.agentId, me.projectId) : [];
     const { replies, more } = me.projectId ? replyInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
-    return { messages: store.pendingFor(spaceId(), me.agent.agentId)
+    return { messages: store.pendingFor(spaceId(), me.agent.agentId, 5, me)
       .filter(message => messageProject(message) === me.projectId && forViewer(message, me)).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
       ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
@@ -1018,7 +1018,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     // viewer: the entering session ({ client, session }); an ask that named another session is not its.
-    pending: (agentId, projectId = undefined, viewer = null) => store.pendingFor(spaceId(), agentId)
+    pending: (agentId, projectId = undefined, viewer = null) => store.pendingFor(spaceId(), agentId, 5, viewer)
       .filter(message => (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer)).map(inboxItem),
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
