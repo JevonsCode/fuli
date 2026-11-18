@@ -102,7 +102,7 @@ async function projectView(app, run, { spaceId, project, agents, after, limit })
   const unreadable = reads.filter((read) => read.rows === null).map((read) => fla(agents, read.agent.agentId));
   // Each FLA's rows come newest first from the Provider; merged here by parsed time.
   const merged = reads.flatMap(({ agent, rows }) => (rows ?? []).map((row) => ({ row, agent })))
-    .sort((left, right) => (Date.parse(right.row.last_activity) - Date.parse(left.row.last_activity))
+    .sort((left, right) => compareInstants(right.row.last_activity, left.row.last_activity)
       || compareText(left.row.id, right.row.id));
   const shown = merged.slice(0, limit);
   const last = shown.at(-1)?.row;
@@ -164,7 +164,27 @@ function latestEvidence(row, handledBy, agents) {
       eventId: receipt.source.event_id,
       ...(receipt.same_second_event_ids ? { sameSecondEventIds: receipt.same_second_event_ids } : {}) } } : null;
   if (!checkpoint || !activity) return checkpoint ?? activity;
-  return Date.parse(activity.at) > Date.parse(checkpoint.at) ? activity : checkpoint;
+  // Only an instant that is truly the same keeps the fixed choice (the checkpoint).
+  return compareInstants(activity.at, checkpoint.at) > 0 ? activity : checkpoint;
+}
+
+// ISO instants compared at their full precision, with Z and offsets brought to UTC.
+// Date.parse keeps milliseconds only, so 15:23:26.100100+00:00 and 15:23:26.100900Z
+// compared equal and the earlier checkpoint was named the latest report (review 11-19).
+// An instant that cannot be read sorts before every one that can.
+export function compareInstants(left, right) {
+  const a = nanoseconds(left);
+  const b = nanoseconds(right);
+  if (a === null || b === null) return a === b ? 0 : a === null ? -1 : 1;
+  return a > b ? 1 : a < b ? -1 : 0;
+}
+
+function nanoseconds(value) {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})$/i.exec(String(value ?? ''));
+  if (!match) return null;
+  const seconds = Date.parse(match[1] + (match[3].toUpperCase() === 'Z' ? 'Z' : match[3]));
+  if (Number.isNaN(seconds)) return null;
+  return BigInt(seconds) * 1_000_000n + BigInt((match[2] ?? '').padEnd(9, '0').slice(0, 9));
 }
 
 // An FLA as other views name it (project-team-view.js): display name, then role

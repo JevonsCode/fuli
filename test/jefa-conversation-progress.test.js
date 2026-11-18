@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { AUTO_CLOSE_SUMMARY, AUTO_KEEP_REASON } from '../src/conversations/stop-auto-close.js';
 import { safeConversationContent } from '../src/graphiti/agent-conversations.js';
-import { parseConversationProgressArgs, projectConversationProgress } from '../src/employees/project-conversation-progress.js';
+import { compareInstants, parseConversationProgressArgs, projectConversationProgress } from '../src/employees/project-conversation-progress.js';
 import { projectAgentCoordinationPolicyRecord } from '../src/graphiti/project-agent-mapping.js';
 import { createEmployeeFixture } from '../test-support/employee-fixture.js';
 
@@ -140,6 +140,25 @@ test('a member reporting on a lead conversation is named as the reporter, beside
   assert.deepEqual(row.progress.source, { client: 'codex', sessionId: 'synthetic-shared-session', taskId: 'synthetic-task',
     eventId: 'synthetic-event-b', sameSecondEventIds: ['synthetic-event-a'] });
   await assert.rejects(read(fakeApp(data), { projectId: GAMMA }), { code: 'project_not_managed', status: 403 });
+});
+
+// Review 11-19: the checkpoint at .100100+00:00 and a member's receipt at .100900Z fall in one
+// millisecond; Date.parse saw them equal and named the earlier checkpoint's holder as reporter.
+test('within one millisecond the later evidence still wins, read at full precision with Z and offsets alike', async () => {
+  const at = (instant) => ({ at: instant });
+  const data = (checkpointAt, receiptAt) => ({ [`${ALPHA}/lead-alpha`]: [conversation('alpha-held', 45, { sessions: [codexSession],
+    progress: { ...checkpoint(20, 'Planned the release'), ...at(checkpointAt) },
+    activity: { ...receipt(44, 'Ran the release checks', 'codex', 'synthetic-shared-session', 'dev-alpha', 'synthetic-event-b'),
+      ...at(receiptAt) } })] });
+  const reporter = async (checkpointAt, receiptAt) =>
+    (await read(fakeApp(data(checkpointAt, receiptAt)), { projectId: ALPHA })).conversations[0].progress.reportedBy.agentId;
+  assert.equal(await reporter('2026-11-18T15:23:26.100100+00:00', '2026-11-18T15:23:26.100900Z'), 'dev-alpha');
+  assert.equal(await reporter('2026-11-18T15:23:26.100900Z', '2026-11-18T15:23:26.100100+00:00'), 'lead-alpha');
+  // The same instant written two ways (an offset, fewer digits) is truly equal: the fixed choice, the checkpoint.
+  assert.equal(await reporter('2026-11-18T23:23:26.1009+08:00', '2026-11-18T15:23:26.100900Z'), 'lead-alpha');
+  assert.equal(compareInstants('2026-11-18T15:23:26.100900Z', '2026-11-18T15:23:26.100100+00:00'), 1);
+  assert.equal(compareInstants('2026-11-18T15:23:26.1Z', '2026-11-18T23:23:26.100000+08:00'), 0);
+  assert.equal(compareInstants('not a time', '2026-11-18T15:23:26Z'), -1);
 });
 
 test('the Provider knows the Stop hook\'s automatic-close texts exactly, as the hook writes them', () => {
