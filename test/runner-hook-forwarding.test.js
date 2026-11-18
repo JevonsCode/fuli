@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createDeviceCertificate, deviceIdentity, loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { CODEX_RUNNER_PROMPT_TIMEOUT_MS, codexHookTimeoutMs } from '../src/agents/codex/hook-contract.js';
 import { resolveCallerProjectPath } from '../src/graphiti/caller-workspace.js';
 import { forwardHookToHost } from '../src/runner/hook-forwarding.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -72,4 +73,11 @@ test('a hook the host cannot take gives the runner nothing to print, so it falls
     stdin: hookStdin(root), deadlineAt: Date.now() + 20_000 }), null);
   assert.equal(await forwardHookToHost({ dataDir, client: 'codex', event: 'UserPromptSubmit', env: {},
     stdin: [Buffer.from('not json')], deadlineAt: Date.now() + 20_000 }), null);
+});
+
+test('a runner\'s Codex prompt hook waits for the host\'s whole entry and the trip there, inside Codex\'s hook timeout', () => {
+  const entry = codexHookTimeoutMs(['--event', 'UserPromptSubmit']);
+  // The host enters the task under this limit; the runner gets it plus the hop and its own margin.
+  assert.ok(CODEX_RUNNER_PROMPT_TIMEOUT_MS - 2_000 > entry);
+  assert.ok(CODEX_RUNNER_PROMPT_TIMEOUT_MS < 30_000, 'Codex stops a hook at 30 s');
 });
