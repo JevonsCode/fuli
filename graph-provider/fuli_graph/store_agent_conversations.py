@@ -326,12 +326,13 @@ class StoreAgentConversations:
             created_at = now_utc()
             now = created_at.isoformat()
             provenance = request.provenance
+            # A conversation is titled once, when it opens: a later task's words never name an earlier one.
             await store.runtime.driver.execute_query(
                 'MERGE (c:FuliConversation {id: $id}) ON CREATE SET c.scope=$scope, c.revision=0, '
-                "c.last_activity=$now, c.summary='', c.status='reported' "
-                'SET c.serial=coalesce(c.serial,0)+1, c.title=coalesce(c.title, $title)',
+                "c.last_activity=$now, c.summary='', c.status='reported', c.title=$title "
+                'SET c.serial=coalesce(c.serial,0)+1',
                 id=conversation_id, scope=scope, now=now, title=provenance.title if provenance else None)
-            await store._note_session(binding, scope, request, now)
+            await store._note_session(scope, conversation_id, request, now)
             new_summary = False
             compaction = None
             unfolded = 0
@@ -395,39 +396,44 @@ class StoreAgentConversations:
                 id=request.conversation_id, scope=scope)
             if not rows:
                 raise HTTPException(404, 'Conversation not found in this Agent and project')
-            binding = conversation_binding_id(scope, request.source_application, request.session_id)
             await store.runtime.driver.execute_query(
                 'MERGE (b:FuliConversationBinding {id: $id}) ON CREATE SET b.cursor=0 '
                 'SET b.conversation_id=$conversation_id',
-                id=binding, conversation_id=request.conversation_id)
-            await store._note_session(binding, scope, request, now_utc().isoformat())
+                id=conversation_binding_id(scope, request.source_application, request.session_id),
+                conversation_id=request.conversation_id)
+            # The resumed conversation gains this session; the one it left keeps its record.
+            await store._note_session(scope, request.conversation_id, request, now_utc().isoformat())
             return {'status': 'resumed', 'conversation_id': request.conversation_id}
 
-    async def _note_session(self, binding, scope, request, now):
-        """Where this host session works, on its binding: which client and
-        session, when it was first and last seen, and the folder and model its
-        entry reported (kept until a later entry reports another)."""
+    async def _note_session(self, scope, conversation_id, request, now):
+        """Where this host session worked on this conversation: its client and
+        session, when it was first and last seen here, and the folder and model
+        its entry reported (kept until a later entry reports another). One
+        record per conversation and session, so a resume elsewhere never
+        rewrites where an earlier conversation was written from."""
         provenance = getattr(request, 'provenance', None)
         await self.runtime.driver.execute_query(
-            'MATCH (b:FuliConversationBinding {id: $id}) '
-            'SET b.scope=$scope, b.source_application=$source, b.session_id=$session, '
-            'b.first_seen=coalesce(b.first_seen, $now), b.last_seen=$now, '
-            'b.working_directory=coalesce($folder, b.working_directory), b.model=coalesce($model, b.model)',
-            id=binding, scope=scope, source=request.source_application, session=request.session_id, now=now,
-            folder=provenance.working_directory if provenance else None,
+            'MERGE (s:FuliConversationSession {id: $id}) '
+            'ON CREATE SET s.conversation_id=$conversation_id, s.scope=$scope, s.source_application=$source, '
+            's.session_id=$session, s.first_seen=$now '
+            'SET s.last_seen=$now, s.working_directory=coalesce($folder, s.working_directory), '
+            's.model=coalesce($model, s.model)',
+            id=stable_uuid('conversation-session', conversation_id, request.source_application, request.session_id),
+            conversation_id=conversation_id, scope=scope, source=request.source_application, session=request.session_id,
+            now=now, folder=provenance.working_directory if provenance else None,
             model=provenance.model if provenance else None)
 
     async def _conversation_sessions(self, conversation_ids, limit=SESSIONS_PER_CONVERSATION):
-        """The host sessions each conversation was written from, newest first:
-        from the bindings, or for a conversation written before bindings kept
-        that (graph 22), from its journal events (client and session only)."""
+        """The host sessions each conversation was written from, newest first.
+        A conversation written before graph 22 has no such records: its
+        journal events name the client and session, with their times."""
         if not conversation_ids:
             return {}
         rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (b:FuliConversationBinding) WHERE b.conversation_id IN $ids AND b.session_id IS NOT NULL '
-            'RETURN b.conversation_id AS conversation_id, b.source_application AS client, b.session_id AS session_id, '
-            'b.model AS model, b.working_directory AS working_directory, b.first_seen AS first_seen, '
-            'b.last_seen AS last_seen ORDER BY b.last_seen DESC', ids=list(conversation_ids))
+            'MATCH (s:FuliConversationSession) WHERE s.conversation_id IN $ids '
+            'RETURN s.conversation_id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
+            's.model AS model, s.working_directory AS working_directory, s.first_seen AS first_seen, '
+            's.last_seen AS last_seen ORDER BY s.last_seen DESC', ids=list(conversation_ids))
         sessions = {}
         for row in rows:
             sessions.setdefault(row['conversation_id'], []).append(
@@ -447,19 +453,28 @@ class StoreAgentConversations:
 
     async def _sessions_elsewhere(self, scope, request, since):
         """Other host sessions of this Agent in this scope seen since `since`,
-        newest first, each with its conversation's title or summary: what the
-        same Agent is doing in another client or chat right now."""
+        newest first and one row each, with the conversation it last worked on
+        and that conversation's summary or title: where else the same Agent
+        works right now. Read through the (scope, last_seen) index."""
         rows, _, _ = await self.runtime.driver.execute_query(
-            'MATCH (b:FuliConversationBinding {scope: $scope}) '
-            'WHERE b.last_seen >= $since AND NOT (b.source_application = $source AND b.session_id = $session) '
-            'MATCH (c:FuliConversation {id: b.conversation_id}) '
-            'RETURN c.id AS conversation_id, b.source_application AS client, b.session_id AS session_id, '
-            'b.model AS model, b.working_directory AS working_directory, b.last_seen AS last_seen, '
+            'MATCH (s:FuliConversationSession {scope: $scope}) '
+            'WHERE s.last_seen >= $since AND NOT (s.source_application = $source AND s.session_id = $session) '
+            'WITH s ORDER BY s.last_seen DESC LIMIT $scan '
+            'MATCH (c:FuliConversation {id: s.conversation_id}) '
+            'RETURN c.id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
+            's.model AS model, s.working_directory AS working_directory, s.last_seen AS last_seen, '
             "CASE WHEN c.summary <> '' THEN c.summary ELSE c.title END AS title "
-            'ORDER BY b.last_seen DESC LIMIT $limit',
+            'ORDER BY s.last_seen DESC',
             scope=scope, since=since, source=request.source_application, session=request.session_id,
-            limit=SESSIONS_ELSEWHERE)
-        return [{key: value for key, value in dict(row).items() if value is not None} for row in rows]
+            scan=SESSIONS_ELSEWHERE * 4)
+        seen, found = set(), []
+        for row in rows:
+            key = (row['client'], row['session_id'])
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append({key: value for key, value in dict(row).items() if value is not None})
+        return found[:SESSIONS_ELSEWHERE]
 
     async def claim_conversation_boundary(self, actor, request):
         if request.fallback_recovery:

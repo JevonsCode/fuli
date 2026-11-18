@@ -22773,15 +22773,8 @@
       "FuliConversationBinding": {
         "conversation_id": "string",
         "cursor": "integer",
-        "first_seen": "string?",
         "id": "string",
-        "last_seen": "string?",
-        "model": "string?",
-        "scope": "string?",
-        "serial": "integer?",
-        "session_id": "string?",
-        "source_application": "string?",
-        "working_directory": "string?"
+        "serial": "integer?"
       },
       "FuliConversationEvent": {
         "created_at": "datetime",
@@ -22792,6 +22785,17 @@
         "session_id": "string",
         "source_application": "string",
         "task_context_token": "string"
+      },
+      "FuliConversationSession": {
+        "conversation_id": "string",
+        "first_seen": "string",
+        "id": "string",
+        "last_seen": "string",
+        "model": "string?",
+        "scope": "string",
+        "session_id": "string",
+        "source_application": "string",
+        "working_directory": "string?"
       },
       "FuliConversationPolicy": {
         "id": "string",

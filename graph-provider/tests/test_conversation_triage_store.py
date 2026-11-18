@@ -226,7 +226,7 @@ class ListDriver:
 
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
-        if 'FuliConversationBinding' in query or 'HAS_EVENT' in query:
+        if 'FuliConversationSession' in query or 'HAS_EVENT' in query:
             return [], None, None  # where each conversation was written from: none recorded here
         assert 'FuliConversationTriage' in query
         return [{'c': {'id': 'c1', 'summary': 'One', 'status': 'reported', 'revision': 2, 'last_activity': 'x'},

@@ -364,12 +364,25 @@ def test_a_conversation_names_where_it_was_written_and_an_entry_names_the_agents
                 ('codex', 'synthetic-codex-1', 'synthetic-model-b', 'T:/synthetic/repo')]
             assert traced['sessions'][0]['first_seen'] <= traced['sessions'][0]['last_seen']
             assert [s['client'] for s in rows[claude['conversation_id']]['sessions']] == ['claude_code']
-            # A credential never becomes a title.
+            # A credential never becomes a title, and never refuses the entry.
+            secret = await begin('codex', 'synthetic-codex-3', {'title': 'fix access_token=abc', 'model': 'synthetic-model-c'})
+            listed = (await client.post('/v1/agent-conversations/query', json={**scope, 'source_application': 'codex',
+                'mode': 'list'})).json()['conversations']
+            assert [row.get('title') for row in listed if row['id'] == secret['conversation_id']] == [None]
+            # Resuming the Codex conversation from Claude adds Claude's session to it; the conversation Claude
+            # left still names Claude's session (history is kept), and Claude's next entry no longer lists itself.
             token = 'fuli-task-' + uuid4().hex
             await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
-                project_agent_id='engineer', session_id='synthetic-codex-3', source_application='codex', token=token))
-            refused = await client.post('/v1/agent-conversations/begin', json={**scope, 'source_application': 'codex',
-                'session_id': 'synthetic-codex-3', 'task_context_token': token,
-                'provenance': {'title': 'use sk-ant-api03-' + 'A' * 40}})
-            assert refused.status_code == 422
+                project_agent_id='engineer', session_id='synthetic-claude-1', source_application='claude_code', token=token))
+            resumed = await client.post('/v1/agent-conversations/resume', json={**scope, 'source_application': 'claude_code',
+                'session_id': 'synthetic-claude-1', 'task_context_token': token, 'conversation_id': codex['conversation_id']})
+            assert resumed.status_code == 200, resumed.text
+            listed = (await client.post('/v1/agent-conversations/query', json={**scope, 'source_application': 'codex',
+                'mode': 'list'})).json()['conversations']
+            rows = {row['id']: row for row in listed}
+            assert {s['client'] for s in rows[codex['conversation_id']]['sessions']} == {'codex', 'claude_code'}
+            assert [s['client'] for s in rows[claude['conversation_id']]['sessions']] == ['claude_code']
+            again = await begin('claude_code', 'synthetic-claude-1')
+            assert [(row['client'], row['session_id']) for row in again['elsewhere']] == [
+                ('codex', 'synthetic-codex-3'), ('codex', 'synthetic-codex-1')], 'one row per session, newest first'
     asyncio.run(scenario())

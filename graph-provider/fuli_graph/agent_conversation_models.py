@@ -2,7 +2,7 @@
 from typing import Literal
 from pydantic import Field, model_validator
 from .models import StrictModel, SourceApplication
-from .model_validation import reject_credentials
+from .model_validation import contains_credentials, reject_credentials
 
 
 class ConversationPolicy(StrictModel):
@@ -59,8 +59,12 @@ class ConversationProvenance(StrictModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode='after')
-    def reject_secrets(self):
-        reject_credentials(self, 'Conversation provenance')
+    def drop_secrets(self):
+        # Where a session works is a note, never a reason to refuse its task
+        # entry: a value that looks like a credential is left out instead.
+        for field in ('working_directory', 'model', 'title'):
+            if contains_credentials(getattr(self, field)):
+                setattr(self, field, None)
         return self
 
 

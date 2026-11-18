@@ -14,7 +14,7 @@ class SessionsDriver:
 
     async def execute_query(self, query, **parameters):
         self.queries.append((query, parameters))
-        if 'FuliConversationBinding' in query:
+        if 'FuliConversationSession' in query:
             return [row for row in self.bindings if row['conversation_id'] in parameters['ids']], None, None
         assert 'HAS_EVENT' in query
         return [row for row in self.events if row['conversation_id'] in parameters['ids']], None, None
@@ -59,3 +59,11 @@ async def test_a_list_names_at_most_five_sessions_per_conversation_and_reads_not
     assert [s['session_id'] for s in sessions['c']] == [f'synthetic-{n}' for n in range(5)]
     assert all('model' not in s and 'working_directory' not in s for s in sessions['c'])
     assert await store_with([], [])._conversation_sessions([]) == {}
+
+
+def test_a_credential_like_note_is_left_out_and_never_refuses_the_entry():
+    from fuli_graph.agent_conversation_models import ConversationProvenance
+    note = ConversationProvenance(working_directory='T:/synthetic', model='synthetic-model',
+                                  title='fix access_token=abc in the synthetic client')
+    assert (note.working_directory, note.model, note.title) == ('T:/synthetic', 'synthetic-model', None)
+    assert ConversationProvenance(working_directory='T:/sk-ant-api03-' + 'A' * 40).working_directory is None

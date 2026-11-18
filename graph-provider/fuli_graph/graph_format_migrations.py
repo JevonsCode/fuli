@@ -15,6 +15,8 @@ from .graph_format_schema import (
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
+    CONVERSATION_SESSION_LABELS,
+    CONVERSATION_SESSION_RULES,
     KNOWLEDGE_TAG_LABELS,
     KNOWLEDGE_TAG_RULES,
     SOURCE_DELETE_RULES,
@@ -190,8 +192,8 @@ GRAPH_MIGRATIONS = (
     GraphMigration(
         'graph/22-conversation-provenance', 22, 'schema',
         'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
-        "and a conversation's opening words as its title; older conversations get them from their next write",
-        fields_only=True,
+        "and a new conversation's opening words as its title; earlier conversations name client and session from their journal",
+        rules=CONVERSATION_SESSION_RULES, labels=CONVERSATION_SESSION_LABELS,
     ),
 )
 

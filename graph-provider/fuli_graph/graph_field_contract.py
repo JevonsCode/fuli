@@ -109,14 +109,17 @@ NODE_FIELDS = {
         'status': 'conversation_status', 'summary': 'string', 'title': 'string?', 'unfolded_bytes': 'integer?',
     },
     'FuliConversationBinding': {
-        'conversation_id': 'string', 'cursor': 'integer', 'first_seen': 'string?', 'id': 'string',
-        'last_seen': 'string?', 'model': 'string?', 'scope': 'string?', 'serial': 'integer?',
-        'session_id': 'string?', 'source_application': 'string?', 'working_directory': 'string?',
+        'conversation_id': 'string', 'cursor': 'integer', 'id': 'string', 'serial': 'integer?',
     },
     'FuliConversationEvent': {
         'created_at': 'datetime', 'digest': 'string', 'id': 'string', 'payload': 'string',
         'sequence': 'integer', 'session_id': 'string', 'source_application': 'string',
         'task_context_token': 'string',
+    },
+    'FuliConversationSession': {
+        'conversation_id': 'string', 'first_seen': 'string', 'id': 'string', 'last_seen': 'string',
+        'model': 'string?', 'scope': 'string', 'session_id': 'string', 'source_application': 'string',
+        'working_directory': 'string?',
     },
     'FuliConversationPolicy': {
         'id': 'string', 'policy': 'string',
