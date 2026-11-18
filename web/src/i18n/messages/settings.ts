@@ -104,6 +104,16 @@ export const settingsMessages = {
         name: { mcp: 'MCP', hooks: '自动进入与收尾', plugin: '插件', skills: 'Skills', instructions: '全局说明', permissions: '权限白名单', prompts: '/fla 菜单' },
         state: { current: '已装好', outdated: '需更新', missing: '未装', conflict: '无法确认' },
         title: '{state}：{meaning}',
+        capability: { mcp: 'MCP', lifecycle: '自动进入与收尾', skills: 'Skills', instructions: '全局说明', permissions: '权限白名单', prompts: '/fla 菜单' },
+        unsupportedTitle: '这个客户端不支持：{lost}',
+        lost: {
+          mcp: '用不了 FULI 的工具。',
+          lifecycle: '不会自动开任务和收尾，要靠 Agent 按 FULI 的说明调用，也不会自动记录对话。',
+          skills: 'Agent 少了何时查知识、怎么存知识、怎么操作 FULI 的详细做法，更容易漏查漏记。',
+          instructions: '没有写进全局说明的提醒，只靠 MCP 自带的简短说明让它先找 FULI。',
+          permissions: '每次调用开任务和收尾的 FULI 工具都可能要你确认。',
+          prompts: '没有 /fla 菜单，要用「#FLA 名字」叫一位 FLA。',
+        },
         noLifecycle: '不会自动进入与收尾：靠 Agent 按 FULI 的说明做，也不会自动记录对话。',
       },
       custom: {
@@ -587,6 +597,16 @@ export const settingsMessages = {
         name: { mcp: 'MCP', hooks: 'Auto start and close', plugin: 'Plugin', skills: 'Skills', instructions: 'Instructions', permissions: 'Allowlist', prompts: '/fla menu' },
         state: { current: 'Installed', outdated: 'Needs update', missing: 'Not installed', conflict: 'Cannot confirm' },
         title: '{state}: {meaning}',
+        capability: { mcp: 'MCP', lifecycle: 'Auto start and close', skills: 'Skills', instructions: 'Instructions', permissions: 'Allowlist', prompts: '/fla menu' },
+        unsupportedTitle: 'This client does not support it: {lost}',
+        lost: {
+          mcp: 'FULI\'s tools are not available.',
+          lifecycle: 'Tasks do not start and close by themselves; the Agent follows FULI\'s instructions, and nothing is recorded by itself.',
+          skills: 'The Agent lacks the detailed ways to look up and save knowledge and operate FULI, so it misses more.',
+          instructions: 'No reminder in global instructions; only the MCP server\'s short instructions tell it to ask FULI first.',
+          permissions: 'FULI\'s task-start and checkpoint tools may ask you each time.',
+          prompts: 'No /fla menu; call an FLA with 「#FLA name」.',
+        },
         noLifecycle: 'No auto start and close: the Agent follows FULI\'s instructions, and nothing is recorded by itself.',
       },
       custom: {
