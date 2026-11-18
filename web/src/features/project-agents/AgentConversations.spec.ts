@@ -373,7 +373,7 @@ it('opens the exact checkpoint of each task result, even when two clients wrote 
   const wrapper = await openTasks([
     { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Same words', source: claudeSource },
     { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Same words', source: codexSource }])
-  expect(wrapper.get('[data-conversation-digest]').text()).toContain('不是你说的原话')
+  expect(wrapper.get('[data-conversation-digest]').text()).toContain('Agent 收尾时写的工作小结')
   let resolve!: (value: unknown) => void
   postJson.mockImplementationOnce(() => new Promise(done => { resolve = done }))
   await wrapper.findAll('[data-digest-task]')[1].get('[data-view-source]').trigger('click')
@@ -395,7 +395,13 @@ it('says unavailable when the source is gone or another event answers, and unkno
     { at: '2026-11-18T21:02:00Z', status: 'completed', summary: 'Next one', source: claudeSource }])
   const rows = () => wrapper.findAll('[data-digest-task]')
   expect(rows()[0].find('[data-view-source]').exists()).toBe(false)
-  expect(rows()[0].get('[data-source-unknown]').text()).toContain('来源未知')
+  // Neutral: a missing source may be an older result or a write with no single matching checkpoint.
+  expect(rows()[0].get('[data-source-unknown]').text()).toBe('来源未知')
+  setLocale('en-US', { persist: false })
+  await flushPromises()
+  expect(rows()[0].get('[data-source-unknown]').text()).toBe('Source unknown')
+  setLocale('zh-CN', { persist: false })
+  await flushPromises()
   postJson.mockResolvedValueOnce({ source_check: 'unavailable', events: [] })
   await rows()[1].get('[data-view-source]').trigger('click')
   await flushPromises()
