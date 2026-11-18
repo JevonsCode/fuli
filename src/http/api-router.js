@@ -19,6 +19,7 @@ import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
 import { handleProjectOrganizingRequest } from './project-organizing-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
+import { handleClientConnectionRequest } from './client-connection-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleProjectHierarchyRequest } from './project-hierarchy-api-router.js';
@@ -131,53 +132,7 @@ export async function handleApiRequest({
     return true;
   }
 
-  if (system && url.pathname === '/api/system/client-connection' && request.method === 'GET') {
-    response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, system.clientConnection());
-    return true;
-  }
-
-  if (system && url.pathname === '/api/system/client-connection/connect' && request.method === 'POST') {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Client connection is only available on this computer' });
-      return true;
-    }
-    sendJson(response, 200, await system.connectClient(await readJson(request)));
-    return true;
-  }
-
-  // Quitting and reopening a client app ends its open sessions: only the person on this computer starts it.
-  if (system && url.pathname === '/api/system/client-connection/restart' && request.method === 'POST') {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Restarting a client is only available on this computer' });
-      return true;
-    }
-    sendJson(response, 200, await system.restartClient(await readJson(request)));
-    return true;
-  }
-
-  if (system && url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
-    response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, await system.clientConnectionStatus());
-    return true;
-  }
-
-  // A client the person describes by hand goes into the shared agent-clients
-  // directory, so only this computer may add or remove one.
-  const customClient = /^\/api\/system\/client-connection\/custom-clients(?:\/([a-z][a-z0-9-]{0,63}))?$/.exec(url.pathname);
-  if (system && customClient && ((request.method === 'POST' && !customClient[1]) || (request.method === 'DELETE' && customClient[1]))) {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Custom clients can only be changed on this computer' });
-      return true;
-    }
-    sendJson(response, 200, request.method === 'POST'
-      ? await system.addCustomClient(await readJson(request))
-      : await system.removeCustomClient(customClient[1]));
-    return true;
-  }
+  if (system && await handleClientConnectionRequest({ request, response, url, system })) return true;
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'PUT') {
     const result = await system.updateSettings(await readJson(request));

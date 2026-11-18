@@ -1,4 +1,6 @@
 import { callAgentTool } from '../agent-tools.js';
+import { lifecycleHookClient, runLifecycleEvent } from '../agents/lifecycle-events.js';
+import { nativeSessionEnv } from '../agents/native-session-env.js';
 import { runAsRunnerCall } from '../app/agent-request-context.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { mapHttpError } from '../http/error-mapping.js';
@@ -11,8 +13,9 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { displayName, ENTRY_ID, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER,
-  TOOL_PROFILE_HEADER } from './protocol.js';
+import { relayToConsole } from './console-relay.js';
+import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
+  SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -40,11 +43,17 @@ const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge']);
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
 const SESSION_ID = ENTRY_ID;
+// A forwarded prompt hook gets what a client's hook process would: the clients wait 30 s.
+const HOOK_TIMEOUT_MS = 25_000;
+// The hooks a runner forwards: task entry at each prompt, and the turn's end, which closes it.
+const FORWARDED_EVENTS = new Set(['UserPromptSubmit', 'Stop']);
 // The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
 const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
+// consoleOrigin(): the host console's own loopback origin, or null before it listens.
+// runtimeConfigPath: this host's graph runtime configuration, which a forwarded prompt hook runs with.
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
-  createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
+  consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -85,7 +94,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
 
   async function handle(request, response, { fingerprint, pathname, address }) {
     if (pathname === RUNNER_PATHS.pair) return pair(request, response, { fingerprint, address });
-    if (!Object.values(RUNNER_PATHS).includes(pathname)) return false;
+    const consolePath = pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`);
+    if (!consolePath && !Object.values(RUNNER_PATHS).includes(pathname)) return false;
     if (!store.isPaired(fingerprint)) {
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
@@ -104,7 +114,13 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   }
 
   async function route(request, response, { fingerprint, pathname }) {
-    if (pathname === RUNNER_PATHS.hello) {
+    if (pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
+      relayToConsole(request, response, { consoleOrigin: consoleOrigin(), prefix: RUNNER_PATHS.console, fingerprint });
+    } else if (pathname === RUNNER_PATHS.hook) {
+      if (request.method !== 'POST') return void methodNotAllowed(response);
+      const answer = await forwardedHook(fingerprint, await readJson(request));
+      sendJson(response, answer.status, answer.body);
+    } else if (pathname === RUNNER_PATHS.hello) {
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
@@ -114,15 +130,36 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const sourceApplication = normalizeMcpSourceApplication(request.headers[SOURCE_APPLICATION_HEADER] ?? 'other');
       const sessionId = runnerSession(request.headers[RUNNER_SESSION_HEADER]);
       const toolProfile = request.headers[TOOL_PROFILE_HEADER] === 'full' ? 'full' : 'chat';
-      // env {}: the console's own environment names no session or setting of the runner's client.
+      // The console's own environment names no session or setting of the runner's client. A session the
+      // runner read from its client's environment is the client's own, as on the client's computer.
+      const env = request.headers[NATIVE_SESSION_HEADER] === '1' ? nativeSessionEnv(sourceApplication, sessionId) : {};
       await sessions.handle(request, response, { owner: fingerprint, createMcp: () => createMcp(app, {
-        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env: {},
+        sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env,
         withRuntimeLease: inWorkspace(fingerprint) }) });
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       const answer = await replay(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     }
+  }
+
+  // A runner client's prompt hook (hook-forwarding.js), entered here as the console enters a local
+  // hook's: for the client's own session, in the folder the runner described, without its transcript.
+  async function forwardedHook(fingerprint, body) {
+    const client = lifecycleHookClient(body?.client);
+    if (!client || !FORWARDED_EVENTS.has(body.event) || !runtimeConfigPath || !body.payload
+      || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+      return { status: 400, body: { error: 'hook_invalid' } };
+    }
+    rememberFolder(fingerprint, parseWorkspaceFacts(body.facts));
+    const { transcript_path: _absent, ...payload } = body.payload;
+    const env = Object.fromEntries(client.envNames.filter((name) => typeof body.env?.[name] === 'string')
+      .map((name) => [name, body.env[name]]));
+    const result = await runAsRunnerCall(fingerprint, () => runWithCallerWorkspaces(lookup(fingerprint), () => runHook({
+      client: body.client, argv: ['--fuli-lifecycle', '--runtime-config', runtimeConfigPath, '--event', body.event],
+      env, cwd: process.cwd(), stdin: [Buffer.from(JSON.stringify(payload))], timeoutMs: HOOK_TIMEOUT_MS },
+    { baseEnv: process.env })));
+    return { status: 200, body: { stdout: String(result.stdout ?? ''), exitCode: result.exitCode ?? 0 } };
   }
 
   async function pair(request, response, { fingerprint, address }) {

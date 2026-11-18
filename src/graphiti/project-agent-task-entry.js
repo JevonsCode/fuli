@@ -157,7 +157,7 @@ export async function loadProjectAgentContinuity(application, {
       ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
         personalSpaceId: scope.personalSpaceId, personalProjectId: projectId,
         projectAgentId: agent.agentId, query, limit: 4, includePending: false, sourceApplication,
-        agentInvocation: true, agentToolName: 'automatic_project_agent_context'
+        agentInvocation: true, agentToolName: 'automatic_project_agent_context', relatedProjects: false
       }))) : Promise.resolve([])]
     ] : [])
   ];

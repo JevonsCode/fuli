@@ -60,7 +60,9 @@ it('loads as a plain card and hosts without enabling console LAN access', async 
   const wrapper = mount(PeerSettings)
   await flushPromises()
   expect(wrapper.find('details').exists()).toBe(false)
-  expect(wrapper.get('[data-slot="card-title"]').text()).toBe('局域网圆桌（Beta）')
+  // The feature is in testing: the shared Beta badge, not words in the title.
+  expect(wrapper.get('[data-slot="card-title"]').text()).toBe('局域网圆桌Beta')
+  expect(wrapper.get('[data-slot="card-title"] [data-beta-badge]').attributes('title')).toContain('测试中的功能')
   expect(fetch.mock.calls[0]?.[0]).toBe('/api/peer')
   await wrapper.get('[data-host-peer]').trigger('click')
   await flushPromises()

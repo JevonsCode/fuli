@@ -79,6 +79,24 @@ export function clientParts(client: Pick<ClientTile, 'components'>): { part: Cli
   return parts.some(({ state }) => state === 'current' || state === 'outdated') ? parts : []
 }
 
+// What a connected client can do with FULI, the same row on every tile so tiles compare at a glance:
+// each capability installed (its part's state) or 'unsupported' when this client takes no such part,
+// with what that costs in the chip's title. Auto start and close comes from hooks or a plugin.
+export const CLIENT_CAPABILITIES = ['mcp', 'lifecycle', 'skills', 'instructions', 'permissions', 'prompts'] as const
+export type ClientCapability = typeof CLIENT_CAPABILITIES[number]
+export type CapabilityState = PartState | 'unsupported'
+
+export function clientCapabilities(client: Pick<ClientTile, 'components'>):
+  { capability: ClientCapability, part: ClientPart, state: CapabilityState }[] {
+  const parts = clientParts(client)
+  if (!parts.length) return []
+  const states = new Map<ClientPart, PartState>(parts.map(({ part, state }) => [part, state]))
+  return CLIENT_CAPABILITIES.map((capability) => {
+    const part: ClientPart = capability === 'lifecycle' ? (states.has('plugin') && !states.has('hooks') ? 'plugin' : 'hooks') : capability
+    return { capability, part, state: states.get(part) ?? 'unsupported' }
+  })
+}
+
 // Neither hooks nor a plugin: task entry and its close depend on the Agent, and nothing is captured by itself.
 export function withoutLifecycle(client: Pick<ClientTile, 'components'>): boolean {
   const parts = clientParts(client).map(({ part }) => part)

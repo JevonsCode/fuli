@@ -47,13 +47,16 @@ export function customClientStore({ extensionsDir, home = homedir() }) {
     const format = input?.format ?? CUSTOM_CLIENT_FORMATS[0];
     if (!CUSTOM_CLIENT_FORMATS.includes(format)) throw new InvalidInputError(`format must be one of ${CUSTOM_CLIENT_FORMATS.join(', ')}`);
     const file = homePath(requiredString(input?.mcpFile, 'mcpFile').trim(), home);
+    // Optional: the folder where the client reads Skills (one folder per Skill with its SKILL.md).
+    const skillsDir = typeof input?.skillsDir === 'string' && input.skillsDir.trim()
+      ? homePath(input.skillsDir.trim(), home, 'skillsDir', '~/.acme/skills') : null;
     const key = comparable(file, home);
     if (takenFiles.some((taken) => comparable(taken, home) === key)) {
       throw new InvalidInputError('mcpFile is the configuration file of a client already listed; name the file of the client you are adding');
     }
     const id = uniqueId(slug(name), new Set([...takenIds, ...fileIds()]));
     writeJsonFileAtomic(fileOf(id), { schemaVersion: 1, name,
-      install: { detect: [{ path: file }], mcp: { file, format } } });
+      install: { detect: [{ path: file }], mcp: { file, format }, ...(skillsDir ? { skills: { dir: skillsDir } } : {}) } });
     return { id };
   }
   function remove(id) {
@@ -73,11 +76,11 @@ function ownShape(value) {
 // resolved file must be inside the home folder.
 const TILDE = /^~(?:[\\/]|$)/;
 
-function homePath(path, home) {
+function homePath(path, home, field = 'mcpFile', example = '~/.acme/mcp.json') {
   const resolved = TILDE.test(path) ? join(home, path.slice(1).replaceAll('\\', '/')) : isAbsolute(path) ? path : null;
   const inside = resolved === null ? null : relative(home, resolved);
   if (!inside || path.split(/[\\/]/).includes('..') || inside.split(sep)[0] === '..' || isAbsolute(inside)) {
-    throw new InvalidInputError('mcpFile must be a file in your home folder, such as ~/.acme/mcp.json');
+    throw new InvalidInputError(`${field} must be in your home folder, such as ${example}`);
   }
   return `~/${inside.split(sep).join('/')}`;
 }

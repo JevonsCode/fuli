@@ -5,7 +5,7 @@
 // it (lifecycle-forwarder.js); the work itself is lifecycle-event.js. Only
 // Node built-ins load before that decision.
 import { runThinLifecycleHook } from '../lifecycle-forwarder.js';
-import { CODEX_HOOK_ENV, codexHookTimeoutMs } from './hook-contract.js';
+import { CODEX_HOOK_ENV, codexHookTimeoutMs, codexRunnerTimeoutMs } from './hook-contract.js';
 
 await runThinLifecycleHook({ client: 'codex', envNames: CODEX_HOOK_ENV,
-  timeoutMs: codexHookTimeoutMs(process.argv.slice(2)) });
+  timeoutMs: codexHookTimeoutMs(process.argv.slice(2)), runnerTimeoutMs: codexRunnerTimeoutMs });

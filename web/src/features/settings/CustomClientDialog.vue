@@ -36,7 +36,7 @@ async function copy() {
 const { busy, writing } = injectClientConnectionStatus()
 const pending = ref(false)
 const error = ref('')
-const draft = reactive<{ name: string, mcpFile: string, format: AddClientFormat }>({ name: '', mcpFile: '', format: 'mcp-servers-json' })
+const draft = reactive<AddClientDraft>({ name: '', mcpFile: '', format: 'mcp-servers-json', skillsDir: '' })
 const formatOptions = ADD_CLIENT_FORMATS.map((value) => ({ value, label: t(`settings.connection.custom.formats.${value}`) }))
 // What the add link carries opens the form with it, for the person to check.
 // Any page may open that link, so the dialog says the link filled it, never who.
@@ -72,8 +72,9 @@ async function add() {
   await writing(async () => {
     try {
       const added = await postJson<{ id: string }>('/api/system/client-connection/custom-clients',
-        { name: draft.name.trim(), mcpFile: draft.mcpFile.trim(), format: draft.format })
-      Object.assign(draft, { name: '', mcpFile: '', format: 'mcp-servers-json' })
+        { name: draft.name.trim(), mcpFile: draft.mcpFile.trim(), format: draft.format,
+          ...(draft.skillsDir.trim() ? { skillsDir: draft.skillsDir.trim() } : {}) })
+      Object.assign(draft, { name: '', mcpFile: '', format: 'mcp-servers-json', skillsDir: '' })
       addedId = added.id
       hide()
     } catch (reason) {
@@ -112,6 +113,11 @@ async function add() {
           placeholder="~/.acme/mcp.json" required />
         <OptionSelect control-id="custom-client-format" :model-value="draft.format" :options="formatOptions"
           :label="t('settings.connection.custom.format')" @update:model-value="selectFormat" />
+        <div class="custom-form__field">
+          <TextField v-model="draft.skillsDir" control-id="custom-client-skills" :label="t('settings.connection.custom.skillsDir')"
+            placeholder="~/.acme/skills" aria-describedby="custom-client-skills-hint" />
+          <p id="custom-client-skills-hint" class="custom-form__hint">{{ t('settings.connection.custom.skillsDirHint') }}</p>
+        </div>
         <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
       </form>
       <DialogFooter v-if="byHand">
@@ -127,6 +133,8 @@ async function add() {
 
 <style scoped>
 .custom-form { display: grid; gap: 12px; }
+.custom-form__field { display: grid; gap: 4px; min-width: 0; }
+.custom-form__hint { margin: 0; color: var(--color-muted); font-size: var(--text-meta); line-height: 1.5; }
 .add-prompt { display: grid; gap: 6px; min-width: 0; }
 .add-prompt__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .add-prompt__head strong { font-size: 13px; }

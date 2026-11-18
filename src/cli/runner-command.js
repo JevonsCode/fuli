@@ -10,12 +10,13 @@ import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
+import { serveFollowerConsole } from '../runner/follower-runtime.js';
 import { writeLine } from './terminal-io.js';
 
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
 // the local console. On a runner: join (pair, then set up its clients as
 // `fuli setup` does, with no graph runtime), status, sync and leave.
-const USAGE = `fuli runner <action>  (runners: other computers whose clients use this FULI)
+const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clients use this FULI)
   On the host:
     invite [--name NAME]          print a one-use invitation for a runner (10 minutes)
     list                          paired runners and where the host listens
@@ -29,6 +30,7 @@ const USAGE = `fuli runner <action>  (runners: other computers whose clients use
     sync                          deliver the outbox now
     leave [--force]               end the pairing here and delete what is kept here
                                   (--force: also when checkpoints never reached the host)
+    console [--port PORT]         serve the host's console on this computer (fuli start runs it)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
 const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
@@ -67,6 +69,12 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     write('Restart those clients. Their FULI tools now use the host.');
     write(KEPT_HERE);
     return { exitCode: clients.every((client) => client.status === 'connected') ? 0 : 1 };
+  }
+  if (action === 'console') {
+    const port = Number(option(rest, '--port') ?? new URL(localConsoleUrl({ dataDir, env })).port);
+    const served = await serveFollowerConsole({ dataDir: paths().dataDir, port });
+    write(`Runner console: ${served.url}`);
+    return new Promise(() => {});
   }
   if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
   if (action === 'status' || action === 'sync') {
@@ -163,7 +171,7 @@ async function deliverQueued(dataDir) {
 
 // The clients `fuli setup` would set up here, written with the same entries;
 // the MCP entry then serves through the host (src/cli/mcp-command.js).
-async function setUpRunnerClients({ dataDir, env, write, plan = planLocalSetup, apply = applyLocalSetup }) {
+export async function setUpRunnerClients({ dataDir, env, write, plan = planLocalSetup, apply = applyLocalSetup }) {
   const options = { ...parseSetupOptions(['--yes']), dataDir };
   const planned = await plan(options, { env });
   const result = await apply(planned, options, { env, onProgress: write,

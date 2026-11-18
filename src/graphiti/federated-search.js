@@ -23,6 +23,9 @@ export async function searchFederatedKnowledge(application, {
   includePending = true,
   agentInvocation = false,
   agentToolName = 'search_knowledge_graph',
+  // Whether to suggest related projects, which reads the whole personal graph:
+  // a caller that never shows them (task entry's recall) says false.
+  relatedProjects = true,
   sourceApplication = null,
   sourceSessionId = null,
   cursor = null,
@@ -154,10 +157,9 @@ export async function searchFederatedKnowledge(application, {
         .map(({ id }) => ({ item_id: id, item_kind: 'entity' }))
     ], agentToolName);
   }
-  const relatedProjects = await loadSearchRelatedProjectSuggestions(
-    application,
-    { facts, entities }
-  );
+  const related = relatedProjects
+    ? await loadSearchRelatedProjectSuggestions(application, { facts, entities })
+    : { status: 'not_requested', suggestions: [] };
   if (agentInvocation) await recordReadExtensionUsage(application, { sourceApplication, sourceSessionId,
     personalProjectScope, contextPersonalProjectIds, facts, entities }).catch(() => {});
   const result = {
@@ -176,9 +178,9 @@ export async function searchFederatedKnowledge(application, {
     failedProjectIds: unavailableProjectIds,
     partial: unavailableProjectIds.length > 0,
     subscriptions: selectedSubscriptions,
-    relatedProjectSuggestions: relatedProjects.suggestions,
-    relatedProjectSuggestionsStatus: relatedProjects.status,
-    relatedProjectGuidance: relatedProjectGuidance(relatedProjects.suggestions)
+    relatedProjectSuggestions: related.suggestions,
+    relatedProjectSuggestionsStatus: related.status,
+    relatedProjectGuidance: relatedProjectGuidance(related.suggestions)
   };
   return agentInvocation && agentToolName === 'search_knowledge_graph'
     ? budgetKnowledgeSearch(result, { cursor, view, ids, consoleUrl: application.consoleUrl,

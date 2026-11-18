@@ -123,7 +123,10 @@ test('「添加客户端」\'s prompt opens this console\'s add link, never the 
     assert.ok(prompt.includes('get_collaboration_preferences') && prompt.includes('agent_receipt.markdown'), `${locale} checks the receipt`);
   }
   assert.deepEqual(addClientDraft({ tab: 'clients', addClient: ' Acme ', mcpFile: '~/.acme/mcp.json', format: 'nope' }),
-    { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' });
+    { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json', skillsDir: '' });
+  // A client with Skills names its folder too, so FULI's Skills reach it.
+  assert.equal(addClientDraft({ addClient: 'Acme', mcpFile: '~/.acme/mcp.json', skillsDir: ' ~/.acme/skills ' }).skillsDir, '~/.acme/skills');
+  for (const locale of ['zh-CN', 'en-US']) assert.ok(addClientPrompt(locale, CONTEXT.console).includes('&skillsDir=<skills>'));
   assert.equal(addClientDraft({ tab: 'clients' }), null);
 });
 

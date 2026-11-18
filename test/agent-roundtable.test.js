@@ -431,7 +431,9 @@ test('task entry hands the selected Agent the questions waiting for it', async (
   const waiting = [{ messageId: 'm-1', threadId: 't-1', from: 'Milo Reed', body: '请看一下 PR' }];
   const application = {
     config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://127.0.0.1:2727',
-    roundtable: { pending: (agentId) => agentId === 'reviewer-1' ? waiting : [] },
+    // The entering client and native session: an ask that named another session is not handed to it (11-18).
+    roundtable: { pending: (agentId, projectId, viewer) => agentId === 'reviewer-1' && projectId === 'app'
+      && viewer?.client === 'codex' && viewer?.session === 's' ? waiting : [] },
     personal: {
       resolveProjectAgentContext: async () => ({ status: 'ready', agent: { agent_id: 'reviewer-1',
         profile: { name: 'Nova Lane', status: 'active', allowed_clients: ['codex'], work_kinds: ['code_review'] } } }),

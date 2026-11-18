@@ -18,7 +18,7 @@ import { ADD_CLIENT_QUERY_KEYS, addClientDraft, type AddClientDraft } from './ad
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
 
-import { STATUS_ICONS, awaitsFirstConnection, canConnect, changedExplanation, clientParts, clientTiles, withoutLifecycle, connectActionKey, connectionSummary, offersRestart,
+import { STATUS_ICONS, awaitsFirstConnection, canConnect, changedExplanation, clientCapabilities, clientParts, clientTiles, withoutLifecycle, connectActionKey, connectionSummary, offersRestart,
   type ClientObservation, type ClientTile, type ConnectionResult } from './client-connection-model'
 
 // Settings › 客户端's first card: whether each client has FULI, with 接入,
@@ -198,12 +198,14 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
               </div>
               <p>{{ explanation(client) }}</p>
               <!-- What FULI puts into this client, each part with its state (README: what each part gives you). -->
-              <ul v-if="clientParts(client).length" class="client-parts" :data-client-parts="client.id">
-                <li v-for="{ part, state } in clientParts(client)" :key="part" :data-part="part" :data-part-state="state"
-                  :data-term="`setting.clientPart.${part}`"
-                  :title="t('settings.connection.parts.title', { state: t(`settings.connection.parts.state.${state}`), meaning: t(`glossary.setting.clientPart.${part}`) })">
-                  <UiIcon v-if="state === 'current'" name="check" :size="11" />
-                  {{ t(`settings.connection.parts.name.${part}`) }}<template v-if="state !== 'current'"> · {{ t(`settings.connection.parts.state.${state}`) }}</template>
+              <ul v-if="clientCapabilities(client).length" class="client-parts" :data-client-parts="client.id">
+                <li v-for="{ capability, part, state } in clientCapabilities(client)" :key="capability" :data-part="part"
+                  :data-part-state="state" :data-term="`setting.clientPart.${part}`"
+                  :title="state === 'unsupported'
+                    ? t('settings.connection.parts.unsupportedTitle', { lost: t(`settings.connection.parts.lost.${capability}`) })
+                    : t('settings.connection.parts.title', { state: t(`settings.connection.parts.state.${state}`), meaning: t(`glossary.setting.clientPart.${part}`) })">
+                  <UiIcon :name="state === 'current' ? 'check' : state === 'unsupported' ? 'close' : 'warning'" :size="11" />
+                  {{ t(`settings.connection.parts.capability.${capability}`) }}<template v-if="state !== 'current' && state !== 'unsupported'"> · {{ t(`settings.connection.parts.state.${state}`) }}</template>
                 </li>
               </ul>
               <p v-if="withoutLifecycle(client)" class="client-row__meta client-row__note" data-client-no-lifecycle>{{ t('settings.connection.parts.noLifecycle') }}</p>
@@ -294,6 +296,8 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
   background: var(--color-accent-soft, var(--color-surface)); color: var(--color-muted); font-size: 11px; line-height: 18px; white-space: nowrap;
 }
 .client-parts li[data-part-state=outdated], .client-parts li[data-part-state=missing] { color: var(--color-warning); }
+/* A capability this client does not take: an outlined, faint chip with ✗; its cost in the title. */
+.client-parts li[data-part-state=unsupported] { background: none; box-shadow: inset 0 0 0 1px var(--color-border); color: var(--color-muted); opacity: .7; }
 .client-row .client-row__note { white-space: normal; }
 /* The add tile: as tall as its row's tiles, a dashed outline and one large plus. */
 .client-add { display: grid; min-width: 0; min-height: 132px; }
