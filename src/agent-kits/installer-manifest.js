@@ -21,6 +21,10 @@ const TEMPLATE = new URL('./fuli-installer-manifest.json', import.meta.url);
 function fuliInstallerManifest({ packs, openCodePlugin, clientPrompts }) {
   const manifest = JSON.parse(readFileSync(TEMPLATE, 'utf8'));
   manifest.version = FULI_VERSION;
+  // Every client with a Skills folder gets FULI's Skills: a client someone
+  // adds by hand names its folder in its extension file (custom-clients.js);
+  // a client without one skips them. A pack client's own list overrides this.
+  manifest.skills = packagedSkills(false);
   for (const pack of packs) manifest.clients[pack.id] = packManifestClient(pack);
   if (openCodePlugin) manifest.clients.opencode.plugin = { source: '{openCodePlugin}' };
   // DSH reads no MCP file: the bundle starts FULI's MCP server itself.
