@@ -96,6 +96,8 @@ test('a conversation title is the opening words of the person, never a host noti
   assert.equal(conversationProvenance({ taskPrompt: 'Resumed words', resumed: true }), null);
   assert.ok(Buffer.byteLength(conversationProvenance({ taskPrompt: '长'.repeat(200) }).title) <= 120);
   assert.deepEqual(conversationProvenance({ clientModel: '  synthetic-model  ' }), { model: 'synthetic-model' });
+  assert.deepEqual(conversationProvenance({ branch: 'JVS/synthetic' }), { branch: 'JVS/synthetic' });
+  assert.equal(conversationProvenance({ branch: 'x'.repeat(256) }), null, 'an outsized branch is unknown');
 });
 test('checkpoint receipt is not saved when provider fails', async () => {
   const { app } = fixture(); app.personal.conversation = async () => { throw new Error('offline'); };

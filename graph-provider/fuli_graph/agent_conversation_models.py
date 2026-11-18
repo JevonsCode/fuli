@@ -56,13 +56,14 @@ class ConversationProvenance(StrictModel):
     opening words (the conversation's title until a checkpoint summarises it)."""
     working_directory: str | None = Field(default=None, min_length=1, max_length=1024)
     model: str | None = Field(default=None, min_length=1, max_length=120)
+    branch: str | None = Field(default=None, min_length=1, max_length=255)
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode='after')
     def drop_secrets(self):
         # Where a session works is a note, never a reason to refuse its task
         # entry: a value that looks like a credential is left out instead.
-        for field in ('working_directory', 'model', 'title'):
+        for field in ('working_directory', 'model', 'branch', 'title'):
             if contains_credentials(getattr(self, field)):
                 setattr(self, field, None)
         return self

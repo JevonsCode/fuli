@@ -22768,6 +22768,8 @@
         "status": "conversation_status",
         "summary": "string",
         "title": "string?",
+        "title_session_id": "string?",
+        "title_source_application": "string?",
         "unfolded_bytes": "integer?"
       },
       "FuliConversationBinding": {
@@ -22787,6 +22789,7 @@
         "task_context_token": "string"
       },
       "FuliConversationSession": {
+        "branch": "string?",
         "conversation_id": "string",
         "first_seen": "string",
         "id": "string",

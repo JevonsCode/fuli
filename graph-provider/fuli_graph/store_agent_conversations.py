@@ -96,21 +96,26 @@ class StoreAgentConversations:
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
-            'RETURN e.payload AS payload, e.sequence AS sequence '
+            'RETURN e.payload AS payload, e.sequence AS sequence, '
+            'e.source_application AS source_application, e.session_id AS session_id '
             'ORDER BY e.sequence ASC LIMIT $limit', id=record['id'], after=request.after,
             revision=record['revision'], limit=request.limit + 1)
         decoded = []
         total = 0
         for event in events[:request.limit]:
-            value = decode_event(event)
+            # Each event names the client and native session that wrote it.
+            value = {**decode_event(event), 'client': event.get('source_application'),
+                     'session_id': event.get('session_id')}
             total += len(json.dumps(value, ensure_ascii=False).encode())
             if total > 512 * 1024 and decoded:
                 break
             decoded.append(value)
         cursor = decoded[-1]['sequence'] if decoded else request.after
+        sources = await self._event_sources(record['id'], decoded)
         # Deletion leaves gaps and advances revision without adding an event.
         # Only a retained event beyond this page proves there is another page.
-        page = {**view, 'events': decoded, 'next_cursor': cursor, 'has_more': len(events) > len(decoded)}
+        page = {**view, 'events': decoded, 'sources': sources, 'next_cursor': cursor,
+                'has_more': len(events) > len(decoded)}
         if request.after == 0:
             # The first history page shows what compaction extracted and where it came from.
             page['digest'] = await self._current_digest(record)
@@ -259,6 +264,9 @@ class StoreAgentConversations:
         return {key: record.get(key) for key in ('id', 'summary', 'title', 'status', 'revision', 'last_activity')} | {
             'compacted_through': record.get('compacted_through') or 0,
             'unfolded_bytes': record.get('unfolded_bytes') or 0,
+            # Which client and native session wrote the opening words the title holds.
+            'title_source': ({'client': record.get('title_source_application'), 'session_id': record.get('title_session_id')}
+                             if record.get('title_session_id') else None),
             'policy': policy.model_dump(), 'raw_retained': True}
 
     async def _compact_conversation(self, conversation_id, policy):
@@ -329,9 +337,12 @@ class StoreAgentConversations:
             # A conversation is titled once, when it opens: a later task's words never name an earlier one.
             await store.runtime.driver.execute_query(
                 'MERGE (c:FuliConversation {id: $id}) ON CREATE SET c.scope=$scope, c.revision=0, '
-                "c.last_activity=$now, c.summary='', c.status='reported', c.title=$title "
+                "c.last_activity=$now, c.summary='', c.status='reported', c.title=$title, "
+                'c.title_source_application=CASE WHEN $title IS NULL THEN null ELSE $source END, '
+                'c.title_session_id=CASE WHEN $title IS NULL THEN null ELSE $session END '
                 'SET c.serial=coalesce(c.serial,0)+1',
-                id=conversation_id, scope=scope, now=now, title=provenance.title if provenance else None)
+                id=conversation_id, scope=scope, now=now, title=provenance.title if provenance else None,
+                source=request.source_application, session=request.session_id)
             await store._note_session(scope, conversation_id, request, now)
             new_summary = False
             compaction = None
@@ -417,11 +428,26 @@ class StoreAgentConversations:
             'ON CREATE SET s.conversation_id=$conversation_id, s.scope=$scope, s.source_application=$source, '
             's.session_id=$session, s.first_seen=$now '
             'SET s.last_seen=$now, s.working_directory=coalesce($folder, s.working_directory), '
-            's.model=coalesce($model, s.model)',
+            's.model=coalesce($model, s.model), s.branch=coalesce($branch, s.branch)',
             id=stable_uuid('conversation-session', conversation_id, request.source_application, request.session_id),
             conversation_id=conversation_id, scope=scope, source=request.source_application, session=request.session_id,
             now=now, folder=provenance.working_directory if provenance else None,
-            model=provenance.model if provenance else None)
+            model=provenance.model if provenance else None, branch=provenance.branch if provenance else None)
+
+    async def _event_sources(self, conversation_id, events):
+        """Where the sessions on a history page worked (model, folder, branch),
+        once per session, from their records; a session written before graph
+        22 is named by client and session only."""
+        pairs = sorted({(e['client'], e['session_id']) for e in events if e.get('client') and e.get('session_id')})
+        if not pairs:
+            return []
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliConversationSession {conversation_id: $id}) '
+            'RETURN s.source_application AS client, s.session_id AS session_id, s.model AS model, '
+            's.working_directory AS working_directory, s.branch AS branch', id=conversation_id)
+        known = {(row['client'], row['session_id']): row for row in rows}
+        return [{key: value for key, value in dict(known.get(pair, {'client': pair[0], 'session_id': pair[1]})).items()
+                 if value is not None} for pair in pairs]
 
     async def _conversation_sessions(self, conversation_ids, limit=SESSIONS_PER_CONVERSATION):
         """The host sessions each conversation was written from, newest first.
@@ -432,7 +458,7 @@ class StoreAgentConversations:
         rows, _, _ = await self.runtime.driver.execute_query(
             'MATCH (s:FuliConversationSession) WHERE s.conversation_id IN $ids '
             'RETURN s.conversation_id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
-            's.model AS model, s.working_directory AS working_directory, s.first_seen AS first_seen, '
+            's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.first_seen AS first_seen, '
             's.last_seen AS last_seen ORDER BY s.last_seen DESC', ids=list(conversation_ids))
         sessions = {}
         for row in rows:
@@ -462,7 +488,7 @@ class StoreAgentConversations:
             'WITH s ORDER BY s.last_seen DESC LIMIT $scan '
             'MATCH (c:FuliConversation {id: s.conversation_id}) '
             'RETURN c.id AS conversation_id, s.source_application AS client, s.session_id AS session_id, '
-            's.model AS model, s.working_directory AS working_directory, s.last_seen AS last_seen, '
+            's.model AS model, s.working_directory AS working_directory, s.branch AS branch, s.last_seen AS last_seen, '
             "CASE WHEN c.summary <> '' THEN c.summary ELSE c.title END AS title "
             'ORDER BY s.last_seen DESC',
             scope=scope, since=since, source=request.source_application, session=request.session_id,
