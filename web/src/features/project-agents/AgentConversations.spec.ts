@@ -379,7 +379,7 @@ it('opens the exact checkpoint of each task result, even when two clients wrote 
   await wrapper.findAll('[data-digest-task]')[1].get('[data-view-source]').trigger('click')
   expect(wrapper.findAll('[data-digest-task]')[1].text()).toContain('正在读取这条小结的原记录')
   expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', { ...scope, mode: 'events',
-    conversationId: 'conversation-a', after: 4, limit: 1, eventId: 'synthetic-codex:summary' })
+    conversationId: 'conversation-a', after: 4, limit: 1, eventId: 'synthetic-codex:summary' }, expect.objectContaining({ schema: expect.anything() }))
   resolve({ source_check: 'verified', events: [{ ...codexSource, content: 'Same words', kind: 'checkpoint', role: 'summary' }] })
   await flushPromises()
   const record = wrapper.findAll('[data-digest-task]')[1].get('[data-source-record]')

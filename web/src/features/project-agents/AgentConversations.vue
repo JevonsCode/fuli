@@ -6,6 +6,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { saveFile } from '@/lib/save-file'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { z } from 'zod'
+import { shapeOf } from '@/api/response-shape'
 import { clientName } from '@/features/capture/capture-change'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
@@ -17,7 +19,11 @@ interface DigestEntry { kind: string; text: string; sources: Array<{ role: strin
 interface TaskSource { sequence: number; event_id: string; client: string; session_id: string }
 interface DigestTask { at: string; status: string; summary: string; source?: TaskSource | null }
 interface Digest { notes?: string[]; entries?: DigestEntry[]; omitted?: number; tasks?: DigestTask[] }
-interface SourceEvent { sequence: number; event_id: string; content: unknown; kind: string; client: string; session_id: string }
+type SourceEvent = z.infer<typeof sourceEventSchema>
+// The exact source read, checked at the boundary: a missing field is a mismatch (isSource), not a crash.
+const sourceEventSchema = z.looseObject({ sequence: z.number(), event_id: z.string().optional(), kind: z.string().optional(),
+  client: z.string().nullable().optional(), session_id: z.string().nullable().optional(), content: z.unknown() })
+const sourcePageShape = shapeOf(z.looseObject({ events: z.array(sourceEventSchema).optional(), source_check: z.string().optional() }))
 type SourceView = { state: 'loading' | 'unavailable' | 'failed' } | { state: 'verified'; event: SourceEvent }
 interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean; digest?: Digest | null }
 interface WorkingMemory { summary: string; decisions: string[]; openThreads: string[]; nextActions: string[] }
@@ -156,8 +162,8 @@ async function viewSource(index: number, source: TaskSource) {
   const current = messageVersion
   sources.value = { ...sources.value, [index]: { state: 'loading' } }
   try {
-    const page = await postJson<{ events: SourceEvent[]; source_check?: string }>('/api/agent-conversations/query', {
-      ...scope(), mode: 'events', conversationId, after: source.sequence - 1, limit: 1, eventId: source.event_id })
+    const page = await postJson('/api/agent-conversations/query', {
+      ...scope(), mode: 'events', conversationId, after: source.sequence - 1, limit: 1, eventId: source.event_id }, sourcePageShape)
     if (current !== messageVersion) return
     const [event] = page.events ?? []
     sources.value = { ...sources.value, [index]: isSource(page, event, source) ? { state: 'verified', event } : { state: 'unavailable' } }
@@ -300,7 +306,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
                       <p v-else-if="sources[index]?.state === 'failed'" role="alert" class="conversation-hint">{{ t('projectAgents.conversations.tasks.failed') }}</p>
                       <p v-else-if="sources[index]?.state === 'unavailable'" class="digest-source" data-source-unavailable>{{ t('projectAgents.conversations.tasks.unavailable') }}</p>
                       <blockquote v-else-if="sources[index]?.state === 'verified'" class="task-source" data-source-record>
-                        <span class="digest-source">{{ t('projectAgents.conversations.tasks.source', { sequence: (sources[index] as { event: SourceEvent }).event.sequence, client: clientName((sources[index] as { event: SourceEvent }).event.client), session: (sources[index] as { event: SourceEvent }).event.session_id }) }}</span>
+                        <span class="digest-source">{{ t('projectAgents.conversations.tasks.source', { sequence: (sources[index] as { event: SourceEvent }).event.sequence, client: clientName((sources[index] as { event: SourceEvent }).event.client ?? ''), session: (sources[index] as { event: SourceEvent }).event.session_id ?? '' }) }}</span>
                         <pre>{{ content((sources[index] as { event: SourceEvent }).event.content) }}</pre>
                       </blockquote>
                     </template>
