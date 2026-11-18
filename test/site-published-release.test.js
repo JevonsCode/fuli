@@ -7,6 +7,8 @@ import { parseHTML } from 'linkedom';
 import { parseDocument } from 'yaml';
 
 import { createSitePages } from '../scripts/build-site.js';
+import { createLanguageController } from '../site/i18n.js';
+import * as previewCatalog from '../site/next/translations.js';
 import { publishedStable, readReleases, stableInstallers } from '../scripts/site-published-release.js';
 
 // 11-19: after the 0.27.17 release PR merged, Pages linked the stable downloads to
@@ -106,6 +108,33 @@ test('a stable release published after this commit (0.27.18) switches all three 
   assertPreview(files, '0.29.0-beta.8', '0.27.18');
   // A local build without the list still names its own version.
   assert.deepEqual(links(createSitePages({ ...templates, version: '0.27.17' }), 'en/index.html'), download('0.27.17'));
+});
+
+// 11-19 (after #1045): an English browser opening /next/ with no language in the path got
+// English headings and buttons, but the release-notes sentence stayed Chinese: the build
+// wrote it in zh and dropped its data-i18n. It is translatable again, versions as arguments.
+test('/next/ without a language: the release-notes sentence and its meta follow the browser and an explicit choice', () => {
+  const files = createSitePages({ ...templates, version: '0.27.17', releases: LIVE_DRAFT });
+  const english = /since stable 0\.27\.16 is in this version's release notes/;
+  const chinese = /相对稳定版 0\.27\.16 的全部变化，写在这个版本的发布说明里/;
+  const open = languages => {
+    const { document } = parseHTML(files.get('next/index.html'));
+    const language = createLanguageController({ document, languages, catalog: previewCatalog });
+    const metas = [...document.querySelectorAll('meta[name="description"], meta[name="twitter:description"]')].map(meta => meta.content);
+    return { document, language, lede: () => document.querySelector('.lede').textContent, metas };
+  };
+  const en = open(['en-US', 'en']);
+  assert.equal(en.document.documentElement.lang, 'en');
+  assert.match(en.lede(), english);
+  assert.doesNotMatch(en.lede(), /[一-鿿]/, 'no Chinese left in the English sentence');
+  assert.equal(en.metas.length, 2);
+  for (const content of en.metas) assert.match(content, /^The public preview 0\.29\.0-beta\.8 .* since stable 0\.27\.16 /);
+  en.language.setLocale('zh-CN');
+  assert.match(en.lede(), chinese, 'an explicit choice switches it');
+  assert.match(open(['zh-CN']).lede(), chinese);
+  // The beta's release link and the single-language pages are unchanged.
+  for (const link of en.document.querySelectorAll('[data-preview-release]')) assert.match(link.href, /releases\/tag\/v0\.29\.0-beta\.8$/);
+  assertPreview(files, '0.29.0-beta.8', '0.27.16');
 });
 
 test('a newer draft or incomplete beta is passed over for the newest complete one; none ahead says no preview', () => {

@@ -13,6 +13,12 @@ export function resolveLanguage(languages = [], saved) {
   return 'en';
 }
 
+export function formatMessage(message, args) {
+  if (!args) return message;
+  const values = JSON.parse(args);
+  return message.replace(/\{(\w+)\}/g, (slot, name) => Object.hasOwn(values, name) ? String(values[name]) : slot);
+}
+
 // `catalog` holds a page's copy: { messages, sceneMessages }; the stable home page by default.
 export function createLanguageController({ document, languages = [], getStorage = () => null, catalog = homeCatalog }) {
   const { messages, sceneMessages } = catalog;
@@ -23,11 +29,14 @@ export function createLanguageController({ document, languages = [], getStorage 
   let locale = supported(pageLocale) ? pageLocale : resolveLanguage(languages, saved);
   const listeners = new Set();
   const t = key => messages[locale][key];
+  // A message with {name} slots takes its values from the element's data-i18n-args (JSON),
+  // which the build sets: values such as a version stay the same in every language.
+  const text = (element, key) => formatMessage(t(key), element.getAttribute('data-i18n-args'));
 
   function render() {
     document.documentElement.lang = locale;
     for (const element of document.querySelectorAll('[data-i18n]')) {
-      element.textContent = t(element.getAttribute('data-i18n'));
+      element.textContent = text(element, element.getAttribute('data-i18n'));
     }
     // These templates come only from the bundled, authored translation dictionary.
     for (const element of document.querySelectorAll('[data-i18n-html]')) {
@@ -35,7 +44,7 @@ export function createLanguageController({ document, languages = [], getStorage 
     }
     for (const attribute of ['aria-label', 'content', 'href']) {
       for (const element of document.querySelectorAll(`[data-i18n-${attribute}]`)) {
-        element.setAttribute(attribute, t(element.getAttribute(`data-i18n-${attribute}`)));
+        element.setAttribute(attribute, text(element, element.getAttribute(`data-i18n-${attribute}`)));
       }
     }
     for (const link of document.querySelectorAll('[data-locale]')) {
