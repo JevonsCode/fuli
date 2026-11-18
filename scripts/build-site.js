@@ -10,6 +10,7 @@ import * as reportCatalog from '../site/report/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { stampAssetVersions } from './site-asset-versions.js';
+import { publishedPreview, publishedStable, readReleases } from './site-published-release.js';
 import { writeSiteAvatars } from './site-avatars.js';
 
 // Each page is published at its template's own route (Chinese by default) and
@@ -126,9 +127,13 @@ function homePages(template, version, files, stable = version) {
 }
 
 // The preview channel names the version this build packages (package.json is its only source).
-function previewPages(template, version, files) {
+// packaged: this build is that beta, so the page's change list describes it. A public beta
+// this build does not package keeps its version, installers and release notes, and points
+// to those notes instead of a change list written for another version.
+function previewPages(template, version, files, { packaged = true, stable = null } = {}) {
   for (const [route, locale] of languageRoutes) {
     const { document } = renderPage(template, PREVIEW_BASE, route, locale, previewCatalog);
+    if (!packaged) describeByReleaseNotes(document, locale, version, stable);
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     for (const element of document.querySelectorAll('[data-preview-version]')) element.textContent = version;
     for (const link of document.querySelectorAll('[data-preview-release]')) link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
@@ -145,6 +150,33 @@ function guidePages(template, base, catalog, files, version) {
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     stampVersion(document, version);
     files.set(base + route + 'index.html', document.toString());
+  }
+}
+
+const releaseNotesCopy = {
+  'zh-CN': {
+    hero: stable => `这是下一版的公开预览，给愿意先试新功能的人用。它相对稳定版 ${stable} 的全部变化，写在这个版本的发布说明里。`,
+    meta: (version, stable) => `FULI（FULI AI）下一版的公开预览 ${version}：相对稳定版 ${stable} 的全部变化见发布说明；每个平台一条命令装上 beta。`,
+  },
+  en: {
+    hero: stable => `A public preview of the next release, for people who want new features first. Everything it changes since stable ${stable} is in this version's release notes.`,
+    meta: (version, stable) => `The public preview ${version} of the next FULI (FULI AI) release: everything it changes since stable ${stable} is in its release notes. One command per platform installs the beta.`,
+  },
+};
+
+// The change list on the template describes the beta this build packages; another one's
+// changes are in its own release notes, which the page already links (data-preview-release).
+function describeByReleaseNotes(document, locale, version, stable) {
+  const copy = releaseNotesCopy[locale];
+  document.querySelector('.preview-changes')?.remove();
+  for (const link of document.querySelectorAll('a[href="#changes"]')) link.remove();
+  for (const element of document.querySelectorAll('[data-i18n="hero.description"]')) {
+    element.removeAttribute('data-i18n');
+    element.textContent = copy.hero(stable);
+  }
+  for (const meta of document.querySelectorAll('meta[data-i18n-content="meta.description"]')) {
+    meta.removeAttribute('data-i18n-content');
+    meta.setAttribute('content', copy.meta(version, stable));
   }
 }
 
@@ -182,17 +214,30 @@ function noPreviewPages(version, files) {
   }
 }
 
-export function createSitePages({ home, preview, models, tech, guide, report, version }) {
+// releases: GitHub's release list when the deploy read it (FULI_SITE_RELEASES). With it the
+// stable pages name and download the newest public, complete stable release (publishedStable),
+// whatever this build's own version; a draft, a beta or one still building its installers
+// leaves the last complete one. Without it (a local or offline build) they name this build's.
+export function createSitePages({ home, preview, models, tech, guide, report, version, releases = null }) {
   const files = new Map();
-  // A prerelease version (0.23.0-beta.1) is a preview; a stable one has none ahead of it.
-  const hasPreview = version.includes('-');
-  homePages(home, version, files, hasPreview ? stableBaseline(preview) : version);
-  if (hasPreview) previewPages(preview, version, files);
-  else noPreviewPages(version, files);
-  guidePages(models, MODELS_BASE, modelsCatalog, files, version);
-  guidePages(tech, TECH_BASE, techCatalog, files, version);
-  guidePages(guide, GUIDE_BASE, guideCatalog, files, version);
-  guidePages(report, REPORT_BASE, reportCatalog, files, version);
+  // A prerelease version (0.23.0-beta.1) packages a preview; a stable one has none ahead of it.
+  const packaged = version.includes('-');
+  const candidate = packaged ? stableBaseline(preview) : version;
+  const stable = releases ? publishedStable(releases) : candidate;
+  if (!stable) throw new Error('No public stable release has both installers; the site is left as it is.');
+  // With the release list, /next/ shows the newest complete public beta ahead of that stable
+  // release, whichever build this is; without it, the beta this build packages, if any.
+  const previewVersion = releases ? publishedPreview(releases, stable) : (packaged ? version : null);
+  const hasPreview = Boolean(previewVersion);
+  // The stable pages name the stable release; a build without the list, during a beta, names none.
+  const shown = releases || !packaged ? stable : version;
+  homePages(home, shown, files, stable);
+  if (hasPreview) previewPages(preview, previewVersion, files, { packaged: previewVersion === version, stable });
+  else noPreviewPages(stable, files);
+  guidePages(models, MODELS_BASE, modelsCatalog, files, shown);
+  guidePages(tech, TECH_BASE, techCatalog, files, shown);
+  guidePages(guide, GUIDE_BASE, guideCatalog, files, shown);
+  guidePages(report, REPORT_BASE, reportCatalog, files, shown);
 
   const urls = (hasPreview ? ['', PREVIEW_BASE, GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE] : ['', GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE]).flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
   files.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);
@@ -213,6 +258,7 @@ export async function buildSite(output = new URL('../dist/site/', import.meta.ur
     guide: await readFile(new URL(GUIDE_BASE + 'index.html', source), 'utf8'),
     report: await readFile(new URL(REPORT_BASE + 'index.html', source), 'utf8'),
     version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
+    releases: process.env.FULI_SITE_RELEASES ? await readReleases(process.env.FULI_SITE_RELEASES) : null,
   });
   for (const [path, content] of files) {
     const destination = new URL(path, output);
