@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 
 import { getJson } from '@/api/client'
 import type { ConsoleUpdateKind } from './model'
@@ -26,6 +26,31 @@ export const readVersionStatus = (signal?: AbortSignal, { fresh = false } = {}) 
 /** Whether the answer offers a newer release to install. */
 export const offersUpdate = (status: PackageVersionStatus | null): status is PackageVersionStatus & { latestVersion: string } =>
   status?.status === 'ready' && status.updateAvailable && Boolean(status.latestVersion)
+
+// The console's one answer about a newer release (11-18: the header's dot read
+// once at start-up while 设置 kept its own, so switching the channel or
+// 「检查更新」 never reached the dot). Every answer the console accepts lands here.
+const lastAnswer = ref<PackageVersionStatus | null>(null)
+
+/** The newer release the console last heard of, or null: the header's update dot. */
+export const offeredVersion = computed(() => offersUpdate(lastAnswer.value) ? lastAnswer.value.latestVersion : null)
+
+// An answer checked earlier than the one kept (a slow start-up read landing after
+// 「检查更新」) never replaces it, and npm being unreachable for a moment does not
+// hide a release already found on the same channel.
+function keep(answer: PackageVersionStatus) {
+  const held = lastAnswer.value
+  if (held && Date.parse(answer.checkedAt) < Date.parse(held.checkedAt)) return
+  if (held?.status === 'ready' && answer.status !== 'ready' && answer.channel === held.channel) return
+  lastAnswer.value = answer
+}
+
+/** Reads the version status and keeps it as the console's latest answer. */
+export async function refreshVersionStatus(signal?: AbortSignal, options: { fresh?: boolean } = {}) {
+  const answer = await readVersionStatus(signal, options)
+  keep(answer)
+  return answer
+}
 
 const RETRY_MS = 1200
 const MAX_TRIES = 6
@@ -59,6 +84,8 @@ export function useChannelVersionStatus(channel: Ref<UpdateChannel | undefined>)
         return
       }
       status.value = answer
+      // The last try may show another channel's answer here; the dot never takes it.
+      if (!answer.channel || answer.channel === channel.value) keep(answer)
     } catch (error) {
       if ((error as Error)?.name !== 'AbortError') failed.value = true
     } finally {
