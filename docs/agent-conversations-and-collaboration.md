@@ -91,6 +91,8 @@ FULI 0.23 及更早写出的 `@{agentId}` 接续指令（任何 ID，例如 `@{e
 - 点名的 FLA 优先于目录归属，与「自己点名的项目优先」一致：任务在它自己的项目里开始，按显式 Agent
   交给 Provider 选择（成员由负责人持有时以 `requested_agent_id` 请求它），恢复它的记忆；入口提示
   用 `resume_agent_conversation` 接回 `conversation.recent_conversation`。
+- 每条对话都能溯源：`list_agent_conversations` 的每一行带 `sessions`（最近 5 个写过它的会话：客户端、会话 id、模型、目录、首次和最后出现时间）和 `title`（没有收尾摘要时，是这段对话第一句话）。模型来自客户端：Codex 的提示钩子直接报，Claude Code 从它自己的对话记录里读最新一条回复的模型。
+- 同一个 FLA 最近 6 小时在别的会话里干过活，任务入口的 `conversation.active_elsewhere` 列出最多 3 个（同样的字段），只是告知，不绑定、不接管。
 - 绑定记在本会话当前任务的路由标记里（与长期职责的路由相同，不新增存储格式），之后各轮沿用，直到点名
   另一位 FLA、接续指令 `#FLA {agentId}` 指向另一位 Agent，或 `#FLA 结束`。接续指令找不到那位 Agent 时绑定保留。
   绑定期间开头的 `@词` 是普通文字，仍由所绑定的 FLA 处理。圆桌唤醒等内部活动原样保留绑定。解除后回到常规归属：目录的项目，没有项目时回到助理。

@@ -374,6 +374,14 @@ same client permission and only while recording is on. The whole serialized
 a full title); one that would be larger is left out, never cut. It binds nothing
 and reads no messages; continuing is still an explicit `resume_agent_conversation`.
 
+Every entry may carry `conversation.active_elsewhere`: the same Agent's other
+host sessions in the same scope seen in the last six hours, at most three,
+newest first. Each row names the client, session ID, model and folder the
+session's entries reported (graph 22 keeps them on the session's binding), when
+it was last seen, its conversation ID and a one-line title of at most 96 bytes
+(the checkpoint summary, else the person's opening words). The field is absent
+when there is none, so an Agent working in one session costs nothing.
+
 Known limit: the result of `resume_agent_conversation` is not tracked as a
 frame, so the next entry of the resuming session sends the resumed messages
 once more before they count as seen.

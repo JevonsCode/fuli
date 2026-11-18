@@ -1,6 +1,6 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
-import { beginConversation } from './agent-conversations.js';
+import { beginConversation, conversationProvenance } from './agent-conversations.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
@@ -80,7 +80,7 @@ export async function beginTaskContext(application, {
   }
   return beginTaskFromPreferences(application, preferences, {
     sessionId, turnId: existingTask?.turnId ?? turnId, sourceApplication, sourceSessionId, taskPrompt,
-    workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow, clientModel
+    workKind: preferenceScope.work_kind, workflow: preferenceScope.workflow, clientModel, projectPath
   }, { existingTask: resumed ?? (scopeRetry?.projectScope?.type === 'temporary' ? scopeRetry : null), resumed: Boolean(resumed),
     entryVia: 'hook' });
 }
@@ -91,7 +91,9 @@ export async function beginTaskFromPreferences(application, preferences, {
   sessionId, turnId = null, sourceApplication = 'other', sourceSessionId = null,
   workKind = null, workflow = null, taskPrompt = null,
   // The model the client's hook reported (beginTaskContext); the tool fallback has none.
-  clientModel = null
+  clientModel = null,
+  // The folder the client works in, for the conversation's provenance.
+  projectPath = null
 }, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
@@ -125,7 +127,8 @@ export async function beginTaskFromPreferences(application, preferences, {
       // Ignore: the rule stays in the conversation; the entry goes on.
     }
   }
-  const conversation = await beginConversation(application, task);
+  const conversation = await beginConversation(application, task,
+    conversationProvenance({ projectPath, clientModel, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;

@@ -187,6 +187,12 @@ GRAPH_MIGRATIONS = (
         'the earlier value was saved as on by default and is no longer read',
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/22-conversation-provenance', 22, 'schema',
+        'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
+        "and a conversation's opening words as its title; older conversations get them from their next write",
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

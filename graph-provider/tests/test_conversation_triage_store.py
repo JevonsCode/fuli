@@ -226,6 +226,8 @@ class ListDriver:
 
     async def execute_query(self, query, **parameters):
         self.calls.append((query, parameters))
+        if 'FuliConversationBinding' in query or 'HAS_EVENT' in query:
+            return [], None, None  # where each conversation was written from: none recorded here
         assert 'FuliConversationTriage' in query
         return [{'c': {'id': 'c1', 'summary': 'One', 'status': 'reported', 'revision': 2, 'last_activity': 'x'},
                  't': {'kind': 'topic', 'topic': 'Garden', 'source': 'user', 'personal_project_id': None,
@@ -261,7 +263,8 @@ async def test_conversation_lists_carry_their_triage_label():
     await store.query_conversations({}, ConversationQuery(
         personal_space_id=SPACE, personal_project_id=None, agent_id='employee.assistant', mode='list',
         topic='  Garden   Planning '))
-    query, parameters = store.runtime.driver.calls[1]
+    # The list query, not the reads of where each conversation was written from.
+    query, parameters = [call for call in store.runtime.driver.calls if 'FuliConversationTriage' in call[0]][1]
     assert parameters['topic'] == 'garden planning'
     assert "t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL" in query
 
