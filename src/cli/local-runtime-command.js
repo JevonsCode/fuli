@@ -15,6 +15,8 @@ import {
 } from '../system/runtime-settings.js';
 import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
+import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
+import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
@@ -40,6 +42,13 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     env,
     onProgress: write
   };
+  // A runner has no graph runtime; its commands manage its console entry (docs/runner.md).
+  if (paths.dataDir && (dependencies.isRunner ?? isRunnerDataDirectory)(paths.dataDir)) {
+    const runner = dependencies.runnerHandlers ?? followerRuntimeHandlers();
+    const result = await runner[command](input);
+    write(command === 'status' && options.json ? JSON.stringify(result, null, 2) : formatFollowerResult(command, result));
+    return { ...result, exitCode: command === 'status' && result.status !== 'running' ? 1 : result.status === 'partial' ? 1 : 0 };
+  }
   const handlers = {
     start: dependencies.start ?? startLocalRuntime,
     stop: dependencies.stop ?? stopLocalRuntime,

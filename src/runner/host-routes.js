@@ -11,6 +11,7 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { relayToConsole } from './console-relay.js';
 import { displayName, ENTRY_ID, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER,
   TOOL_PROFILE_HEADER } from './protocol.js';
 
@@ -43,8 +44,9 @@ const SESSION_ID = ENTRY_ID;
 // The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
 const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
+// consoleOrigin(): the host console's own loopback origin, or null before it listens.
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
-  createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
+  consoleOrigin = () => null, createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -85,7 +87,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
 
   async function handle(request, response, { fingerprint, pathname, address }) {
     if (pathname === RUNNER_PATHS.pair) return pair(request, response, { fingerprint, address });
-    if (!Object.values(RUNNER_PATHS).includes(pathname)) return false;
+    const consolePath = pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`);
+    if (!consolePath && !Object.values(RUNNER_PATHS).includes(pathname)) return false;
     if (!store.isPaired(fingerprint)) {
       sendJson(response, 403, { error: 'runner_unknown' });
       return true;
@@ -104,7 +107,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   }
 
   async function route(request, response, { fingerprint, pathname }) {
-    if (pathname === RUNNER_PATHS.hello) {
+    if (pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
+      relayToConsole(request, response, { consoleOrigin: consoleOrigin(), prefix: RUNNER_PATHS.console, fingerprint });
+    } else if (pathname === RUNNER_PATHS.hello) {
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);

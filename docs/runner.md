@@ -60,6 +60,26 @@ enter tasks through the instructions and Skills instead.
 store (the host, the cached answers, offline task tokens and the outbox). The
 host lists the runner until the person revokes it there.
 
+## The console on a runner
+
+A runner has no FULI of its own, but it has a console entry: `fuli start` (and FULI.app's start)
+runs `fuli runner console`, which listens on this computer's loopback at its usual console port
+(2727 unless Settings say otherwise) and shows the host's console. Each request goes over the paired
+mutual-TLS channel to `/runner/1/console/…` on the host, which forwards it to its own console on
+loopback (`src/runner/console-relay.js`), so pages, API calls and live event streams behave as on
+the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) open on the runner too.
+
+- The entry answers only on loopback under its own name (no DNS rebinding) and refuses any other
+  site's `Origin` before the channel; the host then gives the runner's own page the console's
+  origin. A runner reaches what the person reaches at the host's own console, nothing more:
+  runners and LAN pairing (`/api/runners`, `/api/peer`) are managed only on the host itself.
+- While the host is away the entry shows a page saying so, with what waits in the outbox; API
+  calls answer 503 `host_unreachable`. A revoked runner's entry reaches nothing.
+- `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
+  and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
+  runner sets up its clients only. A runner never gets a graph runtime by accident.
+- The host's and the runner's console ports should match for receipt links to open as they are.
+
 ## What a runner's call may do on the host
 
 Every call a runner makes runs as that runner's, known by its certificate

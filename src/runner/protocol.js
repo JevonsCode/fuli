@@ -15,7 +15,9 @@ export const RUNNER_PATHS = Object.freeze({
   hello: '/runner/1/hello',
   workspace: '/runner/1/workspace',
   mcp: '/runner/1/mcp',
-  replay: '/runner/1/replay'
+  replay: '/runner/1/replay',
+  // A prefix: the host's console paths follow it (console-relay.js).
+  console: '/runner/1/console'
 });
 // The client a runner's MCP session serves, named by its process (never a tool argument).
 export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
@@ -23,6 +25,8 @@ export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
 export const RUNNER_SESSION_HEADER = 'x-fuli-runner-session';
 // The tool profile the client's FULI entry names (chat unless it asks for full).
 export const TOOL_PROFILE_HEADER = 'x-fuli-tool-profile';
+// A runner's console entry sets it when the browser sent an Origin the entry checked was its own (console-relay.js).
+export const SAME_ORIGIN_HEADER = 'x-fuli-runner-same-origin';
 // The id a runner gives each checkpoint, online in the call's _meta and the
 // same id in its outbox when that call's outcome is unknown; the host applies
 // one id once (host-store.js claimReplay).

@@ -5,6 +5,9 @@ import {
 } from './setup-agent-selection.js';
 import { entryState } from '../agent-kits/client-detection.js';
 import { parseSetupOptions } from '../setup/options.js';
+import { resolveSetupPaths } from '../setup/paths.js';
+import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { setUpRunnerClients } from './runner-command.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -21,6 +24,9 @@ import { portMoveSentence } from '../system/blocked-port-recovery.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
+  // A runner (docs/runner.md) has no FULI of its own to set up: only its clients, which use the host.
+  const dataDir = resolveSetupPaths({ dataDir: options.dataDir, env: dependencies.env ?? process.env }).dataDir;
+  if ((dependencies.isRunner ?? isRunnerDataDirectory)(dataDir)) return setUpRunner(options, dataDir, dependencies);
   const planSetup = dependencies.planSetup ?? planLocalSetup;
   const applySetup = dependencies.applySetup ?? applyLocalSetup;
   const confirm = dependencies.confirm
@@ -64,6 +70,15 @@ export async function runSetupCommand(args, dependencies = {}) {
   const shadowed = shadowedLaunchers?.();
   if (shadowed) write(shadowed);
   return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
+}
+
+async function setUpRunner(options, dataDir, dependencies) {
+  const write = dependencies.write ?? writeLine;
+  write('This computer is a FULI runner: its FULI is on the host, so only its clients are set up here.');
+  const agents = options.skipAgents ? []
+    : await (dependencies.setupRunnerClients ?? setUpRunnerClients)({ dataDir, env: dependencies.env ?? process.env, write });
+  for (const agent of agents) write(`  ${agent.label ?? agent.id}: ${agent.status}`);
+  return { status: 'runner', agents, exitCode: agents.every(({ status }) => status === 'connected') ? 0 : 1 };
 }
 
 // A new installation asks where FULI records (rec#5 C10): here when a person
