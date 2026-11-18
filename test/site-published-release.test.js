@@ -50,30 +50,77 @@ test('a draft, a beta, or a release still missing an installer never replaces th
   assert.equal(publishedStable([release('0.27.17'), shipped], '0.27.17'), '0.27.17');
 });
 
-test('while 0.27.17 is a draft the stable pages, in every language, name and download 0.27.16', () => {
-  const files = createSitePages({ ...templates, version: '0.27.17',
-    releases: [release('0.27.17', { draft: true }), release('0.27.16'), release('0.29.0-beta.8')] });
+// The two release states of 11-19, end to end (both read like the live list):
+// 0.27.17 still a draft, and 0.27.17 public with both installers; beta.8 public all along.
+const LIVE_DRAFT = [release('0.27.17', { draft: true }), release('0.27.16'), release('0.29.0-beta.8'), release('0.29.0-beta.2')];
+const LIVE_RELEASED = [release('0.27.17'), release('0.27.16'), release('0.29.0-beta.8'), release('0.29.0-beta.2')];
+const notesLink = version => `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
+
+function assertPreview(files, version, stable) {
+  for (const [path, locale] of [['next/index.html', 'zh-CN'], ['next/zh/index.html', 'zh-CN'], ['next/en/index.html', 'en']]) {
+    const { document } = parseHTML(files.get(path));
+    assert.equal(document.documentElement.lang, locale, path);
+    assert.deepEqual(links(files, path), download(version), path);
+    assert.deepEqual([...document.querySelectorAll('[data-preview-version]')].map(node => node.textContent), [version], path);
+    for (const link of document.querySelectorAll('[data-preview-release]')) assert.equal(link.href, notesLink(version), path);
+    assert.equal(document.querySelector('.brand-version').textContent, 'v' + version, path);
+    // This build does not package that beta: its changes are in its release notes, not a list written for another version.
+    assert.equal(document.querySelector('.preview-changes'), null, path);
+    assert.equal(document.querySelector('a[href="#changes"]'), null, path);
+    assert.ok(document.querySelector('[data-preview-release]'), path);
+    const hero = document.querySelector('.lede').textContent;
+    assert.match(hero, locale === 'en' ? new RegExp(`since stable ${stable.replace(/\./g, '\\.')} is in this version's release notes`)
+      : new RegExp(`稳定版 ${stable.replace(/\./g, '\\.')} 的全部变化，写在这个版本的发布说明里`), path);
+    assert.doesNotMatch(document.querySelector('meta[name="description"]').content, /0\.27\.17 的全部新功能|since stable 0\.27\.17\. One/, path);
+  }
+  assert.match(files.get('sitemap.xml'), /\/next\//, 'the preview is in the sitemap');
+}
+
+test('live, 0.27.17 a draft: stable pages name and download 0.27.16; /next/ is beta.8 in every language', () => {
+  const files = createSitePages({ ...templates, version: '0.27.17', releases: LIVE_DRAFT });
   for (const path of ['index.html', 'zh/index.html', 'en/index.html']) {
     assert.deepEqual(links(files, path), download('0.27.16'), path);
     const versionLink = parseHTML(files.get(path)).document.querySelector('.brand-row .brand-version');
-    assert.deepEqual([versionLink.textContent, versionLink.href], ['v0.27.16', 'https://github.com/JevonsCode/fuli/releases/tag/v0.27.16'], path);
+    assert.deepEqual([versionLink.textContent, versionLink.href], ['v0.27.16', notesLink('0.27.16')], path);
   }
   for (const path of ['guide/index.html', 'models/index.html', 'report/en/index.html']) {
     assert.equal(parseHTML(files.get(path)).document.querySelector('.brand-row .brand-version').textContent, 'v0.27.16', path);
   }
-  assert.match(files.get('next/index.html'), /稳定版 0\.27\.16 就是最新版本/);
-  assert.match(files.get('next/en/index.html'), /Stable 0\.27\.16 is the latest release/);
-  // Once public with both installers, the next build switches.
-  const switched = createSitePages({ ...templates, version: '0.27.17', releases: [release('0.27.17'), release('0.27.16')] });
-  assert.deepEqual(links(switched, 'en/index.html'), download('0.27.17'));
+  assertPreview(files, '0.29.0-beta.8', '0.27.16');
 });
 
-test('during a beta the stable pages keep the last complete stable release and /next/ the packaged beta', () => {
+test('live, 0.27.17 released with both installers: stable pages switch to it and beta.8 stays the preview', () => {
+  const files = createSitePages({ ...templates, version: '0.27.17', releases: LIVE_RELEASED });
+  for (const path of ['index.html', 'en/index.html']) assert.deepEqual(links(files, path), download('0.27.17'), path);
+  assertPreview(files, '0.29.0-beta.8', '0.27.17');
+});
+
+test('a newer draft or incomplete beta is passed over for the newest complete one; none ahead says no preview', () => {
+  const draft9 = release('0.29.0-beta.9', { draft: true });
+  const broken9 = release('0.29.0-beta.9', { assets: ['FULI-Setup-0.29.0-beta.9.exe'] });
+  const attaching9 = release('0.29.0-beta.9', { assets: stableInstallers('0.29.0-beta.9').map(name => ({ name, state: 'starter', size: 0 })) });
+  for (const late of [draft9, broken9, attaching9]) {
+    assertPreview(createSitePages({ ...templates, version: '0.27.17', releases: [...LIVE_DRAFT, late] }), '0.29.0-beta.8', '0.27.16');
+  }
+  // Only betas behind the stable release: no preview.
+  const behind = [release('0.27.17'), release('0.27.16'), release('0.27.17-beta.1')];
+  const files = createSitePages({ ...templates, version: '0.27.17', releases: behind });
+  assert.match(files.get('next/index.html'), /稳定版 0\.27\.17 就是最新版本/);
+  assert.match(files.get('next/en/index.html'), /Stable 0\.27\.17 is the latest release/);
+  assert.doesNotMatch(files.get('sitemap.xml'), /\/next\//);
+});
+
+test('a beta build whose own beta is public keeps its change list; while it is not, the newest public beta shows', () => {
   const baseline = /data-preview-baseline="([^"]+)"/.exec(templates.preview)[1];
-  const files = createSitePages({ ...templates, version: '0.29.0-beta.9',
+  const packaged = createSitePages({ ...templates, version: '0.29.0-beta.9', releases: [...LIVE_RELEASED, release('0.29.0-beta.9')] });
+  const { document } = parseHTML(packaged.get('next/index.html'));
+  assert.deepEqual(links(packaged, 'next/index.html'), download('0.29.0-beta.9'));
+  assert.ok(document.querySelector('.preview-changes'), 'this build is that beta: its change list stays');
+  assert.deepEqual(links(packaged, 'index.html'), download(baseline === '0.27.17' ? '0.27.17' : '0.27.16'));
+  const unpublished = createSitePages({ ...templates, version: '0.29.0-beta.9',
     releases: [release(baseline, { assets: [`FULI-Setup-${baseline}.exe`] }), release('0.27.16'), release('0.29.0-beta.8')] });
-  assert.deepEqual(links(files, 'index.html'), download('0.27.16'), 'the baseline lacks its macOS installer');
-  assert.deepEqual(links(files, 'next/index.html'), download('0.29.0-beta.9'));
+  assert.deepEqual(links(unpublished, 'index.html'), download('0.27.16'), 'the baseline lacks its macOS installer');
+  assertPreview(unpublished, '0.29.0-beta.8', '0.27.16');
 });
 
 test('a build that read no release list (offline, local) names its own version, and an empty list stops the build', async () => {
