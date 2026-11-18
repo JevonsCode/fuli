@@ -77,6 +77,10 @@ the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) ope
   site's `Origin` before the channel; the host then gives the runner's own page the console's
   origin. A runner reaches what the person reaches at the host's own console, nothing more:
   runners and LAN pairing (`/api/runners`, `/api/peer`) are managed only on the host itself.
+- The client pages show the host computer's clients. A runner may read them but never connect,
+  add or restart a client there, or open a session there (`/api/system/client-connection`,
+  `/api/session-launch` answer 403 `host_computer_only`): the runner's own clients are set up on
+  the runner with `fuli setup`.
 - While the host is away the entry shows a page saying so, with what waits in the outbox; API
   calls answer 503 `host_unreachable`. A revoked runner's entry reaches nothing.
 - `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
