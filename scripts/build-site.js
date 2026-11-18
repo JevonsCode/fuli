@@ -153,24 +153,27 @@ function guidePages(template, base, catalog, files, version) {
   }
 }
 
+const releaseNotesMeta = {
+  'zh-CN': (version, stable) => `FULI（FULI AI）下一版的公开预览 ${version}：相对稳定版 ${stable} 的全部变化见发布说明；每个平台一条命令装上 beta。`,
+  en: (version, stable) => `The public preview ${version} of the next FULI (FULI AI) release: everything it changes since stable ${stable} is in its release notes. One command per platform installs the beta.`,
+};
+
 // The change list on the template describes the beta this build packages; another one's
 // changes are in its own release notes, which the page already links (data-preview-release).
-// The sentences that say so stay translatable (the catalog's *.releaseNotes), so the
-// language the browser picks on /next/ covers them too; the versions are their arguments.
+// The visible sentence that says so stays translatable (the catalog's hero.releaseNotes,
+// stable version as its argument), so the language /next/ picks in the browser covers it.
 function describeByReleaseNotes(document, locale, version, stable) {
   document.querySelector('.preview-changes')?.remove();
   for (const link of document.querySelectorAll('a[href="#changes"]')) link.remove();
-  const args = JSON.stringify({ version, stable });
-  const messages = previewCatalog.messages[locale];
+  const args = JSON.stringify({ stable });
   for (const element of document.querySelectorAll('[data-i18n="hero.description"]')) {
     element.setAttribute('data-i18n', 'hero.releaseNotes');
     element.setAttribute('data-i18n-args', args);
-    element.textContent = formatMessage(messages['hero.releaseNotes'], args);
+    element.textContent = formatMessage(previewCatalog.messages[locale]['hero.releaseNotes'], args);
   }
   for (const meta of document.querySelectorAll('meta[data-i18n-content="meta.description"]')) {
-    meta.setAttribute('data-i18n-content', 'meta.releaseNotes');
-    meta.setAttribute('data-i18n-args', args);
-    meta.setAttribute('content', formatMessage(messages['meta.releaseNotes'], args));
+    meta.removeAttribute('data-i18n-content');
+    meta.setAttribute('content', releaseNotesMeta[locale](version, stable));
   }
 }
 

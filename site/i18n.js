@@ -44,7 +44,7 @@ export function createLanguageController({ document, languages = [], getStorage 
     }
     for (const attribute of ['aria-label', 'content', 'href']) {
       for (const element of document.querySelectorAll(`[data-i18n-${attribute}]`)) {
-        element.setAttribute(attribute, text(element, element.getAttribute(`data-i18n-${attribute}`)));
+        element.setAttribute(attribute, t(element.getAttribute(`data-i18n-${attribute}`)));
       }
     }
     for (const link of document.querySelectorAll('[data-locale]')) {

@@ -12,9 +12,8 @@ const copy = {
     "copy.label": "复制预览版安装命令",
     "hero.description": "这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对稳定版 0.27.17 的全部变化。",
     // A public beta this build does not package: its changes are in its release notes.
-    // {version} and {stable} come from the public release list (scripts/build-site.js).
+    // {stable} comes from the public release list (scripts/build-site.js).
     "hero.releaseNotes": "这是下一版的公开预览，给愿意先试新功能的人用。它相对稳定版 {stable} 的全部变化，写在这个版本的发布说明里。",
-    "meta.releaseNotes": "FULI（FULI AI）下一版的公开预览 {version}：相对稳定版 {stable} 的全部变化见发布说明；每个平台一条命令装上 beta。",
     "next.home": "Fuli 复利 预览版首页",
     "next.eyebrow": "抢先体验 · npm beta",
     "next.description": "这里列出这个预览版相对当前稳定版 0.27.17 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。",
@@ -47,7 +46,6 @@ const copy = {
     "copy.label": "Copy the preview install commands",
     "hero.description": "A public preview of the next release, for people who want new features first. Below is everything it changes since stable 0.27.17.",
     "hero.releaseNotes": "A public preview of the next release, for people who want new features first. Everything it changes since stable {stable} is in this version's release notes.",
-    "meta.releaseNotes": "The public preview {version} of the next FULI (FULI AI) release: everything it changes since stable {stable} is in its release notes. One command per platform installs the beta.",
     "next.home": "Fuli preview home",
     "next.eyebrow": "Preview · npm beta",
     "next.description": "Everything this preview adds or changes compared with the current stable release, 0.27.17, not just what changed since the last beta. The release runs the full automated test suite before it is published, but it has not had the long real-world use a stable release has. Please report problems as GitHub issues.",
