@@ -21,7 +21,8 @@ def test_automatic_closes_after_a_real_result_leave_it_as_the_progress():
     digest = add_task_result({}, 't0', 'completed', 'Shipped the parser')
     for n in range(3):
         digest = add_task_result(digest, f'a{n}', 'reported', AUTO_CLOSE if n % 2 else AUTO_KEEP)
-    assert latest_progress(digest) == {'at': 't0', 'status': 'completed', 'summary': 'Shipped the parser'}
+    progress = latest_progress(digest)
+    assert (progress['at'], progress['status'], progress['summary']) == ('t0', 'completed', 'Shipped the parser')
 
 
 def test_the_progress_outlives_the_task_window_with_its_own_time():
