@@ -1,5 +1,6 @@
 """Synthetic data only; requires an explicitly disposable loopback database."""
 import asyncio
+import json
 from uuid import uuid4
 from test_project_agent_memory_neo4j import fixture_settings, provider_client, seed_agent
 
@@ -456,4 +457,97 @@ def test_one_conversation_written_by_claude_then_codex_names_each_events_client_
             row = next(row for row in listed if row['id'] == conversation)
             assert row['title'] == 'Write A'
             assert row['title_source'] == {'client': 'claude_code', 'session_id': 'synthetic-claude-a'}
+    asyncio.run(scenario())
+
+
+def test_each_digest_task_reads_back_the_checkpoint_event_that_wrote_it():
+    """11-18 acceptance: Claude and Codex each write a checkpoint with the same
+    words into one conversation; each digest task names its own event (sequence,
+    event ID, client, native session), and the exact read of that sequence and
+    event ID returns that checkpoint. A repeated write adds no task; a task
+    with no recorded source reads as unknown; a source that names another
+    event reads as unavailable, never as the next event."""
+    async def scenario():
+        settings = fixture_settings()
+        async with provider_client(settings) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name': 'Synthetic digest source', 'kind': 'personal'})).json()['id']
+            project = 'digest-' + uuid4().hex[:10]
+            await seed_agent(client, space, project=project, allowed_clients=['codex', 'claude_code'])
+            scope = dict(personal_space_id=space, personal_project_id=project, agent_id='engineer')
+
+            async def post(path, body):
+                r = await client.post(path, json={**scope, **body})
+                assert r.status_code == 200, r.text
+                return r.json()
+
+            async def task(source, session):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id='engineer', session_id=session, source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                return token
+
+            async def checkpoint(source, session, token, event_id, words='Same words from either client'):
+                return await post('/v1/agent-conversations/append', {'source_application': source, 'session_id': session,
+                    'task_context_token': token, 'summary': words, 'status': 'completed',
+                    'events': [dict(event_id=event_id, role='summary', kind='checkpoint', content=words)]})
+
+            claude = await task('claude_code', 'synthetic-claude-d')
+            opened = await post('/v1/agent-conversations/begin', {'source_application': 'claude_code',
+                'session_id': 'synthetic-claude-d', 'task_context_token': claude})
+            conversation = opened['conversation_id']
+            await checkpoint('claude_code', 'synthetic-claude-d', claude, 'claude-task:summary')
+            # The same event again (a retried write) adds no task.
+            await checkpoint('claude_code', 'synthetic-claude-d', claude, 'claude-task:summary')
+            codex = await task('codex', 'synthetic-codex-d')
+            await post('/v1/agent-conversations/begin', {'source_application': 'codex', 'session_id': 'synthetic-codex-d',
+                'task_context_token': codex})
+            await post('/v1/agent-conversations/resume', {'source_application': 'codex', 'session_id': 'synthetic-codex-d',
+                'task_context_token': codex, 'conversation_id': conversation})
+            await checkpoint('codex', 'synthetic-codex-d', codex, 'codex-task:summary')
+
+            async def digest_tasks():
+                page = await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'events',
+                    'conversation_id': conversation, 'limit': 1})
+                return page['digest']['tasks']
+
+            tasks = await digest_tasks()
+            assert [(t['source']['client'], t['source']['session_id'], t['source']['event_id']) for t in tasks] == [
+                ('claude_code', 'synthetic-claude-d', 'claude-task:summary'),
+                ('codex', 'synthetic-codex-d', 'codex-task:summary')]
+            async def exact(sequence, event_id):
+                return await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'events',
+                    'conversation_id': conversation, 'after': sequence - 1, 'limit': 1, 'event_id': event_id})
+
+            for entry in tasks:
+                read = await exact(entry['source']['sequence'], entry['source']['event_id'])
+                assert read['source_check'] == 'verified'
+                [event] = read['events']
+                assert (event['sequence'], event['event_id'], event['kind'], event['content'], event['client'],
+                        event['session_id']) == (entry['source']['sequence'], entry['source']['event_id'], 'checkpoint',
+                        entry['summary'], entry['source']['client'], entry['source']['session_id'])
+            # Another event ID at a source's sequence, or a sequence with no event: unavailable, nothing shown.
+            wrong = await exact(tasks[0]['source']['sequence'], tasks[1]['source']['event_id'])
+            assert (wrong['source_check'], wrong['events']) == ('unavailable', [])
+            beyond = await exact(tasks[1]['source']['sequence'] + 50, tasks[1]['source']['event_id'])
+            assert (beyond['source_check'], beyond['events']) == ('unavailable', [])
+            listed = (await post('/v1/agent-conversations/query', {'source_application': 'codex', 'mode': 'list'}))['conversations']
+            assert next(row for row in listed if row['id'] == conversation)['summary_source'] == tasks[-1]['source']
+
+            # A digest stored before tasks kept their source: nothing proves which write a task was, so unknown.
+            from neo4j import AsyncGraphDatabase
+            driver = AsyncGraphDatabase.driver(settings.neo4j_uri, auth=('neo4j', settings.neo4j_password))
+            try:
+                rows, _, _ = await driver.execute_query('MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest',
+                    id=conversation)
+                stored = json.loads(rows[0]['digest'])
+                older = [{key: value for key, value in t.items() if key != 'source'} for t in stored['tasks']]
+                await driver.execute_query('MATCH (c:FuliConversation {id: $id}) SET c.digest = $digest', id=conversation,
+                    digest=json.dumps({**stored, 'tasks': older}))
+            finally:
+                await driver.close()
+            assert [t['source'] for t in await digest_tasks()] == [None, None]
+            row = next(r for r in (await post('/v1/agent-conversations/query', {'source_application': 'codex',
+                'mode': 'list'}))['conversations'] if r['id'] == conversation)
+            assert row['summary_source'] is None
     asyncio.run(scenario())

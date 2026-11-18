@@ -356,3 +356,93 @@ it('explains a scrubbed current revision in English without showing old content'
   expect(wrapper.find('.memory-summary').exists()).toBe(false)
   wrapper.unmount()
 })
+
+// 11-19: a task result opens the exact checkpoint that wrote it, with its client
+// and session; a missing or moved source never shows another record.
+const claudeSource = { sequence: 3, event_id: 'synthetic-claude:summary', client: 'claude_code', session_id: 'synthetic-claude-session' }
+const codexSource = { sequence: 5, event_id: 'synthetic-codex:summary', client: 'codex', session_id: 'synthetic-codex-session' }
+async function openTasks(tasks: unknown[]) {
+  const wrapper = render()
+  await open(wrapper)
+  postJson.mockResolvedValueOnce({ events: [], has_more: false, digest: { entries: [], omitted: 0, tasks } })
+  await wrapper.get('[data-read-conversation]').trigger('click')
+  await flushPromises()
+  return wrapper
+}
+it('opens the exact checkpoint of each task result, even when two clients wrote the same words', async () => {
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Same words', source: claudeSource },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Same words', source: codexSource }])
+  expect(wrapper.get('[data-conversation-digest]').text()).toContain('不是你说的原话')
+  let resolve!: (value: unknown) => void
+  postJson.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  await wrapper.findAll('[data-digest-task]')[1].get('[data-view-source]').trigger('click')
+  expect(wrapper.findAll('[data-digest-task]')[1].text()).toContain('正在读取这条小结的原记录')
+  expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', { ...scope, mode: 'events',
+    conversationId: 'conversation-a', after: 4, limit: 1, eventId: 'synthetic-codex:summary' })
+  resolve({ source_check: 'verified', events: [{ ...codexSource, content: 'Same words', kind: 'checkpoint', role: 'summary' }] })
+  await flushPromises()
+  const record = wrapper.findAll('[data-digest-task]')[1].get('[data-source-record]')
+  expect(record.text()).toContain('任务小结（checkpoint #5）')
+  expect(record.text()).toContain('Codex')
+  expect(record.text()).toContain('synthetic-codex-session')
+  expect(wrapper.findAll('[data-digest-task]')[0].find('[data-source-record]').exists()).toBe(false)
+})
+it('says unavailable when the source is gone or another event answers, and unknown when none was kept', async () => {
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Older words', source: null },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Moved', source: codexSource },
+    { at: '2026-11-18T21:02:00Z', status: 'completed', summary: 'Next one', source: claudeSource }])
+  const rows = () => wrapper.findAll('[data-digest-task]')
+  expect(rows()[0].find('[data-view-source]').exists()).toBe(false)
+  expect(rows()[0].get('[data-source-unknown]').text()).toContain('来源未知')
+  postJson.mockResolvedValueOnce({ source_check: 'unavailable', events: [] })
+  await rows()[1].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[1].get('[data-source-unavailable]').text()).toContain('原记录不可用')
+  // An older Provider that ignores eventId returns whatever comes next: never shown as the original.
+  postJson.mockResolvedValueOnce({ events: [{ sequence: 4, event_id: 'synthetic-other', content: 'Someone else', kind: 'message',
+    role: 'user', client: 'codex', session_id: 'x' }] })
+  await rows()[2].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[2].find('[data-source-record]').exists()).toBe(false)
+  expect(rows()[2].text()).not.toContain('Someone else')
+  expect(rows()[2].find('[data-source-unavailable]').exists()).toBe(true)
+})
+it('lets a failed source read be tried again', async () => {
+  const wrapper = await openTasks([{ at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Words', source: claudeSource }])
+  postJson.mockRejectedValueOnce(new Error('offline'))
+  await wrapper.get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-digest-task]').text()).toContain('原记录读取失败')
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...claudeSource, content: 'Words', kind: 'checkpoint', role: 'summary' }] })
+  await wrapper.get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-source-record]').text()).toContain('Claude Code')
+})
+it('shows the original only when sequence, event ID, client, session and checkpoint kind all match', async () => {
+  const deleted = { sequence: 2, event_id: 'synthetic-deleted:summary', client: 'codex', session_id: 'synthetic-codex-session' }
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Words', source: claudeSource },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Words', source: codexSource },
+    { at: '2026-11-18T21:02:00Z', status: 'completed', summary: 'Gone', source: deleted }])
+  const rows = () => wrapper.findAll('[data-digest-task]')
+  // Same sequence and ID, written by another client or session: not the original.
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...claudeSource, client: 'codex', content: 'Words', kind: 'checkpoint' }] })
+  await rows()[0].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[0].find('[data-source-unavailable]').exists()).toBe(true)
+  // A plain message at that place is not the task result.
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...codexSource, content: 'Words', kind: 'message' }] })
+  await rows()[1].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[1].find('[data-source-unavailable]').exists()).toBe(true)
+  // The event was deleted: after:1/limit:1 now finds sequence 3, which is never shown as the original.
+  postJson.mockResolvedValueOnce({ events: [{ sequence: 3, event_id: 'synthetic-next:summary', client: 'codex',
+    session_id: 'synthetic-codex-session', content: 'The next one', kind: 'checkpoint' }] })
+  await rows()[2].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[2].find('[data-source-record]').exists()).toBe(false)
+  expect(rows()[2].text()).not.toContain('The next one')
+  expect(rows()[2].find('[data-source-unavailable]').exists()).toBe(true)
+})

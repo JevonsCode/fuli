@@ -35,6 +35,9 @@ class ConversationQuery(ConversationScope):
     topic: str | None = Field(default=None, min_length=1, max_length=80)
     after: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=50)
+    # events only: read exactly the event at sequence after + 1 with this event_id
+    # (a digest task's source), or nothing; never the next event in its place.
+    event_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class ConversationEvent(StrictModel):
