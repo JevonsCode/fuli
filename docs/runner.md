@@ -53,8 +53,12 @@ points at `fuli runner list` and `fuli runner revoke`.
 
 `join` then sets up the runner's clients exactly as `fuli setup` does (MCP entry,
 Skills, Codex instructions), without starting a graph runtime. In runner mode the
-same MCP command serves through the host, and lifecycle hooks do nothing: clients
-enter tasks through the instructions and Skills instead.
+same MCP command serves through the host. A client's prompt hook is forwarded to
+the host, which enters the task for the client's own session and the folder the
+client is in, exactly as a local hook would; the transcript stays on the runner.
+A client names its session only to its hooks (Codex gives MCP servers no thread
+ID), so this is how a runner's client gets a task token. When the host is away,
+the hook tells the model to enter the task through FULI's MCP tools instead.
 
 `fuli runner leave` on the runner ends the pairing there: it deletes the runner
 store (the host, the cached answers, offline task tokens and the outbox). The
@@ -221,12 +225,13 @@ as for every migration, and an older FULI then refuses that store.
 
 - Runner and host must reach each other directly (same LAN, cable, or a network
   both are on).
-- Lifecycle hooks (automatic task entry and Stop checkpoints) do not run on a
-  runner, and neither does the session switch (`/fuli start|stop|status`,
-  `fuli session`): it needs a FULI on the same computer. Every client's hook
-  tells the model instead to enter the task through FULI's MCP server: Claude
-  Code, Codex, OpenCode and DeepSeek Harness at each prompt, Cursor at session
-  start (its prompt hook can only show text to the person).
+- Only the prompt hook reaches the host (above). Stop checkpoints and the other
+  lifecycle hooks do not run on a runner, and neither does the session switch
+  (`/fuli start|stop|status`, `fuli session`): it needs a FULI on the same
+  computer. While the host is away, every client's hook tells the model to
+  enter the task through FULI's MCP server: Claude Code, Codex, OpenCode and
+  DeepSeek Harness at each prompt, Cursor at session start (its prompt hook can
+  only show text to the person).
 - On Windows an ask from another computer (a runner's, or a paired device's)
   wakes only Claude Code, whose read-only wake has no shell; it never wakes
   Codex there, whose read-only sandbox is not verified to block the network on
