@@ -136,6 +136,23 @@ test('who may reach the host stays the host\'s: runners and pairing are not mana
   assert.equal(consoleSide.seen.length, 0);
 });
 
+// Review of 0.27.17: `//other-host/…` read as another address and skipped the
+// host-only checks, so a runner could reach them or any address the host can.
+test('a doubled slash neither skips the host-only checks nor leaves the console', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  for (const route of ['/api//runners/invitations', '//api/runners', '/api//peer/nearby',
+    '//api//system/client-connection/connect']) {
+    const answer = await get(`${entry.url}${route}`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    assert.equal(answer.status, 403, route);
+  }
+  assert.equal(consoleSide.seen.length, 0);
+  // `//127.0.0.1:9/…` stays a path of the console itself (one it does not have), never another address.
+  await get(`${entry.url}//127.0.0.1:9/api/runners`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  assert.deepEqual(consoleSide.seen.map((seen) => [seen.url, seen.host]),
+    [['/127.0.0.1:9/api/runners', consoleSide.seen[0]?.host]]);
+  assert.doesNotMatch(consoleSide.seen[0].host, /:9$/);
+});
+
 test('a runner reads the host computer\'s clients but never connects, adds, restarts or launches one there', async (t) => {
   const { entry, consoleSide } = await pairedRunner(t);
   for (const route of ['/api/system/client-connection/connect', '/api/system/client-connection/restart',

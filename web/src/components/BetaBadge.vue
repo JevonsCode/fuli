@@ -9,7 +9,7 @@ import { t } from '@/i18n'
 </script>
 
 <template>
-  <Badge class="beta-badge" variant="default" :title="t('common.beta.hint')" :aria-label="t('common.beta.hint')" data-beta-badge>
+  <Badge class="beta-badge" variant="default" :title="t('common.beta.hint')" data-beta-badge>
     {{ t('common.beta.label') }}
   </Badge>
 </template>
