@@ -136,6 +136,18 @@ test('who may reach the host stays the host\'s: runners and pairing are not mana
   assert.equal(consoleSide.seen.length, 0);
 });
 
+test('a runner reads the host computer\'s clients but never connects, adds, restarts or launches one there', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  for (const route of ['/api/system/client-connection/connect', '/api/system/client-connection/restart',
+    '/api/system/client-connection/custom-clients', '/api/session-launch/new-session']) {
+    const answer = await get(`${entry.url}${route}`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    assert.equal(answer.status, 403, route);
+    assert.equal(JSON.parse(answer.text).error, 'host_computer_only');
+  }
+  assert.equal(consoleSide.seen.length, 0);
+  assert.equal((await get(`${entry.url}/api/system/client-connection/status`)).status, 200);
+});
+
 test('the entry answers only to this computer under its own name, and says when the host is away', async (t) => {
   const { entry, setAway } = await pairedRunner(t);
   const rebound = await get(`${entry.url}/`, { headers: { host: 'attacker.example:2727' } });
