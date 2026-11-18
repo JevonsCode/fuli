@@ -459,9 +459,12 @@ def test_one_conversation_written_by_claude_then_codex_names_each_events_client_
     asyncio.run(scenario())
 
 
-def test_a_progress_list_pages_past_twenty_and_carries_each_conversations_task_results():
-    """11-19 (Jefa's list_project_conversations): a list asked with_progress names each
-    conversation's last task results, and after passes over the newest for a page."""
+AUTO_CLOSE = 'Auto-closed by the Stop hook: the Agent recorded no checkpoint for this task.'
+
+
+def test_a_progress_list_pages_by_position_and_keeps_real_progress_past_automatic_closes():
+    """11-19 (Jefa's list_project_conversations): a keyset list reaches every
+    conversation, and a real result stays the progress after 13 automatic closes."""
     async def scenario():
         async with provider_client(fixture_settings()) as (client, _):
             space = (await client.post('/v1/spaces', json={'name': 'Synthetic progress', 'kind': 'personal'})).json()['id']
@@ -474,6 +477,11 @@ def test_a_progress_list_pages_past_twenty_and_carries_each_conversations_task_r
                 assert r.status_code == 200, r.text
                 return r.json()
 
+            async def checkpoint(session, token, event_id, summary):
+                await post('/v1/agent-conversations/append', {'source_application': 'codex', 'session_id': session,
+                    'task_context_token': token, 'summary': summary, 'status': 'reported',
+                    'events': [dict(event_id=event_id, role='summary', kind='checkpoint', content=summary)]})
+
             for n in range(22):
                 session = f'synthetic-session-{n:02d}'
                 token = 'fuli-task-' + uuid4().hex
@@ -482,21 +490,87 @@ def test_a_progress_list_pages_past_twenty_and_carries_each_conversations_task_r
                 assert r.status_code == 200, r.text
                 await post('/v1/agent-conversations/begin', {'source_application': 'codex', 'session_id': session,
                     'task_context_token': token})
-                if n % 2 == 0:
-                    await post('/v1/agent-conversations/append', {'source_application': 'codex', 'session_id': session,
-                        'task_context_token': token, 'summary': f'Result {n}', 'status': 'completed',
-                        'events': [dict(event_id=f'task-{n}:summary', role='summary', kind='checkpoint', content=f'Result {n}')]})
+                if n == 0:
+                    await checkpoint(session, token, 'task-0:summary', 'Result 0')
+                    for close in range(13):
+                        await checkpoint(session, token, f'auto-{close}:summary', AUTO_CLOSE)
 
-            async def page(after, limit=20, **extra):
-                return (await post('/v1/agent-conversations/query', {'mode': 'list', 'after': after, 'limit': limit,
+            async def page(position=None, limit=20, **extra):
+                after = {'after_activity': position[0], 'after_id': position[1]} if position else {}
+                return (await post('/v1/agent-conversations/query', {'mode': 'list', 'limit': limit, **after,
                     **extra}))['conversations']
 
-            first, second = await page(0, with_progress=True), await page(20, with_progress=True)
+            first = await page(with_progress=True)
+            second = await page((first[-1]['last_activity'], first[-1]['id']), with_progress=True)
             ids = [row['id'] for row in first + second]
             assert len(ids) == 22 and len(set(ids)) == 22, 'two pages, no repeat and no gap'
-            assert all('recent_tasks' in row for row in first + second)
-            reported = [row for row in first + second if row['recent_tasks']]
-            assert len(reported) == 11
-            assert all(row['recent_tasks'][-1]['summary'].startswith('Result ') for row in reported)
-            assert all('recent_tasks' not in row for row in await page(0, limit=3)), 'only when asked'
+            reported = [row for row in first + second if row['progress']]
+            assert len(reported) == 1
+            assert reported[0]['progress']['summary'] == 'Result 0', 'the real result outlives 13 automatic closes'
+            assert reported[0]['progress']['at'] < reported[0]['last_activity']
+            assert all('progress' not in row for row in await page(limit=3)), 'only when asked'
+    asyncio.run(scenario())
+
+
+def test_a_task_activity_receipt_links_only_through_a_session_bound_to_one_conversation():
+    """11-19: a member's receipt on the session of the lead's conversation is that
+    conversation's progress, named with its reporter, task and event; a receipt
+    from another client, without a session or in another project is not, and
+    nothing is linked once the session works on a second conversation there."""
+    async def scenario():
+        async with provider_client(fixture_settings()) as (client, _):
+            space = (await client.post('/v1/spaces', json={'name': 'Synthetic receipts', 'kind': 'personal'})).json()['id']
+            project, other = 'receipts-' + uuid4().hex[:10], 'receipts-other-' + uuid4().hex[:10]
+            for name in (project, other):
+                for agent in ('engineer', 'member'):
+                    await seed_agent(client, space, project=name, agent=agent, allowed_clients=['codex', 'claude_code'])
+            session = 'synthetic-shared-session'
+
+            async def begin(agent, source='codex'):
+                token = 'fuli-task-' + uuid4().hex
+                r = await client.put('/v1/task-contexts', json=dict(personal_space_id=space, personal_project_id=project,
+                    project_agent_id=agent, session_id=session, source_application=source, token=token))
+                assert r.status_code == 200, r.text
+                r = await client.post('/v1/agent-conversations/begin', json=dict(personal_space_id=space,
+                    personal_project_id=project, agent_id=agent, source_application=source, session_id=session,
+                    task_context_token=token))
+                assert r.status_code == 200, r.text
+                return r.json()['conversation_id']
+
+            async def task(name):
+                r = await client.post('/v1/project-agent-tasks', json={'personal_space_id': space,
+                    'personal_project_id': name, 'idempotency_key': 'synthetic-receipt-task-' + name,
+                    'title': 'Synthetic receipt task', 'objective': 'Verify receipt links.', 'work_kind': 'implementation',
+                    'lead_agent_id': 'engineer', 'collaborator_agent_ids': ['member'], 'source_application': 'codex',
+                    'routing_reason': 'Synthetic routing.'})
+                assert r.status_code == 200, r.text
+                return {**r.json()['task'], 'project': name}
+
+            async def receipt(found, key, summary, **source):
+                r = await client.post(f'/v1/project-agent-tasks/{found["task_id"]}/events', json={
+                    'personal_space_id': space, 'personal_project_id': found['project'],
+                    'task_id': found['task_id'], 'agent_id': 'member', 'status': found['status'],
+                    'idempotency_key': f'synthetic-receipt-{key}', 'summary': summary, **source})
+                assert r.status_code == 200, r.text
+
+            held = await begin('engineer')
+            here, there = await task(project), await task(other)
+            await receipt(here, 'linked', 'Ran the release checks', source_application='codex', source_session_id=session)
+            await receipt(here, 'other-client', 'Another client', source_application='claude_code', source_session_id=session)
+            await receipt(here, 'no-session', 'No native session', source_application='codex')
+            await receipt(there, 'other-project', 'Another project', source_application='codex', source_session_id=session)
+
+            async def listed():
+                r = await client.post('/v1/agent-conversations/query', json=dict(personal_space_id=space,
+                    personal_project_id=project, agent_id='engineer', mode='list', with_progress=True))
+                assert r.status_code == 200, r.text
+                return next(row for row in r.json()['conversations'] if row['id'] == held)
+
+            activity = (await listed())['task_activity']
+            assert activity['summary'] == 'Ran the release checks'
+            assert activity['source']['agent_id'] == 'member' and activity['source']['client'] == 'codex'
+            assert activity['source']['task_id'] == here['task_id'] and activity['source']['event_id']
+            # The same native session now also works on the member's own conversation here: ambiguous.
+            await begin('member')
+            assert (await listed())['task_activity'] is None
     asyncio.run(scenario())

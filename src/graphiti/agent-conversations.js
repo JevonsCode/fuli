@@ -159,10 +159,13 @@ export async function queryConversations(application, input) {
   const result = await application.personal.conversation('query', { ...conversationScope(application, input),
     mode: input.mode ?? 'list', ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
     ...(input.topic ? { topic: input.topic } : {}),
-    // A progress view (Jefa's list_project_conversations): each row's last task results.
+    // A progress view (Jefa's list_project_conversations): each row's evidence of
+    // progress, and a keyset page that starts after the previous page's last row.
     ...(input.withProgress ? { with_progress: true } : {}),
+    ...(input.afterPosition ? { after_activity: input.afterPosition.lastActivity, after_id: input.afterPosition.id } : {}),
     after: input.after ?? 0, limit: input.limit ?? (input.mode === 'events' ? 3 : 10) });
-  if (!Array.isArray(result.conversations)) return result;
+  // A progress view names conversations and continues none, so it needs no continuation prompt.
+  if (!Array.isArray(result.conversations) || input.withProgress) return result;
   return { ...result, conversations: result.conversations.map(conversation => ({ ...conversation,
     continuation_prompt: agentContinuation(input.personalProjectId, input.agentId, conversation.id).prompt })) };
 }
