@@ -49,6 +49,9 @@ class ConversationQuery(ConversationScope):
         if (self.after_activity is None) != (self.after_id is None):
             raise ValueError('after_activity and after_id are given together')
         return self
+    # events only: read exactly the event at sequence after + 1 with this event_id
+    # (a digest task's source), or nothing; never the next event in its place.
+    event_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class ConversationEvent(StrictModel):

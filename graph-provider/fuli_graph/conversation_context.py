@@ -55,8 +55,12 @@ def is_progress(summary):
     return bool(text) and text not in AUTOMATIC_CLOSE_SUMMARIES
 
 
-def add_task_result(digest, at, status, summary):
-    result = {'at': at, 'status': status, 'summary': summary}
+def add_task_result(digest, at, status, summary, source=None):
+    """One task result; source points at the checkpoint event that wrote it
+    (sequence, event_id, client, session_id), read back with read_agent_conversation
+    mode events after sequence - 1, limit 1. No source when it is not certain."""
+    # source None: written with this field, but no single checkpoint event matched.
+    result = {'at': at, 'status': status, 'summary': summary, 'source': source}
     tasks = [*digest.get('tasks', []), result]
     # The latest result with evidence is kept beside the window, so automatic closes
     # after it, however many, never push it out.

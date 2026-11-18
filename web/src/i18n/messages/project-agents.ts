@@ -48,6 +48,16 @@ export const projectAgentMessages = {
       memory: { decisions: '决定', openThreads: '未完成事项', nextActions: '下一步' },
       digestTitle: '压缩摘录', digestHint: '较早消息折叠后的索引：每条用户请求的第一行，以及 Agent 客户端自己压缩上下文时写下的摘要。不是工作记忆，以下方原文为准。',
       kinds: { request: '请求', compaction: '客户端压缩摘要' },
+      tasks: {
+        title: '任务小结',
+        hint: '这些是 Agent 收尾时写的工作小结，原话在下方对话记录里。',
+        view: '查看原记录',
+        loading: '正在读取这条小结的原记录',
+        unknown: '来源未知',
+        unavailable: '原记录不可用：它已不在原来的位置，不显示别的记录。',
+        failed: '原记录读取失败，请重试。',
+        source: '任务小结（checkpoint #{sequence}）· {client} · 会话 {session}',
+      },
       truncated: '已截断', omitted: '另有 {count} 行未摘录或因容量被移除，可在原文中查看。',
     },
     workHistory: {
@@ -420,6 +430,16 @@ export const projectAgentMessages = {
       memory: { decisions: 'Decisions', openThreads: 'Open work', nextActions: 'Next actions' },
       digestTitle: 'Compacted extract', digestHint: 'Index of folded earlier messages: the first line of each user request, plus the summaries the Agent client wrote when it compacted its own context. It is not working memory; the originals below are authoritative.',
       kinds: { request: 'Request', compaction: 'Client compaction summary' },
+      tasks: {
+        title: 'Task results',
+        hint: 'These are the work summaries an Agent wrote when it finished a task; the original words are in the conversation below.',
+        view: 'View original record',
+        loading: 'Reading the original record of this result',
+        unknown: 'Source unknown',
+        unavailable: 'Original record unavailable: it is no longer where it was, and no other record is shown.',
+        failed: 'Could not read the original record. Try again.',
+        source: 'Task result (checkpoint #{sequence}) · {client} · session {session}',
+      },
       truncated: 'truncated', omitted: '{count} more lines were not extracted or were dropped for space; see the originals.',
     },
     workHistory: {

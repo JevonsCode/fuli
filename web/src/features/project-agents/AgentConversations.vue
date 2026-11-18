@@ -6,13 +6,25 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { saveFile } from '@/lib/save-file'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { z } from 'zod'
+import { shapeOf } from '@/api/response-shape'
+import { clientName } from '@/features/capture/capture-change'
 
 const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
 interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
 interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; compacted_through: number; raw_retained: boolean; continuation_prompt?: string }
 interface Message { role: string; content: unknown; kind: string; sequence: number }
 interface DigestEntry { kind: string; text: string; sources: Array<{ role: string; sequence: number }>; truncated?: boolean }
-interface Digest { notes?: string[]; entries?: DigestEntry[]; omitted?: number }
+// A task result names the checkpoint event its write recorded; null when that is unknown.
+interface TaskSource { sequence: number; event_id: string; client: string; session_id: string }
+interface DigestTask { at: string; status: string; summary: string; source?: TaskSource | null }
+interface Digest { notes?: string[]; entries?: DigestEntry[]; omitted?: number; tasks?: DigestTask[] }
+type SourceEvent = z.infer<typeof sourceEventSchema>
+// The exact source read, checked at the boundary: a missing field is a mismatch (isSource), not a crash.
+const sourceEventSchema = z.looseObject({ sequence: z.number(), event_id: z.string().optional(), kind: z.string().optional(),
+  client: z.string().nullable().optional(), session_id: z.string().nullable().optional(), content: z.unknown() })
+const sourcePageShape = shapeOf(z.looseObject({ events: z.array(sourceEventSchema).optional(), source_check: z.string().optional() }))
+type SourceView = { state: 'loading' | 'unavailable' | 'failed' } | { state: 'verified'; event: SourceEvent }
 interface MessagePage { events: Message[]; next_cursor?: number; has_more?: boolean; digest?: Digest | null }
 interface WorkingMemory { summary: string; decisions: string[]; openThreads: string[]; nextActions: string[] }
 interface MemoryView { revision: number; current: { revision: number; createdAt: string; sourceApplication?: string; memory: WorkingMemory | null; memoryState?: 'present' | 'scrubbed'; scrubbedBy?: string } | null }
@@ -29,6 +41,8 @@ const error = ref('')
 const selectedId = ref('')
 const messages = ref<Message[]>([])
 const digest = ref<Digest | null>(null)
+// The original record of each task result a person opened, by its position in digest.tasks.
+const sources = ref<Record<number, SourceView>>({})
 const messagesLoading = ref(false)
 const messagesError = ref('')
 const nextCursor = ref<number>()
@@ -121,7 +135,7 @@ async function readMessages(id: string, more = false) {
   if (messagesLoading.value) return
   const current = ++messageVersion
   selectedId.value = id; messagesError.value = ''; messagesLoading.value = true
-  if (!more) { messages.value = []; digest.value = null; nextCursor.value = undefined; hasMore.value = false }
+  if (!more) { messages.value = []; digest.value = null; sources.value = {}; nextCursor.value = undefined; hasMore.value = false }
   try {
     const page = await postJson<MessagePage>('/api/agent-conversations/query', {
       ...scope(), mode: 'events', conversationId: id, limit: 20,
@@ -134,6 +148,28 @@ async function readMessages(id: string, more = false) {
     hasMore.value = page.has_more === true && page.next_cursor !== undefined
   } catch (cause) { if (current === messageVersion) messagesError.value = failure(cause) }
   finally { if (current === messageVersion) messagesLoading.value = false }
+}
+// Exactly the checkpoint a task result names: the same sequence and event ID, or unavailable;
+// never the event that now comes next (the Provider checks both, and so does this page).
+// The original only when it is the one event the source names, as a checkpoint written by that client and session.
+function isSource(page: { events?: SourceEvent[]; source_check?: string }, event: SourceEvent | undefined, source: TaskSource) {
+  return page.source_check === 'verified' && (page.events?.length ?? 0) === 1 && event?.sequence === source.sequence
+    && event.event_id === source.event_id && event.client === source.client && event.session_id === source.session_id
+    && event.kind === 'checkpoint'
+}
+async function viewSource(index: number, source: TaskSource) {
+  const conversationId = selectedId.value
+  const current = messageVersion
+  sources.value = { ...sources.value, [index]: { state: 'loading' } }
+  try {
+    const page = await postJson('/api/agent-conversations/query', {
+      ...scope(), mode: 'events', conversationId, after: source.sequence - 1, limit: 1, eventId: source.event_id }, sourcePageShape)
+    if (current !== messageVersion) return
+    const [event] = page.events ?? []
+    sources.value = { ...sources.value, [index]: isSource(page, event, source) ? { state: 'verified', event } : { state: 'unavailable' } }
+  } catch {
+    if (current === messageVersion) sources.value = { ...sources.value, [index]: { state: 'failed' } }
+  }
 }
 function settingsToggle(event: Event) {
   settingsOpen.value = (event.target as HTMLDetailsElement).open
@@ -246,7 +282,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
           </div>
           <div v-if="selectedId === conversation.id" class="conversation-messages">
             <p v-if="conversation.raw_retained" class="conversation-hint">{{ t('projectAgents.conversations.rawRetained') }}</p>
-            <section v-if="digest && (digest.entries?.length || digest.notes?.length || digest.omitted)" data-conversation-digest class="conversation-digest">
+            <section v-if="digest && (digest.entries?.length || digest.notes?.length || digest.omitted || digest.tasks?.length)" data-conversation-digest class="conversation-digest">
               <h4>{{ t('projectAgents.conversations.digestTitle') }}</h4>
               <p class="conversation-hint">{{ t('projectAgents.conversations.digestHint') }}</p>
               <ul>
@@ -257,6 +293,26 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
                 </li>
               </ul>
               <p v-if="digest.omitted" class="conversation-hint">{{ t('projectAgents.conversations.omitted', { count: digest.omitted }) }}</p>
+              <template v-if="digest.tasks?.length">
+                <h4>{{ t('projectAgents.conversations.tasks.title') }}</h4>
+                <p class="conversation-hint">{{ t('projectAgents.conversations.tasks.hint') }}</p>
+                <ul data-digest-tasks>
+                  <li v-for="(task, index) in digest.tasks" :key="`task:${index}:${task.at}`" data-digest-task>
+                    <span class="digest-kind">{{ t('projectAgents.workHistory.' + task.status) }}</span>{{ task.summary }}
+                    <span v-if="!task.source" class="digest-source" data-source-unknown>{{ t('projectAgents.conversations.tasks.unknown') }}</span>
+                    <template v-else>
+                      <Button v-if="!sources[index] || sources[index].state === 'failed'" size="sm" variant="ghost" data-view-source @click="viewSource(index, task.source)">{{ t('projectAgents.conversations.tasks.view') }}</Button>
+                      <GrowthLoading v-if="sources[index]?.state === 'loading'" variant="inline" :label="t('projectAgents.conversations.tasks.loading')" />
+                      <p v-else-if="sources[index]?.state === 'failed'" role="alert" class="conversation-hint">{{ t('projectAgents.conversations.tasks.failed') }}</p>
+                      <p v-else-if="sources[index]?.state === 'unavailable'" class="digest-source" data-source-unavailable>{{ t('projectAgents.conversations.tasks.unavailable') }}</p>
+                      <blockquote v-else-if="sources[index]?.state === 'verified'" class="task-source" data-source-record>
+                        <span class="digest-source">{{ t('projectAgents.conversations.tasks.source', { sequence: (sources[index] as { event: SourceEvent }).event.sequence, client: clientName((sources[index] as { event: SourceEvent }).event.client ?? ''), session: (sources[index] as { event: SourceEvent }).event.session_id ?? '' }) }}</span>
+                        <pre>{{ content((sources[index] as { event: SourceEvent }).event.content) }}</pre>
+                      </blockquote>
+                    </template>
+                  </li>
+                </ul>
+              </template>
             </section>
             <ol><li v-for="message in messages" :key="message.sequence"><strong>{{ role(message.role) }} #{{ message.sequence }}</strong><pre>{{ content(message.content) }}</pre></li></ol>
             <GrowthLoading v-if="messagesLoading" variant="compact" :label="t('projectAgents.conversations.loadingMessages')" />
@@ -317,6 +373,8 @@ ol { padding: 0; list-style: none; margin: 0; }
 .memory-summary { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
 .digest-kind { font-weight: 650; margin-right: 8px; }
 .digest-source { display: block; color: var(--color-muted); font-size: 12px; }
+.task-source { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--color-surface-subtle); }
+.task-source pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; max-height: 320px; overflow: auto; margin-block: 8px; }
 textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--color-control-border); border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: var(--color-surface); resize: vertical; }
 button:disabled { cursor: wait; opacity: .65; }
