@@ -1,4 +1,5 @@
 import { callAgentTool } from '../agent-tools.js';
+import { lifecycleHookClient, runLifecycleEvent } from '../agents/lifecycle-events.js';
 import { nativeSessionEnv } from '../agents/native-session-env.js';
 import { runAsRunnerCall } from '../app/agent-request-context.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
@@ -42,12 +43,15 @@ const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge']);
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
 const SESSION_ID = ENTRY_ID;
+// A forwarded prompt hook gets what a client's hook process would: the clients wait 30 s.
+const HOOK_TIMEOUT_MS = 25_000;
 // The owner name an MCP session gives a checkpoint call (create-mcp-server.js invoke).
 const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
 // consoleOrigin(): the host console's own loopback origin, or null before it listens.
+// runtimeConfigPath: this host's graph runtime configuration, which a forwarded prompt hook runs with.
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
-  consoleOrigin = () => null, createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
+  consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool, now = Date.now }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -110,6 +114,10 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   async function route(request, response, { fingerprint, pathname }) {
     if (pathname === RUNNER_PATHS.console || pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
       relayToConsole(request, response, { consoleOrigin: consoleOrigin(), prefix: RUNNER_PATHS.console, fingerprint });
+    } else if (pathname === RUNNER_PATHS.hook) {
+      if (request.method !== 'POST') return void methodNotAllowed(response);
+      const answer = await promptHook(fingerprint, await readJson(request));
+      sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION });
     } else if (pathname === RUNNER_PATHS.workspace) {
@@ -131,6 +139,25 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const answer = await replay(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     }
+  }
+
+  // A runner client's prompt hook (hook-forwarding.js), entered here as the console enters a local
+  // hook's: for the client's own session, in the folder the runner described, without its transcript.
+  async function promptHook(fingerprint, body) {
+    const client = lifecycleHookClient(body?.client);
+    if (!client || body.event !== 'UserPromptSubmit' || !runtimeConfigPath || !body.payload
+      || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+      return { status: 400, body: { error: 'hook_invalid' } };
+    }
+    rememberFolder(fingerprint, parseWorkspaceFacts(body.facts));
+    const { transcript_path: _absent, ...payload } = body.payload;
+    const env = Object.fromEntries(client.envNames.filter((name) => typeof body.env?.[name] === 'string')
+      .map((name) => [name, body.env[name]]));
+    const result = await runAsRunnerCall(fingerprint, () => runWithCallerWorkspaces(lookup(fingerprint), () => runHook({
+      client: body.client, argv: ['--fuli-lifecycle', '--runtime-config', runtimeConfigPath, '--event', 'UserPromptSubmit'],
+      env, cwd: process.cwd(), stdin: [Buffer.from(JSON.stringify(payload))], timeoutMs: HOOK_TIMEOUT_MS },
+    { baseEnv: process.env })));
+    return { status: 200, body: { stdout: String(result.stdout ?? ''), exitCode: result.exitCode ?? 0 } };
   }
 
   async function pair(request, response, { fingerprint, address }) {

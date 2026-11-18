@@ -94,7 +94,14 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs }) {
   // (docs/runner.md): nothing loads, and a prompt says so, as the plugin hook does.
   if (runnerRuntimeConfig(argv)) {
     if (argv[argv.indexOf('--event') + 1] === 'UserPromptSubmit') {
-      process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
+      // The host enters the task for the client's own session (src/runner/hook-forwarding.js), loaded only now.
+      const stdin = await readStdin(process.stdin, Math.min(STDIN_WAIT_MS, timeoutMs));
+      const configPath = argv[argv.indexOf('--runtime-config') + 1];
+      const { forwardHookToHost } = await import('../runner/hook-forwarding.js');
+      const answer = stdin.complete ? await forwardHookToHost({ dataDir: dirname(resolve(configPath)), client,
+        event: 'UserPromptSubmit', env: namedEnvironment(process.env, envNames), stdin: stdin.chunks, deadlineAt })
+        .catch(() => null) : null;
+      process.stdout.write(answer ? answer.stdout : `${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
         additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
     }
     process.exitCode = 0;

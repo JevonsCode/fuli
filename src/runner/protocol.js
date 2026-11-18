@@ -17,7 +17,9 @@ export const RUNNER_PATHS = Object.freeze({
   mcp: '/runner/1/mcp',
   replay: '/runner/1/replay',
   // A prefix: the host's console paths follow it (console-relay.js).
-  console: '/runner/1/console'
+  console: '/runner/1/console',
+  // A runner client's prompt hook, entered on the host (hook-forwarding.js).
+  hook: '/runner/1/hook'
 });
 // The client a runner's MCP session serves, named by its process (never a tool argument).
 export const SOURCE_APPLICATION_HEADER = 'x-fuli-source-application';
