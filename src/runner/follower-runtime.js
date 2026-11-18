@@ -8,7 +8,9 @@ import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
 import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
 import { startFollowerConsole, STATUS_PATH } from './follower-console.js';
+import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
+import { createRunnerClients } from './runner-clients.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // `fuli start | stop | restart | status | open` on a runner (docs/runner.md):
@@ -84,7 +86,7 @@ export function formatFollowerResult(command, result) {
   if (command === 'open') return `Opened: ${result.url}`;
   const host = result.host ? `${result.host.name}, ${result.host.reachable ? 'answering' : 'not reachable now'}` : 'not paired';
   const lines = [result.status === 'stopped' ? 'This computer is a runner; its console is not running.'
-    : `This computer is a runner. Console: ${result.url} (shows the host's FULI)`,
+    : `This computer is a runner. Console: ${result.url} (the host's FULI; 客户端接入 lists this computer's clients)`,
   ...(result.status === 'stopped' ? [] : [`Host: ${host}`, `Outbox: ${result.outbox ?? 0} waiting.`])];
   return lines.join('\n');
 }
@@ -94,7 +96,8 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity });
-  const served = await startFollowerConsole({ dataDir, port, store, connection });
+  const served = await startFollowerConsole({ dataDir, port, store, connection,
+    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }) }) });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {
     connection.close();

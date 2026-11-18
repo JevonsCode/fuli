@@ -1,6 +1,7 @@
 import { createServer as createHttpServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
+import { handleClientConnectionRequest } from '../http/client-connection-api-router.js';
 import { sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { listenServer } from '../server/listen.js';
@@ -13,13 +14,15 @@ import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
 // (console-relay.js on the host); while the host is away, a page says so and
 // how many writes wait in the outbox. STATUS_PATH answers here, never from the
 // host: it is how `fuli status` and the app know this entry is running.
+// 客户端接入 (/api/system/client-connection…) answers here from `clients`
+// (runner-clients.js): the clients that matter on a runner are its own.
 export const STATUS_PATH = '/__fuli-runner/status';
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'upgrade',
   'transfer-encoding', 'host', 'origin', 'referer']);
 
 
-export async function startFollowerConsole({ dataDir, port, store, connection, pid = process.pid,
+export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
   createServer = createHttpServer }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
@@ -43,8 +46,10 @@ export async function startFollowerConsole({ dataDir, port, store, connection, p
       sendJson(response, 403, { error: 'cross_origin' });
       return;
     }
+    const url = new URL(request.url ?? '/', 'http://runner.invalid');
+    if (clients && await handleClientConnectionRequest({ request, response, url, system: clients })) return;
     const host = store.host();
-    if (new URL(request.url ?? '/', 'http://runner.invalid').pathname === STATUS_PATH) {
+    if (url.pathname === STATUS_PATH) {
       const reached = host ? await connection.connect() : null;
       sendJson(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
         host: host ? { name: host.name, reachable: Boolean(reached), address: reached?.address ?? null } : null,

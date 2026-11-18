@@ -50,7 +50,7 @@ async function hostConsole(t) {
 }
 
 // A host listener with one paired runner, and that runner's console entry.
-async function pairedRunner(t) {
+async function pairedRunner(t, { clients = null } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -65,7 +65,7 @@ async function pairedRunner(t) {
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
   const connection = createHostConnection({ store, identity: runner, lookUp: async () => [] });
-  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection });
+  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients });
   t.after(async () => {
     await entry.close();
     connection.close();
@@ -146,6 +146,26 @@ test('a runner reads the host computer\'s clients but never connects, adds, rest
   }
   assert.equal(consoleSide.seen.length, 0);
   assert.equal((await get(`${entry.url}/api/system/client-connection/status`)).status, 200);
+});
+
+test('a runner\'s 客户端接入 lists and connects this computer\'s own clients, never the host\'s', async (t) => {
+  const connected = [];
+  const clients = {
+    clientConnection: () => ({ standard: { mcpServers: {} } }),
+    clientConnectionStatus: async () => ({ clients: [{ id: 'codex', label: 'Codex on the runner', status: 'connected' }] }),
+    connectClient: async (input) => { connected.push(input.clientId); return { id: input.clientId, status: 'connected' }; },
+    restartClient: async () => ({ status: 'restarted' }),
+    addCustomClient: async () => ({ id: 'custom-client' }),
+    removeCustomClient: async () => ({ removed: true })
+  };
+  const { entry, consoleSide } = await pairedRunner(t, { clients });
+  const status = await get(`${entry.url}/api/system/client-connection/status`);
+  assert.equal(JSON.parse(status.text).clients[0].label, 'Codex on the runner');
+  const connect = await get(`${entry.url}/api/system/client-connection/connect`, { method: 'POST', body: '{"clientId":"codex"}',
+    headers: { 'content-type': 'application/json' } });
+  assert.equal(connect.status, 200);
+  assert.deepEqual(connected, ['codex']);
+  assert.equal(consoleSide.seen.length, 0, 'nothing of it reaches the host');
 });
 
 test('the entry answers only to this computer under its own name, and says when the host is away', async (t) => {
