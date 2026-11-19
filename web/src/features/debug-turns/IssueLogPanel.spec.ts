@@ -4,6 +4,29 @@ import IssueLogPanel from './IssueLogPanel.vue'
 
 afterEach(() => vi.unstubAllGlobals())
 
+it.each([401, 403])('drops the preview and copy action when access is refused with %i', async (status) => {
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(Response.json({ markdown: 'initial host snapshot' }))
+    .mockResolvedValueOnce(new Response(null, { status }))
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(Response.json({ markdown: 'freshly authorized snapshot' })))
+  const panel = mount(IssueLogPanel)
+  await flushPromises()
+  expect((panel.get('textarea').element as HTMLTextAreaElement).value).toBe('initial host snapshot')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await panel.get('[data-issue-refresh]').trigger('click')
+    await flushPromises()
+    expect(panel.get('[data-issue-denied]').text()).toContain('宿主')
+    expect(panel.find('textarea').exists()).toBe(false)
+    expect(panel.find('[data-issue-copy]').exists()).toBe(false)
+  }
+  await panel.get('[data-issue-refresh]').trigger('click')
+  await flushPromises()
+  expect((panel.get('textarea').element as HTMLTextAreaElement).value).toBe('freshly authorized snapshot')
+  expect(panel.find('[data-issue-copy]').exists()).toBe(true)
+  panel.unmount()
+})
+
 it('copies exactly the visible Markdown and preserves a dated report when refresh fails', async () => {
   const markdown = '## FULI 故障日志\nGET spaces | provider_http_5xx | HTTP 503'
   const fetch = vi.fn().mockResolvedValueOnce(Response.json({ markdown }))

@@ -85,7 +85,10 @@ versions, OS, the newest 30 retained failures, MCP configuration and counts of r
 version. A slow configuration scan still returns the local events. Configuration describes the client's entry,
 and a process count describes locally observed servers. Neither checks a client's end-to-end handshake.
 Paths, session identifiers, custom client names, free-text errors and conversation content stay outside the report.
-The console serves this same preview at the loopback-only `GET /api/diagnostics/issue-report` endpoint.
+The host console serves this preview at `GET /api/diagnostics/issue-report` for a direct local connection.
+The console uses the operating system's local-user boundary. Paired runners, LAN clients, forwarded
+requests and delegated Agent requests cannot read the preview. If access is denied, the page discards
+its previous preview and disables copying until the host grants access again.
 
 All three readers use the same filters and return the same answer: `from` / `to` (ISO 8601), `component`, `level`,
 `code`, `limit` (1–100, default 50) and `cursor`. Events come newest first. The answer includes:
@@ -104,7 +107,9 @@ The readers are:
 - **HTTP**: `GET /api/diagnostics/events?component=provider&limit=20` on the local console. Only loopback requests are
   answered (others get 403 `local_user_only`).
 - **Agent tool**: `read_diagnostic_events`, a read-only full-profile tool. A chat-profile Agent reads its schema with
-  `list_agent_interfaces("read_diagnostic_events")` and calls it with `fuli_call`.
+  `list_agent_interfaces("read_diagnostic_events")` and calls it with `fuli_call`. Run it on the host.
+  The local Agent receives structured, sanitized event fields. A paired runner receives
+  `local_user_only` even when offline.
 - **CLI**: `fuli diagnostics [--from ISO] [--to ISO] [--component …] [--level …] [--code CODE] [--limit N]
   [--cursor C] [--json] [--data-dir DIR]` reads the files directly, so it works while the console or MCP server is
   down. It exits with code 2 when a log file could not be read.

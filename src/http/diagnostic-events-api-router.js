@@ -1,3 +1,4 @@
+import { DELEGATION_HEADER } from '../agent-delegation/delegation-header.js';
 import { diagnosticEventsAnswer } from '../diagnostics/query.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { sendJson } from './response.js';
@@ -16,7 +17,11 @@ export async function handleDiagnosticEventsRequest({ request, response, url, di
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (refuseRemoteDecision(request, response, 'FULI\'s diagnostic events are read only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'FULI\'s diagnostic events are read only on this computer', { directHost: true })) return true;
+  if (url.pathname === REPORT_PATH && request.headers?.[DELEGATION_HEADER] !== undefined) {
+    sendJson(response, 403, { error: 'Open the local host console to read the Issue report.', code: 'local_user_only' });
+    return true;
+  }
   if (url.pathname === REPORT_PATH && readIssueReport) {
     sendJson(response, 200, { markdown: await readIssueReport(url.searchParams.get('locale')) });
     return true;
