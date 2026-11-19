@@ -10,29 +10,31 @@ import ModelFailureNote from './ModelFailureNote.vue'
 import ModelUseCard from './ModelUseCard.vue'
 import type { ModelRoleView } from './model'
 import { stateTone } from './model-uses'
+import { useAuthorizeReturn } from './useAuthorizeReturn'
 import { useDreaming } from './useDreaming'
 
 // Dreaming, one of Astro's tasks, as a compact use card (11-11): one line of
-// how it stands (how many projects have new sessions and when it last ran,
-// what the runs just found, or what did not finish and why) and one action in
-// one place: 整理全部, 重试 after a failure, or Astro's settings without a
-// model. The projects, each with its own run, open in 「查看详情」.
-const props = withDefaults(defineProps<{ status?: ModelRoleView['state']; model?: string | null }>(),
-  { status: 'not_configured', model: null })
-const emit = defineEmits<{ edit: []; checked: [] }>()
+// how it stands (how many new sessions wait and what a run does with them,
+// the run going on and its place in the queue, what the runs just found, or
+// what did not finish and why) and one action in one place: 整理全部, 重试
+// after a failure, 去授权 when no project may be sent yet, or Astro's settings
+// without a model. The projects, each with its own run, and the steps of a
+// run open in 「查看详情」 (rec issue 143).
+const props = withDefaults(defineProps<{ status?: ModelRoleView['state']; model?: string | null; settingsOpen?: boolean }>(),
+  { status: 'not_configured', model: null, settingsOpen: false })
+const emit = defineEmits<{ edit: []; authorize: []; checked: [] }>()
 
 const dreaming = useDreaming()
 const details = ref(false)
 const listed = computed(() => dreaming.readiness === 'ready')
 const runLabel = computed(() => (dreaming.running
   ? t(dreaming.running.fromStart ? 'modelSettings.dreaming.rereading' : 'modelSettings.dreaming.running', { name: dreaming.running.name }) : ''))
+// Back from approving projects: read again, and reopen the details if they were open.
+const authorize = useAuthorizeReturn(() => props.settingsOpen, details, () => dreaming.load(), () => emit('authorize'))
 
 onMounted(() => void dreaming.load())
 
-function openAstro() {
-  details.value = false
-  emit('edit')
-}
+const openAstro = () => emit('edit')
 </script>
 
 <template>
@@ -48,7 +50,7 @@ function openAstro() {
     <p v-else-if="dreaming.readiness === 'unavailable'" class="dreaming-note is-error" role="alert" data-dreaming-unavailable>{{ t('modelSettings.dreaming.unavailable') }}</p>
     <ModelFailureNote v-else-if="dreaming.summary.kind === 'failed'" :text="dreaming.summary.text" role="assistant" :model="model ?? ''"
       data-dreaming-failed @checked="emit('checked')" />
-    <p v-else class="dreaming-note" :title="dreaming.summary.text" data-dreaming-summary>
+    <p v-else class="dreaming-note" :role="dreaming.summary.kind === 'running' ? 'status' : undefined" :title="dreaming.summary.text" data-dreaming-summary>
       {{ dreaming.summary.text }}
       <RouterLink v-if="dreaming.summary.kind === 'found' && dreaming.summary.queued > 0" to="/inbox" class="dreaming-confirm" data-dreaming-confirm>
         {{ t('modelSettings.dreaming.confirm') }}
@@ -67,13 +69,16 @@ function openAstro() {
       <Button v-else-if="dreaming.failed.length" size="sm" :loading="dreaming.running !== null" :loading-label="runLabel" data-dreaming-retry @click="dreaming.retry()">
         {{ t('modelSettings.retryAction') }}
       </Button>
+      <Button v-else-if="dreaming.onlyUnapproved" size="sm" data-dreaming-authorize @click="authorize">
+        {{ t('modelSettings.uses.authorize') }}
+      </Button>
       <Button v-else-if="listed" size="sm" :variant="dreaming.pending.length ? 'default' : 'outline'" :disabled="!dreaming.pending.length"
         :loading="dreaming.running !== null" :loading-label="runLabel" data-dreaming-run-all @click="dreaming.runAll()">
         {{ t('modelSettings.dreaming.runAll') }}
       </Button>
     </template>
   </ModelUseCard>
-  <DreamingDialog :open="details" :dreaming="dreaming" :model="model" @close="details = false" @edit="openAstro" @checked="emit('checked')" />
+  <DreamingDialog :open="details" :dreaming="dreaming" :model="model" @close="details = false" @authorize="authorize" @checked="emit('checked')" />
 </template>
 
 <style scoped>

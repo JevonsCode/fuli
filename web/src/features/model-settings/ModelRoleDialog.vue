@@ -31,7 +31,11 @@ import {
 // with the revision it was read at; the server validates and refuses a file
 // that changed meanwhile, and the page then shows what it read again.
 // projectsLoaded: whether `projects` was read yet; the page reads it alongside the settings.
-const props = defineProps<{ role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[]; projectsLoaded: boolean }>()
+// A use can open the form directly at the projects it needs permission to send.
+const props = defineProps<{
+  role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[]
+  projectsLoaded: boolean; focus?: 'projects' | null
+}>()
 // Projects whose content may go to the model: every project in use, formal and temporary; archived ones are not offered.
 const offeredProjects = computed(() => props.projects.filter(project => !isArchivedProject(project)))
 const approvedProject = (project: PersonalProject) => ({ personalSpaceId: project.personal_space_id, personalProjectId: project.project_id })
@@ -80,6 +84,13 @@ watch(() => props.role, (role) => {
   error.value = ''
   refreshModels()
 }, { immediate: true })
+// Opened to approve projects: the project list is marked and is the dialog's first focus
+// ([autofocus], which useModalDialog focuses once the dialog shows). It scrolls into view when
+// that focus reaches it, so keyboard and view both start there; Tab goes on to its controls.
+const asked = computed(() => Boolean(props.role) && props.focus === 'projects')
+function showAsked(event: FocusEvent) {
+  if (asked.value && event.target === event.currentTarget) (event.currentTarget as HTMLElement).scrollIntoView({ block: 'center' })
+}
 
 const name = computed(() => (props.role ? roleName(props.role) : ''))
 const presetOptions = computed(() => SEMANTIC_PRESETS.map(value => ({ value, label: t(`modelSettings.semantic.presets.${value}`) })))
@@ -217,7 +228,8 @@ async function save() {
         <FieldLabel for="model-role-terms">{{ t('modelSettings.retrievalTerms.enable') }}</FieldLabel>
       </Field>
 
-      <fieldset class="model-role-fieldset">
+      <fieldset class="model-role-fieldset" :class="{ 'is-asked': asked }" :tabindex="asked ? -1 : undefined" :autofocus="asked || undefined"
+        data-model-egress @focus="showAsked">
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>
         <GrowthLoading v-if="!projectsLoaded" variant="inline" :label="t('modelSettings.loadingProjects')" data-model-projects-loading />
         <p v-else-if="!offeredProjects.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
@@ -306,6 +318,8 @@ async function save() {
 .model-role-wide { grid-column: 1 / -1; }
 .model-role-fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .model-role-fieldset legend { margin-bottom: 4px; font-size: 14px; font-weight: 500; }
+/* Opened from a use's 去授权: the list the person came for is marked. */
+.model-role-fieldset.is-asked legend { color: var(--color-gold); }
 .model-role-check { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .model-role-advanced :deep(.model-role-advanced-trigger) { padding-block: 8px; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .model-role-advanced :deep(.model-role-advanced-body) { display: grid; gap: 16px; padding-top: 8px; }
