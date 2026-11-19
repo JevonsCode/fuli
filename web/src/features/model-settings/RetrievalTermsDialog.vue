@@ -9,7 +9,8 @@ import { useAdvice } from './model-uses'
 import type { RetrievalTerms } from './useRetrievalTerms'
 
 // 「查看详情」 of 补检索词 (11-11): the project choice, then how filling works
-// in three steps, each with what the server answered of it (rec issue 143): the
+// in three steps, shown also for a project not yet approved (all still to
+// come until it is counted), each with what the server answered of it (rec issue 143): the
 // count, what the 20-item self-test measured or why it stopped, and the fill's
 // written of total. Under them the advice and the cost of the rest, for the
 // choice to fill it or not. A fill the model stopped answering says so with
@@ -30,17 +31,18 @@ const emit = defineEmits<{ close: []; authorize: []; checked: [] }>()
         <ModelFailureNote v-if="terms.failed" :text="terms.line" role="assistant" :model="model ?? ''" @checked="emit('checked')" />
         <ModelFailureNote v-else-if="terms.trialFailure?.model" :text="t('modelSettings.retrievalTerms.trialStopped', { reason: terms.trialFailure.text })" role="assistant"
           :model="model ?? ''" @checked="emit('checked')" />
-        <UseSteps :steps="terms.steps" :label="t('modelSettings.retrievalTerms.stepsLabel')" />
-        <div v-if="terms.tested && terms.trial" class="terms-trial" data-terms-trial>
-          <p class="terms-result">
-            {{ t('modelSettings.retrievalTerms.result', { sample: terms.trial.sample ?? 0, before: terms.trial.before ?? 0, after: terms.trial.after ?? 0 }) }}
-            <strong :data-advice="terms.trial.advice">{{ t(`modelSettings.retrievalTerms.advice.${terms.trial.advice ?? 'not_worth'}`) }}</strong>
-          </p>
-          <p class="terms-line">
-            {{ t('modelSettings.retrievalTerms.cost', { perItem: terms.trial.tokens?.perItem ?? 0, remaining: terms.missing, projected: (terms.trial.tokens?.perItem ?? 0) * terms.missing }) }}
-          </p>
-        </div>
       </template>
+      <!-- Also before a project is approved: how filling works is read before agreeing to send anything. -->
+      <UseSteps v-if="!terms.error" :steps="terms.steps" :label="t('modelSettings.retrievalTerms.stepsLabel')" />
+      <div v-if="terms.tested && terms.trial && !terms.note" class="terms-trial" data-terms-trial>
+        <p class="terms-result">
+          {{ t('modelSettings.retrievalTerms.result', { sample: terms.trial.sample ?? 0, before: terms.trial.before ?? 0, after: terms.trial.after ?? 0 }) }}
+          <strong :data-advice="terms.trial.advice">{{ t(`modelSettings.retrievalTerms.advice.${terms.trial.advice ?? 'not_worth'}`) }}</strong>
+        </p>
+        <p class="terms-line">
+          {{ t('modelSettings.retrievalTerms.cost', { perItem: terms.trial.tokens?.perItem ?? 0, remaining: terms.missing, projected: (terms.trial.tokens?.perItem ?? 0) * terms.missing }) }}
+        </p>
+      </div>
     </div>
     <template #footer>
       <Button v-if="terms.needsApproval" size="sm" data-terms-authorize @click="emit('authorize')">{{ t('modelSettings.uses.authorize') }}</Button>

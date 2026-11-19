@@ -572,18 +572,20 @@ describe('ModelSettingsPage', () => {
     const termsRead = vi.fn(async () => ({ readiness: 'project_not_approved', stats: null, trial: null, run: null, busy: null }))
     const answer = api.getJson.getMockImplementation()!
     api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/retrieval-terms') ? termsRead() : answer(url)))
-    // jsdom has no layout, so no scrollIntoView of its own.
+    // jsdom has no layout, so no scrollIntoView of its own; the dialog's first focus calls it.
     const scrolled = vi.fn()
     Element.prototype.scrollIntoView = scrolled
     try {
       const wrapper = await mountPage()
       await wrapper.get('[data-retrieval-terms] [data-terms-authorize]').trigger('click')
       await flushPromises()
-      await new Promise(requestAnimationFrame)
       const dialog = wrapper.get('[data-model-role-dialog]')
       expect(dialog.find('[data-model-dreaming]').exists()).toBe(true)
       const egress = dialog.get('[data-model-egress]')
       expect(egress.classes()).toContain('is-asked')
+      // Keyboard focus starts in the project list ([autofocus] through useModalDialog), and it is scrolled into view.
+      expect(egress.attributes('autofocus')).toBeDefined()
+      expect(document.activeElement).toBe(egress.element)
       expect(scrolled).toHaveBeenCalledWith({ block: 'center' })
       expect(scrolled.mock.contexts).toEqual([egress.element])
 
@@ -594,9 +596,14 @@ describe('ModelSettingsPage', () => {
       expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
       expect(termsRead).toHaveBeenCalledTimes(reads + 1)
 
-      // Opened any other way, the form does not mark the projects.
+      // Opened any other way, the form does not mark, focus or scroll to the projects.
       await wrapper.get('[data-model-role="assistant"] [data-model-role-edit]').trigger('click')
-      expect(wrapper.get('[data-model-egress]').classes()).not.toContain('is-asked')
+      await flushPromises()
+      const plain = wrapper.get('[data-model-egress]')
+      expect(plain.classes()).not.toContain('is-asked')
+      expect(plain.attributes('autofocus')).toBeUndefined()
+      expect(plain.element.contains(document.activeElement)).toBe(false)
+      expect(scrolled).toHaveBeenCalledTimes(1)
     } finally {
       delete (Element.prototype as Partial<Element>).scrollIntoView
     }

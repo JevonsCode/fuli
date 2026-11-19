@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -72,15 +72,13 @@ watch(() => props.role, (role) => {
   error.value = ''
   refreshModels()
 }, { immediate: true })
-// Opened to approve projects: the project list is marked and scrolled into view once the dialog
-// shows; focus stays where the dialog puts it (useModalDialog).
-const egress = ref<HTMLFieldSetElement | null>(null)
+// Opened to approve projects: the project list is marked and is the dialog's first focus
+// ([autofocus], which useModalDialog focuses once the dialog shows). It scrolls into view when
+// that focus reaches it, so keyboard and view both start there; Tab goes on to its controls.
 const asked = computed(() => Boolean(props.role) && props.focus === 'projects')
-watch(asked, async (open) => {
-  if (!open) return
-  await nextTick()
-  requestAnimationFrame(() => egress.value?.scrollIntoView({ block: 'center' }))
-}, { immediate: true })
+function showAsked(event: FocusEvent) {
+  if (asked.value && event.target === event.currentTarget) (event.currentTarget as HTMLElement).scrollIntoView({ block: 'center' })
+}
 
 const name = computed(() => (props.role ? roleName(props.role) : ''))
 const presetOptions = computed(() => SEMANTIC_PRESETS.map(value => ({ value, label: t(`modelSettings.semantic.presets.${value}`) })))
@@ -214,7 +212,8 @@ async function save() {
         <FieldLabel for="model-role-terms">{{ t('modelSettings.retrievalTerms.enable') }}</FieldLabel>
       </Field>
 
-      <fieldset ref="egress" class="model-role-fieldset" :class="{ 'is-asked': asked }" data-model-egress>
+      <fieldset class="model-role-fieldset" :class="{ 'is-asked': asked }" :tabindex="asked ? -1 : undefined" :autofocus="asked || undefined"
+        data-model-egress @focus="showAsked">
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>
         <p v-if="!projectChoices.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
         <template v-else>

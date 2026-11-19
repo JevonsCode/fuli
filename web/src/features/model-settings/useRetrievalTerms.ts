@@ -16,7 +16,11 @@ import type { UseStep } from './use-steps'
 export function useRetrievalTerms(projects: () => readonly PersonalProject[], model: () => string | null) {
   const projectId = ref('')
   const state = ref<TermsState | null>(null)
-  const testing = ref(false)
+  // The project a self-test runs for; the chosen project shows it only when it is that one.
+  const testingFor = ref('')
+  const testing = computed(() => Boolean(testingFor.value) && testingFor.value === projectId.value)
+  // Every read gets a number; an answer for an older read or another project is dropped.
+  let reads = 0
   const declined = ref(false)
   const error = ref('')
   // Why the last self-test stopped before it measured anything, and whether the model is why.
@@ -80,6 +84,8 @@ export function useRetrievalTerms(projects: () => readonly PersonalProject[], mo
       ({ id, title: t(`modelSettings.retrievalTerms.steps.${id}.title`), detail: t(`modelSettings.retrievalTerms.steps.${id}.how`), ...extra })
     const stats = state.value?.stats
     const run = state.value?.run
+    // Nothing counted yet (a project not approved, or one still being read): every step is still to come.
+    if (!stats) return [step('count'), step('trial'), step('fill')]
     const count = step('count', stats ? { state: 'done', detail: missing.value ? t('modelSettings.retrievalTerms.missing', { count: missing.value, tokens: stats.roughTokens })
       : t('modelSettings.retrievalTerms.complete', { count: stats.items }) } : {})
     const sample = testing.value ? step('trial', { state: 'active', detail: t('modelSettings.retrievalTerms.testing', { name: projectName.value }) })
@@ -93,41 +99,61 @@ export function useRetrievalTerms(projects: () => readonly PersonalProject[], mo
   })
 
   watch(choices, (next) => { if (!projectId.value && next[0]) projectId.value = next[0].value }, { immediate: true })
-  watch(projectId, () => { declined.value = false; trialFailure.value = null; void load() }, { immediate: true })
+  // Another project: nothing of the last one stays on screen while its own state is read.
+  watch(projectId, () => {
+    declined.value = false
+    trialFailure.value = null
+    state.value = null
+    error.value = ''
+    void load()
+  }, { immediate: true })
   onBeforeUnmount(() => { unmounted = true; clearTimeout(timer) })
 
   async function load() {
     clearTimeout(timer)
-    if (!projectId.value) return
-    error.value = ''
-    try {
-      state.value = await readTerms(projectId.value)
-    } catch (cause) {
-      error.value = apiErrorReason(cause)
-    }
-    if (!unmounted && filling.value) timer = setTimeout(load, 3000)
-  }
-
-  async function act(action: () => Promise<unknown>) {
+    const id = projectId.value
+    if (!id) return
+    const read = ++reads
+    let next: TermsState | null = null
     let failure = ''
     try {
-      await action()
+      next = await readTerms(id)
     } catch (cause) {
       failure = apiErrorReason(cause)
     }
+    if (read !== reads || id !== projectId.value) return
+    error.value = failure
+    if (next) state.value = next
+    if (!unmounted && filling.value) timer = setTimeout(load, 3000)
+  }
+
+  // An action for the project chosen when it started; once another is chosen, its answer is not shown there.
+  async function act(action: (id: string) => Promise<unknown>) {
+    const id = projectId.value
+    let failure = ''
+    try {
+      await action(id)
+    } catch (cause) {
+      failure = apiErrorReason(cause)
+    }
+    if (id !== projectId.value) return
     await load()
-    if (failure) error.value = failure
+    if (failure && id === projectId.value) error.value = failure
   }
 
   async function test() {
-    testing.value = true
+    const id = projectId.value
+    testingFor.value = id
     declined.value = false
     trialFailure.value = null
-    await act(async () => { trialFailure.value = trialStopped(await trialTerms(projectId.value)) })
-    testing.value = false
+    await act(async () => {
+      const stopped = trialStopped(await trialTerms(id))
+      if (id === projectId.value) trialFailure.value = stopped
+    })
+    if (testingFor.value === id) testingFor.value = ''
   }
 
-  const fill = () => act(() => fillTerms(projectId.value))
+  const fill = () => act(id => fillTerms(id))
   const stop = () => act(stopTerms)
   const decline = () => { declined.value = true }
   const choose = (id: string) => { projectId.value = id }
