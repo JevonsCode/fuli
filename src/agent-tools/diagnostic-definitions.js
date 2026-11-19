@@ -8,7 +8,7 @@ export const DIAGNOSTIC_DEFINITIONS = [
   {
     name: 'read_diagnostic_events',
     title: 'READ · FULI runtime failures',
-    description: 'When FULI misbehaves: failures its hooks, HTTP API, Graph Provider start and MCP tools caught, newest first, '
+    description: 'FULI hook, HTTP, database request/startup, MCP configuration/startup/tool and roundtable wake failures, newest first, '
       + 'with counts. Empty is not healthy: check truncated, sourcesUnavailable and notCovered. Page with nextCursor.',
     inputSchema: objectSchema({
       from: { ...boundedString(40), description: 'ISO 8601 date-time' },

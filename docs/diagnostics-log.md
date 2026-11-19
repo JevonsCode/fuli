@@ -29,6 +29,7 @@ what it does not.
 | `code` | A fixed error code or class, such as `provider_not_ready` or `invalid_input` |
 | `reason` | A short, redacted sentence of at most 240 bytes |
 | `durationMs` | Optional: how long the operation ran before it failed |
+| `httpStatus` | HTTP error status when a console or database request received a response |
 | `correlationId` | Optional: the client session the failure belongs to |
 
 The `reason` comes only from a FULI error written for its caller or from a fixed sentence. A raw exception message is
@@ -45,6 +46,12 @@ user names and passwords are dropped, local paths become `[path]`, and long opaq
 - **Native Graph Provider start**: a start that fails because the Provider process exited during startup
   (`provider_exited`), never became ready (`provider_not_ready`) or is incompatible (`provider_incompatible`), or
   because the native services otherwise did not start.
+- **Database requests** record the method, route family, known failure code, duration and received HTTP status.
+  Personal graph, workspace and human-review requests use the same fields. Successful credential refreshes and
+  cancelled reads leave no request error.
+- **MCP configuration and startup** record a failed client scan, an outdated, unreadable or removed MCP entry,
+  a missing installation, and failures starting the stdio server after its runtime path is known.
+  Repeated scans of the same configuration problem produce one event until it clears or changes.
 - **MCP tool calls**: a tool call that throws, as `refused` with the tool's own code or as `failed` with
   `internal_error`. A `failed` reason names the error's class, its cause's code and the first line of FULI's own code
   that raised it (`Tool execution failed (TypeError at src/…/module.js:51)`), never its message.
@@ -62,15 +69,23 @@ created.
 
 - A **hard power loss** or OS crash, or a process **killed before it wrote** its event (for example a hook that hits
   its client's deadline and is terminated). Such a failure leaves no event.
-- Failures outside the five places above, including a hook that fails before it can find its runtime configuration.
+- Failures before FULI can write, including a client pointing to an executable that no longer exists.
 - 4xx answers a route sends directly without raising an error (for example a plain 404 or 405).
-- A Provider that exits **after** it started successfully. Only startup is watched.
+- A Provider exit between requests. Subsequent failed requests appear in the log.
 - Events refused at the hard cap while rotation was blocked, and events removed when `.3` is rotated out.
 - Successful operations, timings of successful operations, and warnings that did not fail anything.
 
 An empty answer therefore does not prove that FULI is healthy. Every answer repeats this in `notCovered`.
 
 ## Reading it
+
+Hold **Settings** for three seconds to open **Issue diagnostics**. Refresh after reproducing the problem, then
+choose **Copy for issue** and paste the preview into the issue. The Markdown includes the console and event
+versions, OS, the newest 30 retained failures, MCP configuration and counts of registered processes by client and
+version. A slow configuration scan still returns the local events. Configuration describes the client's entry,
+and a process count describes locally observed servers. Neither checks a client's end-to-end handshake.
+Paths, session identifiers, custom client names, free-text errors and conversation content stay outside the report.
+The console serves this same preview at the loopback-only `GET /api/diagnostics/issue-report` endpoint.
 
 All three readers use the same filters and return the same answer: `from` / `to` (ISO 8601), `component`, `level`,
 `code`, `limit` (1–100, default 50) and `cursor`. Events come newest first. The answer includes:

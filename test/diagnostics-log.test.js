@@ -228,6 +228,20 @@ test('GET /api/diagnostics/events answers this computer only, with the filters i
   assert.equal(filtered.response.body.total, 1);
 });
 
+test('the Issue report is loopback-only, read-only, uncached and independent of a graph or space', async () => {
+  const path = '/api/diagnostics/issue-report?locale=zh-CN';
+  let calls = 0;
+  const readIssueReport = locale => { calls++; assert.equal(locale, 'zh-CN'); return '## FULI'; };
+  for (const [extra, expected] of [[{ remoteAddress: '192.0.2.1' }, 403], [{ method: 'POST' }, 405], [{}, 200]]) {
+    const exchange = fakeExchange({ path, ...extra });
+    assert.ok(await handleDiagnosticEventsRequest({ ...exchange, readIssueReport }));
+    assert.equal(exchange.response.status, expected);
+    assert.equal(exchange.response.headers['cache-control'], 'no-store');
+    if (expected === 200) assert.deepEqual(exchange.response.body, { markdown: '## FULI' });
+  }
+  assert.equal(calls, 1);
+});
+
 test('read_diagnostic_events reads the same answer and is refused without a local log', async (t) => {
   const directory = await dataDir(t);
   const log = diagnosticEventLog(directory);

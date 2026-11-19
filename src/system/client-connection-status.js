@@ -53,7 +53,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
     const observedAt = now().toISOString();
     const answer = await detectClients(installer);
     if (answer.status !== 'available') {
-      return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [] };
+      return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [],
+        ...(answer.diagnosticCode ? { diagnosticCode: answer.diagnosticCode } : {}) };
     }
     const builtin = answer.clients.filter((client) => client.builtin);
     const waiting = new Map(awaitingRestart().map(entry => [entry.sourceApplication, entry.count]));
@@ -68,7 +69,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
       // A FULI entry FULI cannot read or call its own (for DeepSeek Harness, a
       // plugin directory that is not FULI's) is never reported as a removal.
       if (entryState(client.components) === 'conflict') {
-        return { shown: view(client, { ...record, status: 'unknown' }, { ...extra, lastKnownStatus: record.status }) };
+        return { shown: view(client, { ...record, status: 'unknown' }, { ...extra, components: client.components, lastKnownStatus: record.status }) };
       }
       const previouslyConnected = record.previouslyConnected || PRESENT.has(statusOf(client, false));
       const status = statusOf(client, previouslyConnected);

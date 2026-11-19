@@ -1,5 +1,11 @@
 export const debugTurnsMessages = {
   'zh-CN': {
+    issue: {
+      title: '故障日志', hint: '可直接粘贴到 Issue。报告只列出版本、MCP 配置和进程，以及最近 30 条故障的时间、操作和错误码。',
+      loading: '正在读取本机故障日志和 MCP 状态…', preview: '将复制到 Issue 的故障日志', copy: '复制到 Issue',
+      copied: '已复制', refresh: '刷新日志', manual: '已选中日志，请手动复制。',
+      unavailable: '这次读取失败。可以复制下方结果，或刷新日志重试。', previous: '上次成功读取的报告',
+    },
     title: '调试记录',
     back: '设置',
     loading: '正在读取调试记录…',
@@ -58,6 +64,12 @@ export const debugTurnsMessages = {
     removedSelected: '已删除 {count} 条调试记录',
   },
   'en-US': {
+    issue: {
+      title: 'Issue diagnostics', hint: 'Paste this report into an issue. It includes versions, MCP configuration and processes, and the time, operation and code of the latest 30 failures.',
+      loading: 'Reading local failure events and MCP status…', preview: 'Diagnostic report to copy into an issue', copy: 'Copy for issue',
+      copied: 'Copied', refresh: 'Refresh log', manual: 'The report is selected. Copy the text manually.',
+      unavailable: 'The report could not be read. Copy the result below or refresh to try again.', previous: 'Last successful report',
+    },
     title: 'Debug records',
     back: 'Settings',
     loading: 'Reading debug records…',
