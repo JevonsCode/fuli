@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ModelCaptureSwitch from '@/features/debug-turns/ModelCaptureSwitch.vue'
+import IssueLogPanel from '@/features/debug-turns/IssueLogPanel.vue'
 import { RouterLink } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
@@ -86,6 +87,7 @@ onBeforeUnmount(() => reading?.abort())
   <section class="view debug-turns-view" :aria-label="t('debugTurns.title')">
     <div class="debug-turns-content">
       <Breadcrumb :parent="{ label: t('debugTurns.back'), to: '/settings', from: openedFromSettings }" :current="t('debugTurns.title')" />
+      <IssueLogPanel />
       <p class="debug-turns-lede">{{ t('debugTurns.lede') }}</p>
       <ModelCaptureSwitch />
       <GrowthLoading v-if="loading && !records" :label="t('debugTurns.loading')" />

@@ -81,7 +81,8 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
         const { clients, extensionErrors } = await bound.installer.status();
         return { status: 'available', clients: clients.map(toFuli), extensionErrors };
       } catch (error) {
-        return unavailable(`${error?.code ?? 'internal_error'}: ${error?.message}`);
+        return { ...unavailable(`${error?.code ?? 'internal_error'}: ${error?.message}`),
+          ...(Object.hasOwn(INSPECTION_ERRORS, error?.code) ? { diagnosticCode: INSPECTION_ERRORS[error.code] } : {}) };
       }
     },
     plan: (ids, { packs } = {}) => write('plan', ids, packs),
@@ -91,6 +92,8 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
 }
 
 const unavailable = (reason) => ({ status: 'unavailable', reason });
+const INSPECTION_ERRORS = Object.freeze({ unavailable: 'mcp_inspector_unavailable', unknown_outcome: 'mcp_inspector_timeout',
+  invalid_response: 'mcp_inspector_invalid_response' });
 const SESSION_FREE = new Set(['mcp', 'prompts']);
 
 // Open sessions don't reread what this write changed; the MCP entry alone they

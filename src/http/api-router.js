@@ -210,7 +210,8 @@ export async function handleApiRequest({
   if (await handleEmbeddingModelsRequest({ request, response, url, embeddingModels: app.embeddingModels ?? null })) return true;
   if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
-  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
+  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents,
+    readIssueReport: system?.issueReport })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 

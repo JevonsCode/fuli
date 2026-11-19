@@ -79,7 +79,7 @@ function safeText(value, limit = REASON_BYTES) {
 
 // One event as it is stored. component, outcome and operation are required;
 // a field that is not safe as given is left out rather than stored.
-export function diagnosticEvent({ component, operation, outcome, code = null, reason = null, durationMs = null,
+export function diagnosticEvent({ component, operation, outcome, code = null, reason = null, durationMs = null, httpStatus = null,
   correlationId = null }, { now = new Date() } = {}) {
   if (!DIAGNOSTIC_COMPONENTS.includes(component)) throw new TypeError('Unknown diagnostic component');
   if (!Object.hasOwn(LEVEL_OF_OUTCOME, outcome)) throw new TypeError('Unknown diagnostic outcome');
@@ -94,6 +94,7 @@ export function diagnosticEvent({ component, operation, outcome, code = null, re
     level: LEVEL_OF_OUTCOME[outcome],
     code: typeof code === 'string' && SAFE_CODE.test(code) ? code : null,
     reason: reason === null ? null : safeText(reason),
+    ...(Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599 ? { httpStatus } : {}),
     ...(Number.isSafeInteger(durationMs) && durationMs >= 0 && durationMs <= MAX_DURATION_MS ? { durationMs } : {}),
     ...(typeof correlationId === 'string' && SAFE_ID.test(correlationId) ? { correlationId } : {})
   };

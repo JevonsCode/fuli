@@ -43,7 +43,6 @@ import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js'
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { createSessionPromptSentences } from './session-prompt-sentences.js';
-import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { nativeChoiceAnswers } from '../agents/choice-answers.js';
 import { createProcessInspector } from '../agent-services/process-identity.js';
 
@@ -52,8 +51,6 @@ import { createProcessInspector } from '../agent-services/process-identity.js';
 export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl }) {
   const dataDir = dirname(runtimeConfigPath);
   const providerIdentity = app.config.personal.providerUrl;
-  // The runtime failures this process and the data directory's other FULI processes caught (rec#73).
-  app.diagnosticEvents = diagnosticEventLog(dataDir);
   app.preferenceDelivery = createSessionPreferenceDelivery({
     directory: join(dataDir, 'preference-delivery'),
     env

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseProviderEnv } from '../setup/provider-env.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { recordProviderFailure } from '../diagnostics/provider-operation.js';
 import { ProviderRequestError, providerRefusalMessage } from './provider-client.js';
 
 // The personal provider as a person's own console and CLI reach it for the
@@ -26,6 +28,7 @@ export function personalHumanReviewChannel(dataDir, {
   fetchImpl = fetch,
   readText = (path) => readFileSync(path, 'utf8')
 } = {}) {
+  const log = diagnosticEventLog(dataDir);
   const connection = () => {
     const config = JSON.parse(readText(join(dataDir, 'graph-runtime.json')));
     const providerUrl = config?.personal?.providerUrl;
@@ -41,6 +44,7 @@ export function personalHumanReviewChannel(dataDir, {
     return token;
   };
   return async (path, body, { review = false, timeoutMs = REQUEST_TIMEOUT_MS, method = 'POST' } = {}) => {
+    const started = Date.now();
     const { providerUrl, accessToken } = connection();
     const headers = { authorization: `Bearer ${accessToken}`,
       ...(method === 'GET' ? {} : { 'content-type': 'application/json' }),
@@ -50,9 +54,14 @@ export function personalHumanReviewChannel(dataDir, {
       response = await fetchImpl(`${providerUrl}${path}`, { method, headers,
         ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }), signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
-      throw unreachableProvider(error);
+      const failure = unreachableProvider(error);
+      recordProviderFailure(log, method, path, failure, started);
+      throw failure;
     }
     const payload = await response.json().catch(() => ({}));
+    if (!response.ok) recordProviderFailure(log, method, path, {
+      status: response.status, code: payload?.detail?.code ?? (response.status >= 500 ? 'provider_http_5xx' : 'provider_error')
+    }, started);
     return { ok: response.ok, status: response.status, payload };
   };
 }

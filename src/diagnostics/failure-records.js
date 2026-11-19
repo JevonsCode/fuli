@@ -14,6 +14,7 @@ export function recordHttpFailure(log, { request, error, status, startedAt }) {
     operation: `${request.method} ${pathOf(request.url)}`,
     outcome: status >= SERVER_ERROR ? 'failed' : 'refused',
     code: errorCode(error) ?? `http_${status}`,
+    httpStatus: status,
     reason: `HTTP ${status}: ${failureReason(error, 'internal error')}`,
     durationMs: Date.now() - startedAt
   }));
