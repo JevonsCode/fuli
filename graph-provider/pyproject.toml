@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.116.1",
   "graphiti-core==0.29.2",
+  # The Neo4j driver's own Rust codec (rec#126): without it the driver decodes
+  # every row in pure Python. Each release requires the driver of the same
+  # version (here neo4j==6.4.1), so the two are bumped together.
+  "neo4j-rust-ext==6.4.1.0",
   "openai>=1.91,<2",
   "pydantic-settings==2.10.1",
   "pynacl==1.6.2",
