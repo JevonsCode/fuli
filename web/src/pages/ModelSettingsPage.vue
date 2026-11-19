@@ -227,7 +227,7 @@ onBeforeUnmount(() => {
           @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />
         <BuiltinEmbeddingDialog :open="builtinOpen" @close="builtinOpen = false" @changed="settingsChanged()"
           @own="builtinOpen = false; edit(SEMANTIC_ROLE)" />
-        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
+        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects" :projects-loaded="Boolean(store.state)"
           @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>
     </div>

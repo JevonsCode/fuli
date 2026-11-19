@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { currentLocale, t } from '@/i18n'
 import { saveFile } from '@/lib/save-file'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
+import type { PersonalProject } from '@/types'
 import { z } from 'zod'
 import { shapeOf } from '@/api/response-shape'
 import { clientName } from '@/features/capture/capture-change'
 
-const props = defineProps<{ personalSpaceId: string; agentId: string; projects: Array<{ id: string; name: string }> }>()
+const props = defineProps<{ personalSpaceId: string; agentId: string; projects: readonly PersonalProject[] }>()
+// Global first, then the projects: named ones by name, temporary ones folded under one row.
+const scopeOptions = computed(() => [{ value: '', label: t('projectAgents.conversations.global') }, ...projectScopeOptions(props.projects)])
 interface Policy { compact_after_kb: number; context_budget: number; enabled: boolean }
 interface Conversation { id: string; summary: string; status: string; revision: number; last_activity: string; compacted_through: number; raw_retained: boolean; continuation_prompt?: string }
 interface Message { role: string; content: unknown; kind: string; sequence: number }
@@ -72,8 +77,8 @@ function failure(cause: unknown) { return cause instanceof Error ? cause.message
 // Declared first so the initial scope choice below also loads.
 watch(projectId, () => void load())
 // A string key: parent re-renders that hand over an equal project list must not reload.
-watch(() => [props.agentId, props.personalSpaceId, ...props.projects.map(project => project.id)].join('\n'), () => {
-  const next = (globalChosen.value && projectId.value === '') ? '' : props.projects.some(project => project.id === projectId.value) ? projectId.value : props.projects[0]?.id ?? ''
+watch(() => [props.agentId, props.personalSpaceId, ...props.projects.map(project => project.project_id)].join('\n'), () => {
+  const next = (globalChosen.value && projectId.value === '') ? '' : props.projects.some(project => project.project_id === projectId.value) ? projectId.value : props.projects[0]?.project_id ?? ''
   if (next !== projectId.value) projectId.value = next
   else void load()
 }, { immediate: true })
@@ -236,7 +241,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
   <section class="agent-conversations" :aria-label="t('projectAgents.conversations.title')">
     <!-- Always shown: an empty state is information, not something to hide behind a toggle. -->
     <h2 class="agent-conversations-title">{{ t('projectAgents.conversations.title') }}</h2>
-      <OptionCombobox :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
+      <OptionCombobox :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="scopeOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
         <div class="memory-heading">

@@ -6,17 +6,22 @@ import { sendJson } from './response.js';
 // read_diagnostic_events Agent tool and `fuli diagnostics`. They name this
 // computer's operations, so only a request from this computer reads them.
 const EVENTS_PATH = '/api/diagnostics/events';
+const REPORT_PATH = '/api/diagnostics/issue-report';
 const FILTERS = ['from', 'to', 'component', 'level', 'code', 'limit', 'cursor'];
 
-export async function handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents }) {
-  if (url.pathname !== EVENTS_PATH) return false;
+export async function handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents, readIssueReport }) {
+  if (url.pathname !== EVENTS_PATH && url.pathname !== REPORT_PATH) return false;
   response.setHeader('Cache-Control', 'no-store');
   if (request.method !== 'GET') {
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
   if (refuseRemoteDecision(request, response, 'FULI\'s diagnostic events are read only on this computer')) return true;
-  if (!diagnosticEvents) {
+  if (url.pathname === REPORT_PATH && readIssueReport) {
+    sendJson(response, 200, { markdown: await readIssueReport(url.searchParams.get('locale')) });
+    return true;
+  }
+  if (!diagnosticEvents || url.pathname === REPORT_PATH) {
     sendJson(response, 503, { error: 'Diagnostic events need a local FULI installation', code: 'diagnostics_unavailable' });
     return true;
   }

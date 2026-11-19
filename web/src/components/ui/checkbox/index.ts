@@ -7,6 +7,8 @@
 //   lucide.
 // - FULI box, matching the element defaults: 1.5px control border on the card
 //   surface, filled primary when checked, no resting shadow.
+// - An indeterminate box (part of a group chosen) is filled like a checked one
+//   and shows FULI's minus mark.
 // - FULI focus outline and .5 disabled look instead of the opacity ring;
 //   aria-invalid keeps the danger border.
 export { default as Checkbox } from "./Checkbox.vue"

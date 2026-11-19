@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 
@@ -98,6 +99,7 @@ import {
   listPersonalProjectHistory,
   listPersonalProjects,
   listProjectRelationWeights,
+  listTemporaryProjectSources,
   upsertPersonalProject
 } from './personal-projects.js';
 import { environmentTokenUsageResolver } from '../agents/token-usage-resolver.js';
@@ -192,7 +194,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     refreshPersonalToken = null,
     // The runtime directory whose transcript ledgers this application's hooks
     // keep; none for an application that only lives in memory.
-    runtimeConfigPath = null
+    runtimeConfigPath = null,
+    diagnosticEvents = runtimeConfigPath ? diagnosticEventLog(dirname(runtimeConfigPath)) : null
   } = {}) {
     super();
     this.graphiti = true;
@@ -207,6 +210,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.advancedAreas = advancedAreas;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
+    this.diagnosticEvents = diagnosticEvents;
     // A confirmed session migration waiting for that session's next task entry (rec#82).
     this.sessionMigrationNotices = sessionMigrationNoticesForRuntime(runtimeConfigPath);
     this.agentAccessPolicyStore = agentAccessPolicyStore;
@@ -220,14 +224,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
       requestTimeoutMs: providerRequestTimeoutMs,
-      refreshAccessToken: refreshPersonalToken
+      refreshAccessToken: refreshPersonalToken,
+      diagnosticEvents
     });
     this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
       this.personal, config.personal.spaceId
     );
     this.workspaces = new Map(config.workspaces.map((workspace) => {
       const provider = createWorkspaceProvider(workspace, {
-        fetchImpl, requestTimeoutMs: providerRequestTimeoutMs
+        fetchImpl, requestTimeoutMs: providerRequestTimeoutMs, diagnosticEvents
       });
       return [provider.providerUrl, provider];
     }));
@@ -411,6 +416,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async listPersonalProjects(input) {
     return listPersonalProjects(this, input);
+  }
+
+  listTemporaryProjectSources(input) {
+    return listTemporaryProjectSources(this, input);
   }
 
   async listProjectRelationWeights(input) {

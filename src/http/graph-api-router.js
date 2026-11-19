@@ -213,6 +213,12 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/personal-projects/temporary-sources' && request.method === 'GET') {
+    sendJson(response, 200, await app.listTemporaryProjectSources({
+      personalSpaceId: url.searchParams.get('personalSpaceId') ?? undefined
+    }));
+    return true;
+  }
   const projectHistory = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/history$/);
   if (projectHistory && request.method === 'GET') {
     const limit = url.searchParams.get('limit');

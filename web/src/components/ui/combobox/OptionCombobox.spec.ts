@@ -284,3 +284,78 @@ describe('OptionCombobox with free text', () => {
     expect(input().value).toBe('not-listed')
   })
 })
+
+describe('a folded group', () => {
+  const grouped: SelectOption[] = [
+    { value: 'alpha', label: 'Alpha 项目' },
+    { value: 't1', label: '#11111111', meta: '2026/11/1', group: '临时项目' },
+    { value: 't2', label: '#22222222', meta: '2026/11/2 · 周报', group: '临时项目' },
+  ]
+  const fold = () => document.querySelector<HTMLElement>('[data-option-fold]')
+
+  it('single: shows one row with the chosen count, opens on a click, and picks one of it', async () => {
+    const { value } = mountCombobox('', { options: grouped, foldGroup: '临时项目' })
+    input().click()
+    await flushPromises()
+    expect(options().map(option => option.textContent?.trim())).toEqual(['Alpha 项目'])
+    expect(fold()?.textContent).toContain('临时项目')
+    expect(fold()?.querySelector('[data-option-fold-count]')?.textContent).toBe('0/2')
+    fold()!.click()
+    await flushPromises()
+    expect(options()).toHaveLength(3)
+    options().find(option => option.textContent?.includes('#22222222'))!.click()
+    await flushPromises()
+    expect(value.value).toBe('t2')
+  })
+
+  it('single: opened again without typing, the row is still folded; the chosen label in the field is not a search', async () => {
+    mountCombobox('alpha', { options: grouped, foldGroup: '临时项目' })
+    await flushPromises()
+    expect(input().value).toBe('Alpha 项目')
+    for (const round of ['first', 'again']) {
+      input().click()
+      await flushPromises()
+      expect(fold(), round).not.toBeNull()
+      expect(options().map(option => option.textContent?.trim()), round).toEqual(['Alpha 项目'])
+      await key(input(), 'Escape')
+      expect(options(), round).toHaveLength(0)
+    }
+    expect(input().value).toBe('Alpha 项目')
+  })
+
+  it('says when its members come into view: opening the list folded does not, opening the row or typing does', async () => {
+    let shown = 0
+    mountCombobox('', { options: grouped, foldGroup: '临时项目', onFoldShown: () => { shown += 1 } })
+    input().click()
+    await flushPromises()
+    expect(shown).toBe(0)
+    fold()!.click()
+    await flushPromises()
+    expect(shown).toBe(1)
+    await key(input(), 'Escape')
+    input().click()
+    await flushPromises()
+    input().value = '周报'
+    input().dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(shown).toBe(2)
+  })
+
+  it('typing finds its members without opening the row', async () => {
+    mountCombobox('', { options: grouped, foldGroup: '临时项目' })
+    input().click()
+    await flushPromises()
+    input().value = '周报'
+    input().dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(fold()).toBeNull()
+    expect(options().map(option => option.textContent?.trim())).toEqual(['#222222222026/11/2 · 周报'])
+  })
+
+  it('multiple: counts the chosen members on the row', async () => {
+    mountCombobox(['t1'], { options: grouped, foldGroup: '临时项目', multiple: true })
+    input().click()
+    await flushPromises()
+    expect(fold()?.querySelector('[data-option-fold-count]')?.textContent).toBe('1/2')
+  })
+})

@@ -415,13 +415,13 @@ describe('ModelSettingsPage', () => {
     const wrapper = await mountPage()
     await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
     const dialog = wrapper.get('[data-model-role-dialog]')
-    const shown = dialog.findAll('[data-model-egress-project]').length
+    const shown = dialog.findAll('[data-project-scope-formal]').length
     expect(shown).toBeGreaterThan(0)
-    await dialog.get('[data-model-project-search]').setValue('no-such-synthetic-project')
-    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(0)
+    await dialog.get('[data-project-scope-search]').setValue('no-such-synthetic-project')
+    expect(dialog.findAll('[data-project-scope-formal]')).toHaveLength(0)
     expect(dialog.text()).toContain('没有匹配的项目。')
-    await dialog.get('[data-model-project-search]').setValue('')
-    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(shown)
+    await dialog.get('[data-project-scope-search]').setValue('')
+    expect(dialog.findAll('[data-project-scope-formal]')).toHaveLength(shown)
   })
 
   it('reads the settings again when they changed meanwhile, and shows a refusal in the form', async () => {

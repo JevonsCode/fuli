@@ -173,11 +173,8 @@ const currentProjects = computed(() =>
       })
     : [],
 );
-const conversationProjects = computed(() =>
-  projects.value
-    .filter((item) => currentProjects.value.includes(item.project_id))
-    .map((item) => ({ id: item.project_id, name: item.profile.name })),
-);
+const conversationProjectRecords = computed(() => projects.value.filter((item) => currentProjects.value.includes(item.project_id)));
+const conversationProjects = computed(() => conversationProjectRecords.value.map((item) => ({ id: item.project_id, name: item.profile.name })));
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
 const previousProjects = computed(() =>
@@ -492,7 +489,7 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
                 <AgentOccupationEditor v-if="agent.profile.status !== 'archived'" :key="`occupation-${agent.agentId}`" :agent="agent" @saved="saved" />
                 <Card v-if="agent.memoryScope === 'reviewed_agent'" as="section" class="agent-resume-section" aria-labelledby="agent-memory-settings-heading">
                   <h2 id="agent-memory-settings-heading">{{ t("agentProfiles.memorySettings") }}</h2>
-                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
+                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjectRecords" />
                   <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
                 </Card>
                 <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution']" />

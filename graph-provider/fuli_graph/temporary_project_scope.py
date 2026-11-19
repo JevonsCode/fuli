@@ -40,6 +40,12 @@ def session_temporary_project_id(space_id: str, source_application: str, session
     return 'temporary-' + _scope_key(['fuli-temporary-session-v1', space_id, source_application, session_id])
 
 
+def conversation_fallback_project_id(space_id: str, source_application: str, session_id: str) -> str:
+    """The project task entry created for an unmatched session until 2026-10-18
+    (removed in e50b04c2; its projects remain): the same key that code asked for."""
+    return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
+
+
 def _scope_key(parts: list) -> str:
     return hashlib.sha256(json.dumps(parts, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
 

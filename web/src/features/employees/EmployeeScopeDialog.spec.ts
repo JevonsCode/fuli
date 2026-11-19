@@ -64,17 +64,20 @@ describe('employee project scope', () => {
     expect(wrapper.get('button[type="submit"]').text()).toBe('保存负责范围')
   })
 
-  it('lists people-made projects before fallback session projects, which are named by last use', async () => {
+  it('lists people-made projects by name and folds fallback session projects into one 临时项目 row', async () => {
     const fallback: PersonalProject = {
       project_id: `conversation-${'f'.repeat(64)}`, personal_space_id: 'space-a', updated_at: '2026-10-17T07:20:00Z',
       profile: { name: '会话项目 / Conversation project', sources: [], boundaries: [] },
     }
     const { wrapper } = await setup([fallback, ...projects])
-    const labels = wrapper.findAll('[role="option"]').map(option => option.text()).filter(text => /项目/.test(text))
-    const formal = labels.findIndex(text => text.includes('招募验收项目'))
-    const session = labels.findIndex(text => text.startsWith('会话项目 · '))
-    expect(formal).toBeGreaterThanOrEqual(0)
-    expect(session).toBeGreaterThan(formal)
+    const shown = () => wrapper.findAll('[role="option"]').map(option => option.text())
+    expect(shown().some(text => text.includes('招募验收项目'))).toBe(true)
+    expect(shown().some(text => text.startsWith('#ffffffff'))).toBe(false)
+    const fold = wrapper.get('[data-option-fold]')
+    expect(fold.text()).toContain('临时项目')
+    expect(fold.get('[data-option-fold-count]').text()).toBe('0/1')
+    await fold.trigger('click')
+    expect(shown().find(text => text.startsWith('#ffffffff'))).toMatch(/2026/)
     expect(wrapper.text()).not.toContain('Conversation project')
   })
 
