@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { t } from '@/i18n'
+import { projectScopeOptions } from '@/features/projects/project-scope-choices'
 import type { PersonalProject } from '@/types'
 import { fillTerms, readTerms, stopTerms, trialTerms, type TermsState, type TermsTrial } from './retrieval-terms'
 
@@ -19,8 +20,7 @@ export function useRetrievalTerms(projects: () => readonly PersonalProject[], mo
   let timer: ReturnType<typeof setTimeout> | undefined
   let unmounted = false
 
-  const choices = computed(() => projects().filter(project => project.scope_type !== 'temporary')
-    .map(project => ({ value: project.project_id, label: project.profile.name })))
+  const choices = computed(() => projectScopeOptions(projects().filter(project => project.scope_type !== 'temporary')))
   const projectName = computed(() => choices.value.find(choice => choice.value === projectId.value)?.label ?? projectId.value)
   // Without Astro's model, or with the task off in its settings, the action opens those settings.
   const needsAstro = computed(() => state.value?.readiness === 'needs_model' || state.value?.readiness === 'not_allowed')

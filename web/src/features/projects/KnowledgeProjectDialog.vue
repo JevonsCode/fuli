@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
@@ -89,12 +90,7 @@ const availableProjects = computed(() =>
   props.projects.filter(({ project_id }) => project_id !== sourceProjectId.value),
 )
 const availableProjectOptions = computed(() =>
-  availableProjects.value.map((project) => ({
-    value: project.project_id,
-    label: project.profile.name,
-    meta: `#${compactIdentity(project.project_id, 26)}`,
-    search: identitySearchText(project.project_id),
-  })),
+  projectScopeOptions(availableProjects.value, project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) })),
 )
 const selectedProject = computed(() =>
   availableProjects.value.find(({ project_id }) => project_id === targetProjectId.value) ?? null,
@@ -353,7 +349,7 @@ function fail(message: string) {
           <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
         </label>
       </section>
-      <OptionCombobox v-else v-model="targetProjectId" field :options="availableProjectOptions" :label="t('projects.knowledgeDialog.targetPersonalProject')" required />
+      <OptionCombobox v-else v-model="targetProjectId" field :options="availableProjectOptions" :fold-group="temporaryGroupLabel()" :label="t('projects.knowledgeDialog.targetPersonalProject')" required />
 
       <section v-if="sourceProjectId" class="knowledge-project-relation">
         <label class="ui-check">

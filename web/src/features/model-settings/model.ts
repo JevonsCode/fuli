@@ -257,7 +257,15 @@ const NEW_CONNECTION: ModelConnection = {
 export const projectKey = (project: ApprovedProject) => `${project.personalSpaceId}/${project.personalProjectId}`
 const text = (value: number | null | undefined) => (value === null || value === undefined ? '' : String(value))
 
-export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDraft {
+/** Whether the role's projects were ever saved; until then the form approves every offered one. */
+export function hasSavedEgress(payload: ModelRolesPayload, role: ModelRoleId) {
+  return Boolean(payload.roles.find(entry => entry.role === role)?.egress)
+}
+
+// `offered`: the projects the form offers. A role never saved starts with all of
+// them approved; a saved role shows exactly what it saved, an empty list too, and
+// a project added since is not approved until someone ticks it.
+export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId, offered: readonly ApprovedProject[] = []): RoleDraft {
   const view = payload.roles.find(entry => entry.role === role)
   // The form connects the person's own model service: from a built-in model it starts a connection of its own.
   const connectionId = view?.connection && view.connection.protocol !== BUILTIN_EMBEDDING_PROTOCOL ? view.connection.id : role
@@ -269,7 +277,7 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
     connectionId,
     // Dreaming sends sessions to the model, so a new role starts without it: the person turns it on.
     operations: (view?.allowedOperations ?? (payload.operations[role] ?? []).filter(operation => operation !== 'dreaming')).join(', '),
-    approvedProjects: [...(view?.egress?.approvedProjects ?? [])],
+    approvedProjects: [...(view?.egress ? view.egress.approvedProjects : offered)],
     allowUnassigned: view?.egress?.allowUnassigned ?? false,
     maxInputTokens: text(budget.maxInputTokens),
     maxOutputTokens: text(budget.maxOutputTokens),
@@ -305,10 +313,11 @@ function connectionFields(connection: ModelConnection) {
   }
 }
 
-// Approves or withdraws one project for egress.
-export function withProject(draft: RoleDraft, project: ApprovedProject, approved: boolean): RoleDraft {
-  const others = draft.approvedProjects.filter(entry => projectKey(entry) !== projectKey(project))
-  return { ...draft, approvedProjects: approved ? [...others, project] : others }
+// Approves or withdraws projects for egress; approvals of projects not listed stay.
+export function withProjects(draft: RoleDraft, projects: readonly ApprovedProject[], approved: boolean): RoleDraft {
+  const keys = new Set(projects.map(projectKey))
+  const others = draft.approvedProjects.filter(entry => !keys.has(projectKey(entry)))
+  return { ...draft, approvedProjects: approved ? [...others, ...projects] : others }
 }
 
 // Other roles that use the same connection, so the form says an edit reaches them.

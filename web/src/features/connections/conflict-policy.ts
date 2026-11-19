@@ -63,7 +63,7 @@ export function projectExceptions(overview: ConflictPolicyOverview, projects: re
   })
 }
 
-export function projectsFollowingDefault(overview: ConflictPolicyOverview, projects: readonly NamedProject[]) {
+export function projectsFollowingDefault<T extends NamedProject>(overview: ConflictPolicyOverview, projects: readonly T[]): T[] {
   const chosen = new Set(overview.projects.map(({ personalProjectId }) => personalProjectId))
   return projects.filter(({ project_id: id }) => !chosen.has(id))
 }
