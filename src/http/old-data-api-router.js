@@ -18,7 +18,7 @@ export async function handleOldDataRequest({ request, response, url, shelf, rest
   const action = ACTION_PATH.exec(url.pathname);
   if (url.pathname !== LIST_PATH && !action) return false;
   response.setHeader('Cache-Control', 'no-store');
-  if (refuseRemoteDecision(request, response, 'Old data is managed only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'Old data is managed only on this computer', { directHost: true })) return true;
   if (!shelf) {
     sendJson(response, 503, { error: 'Old data needs a local FULI installation', code: 'old_data_unavailable' });
     return true;

@@ -21,7 +21,7 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, hostOnlyAnswer, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -259,6 +259,8 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
     const asked = effectiveCall(name, args);
+    const refused = hostOnlyAnswer(asked.tool);
+    if (refused) return refused;
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
     // The host does not know a runner's offline token: other calls go without it.

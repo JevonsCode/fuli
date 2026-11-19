@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { DIAGNOSTIC_EVENTS_TOOL } from '../diagnostics/agent-access.js';
 import { REPLAY_WAIT_MS } from './protocol.js';
 
 // A runner's own record (docs/runner.md): the host it paired with, the last
@@ -57,7 +58,18 @@ export class RunnerStore {
   // keep it locked on Windows (updates, uninstall).
   get db() {
     if (this.closed) throw new Error('The runner store is closed');
-    this.database ??= openFormattedDatabase(this.path, RUNNER_FORMAT);
+    if (!this.database) {
+      const db = openFormattedDatabase(this.path, RUNNER_FORMAT);
+      try {
+        // Older runners kept these private host answers among ordinary offline reads.
+        const legacy = db.prepare('SELECT 1 FROM answers WHERE tool = ? LIMIT 1').get(DIAGNOSTIC_EVENTS_TOOL);
+        if (legacy) db.prepare('DELETE FROM answers WHERE tool = ?').run(DIAGNOSTIC_EVENTS_TOOL);
+        this.database = db;
+      } catch (error) {
+        db.close();
+        throw error;
+      }
+    }
     return this.database;
   }
 
@@ -131,6 +143,7 @@ export class RunnerStore {
   }
 
   rememberAnswer(key, tool, body) {
+    if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
     immediateTransaction(this.db, () => {
       this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
@@ -142,7 +155,8 @@ export class RunnerStore {
   // { at, body } of the last answer to this call, or null.
   answer(key) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ?').get(key, this.#keptSince());
+    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ? AND tool <> ?')
+      .get(key, this.#keptSince(), DIAGNOSTIC_EVENTS_TOOL);
     return row ? { at: row.at, body: JSON.parse(row.body) } : null;
   }
 

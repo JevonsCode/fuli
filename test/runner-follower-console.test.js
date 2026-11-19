@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js';
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
@@ -113,6 +114,27 @@ test('another site\'s page cannot act on the host through a runner', async (t) =
     headers: { 'content-type': 'application/json', origin: 'https://attacker.example' } });
   assert.equal(forged.status, 403);
   assert.equal(consoleSide.seen.length, 0);
+});
+
+test('paired console users can read the public version while host maintenance and private diagnostics stay on the host', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  const denied = [
+    ['GET', '/api/system/update'], ['POST', '/api/system/update'],
+    ['GET', '/api/diagnostics/issue-report'], ['GET', '/api/diagnostics/events'],
+    ['GET', '/api/system/diagnostics'], ['GET', '/api/system/log-archives'], ['GET', '/api/debug-turns'],
+    ['POST', '/api/system/doctor/repair'], ['PUT', '/api/system/cli-path'], ['PUT', '/api/system/settings'],
+    ['POST', '/api/system/npm-copies/uninstall'], ['POST', '/api/data-format/apply'], ['POST', '/api/system/graph-migration'],
+    ['GET', '/api/old-data'], ['POST', '/api/embedding-models/download']
+  ];
+  for (const [method, path] of denied) {
+    const res = await get(entry.url + path, { method });
+    assert.equal(res.status, 403, method + ' ' + path);
+  }
+  const delegated = await get(entry.url + '/api/system/version', { headers: { [DELEGATION_HEADER]: 'declared' } });
+  assert.equal(delegated.status, 403);
+  assert.equal(consoleSide.seen.length, 0);
+  assert.equal((await get(entry.url + '/api/system/version')).status, 200);
+  assert.equal(consoleSide.seen.length, 1);
 });
 
 test('a live event stream reaches the runner as it is written', async (t) => {

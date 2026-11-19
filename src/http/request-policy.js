@@ -2,6 +2,10 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { sendJson } from './response.js';
 
+// The host adds this to each paired runner request it forwards to its console.
+export const RUNNER_CONSOLE_HEADER = 'x-fuli-runner';
+const FORWARDING_HEADERS = [RUNNER_CONSOLE_HEADER, 'forwarded', 'x-forwarded-for', 'x-real-ip', 'x-forwarded-host', 'x-forwarded-proto'];
+
 export function localServerAuthority(address) {
   if (!address || typeof address === 'string') return null;
   if (!Number.isSafeInteger(address.port) || address.port < 1 || address.port > 65535) {
@@ -78,10 +82,16 @@ function hasLanAccess(authorization, accessToken) {
 // A console route the interface catalog marks local_user_only: the person's
 // own decision on this computer. A request from anywhere else is answered 403
 // with `error` and true is returned; a loopback request returns false.
-export function refuseRemoteDecision(request, response, error) {
-  if (isLoopbackAddress(request.socket?.remoteAddress)) return false;
+export function refuseRemoteDecision(request, response, error, { directHost = false } = {}) {
+  if (isLoopbackAddress(request.socket?.remoteAddress) && !(directHost && isForwardedConsoleRequest(request))) return false;
   sendJson(response, 403, { error, code: 'local_user_only' });
   return true;
+}
+
+// A loopback socket can be the last hop of a relay. Forwarding metadata can
+// only restrict a host operation; a claimed local address never permits one.
+export function isForwardedConsoleRequest(request) {
+  return FORWARDING_HEADERS.some(name => Object.hasOwn(request.headers ?? {}, name));
 }
 
 export function isLoopbackAddress(address) {
