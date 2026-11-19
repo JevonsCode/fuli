@@ -4,9 +4,10 @@
 // (A popup choice is OptionCombobox; this one has no popup, so Escape still
 // belongs to the dialog.) `label` names the list and heads it with the count.
 // `foldGroup`: the heading of a group shown folded into one row with how many
-// of it are chosen (「临时项目 7/12」) until the row opens it or a search finds it.
+// of it are chosen (「临时项目 7/12」) until the row opens it or a search finds it;
+// `foldShown` is emitted each time its members come into view.
 import { ListboxContent, ListboxFilter, ListboxGroup, ListboxGroupLabel, ListboxItem, ListboxItemIndicator, ListboxRoot, useFilter } from "reka-ui"
-import { computed, ref, useId } from "vue"
+import { computed, ref, useId, watch } from "vue"
 import { t } from "@/i18n"
 import UiIcon from "@/ui/UiIcon.vue"
 import { Button } from "../button"
@@ -22,13 +23,14 @@ const props = withDefaults(defineProps<{
   foldGroup?: string
 }>(), { hint: undefined, disabled: false, foldGroup: undefined })
 
-const emit = defineEmits<{ "update:modelValue": [value: string[]] }>()
+const emit = defineEmits<{ "update:modelValue": [value: string[]]; foldShown: [] }>()
 
 const labelId = `option-listbox-${useId()}`
 const query = ref("")
 const { contains } = useFilter({ sensitivity: "base" })
 const shown = computed(() => groupOptions(props.options.filter(option => !query.value || contains(optionSearchText(option), query.value))))
 const unfolded = ref(false)
+watch(() => Boolean(props.foldGroup) && (unfolded.value || Boolean(query.value)), (shown) => { if (shown) emit("foldShown") })
 const folds = (heading: string | undefined) => Boolean(props.foldGroup) && heading === props.foldGroup && !query.value
 const foldedCount = (heading: string | undefined) => {
   const members = props.options.filter(option => option.group === heading)

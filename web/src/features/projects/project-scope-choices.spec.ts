@@ -56,6 +56,22 @@ describe('project scope groups', () => {
     expect(byKey(all)).toEqual(first)
   })
 
+  it('grows a number only as far as it takes: digests equal for 12 characters show 13, a shared-word ID shows a short code', () => {
+    const near = ['ab12cd34ef56' + '7' + '0'.repeat(51), 'ab12cd34ef56' + '8' + '0'.repeat(51)]
+      .map(digest => temporary('', { project_id: `temporary-${digest}` }))
+    const legacy = ['legacy-fallback-session-alpha', 'legacy-fallback-session-beta']
+      .map(id => project(id, 'x', { profile: { name: 'x', origin: 'conversation_fallback' } }))
+    const labels = new Map(projectScopeGroups([...near, ...legacy]).temporary.map(choice => [choice.project.project_id, choice.label]))
+    expect(labels.get(near[0]!.project_id)).toBe('#ab12cd34ef567')
+    expect(labels.get(near[1]!.project_id)).toBe('#ab12cd34ef568')
+    for (const item of legacy) expect(labels.get(item.project_id)).toMatch(/^#[0-9a-f]{8}$/)
+    expect(labels.get(legacy[0]!.project_id)).not.toBe(labels.get(legacy[1]!.project_id))
+    // The same ID always gets the same code, and the full ID still finds it.
+    expect(projectScopeGroups([legacy[0]!]).temporary[0]!.label).toMatch(/^#[0-9a-f]{8}$/)
+    const choice = projectScopeGroups(legacy).temporary.find(entry => entry.project.project_id === 'legacy-fallback-session-beta')!
+    expect(matchesProjectQuery(choice, 'legacy-fallback-session-beta')).toBe(true)
+  })
+
   it('shows what is recorded beside the number: the last-use date and a title someone gave, never a generated name', () => {
     const [titled, plain, undated] = [
       temporary('1', { updated_at: '2026-11-18T09:00:00Z', profile: { name: '发布检查' } }),

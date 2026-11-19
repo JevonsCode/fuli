@@ -159,6 +159,11 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return sharedProjectList(this, personalSpaceId, () => this.#request(`/v1/personal-projects?${query}`));
   }
+  // Which recorded host session made each session temporary project (read on demand).
+  listTemporaryProjectSources(personalSpaceId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/personal-projects/temporary-sources?${query}`);
+  }
   getPersonalProject(personalSpaceId, projectId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(

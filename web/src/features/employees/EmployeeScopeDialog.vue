@@ -14,6 +14,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import type { PersonalProject } from '@/types'
 import {
   employeeName, employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
@@ -201,7 +202,7 @@ function scopeKeydown(event: KeyboardEvent) {
         </div>
         <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: employeeName(selected) }) : t('employees.scope.selectedHint') }}</p>
       </div>
-      <OptionListbox v-model="selectionIds" :options="projectChoices" :fold-group="temporaryGroupLabel()" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
+      <OptionListbox v-model="selectionIds" :options="projectChoices" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
       <p v-if="scopeMode === 'all' && excludedIds.length" class="ui-meta">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>
       <p v-if="!projectOptions.length" class="ui-meta">{{ t('employees.noProjects') }} <RouterLink :to="personalProjectsPath(personalSpaceId, 'directory')" @click="close">{{ t('employees.createProject') }}</RouterLink></p>
       <p v-if="removals.length && !success" class="ui-meta">{{ t('employees.scopeRemoved', { count: removals.length }) }}</p>

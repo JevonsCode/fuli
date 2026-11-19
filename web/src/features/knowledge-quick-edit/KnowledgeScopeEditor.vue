@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -93,13 +94,13 @@ async function save() {
         </RadioGroup>
       </Field>
       <OptionCombobox v-if="draft.choice === 'projects'" v-model="draft.projectIds" field multiple
-        :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :fold-group="temporaryGroupLabel()" :disabled="saving" data-scope-projects />
+        :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :disabled="saving" data-scope-projects />
       <p v-if="!isPreference(item)" class="m-0 text-xs text-muted-foreground" data-scope-other-knowledge>
         {{ t('knowledgeQuickEdit.scope.otherKnowledge') }}
       </p>
       <template v-if="draft.choice === 'agent'">
         <OptionCombobox v-model="draft.agentProjectId" field :label="t('knowledgeQuickEdit.scope.project')"
-          :options="projectOptions" :fold-group="temporaryGroupLabel()" :disabled="saving" data-scope-agent-project />
+          :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :disabled="saving" data-scope-agent-project />
         <OptionCombobox v-if="agents.length" v-model="draft.agentId" field :label="t('knowledgeQuickEdit.scope.agentLabel')"
           :options="agents" :disabled="saving" data-scope-agent />
         <p v-else class="m-0 text-xs text-muted-foreground">{{ t('knowledgeQuickEdit.scope.noAgents') }}</p>

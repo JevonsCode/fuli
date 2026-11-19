@@ -19,6 +19,7 @@ import { normalizeOverviewTasks, overviewOwnerId, overviewTaskTitle } from '@/fe
 import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { projectDisplayName } from '@/features/projects/project-origin'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { createDebouncedAction } from '@/lib/debounce'
@@ -188,7 +189,7 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
           <template v-for="field in filterFields" :key="field.filter.key">
             <OptionCombobox v-if="field.filter.multiple" class="workbench-list-filter" multiple :searchable="typeof field.filter.options === 'string'"
               :model-value="field.chosen" :options="field.options" :label="field.label" :placeholder="field.all" :max-chips="1"
-              :fold-group="field.filter.options === 'projects' ? temporaryGroupLabel() : undefined"
+              :fold-group="field.filter.options === 'projects' ? temporaryGroupLabel() : undefined" @fold-shown="readTemporaryProjectSources()"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />
             <OptionSelect v-else class="workbench-list-filter" :model-value="field.chosen[0] ?? ''" :options="field.single" :label="field.label"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />

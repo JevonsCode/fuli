@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
@@ -135,7 +136,7 @@ function createIdempotencyKey() {
   <UiDialog :open="open" class="project-agent-assignment-dialog" form :busy="busy" :error="error"
     :title="t(`projectAgents.assignmentDialog.${editing ? action : 'assign'}Title`)" @close="emit('close')" @submit="save">
     <div class="project-agent-assignment-fields">
-      <OptionCombobox v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
+      <OptionCombobox v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
       <label v-else class="ui-field">{{ t('projectAgents.fields.project') }}
         <input :value="props.assignment ? props.assignment.personalProjectId : ''" disabled />
       </label>
