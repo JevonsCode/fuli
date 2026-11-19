@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -35,12 +36,7 @@ const helpUrl = computed(() => docsHelpUrl('external-knowledge', 'external-knowl
 const projects = computed(() => store.state?.personalProjects ?? [])
 const exceptions = computed(() => overview.value ? projectExceptions(overview.value, projects.value) : [])
 const addableOptions = computed<SelectOption[]>(() => overview.value
-  ? projectsFollowingDefault(overview.value, projects.value).map((project) => ({
-      value: project.project_id,
-      label: project.profile.name,
-      meta: `#${compactIdentity(project.project_id, 26)}`,
-      search: identitySearchText(project.project_id),
-    }))
+  ? projectScopeOptions(projectsFollowingDefault(overview.value, projects.value), project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) }))
   : [])
 const modeOptions = computed(() => CONFLICT_MODES.map((mode) => ({
   value: mode, label: t(`pages.connections.conflictMode.${mode}`),
@@ -192,6 +188,7 @@ async function addException() {
               :label="t('pages.connections.conflictExceptionProject')"
               :placeholder="t('pages.connections.conflictExceptionProject')"
               :options="addableOptions"
+              :fold-group="temporaryGroupLabel()"
               :disabled="Boolean(savingLabel)"
               required
             />

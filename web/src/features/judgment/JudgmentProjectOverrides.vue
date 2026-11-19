@@ -7,6 +7,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import type { PersonalProject } from '@/types'
 
 import ProjectJudgmentPolicy from './ProjectJudgmentPolicy.vue'
@@ -34,7 +35,7 @@ const projectName = (projectId: string) => {
   return project ? projectDisplayName(project) : projectId
 }
 const addable = computed(() => spaceProjects.value.filter(project => !overrides.value.some(policy => policy.personalProjectId === project.project_id)))
-const addableOptions = computed(() => addable.value.map(project => ({ value: project.project_id, label: projectDisplayName(project) })))
+const addableOptions = computed(() => projectScopeOptions(addable.value))
 const addingLabel = computed(() => t('judgment.project.starting', { name: projectName(chosenProjectId.value) }))
 
 watch(() => props.personalSpaceId, () => { void load() }, { immediate: true })
@@ -99,7 +100,7 @@ function changed(value: JudgmentPolicy) {
           :heading="projectName(policy.personalProjectId ?? '')" :policy="policy" @change="changed" />
         <div v-if="addable.length" class="judgment-overrides-add">
           <OptionCombobox v-model="chosenProjectId" class="judgment-overrides-project" control-id="judgment-override-project" data-select="judgment-override-project"
-            :label="judgmentText('overrides.project')" :options="addableOptions" :disabled="adding" />
+            :label="judgmentText('overrides.project')" :options="addableOptions" :fold-group="temporaryGroupLabel()" :disabled="adding" />
           <Button variant="outline" data-action="add-project-policy" :disabled="!chosenProjectId" :loading="adding" :loading-label="addingLabel" @click="add">
             {{ judgmentText('overrides.add') }}
           </Button>

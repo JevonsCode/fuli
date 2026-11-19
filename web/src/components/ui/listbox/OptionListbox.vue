@@ -3,10 +3,13 @@
 // always visible, with a search field, for managing a set inside a dialog.
 // (A popup choice is OptionCombobox; this one has no popup, so Escape still
 // belongs to the dialog.) `label` names the list and heads it with the count.
+// `foldGroup`: the heading of a group shown folded into one row with how many
+// of it are chosen (「临时项目 7/12」) until the row opens it or a search finds it.
 import { ListboxContent, ListboxFilter, ListboxGroup, ListboxGroupLabel, ListboxItem, ListboxItemIndicator, ListboxRoot, useFilter } from "reka-ui"
 import { computed, ref, useId } from "vue"
 import { t } from "@/i18n"
 import UiIcon from "@/ui/UiIcon.vue"
+import { Button } from "../button"
 import { fromItemValue, groupOptions, optionSearchText, toItemValue, type SelectOption } from "../select/option"
 import SelectionActions from "../select/SelectionActions.vue"
 
@@ -16,7 +19,8 @@ const props = withDefaults(defineProps<{
   label: string
   hint?: string
   disabled?: boolean
-}>(), { hint: undefined, disabled: false })
+  foldGroup?: string
+}>(), { hint: undefined, disabled: false, foldGroup: undefined })
 
 const emit = defineEmits<{ "update:modelValue": [value: string[]] }>()
 
@@ -24,6 +28,12 @@ const labelId = `option-listbox-${useId()}`
 const query = ref("")
 const { contains } = useFilter({ sensitivity: "base" })
 const shown = computed(() => groupOptions(props.options.filter(option => !query.value || contains(optionSearchText(option), query.value))))
+const unfolded = ref(false)
+const folds = (heading: string | undefined) => Boolean(props.foldGroup) && heading === props.foldGroup && !query.value
+const foldedCount = (heading: string | undefined) => {
+  const members = props.options.filter(option => option.group === heading)
+  return `${members.filter(option => props.modelValue.includes(option.value)).length}/${members.length}`
+}
 const order = computed(() => new Map(props.options.map((option, index) => [option.value, index])))
 
 function emitValues(values: string[]) {
@@ -56,9 +66,15 @@ function choose(next: unknown) {
       <ListboxContent class="max-h-72 overflow-y-auto p-1 outline-none" :aria-labelledby="labelId">
         <p v-if="!shown.length" class="py-6 text-center text-sm text-muted-foreground">{{ options.length ? t('ui.select.noMatches') : t('ui.select.noOptions') }}</p>
         <ListboxGroup v-for="group in shown" :key="group.heading ?? ''" class="p-0">
-          <ListboxGroupLabel v-if="group.heading" class="px-2 py-1.5 text-xs font-medium text-muted-foreground">{{ group.heading }}</ListboxGroupLabel>
+          <Button v-if="folds(group.heading)" variant="ghost" size="sm" class="w-full justify-start gap-2 px-2 font-normal"
+            :aria-expanded="unfolded" data-option-fold @click="unfolded = !unfolded">
+            <span class="min-w-0 flex-1 truncate text-left">{{ group.heading }}</span>
+            <span class="text-xs text-muted-foreground tabular-nums" data-option-fold-count>{{ foldedCount(group.heading) }}</span>
+            <UiIcon :name="unfolded ? 'chevron-up' : 'chevron-down'" :size="14" class="text-muted-foreground" />
+          </Button>
+          <ListboxGroupLabel v-else-if="group.heading" class="px-2 py-1.5 text-xs font-medium text-muted-foreground">{{ group.heading }}</ListboxGroupLabel>
           <ListboxItem
-            v-for="option in group.options"
+            v-for="option in (folds(group.heading) && !unfolded ? [] : group.options)"
             :key="option.value"
             :value="toItemValue(option.value)"
             :disabled="option.disabled"

@@ -148,7 +148,8 @@ describe('语义搜索 on the model page', () => {
     expect(endpoint()).toBe(OLLAMA)
     expect(dialog.find('[data-model-secret-ref]').exists()).toBe(false)
     await dialog.get('[data-model-name] input').setValue('synthetic-embed')
-    await dialog.get('[data-model-egress-project]').trigger('click')
+    // A role never saved starts with every offered project approved.
+    expect(dialog.get('[data-project-scope-formal] [data-slot="checkbox"]').attributes('data-state')).toBe('checked')
     await dialog.get('form').trigger('submit')
     await flushPromises()
     const [url, body] = api.putJson.mock.calls[0]

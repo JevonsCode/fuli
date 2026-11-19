@@ -93,6 +93,7 @@ export const projectMessages = {
     },
     conversationFallback: '会话项目 · {time}',
     conversationFallbackUndated: '会话项目',
+    scopePicker: { search: '搜索项目', noMatch: '没有匹配的项目。', temporary: '临时项目', allTemporary: '全部临时项目' },
     createDialog: {
       open: '新建项目',
       title: '新建项目',
@@ -388,6 +389,7 @@ export const projectMessages = {
     },
     conversationFallback: 'Conversation project · {time}',
     conversationFallbackUndated: 'Conversation project',
+    scopePicker: { search: 'Search projects', noMatch: 'No project matches.', temporary: 'Temporary projects', allTemporary: 'All temporary projects' },
     createDialog: {
       open: 'New project',
       title: 'New project',

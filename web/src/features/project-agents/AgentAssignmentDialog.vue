@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
@@ -41,11 +42,7 @@ const busy = ref(false)
 const error = ref('')
 
 const editing = computed(() => props.action !== 'assign')
-const projectOptions = computed(() => props.projects.map((project) => ({
-  value: project.project_id,
-  label: project.profile.name,
-  meta: project.project_id,
-})))
+const projectOptions = computed(() => projectScopeOptions(props.projects, project => ({ meta: project.project_id })))
 const replacementOptions = computed(() => props.availableAgents
   .filter((agent) => agent.agentId !== props.agent?.agentId && agent.profile.status === 'active')
   .map((agent) => ({ value: agent.agentId, label: agent.profile.displayName || agent.profile.name, meta: agent.profile.name })))
@@ -138,7 +135,7 @@ function createIdempotencyKey() {
   <UiDialog :open="open" class="project-agent-assignment-dialog" form :busy="busy" :error="error"
     :title="t(`projectAgents.assignmentDialog.${editing ? action : 'assign'}Title`)" @close="emit('close')" @submit="save">
     <div class="project-agent-assignment-fields">
-      <OptionCombobox v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
+      <OptionCombobox v-if="!editing" v-model="projectId" field control-id="project-agent-assignment-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="busy" required />
       <label v-else class="ui-field">{{ t('projectAgents.fields.project') }}
         <input :value="props.assignment ? props.assignment.personalProjectId : ''" disabled />
       </label>

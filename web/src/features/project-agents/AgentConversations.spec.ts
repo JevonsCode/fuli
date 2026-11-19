@@ -13,7 +13,7 @@ const conversation = { id: 'conversation-a', summary: 'Prepare a new page', stat
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { ...optionSelectStubs } } })
+    projects: [{ project_id: 'project-a', personal_space_id: 'space', profile: { name: 'Project A' } }, { project_id: 'project-b', personal_space_id: 'space', profile: { name: 'Project B' } }] }, global: { stubs: { ...optionSelectStubs } } })
 }
 async function open(wrapper: ReturnType<typeof render>, selector?: string) {
   // The panel itself is always shown and loads on display; only nested settings still open.
@@ -451,4 +451,18 @@ it('shows the original only when sequence, event ID, client, session and checkpo
   expect(rows()[2].find('[data-source-record]').exists()).toBe(false)
   expect(rows()[2].text()).not.toContain('The next one')
   expect(rows()[2].find('[data-source-unavailable]').exists()).toBe(true)
+})
+
+it('offers named projects by name and the FLA\'s temporary projects by number, never their generated name', async () => {
+  postJson.mockResolvedValue({ conversations: [] })
+  const temporary = { project_id: `temporary-${'a'.repeat(64)}`, personal_space_id: 'space', scope_type: 'temporary' as const, profile: { name: '临时任务 / Temporary task' } }
+  const wrapper = mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
+    projects: [{ project_id: 'project-a', personal_space_id: 'space', profile: { name: 'Project A' } }, temporary] }, global: { stubs: { ...optionSelectStubs } } })
+  await open(wrapper)
+  // The fold itself is OptionCombobox's (its spec); this spec stubs it as a native select.
+  const labels = wrapper.findAll('select option').map(option => option.text())
+  expect(labels).toContain('Project A')
+  expect(labels).toContain('#aaaaaaaa')
+  expect(labels.join(' ')).not.toContain('Temporary task')
+  wrapper.unmount()
 })

@@ -18,6 +18,7 @@ import { knownNotice, noticePageShape, type Notice } from '@/features/overview/n
 import { normalizeOverviewTasks, overviewOwnerId, overviewTaskTitle } from '@/features/overview/overview-data'
 import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { projectDisplayName } from '@/features/projects/project-origin'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { createDebouncedAction } from '@/lib/debounce'
@@ -130,7 +131,7 @@ const sortOptions = computed(() => LIST_SORTS.map(value => ({ value, label: t(`o
 const searchLabel = computed(() => t(`overview.lists.search.${list.value}`))
 
 // Each declared filter's choices.
-const projectOptions = computed(() => projects.value.map(project => ({ value: project.project_id, label: projectDisplayName(project) })))
+const projectOptions = computed(() => projectScopeOptions(projects.value))
 const flaOptions = computed(() => roster.value.map(record => ({ value: record.agentId, label: agentDisplayName(record) })))
 function optionLabel(filter: ListFilter, value: string) {
   if (filter.key === 'status') return taskStatusLabel(value)
@@ -187,6 +188,7 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
           <template v-for="field in filterFields" :key="field.filter.key">
             <OptionCombobox v-if="field.filter.multiple" class="workbench-list-filter" multiple :searchable="typeof field.filter.options === 'string'"
               :model-value="field.chosen" :options="field.options" :label="field.label" :placeholder="field.all" :max-chips="1"
+              :fold-group="field.filter.options === 'projects' ? temporaryGroupLabel() : undefined"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />
             <OptionSelect v-else class="workbench-list-filter" :model-value="field.chosen[0] ?? ''" :options="field.single" :label="field.label"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />

@@ -97,6 +97,9 @@ describe('a workbench list on its own page', () => {
     const running = await setup('/workbench/running')
     await running.wrapper.get('[data-list-filters]').trigger('click')
     expect(running.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'quiet'])
+    // The project filter folds temporary projects under one row; the others have no such group.
+    const folds = running.wrapper.findAllComponents({ name: 'OptionCombobox' }).map(field => field.props('foldGroup'))
+    expect(folds.filter(Boolean)).toEqual(['临时项目'])
     const done = await setup('/workbench/done')
     await done.wrapper.get('[data-list-filters]').trigger('click')
     expect(done.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'result', 'took'])

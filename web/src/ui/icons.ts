@@ -30,6 +30,8 @@ export const ICONS = {
   // for Lucide are held by Lucide Contributors 2022."). Every done or check mark draws this icon,
   // never a text check character (Jevons, 11-01; ui/check-mark.spec.ts).
   check: '<path d="M20 6 9 17l-5-5"/>',
+  // A part-chosen group (a checkbox in its indeterminate state).
+  minus: '<path d="M5 12h14"/>',
   copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M15.5 8.5V5.5A1.5 1.5 0 0 0 14 4H5.5A1.5 1.5 0 0 0 4 5.5V14a1.5 1.5 0 0 0 1.5 1.5h3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',

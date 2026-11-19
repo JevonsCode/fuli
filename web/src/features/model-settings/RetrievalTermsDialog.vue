@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { Button } from '@/components/ui/button'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
@@ -19,7 +20,7 @@ const emit = defineEmits<{ close: []; checked: [] }>()
   <UiDialog :open="open" :title="t('modelSettings.retrievalTerms.title')" size="md" data-terms-dialog @close="emit('close')">
     <div class="terms-dialog">
       <p class="terms-line" data-terms-advice><span class="terms-label">{{ t('modelSettings.uses.advicePrefix') }}</span>{{ useAdvice('retrieval_terms') }}</p>
-      <OptionCombobox :model-value="terms.projectId" :options="terms.choices" :label="t('modelSettings.retrievalTerms.project')" data-terms-project @update:model-value="terms.choose(String($event))" />
+      <OptionCombobox :model-value="terms.projectId" :options="terms.choices" :fold-group="temporaryGroupLabel()" :label="t('modelSettings.retrievalTerms.project')" data-terms-project @update:model-value="terms.choose(String($event))" />
       <p v-if="terms.error" role="alert" class="terms-line is-error" data-terms-error>{{ terms.error }}</p>
       <p v-else-if="terms.note" class="terms-line" data-terms-note>{{ terms.note }}</p>
       <template v-else-if="terms.state?.stats">

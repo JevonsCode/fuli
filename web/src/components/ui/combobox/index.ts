@@ -15,6 +15,9 @@
 //   emits `search` with the typed text, for a list the page reads per query
 //   (the LAN roundtable's 添加项目); `emptyLabel` / `loadingLabel` replace the
 //   generic empty and loading text.
+// - OptionCombobox `foldGroup` folds the options of one group heading into a
+//   row with its chosen count until the row is opened or something is typed
+//   (temporary projects, features/projects/project-scope-choices.ts).
 // - `cn` comes from @/lib/class-names; the chevron and check mark are FULI's
 //   (UiIcon), not lucide.
 // - ComboboxList has the FULI popover look, as Select and DropdownMenu: card

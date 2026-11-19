@@ -14,12 +14,23 @@ export function isConversationFallback(project: Pick<PersonalProject, 'project_i
   return CONVERSATION_FALLBACK_ID.test(project.project_id)
 }
 
+export function isArchivedProject(project: Pick<PersonalProject, 'status' | 'profile'>) {
+  return project.status === 'archived' || project.profile?.lifecycle === 'archived'
+}
+
 export function isFormalProject(project: Pick<PersonalProject, 'project_id' | 'scope_type' | 'status' | 'profile'>) {
-  if (isConversationFallback(project)) return false
-  if (project.scope_type === 'temporary') return false
-  if (project.status === 'archived' || project.profile?.lifecycle === 'archived') return false
-  if (project.profile?.origin === 'conversation_fallback') return false
-  return true
+  if (isArchivedProject(project)) return false
+  return !hasTemporaryOrigin(project)
+}
+
+/** Started temporary, archived or not: marked temporary, or a session fallback (its generated ID or recorded origin). */
+export function hasTemporaryOrigin(project: Pick<PersonalProject, 'project_id' | 'scope_type' | 'profile'>) {
+  return isConversationFallback(project) || project.scope_type === 'temporary' || project.profile?.origin === 'conversation_fallback'
+}
+
+/** Most recently used first; equal or unknown times fall back to ID order, the same way every time. */
+export function byLastUse(a: PersonalProject, b: PersonalProject) {
+  return lastUsed(b) - lastUsed(a) || a.project_id.localeCompare(b.project_id)
 }
 
 /** A name people can tell apart: fallback session projects show when they were last used. */
@@ -36,6 +47,6 @@ export function projectDisplayName(project: PersonalProject) {
 export function pickerOrder<T extends PersonalProject>(projects: readonly T[]): T[] {
   const formal = projects.filter(project => !isConversationFallback(project))
   const fallback = projects.filter(isConversationFallback)
-    .sort((a, b) => lastUsed(b) - lastUsed(a) || a.project_id.localeCompare(b.project_id))
+    .sort(byLastUse)
   return [...formal, ...fallback]
 }
