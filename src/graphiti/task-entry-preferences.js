@@ -216,7 +216,9 @@ async function entryPreferences(application, projectResolution, {
     ...(ownerChange ? [ownerChange.marker] : []), ...(introduction ? [introduction.marker] : [])];
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
-    ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
+    // An ask that named another native session of this FLA is not this session's to see.
+    ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId,
+      { client: sourceApplication, session: sessionId ?? sourceSessionId ?? null }) : [];
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];

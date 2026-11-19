@@ -1,0 +1,13 @@
+{
+  "version": "0.27.17",
+  "zh": [
+    "另一台电脑可以当「运行机」（Beta）：上面的客户端都用这台的 FULI，记忆只存一份。",
+    "每段对话都记下是哪个客户端、哪个会话、什么模型写的，读记录时逐条可查。",
+    "开任务快了将近一半；客户端卡片列全六项，缺什么一眼看出。"
+  ],
+  "en": [
+    "Another computer can be a runner (Beta): its clients use this FULI, with one memory.",
+    "Each conversation records the client, session and model that wrote it, message by message.",
+    "Task entry is nearly twice as fast; client tiles list all six parts, so gaps show."
+  ]
+}

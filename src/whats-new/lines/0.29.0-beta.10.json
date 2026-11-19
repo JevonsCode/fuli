@@ -1,0 +1,13 @@
+{
+  "version": "0.29.0-beta.10",
+  "zh": [
+    "选择项目时，临时项目收在一行。展开就能单独选，收起也能看见选了几项。",
+    "Astro 会记住你上次选的项目，包括全部清空。",
+    "Windows 更新时连接可接续。长按「设置」三秒，可以复制本机故障报告。"
+  ],
+  "en": [
+    "Temporary projects share one row with a selection count. Expand it to pick them individually.",
+    "Astro remembers the projects you selected, including an empty selection.",
+    "Windows clients reconnect after updates. Hold Settings for three seconds to copy a local report."
+  ]
+}

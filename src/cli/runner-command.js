@@ -17,7 +17,7 @@ import { writeLine } from './terminal-io.js';
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
 // the local console. On a runner: join (pair, then set up its clients as
 // `fuli setup` does, with no graph runtime), status, sync and leave.
-const USAGE = `fuli runner <action>  (runners: other computers whose clients use this FULI)
+const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clients use this FULI)
   On the host:
     invite [--name NAME]          print a one-use invitation for a runner (10 minutes)
     list                          paired runners and where the host listens

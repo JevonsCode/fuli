@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import BetaBadge from '@/components/BetaBadge.vue'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -260,7 +261,7 @@ function shareState(projectId: string) {
 <template>
   <Card as="section" id="peer" class="settings-card peer-settings" aria-labelledby="settings-peer-title" data-peer-settings>
     <CardHeader>
-      <CardTitle id="settings-peer-title" as="h2">{{ t('settings.peer.title') }}<AiHelpButton term="task.peer" /></CardTitle>
+      <CardTitle id="settings-peer-title" as="h2">{{ t('settings.peer.title') }}<BetaBadge /><AiHelpButton term="task.peer" /></CardTitle>
       <CardDescription>{{ t('settings.peer.description') }}</CardDescription>
     </CardHeader>
     <div class="peer-body">

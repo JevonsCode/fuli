@@ -148,7 +148,7 @@ export const settingsMessages = {
       },
     },
     peer: {
-      title: '局域网圆桌（Beta）',
+      title: '局域网圆桌',
       description: '在同一局域网的两台电脑之间，只向对方共享当前项目组长。配对、共享和撤销只能在本机完成。',
       loading: '正在读取局域网圆桌…',
       loadError: '暂时无法读取局域网圆桌',
@@ -641,7 +641,7 @@ export const settingsMessages = {
       },
     },
     peer: {
-      title: 'LAN roundtable (Beta)',
+      title: 'LAN roundtable',
       description: 'On the same LAN, share only each project’s current lead with another computer. Pairing, sharing and revoking stay on this device.',
       loading: 'Loading the LAN roundtable…',
       loadError: 'The LAN roundtable is unavailable',
