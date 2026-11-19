@@ -21,7 +21,7 @@ export async function handleDiagnosticsApiRequest({ request, response, url, app,
     sendJson(response, 405, { error: 'Method not allowed' });
     return true;
   }
-  if (refuseRemoteDecision(request, response, 'FULI\'s diagnostics and logs are read only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'FULI\'s diagnostics and logs are read only on this computer', { directHost: true })) return true;
   if (url.searchParams.get('personalSpaceId') !== app.config.personal.spaceId) {
     throw new ApplicationError('scope_mismatch', 'Use the active personal space', { status: 403 });
   }

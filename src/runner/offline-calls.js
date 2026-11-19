@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
+import { DIAGNOSTIC_EVENTS_TOOL, HOST_DIAGNOSTICS_ONLY } from '../diagnostics/agent-access.js';
 import { annotationsFor } from '../mcp/tool-annotations.js';
 import { sha256Bytes } from '../security/digest.js';
 
@@ -37,6 +38,11 @@ export function withoutOfflineToken(name, args) {
 export function effectiveCall(name, args) {
   return name === 'fuli_call' && typeof args?.toolName === 'string'
     ? { tool: args.toolName, input: args.input ?? {} } : { tool: name, input: args ?? {} };
+}
+
+// Enforce this on the runner as well as the host, including with an older host.
+export function hostOnlyAnswer(tool) {
+  return tool === DIAGNOSTIC_EVENTS_TOOL ? failure('local_user_only', HOST_DIAGNOSTICS_ONLY) : null;
 }
 
 // Keeps an answer the host gave, for showing while it is away.

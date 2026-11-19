@@ -75,8 +75,9 @@ the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) ope
 
 - The entry answers only on loopback under its own name (no DNS rebinding) and refuses any other
   site's `Origin` before the channel; the host then gives the runner's own page the console's
-  origin. A runner reaches what the person reaches at the host's own console, nothing more:
-  runners and LAN pairing (`/api/runners`, `/api/peer`) are managed only on the host itself.
+  origin. The host keeps the runner's identity when forwarding to loopback. Pairing, host
+  software updates and repairs, old installation data and detailed diagnostics belong to the
+  host console. The runner can still read the public version at `/api/system/version`.
 - 客户端接入 (`/api/system/client-connection…`) answers on the runner itself: it lists, connects,
   restarts and adds this computer's clients, with the same entries `fuli runner join` writes.
   Nothing of it reaches the host. The host's relay refuses those writes, and opening a session
@@ -153,6 +154,10 @@ without touching the host's disk. A folder the runner did not describe is
 refused.
 
 ## When the host is away
+
+Host diagnostic events (`read_diagnostic_events`) require a local client on the host.
+A runner refuses this tool both online and offline. Opening an upgraded runner removes diagnostic
+answers cached by earlier versions and keeps ordinary read-only answers.
 
 | Call | Answer |
 | --- | --- |

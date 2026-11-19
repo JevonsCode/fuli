@@ -48,6 +48,27 @@ function beta1Store(path, format, records) {
   try { database.exec(records); } finally { database.close(); }
 }
 
+test('upgrading a runner removes only cached host diagnostics and never returns or stores them again', (t) => {
+  const path = join(directory(t), 'runner.sqlite');
+  const old = openFormattedDatabase(path, BETA1_RUNNER);
+  const insert = 'INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)';
+  const at = new Date().toISOString();
+  old.prepare(insert).run('sensitive', 'read_diagnostic_events', at, '{"total":3}');
+  old.prepare(insert).run('ordinary', 'search_current_project_knowledge', at, '{"total":1}');
+  old.close();
+  const upgraded = new RunnerStore(path);
+  try {
+    assert.equal(upgraded.answer('sensitive'), null);
+    assert.deepEqual(upgraded.answer('ordinary')?.body, { total: 1 });
+    upgraded.rememberAnswer('new', 'read_diagnostic_events', { total: 5 });
+    assert.equal(upgraded.db.prepare('SELECT count(*) AS n FROM answers').get().n, 1);
+    upgraded.db.prepare(insert).run('concurrent-old-client', 'read_diagnostic_events', at, '{"total":2}');
+    assert.equal(upgraded.answer('concurrent-old-client'), null);
+  } finally {
+    upgraded.close();
+  }
+});
+
 // Layout of the CREATE text does not matter, its content does (data-format-inventory.test.js).
 const statement = (sql) => String(sql ?? '').replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim();
 

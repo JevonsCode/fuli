@@ -32,6 +32,22 @@ import { reachableModules } from '../test-support/module-graph.js';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const HOST_TOOLS = ['get_collaboration_preferences', 'checkpoint_task_knowledge', 'search_current_project_knowledge'];
 
+test('a paired runner refuses host diagnostic events online and offline in both MCP profiles', async (t) => {
+  const runner = await pairedRunner(t);
+  for (const state of ['online', 'offline']) {
+    if (state === 'offline') runner.hostAway();
+    for (const request of [
+      { name: 'read_diagnostic_events', arguments: {} },
+      { name: 'fuli_call', arguments: { toolName: 'read_diagnostic_events', input: {} } }
+    ]) {
+      const answer = await runner.client.callTool(request);
+      assert.equal(answer.isError, true, state);
+      assert.equal(JSON.parse(answer.content[0].text).code, 'local_user_only');
+    }
+  }
+  assert.deepEqual(runner.calls, []);
+});
+
 // serve: false pairs only; the caller starts the runner's MCP server itself.
 // replayHangs: the host takes an outbox entry and never answers it.
 // dropFirst: tool names whose first call the host takes and then drops with the session, as a restart does.

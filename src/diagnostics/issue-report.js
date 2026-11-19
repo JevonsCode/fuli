@@ -1,7 +1,8 @@
 import { release } from 'node:os';
 import { clientSourceApplication, entryState } from '../agent-kits/client-detection.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { issueEventLine, publicSource, publicVersion } from './issue-event.js';
+import { issueEventLine, publicSource } from './issue-event.js';
+import { publicVersion } from './safe-event.js';
 import { diagnosticEventsAnswer } from './query.js';
 import { withinTimeLimit } from '../conversations/working-branch.js';
 

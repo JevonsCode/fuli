@@ -16,6 +16,7 @@ import { FULI_VERSION } from '@/version'
 const shape = shapeOf(z.object({ markdown: z.string().min(1) }))
 const snapshot = ref('')
 const failure = ref('')
+const accessDenied = ref(false)
 const loading = ref(false)
 const manualCopy = ref(false)
 const preview = useTemplateRef<InstanceType<typeof Textarea>>('preview')
@@ -41,8 +42,16 @@ async function load() {
     if (reading.signal.aborted) return
     snapshot.value = result.markdown
     failure.value = ''
+    accessDenied.value = false
   } catch (error) {
     if (reading.signal.aborted) return
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      snapshot.value = ''
+      failure.value = ''
+      accessDenied.value = true
+      return
+    }
+    if (accessDenied.value) return
     const code = error instanceof ApiError
       ? error.status >= 400 ? `HTTP ${error.status}` : 'diagnostics_invalid_response'
       : signal.aborted ? 'diagnostics_timeout' : 'diagnostics_unreachable'
@@ -76,24 +85,25 @@ onBeforeUnmount(() => request?.abort())
       <CardDescription>{{ t('debugTurns.issue.hint') }}</CardDescription>
     </CardHeader>
     <div class="issue-log-body">
-      <GrowthLoading v-if="loading && !report" variant="compact" :label="t('debugTurns.issue.loading')" />
+      <GrowthLoading v-if="loading && !report && !accessDenied" variant="compact" :label="t('debugTurns.issue.loading')" />
+      <UiNotice v-if="accessDenied" tone="warning" data-issue-denied>{{ t('debugTurns.issue.hostOnly') }}</UiNotice>
       <template v-if="report">
         <UiNotice v-if="failure" tone="warning">{{ t('debugTurns.issue.unavailable') }}</UiNotice>
         <Textarea ref="preview" class="issue-log-preview" readonly spellcheck="false" :model-value="report"
           :aria-label="t('debugTurns.issue.preview')" />
-        <div class="issue-log-actions">
-          <Button size="sm" data-issue-copy @click="copyReport">
-            <UiIcon :name="copied === report ? 'check' : 'copy'" :size="15" />
-            {{ copied === report ? t('debugTurns.issue.copied') : t('debugTurns.issue.copy') }}
-          </Button>
-          <Button variant="outline" size="sm" data-issue-refresh :disabled="loading" @click="load">
-            <GrowthLoading v-if="loading" variant="inline" :label="t('debugTurns.issue.loading')" />
-            <template v-else>{{ t('debugTurns.issue.refresh') }}</template>
-          </Button>
-          <span class="sr-only" role="status">{{ copied === report ? t('debugTurns.issue.copied') : '' }}</span>
-          <UiNotice v-if="manualCopy" tone="warning">{{ t('debugTurns.issue.manual') }}</UiNotice>
-        </div>
       </template>
+      <div v-if="report || accessDenied" class="issue-log-actions">
+        <Button v-if="report" size="sm" data-issue-copy @click="copyReport">
+          <UiIcon :name="copied === report ? 'check' : 'copy'" :size="15" />
+          {{ copied === report ? t('debugTurns.issue.copied') : t('debugTurns.issue.copy') }}
+        </Button>
+        <Button variant="outline" size="sm" data-issue-refresh :disabled="loading" @click="load">
+          <GrowthLoading v-if="loading" variant="inline" :label="t('debugTurns.issue.loading')" />
+          <template v-else>{{ t('debugTurns.issue.refresh') }}</template>
+        </Button>
+        <span class="sr-only" role="status">{{ report && copied === report ? t('debugTurns.issue.copied') : '' }}</span>
+        <UiNotice v-if="manualCopy" tone="warning">{{ t('debugTurns.issue.manual') }}</UiNotice>
+      </div>
     </div>
   </Card>
 </template>

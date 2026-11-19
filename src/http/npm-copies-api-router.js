@@ -25,7 +25,7 @@ export async function handleNpmCopiesRequest({ request, response, url, system })
     sendJson(response, 200, control ? control.list() : { copies: [] });
     return true;
   }
-  if (refuseRemoteDecision(request, response, 'An npm copy of FULI is changed only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'An npm copy of FULI is changed only on this computer', { directHost: true })) return true;
   if (!control) {
     sendJson(response, 404, { error: 'Only the desktop app looks after npm copies of FULI', code: 'npm_copies_unavailable' });
     return true;

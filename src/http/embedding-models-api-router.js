@@ -21,7 +21,7 @@ export async function handleEmbeddingModelsRequest({ request, response, url, emb
   }
   const action = ['download', 'use', 'remove'].find(name => route === `POST ${BASE}/${name}`);
   if (!action) return false;
-  if (refuseRemoteDecision(request, response, 'Built-in models change only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'Built-in models change only on this computer', { directHost: true })) return true;
   const input = await readJson(request);
   if (typeof input?.id !== 'string') throw new TypeError('id of the model is required');
   if (action === 'download') {

@@ -14,6 +14,7 @@ export const consoleMessages = {
       detailsTitle: '更新没有完成',
       detailsCopy: 'FULI 记下的原因（原文）：',
       notStarted: '没能开始更新，FULI 没有改动。',
+      hostOnly: '请在安装 FULI 宿主的电脑上打开控制台，开始更新。',
       macCopy: '会下载并校验 v{version}，关闭 FULI 窗口、换成新版本后自动重新打开。知识数据不会动，新版本起不来会自动换回原版本。',
       macSteps: {
         downloading: '正在下载 v{version} 的 Mac 安装包…',
@@ -77,6 +78,7 @@ export const consoleMessages = {
       detailsTitle: 'The update did not finish',
       detailsCopy: 'The reason FULI recorded:',
       notStarted: 'The update could not start; nothing was changed.',
+      hostOnly: 'Open the console on the FULI host computer to start the update.',
       macCopy: 'Downloads and verifies v{version}, closes the FULI window, switches to the new version and opens it again. Your knowledge data stays put, and a new version that does not start is switched back.',
       macSteps: {
         downloading: 'Downloading the v{version} Mac installer…',
