@@ -27,6 +27,7 @@ import { parseHookInput, readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { turnFindings } from '../../conversations/turn-findings.js';
 import { claudeTurnRecords } from './turn-records.js';
+import { claudeSessionModel } from './session-model.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
@@ -70,8 +71,11 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     if (basis) return withinInlineLimit(event, input,
       await claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis));
     const prompt = claudeFlaMenuPrompt(withoutDebugMark(input.prompt));
+    // Claude Code's hook does not name the model; its transcript does (session-model.js).
+    const clientModel = await claudeSessionModel(input.transcript_path);
     const context = await invoke('begin_task_context', {
-      sessionId, projectPath: input.cwd, taskPrompt: prompt.slice(0, 8192), ...source, ...taskSceneInput(prompt)
+      sessionId, projectPath: input.cwd, taskPrompt: prompt.slice(0, 8192), ...source, ...taskSceneInput(prompt),
+      ...(clientModel ? { clientModel } : {})
     });
     const entry = compactTaskContext(context);
     return withinInlineLimit(event, input, await preferenceHookOutput(entry, event, input, delivery, 'claude_code',

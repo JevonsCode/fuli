@@ -55,7 +55,7 @@ async function collaborationPreferences(application, {
   }, (items, toolName) => recordAgentViews(application, items, toolName, { sourceApplication, projectPath,
     personalProjectId: projectResolution.personalProjectId, sessionId: sessionId ?? sourceSessionId }));
   return finishTaskEntryPreferences(application, preferences, { agentInvocation, agentToolName,
-    sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow });
+    sessionId, sourceApplication, sourceSessionId, taskPrompt, workKind, workflow, projectPath });
 }
 
 export async function getUserTasteSkill(application, {

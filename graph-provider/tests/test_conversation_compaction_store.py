@@ -26,6 +26,8 @@ class JournalDriver:
     async def execute_query(self, query, **params):
         if query.endswith('RETURN c'):
             return [{'c': dict(self.conversation)}], None, None
+        if 'HAS_EVENT' in query and 'seconds' in params:
+            return [], None, None  # these synthetic events record no write time
         if 'HAS_EVENT' in query and 'sequence' in params:
             return [event for event in self.events if event['sequence'] == params['sequence']], None, None
         if 'HAS_EVENT' in query:
@@ -270,9 +272,11 @@ async def test_an_older_digest_is_rebuilt_from_raw_events_and_keeps_checkpoint_t
     driver.conversation['digest'] = legacy
     digest = (await store.query_conversations(None, query('events', limit=50)))['digest']
     assert digest['version'] == DIGEST_VERSION
-    assert digest['tasks'] == [task] and digest['compaction'] == {'sequence': 3, 'bytes': 10}
+    # A task from before results kept their source, with no checkpoint event written at its time: unknown.
+    assert digest['tasks'] == [{**task, 'source': None}] and digest['compaction'] == {'sequence': 3, 'bytes': 10}
     assert {entry['text'] for entry in digest['entries']} == {'Synthetic ledger import'}
-    assert json.loads(driver.conversation['digest']) == digest
+    # What is stored keeps the task as it was; the unknown source is read, never written.
+    assert json.loads(driver.conversation['digest']) == {**digest, 'tasks': [task]}
 
 
 @pytest.mark.asyncio

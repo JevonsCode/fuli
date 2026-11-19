@@ -24,7 +24,7 @@ import { usePageTools } from '@/features/webmcp/usePageTools'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { useVisitAwaiting } from '@/features/visit-requests/useVisitAwaiting'
 import { useReviewList } from '@/features/review-list/review-store'
-import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
+import { offeredVersion, refreshVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { shown } from '@/features/advanced-areas/advanced-areas'
 import { t } from '@/i18n'
@@ -148,15 +148,19 @@ async function refreshConsole() {
   } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
-// the version opens 设置 › 系统 › 版本与更新, where it installs.
-const latestVersion = ref<string | null>(null)
+// the version opens 设置 › 系统 › 版本与更新, where it installs. The dot shows the
+// console's shared answer, so 设置's channel switch and 「检查更新」 move it too; an
+// open console asks npm again every hour (the server's cached answer is up to 6 h old).
+const latestVersion = offeredVersion
 const versionRequest = new AbortController()
+const VERSION_RECHECK_MS = 60 * 60 * 1000
+let versionTimer: ReturnType<typeof setInterval> | undefined
+// Version checks are advisory and never interrupt the console.
+const recheckVersion = (fresh: boolean) => void refreshVersionStatus(versionRequest.signal, { fresh }).catch(() => {})
 onMounted(() => {
   measureScrollbarSize()
-  void readVersionStatus(versionRequest.signal)
-    .then((status) => { latestVersion.value = offersUpdate(status) ? status.latestVersion : null })
-    // Version checks are advisory and never interrupt the console.
-    .catch(() => {})
+  recheckVersion(false)
+  versionTimer = setInterval(() => recheckVersion(true), VERSION_RECHECK_MS)
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshWaiting, 30000)
   reviewTimer = setInterval(refreshReview, 300000)
@@ -164,6 +168,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   versionRequest.abort()
+  clearInterval(versionTimer)
   clearInterval(attentionTimer)
   clearInterval(reviewTimer)
   document.removeEventListener('visibilitychange', refreshWaiting)

@@ -151,6 +151,10 @@ def validate_emoji_sequence(
     return normalized
 
 
+def contains_credentials(text: str | None) -> bool:
+    return bool(text) and any(pattern.search(text) for pattern in _CREDENTIAL_PATTERNS)
+
+
 def reject_credentials(model: Any, label: str) -> None:
     searchable = json.dumps(model.model_dump(mode='json'), ensure_ascii=False)
     if any(pattern.search(searchable) for pattern in _CREDENTIAL_PATTERNS):

@@ -49,6 +49,10 @@ function Use-FuliStandaloneNode {
       Remove-Item -LiteralPath $tmpArchive -Force -ErrorAction SilentlyContinue
       throw "Standalone Node.js checksum mismatch for $distName.zip (expected $expectedSha, got $actualSha)."
     }
+    # The Archive module of this PowerShell edition: a PSModulePath inherited from pwsh 7 would
+    # load its newer module in Windows PowerShell 5.1, which calls a .NET Core-only
+    # ExtractToDirectory overload and fails ("argument count: 3").
+    Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Archive') -Force
     Expand-Archive -LiteralPath $tmpArchive -DestinationPath $baseRuntime -Force
     Remove-Item -LiteralPath $tmpArchive -Force -ErrorAction SilentlyContinue
   }

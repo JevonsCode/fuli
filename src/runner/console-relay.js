@@ -29,7 +29,11 @@ export function relayToConsole(request, response, { consoleOrigin, prefix, finge
     return;
   }
   const incoming = new URL(request.url ?? '/', 'https://runner.invalid');
-  const path = incoming.pathname.slice(prefix.length) || '/';
+  // One leading slash and no empty segments: `//host/…` would otherwise read as
+  // another address (and pass the checks below), and `/api//runners` as a path
+  // they do not match. The target must still be the console itself.
+  const path = `/${incoming.pathname.slice(prefix.length).split('/').filter(Boolean).join('/')}`
+    + (incoming.pathname.endsWith('/') && incoming.pathname.length > prefix.length + 1 ? '/' : '');
   if (BLOCKED.some((blocked) => blocked.test(path))) {
     sendJson(response, 403, { error: 'host_only', message: 'Runners and LAN pairing are managed only on the host itself.' });
     return;
@@ -40,6 +44,10 @@ export function relayToConsole(request, response, { consoleOrigin, prefix, finge
     return;
   }
   const target = new URL(`${path}${incoming.search}`, consoleOrigin);
+  if (target.origin !== new URL(consoleOrigin).origin) {
+    sendJson(response, 400, { error: 'not_console_path' });
+    return;
+  }
   const headers = Object.fromEntries(Object.entries(request.headers).filter(([name]) => !HOP_HEADERS.has(name)));
   headers.host = target.host;
   // The runner's entry refused any other site's Origin; its own page's becomes the console's own.
