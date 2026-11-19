@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardTitle } from '@/components/ui/card'
@@ -73,14 +74,7 @@ const connectorOptions = computed<SelectOption[]>(() =>
     meta: connector.description,
   })),
 )
-const personalProjectOptions = computed<SelectOption[]>(() =>
-  personalProjects.value.map((project) => ({
-    value: project.project_id,
-    label: project.profile.name,
-    meta: `#${compactIdentity(project.project_id, 26)}`,
-    search: identitySearchText(project.project_id),
-  })),
-)
+const personalProjectOptions = computed<SelectOption[]>(() => projectScopeOptions(personalProjects.value, project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) })))
 const bindingModeOptions = computed<SelectOption[]>(() => [
   { value: 'hybrid', label: t('pages.connections.mode.hybrid'), disabled: !connectorSupportsMode(form.connectorType, 'hybrid') },
   { value: 'mirror', label: t('pages.connections.mode.mirror'), disabled: !connectorSupportsMode(form.connectorType, 'mirror') },
@@ -467,6 +461,7 @@ usePageRefresh(refreshExternalKnowledge)
               :control-id="`external-projects-${binding.id}`"
               :label="t('pages.connections.targetProjects')"
               :options="personalProjectOptions"
+              :fold-group="temporaryGroupLabel()"
               :disabled="externalBusy"
               required
               @update:model-value="updateEditingProjects"
@@ -518,6 +513,7 @@ usePageRefresh(refreshExternalKnowledge)
           control-id="external-projects"
           :label="t('pages.connections.targetProjects')"
           :options="personalProjectOptions"
+          :fold-group="temporaryGroupLabel()"
           :disabled="externalBusy"
           required
  />

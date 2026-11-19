@@ -34,7 +34,7 @@ const mounted: Array<{ unmount: () => void }> = []
 afterEach(() => { for (const wrapper of mounted.splice(0)) wrapper.unmount() })
 
 function mountDialog(role: ModelRoleId, protocol = role === 'semantic' ? 'openai_embeddings' : 'openai_chat', model = 'synthetic-old') {
-  const wrapper = mount(ModelRoleDialog, { attachTo: document.body, props: { role, payload: payload(role, protocol, model), projects: [] },
+  const wrapper = mount(ModelRoleDialog, { attachTo: document.body, props: { role, payload: payload(role, protocol, model), projects: [], projectsLoaded: true },
     global: { stubs: { OptionSelect: optionSelectStubs.OptionSelect } } })
   mounted.push(wrapper)
   return wrapper

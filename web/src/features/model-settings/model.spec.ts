@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   endpointOrigin,
-  callParts, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProject,
+  callParts, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProjects,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -66,9 +66,27 @@ describe('model settings drafts', () => {
     expect(draft).toMatchObject({ connectionId: 'jev', protocol: 'typesafe_systemone', secretRef: 'jev-ref', priced: false })
     expect(roleEdit(draft, null).connection.reasoningEffort).toBeNull()
     expect(rolesSharing(data, 'local-qwen', 'bole')).toEqual(['tonborg'])
-    const added = withProject(draft, { personalSpaceId: 's', personalProjectId: 'beta' }, true)
-    expect(withProject(added, { personalSpaceId: 's', personalProjectId: 'beta' }, false).approvedProjects).toEqual([])
+    const beta = { personalSpaceId: 's', personalProjectId: 'beta' }
+    const gamma = { personalSpaceId: 's', personalProjectId: 'gamma' }
+    const added = withProjects(draft, [beta, gamma], true)
+    expect(added.approvedProjects).toEqual([beta, gamma])
+    expect(withProjects(added, [beta], false).approvedProjects).toEqual([gamma])
     expect(roleEdit({ ...draft, operations: 'a_b, c_d，e_f' }, null).settings.allowedOperations).toEqual(['a_b', 'c_d', 'e_f'])
+  })
+})
+
+describe('egress projects a role starts with', () => {
+  const offered = [{ personalSpaceId: 's', personalProjectId: 'alpha' }, { personalSpaceId: 's', personalProjectId: 'temporary-1' }]
+
+  it('approves every offered project for a role never saved', () => {
+    expect(roleDraft(payload(), 'assistant', offered).approvedProjects).toEqual(offered)
+  })
+
+  it('shows exactly what a saved role approved: a subset, or none at all, and nothing added since', () => {
+    expect(roleDraft(payload(), 'tonborg', offered).approvedProjects).toEqual([{ personalSpaceId: 's', personalProjectId: 'alpha' }])
+    const none = roleDraft(payload(), 'bole', offered)
+    expect(none.approvedProjects).toEqual([])
+    expect(roleEdit(none, null).settings.egress.approvedProjects).toEqual([])
   })
 })
 
