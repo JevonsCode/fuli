@@ -4,6 +4,7 @@ import { sep } from 'node:path';
 
 import { clientSourceApplication, detectClients, entryState } from '../agent-kits/client-detection.js';
 import { configuredInstall, installOf } from './configured-install.js';
+import { observeMcpDiagnostics } from '../diagnostics/mcp-configuration.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
@@ -43,7 +44,7 @@ const MAX_INSTALL_KEY = 1024;
  * says `overwritten` (rec#106).
  */
 export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date(), awaitingRestart = () => [],
-  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform }) {
+  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform, diagnosticEvents = null }) {
   const own = consoleInstall ? installOf([consoleInstall.nodePath, consoleInstall.mcpServerPath], { platform }) : null;
   const ownInstall = own ? { path: displayPath(own.root, homeDir, platform), version: consoleInstall.version } : null;
   // History that could not be written stays reliable for this observer.
@@ -114,7 +115,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
         // Where the person puts FULI's MCP entry by hand, relative to home.
         mcpPaths: client.mcpPaths, removable: removable.has(client.id), components: client.components })) };
   }
-  return { observe };
+  return { observe: diagnosticEvents ? observeMcpDiagnostics(observe, diagnosticEvents) : observe };
 }
 
 function statusOf(client, previouslyConnected) {

@@ -12,6 +12,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { GraphitiProviderClient } from '../src/graphiti/provider-client.js';
 import { personalHumanReviewChannel } from '../src/graphiti/human-review-channel.js';
 import { runStdio } from '../src/mcp/runtime.js';
+import { listenFetchableServer } from '../src/server/listen.js';
 
 async function localLog(t) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-issue-log-'));
@@ -95,7 +96,7 @@ test('real database requests record the final failure with a public operation an
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ detail: { code: 'private_customer', message: secret } }));
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await listenFetchableServer(server, 0, '127.0.0.1');
   t.after(() => new Promise(resolve => server.close(resolve)));
   const providerUrl = `http://127.0.0.1:${server.address().port}`;
   const app = new FederatedGraphApplication({ personal: { providerUrl, accessToken: secret }, workspaces: [

@@ -15,7 +15,6 @@ import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
-import { observeMcpDiagnostics } from '../diagnostics/mcp-configuration.js';
 import { createIssueReport } from '../diagnostics/issue-report.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createClientRestart } from './client-restart.js';
@@ -70,13 +69,14 @@ export function createSystemService({
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   // The client apps FULI quits and reopens around an update (src/agents/client-apps.js).
   apps = clientApps(),
+  eventLog = diagnosticEventLog(paths.dataDir),
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
     customClients,
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps
+    apps, diagnosticEvents: eventLog
   }),
   clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
@@ -170,8 +170,7 @@ export function createSystemService({
     return result;
   }
 
-  const eventLog = diagnosticEventLog(paths.dataDir);
-  const observeClients = observeMcpDiagnostics(() => clientObserver.observe(), eventLog);
+  const observeClients = () => clientObserver.observe();
   const liveProcesses = () => liveMcpProcesses(runtimeConfigPath);
   // The client polls the doctor; the OS process list is read at most once per window.
   let serverScan = null;

@@ -8,8 +8,8 @@ export const DIAGNOSTIC_DEFINITIONS = [
   {
     name: 'read_diagnostic_events',
     title: 'READ · FULI runtime failures',
-    description: 'FULI hook, HTTP, database request/startup, MCP configuration/startup/tool and roundtable wake failures, newest first, '
-      + 'with counts. Empty is not healthy: check truncated, sourcesUnavailable and notCovered. Page with nextCursor.',
+    description: 'Recent hook, HTTP, database startup/request, MCP config/startup/tool and roundtable wake failures. '
+      + 'Counts cover all matches. See truncated, sourcesUnavailable and notCovered. Page with nextCursor.',
     inputSchema: objectSchema({
       from: { ...boundedString(40), description: 'ISO 8601 date-time' },
       to: { ...boundedString(40), description: 'ISO 8601 date-time' },
