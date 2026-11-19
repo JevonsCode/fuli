@@ -32,9 +32,10 @@ do not redundantly call `get_collaboration_preferences`. Claude Desktop's FULI c
 begun in another client, call `get_collaboration_preferences` through that connection once and pass
 its token to every call made through it, checkpoint included; never retry the refused token.
 
-After a FULI update an open session can still have a FULI MCP connection on the older version.
-The hook then says so once, in a notice after the task context. If a FULI call with the hook's
-token then fails ("Task context ... not found", or a refusal that names an older connection),
+Local stdio relays check for updates when idle. A relay with update retry support keeps its
+working server after a failed switch and can try again after 30 seconds. If an open session
+still runs an older version, the hook reports it once after the task context. If a FULI call
+with the hook's token then fails ("Task context ... not found", or a refusal that names an older connection),
 tell the person to restart this session's FULI MCP connection or open a new session. Until they
 do, call `get_collaboration_preferences` for a token that connection can read. Never retry the
 hook's token as if the failure were transient.
