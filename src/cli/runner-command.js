@@ -5,6 +5,7 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
+import { isGuestSourceAddress } from '../server/lan-access.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -28,6 +29,9 @@ const USAGE = `fuli runner <action>  (runners: other computers whose clients use
                                   (NAME: what the host shows for this computer; default its own name)
     status                        the host, whether it answers, and the outbox
     sync                          deliver the outbox now
+    add-address ADDRESS           where the host is now, when this computer cannot find it by
+                                  itself (another subnet, as in an office); kept for next time,
+                                  then the outbox is delivered as with sync
     leave [--force]               end the pairing here and delete what is kept here
                                   (--force: also when checkpoints never reached the host)
     console [--port PORT]         serve the host's console on this computer (fuli start runs it)
@@ -77,11 +81,17 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     return new Promise(() => {});
   }
   if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
-  if (action === 'status' || action === 'sync') {
+  if (action === 'status' || action === 'sync' || action === 'add-address') {
+    const named = action === 'add-address' ? rest.find((value) => !value.startsWith('--') && rest[rest.indexOf(value) - 1] !== '--data-dir') : null;
+    // A private IPv4 address only: the paired certificate is checked there anyway, but nothing is sent anywhere else.
+    if (action === 'add-address' && !isGuestSourceAddress(named ?? '')) {
+      throw new TypeError(`add-address takes the host's private IPv4 address (as 10.x, 172.16-31.x or 192.168.x)\n${USAGE}`);
+    }
     const store = new RunnerStore(join(paths().dataDir, RUNNER_FILE));
     try {
       const host = store.host();
       if (!host) return void write('This computer is not a runner. Pair it with `fuli runner join INVITATION`.');
+      if (named) store.learnHostAddresses([named], { first: true });
       if (host.revokedAt) {
         write(`${host.name} revoked this computer or does not know it (${host.revokedAt}).`);
         write(`${store.outbox().failedCount} checkpoint(s) wait here refused; joining ${host.name} again delivers them.`);
@@ -97,13 +107,19 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
             + `its answers kept here are deleted and ${store.outbox().failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
           return { exitCode: 1 };
         }
-        write(`Host: ${host.name} — ${reached ? `answering at ${reached.address}:${host.port}` : 'not reachable now'}`);
+        write(`Host: ${host.name} — ${reached ? `answering at ${reached.address}:${host.port}${reached.via ? ` (from ${reached.via})` : ''}`
+          : 'not reachable now'}`);
+        if (!reached && !named) {
+          write('In another subnet (an office network, say) this computer cannot find the host by itself: '
+            + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');
+        }
         if (!reached && connection.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
         }
-        const outbox = action === 'sync' && reached ? await deliverOutbox({ store, connection }) : store.outbox();
-        if (action === 'sync' && reached) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
+        const delivering = action !== 'status' && reached;
+        const outbox = delivering ? await deliverOutbox({ store, connection }) : store.outbox();
+        if (delivering) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
         return { exitCode: reached ? 0 : 1 };

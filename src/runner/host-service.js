@@ -84,7 +84,8 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
       }
     } else {
       const routes = createRunnerRoutes({ app, store, hostName, hostFingerprint: identity.fingerprint, withLease,
-        consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now });
+        consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
+        hostAddresses: () => serving?.listener.addresses ?? [] });
       try {
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle }) };
       } catch (error) {
