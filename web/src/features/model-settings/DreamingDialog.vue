@@ -5,19 +5,22 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { UiDialog } from '@/ui'
 import ModelFailureNote from './ModelFailureNote.vue'
+import UseSteps from './UseSteps.vue'
 import { queuedCount, type DreamingProject } from './dreaming'
 import { useAdvice } from './model-uses'
 import type { Dreaming } from './useDreaming'
 
-// 「查看详情」 of Dreaming (11-11): every authorized project in a dialog that
-// scrolls, so the card stays one height however many there are. Projects with
-// new sessions come first, each with 「整理」; the rest are quieter and their
-// 「整理一次」 reads every session again. A project that just ran keeps its
-// place and says what it found, with a link to the review queue; one that did
-// not finish says why and its button is 「重试」, with 「测试连接」 for Astro's
-// model above the lists.
+// 「查看详情」 of Dreaming (11-11): how a run works in three steps, marked
+// with what the runs here reported (rec issue 143), then every authorized project in
+// a dialog that scrolls, so the card stays one height however many there are.
+// Projects with new sessions come first, each with 「整理」; the rest are
+// quieter and their 「整理一次」 reads every session again. A project that
+// just ran keeps its place and says what it found, with a link to the review
+// queue; one that did not finish says why and its button is 「重试」, with
+// 「测试连接」 for Astro's model above the lists. Projects not yet approved
+// are counted, with 「去授权」 to approve them in Astro's settings.
 defineProps<{ open: boolean; dreaming: Dreaming; model: string | null }>()
-const emit = defineEmits<{ close: []; edit: []; checked: [] }>()
+const emit = defineEmits<{ close: []; authorize: []; checked: [] }>()
 
 // A full re-read is offered once the project has something it could read again.
 const canRun = (project: DreamingProject, group: 'fresh' | 'quiet') => group === 'fresh' || project.lastRun !== null
@@ -29,7 +32,8 @@ const runLabel = (project: DreamingProject, fromStart: boolean) =>
   <UiDialog :open="open" title="Dreaming" :description="t('modelSettings.dreaming.daily')" size="lg" data-dreaming-dialog @close="emit('close')">
     <div class="dreaming-dialog">
       <p class="dreaming-note" data-dreaming-advice><span class="dreaming-label">{{ t('modelSettings.uses.advicePrefix') }}</span>{{ useAdvice('dreaming') }}</p>
-      <ModelFailureNote v-if="dreaming.failed.length" :text="dreaming.summary.text" role="assistant" :model="model ?? ''" @checked="emit('checked')" />
+      <UseSteps :steps="dreaming.steps" :label="t('modelSettings.dreaming.stepsLabel')" />
+      <ModelFailureNote v-if="dreaming.failureText" :text="dreaming.failureText" role="assistant" :model="model ?? ''" @checked="emit('checked')" />
       <template v-for="[group, rows] in ([['fresh', dreaming.fresh], ['quiet', dreaming.quiet]] as const)" :key="group">
         <ul v-if="rows.length" class="dreaming-list" :class="`dreaming-list--${group}`" :data-dreaming-list="group">
           <li v-for="project in rows" :key="project.personalProjectId" class="dreaming-row" :data-dreaming-row="project.personalProjectId">
@@ -53,15 +57,15 @@ const runLabel = (project: DreamingProject, fromStart: boolean) =>
       </p>
     </div>
     <template #footer>
-      <Button v-if="dreaming.unapproved.length" size="sm" variant="outline" data-dreaming-open @click="emit('edit')">
-        {{ t('modelSettings.uses.openAstro') }}
+      <Button v-if="dreaming.unapproved.length" size="sm" variant="outline" data-dreaming-authorize @click="emit('authorize')">
+        {{ t('modelSettings.uses.authorize') }}
       </Button>
     </template>
   </UiDialog>
 </template>
 
 <style scoped>
-.dreaming-dialog { display: grid; gap: var(--space-3); min-width: 0; }
+.dreaming-dialog { display: grid; gap: var(--space-4); min-width: 0; }
 .dreaming-note { margin: 0; color: var(--color-muted); font-size: var(--text-control); }
 .dreaming-label { margin-inline-end: 8px; font-size: var(--text-meta); }
 .dreaming-list { display: grid; margin: 0; padding: 0; list-style: none; font-size: var(--text-control); }

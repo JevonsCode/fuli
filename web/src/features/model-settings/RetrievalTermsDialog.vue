@@ -4,15 +4,19 @@ import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { UiDialog } from '@/ui'
 import ModelFailureNote from './ModelFailureNote.vue'
+import UseSteps from './UseSteps.vue'
 import { useAdvice } from './model-uses'
 import type { RetrievalTerms } from './useRetrievalTerms'
 
-// 「查看详情」 of 补检索词 (11-11): the project choice, how it stands, what the
-// 20-item self-test measured with its cost and advice, and the fill of the
-// rest or not. A fill the model stopped answering says so with 「测试连接」 and
-// 「重试」. The actions keep their place in the footer.
+// 「查看详情」 of 补检索词 (11-11): the project choice, then how filling works
+// in three steps, each with what the server answered of it (rec issue 143): the
+// count, what the 20-item self-test measured or why it stopped, and the fill's
+// written of total. Under them the advice and the cost of the rest, for the
+// choice to fill it or not. A fill the model stopped answering says so with
+// 「测试连接」 and 「重试」; a project not approved has 「去授权」. The
+// actions keep their place in the footer.
 defineProps<{ open: boolean; terms: RetrievalTerms; model: string | null }>()
-const emit = defineEmits<{ close: []; checked: [] }>()
+const emit = defineEmits<{ close: []; authorize: []; checked: [] }>()
 </script>
 
 <template>
@@ -24,9 +28,10 @@ const emit = defineEmits<{ close: []; checked: [] }>()
       <p v-else-if="terms.note" class="terms-line" data-terms-note>{{ terms.note }}</p>
       <template v-else-if="terms.state?.stats">
         <ModelFailureNote v-if="terms.failed" :text="terms.line" role="assistant" :model="model ?? ''" @checked="emit('checked')" />
-        <p v-else class="terms-line" :role="terms.filling ? 'status' : undefined" data-terms-line>{{ terms.line }}</p>
-        <p v-if="terms.lastRun && terms.missing && !terms.failed" class="terms-line" data-terms-last-run>{{ terms.lastRun }}</p>
-        <div v-if="terms.trial?.status === 'tested' && terms.missing && !terms.filling" class="terms-trial" data-terms-trial>
+        <ModelFailureNote v-else-if="terms.trialFailure?.model" :text="t('modelSettings.retrievalTerms.trialStopped', { reason: terms.trialFailure.text })" role="assistant"
+          :model="model ?? ''" @checked="emit('checked')" />
+        <UseSteps :steps="terms.steps" :label="t('modelSettings.retrievalTerms.stepsLabel')" />
+        <div v-if="terms.tested && terms.trial" class="terms-trial" data-terms-trial>
           <p class="terms-result">
             {{ t('modelSettings.retrievalTerms.result', { sample: terms.trial.sample ?? 0, before: terms.trial.before ?? 0, after: terms.trial.after ?? 0 }) }}
             <strong :data-advice="terms.trial.advice">{{ t(`modelSettings.retrievalTerms.advice.${terms.trial.advice ?? 'not_worth'}`) }}</strong>
@@ -38,9 +43,10 @@ const emit = defineEmits<{ close: []; checked: [] }>()
       </template>
     </div>
     <template #footer>
-      <template v-if="terms.trial?.status === 'tested' && terms.missing && !terms.filling && !terms.failed">
+      <Button v-if="terms.needsApproval" size="sm" data-terms-authorize @click="emit('authorize')">{{ t('modelSettings.uses.authorize') }}</Button>
+      <template v-else-if="terms.tested">
         <Button size="sm" variant="ghost" data-terms-decline @click="terms.decline()">{{ t('modelSettings.retrievalTerms.decline') }}</Button>
-        <Button size="sm" :variant="terms.trial.advice === 'fill' ? 'default' : 'outline'" :disabled="terms.busyElsewhere" data-terms-fill @click="terms.fill()">
+        <Button size="sm" :variant="terms.trial?.advice === 'fill' ? 'default' : 'outline'" :disabled="terms.busyElsewhere" data-terms-fill @click="terms.fill()">
           {{ t('modelSettings.retrievalTerms.fill', { count: terms.missing }) }}
         </Button>
       </template>
@@ -48,14 +54,14 @@ const emit = defineEmits<{ close: []; checked: [] }>()
       <Button v-else-if="terms.failed" size="sm" :disabled="terms.busyElsewhere" data-terms-retry @click="terms.fill()">{{ t('modelSettings.retryAction') }}</Button>
       <Button v-else size="sm" :disabled="!terms.ready || !terms.missing || terms.busyElsewhere"
         :loading="terms.testing" :loading-label="t('modelSettings.retrievalTerms.testing', { name: terms.projectName })" data-terms-test @click="terms.test()">
-        {{ t('modelSettings.retrievalTerms.test') }}
+        {{ terms.trialFailure ? t('modelSettings.retryAction') : t('modelSettings.retrievalTerms.test') }}
       </Button>
     </template>
   </UiDialog>
 </template>
 
 <style scoped>
-.terms-dialog { display: grid; gap: var(--space-3); min-width: 0; }
+.terms-dialog { display: grid; gap: var(--space-4); min-width: 0; }
 .terms-line { margin: 0; color: var(--color-muted); font-size: var(--text-control); }
 .terms-label { margin-inline-end: 8px; font-size: var(--text-meta); }
 .terms-line.is-error { color: var(--color-danger); }

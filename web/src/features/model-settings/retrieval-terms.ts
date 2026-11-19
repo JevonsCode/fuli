@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { getJson, postJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
+import { t } from '@/i18n'
+import { failureReason } from './model-health'
 
 // Retrieval terms for old knowledge on the model page (rec#92): count what
 // lacks terms, test a sample with real searches, then fill the rest.
@@ -12,6 +14,8 @@ const trial = z.looseObject({
   after: z.number().optional(),
   remaining: z.number().optional(),
   advice: z.string().optional(),
+  // Why the model did not answer, on a self-test that stopped (src/retrieval-terms/fill.js).
+  reason: z.string().nullable().optional(),
   tokens: z.looseObject({ trial: z.number(), perItem: z.number().optional(), projected: z.number().optional() }).optional(),
 })
 const run = z.looseObject({ status: z.string(), written: z.number().optional(), tokens: z.number().optional() })
@@ -27,3 +31,13 @@ export const readTerms = (projectId: string) => getJson(`/api/retrieval-terms?pr
 export const trialTerms = (personalProjectId: string) => postJson('/api/retrieval-terms/trial', { personalProjectId }, shapeOf(trial))
 export const fillTerms = (personalProjectId: string) => postJson('/api/retrieval-terms/fill', { personalProjectId }, shapeOf(run))
 export const stopTerms = () => postJson('/api/retrieval-terms/stop', {})
+
+/**
+ * Why a self-test stopped before it measured anything, in plain words, and whether the model
+ * is why; null when it measured, or when the project's state (read again after it) says why.
+ */
+export function trialStopped(result: TermsTrial): { text: string; model: boolean } | null {
+  if (result.status === 'model_failed') return { text: failureReason(result.reason), model: true }
+  if (result.status === 'busy') return { text: t('modelSettings.retrievalTerms.busy'), model: false }
+  return null
+}

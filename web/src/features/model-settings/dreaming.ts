@@ -11,8 +11,12 @@ const lastRun = z.looseObject({ at: z.string(), status: z.string(), sessions: z.
 const project = z.looseObject({ personalProjectId: z.string(), name: z.string(), readiness: z.string(),
   newSessions: z.number().nullable(), lastRun: lastRun.nullable() })
 const proposal = z.looseObject({ action: z.string(), seenIn: z.number(), status: z.string() })
-// modelReceipt.reason: why the model did not answer, on a run that stopped (src/dreaming/run.js).
+// What a run reports (src/dreaming/run.js): the sessions it read, the leads the
+// model found (candidates), what reached the review queue (proposed), the
+// sessions no call could read (unread) and the tokens it used. On a run that
+// stopped, modelReceipt.reason says why the model did not answer.
 const result = z.looseObject({ status: z.string(), sessions: z.number().optional(), proposed: z.array(proposal).optional(),
+  candidates: z.number().optional(), unread: z.number().optional(), usage: z.looseObject({ totalTokens: z.number() }).optional(),
   modelReceipt: z.looseObject({ reason: z.string().nullable().optional() }).nullable().optional() })
 const stateShape = shapeOf(z.looseObject({ readiness: z.string(), projects: z.array(project) }))
 const runShape = shapeOf(result)
@@ -36,3 +40,14 @@ export function runFailure(status: string, reason?: string | null): string | nul
 }
 
 export const queuedCount = (run?: DreamingResult) => run?.proposed?.filter(entry => entry.status === 'queued').length ?? 0
+
+/** What finished runs read and found, added up: counts only, as the server reported them. */
+export function runTotals(runs: readonly DreamingResult[]) {
+  const sum = (count: (run: DreamingResult) => number) => runs.reduce((total, run) => total + count(run), 0)
+  // A server before candidates were reported counts only what it proposed.
+  return { sessions: sum(run => run.sessions ?? 0), candidates: sum(run => run.candidates ?? run.proposed?.length ?? 0), queued: sum(queuedCount),
+    // Proposals that did not reach the queue: capture is off or the write failed.
+    missed: sum(run => run.proposed?.filter(entry => entry.status !== 'queued').length ?? 0),
+    unread: sum(run => run.unread ?? 0), tokens: sum(run => run.usage?.totalTokens ?? 0) }
+}
+export type RunTotals = ReturnType<typeof runTotals>

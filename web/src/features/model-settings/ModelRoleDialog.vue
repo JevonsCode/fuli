@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -28,7 +28,8 @@ import {
 // One role's model settings as a centred form. Saving sends the whole role
 // with the revision it was read at; the server validates and refuses a file
 // that changed meanwhile, and the page then shows what it read again.
-const props = defineProps<{ role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[] }>()
+// focus: the part the form opens at; 'projects' when a use's 去授权 opened it (rec issue 143).
+const props = defineProps<{ role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[]; focus?: 'projects' | null }>()
 const emit = defineEmits<{ close: []; saved: [payload: ModelRolesPayload]; conflict: [code: ConfigConflict] }>()
 
 const BUDGET_FIELDS = ['maxInputTokens', 'maxOutputTokens', 'timeoutSeconds', 'windowHours', 'maxTokensPerWindow'] as const
@@ -70,6 +71,15 @@ watch(() => props.role, (role) => {
   draftRevision = props.payload.revision
   error.value = ''
   refreshModels()
+}, { immediate: true })
+// Opened to approve projects: the project list is marked and scrolled into view once the dialog
+// shows; focus stays where the dialog puts it (useModalDialog).
+const egress = ref<HTMLFieldSetElement | null>(null)
+const asked = computed(() => Boolean(props.role) && props.focus === 'projects')
+watch(asked, async (open) => {
+  if (!open) return
+  await nextTick()
+  requestAnimationFrame(() => egress.value?.scrollIntoView({ block: 'center' }))
 }, { immediate: true })
 
 const name = computed(() => (props.role ? roleName(props.role) : ''))
@@ -204,7 +214,7 @@ async function save() {
         <FieldLabel for="model-role-terms">{{ t('modelSettings.retrievalTerms.enable') }}</FieldLabel>
       </Field>
 
-      <fieldset class="model-role-fieldset">
+      <fieldset ref="egress" class="model-role-fieldset" :class="{ 'is-asked': asked }" data-model-egress>
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>
         <p v-if="!projectChoices.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
         <template v-else>
@@ -302,6 +312,8 @@ async function save() {
 .model-role-wide { grid-column: 1 / -1; }
 .model-role-fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .model-role-fieldset legend { margin-bottom: 4px; font-size: 14px; font-weight: 500; }
+/* Opened from a use's 去授权: the list the person came for is marked. */
+.model-role-fieldset.is-asked legend { color: var(--color-gold); }
 .model-role-check { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .model-role-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px 16px; max-height: 208px; padding: 2px; overflow-y: auto; }
 .model-role-projects label { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
