@@ -323,6 +323,24 @@ describe('a folded group', () => {
     expect(input().value).toBe('Alpha 项目')
   })
 
+  it('says when its members come into view: opening the list folded does not, opening the row or typing does', async () => {
+    let shown = 0
+    mountCombobox('', { options: grouped, foldGroup: '临时项目', onFoldShown: () => { shown += 1 } })
+    input().click()
+    await flushPromises()
+    expect(shown).toBe(0)
+    fold()!.click()
+    await flushPromises()
+    expect(shown).toBe(1)
+    await key(input(), 'Escape')
+    input().click()
+    await flushPromises()
+    input().value = '周报'
+    input().dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(shown).toBe(2)
+  })
+
   it('typing finds its members without opening the row', async () => {
     mountCombobox('', { options: grouped, foldGroup: '临时项目' })
     input().click()

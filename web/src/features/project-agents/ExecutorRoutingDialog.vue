@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { putJson } from '@/api/client'
@@ -163,7 +164,7 @@ async function save() {
       <template v-else>
         <OptionSelect v-model="scope" field :label="t('projectAgents.routing.editor.scope')" :options="scopeOptions" :disabled="busy" />
         <label class="ui-field">{{ t('projectAgents.routing.editor.priority') }}<input v-model.number="priority" type="number" min="1" max="1000000" :disabled="busy" required /></label>
-        <OptionCombobox v-if="scope === 'project' || scope === 'task'" v-model="projectId" field control-id="executor-rule-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" :label="t('projectAgents.fields.project')" :disabled="busy" />
+        <OptionCombobox v-if="scope === 'project' || scope === 'task'" v-model="projectId" field control-id="executor-rule-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('projectAgents.fields.project')" :disabled="busy" />
         <label v-if="scope === 'task'" class="ui-field">{{ t('projectAgents.routing.editor.taskId') }}<input v-model="taskId" maxlength="128" :disabled="busy" /></label>
         <label class="ui-field">{{ t('projectAgents.routing.editor.workKind') }}<input v-model="workKind" maxlength="128" :disabled="busy" required /></label>
         <label class="ui-field executor-routing-wide">{{ t('projectAgents.routing.editor.executorIds') }}<textarea v-model="executorAllowList" rows="3" :placeholder="t('projectAgents.routing.editor.executorIdsPlaceholder')" :disabled="busy" required /></label>

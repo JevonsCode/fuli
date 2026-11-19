@@ -7,6 +7,7 @@ import { currentLocale, t } from '@/i18n'
 import { saveFile } from '@/lib/save-file'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import type { PersonalProject } from '@/types'
 import { z } from 'zod'
 import { shapeOf } from '@/api/response-shape'
@@ -240,7 +241,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
   <section class="agent-conversations" :aria-label="t('projectAgents.conversations.title')">
     <!-- Always shown: an empty state is information, not something to hide behind a toggle. -->
     <h2 class="agent-conversations-title">{{ t('projectAgents.conversations.title') }}</h2>
-      <OptionCombobox :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="scopeOptions" :fold-group="temporaryGroupLabel()" />
+      <OptionCombobox :model-value="projectId" field @update:model-value="chooseScope" :label="t('projectAgents.conversations.scope')" :options="scopeOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" />
       <p class="conversation-hint">{{ t('projectAgents.conversations.hint') }}</p>
       <section data-working-memory class="working-memory" :aria-label="t('projectAgents.conversations.memoryTitle')">
         <div class="memory-heading">

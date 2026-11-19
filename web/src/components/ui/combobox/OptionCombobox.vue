@@ -13,7 +13,7 @@
 // `loadingLabel` then say what was searched and what is being read.
 // `foldGroup`: the heading of a group that opens folded into one row with how
 // many of it are chosen (「临时项目 1/12」); the row opens it, and typing shows
-// its matches as usual.
+// its matches as usual; `foldShown` is emitted each time its members come into view.
 import type { HTMLAttributes } from "vue"
 import { ComboboxInput } from "reka-ui"
 import { computed, ref, useId, watch } from "vue"
@@ -69,7 +69,7 @@ const props = withDefaults(defineProps<{
   disabled: false, loading: false, freeText: false, searchOnServer: false, emptyLabel: undefined, loadingLabel: undefined, foldGroup: undefined, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
 })
 
-const emit = defineEmits<{ "update:modelValue": [value: V]; search: [text: string] }>()
+const emit = defineEmits<{ "update:modelValue": [value: V]; search: [text: string]; foldShown: [] }>()
 defineSlots<{ actions?: () => unknown }>()
 
 // TagsInput adds typed text as a chip on its delimiter; chips here only come from the list.
@@ -114,6 +114,7 @@ const foldedCount = (options: readonly SelectOption[]) => {
   const chosen = props.multiple ? chosenValues.value : [props.modelValue as string]
   return `${options.filter(option => chosen.includes(option.value)).length}/${options.length}`
 }
+watch(() => Boolean(props.foldGroup) && open.value && (unfolded.value || Boolean(searchText.value.trim())), (shown) => { if (shown) emit("foldShown") })
 const folds = (heading: string | undefined) => Boolean(props.foldGroup) && heading === props.foldGroup && !searchText.value.trim()
 const chosenLabel = computed(() => props.multiple ? "" : labelOf(itemModel.value))
 watch(chosenLabel, (label) => { if (!open.value) fieldText.value = label })

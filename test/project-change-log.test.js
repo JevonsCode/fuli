@@ -173,7 +173,7 @@ test('GET /api/personal-projects/:projectId/history reads one project of the act
 
 test('the interface catalog names the read route', () => {
   const projects = agentInterfaceCatalog().readWorkflows.find(({ domain }) => domain === 'projects');
-  assert.deepEqual(projects.readRoutes, ['GET /api/personal-projects/:projectId/history']);
+  assert.deepEqual(projects.readRoutes, ['GET /api/personal-projects/:projectId/history', 'GET /api/personal-projects/temporary-sources']);
 });
 
 test('a locally opened application keeps the change log in its data directory', async () => {

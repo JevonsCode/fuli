@@ -99,6 +99,7 @@ import {
   listPersonalProjectHistory,
   listPersonalProjects,
   listProjectRelationWeights,
+  listTemporaryProjectSources,
   upsertPersonalProject
 } from './personal-projects.js';
 import { environmentTokenUsageResolver } from '../agents/token-usage-resolver.js';
@@ -415,6 +416,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async listPersonalProjects(input) {
     return listPersonalProjects(this, input);
+  }
+
+  listTemporaryProjectSources(input) {
+    return listTemporaryProjectSources(this, input);
   }
 
   async listProjectRelationWeights(input) {

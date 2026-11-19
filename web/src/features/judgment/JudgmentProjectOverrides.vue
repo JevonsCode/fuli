@@ -8,6 +8,7 @@ import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import type { PersonalProject } from '@/types'
 
 import ProjectJudgmentPolicy from './ProjectJudgmentPolicy.vue'
@@ -100,7 +101,7 @@ function changed(value: JudgmentPolicy) {
           :heading="projectName(policy.personalProjectId ?? '')" :policy="policy" @change="changed" />
         <div v-if="addable.length" class="judgment-overrides-add">
           <OptionCombobox v-model="chosenProjectId" class="judgment-overrides-project" control-id="judgment-override-project" data-select="judgment-override-project"
-            :label="judgmentText('overrides.project')" :options="addableOptions" :fold-group="temporaryGroupLabel()" :disabled="adding" />
+            :label="judgmentText('overrides.project')" :options="addableOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :disabled="adding" />
           <Button variant="outline" data-action="add-project-policy" :disabled="!chosenProjectId" :loading="adding" :loading-label="addingLabel" @click="add">
             {{ judgmentText('overrides.add') }}
           </Button>

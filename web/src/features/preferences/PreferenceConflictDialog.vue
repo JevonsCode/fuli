@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
@@ -369,7 +370,7 @@ function fail(message: string) {
           <UiSegmented v-model="splitItem" :label="t('preferences.dialog.splitRecordAria')"
             :options="[{ value: 'left', label: 'A' }, { value: 'right', label: 'B' }]" />
         </div>
-        <OptionCombobox v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" :fold-group="temporaryGroupLabel()" />
+        <OptionCombobox v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" />
       </section>
 
       <section class="conflict-impact-preview">

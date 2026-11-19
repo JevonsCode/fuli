@@ -5,7 +5,7 @@
 // every temporary project folded into one row (「临时项目 7/12」) whose box takes
 // or clears them all and which opens to pick them one by one. A single choice
 // from a field uses OptionCombobox with projectScopeOptions and foldGroup.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,7 @@ import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import UiIcon from '@/ui/UiIcon.vue'
 import { groupSelection, matchesProjectQuery, projectScopeGroups, type ProjectScopeChoice } from './project-scope-choices'
+import { readTemporaryProjectSources } from './temporary-project-sources'
 
 const props = withDefaults(defineProps<{
   /** The projects this setting offers, by its own rule. */
@@ -41,6 +42,10 @@ const allShownChosen = computed(() => shownKeys.value.every(key => chosen.value.
 const someShownChosen = computed(() => shownKeys.value.some(key => chosen.value.has(key)))
 // A search that finds temporary projects opens the row on them.
 const open = computed(() => (query.value.trim() ? shownTemporary.value.length > 0 : expanded.value))
+// Temporary projects shown one by one (opened, or found by a search) ask who made them.
+watch(() => open.value && shownTemporary.value.length > 0, (shown) => {
+  if (shown) readTemporaryProjectSources()
+})
 const nothingShown = computed(() => !shownFormal.value.length && !shownTemporary.value.length)
 
 const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.key}`

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -188,7 +189,7 @@ async function addException() {
               :label="t('pages.connections.conflictExceptionProject')"
               :placeholder="t('pages.connections.conflictExceptionProject')"
               :options="addableOptions"
-              :fold-group="temporaryGroupLabel()"
+              :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()"
               :disabled="Boolean(savingLabel)"
               required
             />
