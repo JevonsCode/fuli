@@ -174,7 +174,7 @@ test('the update route reads the state from anywhere the console serves, and sta
   const inputs = [];
   const system = { updateStatus: () => null,
     startUpdate: async (input) => { starts += 1; inputs.push(input); return { id: 'u1', status: 'updating' }; } };
-  const request = (method, remoteAddress, body = '') => ({ method, url: '/api/system/update', headers: {}, socket: { remoteAddress },
+  const request = (method, remoteAddress, body = '', headers = {}) => ({ method, url: '/api/system/update', headers, socket: { remoteAddress },
     async *[Symbol.asyncIterator]() { if (body) yield Buffer.from(body); } });
   await handleApiRequest({ request: request('GET', '127.0.0.1'), response, app: {}, system });
   await handleApiRequest({ request: request('POST', '192.168.1.20'), response, app: {}, system });
@@ -183,6 +183,14 @@ test('the update route reads the state from anywhere the console serves, and sta
     200, { id: 'u1', status: 'updating' }]);
   assert.equal(starts, 1);
   assert.deepEqual(inputs, [{ stopProcesses: ['40:133'] }]);
+  for (const method of ['GET', 'POST']) {
+    for (const headers of [{ 'x-fuli-runner': 'paired' }, { 'x-forwarded-for': '127.0.0.1' }]) {
+      await handleApiRequest({ request: request(method, '::1', '{}', headers), response, app: {}, system });
+      assert.equal(sent.at(-2), 403);
+      assert.equal(sent.at(-1).code, 'local_user_only');
+    }
+  }
+  assert.equal(starts, 1);
 });
 
 test('an npm update started from the beta channel installs from it', async (t) => {

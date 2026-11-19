@@ -13,7 +13,7 @@ const RECORD_PATH = /^\/api\/debug-turns\/([^/]+)$/;
 
 // The full-request capture's switch. Only the person at this computer turns it on.
 async function handleCapture({ request, response, modelCapture }) {
-  if (refuseRemoteDecision(request, response, 'Model capture is switched only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'Model capture is switched only on this computer', { directHost: true })) return true;
   if (!modelCapture) {
     sendJson(response, 503, { error: 'Model capture needs a local FULI installation', code: 'debug_turns_unavailable' });
     return true;
@@ -39,7 +39,7 @@ export async function handleDebugTurnsRequest({ request, response, url, debugTur
   const record = many ? null : RECORD_PATH.exec(url.pathname);
   if (url.pathname !== LIST_PATH && !record && !many) return false;
   response.setHeader('Cache-Control', 'no-store');
-  if (refuseRemoteDecision(request, response, 'Debug turn records are read only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'Debug turn records are read only on this computer', { directHost: true })) return true;
   if (!debugTurns) {
     sendJson(response, 503, { error: 'Debug turn records need a local FULI installation', code: 'debug_turns_unavailable' });
     return true;

@@ -3,7 +3,7 @@ import { ROUNDTABLE_TOOL_NAMES } from '../agent-roundtable/tools.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { ApplicationErrorCode } from '../app/application-error.js';
 import { providerFailureCode, providerOperation } from './provider-operation.js';
-import { DIAGNOSTIC_COMPONENTS, DIAGNOSTIC_LEVELS } from './safe-event.js';
+import { DIAGNOSTIC_COMPONENTS, DIAGNOSTIC_LEVELS, publicVersion } from './safe-event.js';
 
 // An Issue is public. Project the stored event onto product vocabulary again:
 // old local logs can carry a free-text reason, a session ID or a dynamic URL.
@@ -21,7 +21,6 @@ const CODES = new Set([...Object.values(ApplicationErrorCode), 'internal_error',
 const HOOKS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'PreToolUse', 'PostToolUse', 'SessionEnd',
   'sessionStart', 'sessionEnd', 'beforeSubmitPrompt', 'afterAgentResponse', 'stop']);
 
-export const publicVersion = value => typeof value === 'string' && /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:-(?:dev|alpha|beta|rc)\.\d{1,5})?$/.test(value) ? value : 'unknown';
 export const publicSource = value => SOURCE_APPLICATIONS.includes(value) ? value : 'other';
 
 function operation(component, value) {

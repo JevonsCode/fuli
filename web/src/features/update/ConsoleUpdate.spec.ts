@@ -5,6 +5,7 @@ const api = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { ApiError } from '@/api/client'
 import { setLocale } from '@/i18n'
 import ConsoleUpdate from './ConsoleUpdate.vue'
 
@@ -20,6 +21,16 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('ConsoleUpdate', () => {
+  it('directs a runner to the host when it lacks update access and stops polling', async () => {
+    api.postJson.mockRejectedValueOnce(new ApiError('Forbidden', 403))
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.8.0' } })
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('宿主的电脑')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.getJson).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('starts the update with one click, shows progress while FULI restarts, and reloads on the new version', async () => {
     const reload = vi.fn()
     const wrapper = mount(ConsoleUpdate, { props: { version: '0.8.0', reload } })
