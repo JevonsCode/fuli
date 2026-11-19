@@ -121,7 +121,18 @@ The host listens on its private LAN addresses and follows them as they change
 fingerprint while a runner is paired. The runner tries every address it knows at
 once (2.5 seconds in all), then looks the fingerprint up over mDNS (up to 3
 seconds, done at the first answer), taking only private addresses from it. Any
-address is accepted only when it answers with the pinned certificate. The
+address is accepted only when it answers with the pinned certificate.
+
+Each address is tried both by the default route and from each physical
+adapter's own address (Wi-Fi, cable), and the route that answers is the one
+every later request takes. An office VPN often claims the other computer's
+subnet, so the default route goes into its tunnel and never arrives, while the
+Wi-Fi adapter reaches the host directly. The host's `hello` names its current
+addresses and the runner keeps up to 16, so each network the two meet on (home,
+office) is tried again next time. mDNS does not cross subnets: on a network
+where the two computers sit in different subnets, the first time there, tell
+the runner where the host is with `fuli runner add-address ADDRESS` (the host's
+`fuli runner list` shows its addresses); it is kept from then on. The
 listener closes a connection that has not finished its TLS handshake in 10
 seconds and holds at most 24 connections from one address (64 in all). A client
 waits for the tool list when its MCP server starts: when the host has not
