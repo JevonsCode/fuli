@@ -1,5 +1,7 @@
 <script setup lang="ts">
-// Choosing projects for a setting, as an open list: formal projects by name,
+// Choosing projects for a setting, as an open list: 全选 / 清空 on top for every
+// project shown (only the matches while searching; the rest keep their choice),
+// then formal projects by name,
 // every temporary project folded into one row (「临时项目 7/12」) whose box takes
 // or clears them all and which opens to pick them one by one. A single choice
 // from a field uses OptionCombobox with projectScopeOptions and foldGroup.
@@ -33,6 +35,10 @@ const chosen = computed(() => new Set(props.selected))
 const shownFormal = computed(() => groups.value.formal.filter(choice => matchesProjectQuery(choice, query.value)))
 const shownTemporary = computed(() => groups.value.temporary.filter(choice => matchesProjectQuery(choice, query.value)))
 const temporary = computed(() => groupSelection(groups.value.temporary, chosen.value))
+// What 全选 / 清空 act on: every project, or the matches of a search (folded or not).
+const shownKeys = computed(() => [...shownFormal.value, ...shownTemporary.value].map(choice => choice.key))
+const allShownChosen = computed(() => shownKeys.value.every(key => chosen.value.has(key)))
+const someShownChosen = computed(() => shownKeys.value.some(key => chosen.value.has(key)))
 // A search that finds temporary projects opens the row on them.
 const open = computed(() => (query.value.trim() ? shownTemporary.value.length > 0 : expanded.value))
 const nothingShown = computed(() => !shownFormal.value.length && !shownTemporary.value.length)
@@ -44,6 +50,12 @@ const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.ke
   <div class="project-scope" data-project-scope>
     <Input v-model="query" type="search" autocomplete="off" :placeholder="t('projects.scopePicker.search')"
       :aria-label="t('projects.scopePicker.search')" data-project-scope-search @keydown.enter.prevent />
+    <div class="project-scope-bulk">
+      <Button variant="ghost" size="xs" data-project-scope-all :disabled="disabled || !shownKeys.length || allShownChosen"
+        @click="emit('toggle', shownKeys, true)">{{ t('projects.scopePicker.selectAll') }}</Button>
+      <Button variant="ghost" size="xs" data-project-scope-clear :disabled="disabled || !someShownChosen"
+        @click="emit('toggle', shownKeys, false)">{{ t('projects.scopePicker.clear') }}</Button>
+    </div>
     <div class="project-scope-list" data-project-scope-list>
       <div v-for="choice in shownFormal" :key="choice.key" class="project-scope-row" data-project-scope-formal>
         <Checkbox :id="elementId(choice)" :model-value="chosen.has(choice.key)" :disabled="disabled"
@@ -80,6 +92,7 @@ const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.ke
 
 <style scoped>
 .project-scope { display: grid; gap: 8px; min-width: 0; }
+.project-scope-bulk { display: flex; gap: 4px; }
 .project-scope-list { display: grid; gap: 8px; max-height: 240px; padding: 2px; overflow-y: auto; }
 .project-scope-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .project-scope-row :deep(label) { display: flex; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
