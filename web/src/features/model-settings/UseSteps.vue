@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { statusTone } from '@/features/project-agents/task-labels'
 import { UiIcon } from '@/ui'
 import type { UseStep } from './use-steps'
 
@@ -7,13 +8,16 @@ import type { UseStep } from './use-steps'
 // with a count of a total, fills a bar; a done one gets a check; a failed one
 // says why in its line.
 defineProps<{ steps: readonly UseStep[]; label: string }>()
+// A step's colour is the shared status tone of the task status it matches (one status, one colour).
+const TASK_STATUS = { active: 'running', done: 'completed', failed: 'failed' } as const
+const toneOf = (step: UseStep) => (step.state ? statusTone(TASK_STATUS[step.state]) : undefined)
 const percent = (progress: NonNullable<UseStep['progress']>) =>
   (progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0)
 </script>
 
 <template>
   <ol class="use-steps" :aria-label="label" data-use-steps>
-    <li v-for="(step, index) in steps" :key="step.id" class="use-step" :class="step.state && `is-${step.state}`"
+    <li v-for="(step, index) in steps" :key="step.id" class="use-step" :data-tone="toneOf(step)"
       :data-use-step="step.id" :data-state="step.state ?? 'idle'" :aria-current="step.state === 'active' ? 'step' : undefined">
       <span class="use-step-mark" aria-hidden="true">
         <UiIcon v-if="step.state === 'done'" name="check" :size="12" />
@@ -39,13 +43,13 @@ const percent = (progress: NonNullable<UseStep['progress']>) =>
   color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; user-select: none;
   transition: background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
 }
-.use-step.is-active .use-step-mark { border-color: var(--color-gold); color: var(--color-gold); }
-.use-step.is-done .use-step-mark { border-color: var(--color-gold); background: var(--color-gold); color: var(--color-surface); }
-.use-step.is-failed .use-step-mark { border-color: var(--color-danger); color: var(--color-danger); }
+.use-step[data-tone="active"] .use-step-mark { border-color: var(--color-gold); color: var(--color-gold); }
+.use-step[data-tone="success"] .use-step-mark { border-color: var(--color-gold); background: var(--color-gold); color: var(--color-surface); }
+.use-step[data-tone="danger"] .use-step-mark { border-color: var(--color-danger); color: var(--color-danger); }
 .use-step-body { display: grid; gap: 2px; min-width: 0; }
 .use-step-title { margin: 0; color: var(--color-ink); font-weight: var(--weight-medium); line-height: 20px; }
 .use-step-detail { margin: 0; color: var(--color-muted); overflow-wrap: anywhere; }
-.use-step.is-failed .use-step-detail { color: var(--color-danger); }
+.use-step[data-tone="danger"] .use-step-detail { color: var(--color-danger); }
 .use-step-bar { overflow: hidden; block-size: 4px; margin-top: 4px; border-radius: 2px; background: color-mix(in srgb, var(--color-gold) 18%, transparent); }
 .use-step-bar span { display: block; block-size: 100%; border-radius: inherit; background: var(--color-gold); transition: inline-size var(--motion-move); }
 </style>
