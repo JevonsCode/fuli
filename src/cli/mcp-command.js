@@ -40,6 +40,12 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     return;
   }
 
+  // Only the serving version resolves its installed data. A relay launched
+  // from a replaced Windows slot can still find the active server.
+  if (!env[MCP_RELAYED_ENV] && !args.includes('--call')) {
+    runStdioRelay({ target: mcpServerTarget(args) });
+    return;
+  }
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(args, env);
   const configuredSourceApplication = args.includes('--source-application')
     ? requiredOption(args, '--source-application')
@@ -52,11 +58,6 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
         ? normalizeMcpSourceApplication(configuredSourceApplication)
         : 'other'
     });
-    return;
-  }
-  // The client starts the relay; the relay starts this same command as the server.
-  if (!env[MCP_RELAYED_ENV]) {
-    runStdioRelay({ target: mcpServerTarget(args) });
     return;
   }
   const sourceApplication = configuredSourceApplication

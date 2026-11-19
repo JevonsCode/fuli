@@ -50,8 +50,10 @@ export function readWindowsInstallation(packageRoot) {
       || root !== canonicalWindowsInstallPath(join(installRoot, 'versions', receipt.installationId))
       || windowsInstallPathsOverlap(installRoot, dataDir)) fail();
   const record = JSON.parse(readFileSync(join(installRoot, 'installation.json'), 'utf8'));
-  if (supersedes(record, receipt)) throw new WindowsInstallationSupersededError(record);
-  if (record.status !== 'installed' || ['version', 'kind', 'installationId', 'installRoot', 'packageRoot', 'dataDir', 'inventorySha256']
+  if (record?.installationId !== receipt.installationId && sameWindowsInstallation(record, receipt)) {
+    throw new WindowsInstallationSupersededError(record);
+  }
+  if (record?.status !== 'installed' || ['version', 'kind', 'installationId', 'installRoot', 'packageRoot', 'dataDir', 'inventorySha256']
     .some(key => record[key] !== receipt[key])
       || record.applicationVersion !== JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
       || !Array.isArray(record.shortcuts) || record.shortcuts.length !== 2 || !record.shortcuts.every(path => typeof path === 'string' && isAbsolute(path))
@@ -59,10 +61,10 @@ export function readWindowsInstallation(packageRoot) {
   return record;
 }
 
-// The record names another installed version of this installation and its data.
-function supersedes(record, receipt) {
-  return record.status === 'installed' && record.kind === receipt.kind && /^[a-f0-9-]{36}$/.test(record.installationId ?? '')
-    && record.installationId !== receipt.installationId && record.installRoot === receipt.installRoot
+// The selected slot can change across an update or rollback. The installation and data stay bound.
+export function sameWindowsInstallation(record, receipt) {
+  return record?.status === 'installed' && record.kind === receipt.kind && /^[a-f0-9-]{36}$/.test(record.installationId ?? '')
+    && record.installRoot === receipt.installRoot
     && record.dataDir === receipt.dataDir
     && record.packageRoot === join(receipt.installRoot, 'versions', record.installationId);
 }
