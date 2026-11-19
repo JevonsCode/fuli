@@ -1,0 +1,15 @@
+{
+  "version": "0.27.18",
+  "zh": [
+    "选择项目时，临时项目收在一行。展开就能单独选，收起也能看见选了几项。",
+    "Astro 会记住你上次选的项目，包括全部清空。",
+    "Dreaming 会显示正在整理的项目和结果。「补检索词」会告诉你还有几条要补。",
+    "Windows 更新时连接可接续。长按宿主电脑的「设置」三秒，可以复制故障报告。"
+  ],
+  "en": [
+    "Temporary projects share one row with a selection count. Expand it to pick them individually.",
+    "Astro remembers the projects you selected, including an empty selection.",
+    "Dreaming shows its current project and results. Retrieval terms shows how many entries remain.",
+    "Windows clients reconnect after updates. Hold Settings on the host for 3 seconds to copy a report."
+  ]
+}
