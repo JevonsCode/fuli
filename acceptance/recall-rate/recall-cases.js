@@ -145,7 +145,17 @@ export const SEARCH_CALLS = [
   // A flagged item is still current; it must not win over the clean answer.
   { id: 'sc-flagged-zh', language: 'zh',
     queries: ['对账文件 导入 编码'],
-    expect: ['lg-import-format'], forbid: ['nm-import-flagged'] }
+    expect: ['lg-import-format'], forbid: ['nm-import-flagged'] },
+  // A broad first query and the answer in a later one. Every fact in the
+  // project literally contains the project's name, so the broad query is a
+  // whole-phrase match on all of them and legitimately returns them all.
+  // What must not happen is that they spend the page the answer needed.
+  // The shape the entry itself writes: the project's name prefixed onto each
+  // category query, plus the one query that actually names the thing asked.
+  { id: 'sc-broad-first-zh', language: 'zh',
+    about: '前几个查询都带项目名，答案在最后一个查询里',
+    queries: ['潮池账本 约定', '潮池账本 接口', '潮池账本 说明', '对账接口 失败 退避 重试'],
+    expect: ['lg-retry-policy'], forbid: [] }
 ];
 
 export const SEARCH_SCOPE = {

@@ -34,6 +34,10 @@ function itemPreview(item, textBytes) {
   return result;
 }
 
+// How well this record matched. A result without one sorts last rather than
+// ahead of everything, and equal scores keep the order the queries were asked.
+const matchScore = item => (typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0);
+
 function marker(value, consoleUrl) {
   return createFuliSourceMarker({ ...value, consoleUrl, projectScopePriority: 'strict' });
 }
@@ -133,9 +137,15 @@ function pageKnowledgeSearch(value, { cursor, context, consoleUrl, toolName, lim
     }
     return result;
   });
+  // Every query gets its next result before any query gets another, so no
+  // query starves. Within that round the better match goes first, so a page
+  // that fills up carries the best of what the round holds rather than
+  // whichever query happened to be asked first (rec#111).
   const entries = [];
   for (let i = 0; i < Math.max(0, ...lists.map(list => list.length)); i++) {
-    lists.forEach((list, group) => { if (list[i]) entries.push({ ...list[i], group }); });
+    const round = [];
+    lists.forEach((list, group) => { if (list[i]) round.push({ ...list[i], group }); });
+    entries.push(...round.sort((left, right) => matchScore(right.item) - matchScore(left.item)));
   }
   for (const entry of entries) {
     // Search scores/view counters are volatile; the record body stays stable

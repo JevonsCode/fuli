@@ -165,6 +165,37 @@ test('multiple focused queries page every record without starving later query gr
   assert.equal(seen.size, 48);
 });
 
+test('a page that fills up carries the best matches, not whichever query was asked first', async () => {
+  // Each query's own results are already ranked; across queries they were
+  // delivered in the order the queries were written. A weak first query then
+  // spent the page and the strong answer waited for a continuation (rec#111).
+  const scores = { weak: [1.2, 1.1, 1], strong: [9, 8.5, 8], middling: [4, 3.5, 3] };
+  const app = application();
+  app.searchKnowledge = async ({ query }) => ({ query, facts: [],
+    entities: scores[query].map((score, i) => ({ id: `${query}-${i}`, space_id: 'space', scope: 'personal',
+      score, summary: `Fact ${i} for ${query}. ` + '资料'.repeat(600) })) });
+  const input = { queries: ['weak', 'strong', 'middling'], limitPerQuery: 3 };
+  const delivered = page => page.results.flatMap(group => (group.entities ?? []).map(item => item.id));
+  const page = await searchCurrentProjectKnowledge(app, resolution, input);
+
+  assert.ok(bytes(page) <= 8 * 1024);
+  assert.equal(page.retrieval_budget.complete, false, 'this page is full');
+  assert.deepEqual(delivered(page), ['strong-0'], 'the best match, though its query was asked second');
+  assert.equal(page.retrieval_budget.total_items, 9, 'the rest are counted and continue');
+
+  // Fairness is unchanged: every query still gets its own first result before
+  // any query gets a second one.
+  const order = [];
+  for (let cursor = page.next_cursor, pages = 0; cursor; pages++) {
+    assert.ok(pages < 12);
+    const next = await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor });
+    order.push(...delivered(next));
+    cursor = next.next_cursor;
+  }
+  assert.deepEqual(order.slice(0, 2), ['middling-0', 'weak-0'], 'the weakest query is not starved');
+  assert.equal(order[2], 'strong-1', 'no query gets a second result before every query has its first');
+});
+
 // The real per-query result shape: every group carries the call's scope
 // fields, guidance and markers, as searchFederatedKnowledge returns them.
 function federatedApplication({ recordsPerQuery = 6, projectIds = [] } = {}) {
