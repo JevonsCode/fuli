@@ -6,6 +6,10 @@ knowledge, preferences, FLAs and memory stay in **one** FULI, on the host
 computer. Every runner thinks with its own clients; only what it reads and writes
 of FULI goes to the host.
 
+Where this is going: every FULI is a host and follows another one only where it says so, so a
+computer can own some of the person's FULI and follow another for the rest.
+`docs/runner-roles-design.md` is that design and which step is done.
+
 ```
 runner (B)                                              host (A)
 Codex / Cursor / other MCP clients                      FULI console
@@ -66,12 +70,32 @@ host lists the runner until the person revokes it there.
 
 ## The console on a runner
 
-A runner has no FULI of its own, but it has a console entry: `fuli start` (and FULI.app's start)
-runs `fuli runner console`, which listens on this computer's loopback at its usual console port
-(2727 unless Settings say otherwise) and shows the host's console. Each request goes over the paired
-mutual-TLS channel to `/runner/1/console/…` on the host, which forwards it to its own console on
-loopback (`src/runner/console-relay.js`), so pages, API calls and live event streams behave as on
-the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) open on the runner too.
+A runner has no knowledge of its own yet, but it has a console of its own: `fuli start` (and
+FULI.app's start) runs `fuli runner console`, which listens on this computer's loopback at its usual
+console port (2727 unless Settings say otherwise).
+
+**This computer's own page is `/local`.** It opens whether or not the host answers, and says who
+this computer follows, whether that computer answers now, when it was last reached, which capability
+runs here and which on the host (and what each one does while the host is away), and every record
+still waiting to be delivered — one by one, with what it is, when it was made, where it stands and
+why — with 「现在重试」 beside them. It also says plainly that this beta syncs only on a network
+both computers are on.
+
+**A state band sits on top of every page.** One line: who this computer follows, online or not, when
+it last synced, how many records wait, and where this page's data came from. Where it came from is
+not guessed: every answer this entry serves carries `x-fuli-source` (`local`, `host` or
+`unavailable`), and the band (`src/runner/follower-band.js`) reads that header off the page's own
+requests. `fuli status` and `fuli runner status` print the same facts from the same answer
+(`src/runner/follower-status.js`), so the three never disagree about whether the host is reachable.
+
+**The host's pages come over the paired channel.** Each request goes over the paired mutual-TLS
+channel to `/runner/1/console/…` on the host, which forwards it to its own console on loopback
+(`src/runner/console-relay.js`), so pages, API calls and live event streams behave as on the host,
+and the receipt links the host gives (`http://127.0.0.1:2727/…`) open on the runner too.
+`/remote/<host>/…` names the host a page belongs to: the name is the host's own (a slug of it) or the
+start of the fingerprint the pairing pinned, and any other name reaches nothing (404 `unknown_host`).
+An HTML page asked for under that prefix is answered with the host's own path on this origin, because
+the host's console is one page application that reads its own absolute paths.
 
 - The entry answers only on loopback under its own name (no DNS rebinding) and refuses any other
   site's `Origin` before the channel; the host then gives the runner's own page the console's
@@ -83,11 +107,19 @@ the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) ope
   Nothing of it reaches the host. The host's relay refuses those writes, and opening a session
   (`/api/session-launch`), with 403 `host_computer_only`, so a runner never changes the host
   computer's clients.
-- While the host is away the entry shows a page saying so, with what waits in the outbox; API
-  calls answer 503 `host_unreachable`. A revoked runner's entry reaches nothing.
+- While the host is away, a page says so — naming the host's page that cannot be shown — and shows
+  this computer's own console below it; API calls answer 503 `host_unreachable`. A revoked runner's
+  entry reaches nothing.
+- 「现在重试」 (`POST /__fuli-follower/sync`) delivers the outbox now. It is taken only from this
+  computer's own page (its own `Origin`); a program on this computer has `fuli runner sync`.
 - `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
   runner sets up its clients only. A runner never gets a graph runtime by accident.
+- **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
+  (`src/runner/runner-mode.js`). A computer that was set up as a FULI of its own before it joined,
+  or that a start wrote a runtime file for, used to stop counting as a runner, and its clients then
+  silently used an empty local FULI (docs/runner-roles-design.md §1.1). `fuli runner leave` is the
+  one way to end it.
 - The host's and the runner's console ports should match for receipt links to open as they are.
 
 ## What a runner's call may do on the host
@@ -194,7 +226,8 @@ and tells the client to list again once the host's differs.
 
 ## Two computers on different networks
 
-There is no relay: the runner reaches the host directly or not at all. Two
+There is no relay, by decision (Jevons, 2026-11-23): the runner reaches the host directly or not
+at all, and none is planned. Two
 computers that are not on the same network (home and the office) need a VPN or
 mesh tool that puts them on one network — Tailscale, WireGuard, a company VPN
 that lets its clients reach each other. Then:
@@ -210,8 +243,8 @@ that lets its clients reach each other. Then:
    ```
 
    It is kept from then on, tried first, and the outbox is delivered at once.
-   (There is no button for this: the console has no runner page, and the
-   runner's console is the host's.)
+   The same is a button on the runner's own console page (`/local`): while the
+   host does not answer it offers 「添加主机地址」, one button and one field.
 4. `fuli runner status` on the runner says whether the host answers and from
    which address.
 
@@ -244,6 +277,11 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 | `assess_agent_action`, `report_routing_outcome` on a runner whose Tonborg chooses executors | Answered on the runner, online or not (see "Executor judgment on a runner") |
 | Other read-only tools | The last answer to the same call, marked offline, when there is one |
 | Anything else | `host_unreachable`, saying the host must be reachable for it |
+
+Every task entry on a runner carries `runner`, online as well as offline: online it names the host
+that answered, offline it says the host is away, that FULI is still working from what is kept here,
+and that nothing needs to be moved or set up again. A client's AI once read an offline entry as
+"this computer has no FULI, the host must be migrated" and told the person so (rec#144).
 
 A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
@@ -403,8 +441,8 @@ answer that this computer is not paired); `fuli uninstall` removes them.
 ## Data format
 
 A runner whose Tonborg chooses executors adds `runner/routing.sqlite`
-(`runner-routing`, version 1): its decisions and their reported outcomes. An
-older FULI does not open it. Its outbox entries use the tools
+(`runner-routing`, version 1): its decisions and their reported outcomes, which
+no longer expire. An older FULI does not open it. Its outbox entries use the tools
 `runner_routing_decision` and `runner_routing_outcome`, which only a host of
 this version takes; an older host refuses them (`entry_invalid`) and they stay
 listed as refused.
@@ -416,8 +454,9 @@ backup: `runner-host` 1 → 2 adds `runners.device_name`, 2 → 3 makes the
 `replays` table again with its key per runner and the pending state (a
 `replace-table` step: beta.1's replay records are not kept, as only an entry
 still waiting on a runner is delivered again under its id); `runner` 1 → 2
-adds `host.revoked_at`. Runners, pairings, invitations, answers and the outbox
-are kept. Every host's roundtable
+adds `host.revoked_at` and 2 → 3 adds `host.last_seen_at`, when this computer
+last reached its host, which the console and `fuli status` show as the last
+sync. Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or

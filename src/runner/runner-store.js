@@ -47,6 +47,10 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/2-host-revoked', to: 2, kind: 'add-columns', table: 'host',
     summary: 'when the host answered that it does not know this runner (revoked), so nothing kept is shown again',
     columns: { revoked_at: 'TEXT' }
+  }, {
+    id: 'runner/3-host-last-seen', to: 3, kind: 'add-columns', table: 'host',
+    summary: 'when this computer last reached its host, so the console and `fuli status` can say when it last synced',
+    columns: { last_seen_at: 'TEXT' }
   }]
 });
 
@@ -83,7 +87,7 @@ export class RunnerStore {
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
       addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
-      revokedAt: row.revoked_at } : null;
+      revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
   }
 
   // A pairing. Joining the same host again queues again the checkpoints its
@@ -138,12 +142,14 @@ export class RunnerStore {
     });
   }
 
-  // The address the host last answered on, first in line next time.
+  // The address the host last answered on, first in line next time, and when it
+  // answered: what the console and `fuli status` show as the last sync.
   hostAnsweredAt(address) {
     const host = this.host();
     if (!host) return;
     const addresses = [address, ...host.addresses.filter((known) => known !== address)].slice(0, KNOWN_ADDRESSES);
-    this.db.prepare('UPDATE host SET last_address = ?, addresses = ? WHERE id = 1').run(address, JSON.stringify(addresses));
+    this.db.prepare('UPDATE host SET last_address = ?, addresses = ?, last_seen_at = ? WHERE id = 1')
+      .run(address, JSON.stringify(addresses), this.#nowIso());
   }
 
   // Addresses the host says it has, or the person names (`fuli runner
@@ -268,7 +274,17 @@ export class RunnerStore {
     const failed = this.db.prepare(`SELECT id, tool, queued_at, last_error FROM outbox WHERE state = 'failed'
       ORDER BY seq DESC LIMIT 20`).all().map((row) => ({ id: row.id, tool: row.tool, queuedAt: row.queued_at,
       reason: row.last_error }));
-    return { queued, failedCount, failed };
+    return { queued, failedCount, failed, entries: this.entries() };
+  }
+
+  // Everything still waiting or refused, oldest first: what the console lists
+  // one by one (what it is, when it was made, where it stands, why).
+  entries(limit = 200) {
+    if (this.#missing()) return [];
+    return this.db.prepare(`SELECT id, tool, state, queued_at, attempts, last_error, settled_at FROM outbox
+      WHERE state <> 'delivered' ORDER BY seq LIMIT ?`).all(limit).map((row) => ({ id: row.id, tool: row.tool,
+      state: row.state, queuedAt: row.queued_at, attempts: row.attempts, settledAt: row.settled_at ?? null,
+      reason: row.last_error ?? null }));
   }
 
   // What was read from the host: its answers and the offline task tokens.

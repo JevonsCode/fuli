@@ -13,7 +13,8 @@ import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
-import { serveFollowerConsole } from '../runner/follower-runtime.js';
+import { capabilityLines, serveFollowerConsole } from '../runner/follower-runtime.js';
+import { followerStatus } from '../runner/follower-status.js';
 import { writeLine } from './terminal-io.js';
 
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
@@ -104,29 +105,32 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
       const identity = await loadDeviceIdentity(join(paths().dataDir, 'peer'));
       const connection = createHostConnection({ store, identity });
       try {
-        const reached = await connection.connect();
-        if (store.host()?.revokedAt) {
+        // The same description the console entry and `fuli status` show (follower-status.js).
+        const state = await followerStatus({ store, connection, dataDir: paths().dataDir });
+        if (state.host.revokedAt) {
           write(`${host.name} answered that it does not know this computer (revoked, or it lost its records); `
-            + `its answers kept here are deleted and ${store.outbox().failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
+            + `its answers kept here are deleted and ${state.outbox.failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
           return { exitCode: 1 };
         }
-        write(`Host: ${host.name} — ${reached ? `answering at ${reached.address}:${host.port}${reached.via ? ` (from ${reached.via})` : ''}`
-          : 'not reachable now'}`);
+        const reached = state.host.reachable;
+        write(`Host: ${host.name} — ${reached ? `answering at ${state.host.address}:${host.port}`
+          + `${state.host.via ? ` (from ${state.host.via})` : ''}` : 'not reachable now'}`);
+        write(`Last synced: ${state.host.lastSeenAt ?? 'never'}.`);
         if (!reached && !named) {
           write('In another subnet (an office network, say) this computer cannot find the host by itself: '
             + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');
         }
-        const sessions = reached ? (await connection.hello())?.mcpSessions : null;
-        if (sessions) write(mcpSessionsLine(sessions));
-        if (!reached && connection.pinFailed) {
+        if (state.host.mcpSessions) write(mcpSessionsLine(state.host.mcpSessions));
+        if (state.host.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
         }
         const delivering = action !== 'status' && reached;
-        const outbox = delivering ? await deliverOutbox({ store, connection }) : store.outbox();
+        const outbox = delivering ? await deliverOutbox({ store, connection }) : state.outbox;
         if (delivering) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
+        for (const line of capabilityLines(state.capabilities)) write(line);
         return { exitCode: reached ? 0 : 1 };
       } finally {
         connection.close();

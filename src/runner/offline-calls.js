@@ -52,6 +52,21 @@ export function rememberAnswer(store, { tool, input }, result) {
   if (key) store.rememberAnswer(key, tool, result);
 }
 
+// A task entry the host answered, with where it was answered said plainly
+// (rec#144: the Agent could not tell "the host is here" from "there is no
+// FULI"). Only task entry carries it, and only when the host's answer is the
+// JSON object every task entry is; anything else is passed through untouched.
+export function hostAnsweredNote(tool, result, { hostName }) {
+  if (!TASK_ENTRY_TOOLS.has(tool) || result?.isError) return result;
+  const content = Array.isArray(result?.content) ? result.content : [];
+  if (content.length > 1 || (content.length === 1 && content[0]?.type !== 'text')) return result;
+  const value = resultValue(result);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.runner !== undefined) return result;
+  const text = JSON.stringify({ ...value, runner: { offline: false, host: hostName,
+    message: `This computer follows FULI on ${hostName}, which answered this entry; reads and checkpoints go there.` } });
+  return { ...result, content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
+}
+
 // entryId: the id a checkpoint already carried online, whose outcome is unknown; it is queued under that id.
 export function offlineAnswer(store, { tool, input, sourceApplication, sessionId, entryId = null }) {
   const host = store.host();
@@ -63,7 +78,10 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     return envelope({ effective_preferences: [], ...folderEntry(earlier ? resultValue(earlier.body) : null),
       taskContextToken: token, task_context_token: token, checkpoint_required: false,
       checkpoint_guidance: OFFLINE_CHECKPOINT_GUIDANCE, runner: offlineNote(earlier?.at,
-        'Your FULI host is unreachable. These are the preferences it last gave for this folder; a checkpoint is queued and delivered when it answers again.') });
+        `FULI is on ${host.name}, which this computer cannot reach right now. FULI is working: these are the preferences `
+        + `${host.name} last gave for this folder, reads answer from what was kept here, and a checkpoint is queued and `
+        + 'delivered when it answers again. Nothing needs to be moved or set up again; say that the host is away, not that '
+        + 'FULI is missing.') });
   }
   if (QUEUED_TOOLS.has(tool)) {
     const id = entryId ?? randomUUID();
@@ -156,7 +174,8 @@ function folderEntry(value) {
     .map((field) => [field, value[field]]));
 }
 
-// Task entry is kept per folder (its request differs every time); other
+// Task entry is kept per folder (its request differs every time); a resumed
+// conversation per conversation, as its task token differs every time; other
 // read-only calls per exact input. Calls that change something are not kept.
 function answerKey(tool, input) {
   if (TASK_ENTRY_TOOLS.has(tool)) return `entry:${tool}:${input.projectPath ?? ''}`;
