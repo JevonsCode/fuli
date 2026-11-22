@@ -89,11 +89,12 @@ export function formatFollowerResult(command, result) {
     : result.status === 'partial' ? 'The runner console did not stop in time; run fl status.' : 'The runner console stopped.';
   if (command === 'open') return `Opened: ${result.url}`;
   const host = result.host ? `${result.host.name}, ${result.host.reachable ? 'answering' : 'not reachable now'}` : 'not paired';
+  const skew = skewLine(result);
   const lines = [result.status === 'stopped' ? 'This computer is a runner; its console is not running.'
     : `This computer is a runner. Console: ${result.url} (the host's FULI; 客户端接入 lists this computer's clients)`,
   ...(result.status === 'stopped' ? [] : [`Host: ${host}`,
     ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
-    ...(skewLine(result) ? [skewLine(result)] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
+    ...(skew ? [skew] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
   return lines.join('\n');
 }
 
@@ -104,7 +105,7 @@ function skewLine(result) {
 }
 
 // This runner's host as it is now, for its own 客户端接入 page.
-export async function pairedHost(store, connection) {
+async function pairedHost(store, connection) {
   const host = store.host();
   if (!host) return null;
   const reached = await connection.connect();
