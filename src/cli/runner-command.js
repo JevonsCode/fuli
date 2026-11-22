@@ -1,11 +1,13 @@
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
+import { RUNNER_EXECUTORS_FILE } from '../runner/routing-executors.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
+import { MODEL_BACKENDS_FILE } from '../runner/routing-setup.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
@@ -171,6 +173,12 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
   }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(`Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
+  // The person wrote these two; FULI never does, so it does not delete them either.
+  const own = [MODEL_BACKENDS_FILE, RUNNER_EXECUTORS_FILE].filter((file) => existsSync(join(dataDir, file)));
+  if (own.length) {
+    write(`${own.join(' and ')} stay as you wrote them. They do nothing now (every call answers that this computer `
+      + 'is not paired); delete them yourself if this computer should no longer judge executors.');
+  }
   write(`On ${host.name}, \`fuli runner revoke ${identity.fingerprint.slice(0, 16)}\` removes this computer from its list.`);
   write('The clients set up here keep their FULI MCP entry (it now answers that this computer is not paired); '
     + '`fuli uninstall` removes those entries.');

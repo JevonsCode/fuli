@@ -54,8 +54,8 @@ export function rememberAnswer(store, { tool, input }, result) {
 
 // entryId: the id a checkpoint already carried online, whose outcome is unknown; it is queued under that id.
 export function offlineAnswer(store, { tool, input, sourceApplication, sessionId, entryId = null }) {
-  const host = store.host();
-  if (!host || host.revokedAt) return notPaired(host);
+  const unpaired = unpairedAnswer(store);
+  if (unpaired) return unpaired;
   if (TASK_ENTRY_TOOLS.has(tool)) {
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
     store.beginOfflineTask({ token, projectPath: input.projectPath ?? null, sourceApplication });
@@ -82,6 +82,14 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
   }
   return failure('host_unreachable',
     'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.');
+}
+
+// The pairing every call needs: null while this computer is paired, else the
+// refusal. A judgment made here needs it too (local-routing.js): its decision
+// is the host's to keep, and nothing of this runner's own survives a revoke.
+export function unpairedAnswer(store) {
+  const host = store.host();
+  return !host || host.revokedAt ? notPaired(host) : null;
 }
 
 // No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.

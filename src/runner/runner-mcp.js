@@ -24,10 +24,10 @@ import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, offlineTaskAnswer,
   outcomeUnknownAnswer, QUEUED_TOOLS,
-  rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
+  rememberAnswer, repeatable, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
-import { ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
+import { ASSESS_ON_RUNNER, ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -289,9 +289,13 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     return delivering;
   }
 
-  // The host's tools, and this runner's own while it chooses executors itself.
-  const withRunnerTools = (listed) => ({ ...listed,
-    tools: [...listed.tools.filter((tool) => tool.name !== OUTCOME_TOOL), ...routing.tools()] });
+  // The host's tools, with the one this runner's own Tonborg answers described
+  // as it behaves here, and its outcome tool beside them.
+  function withRunnerTools(listed) {
+    const own = routing.listing();
+    return { ...listed, tools: [...listed.tools.map((tool) => own.descriptions[tool.name]
+      ? { ...tool, description: own.descriptions[tool.name] } : tool), ...own.tools] };
+  }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     // A host that refused the session lists nothing; its calls then say why.
@@ -336,6 +340,12 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     const refused = hostOnlyAnswer(asked.tool);
     if (refused) return refused;
     if (routing.handles(asked.tool)) {
+      // Judging here still needs the pairing: the decision and its outcome are
+      // the host's to keep. Checked before the model is called, so an unpaired
+      // or revoked computer spends nothing and queues nothing for a host that
+      // would not take it.
+      const unpaired = unpairedAnswer(store);
+      if (unpaired) return unpaired;
       // A task token names a task of the host's or of this runner's; a judgment here needs none.
       const { taskContextToken: _token, ...input } = asked.input;
       const answer = await routing.call(asked.tool, input, { sourceApplication, sessionId });
@@ -425,7 +435,11 @@ function runnerRouting({ dataDir, store, fetchImpl }) {
     .then(({ createLocalRouting }) => createLocalRouting({ dataDir, store, ...(fetchImpl ? { fetchImpl } : {}) }));
   return {
     handles: (tool) => tool === OUTCOME_TOOL || (tool === ASSESS_TOOL && routingRoleState(dataDir).state !== 'off'),
-    tools: () => (routingRoleState(dataDir).state === 'on' ? [OUTCOME_TOOL_DEFINITION] : []),
+    // What this runner adds to the host's tool list, and the host descriptions
+    // that do not hold here, read in one go for every tools/list.
+    listing: () => (routingRoleState(dataDir).state === 'on'
+      ? { tools: [OUTCOME_TOOL_DEFINITION], descriptions: { [ASSESS_TOOL]: ASSESS_ON_RUNNER } }
+      : { tools: [], descriptions: {} }),
     async call(tool, input, context) {
       const routing = await loaded();
       return tool === OUTCOME_TOOL ? routing.outcome(input, context) : routing.assess(input, context);

@@ -205,6 +205,10 @@ export class RunnerStore {
 
   // offlineProjectPath: the folder of the task an offline token entered; the host enters it again at replay.
   enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null }) {
+    // The store is gone (`fuli runner leave`) while a process still served this
+    // computer: queueing would make the file again, holding an entry no host
+    // will ever take. Every caller checks the pairing first, so this is a race.
+    if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
     this.db.prepare(`INSERT INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
       queued_at, state) VALUES(?, ?, ?, ?, ?, ?, ?, 'queued')`).run(id, tool, JSON.stringify(input), sourceApplication,
       sessionId, offlineProjectPath, this.#nowIso());

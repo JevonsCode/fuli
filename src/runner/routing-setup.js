@@ -32,6 +32,15 @@ export function routingRoleState(dataDir, { read = readModelBackendConfig } = {}
   return { state: 'on' };
 }
 
+// What a runner says assess_agent_action does, in place of the host's own
+// description: none of what that one promises (registered, authorized,
+// preflighted executors, verified conversations, locked policies) is read here.
+// Short: it is listed on every round.
+export const ASSESS_ON_RUNNER = 'On this FULI runner, Tonborg judges this on this computer with its own model, '
+  + 'among the executors declared here that pass a local preflight. The host\'s executor directory, policies, '
+  + 'routing rules and conversations are not read, so nothing is reused and no policy lock applies. '
+  + 'The answer carries decidedOn: "runner" and is a recommendation, not execution; the host keeps a copy.';
+
 // Listed by a runner whose Tonborg chooses executors here, beside the host's tools.
 export const OUTCOME_TOOL_DEFINITION = Object.freeze({
   name: OUTCOME_TOOL,
