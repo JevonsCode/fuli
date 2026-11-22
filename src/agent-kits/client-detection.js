@@ -36,7 +36,8 @@ export async function detectClients(installer, { presence = null } = {}) {
   const clients = answer.clients.filter((client) => client.platformSupported).map(clientOf);
   if (!presence) return { status: 'available', clients };
   const missed = clients.filter((client) => client.builtin && !client.detected && !client.manual).map(({ id }) => id);
-  const installed = missed.length ? await presence.installed(missed) : new Set();
+  // A shell that cannot be started tells us nothing new; agent-installer's answer stands.
+  const installed = missed.length ? await presence.installed(missed).catch(() => new Set()) : new Set();
   return { status: 'available',
     clients: clients.map((client) => (installed.has(client.id) ? { ...client, detected: true } : client)) };
 }

@@ -19,7 +19,7 @@ Local service:
   open [--data-dir DIR]
 
 Install and Agent connection:
-  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs; update previews; apply asks separately for each file)
+  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs, not connected clients; update previews; apply asks separately for each file)
   connect [--format standard|vscode|server] [--data-dir DIR | --runtime-config FILE]  (print generic MCP configuration)
   mcp [--runtime-config FILE] [--source-application codex|claude|claude_code|cursor|kiro|opencode|antigravity|dsh|other]  (stdio server)
   setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--runtime-mode container|native] [--memory-profile low|balanced] [--adaptive-memory|--no-adaptive-memory] [--skip-agents] [--no-start] [--allow-provider-downgrade] [--personal-only|--with-dev-public]
