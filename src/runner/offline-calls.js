@@ -113,6 +113,14 @@ export function outcomeUnknownAnswer(tool) {
     + 'have been applied there, and it was not sent again. Check with a read before you repeat it.');
 }
 
+// The host answered but refused a new MCP session (its session limit, a
+// failure on its side): said as it is, never as the host being away.
+export function hostRefusedAnswer(status, reason) {
+  return failure('host_refused', `Your FULI host answered but refused a new MCP session (HTTP ${status}: ${reason}). `
+    + 'Nothing was sent. If it is the session limit, close FULI clients and MCP processes on this computer that you no '
+    + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
+}
+
 // A queued checkpoint the host has now applied.
 export function deliveredAnswer(outboxId) {
   return envelope({ status: 'delivered', outboxId, runner: { offline: false,

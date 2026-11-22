@@ -46,6 +46,11 @@ const INVITATION_PREFIX = 'fuli-runner-invite:1:';
 const MAX_NAME = 64;
 const MAX_ADDRESSES = 8;
 
+// One line for the MCP sessions a runner holds on its host, from the host's hello (host-routes.js).
+export function mcpSessionsLine({ owned, open, max }) {
+  return `MCP sessions on the host: ${owned} of this computer, ${open} of ${max} in all.`;
+}
+
 export function newInvitationCode() {
   return randomBytes(24).toString('base64url');
 }

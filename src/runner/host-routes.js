@@ -31,8 +31,11 @@ import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER
 // delivery waits while it is applied (409) and gets the first answer after.
 // So is each executor decision of a runner's own Tonborg and its outcome,
 // which go to this host's Tonborg ledger (judgment/runner-routing.js).
-const MCP_MAX_SESSIONS = 32;
-const MCP_SESSIONS_PER_RUNNER = 16;
+// No runner has a cap of its own: each MCP process of a runner holds one
+// session and ends it on the host when it exits (runner-mcp.js), and one that
+// never does (killed, cut off) is released after MCP_SESSION_IDLE_MS idle.
+// The total is a backstop against a runaway, never a share per runner.
+const MCP_MAX_SESSIONS = 64;
 const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
 const MCP_SWEEP_MS = 60 * 1000;
 const MCP_SHUTDOWN_GRACE_MS = 2000;
@@ -59,16 +62,18 @@ const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 // consoleOrigin(): the host console's own loopback origin, or null before it listens.
 // runtimeConfigPath: this host's graph runtime configuration, which a forwarded prompt hook runs with.
 // recordRouting(kind, input, runner): keeps a runner Tonborg's decision or outcome (judgment/runner-routing.js).
+// maxMcpSessions: the backstop on MCP sessions of all runners together.
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
   consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool,
-  recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner), now = Date.now,
+  recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
+  maxMcpSessions = MCP_MAX_SESSIONS, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [] }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
-  const sessions = createHttpSessionTransport({ label: 'Runner MCP', maxSessions: MCP_MAX_SESSIONS,
-    maxSessionsPerOwner: MCP_SESSIONS_PER_RUNNER, sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
+  const sessions = createHttpSessionTransport({ label: 'Runner MCP', maxSessions: maxMcpSessions,
+    sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
     sessionSweepIntervalMs: MCP_SWEEP_MS, now });
 
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
@@ -131,7 +136,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const answer = await forwardedHook(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
-      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses() });
+      // mcpSessions: how many MCP sessions this runner holds open here, beside all runners' and the limit.
+      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
+        mcpSessions: sessions.ownerStats(fingerprint) });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));

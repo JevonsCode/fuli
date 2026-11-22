@@ -278,7 +278,9 @@ const BASELINE = Object.freeze({
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
   // P6: keep the new chat instructions conditional, 1,251 -> 1,238 B.
   // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
-  chatInstructionsBytes: 1250,
+  // Runner sessions: close FULI connections and test scripts once unused, so
+  // none holds a host session until its idle timeout, 1,250 -> 1,327 B (+77 B), measured.
+  chatInstructionsBytes: 1327,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.

@@ -21,5 +21,6 @@ export const MCP_CHAT_INSTRUCTIONS = [
   'Before asking a stable project fact/method: task_knowledge_recall; miss: search_current_project_knowledge with focused action/artifact/target/ID queries, never only the full request. Before saying unknown: search_knowledge_graph.',
   'End: obey checkpoint_required/checkpoint_guidance. Eligible routine finishes use entry receipt, auto retain_nothing; otherwise checkpoint_task_knowledge for capture_candidates or workLog.',
   'Other work only when needed: list_agent_interfaces(toolName), then fuli_call; follow its rules. executionSummary: one row/worker, actual executor, source-labelled tokens; missing=-; never invent.',
+  'Close FULI connections and test scripts once unused; never reopen in a loop.',
   'Terminal-safe Markdown; no HTML. Match=candidate only. If supported: MUST begin sourceMarker.leadMarkdown; append sourceMarker.markdown; else noMatchSourceMarker (empty) if searched; Keep unchanged.',
 ].join(' ');

@@ -51,8 +51,10 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     const host = store.host();
     if (url.pathname === STATUS_PATH) {
       const reached = host ? await connection.connect() : null;
+      const sessions = reached ? (await connection.hello())?.mcpSessions ?? null : null;
       sendJson(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
-        host: host ? { name: host.name, reachable: Boolean(reached), address: reached?.address ?? null } : null,
+        host: host ? { name: host.name, reachable: Boolean(reached), address: reached?.address ?? null,
+          ...(sessions ? { mcpSessions: sessions } : {}) } : null,
         outbox: store.outbox().queued });
       return;
     }

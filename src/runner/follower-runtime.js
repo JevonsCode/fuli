@@ -10,6 +10,7 @@ import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
 import { startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
+import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
@@ -87,7 +88,8 @@ export function formatFollowerResult(command, result) {
   const host = result.host ? `${result.host.name}, ${result.host.reachable ? 'answering' : 'not reachable now'}` : 'not paired';
   const lines = [result.status === 'stopped' ? 'This computer is a runner; its console is not running.'
     : `This computer is a runner. Console: ${result.url} (the host's FULI; 客户端接入 lists this computer's clients)`,
-  ...(result.status === 'stopped' ? [] : [`Host: ${host}`, `Outbox: ${result.outbox ?? 0} waiting.`])];
+  ...(result.status === 'stopped' ? [] : [`Host: ${host}`,
+    ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
   return lines.join('\n');
 }
 

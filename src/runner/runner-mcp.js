@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -21,7 +21,7 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, hostOnlyAnswer, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -50,6 +50,24 @@ const TOOLS_KEY = 'tools:list';
 const STREAM_LOST = /SSE stream disconnected|Failed to reconnect|Maximum reconnection attempts/;
 // withHost's answer for a call that changes something whose connection dropped after it was sent.
 const OUTCOME_UNKNOWN = Symbol('outcome unknown');
+// How long a closing process waits for the host to end its MCP session; past it, the host's idle timeout does.
+const END_SESSION_MS = 2000;
+// The host's answer to a runner it does not know: looked into through hello (revoked), never a refusal to report.
+const NOT_PAIRED_STATUS = 403;
+
+// The host answered but would not open an MCP session (its session limit, a
+// failure on its side): the reason it gave, which the caller is told as it is
+// instead of answers kept for an unreachable host.
+class HostRefusal {
+  constructor(status, message) {
+    this.status = status;
+    // The JSON-RPC error the host sent, when the SDK's message carries one.
+    const body = String(message ?? '').match(/\{.*\}\s*$/s)?.[0];
+    let reason = null;
+    try { reason = body ? JSON.parse(body)?.error?.message : null; } catch { reason = null; }
+    this.reason = String(reason ?? message ?? '').slice(0, 200);
+  }
+}
 
 // lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
 // for, how soon after it was away, how long a tools/list waits for it, and how
@@ -73,7 +91,9 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   let closing = null;
   const close = () => closing ??= (async () => {
     if (stdio) for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, close);
-    // First: a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
+    // First the host releases this process's MCP session (bounded), while the connection still carries it;
+    // then a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
+    await server.endHostSession();
     connection.close();
     await server.close();
     await routing.close();
@@ -97,6 +117,8 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
   const described = new Map();
   let client = null;
+  // The transport of client: it ends the session on the host (DELETE) when this process closes.
+  let clientTransport = null;
   let connecting = null;
   let unreachableUntil = 0;
   let delivering = null;
@@ -123,8 +145,11 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
         [TOOL_PROFILE_HEADER]: toolProfile } } });
     try {
       await created.connect(http);
-    } catch {
+    } catch (error) {
       await created.close().catch(() => {});
+      if (error instanceof StreamableHTTPError && error.code >= 400 && error.code !== NOT_PAIRED_STATUS) {
+        return new HostRefusal(error.code, error.message);
+      }
       return helloThenOffline();
     }
     if (closed) {
@@ -144,8 +169,19 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
       if (client === created && STREAM_LOST.test(String(error?.message ?? ''))) void created.close().catch(() => {});
     };
     client = created;
+    clientTransport = http;
     described.clear();
     return client;
+  }
+
+  // Ends this process's session on the host now (MCP's DELETE), so it does not
+  // hold one of the host's sessions until the idle timeout. Bounded: a host
+  // that does not answer releases it at that timeout instead.
+  async function endHostSession() {
+    const transport = client ? clientTransport : null;
+    if (!transport) return;
+    await Promise.race([transport.terminateSession().catch(() => {}),
+      delay(END_SESSION_MS, null, { ref: false })]);
   }
 
   // The host refused or dropped the session (it may have revoked this runner
@@ -184,7 +220,7 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
   async function withHost(work, { repeat = true } = {}) {
     for (let attempt = 0; ; attempt += 1) {
       const host = await upstream();
-      if (!host) return null;
+      if (!host || host instanceof HostRefusal) return host;
       try {
         return await work(host);
       } catch (error) {
@@ -231,7 +267,9 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     tools: [...listed.tools.filter((tool) => tool.name !== OUTCOME_TOOL), ...routing.tools()] });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const listing = withHost((host) => host.listTools()).then((listed) => {
+    // A host that refused the session lists nothing; its calls then say why.
+    const listing = withHost((host) => host.listTools()).then((answered) => {
+      const listed = answered instanceof HostRefusal ? null : answered;
       if (listed && !closed) store.rememberAnswer(TOOLS_KEY, 'tools/list', listed);
       return listed && withRunnerTools(listed);
     });
@@ -254,7 +292,8 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
   // only, at most CHECKPOINT_WAIT_MS; the round goes on without it.
   async function checkpointOffline(call) {
     const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId });
-    if (queued.isError || !await upstream()) return queued;
+    const host = await upstream();
+    if (queued.isError || !host || host instanceof HostRefusal) return queued;
     const { outboxId } = queued.structuredContent;
     void deliverSoon();
     const deadline = now() + checkpointWaitMs;
@@ -298,28 +337,33 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
         undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
     }, { repeat: repeatable(call.tool) });
     if (answer === OUTCOME_UNKNOWN) return outcomeUnknownAnswer(call.tool);
+    if (answer instanceof HostRefusal) return hostRefusedAnswer(answer.status, answer.reason);
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
     if (store.outbox().queued) void deliverSoon();
     return answer;
   });
 
-  server.setRequestHandler(ListPromptsRequestSchema, async () =>
-    (await withHost((host) => host.listPrompts())) ?? { prompts: [] });
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const prompt = await withHost((host) => host.getPrompt(request.params));
-    if (!prompt) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
-    return prompt;
-  });
+  // A listing or read the host answered; a refused session lists nothing, and a read says why.
+  const listed = async (work) => {
+    const answer = await withHost(work);
+    return answer instanceof HostRefusal ? null : answer;
+  };
+  const read = async (work) => {
+    const answer = await withHost(work);
+    if (answer instanceof HostRefusal) {
+      throw new McpError(-32603, `Your FULI host refused a new MCP session (HTTP ${answer.status}: ${answer.reason})`);
+    }
+    if (!answer) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
+    return answer;
+  };
+  server.setRequestHandler(ListPromptsRequestSchema, async () => (await listed((host) => host.listPrompts())) ?? { prompts: [] });
+  server.setRequestHandler(GetPromptRequestSchema, (request) => read((host) => host.getPrompt(request.params)));
   server.setRequestHandler(ListResourcesRequestSchema, async () =>
-    (await withHost((host) => host.listResources())) ?? { resources: [] });
+    (await listed((host) => host.listResources())) ?? { resources: [] });
   server.setRequestHandler(ListResourceTemplatesRequestSchema, async () =>
-    (await withHost((host) => host.listResourceTemplates())) ?? { resourceTemplates: [] });
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const resource = await withHost((host) => host.readResource(request.params));
-    if (!resource) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
-    return resource;
-  });
+    (await listed((host) => host.listResourceTemplates())) ?? { resourceTemplates: [] });
+  server.setRequestHandler(ReadResourceRequestSchema, (request) => read((host) => host.readResource(request.params)));
 
   const timer = setInterval(() => { if (store.outbox().queued) void deliverSoon(); }, DELIVER_EVERY_MS);
   timer.unref?.();
@@ -334,6 +378,7 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     client = null;
     await close();
   };
+  server.endHostSession = endHostSession;
   return server;
 }
 

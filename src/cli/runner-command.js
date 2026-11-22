@@ -7,6 +7,7 @@ import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { isGuestSourceAddress } from '../server/lan-access.js';
+import { mcpSessionsLine } from '../runner/protocol.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -114,6 +115,8 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
           write('In another subnet (an office network, say) this computer cannot find the host by itself: '
             + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');
         }
+        const sessions = reached ? (await connection.hello())?.mcpSessions : null;
+        if (sessions) write(mcpSessionsLine(sessions));
         if (!reached && connection.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
