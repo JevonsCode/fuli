@@ -16,6 +16,7 @@ import { offlineAnswer } from '../src/runner/offline-calls.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
+import { projectIdentityCache } from '../src/system/project-identity-cache.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 const HOST = { name: 'Host A', fingerprint: 'f'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] };
@@ -136,6 +137,8 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   store.saveHost(HOST);
   keptSomething(store);
   store.close();
+  // The host's answers about its projects go with the rest of what it gave (rec#145).
+  projectIdentityCache(dataDir).remember('/work/blue-kettle', { space: { id: 'space-7f3' } });
   const refusedLines = [];
   const refused = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: (line) => refusedLines.push(line) });
   assert.equal(refused.exitCode, 1);
@@ -148,6 +151,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   assert.equal(result.exitCode, 0);
   assert.match(lines.join('\n'), /keep their FULI MCP entry.*`fuli uninstall` removes those entries/s);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false);
+  assert.equal(projectIdentityCache(dataDir).last('/work/blue-kettle'), null);
   assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted\./);
   assert.match(lines.join('\n'), /fuli runner revoke [0-9a-f]{16}/);
   const usage = [];

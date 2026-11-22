@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, components?: Record<string, string> }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: string, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
@@ -77,6 +77,34 @@ it('can retry a failed configuration request', async () => {
   await wrapper.get('[data-retry-connection]').trigger('click')
   await flushPromises()
   expect(wrapper.find('[data-copy-connection]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+it('on a runner says its hooks do nothing and which computer runs the older FULI (rec#144, rec#145)', async () => {
+  const runner = { version: '0.28.1', hostName: 'Workshop Mac', hostReachable: true, hostVersion: '0.29.0',
+    skew: { older: 'runner' as const } }
+  routed(() => Response.json({ ...statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected', firstRun: 'cursor' }]), runner }))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const notice = wrapper.get('[data-runner-clients]').text()
+  expect(notice).toContain('Workshop Mac')
+  expect(notice).toContain('可能漏')
+  expect(notice).toContain('这台是 0.28.1，主机是 0.29.0')
+  expect(notice).toContain('这台旧了')
+  // Cursor's own first question is said on its tile, with the command that answers it ahead of time.
+  const first = wrapper.get('[data-client-first-run="cursor"]').text()
+  expect(first).toContain('信任这个文件夹')
+  expect(first).toContain('cursor-agent mcp enable fuli')
+  wrapper.unmount()
+})
+
+it('says nothing about a runner on the host, and nothing about versions when they match', async () => {
+  routed(() => Response.json({ ...statusOf([{}]),
+    runner: { version: '0.29.0', hostName: 'Workshop Mac', hostReachable: false, hostVersion: '0.29.0' } }))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  expect(wrapper.get('[data-runner-clients]').text()).not.toContain('版本')
+  expect(wrapper.find('[data-client-first-run="codex"]').exists()).toBe(false)
   wrapper.unmount()
 })
 

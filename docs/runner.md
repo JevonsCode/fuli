@@ -80,7 +80,10 @@ the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) ope
   host console. The runner can still read the public version at `/api/system/version`.
 - 客户端接入 (`/api/system/client-connection…`) answers on the runner itself: it lists, connects,
   restarts and adds this computer's clients, with the same entries `fuli runner join` writes.
-  Nothing of it reaches the host. The host's relay refuses those writes, and opening a session
+  Nothing of it reaches the host. Because it is the runner's own page, it says so at the top: this
+  computer is a runner, its host's name, that a runner's hooks load nothing so every client here
+  depends on the model entering the task through FULI's MCP server, and, when the two differ, which
+  computer runs the older FULI. The host's relay refuses those writes, and opening a session
   (`/api/session-launch`), with 403 `host_computer_only`, so a runner never changes the host
   computer's clients.
 - While the host is away the entry shows a page saying so, with what waits in the outbox; API
@@ -219,6 +222,40 @@ An invitation can already carry such an address, so a runner that joins while
 both are on the VPN needs none of this. A company network that isolates its
 clients from each other blocks both computers equally: use a cable, another
 shared network, or a mesh tool that does not rely on the local network.
+
+## FULI versions on the two computers
+
+A runner and its host each have their own FULI, and nothing keeps them on the same version: a runner
+left in an office stays on the version it joined with (rec#144). The host's version comes with the
+hello the runner already exchanges with it, so `fuli status` and `fuli runner status` on a runner,
+and the runner's 客户端接入 page, say which copy is older and that it should be updated. It is only
+said: a call both versions understand goes through as before, and nothing here refuses anything. The
+host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
+runner's side only.
+
+## Who owns this project (`fuli whoami`)
+
+An outside process on a runner — a background worker that has to sign its results with the right
+FLA, say — has no `graph-runtime.json` to read, and before this had to be told the space by hand
+(rec#145). `fuli whoami` answers it, read only:
+
+```bash
+fuli whoami                      # the folder this runs in
+fuli whoami --project <id|folder>
+fuli whoami --json
+```
+
+It gives the personal space (ID and name), the project (ID and name) the folder resolves to, the
+FLA leading that project (ID and name), and whether this computer is the host or a runner. It
+returns no token, no certificate and no address, enters no task and writes nothing to knowledge.
+
+On a runner it goes through the console entry above, which relays it to the host console
+(`POST /api/whoami`), and sends the folder's facts with it so the host resolves the folder by
+exactly the rules in "Projects" below. While the host is away the host's last answer for that
+folder is shown instead, marked `offline` with the time the host gave it; that answer is kept in
+`whoami-last-answer.json` in the runner's data directory, holds only what the answer already shows,
+and is one of the things `fuli runner leave` deletes. With no earlier answer for that folder it says
+so and exits 2 rather than guess.
 
 ## Projects
 
@@ -381,7 +418,10 @@ The host's last answers to read-only calls, shown marked offline while the
 host is away and deleted after 30 days; the task tokens it gave out offline
 (30 days); checkpoints and executor decisions waiting for the host, deleted once
 delivered (one the host refused for good stays listed for 30 days); and, when
-its Tonborg chooses executors, its decisions and their outcomes (30 days).
+its Tonborg chooses executors, its decisions and their outcomes (30 days). Beside
+them, the host's last `fuli whoami` answer per folder asked about
+(`whoami-last-answer.json`, at most 20 folders): space, project and lead FLA names
+and IDs, nothing else.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops

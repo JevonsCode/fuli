@@ -41,6 +41,26 @@ VS Code's `servers` envelope; `--format server` prints only `type`, `command`, a
 Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PATH`.
 `fuli mcp --tools` lists the available tool contract without starting a task.
 
+### Which clients are on this computer
+
+A built-in client counts as being on this computer when
+[agent-installer](https://github.com/JevonsCode/agent-installer) finds it — FULI's own `PATH`, or a
+configuration file the client has already written — **or** when the client's own command is
+installed here (`src/agent-kits/client-presence.js`). The second case exists because the first one
+misses a client that has never written its configuration, which on a new computer is most of them:
+in rec#145 a new Mac had Cursor and OpenCode installed with no `~/.cursor/mcp.json` and no `mcp`
+section in `opencode.json`, so `fuli setup`, `fuli runner join` and 「一键接入」 skipped both and
+only Codex was connected. The commands asked for are each client's own documented one —
+`cursor-agent` and `cursor`, `claude`, `codex`, `opencode`, `agy`, `dsh` — and they are asked of the
+person's login shell (`src/agent-kits/cli-presence.js`), because FULI may run with a shorter `PATH`
+than their terminal. Answers are kept for a few minutes, and only clients agent-installer did not
+find are asked about, so a status read starts at most one shell per missing client.
+
+This is FULI's only detection of its own, and it decides nothing else: everything read or written
+in a client still goes through agent-installer, which creates a missing configuration file by that
+client's own rules and backs up one that exists. It should move upstream once agent-installer can
+find a client by its command name.
+
 ### Client status in Settings
 
 **Settings → Client connection** is always open. Its summary counts the clients FULI is in (「已接入
@@ -64,6 +84,29 @@ automatically. Fuli keeps only the latest status and the last five changes per c
 `client-connection-observations.json` in its data directory; if that file is damaged, history
 starts over, and if it cannot be saved, the console keeps history until restart with an unsaved
 notice.
+
+**Listed is not connected** (rec#90, rec#145). The summary counts the two apart: 「已接入 2/3 个客户端，
+另有 1 个这台电脑上没装」, where the second number is the clients that are on this computer and the
+last one the built-in clients that are not. A client that is not here keeps no tile — there is
+nothing to do on it — but it is never dropped from the count, so the line can never read as "all of
+them" while FULI is in none. `fuli setup`'s preview says the same thing as `Not on this computer: …`.
+
+**Cursor's first run in a folder.** `cursor-agent` asks 「trust this folder」 and 「approve MCP」 the
+first time it runs in a project folder, and prints nothing at all until they are answered, so a CLI
+another process started in the background looks alive and does nothing (rec#145). Checked against
+`cursor-agent --help` and `cursor-agent mcp --help` (2026.01.23-916f423): Cursor has **no** flag that
+pre-trusts a folder, and `--approve-mcps` says of itself that it "only works with --print/headless
+mode", so it does nothing for an interactive run. `cursor-agent mcp enable fuli`, run inside the
+folder, approves FULI's server there and writes
+`~/.cursor/projects/<folder>/mcp-approvals.json` — per folder, not per computer. FULI therefore
+approves nothing on the person's behalf and claims no flag that does not exist: Cursor's tile and
+its `fuli setup` result name the two questions and that command
+(`src/agents/cursor/first-run.js`, reached through `src/agents/client-first-run.js`).
+
+**Clients that enter a task by themselves.** A client with neither lifecycle hooks nor a plugin
+says so on its tile: the model has to enter the task by following FULI's MCP instructions and can
+miss it, and its conversations are not recorded. On a runner that is true of every client, because a
+runner's hooks load nothing (below).
 
 An outdated tile names the difference: the FULI version (or installation) its entry runs against the
 console's. Its one-line **Last change** opens **View details**: every kept change with full times, and
@@ -379,7 +422,8 @@ knowledge stay on this one. On this computer run `fuli runner invite`; on the ot
 `fuli runner join <invitation>`. Join pairs the two computers (mutual TLS, both certificates
 pinned) and sets up that computer's clients exactly as `fuli setup` would; their FULI tools then
 answer through this computer. Lifecycle hooks do nothing on a runner, so its clients enter tasks
-through FULI's MCP tools. See [docs/runner.md](runner.md) for how folders are matched and what a
+through FULI's MCP tools — its own 客户端接入 page says so, with its host's name and which of the two
+computers runs the older FULI. See [docs/runner.md](runner.md) for how folders are matched and what a
 runner does while this computer is away.
 
 ## Remote clients

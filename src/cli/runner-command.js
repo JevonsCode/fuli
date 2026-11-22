@@ -10,6 +10,7 @@ import { isReachableHostAddress } from '../server/lan-access.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
 import { versionSkew, versionSkewLine } from '../runner/version-skew.js';
+import { PROJECT_IDENTITY_CACHE_FILE } from '../system/project-identity-cache.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -171,6 +172,8 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
   try {
     rmSync(file, { force: true });
     rmSync(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
+    // The host's last `fuli whoami` answers belonged to its knowledge too.
+    rmSync(join(dataDir, PROJECT_IDENTITY_CACHE_FILE), { force: true });
   } catch {
     // A client's FULI process has it open: it is empty now and answers that this computer is not paired.
   }
