@@ -1,0 +1,9 @@
+{
+  "version": "0.29.0-beta.6",
+  "zh": [
+    "运行机上的 Codex 会等主机开好任务再开始，任务凭证不再因主机慢而丢失。"
+  ],
+  "en": [
+    "Codex on a runner waits for the host to enter the task, so a slow host keeps its task token."
+  ]
+}

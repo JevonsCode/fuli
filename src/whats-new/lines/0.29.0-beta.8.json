@@ -1,0 +1,9 @@
+{
+  "version": "0.29.0-beta.8",
+  "zh": [
+    "客户端卡片列出全部功能：支持的打勾，不支持的打叉，移上去看缺什么。"
+  ],
+  "en": [
+    "Client tiles list every capability: a check if supported, a cross if not; hover to see what is lost."
+  ]
+}
