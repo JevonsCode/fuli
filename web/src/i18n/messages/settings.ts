@@ -21,7 +21,7 @@ export const settingsMessages = {
       clients: {
         title: '本机客户端',
         firstRun: {
-          cursor: '第一次在一个项目目录里启动 cursor-agent，它会先问「信任这个文件夹」和「批准 MCP」，没人回答就一直没有输出。在那个目录里回答一次，或先在那里运行 cursor-agent mcp enable fuli 预先批准 FULI。Cursor 没有预先信任目录的参数，--approve-mcps 只对 --print 生效。',
+          cursor: '第一次在一个项目目录里启动 cursor-agent，它会先问「信任这个文件夹」和「批准 MCP」，没人回答就一直没有输出。在那个目录里回答一次，或先在那里运行 cursor-agent mcp enable fuli 预先批准 FULI。Cursor 的 --trust 只写给无界面运行，本机装的这版也不认它，所以 FULI 不会带这个参数。',
         },
         runner: {
           note: '这台电脑是从机，FULI 在主机「{host}」上。从机上的钩子不起作用，下面这些客户端要靠模型自己调 FULI 进任务，可能漏。',
@@ -537,7 +537,7 @@ export const settingsMessages = {
 
         title: 'Clients on this computer',
         firstRun: {
-          cursor: 'The first cursor-agent run in a project folder asks 「trust this folder」 and 「approve MCP」 first, and produces no output until someone answers. Answer them once in that folder, or run cursor-agent mcp enable fuli there to approve FULI ahead of time. Cursor has no flag that pre-trusts a folder, and --approve-mcps applies to --print runs only.',
+          cursor: 'The first cursor-agent run in a project folder asks 「trust this folder」 and 「approve MCP」 first, and produces no output until someone answers. Answer them once in that folder, or run cursor-agent mcp enable fuli there to approve FULI ahead of time. Cursor documents --trust for headless runs only and the installed CLI does not accept it, so FULI never passes it.',
         },
         runner: {
           note: 'This computer is a runner; FULI runs on the host 「{host}」. Hooks do nothing on a runner, so the clients below rely on the model calling FULI itself to start a task, and it can be missed.',

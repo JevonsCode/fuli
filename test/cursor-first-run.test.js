@@ -24,8 +24,9 @@ test('only a client that still asks the person something itself has a first-run 
   // Verified against cursor-agent's own help, not from memory: the flag that does not exist is not named as one.
   assert.match(CURSOR_FIRST_RUN_STEP, /trust this folder/);
   assert.match(CURSOR_FIRST_RUN_STEP, /cursor-agent mcp enable fuli/);
-  assert.match(CURSOR_FIRST_RUN_STEP, /no flag that pre-trusts a folder/);
-  assert.doesNotMatch(CURSOR_FIRST_RUN_STEP, /--trust\b/);
+  // The documented --trust is headless-only and the installed CLI refuses it, so FULI says so and never passes it.
+  assert.match(CURSOR_FIRST_RUN_STEP, /--trust for headless runs only/);
+  assert.match(CURSOR_FIRST_RUN_STEP, /never passes it/);
 });
 
 test('connecting Cursor says what its CLI still asks the first time in a folder', async () => {

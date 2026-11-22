@@ -94,12 +94,16 @@ them" while FULI is in none. `fuli setup`'s preview says the same thing as `Not 
 **Cursor's first run in a folder.** `cursor-agent` asks 「trust this folder」 and 「approve MCP」 the
 first time it runs in a project folder, and prints nothing at all until they are answered, so a CLI
 another process started in the background looks alive and does nothing (rec#145). Checked against
-`cursor-agent --help` and `cursor-agent mcp --help` (2026.01.23-916f423): Cursor has **no** flag that
-pre-trusts a folder, and `--approve-mcps` says of itself that it "only works with --print/headless
-mode", so it does nothing for an interactive run. `cursor-agent mcp enable fuli`, run inside the
-folder, approves FULI's server there and writes
-`~/.cursor/projects/<folder>/mcp-approvals.json` — per folder, not per computer. FULI therefore
-approves nothing on the person's behalf and claims no flag that does not exist: Cursor's tile and
+the installed CLI and Cursor's own documentation, which disagree:
+[cursor.com/docs/cli/reference/parameters](https://cursor.com/docs/cli/reference/parameters) lists
+`--trust`, "Trust the workspace without prompting (headless mode only)", but `cursor-agent`
+2026.01.23-916f423 answers `error: unknown option '--trust'` and its `--help` does not list it, so
+FULI never passes it. `--approve-mcps` is accepted, and that build's help says it "only works with
+--print/headless mode", which the interactive run FULI opens is not. `cursor-agent mcp enable fuli`,
+documented as "Add an MCP server to the local approved list", run inside the folder wrote
+`~/.cursor/projects/<folder>/mcp-approvals.json` — per folder, not per computer (the documentation
+does not say which). No flag therefore answers the folder question for an interactive run: FULI
+approves nothing on the person's behalf and passes no flag this CLI would refuse. Cursor's tile and
 its `fuli setup` result name the two questions and that command
 (`src/agents/cursor/first-run.js`, reached through `src/agents/client-first-run.js`).
 
