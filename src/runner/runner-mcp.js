@@ -82,7 +82,6 @@ class HostRefusal {
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
   transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
-  store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);

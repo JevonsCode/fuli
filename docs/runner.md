@@ -404,7 +404,7 @@ up; through `fuli_call` it is reached the same way. A second report of the same
 decision answers `already_reported`. The next judgment on the runner reads it.
 
 **To the host.** Each decision and each outcome is an outbox entry (kept in
-`runner/routing.sqlite` too, 30 days, deleted by `fuli runner leave`), delivered
+`runner/routing.sqlite` too, until `fuli runner leave`), delivered
 oldest first like a checkpoint and applied once per entry id. The host keeps the
 decision among Tonborg's routing records (`decidedOn: "runner"`, with the
 runner's name and fingerprint), so the person sees it in Tonborg's workbench, and
@@ -416,10 +416,16 @@ records, which these are not.
 ## What a runner keeps
 
 The host's last answers to read-only calls, shown marked offline while the
-host is away and deleted after 30 days; the task tokens it gave out offline
-(30 days); checkpoints and executor decisions waiting for the host, deleted once
-delivered (one the host refused for good stays listed for 30 days); and, when
-its Tonborg chooses executors, its decisions and their outcomes (30 days).
+host is away; the task tokens it gave out offline; checkpoints and executor
+decisions waiting for the host, deleted once delivered (one the host refused
+for good stays listed); and, when its Tonborg chooses executors, its decisions
+and their outcomes.
+
+**Nothing here expires with time** (rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」).
+An answer is replaced when the host answers that call again; everything kept goes when the host
+revokes this computer, when it joins another host, or at `fuli runner leave`. A follower that was
+away from its host for a season still has the preferences it last read, and a checkpoint the host
+refused stays listed until the person has dealt with it.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops

@@ -78,13 +78,19 @@ test('a host that revoked the runner ends what was read from it; waiting checkpo
     sourceApplication: 'codex' })).code, 'runner_not_paired');
 });
 
-test('answers past their keeping time are deleted when the next one is written', () => {
+// rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」.
+test('nothing a follower keeps expires with time; a later answer replaces the one it repeats', () => {
   let now = Date.parse('2026-11-01T00:00:00Z');
   const store = pairedRunner({ now: () => now });
   store.rememberAnswer('read:old', 'search_knowledge_graph', { content: [] });
-  now += 31 * DAY_MS;
+  store.beginOfflineTask({ token: 'runner-offline-synthetic', projectPath: '/synthetic', sourceApplication: 'codex' });
+  now += 400 * DAY_MS;
   store.rememberAnswer('read:new', 'search_knowledge_graph', { content: [] });
-  assert.deepEqual(store.db.prepare('SELECT key FROM answers').all().map((row) => row.key), ['read:new']);
+  store.rememberAnswer('read:old', 'search_knowledge_graph', { content: [{ type: 'text', text: 'newer' }] });
+  assert.deepEqual(store.db.prepare('SELECT key FROM answers ORDER BY key').all().map((row) => row.key),
+    ['read:new', 'read:old']);
+  assert.deepEqual(store.answer('read:old').body.content, [{ type: 'text', text: 'newer' }]);
+  assert.equal(store.offlineTask('runner-offline-synthetic')?.projectPath, '/synthetic');
 });
 
 test('joining the same host again queues its refused checkpoints again; joining another host drops them and says how many', () => {
@@ -101,16 +107,16 @@ test('joining the same host again queues its refused checkpoints again; joining 
   assert.deepEqual(['answers', 'offline_tasks', 'outbox'].map((table) => count(store, table)), [0, 0, 0]);
 });
 
-test('a delivered checkpoint is deleted at once; a refused one after 30 days', () => {
+test('a delivered checkpoint is deleted at once; a refused one stays listed however long it waits', () => {
   let now = Date.parse('2026-11-01T00:00:00Z');
   const store = pairedRunner({ now: () => now });
   for (const id of ['delivered', 'refused', 'later']) store.enqueue({ id, tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
   store.delivered('delivered');
   store.failed('refused', 'invalid_input');
   assert.deepEqual([store.entryState('delivered'), store.entryState('refused')], [null, 'failed']);
-  now += 31 * DAY_MS;
+  now += 400 * DAY_MS;
   store.failed('later', 'invalid_input');
-  assert.deepEqual(store.db.prepare('SELECT id FROM outbox').all().map((row) => row.id), ['later']);
+  assert.deepEqual(store.db.prepare('SELECT id FROM outbox ORDER BY seq').all().map((row) => row.id), ['refused', 'later']);
 });
 
 test('joining prints how many checkpoints of the previous host were dropped', async (t) => {
@@ -155,7 +161,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   assert.match(usage.join('\n'), /leave \[--force\] +end the pairing here/);
 });
 
-test('joining says what the runner keeps and for how long', async (t) => {
+test('joining says what the runner keeps, and that nothing of it expires', async (t) => {
   const dataDir = dataDirectory(t);
   const lines = [];
   await runRunnerCommand(['join', 'synthetic-invitation', '--data-dir', dataDir], { write: (line) => lines.push(line),
@@ -163,7 +169,7 @@ test('joining says what the runner keeps and for how long', async (t) => {
     setupClients: async () => [{ id: 'codex', status: 'connected' }] });
   const said = lines.join('\n');
   assert.doesNotMatch(said, /nothing of FULI's knowledge is kept here/);
-  assert.match(said, /Kept here: the host's last answers .* deleted after 30 days\) and checkpoints waiting for the host \(deleted once delivered; refused ones after 30 days\)/);
+  assert.match(said, /Kept here: the host's last answers to read-only calls .* and checkpoints waiting for the host \(deleted once delivered; a refused one stays listed\)\. Nothing here expires with time\./);
   assert.match(said, /checkpoints wait, refused, until it joins the same host again/);
 });
 
@@ -285,20 +291,19 @@ test('joining another host while checkpoints wait for the current one needs --fo
   assert.equal(loaded, false, 'nothing was sent to the other host');
 });
 
-test('refused checkpoints past 30 days go when the runner is revoked and when its MCP process starts', () => {
+test('a revoked follower keeps its waiting checkpoints, refused, and loses what it had read', () => {
   let now = Date.parse('2026-11-01T00:00:00Z');
   const store = pairedRunner({ now: () => now });
   for (const id of ['old-1', 'old-2']) {
     store.enqueue({ id, tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
     store.failed(id, 'invalid_input');
   }
-  now += 31 * DAY_MS;
+  now += 400 * DAY_MS;
   store.enqueue({ id: 'waiting', tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
-  store.pruneRefused();
-  assert.deepEqual(store.db.prepare('SELECT id FROM outbox').all().map((row) => row.id), ['waiting']);
-  store.enqueue({ id: 'old-3', tool: 'checkpoint_task_knowledge', input: {}, sourceApplication: 'codex' });
-  store.db.prepare(`UPDATE outbox SET state = 'failed', settled_at = '2026-10-01T00:00:00.000Z' WHERE id = 'old-3'`).run();
+  store.rememberAnswer('read:kept', 'search_knowledge_graph', { content: [] });
   store.revoked();
-  assert.deepEqual(store.db.prepare('SELECT id, last_error FROM outbox').all().map((row) => [row.id, row.last_error]),
-    [['waiting', 'runner_revoked']]);
+  assert.deepEqual(store.db.prepare('SELECT id, last_error FROM outbox ORDER BY seq').all()
+    .map((row) => [row.id, row.last_error]),
+  [['old-1', 'invalid_input'], ['old-2', 'invalid_input'], ['waiting', 'runner_revoked']]);
+  assert.equal(store.answer('read:kept'), null, 'what was read from the host goes at once');
 });

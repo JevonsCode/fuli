@@ -7,23 +7,25 @@ import { REPLAY_WAIT_MS } from './protocol.js';
 
 // A runner's own record (docs/runner.md): the host it paired with, the last
 // answer it read for each read-only call (shown, marked offline, while the host
-// is away, for at most ANSWER_KEEP_MS), the task tokens it gave out while
-// offline, and its outbox: checkpoints made while the host was away, or whose
-// online delivery has no known outcome, replayed oldest first, each applied
-// once; a delivered one is deleted, a refused one after 30 days. Nothing here
-// is the person's knowledge of record; the host holds that. A host that says
-// this runner is revoked or unknown ends what was read from it and holds the
-// waiting checkpoints refused; a pairing with another host, and `fuli runner
-// leave`, end everything kept for the old pairing.
+// is away), the task tokens it gave out while offline, and its outbox:
+// checkpoints made while the host was away, or whose online delivery has no
+// known outcome, replayed oldest first, each applied once; a delivered one is
+// deleted. Nothing here is the person's knowledge of record; the host holds
+// that. A host that says this runner is revoked or unknown ends what was read
+// from it and holds the waiting checkpoints refused; a pairing with another
+// host, and `fuli runner leave`, end everything kept for the old pairing.
+//
+// Nothing here expires with time. What was read stays until the host answers
+// that call again (which replaces it), until the host revokes this computer
+// (which deletes it at once), or until `fuli runner leave`. A follower that
+// was away from its host for a season still has the preferences it last read,
+// and a checkpoint the host refused stays listed until the person has seen it.
 // How many of the host's addresses a runner keeps: enough for every network it is used on.
 const KNOWN_ADDRESSES = 16;
 
 export const RUNNER_FILE = 'runner/runner.sqlite';
 // An outbox entry a process claimed is its own for this long: past its wait for the host.
 const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
-// Answers and offline task tokens older than this are deleted, and so are refused outbox entries.
-const ANSWER_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
-const FAILED_KEEP_MS = ANSWER_KEEP_MS;
 // Why a checkpoint waits refused: the host did not know this runner (revoked).
 const REVOKED = 'runner_revoked';
 
@@ -128,7 +130,6 @@ export class RunnerStore {
       this.#forget();
       this.db.prepare(`UPDATE outbox SET state = 'failed', last_error = ?, settled_at = ?, claimed_until = NULL
         WHERE state = 'queued'`).run(REVOKED, at);
-      this.#pruneRefused();
     });
   }
 
@@ -171,35 +172,35 @@ export class RunnerStore {
 
   rememberAnswer(key, tool, body) {
     if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
-        .run(key, tool, this.#nowIso(), JSON.stringify(body));
-      this.db.prepare('DELETE FROM answers WHERE at <= ?').run(this.#keptSince());
-    });
+    this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
+      .run(key, tool, this.#nowIso(), JSON.stringify(body));
   }
 
   // { at, body } of the last answer to this call, or null.
   answer(key) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ? AND tool <> ?')
-      .get(key, this.#keptSince(), DIAGNOSTIC_EVENTS_TOOL);
+    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND tool <> ?')
+      .get(key, DIAGNOSTIC_EVENTS_TOOL);
     return row ? { at: row.at, body: JSON.parse(row.body) } : null;
   }
 
   // Every kept task entry, newest first, as { at, body }: what the host last gave for each folder.
   taskEntries() {
     if (this.#missing()) return [];
-    return this.db.prepare(`SELECT at, body FROM answers WHERE key LIKE 'entry:%' AND at > ? ORDER BY at DESC`)
-      .all(this.#keptSince()).map((row) => ({ at: row.at, body: JSON.parse(row.body) }));
+    return this.db.prepare(`SELECT at, body FROM answers WHERE key LIKE 'entry:%' ORDER BY at DESC`)
+      .all().map((row) => ({ at: row.at, body: JSON.parse(row.body) }));
+  }
+
+  // When the host last answered anything this computer kept, or null.
+  answeredAt() {
+    if (this.#missing()) return null;
+    return this.db.prepare('SELECT MAX(at) AS at FROM answers').get()?.at ?? null;
   }
 
   beginOfflineTask({ token, projectPath, sourceApplication }) {
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
-        VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
-      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#keptSince());
-    });
+    this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
+      VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
   }
 
   offlineTask(token) {
@@ -236,24 +237,11 @@ export class RunnerStore {
     this.db.prepare('DELETE FROM outbox WHERE id = ?').run(id);
   }
 
-  // A host that refused the entry for good: it stays listed with the reason for FAILED_KEEP_MS.
+  // A host that refused the entry for good: it stays listed with the reason
+  // until the pairing ends or a join to the same host queues it again.
   failed(id, reason) {
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`UPDATE outbox SET state = 'failed', claimed_until = NULL, settled_at = ?, last_error = ?
-        WHERE id = ?`).run(this.#nowIso(), reason, id);
-      this.#pruneRefused();
-    });
-  }
-
-  // Deletes refused entries past FAILED_KEEP_MS; the runner's MCP process calls it at start too.
-  pruneRefused() {
-    if (this.#missing()) return;
-    this.#pruneRefused();
-  }
-
-  #pruneRefused() {
-    this.db.prepare(`DELETE FROM outbox WHERE state <> 'queued' AND settled_at <= ?`)
-      .run(new Date(this.now() - FAILED_KEEP_MS).toISOString());
+    this.db.prepare(`UPDATE outbox SET state = 'failed', claimed_until = NULL, settled_at = ?, last_error = ?
+      WHERE id = ?`).run(this.#nowIso(), reason, id);
   }
 
   // Where one entry stands: 'queued', 'failed', or null once delivered (or never queued here).
@@ -290,10 +278,6 @@ export class RunnerStore {
   // What was read from the host: its answers and the offline task tokens.
   #forget() {
     for (const table of ['answers', 'offline_tasks']) this.db.prepare(`DELETE FROM ${table}`).run();
-  }
-
-  #keptSince() {
-    return new Date(this.now() - ANSWER_KEEP_MS).toISOString();
   }
 
   #nowIso() {

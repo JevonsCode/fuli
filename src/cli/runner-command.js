@@ -37,13 +37,14 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   then the outbox is delivered as with sync
     leave [--force]               end the pairing here and delete what is kept here
                                   (--force: also when checkpoints never reached the host)
-    console [--port PORT]         serve the host's console on this computer (fuli start runs it)
+    console [--port PORT]         serve this computer's console: its own state, and the host's
+                                  pages over the pairing (fuli start runs it)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
-const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
-  + 'deleted after 30 days) and checkpoints waiting for the host (deleted once delivered; refused ones after 30 days). '
-  + 'If the host revokes this computer, the answers go at once and the checkpoints wait, refused, until it joins the same '
-  + 'host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
+const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away) '
+  + 'and checkpoints waiting for the host (deleted once delivered; a refused one stays listed). Nothing here expires with '
+  + 'time. If the host revokes this computer, the answers go at once and the checkpoints wait, refused, until it joins the '
+  + 'same host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
