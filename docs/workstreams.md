@@ -147,9 +147,10 @@ any workstream, and no task of that time gained a marker.
 
 - `register_standing_assignment` — `change: "delegate"` opens one;
   `reassign`, `edit_terms`, `retire` correct or end it.
-- `get_project_team` — `workstreams` for the project.
-- `GET /api/project-team`, `GET /api/standing-assignments`,
-  `POST /api/standing-assignments`,
+- `get_project_team` — `workstreams` for the project, with `latestTask`.
+- `GET /api/project-team` (`withProgress=1` for the ledger),
+  `GET /api/workstreams?agentId=` (one FLA's ledger, for the widget),
+  `GET /api/standing-assignments`, `POST /api/standing-assignments`,
   `POST /api/standing-assignments/:id/(retire|reassign|terms)` — the console,
   on this computer only.
 
