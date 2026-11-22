@@ -144,13 +144,27 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     return { reachable: false };
   }
 
+  // The host's hello answer now (its name, version and the MCP sessions this
+  // runner holds there), or null when it does not answer.
+  async function hello() {
+    const connection = await connect();
+    if (!connection) return null;
+    try {
+      const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
+        { signal: AbortSignal.any([AbortSignal.timeout(REQUEST_MS), closing.signal]) });
+      return answer.status === 200 ? await answer.json() : null;
+    } catch {
+      return null;
+    }
+  }
+
   function close() {
     closed = true;
     closing.abort();
     drop();
   }
 
-  return { connect, drop, postJson, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
+  return { connect, drop, postJson, hello, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
 }
 
 // Something answered at the address with another certificate than the paired one

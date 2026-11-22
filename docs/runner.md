@@ -115,6 +115,36 @@ what a call from another computer may do:
 The fingerprint is recorded with each ask and each applied checkpoint id; task
 records in the graph do not carry it yet.
 
+## MCP sessions on the host
+
+Each FULI MCP process on a runner holds one MCP session on the host. No runner
+has a cap of its own, and neither does one address on the runner listener;
+the host keeps at most 64 sessions and 256 connections for all runners
+together, a backstop against something that opens them in a loop.
+
+- A runner's MCP process ends its session on the host when it exits (its
+  client closed stdin, SIGINT or SIGTERM, or the client disconnected): it sends
+  MCP's `DELETE` for the session, waits for it at most 2 seconds, and the host
+  releases the session at once. A process that stops using a session to open
+  another (its connection dropped, a call lost its answer, the MCP relay
+  switched to a newly installed version) ends the old one the same way, waiting
+  at most 1 second. A process that is killed, or cut off before the `DELETE`
+  arrives, holds its session until it has been idle 30 minutes.
+- So close clients, MCP processes and test scripts once they are no longer
+  used, reuse one connection within a session, and never open new ones in a
+  loop. FULI tells every client's AI the same in its MCP instructions.
+- When the host answers but refuses a new session (the limit, or a failure on
+  its side), the call answers `host_refused` with the HTTP status and the
+  host's reason. It is not taken for the host being away: no offline answer,
+  no `runner-offline-` task token. A refusal of a runner the host does not
+  know (403) is checked through hello as before (`runner_revoked`). The runner
+  also writes it to its own diagnostics (`fuli diagnostics` on the runner,
+  operation `runner.session_open`, code `host_refused` with the status and
+  reason, or `host_session_failed`), once until a session opens again.
+- `fuli runner status`, and `fuli status` while the runner's console runs,
+  show how many sessions this runner holds on the host, and how many there are
+  in all against the limit.
+
 ## Finding the host again
 
 The host listens on its private LAN addresses and follows them as they change
@@ -135,7 +165,8 @@ where the two computers sit in different subnets, the first time there, tell
 the runner where the host is with `fuli runner add-address ADDRESS` (the host's
 `fuli runner list` shows its addresses); it is kept from then on. The
 listener closes a connection that has not finished its TLS handshake in 10
-seconds and holds at most 24 connections from one address (64 in all). A client
+seconds and holds at most 256 connections in all, with no share per address
+(see "MCP sessions on the host"). A client
 waits for the tool list when its MCP server starts: when the host has not
 answered within 4 seconds the runner answers with the list the host last gave,
 and tells the client to list again once the host's differs. A company
@@ -170,8 +201,11 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
 call waits up to 20 seconds for that entry alone and answers `status:
-delivered` only when the host applied it, `queued_offline` otherwise. Any
-other call is sent without the token, which the host never knew.
+delivered` only when the host applied it, `queued_offline` otherwise. A call
+whose schema requires a task token (`resume_agent_conversation`) needs a task
+the host entered: it answers `offline_task_token`, saying to enter the task
+again, and sends nothing. Any other call is sent without the token, which the
+host never knew.
 
 The outbox is replayed oldest first whenever the host answers again (each MCP
 process checks every 30 seconds; `fuli runner sync` replays at once); only the
