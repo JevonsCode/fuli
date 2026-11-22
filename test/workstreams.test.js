@@ -11,6 +11,7 @@ import { buildProjectTeam } from '../src/graphiti/project-team-view.js';
 import { registerStandingAssignment } from '../src/graphiti/standing-assignment-entry.js';
 import { loadProjectTeamContext } from '../src/graphiti/project-agent-team-context.js';
 import { agentWorkstreamLedger } from '../src/graphiti/agent-workstream-ledger.js';
+import { taskWorkstreamId } from '../src/graphiti/task-entry-standing-owner.js';
 
 // docs/workstreams.md: one project carries several unrelated lines of work
 // that share its repository and release process. Each belongs to its own FLA,
@@ -105,6 +106,22 @@ test('a task whose words name a workstream goes to its FLA, and the entry says w
   assert.match(entry.agent_receipt.markdown, /工作线「春促落地页」/);
 });
 
+test('the task keeps which line it was, and its session stays in the project', async () => {
+  const { run, tasks } = fixture({ seed: [SPRING] });
+  const entry = await run({ taskPrompt: '春促 的头图换一下' });
+  const stored = tasks.at(-1).agentAssignment.match_basis;
+  assert.deepEqual(stored.filter(item => item.startsWith('workstream:')),
+    [`workstream:${entry.standing_owner.assignment_id} ${entry.standing_owner.notice}`]);
+  // It moves no session, so it carries none of a routed task's session markers.
+  assert.equal(stored.some(item => item.startsWith('standing_assignment:')
+    || item.startsWith('standing_session_')), false);
+  assert.equal(taskWorkstreamId(tasks.at(-1)), entry.standing_owner.assignment_id);
+  // The next task of the same session is an ordinary one of the same project.
+  const next = await run({ taskPrompt: '发布流程确认一下' });
+  assert.equal(next.context.personal_project_id, PROJECT);
+  assert.equal(taskWorkstreamId(tasks.at(-1)), null);
+});
+
 test('a task run in the workstream\'s own folder reaches it without being told', async () => {
   const { run, requested } = fixture({ seed: [SPRING, COUPON] });
   const entry = await run({ projectPath: `${PATH}/apps/spring-sale`, taskPrompt: '把构建跑一下' });
@@ -172,6 +189,12 @@ test('an explicit read of the team says how far each line got; task entry asks f
   };
   const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
   assert.deepEqual(reads.sort(), ['fla-ember', 'fla-orin']);
+  // A roster read that shows no progress pays for none of it.
+  reads.length = 0;
+  const roster = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT,
+    withProgress: false });
+  assert.deepEqual(reads, []);
+  assert.deepEqual(roster.workstreams.map(item => item.latestTask), [undefined, undefined]);
   assert.deepEqual(team.workstreams.map(line => [line.name, line.ownerName, line.latestTask?.title ?? null]).sort(),
     [['优惠券中心', 'Orin Pike', null], ['春促落地页', 'Ember Vale', '改头图']]);
   // The entry restores the roster without any of those reads.

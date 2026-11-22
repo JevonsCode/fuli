@@ -107,7 +107,8 @@ describe('ProjectWorkstreams', () => {
     await flushPromises()
     await panel.get('[data-open-workstream]').trigger('click')
     await panel.findAll('.project-workstreams-form input')[0].setValue('Coupon centre')
-    await panel.findAll('.project-workstreams-form input')[1].setValue('coupon')
+    // The words that move are clicked off the line that holds them, not typed again.
+    await panel.get('[data-term-chip="coupon"]').trigger('click')
     await panel.get('.project-workstreams-form select').setValue('fla-orin')
     expect(panel.get('.project-workstreams-moving').text()).toContain('Spring sale page')
     await panel.get('.project-workstreams-form').trigger('submit')

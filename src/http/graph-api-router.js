@@ -476,7 +476,9 @@ export async function handleGraphApiRequest({
   if (url.pathname === '/api/project-team' && request.method === 'GET') {
     sendJson(response, 200, await app.getProjectTeam({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
-      personalProjectId: url.searchParams.get('personalProjectId')
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      // Only the page that shows how far each workstream got pays for reading it.
+      withProgress: url.searchParams.get('withProgress') === '1'
     }));
     return true;
   }

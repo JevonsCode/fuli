@@ -134,9 +134,14 @@ The project page shows the same list, and the lead's own ledger is a widget
 takes only the context of where it sits. The person changes the owner, merges
 or splits there, by clicking, never by typing an id.
 
+A task a workstream took keeps which line it was, in its Agent assignment's
+match basis as `workstream:<assignmentId> <notice>`. It moves no session, so
+it carries none of a routed task's session markers, and an owner change later
+never rewrites it: the record says which line did the work, not only who did.
+
 Earlier tasks are not reassigned. To read one FLA's history by workstream,
 the ledger's start date is the honest boundary: work before it was not under
-any workstream.
+any workstream, and no task of that time gained a marker.
 
 ## Interfaces
 

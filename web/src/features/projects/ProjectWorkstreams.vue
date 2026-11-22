@@ -44,14 +44,19 @@ const candidates = computed(() => {
 })
 const canOpen = computed(() => Boolean(draft.value.name.trim() && termsOf(draft.value.terms).length
   && draft.value.ownerAgentId))
+// Splitting a line is clicking the words that move, not typing them again.
+const heldTerms = computed(() => [...new Set(workstreams.value.flatMap(line => line.terms))])
+const chosenTerms = computed(() => termsOf(draft.value.terms).map(term => term.toLowerCase()))
 // The words of this draft that another line of this project holds today: they
 // move here when it opens, so the person sees the split before it happens.
-const movingTerms = computed(() => {
-  const wanted = termsOf(draft.value.terms).map(term => term.toLowerCase())
-  return workstreams.value
-    .map(line => ({ line, terms: line.terms.filter(term => wanted.includes(term.toLowerCase())) }))
-    .filter(item => item.terms.length)
-})
+const movingTerms = computed(() => workstreams.value
+  .map(line => ({ line, terms: line.terms.filter(term => chosenTerms.value.includes(term.toLowerCase())) }))
+  .filter(item => item.terms.length))
+
+function toggleTerm(term: string) {
+  const kept = termsOf(draft.value.terms).filter(item => item.toLowerCase() !== term.toLowerCase())
+  draft.value.terms = (kept.length === chosenTerms.value.length ? [...kept, term] : kept).join(' ')
+}
 
 watch(() => [props.spaceId, props.projectId], () => {
   team.value = null
@@ -90,7 +95,7 @@ async function load() {
   loading.value = true
   failed.value = false
   try {
-    const value = await readProjectTeam(props.spaceId, props.projectId)
+    const value = await readProjectTeam(props.spaceId, props.projectId, { withProgress: true })
     if (current === sequence) team.value = value
   } catch {
     if (current === sequence) failed.value = true
@@ -234,6 +239,12 @@ function open() {
             <option v-for="person in candidates" :key="person.agentId" :value="person.agentId">{{ person.name }}</option>
           </select>
         </label>
+        <div v-if="heldTerms.length" class="project-workstreams-chips">
+          <button v-for="term in heldTerms" :key="term" type="button" class="project-workstreams-chip"
+            :class="{ 'is-on': chosenTerms.includes(term.toLowerCase()) }"
+            :aria-pressed="chosenTerms.includes(term.toLowerCase())" :data-term-chip="term"
+            @click="toggleTerm(term)">{{ term }}</button>
+        </div>
         <Button type="submit" size="sm" :disabled="!canOpen || Boolean(busy)">
           {{ t('projects.workstreams.confirm') }}
         </Button>
@@ -295,6 +306,26 @@ function open() {
 
 .project-workstreams-moving {
   flex-basis: 100%;
+}
+
+.project-workstreams-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.project-workstreams-chip {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 0.125rem 0.5rem;
+}
+
+.project-workstreams-chip.is-on {
+  background: var(--accent);
+  border-color: var(--accent-foreground);
 }
 
 .project-workstreams-error {

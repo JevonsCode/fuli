@@ -32,6 +32,11 @@ const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent'
 const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
 const SESSION_PROJECT = /^standing_session_project:(\S+)$/u;
 const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
+// A task a workstream of its own project took, "workstream:<assignmentId>
+// <notice>": the durable record of which line of work it was, which an owner
+// change later never rewrites. It moves no session, so it carries no session
+// markers and is read by a different prefix than a routed task's.
+const WORKSTREAM = /^workstream:(\S+) (.+)$/su;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which one this task belongs to, then begin the task again naming that project, or that FLA when the '
   + 'candidates are workstreams of one project.';
@@ -122,12 +127,22 @@ function workstreamEntry(owner, selection) {
 }
 
 // The Agent assignment a routed task stores: the selected Agent's, or one
-// without an Agent, with the route appended within the Provider's bound.
+// without an Agent, with the route appended within the Provider's bound. A
+// task a workstream took keeps its line of work instead, without moving the
+// session, so the record still says which line it was after an owner change.
 export function withStandingRoute(assignment, standingOwner) {
+  if (standingOwner?.status === 'workstream') {
+    return withRouteMarkers(assignment, [`workstream:${standingOwner.assignment_id} ${standingOwner.notice}`]);
+  }
   if (standingOwner?.status !== 'routed') return assignment;
   return withRouteMarkers(assignment, [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
     ...sessionMarkers({ personalProjectId: standingOwner.session_project_id,
       projectAgentId: standingOwner.session_agent_id })]);
+}
+
+/** The workstream a stored task belonged to, or null: its ID alone, never the wording. */
+export function taskWorkstreamId(task) {
+  return (task?.agentAssignment?.match_basis ?? []).map(item => WORKSTREAM.exec(item)?.[1]).find(Boolean) ?? null;
 }
 
 // The session's own state stored on a task that does not keep the session
@@ -149,10 +164,11 @@ export function sessionTaskContext(task) {
   return personalProjectId || projectAgentId ? { personalProjectId, projectAgentId, projectScope: null } : null;
 }
 
-// The checkpoint receipt repeats the notice the routed entry showed.
+// The checkpoint receipt repeats the notice the routed entry showed, whether
+// the task moved project or stayed in a workstream of its own.
 export function standingReceiptNotices(task) {
-  return (task?.agentAssignment?.match_basis ?? []).map(item => ROUTE.exec(item)?.[2]).filter(Boolean)
-    .map(receiptText);
+  return (task?.agentAssignment?.match_basis ?? [])
+    .map(item => (ROUTE.exec(item) ?? WORKSTREAM.exec(item))?.[2]).filter(Boolean).map(receiptText);
 }
 
 // A store this FULI cannot read routes nothing; the entry continues as before.

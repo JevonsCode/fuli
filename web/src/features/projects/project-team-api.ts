@@ -63,8 +63,11 @@ export interface ProjectTeam {
   workstreams?: ProjectWorkstream[]
 }
 
-export function readProjectTeam(personalSpaceId: string, personalProjectId: string) {
-  const query = new URLSearchParams({ personalSpaceId, personalProjectId })
+/** `withProgress` also reads how far each workstream got; only the ledger needs it. */
+export function readProjectTeam(personalSpaceId: string, personalProjectId: string,
+  { withProgress = false } = {}) {
+  const query = new URLSearchParams({ personalSpaceId, personalProjectId,
+    ...(withProgress ? { withProgress: '1' } : {}) })
   return getJson<ProjectTeam>(`/api/project-team?${query}`)
 }
 
