@@ -217,7 +217,8 @@ test('internal Agent activity cannot correct or end an assignment', async (t) =>
     assert.deepEqual(app.standingAssignments.list(SPACE), [assignment]);
   }
   const { app } = application(t);
-  await assert.rejects(correct(app, 'preview', 'rename'), /change must be register, retire, reassign or edit_terms/);
+  await assert.rejects(correct(app, 'preview', 'rename'),
+    /change must be register, delegate, retire, reassign or edit_terms/);
 });
 
 test('confirming the same correction again answers unchanged and records no second revision', async (t) => {

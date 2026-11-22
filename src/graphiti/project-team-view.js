@@ -15,7 +15,7 @@ export function isPeerRoleAgent({ agentId, agentType, capabilities = [] }) {
     || capabilities.some(value => PEER_CAPABILITIES.has(String(value).toLowerCase()));
 }
 
-export function buildProjectTeam({ policy, agents, projectId }) {
+export function buildProjectTeam({ policy, agents, projectId, standingAssignments = [] }) {
   const leadId = policy?.team_lead_agent_id ?? null;
   const memberIds = [...new Set(policy?.team_member_agent_ids ?? [])].filter(id => id !== leadId);
   const all = Array.isArray(agents) ? agents : [];
@@ -58,8 +58,33 @@ export function buildProjectTeam({ policy, agents, projectId }) {
       memberCount: members.length, threshold: policy?.sub_team_suggestion_threshold ?? 6 },
     collaborators: collaborators.sort(byName),
     peers: peers.sort(byName),
-    unavailableMemberIds: memberIds.filter(id => !assigned.has(id))
+    unavailableMemberIds: memberIds.filter(id => !assigned.has(id)),
+    workstreams: workstreamLedger(standingAssignments, projectId, leadId, assigned)
   };
+}
+
+// The lead's ledger (docs/workstreams.md): each line of work of this project,
+// who owns it, since when and who decided it. A workstream is a standing
+// assignment of this project whose Agent is not its lead; an assignment that
+// points at the lead routes work into the project and is not a line within
+// it. An owner that has left the project keeps its ID, so the person can
+// still move or end the work.
+function workstreamLedger(assignments, projectId, leadId, assigned) {
+  return (Array.isArray(assignments) ? assignments : [])
+    .filter(item => item.projectId === projectId && !item.retiredAt && item.leadAgentId !== leadId)
+    .map(item => ({
+      assignmentId: item.assignmentId,
+      name: item.responsibility,
+      terms: [...item.terms],
+      ownerAgentId: item.leadAgentId,
+      ownerName: assigned.get(item.leadAgentId)?.name ?? null,
+      ownerOnProject: assigned.has(item.leadAgentId),
+      decidedBy: item.source,
+      startedAt: item.createdAt,
+      changedAt: item.updatedAt,
+      revision: item.revision
+    }))
+    .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.assignmentId.localeCompare(right.assignmentId));
 }
 
 function activeAssignment(agent, projectId) {
@@ -96,5 +121,17 @@ export async function loadProjectTeam(application, personalSpaceId, projectId) {
     application.personal.listProjectAgents(personalSpaceId, projectId, { status: 'active' })
   ]);
   const list = Array.isArray(agents) ? agents : agents?.agents ?? agents?.items ?? [];
-  return buildProjectTeam({ policy, agents: list, projectId });
+  return buildProjectTeam({ policy, agents: list, projectId,
+    standingAssignments: standingAssignmentsFor(application) });
+}
+
+// The local store's active assignments, or none: a FULI that cannot read it
+// still reports its team, without claiming the project has no workstreams.
+function standingAssignmentsFor(application) {
+  if (!application.standingAssignments) return [];
+  try {
+    return application.standingAssignments.list(application.config.personal.spaceId);
+  } catch {
+    return [];
+  }
 }

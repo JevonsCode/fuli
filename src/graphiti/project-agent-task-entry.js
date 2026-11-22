@@ -77,6 +77,10 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     // the routing notice does not claim the switch; one never repeats the other.
     const standingAgentId = resolution.standingOwner?.leadAgentId ?? resolution.standingAgentId ?? null;
     let standingAgentUnreached = false;
+    // Whether this entry actually asked for the assignment's Agent. An
+    // assignment whose Agent the ordinary selection had already chosen changed
+    // nothing, so the entry says nothing new about it.
+    let standingAgentApplied = false;
     if (implicit && !delegation && standingAgentId && value.status === 'ready'
       && ![agent?.agentId, value.requested_agent_id].includes(standingAgentId)) {
       const standing = await application.personal.resolveProjectAgentContext({ ...contextRequest,
@@ -85,6 +89,7 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       if (!standingAgentUnreached) {
         value = standing;
         agent = projectAgentRecord(standing.agent);
+        standingAgentApplied = true;
       }
     }
     // The client and status come first, so a scope refusal below means the scope.
@@ -99,7 +104,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
           worker_started: false };
       }
     }
-    return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
+    return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}),
+      ...(standingAgentApplied ? { standingAgentApplied } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
     // never claim that a role or its private memory was successfully restored.

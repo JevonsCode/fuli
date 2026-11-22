@@ -51,7 +51,8 @@ export function sessionOwnerOf(task) {
 export function changedOwner(resolution, selection) {
   const from = resolution.sessionOwner;
   const to = selection?.agent?.agentId ?? null;
-  if (!from || !to || from.agentId === to || resolution.fla || resolution.group || resolution.standingOwner) return null;
+  if (!from || !to || from.agentId === to || resolution.fla || resolution.group || resolution.standingOwner
+    || resolution.standingWorkstream) return null;
   return from;
 }
 

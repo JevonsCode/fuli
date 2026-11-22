@@ -46,7 +46,8 @@ async function collaborationPreferences(application, {
   }
   projectResolution = await resolveTaskEntryProject(application, projectResolution, {
     sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt, sessionTask,
-    clientModel, turnId
+    // A workstream's term may be a folder of the working directory (docs/workstreams.md).
+    projectPath, clientModel, turnId
   });
   const preferences = await taskEntryPreferences(application, projectResolution, {
     personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,

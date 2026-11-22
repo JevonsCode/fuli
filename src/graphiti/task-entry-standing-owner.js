@@ -33,27 +33,39 @@ const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
 const SESSION_PROJECT = /^standing_session_project:(\S+)$/u;
 const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
-  + 'user once which project this task belongs to, then begin the task again naming that project.';
+  + 'user once which one this task belongs to, then begin the task again naming that project, or that FLA when the '
+  + 'candidates are workstreams of one project.';
 
 export async function withStandingOwner(application, resolution, input) {
-  const matches = standingMatches(application, input.taskPrompt);
+  const matches = standingMatches(application, input.taskPrompt, workingFolders(input.projectPath));
   if (!matches.length || !routable(resolution, input) || hostInternalActivity(application, input)
     || await promptNamesProject(application, input.taskPrompt)) return resolution;
   const projects = new Map((await nameableProjects(application)).map(project => [project.project_id, project]));
   const owners = matches.filter(({ assignment }) => projects.has(assignment.projectId))
-    .map(({ assignment, matchedTerms }) => ({ assignmentId: assignment.assignmentId, projectId: assignment.projectId,
-      projectName: projectDisplayName(projects.get(assignment.projectId)), leadAgentId: assignment.leadAgentId,
-      matchedTerms }));
+    .map(({ assignment, matchedTerms, matchedOn }) => ({ assignmentId: assignment.assignmentId,
+      projectId: assignment.projectId, projectName: projectDisplayName(projects.get(assignment.projectId)),
+      leadAgentId: assignment.leadAgentId, workstream: assignment.responsibility, matchedTerms, matchedOn }));
   if (owners.length > 1) return { ...resolution, standingCandidates: owners };
   const [owner] = owners;
   if (!owner) return resolution;
-  // Already in the assignment's project: the task stays as it is, and only
-  // the Agent selection starts from the assignment's lead.
-  if (owner.projectId === resolution.personalProjectId) return { ...resolution, standingAgentId: owner.leadAgentId };
+  // Already in the assignment's project: a workstream of this project. The
+  // task stays as it is and only the Agent selection starts from its owner,
+  // who is named in the entry like any other routed owner.
+  if (owner.projectId === resolution.personalProjectId) {
+    return { ...resolution, standingAgentId: owner.leadAgentId, standingWorkstream: owner };
+  }
   return { status: 'matched', basis: 'standing_assignment', personalProjectId: owner.projectId,
     standingOwner: { ...owner, sessionProjectId: resolution.status === 'matched' ? resolution.personalProjectId : null,
       sessionAgentId: resolution.status === 'global' && resolution.basis === 'host_session_context'
         ? resolution.globalAgentId : null } };
+}
+
+// The folders of the task's working directory, nearest last. A term that is
+// one of them names its workstream (port.match); the path is not read from
+// disk and nothing outside what the client already sent is used.
+export function workingFolders(projectPath) {
+  if (typeof projectPath !== 'string' || !projectPath.trim()) return [];
+  return projectPath.split(/[\\/]+/u).filter(Boolean);
 }
 
 // What the entry says about a standing assignment: the routed owner with its
@@ -61,9 +73,13 @@ export async function withStandingOwner(application, resolution, input) {
 // selected Agent's when it is the lead; no Agent is read for it.
 export function standingOwnerEntry(resolution, selection) {
   if (resolution.standingCandidates) {
-    return { field: { status: 'clarification_required', candidates: resolution.standingCandidates.map(ownerView),
+    return { field: { status: 'clarification_required',
+      // Workstreams of one project share its name, so each candidate also
+      // says which line of work it is.
+      candidates: resolution.standingCandidates.map(owner => ({ ...ownerView(owner), workstream: owner.workstream })),
       guidance: CLARIFY_GUIDANCE } };
   }
+  if (resolution.standingWorkstream) return workstreamEntry(resolution.standingWorkstream, selection);
   const owner = resolution.standingOwner;
   if (!owner) return null;
   const selected = selection?.agent ?? null;
@@ -83,6 +99,26 @@ export function standingOwnerEntry(resolution, selection) {
       ...(unreached ? { owner_resolved: false } : {}),
       session_project_id: owner.sessionProjectId, ...(owner.sessionAgentId ? { session_agent_id: owner.sessionAgentId } : {}),
       notice } };
+}
+
+// A workstream of the project the task is already in: who is continuing which
+// line of work, said plainly. The task's project does not move, so the line
+// names the workstream and its owner rather than the project.
+function workstreamEntry(owner, selection) {
+  // The owner the ordinary selection had already chosen changed nothing here,
+  // so a small task gains no line about a workstream it never left.
+  if (!selection?.standingAgentApplied && !selection?.standingAgentUnreached) return null;
+  const selected = selection?.agent ?? null;
+  const name = agentName(selected) ?? selected?.agentId ?? owner.leadAgentId;
+  const held = Boolean(selected) && selection.requested_agent_id === owner.leadAgentId;
+  const unreached = Boolean(selection?.standingAgentUnreached);
+  const line = `工作线「${owner.workstream}」`;
+  const notice = unreached ? `${line}的负责人 ${owner.leadAgentId} 暂时联系不上，由 ${name} 接着做`
+    : held ? `${line}由负责人 ${name} 持有，请求 ${owner.leadAgentId} 接着做`
+      : `${line}由 ${name} 接着做`;
+  return { notice, receiptNotice: receiptText(notice),
+    field: { status: 'workstream', assignment_id: owner.assignmentId, ...workstreamView(owner),
+      ...(unreached ? { owner_resolved: false } : {}), notice } };
 }
 
 // The Agent assignment a routed task stores: the selected Agent's, or one
@@ -120,10 +156,10 @@ export function standingReceiptNotices(task) {
 }
 
 // A store this FULI cannot read routes nothing; the entry continues as before.
-function standingMatches(application, taskPrompt) {
+function standingMatches(application, taskPrompt, folders) {
   if (!application.standingAssignments || typeof taskPrompt !== 'string' || !taskPrompt.trim()) return [];
   try {
-    return application.standingAssignments.match(application.config.personal.spaceId, taskPrompt);
+    return application.standingAssignments.match(application.config.personal.spaceId, taskPrompt, folders);
   } catch {
     return [];
   }
@@ -143,4 +179,11 @@ function agentName(agent) {
 function ownerView(owner) {
   return { project_id: owner.projectId, project_name: owner.projectName, lead_agent_id: owner.leadAgentId,
     matched_terms: owner.matchedTerms };
+}
+
+// A workstream stays in its project, so its view names the line of work and
+// why it matched instead of repeating the project.
+function workstreamView(owner) {
+  return { workstream: owner.workstream, owner_agent_id: owner.leadAgentId, matched_terms: owner.matchedTerms,
+    matched_on: owner.matchedOn ?? [] };
 }

@@ -27,6 +27,9 @@ const MAX_TERMS = 20;
 const TERM_LIMIT = 80;
 const RESPONSIBILITY_LIMIT = 240;
 const MAX_PREFERENCES = 50;
+// Deep paths are bounded rather than refused: a working directory below this
+// many folders matches on its nearest ones, never on an unbounded scan.
+const MAX_FOLDERS = 40;
 const SOURCES = new Set(['user', 'host']);
 
 export function createStandingAssignments({ path = ':memory:', now = () => new Date(),
@@ -165,17 +168,31 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     });
   }
 
-  // Every active assignment whose terms occur in the text, with the terms that did.
-  function match(personalSpaceId, text) {
+  // Every active assignment this task names, with the terms that named it and
+  // how. A term occurs in the request's words, or is a whole folder of the
+  // task's working directory: a task run in apps/checkout-page/ reaches the
+  // workstream whose term is "checkout-page" without being told. Both are
+  // deterministic; neither reads a model or the Provider.
+  function match(personalSpaceId, text, folders = []) {
     const prompt = identityKey(requiredString(text, 'text'));
     const space = requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT);
+    const segments = new Set((Array.isArray(folders) ? folders : []).filter((item) => typeof item === 'string')
+      .slice(-MAX_FOLDERS).map(identityKey).filter(Boolean));
     const matched = new Map();
     for (const { termKey, assignmentId } of store.activeTerms(space)) {
-      if (termOccurs(prompt, termKey)) matched.set(assignmentId, [...(matched.get(assignmentId) ?? []), termKey]);
+      const on = termOccurs(prompt, termKey) ? 'words' : segments.has(termKey) ? 'folder' : null;
+      if (!on) continue;
+      const found = matched.get(assignmentId) ?? { keys: [], on: new Set() };
+      found.keys.push(termKey);
+      found.on.add(on);
+      matched.set(assignmentId, found);
     }
     return store.listActive(space).filter(({ assignmentId }) => matched.has(assignmentId))
-      .map((assignment) => ({ assignment, matchedTerms: assignment.terms
-        .filter((term) => matched.get(assignment.assignmentId).includes(identityKey(term))) }));
+      .map((assignment) => {
+        const found = matched.get(assignment.assignmentId);
+        return { assignment, matchedOn: [...found.on],
+          matchedTerms: assignment.terms.filter((term) => found.keys.includes(identityKey(term))) };
+      });
   }
 
   // Every active assignment whose terms or responsibility a search for who

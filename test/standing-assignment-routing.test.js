@@ -306,7 +306,13 @@ test('in its own project an assignment changes the selection only when its Agent
   assert.deepEqual(other.requested, [null, 'helper-timesheet']);
   assert.equal(entry.project_agent_context.requested_agent_id, 'helper-timesheet');
   assert.equal(entry.context.personal_project_id, 'timesheet');
-  assert.equal(entry.standing_owner, undefined, 'the task was not moved, so there is no routing notice');
+  // The task did not move, so the entry names the workstream and who continues it, not a project.
+  const held = '工作线「Fill the synthetic timesheet」由负责人 Timesheet Lead 持有，请求 helper-timesheet 接着做';
+  assert.deepEqual(entry.standing_owner, { status: 'workstream',
+    assignment_id: other.app.standingAssignments.list(SPACE)[0].assignmentId,
+    workstream: 'Fill the synthetic timesheet', owner_agent_id: 'helper-timesheet',
+    matched_terms: ['工时'], matched_on: ['words'], notice: held });
+  assert.match(entry.agent_receipt.markdown, new RegExp(`· ${held}$`));
 });
 
 test('routing adds no Provider round trip to the entry', async () => {

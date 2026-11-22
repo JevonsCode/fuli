@@ -14,6 +14,11 @@ export async function loadProjectTeamContext(application, personalSpaceId, proje
     ...team.members.map(member => entry(member, subLeads.has(member.agentId) ? 'sub_lead' : 'member'))];
   return { lead_agent_id: leadId, roster,
     user_facing_agent_id: leadId,
+    // The project's divided lines of work, so the lead can hand a task on and
+    // an owner knows which line is its own (docs/workstreams.md). Facts only:
+    // the entry asks for nothing and adds no step to an ordinary task.
+    ...(team.workstreams.length ? { workstreams: team.workstreams.map(line => ({ workstream: line.name,
+      owner_agent_id: line.ownerAgentId, terms: line.terms })) } : {}),
     reporting_lines: team.members.map(member => ({ agent_id: member.agentId, reports_to_agent_id: member.reportsToAgentId })),
     unavailable_agent_ids: [...new Set([...(team.lead ? [] : [leadId]), ...team.unavailableMemberIds,
       ...team.subTeams.flatMap(group => [...(group.unavailableLead ? [group.unavailableLead.agentId] : []), ...group.unavailableMemberIds])])],
