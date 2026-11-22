@@ -1,4 +1,4 @@
-import { BAND_STYLE } from './follower-band.js';
+import { BAND_HEIGHT, BAND_STYLE } from './follower-band.js';
 import { CAPABILITIES, followerLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
@@ -94,7 +94,7 @@ function addAddress(host) {
   <p class="note en">If ${escape(host.name)} does not answer, run <code>fuli runner list</code> there and put the address it shows here.</p>
   <button type="button" data-address-open>添加主机地址 / Add the host's address</button>
   <form data-address-form hidden>
-    <input name="address" inputmode="numeric" autocomplete="off" placeholder="192.0.2.20"
+    <input name="address" inputmode="numeric" autocomplete="off" placeholder="10.0.0.20"
       aria-label="主机的局域网地址 / the host's private address">
     <button type="submit">保存并重试 / Save and try again</button>
   </form>
@@ -131,6 +131,7 @@ function escape(value) {
 }
 
 const PAGE_STYLE = `
+:root{--fuli-follower-band:${BAND_HEIGHT}px}
 body{margin:0;padding:calc(var(--fuli-follower-band) + 28px) 20px 64px;color:#1f2328;background:#fff;
  font:14px/1.6 -apple-system,system-ui,"Helvetica Neue",sans-serif}
 main{max-width:46rem;margin:0 auto}
@@ -160,6 +161,7 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .away-step p{margin:0 0 6px}
 .away-step button{margin:4px 0 0}
 .away-step form{display:flex;gap:8px;align-items:center;margin-top:4px}
+.away-step form[hidden]{display:none}
 .away-step input{flex:0 1 14rem;padding:5px 9px;border:1px solid #d6d9de;border-radius:7px;font:inherit;font-size:13px}
 .away-step form button{margin:0}
 @media (prefers-color-scheme:dark){body{color:#e6e8ea;background:#111315}.note{color:#8b9099}.en{color:#71767d}

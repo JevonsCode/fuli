@@ -304,7 +304,8 @@ test('「添加主机地址」 takes a private address from this computer\'s own
   const { entry, store, setAway } = await pairedRunner(t);
   setAway(true);
   const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
-  assert.match(page.text, /data-address-open/, 'the next step is offered while the host is away');
+  assert.match(page.text, /添加主机地址/, 'the next step is offered while the host is away');
+  assert.match(page.text, /不在线/, 'the page says plainly that the host did not answer, never "not checked"');
   assert.match(page.text, /同一个 VPN/, 'how the two computers reach each other is said as it is');
   assert.doesNotMatch(page.text, /中继/, 'no relay is planned, so none is promised');
 
@@ -322,11 +323,11 @@ test('「添加主机地址」 takes a private address from this computer\'s own
   }
   assert.deepEqual(store.host().addresses, ['127.0.0.1'], 'nothing outside a private network is kept');
 
-  const saved = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"192.168.1.20"}',
+  const saved = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"10.0.0.20"}',
     headers: { 'content-type': 'application/json', origin: entry.url } });
   assert.equal(saved.status, 200);
   assert.equal(JSON.parse(saved.text).reachable, false, 'it says plainly that the address did not answer');
-  assert.equal(store.host().addresses[0], '192.168.1.20', 'the address is tried first next time');
+  assert.equal(store.host().addresses[0], '10.0.0.20', 'the address is tried first next time');
 });
 
 test('「现在重试」 delivers now and only from this computer\'s own page', async (t) => {
@@ -359,7 +360,7 @@ function runnerDataDir(t) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-dir-')));
   mkdirSync(path.join(dataDir, 'runner'));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
-  store.saveHost({ name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] });
+  store.saveHost({ name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['10.0.0.20'] });
   store.close();
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   return dataDir;

@@ -27,7 +27,7 @@
 export const SOURCE_HEADER = 'x-fuli-source';
 export const BAND_PATH = '/__fuli-follower/band.js';
 export const STATUS_PATH = '/__fuli-runner/status';
-const BAND_HEIGHT = 26;
+export const BAND_HEIGHT = 26;
 
 // Added before </head> of every HTML page the follower serves from its host.
 // The height is taken off `.app-frame`, which is the console's own full-height

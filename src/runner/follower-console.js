@@ -63,7 +63,9 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     response.setHeader(SOURCE_HEADER, 'local');
     sendJson(response, status, body);
   };
-  const status = ({ reach = true } = {}) => followerStatus({ store, connection, dataDir, reach });
+  // reachable: what this request already learned, for a caller that must not open the connection again.
+  const status = ({ reach = true, reachable = null } = {}) =>
+    followerStatus({ store, connection, dataDir, reach, reachable });
 
   async function handle(request, response) {
     // Only this computer, under its own name: another site's page cannot rebind a name onto it.
