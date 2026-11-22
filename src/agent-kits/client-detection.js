@@ -24,10 +24,21 @@ export const entryState = (components) => components?.[entryComponent(components
 // components: { mcp: 'current' | 'outdated' | 'missing' | 'conflict', … },
 // mcpPaths, entryPaths }. entryPaths are the files or directories of the
 // entry component (entryComponent). Clients this platform cannot run are left out.
-export async function detectClients(installer) {
+//
+// presence (client-presence.js, optional): also counts a built-in client as on
+// this computer when its own command is installed here. agent-installer reads
+// FULI's PATH and each client's configuration files, so without this a client
+// that has never written its configuration is never connected and never
+// reported as installed (rec#145).
+export async function detectClients(installer, { presence = null } = {}) {
   const answer = await installer.status();
   if (answer.status !== 'available') return answer;
-  return { status: 'available', clients: answer.clients.filter((client) => client.platformSupported).map(clientOf) };
+  const clients = answer.clients.filter((client) => client.platformSupported).map(clientOf);
+  if (!presence) return { status: 'available', clients };
+  const missed = clients.filter((client) => client.builtin && !client.detected && !client.manual).map(({ id }) => id);
+  const installed = missed.length ? await presence.installed(missed) : new Set();
+  return { status: 'available',
+    clients: clients.map((client) => (installed.has(client.id) ? { ...client, detected: true } : client)) };
 }
 
 // The MCP files of every client in an installer status answer, on this
@@ -63,8 +74,8 @@ const agentOf = (client) => ({
   integrationDetails: client.components });
 
 // The built-in clients FULI sets up.
-export async function detectAgents(installer) {
-  const answer = await detectClients(installer);
+export async function detectAgents(installer, options) {
+  const answer = await detectClients(installer, options);
   if (answer.status !== 'available') return answer;
   return { status: 'available', agents: answer.clients.filter((client) => client.builtin).map(agentOf) };
 }

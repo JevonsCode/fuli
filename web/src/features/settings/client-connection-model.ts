@@ -10,7 +10,10 @@ export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: s
 export type FuliInstall = { path: string, version: string | null }
 // What an outdated entry runs, against the console's own installation.
 export type ConfiguredInstall = FuliInstall & { exists: boolean, sameAsConsole: boolean }
+// firstRun: this client still asks the person something itself the first time
+// FULI is used in it; the id names which sentence to show.
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
+  firstRun?: string,
   restartSessions?: number,
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
   overwritten?: boolean, configuredInstall?: ConfiguredInstall,
@@ -21,9 +24,14 @@ export type ClientObservation = { id: string, label: string, status: ClientStatu
 // A client the person described by hand (an agent-clients extension file).
 export type CustomClient = { id: string, label: string, detected: boolean, status: ClientStatus, mcpPaths: string[], removable: boolean,
   components?: Record<string, string> }
+// What a runner says about itself on its own 客户端接入 page (docs/runner.md):
+// its host, and which of the two computers runs the older FULI (rec issue 144).
+export type RunnerFacts = { version: string, hostName: string | null, hostReachable: boolean, hostVersion: string | null,
+  skew?: { older: 'host' | 'runner' } }
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
-  customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] } }
+  customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] },
+  runner?: RunnerFacts }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
 // client_running: a client that writes its cached configuration back is, or may be, running (rec issue 106).
 export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
@@ -115,9 +123,14 @@ export function awaitsFirstConnection(client: ClientTile): boolean {
 }
 
 // 「已接入 X/Y 个客户端」: the shown clients and every client described by hand.
-export function connectionSummary(observation: ConnectionStatus | null): { connected: number, total: number } {
+// `notInstalled` counts the built-in clients that are not on this computer, so
+// the line never reads as "all of them" while FULI knows of clients it is not
+// in (rec issue 90, rec issue 145).
+export function connectionSummary(observation: ConnectionStatus | null):
+  { connected: number, total: number, notInstalled: number } {
   const clients = clientTiles(observation)
-  return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length }
+  return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length,
+    notInstalled: (observation?.clients ?? []).filter((client) => client.status === 'not_detected').length }
 }
 
 // 「重启并更新」 replaces 「更新接入」 while the client runs, or FULI cannot tell, since it would write its old entry back (rec issue 106).

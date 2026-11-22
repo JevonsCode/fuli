@@ -11,6 +11,7 @@ import { createClientConnectionObserver } from '../system/client-connection-stat
 import { createClientInstaller } from '../system/client-connection-install.js';
 import { createClientRestart } from '../system/client-restart.js';
 import { createCustomClients } from '../system/custom-client-connection.js';
+import { versionSkew } from './version-skew.js';
 
 // The clients on a runner (docs/runner.md), for its console's 客户端接入:
 // detected, connected and added here, with the same entries `fuli runner join`
@@ -18,7 +19,12 @@ import { createCustomClients } from '../system/custom-client-connection.js';
 // computer's Codex, Cursor and the rest instead of the host's. The same parts
 // as the console's system service, without anything of a graph runtime.
 // paths: resolveSetupPaths() for the runner's data directory.
-export function createRunnerClients({ paths, apps = clientApps(),
+// host(): this runner's host as it is right now ({ name, reachable, version })
+// or null when it is not paired. The page says it, because a runner's clients
+// behave differently from a host's: their lifecycle hooks do nothing here, so
+// every task entry depends on the Agent calling FULI (docs/runner.md), and the
+// two computers can be on different FULI versions (rec#144).
+export function createRunnerClients({ paths, apps = clientApps(), host = null,
   agentKits = agentKitPorts(paths, { runtimeConfigPath: paths.graphRuntimeConfigPath }) }) {
   const runtimeConfigPath = paths.graphRuntimeConfigPath;
   const customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir });
@@ -28,14 +34,21 @@ export function createRunnerClients({ paths, apps = clientApps(),
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps
+    apps, presence: agentKits.clientPresence
   });
-  const connectClient = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients });
+  const connectClient = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients,
+    presence: agentKits.clientPresence });
   return {
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: () => observer.observe(),
+    clientConnectionStatus: async () => {
+      const [observation, paired] = await Promise.all([observer.observe(), host ? host() : null]);
+      const skew = versionSkew({ hostVersion: paired?.version ?? null, runnerVersion: FULI_VERSION });
+      return { ...observation, runner: { version: FULI_VERSION,
+        hostName: paired?.name ?? null, hostReachable: paired?.reachable === true, hostVersion: paired?.version ?? null,
+        ...(skew ? { skew: { older: skew.older } } : {}) } };
+    },
     connectClient,
     restartClient: createClientRestart({ apps, connect: connectClient,
       inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),

@@ -5,6 +5,7 @@ export const settingsMessages = {
     connection: {
       title: '客户端接入',
       summary: '已接入 {connected}/{total} 个客户端',
+      summaryWithMissing: '已接入 {connected}/{total} 个客户端，另有 {notInstalled} 个这台电脑上没装',
       loading: '正在读取 MCP 接入配置…',
       loadError: '暂时无法读取接入配置',
       retry: '重试',
@@ -19,6 +20,15 @@ export const settingsMessages = {
       guide: '接入说明',
       clients: {
         title: '本机客户端',
+        firstRun: {
+          cursor: '第一次在一个项目目录里启动 cursor-agent，它会先问「信任这个文件夹」和「批准 MCP」，没人回答就一直没有输出。在那个目录里回答一次，或先在那里运行 cursor-agent mcp enable fuli 预先批准 FULI。Cursor 没有预先信任目录的参数，--approve-mcps 只对 --print 生效。',
+        },
+        runner: {
+          note: '这台电脑是从机，FULI 在主机「{host}」上。从机上的钩子不起作用，下面这些客户端要靠模型自己调 FULI 进任务，可能漏。',
+          notPaired: '这台电脑还没有配对主机，下面这些客户端连不上 FULI。',
+          runnerOlder: '两台电脑的 FULI 版本不一样：这台是 {runnerVersion}，主机是 {hostVersion}。这台旧了，更新它。',
+          hostOlder: '两台电脑的 FULI 版本不一样：这台是 {runnerVersion}，主机是 {hostVersion}。主机旧了，去主机上更新。',
+        },
         connect: '接入',
         connectAll: '一键接入',
         connectingAll: '正在接入 {count} 个客户端：{client}（{index}/{count}）',
@@ -114,7 +124,7 @@ export const settingsMessages = {
           permissions: '每次调用开任务和收尾的 FULI 工具都可能要你确认。',
           prompts: '没有 /fla 菜单，要用「#FLA 名字」叫一位 FLA。',
         },
-        noLifecycle: '不会自动进入与收尾：靠 Agent 按 FULI 的说明做，也不会自动记录对话。',
+        noLifecycle: '这个客户端靠模型自己进入任务：没有钩子，要它照 FULI 的说明去调，可能漏；对话也不会自动记下来。',
       },
       custom: {
         title: '手动接入',
@@ -497,6 +507,7 @@ export const settingsMessages = {
     connection: {
       title: 'Client connection',
       summary: 'FULI is in {connected} of {total} clients',
+      summaryWithMissing: 'FULI is in {connected} of {total} clients; {notInstalled} more are not installed on this computer',
       loading: 'Loading MCP connection configuration…',
       loadError: 'Connection configuration is unavailable',
       retry: 'Retry',
@@ -525,6 +536,15 @@ export const settingsMessages = {
         unavailable: 'Clients on this computer cannot be detected right now: agent-installer did not run.',
 
         title: 'Clients on this computer',
+        firstRun: {
+          cursor: 'The first cursor-agent run in a project folder asks 「trust this folder」 and 「approve MCP」 first, and produces no output until someone answers. Answer them once in that folder, or run cursor-agent mcp enable fuli there to approve FULI ahead of time. Cursor has no flag that pre-trusts a folder, and --approve-mcps applies to --print runs only.',
+        },
+        runner: {
+          note: 'This computer is a runner; FULI runs on the host 「{host}」. Hooks do nothing on a runner, so the clients below rely on the model calling FULI itself to start a task, and it can be missed.',
+          notPaired: 'This computer is not paired with a host yet, so the clients below cannot reach FULI.',
+          runnerOlder: 'The two computers run different FULI versions: this one {runnerVersion}, the host {hostVersion}. This one is older; update it.',
+          hostOlder: 'The two computers run different FULI versions: this one {runnerVersion}, the host {hostVersion}. The host is older; update it there.',
+        },
         refresh: 'Check again',
         checking: 'Checking FULI connection settings of local clients…',
         checkError: 'Client connections cannot be checked right now. The last result is kept below.',
@@ -607,7 +627,7 @@ export const settingsMessages = {
           permissions: 'FULI\'s task-start and checkpoint tools may ask you each time.',
           prompts: 'No /fla menu; call an FLA with 「#FLA name」.',
         },
-        noLifecycle: 'No auto start and close: the Agent follows FULI\'s instructions, and nothing is recorded by itself.',
+        noLifecycle: 'This client relies on the model entering the task itself: no hook, so it follows FULI\'s instructions and can miss it; conversations are not recorded by themselves either.',
       },
       custom: {
         title: 'Connect by hand',

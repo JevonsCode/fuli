@@ -76,9 +76,10 @@ export function createSystemService({
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps, diagnosticEvents: eventLog
+    apps, diagnosticEvents: eventLog, presence: agentKits.clientPresence
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients,
+    presence: agentKits.clientPresence }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
     inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),

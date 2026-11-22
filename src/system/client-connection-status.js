@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { sep } from 'node:path';
 
 import { clientSourceApplication, detectClients, entryState } from '../agent-kits/client-detection.js';
+import { hasClientFirstRun } from '../agents/client-first-run.js';
 import { configuredInstall, installOf } from './configured-install.js';
 import { observeMcpDiagnostics } from '../diagnostics/mcp-configuration.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
@@ -44,7 +45,8 @@ const MAX_INSTALL_KEY = 1024;
  * says `overwritten` (rec#106).
  */
 export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date(), awaitingRestart = () => [],
-  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform, diagnosticEvents = null }) {
+  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform, diagnosticEvents = null,
+  presence = null }) {
   const own = consoleInstall ? installOf([consoleInstall.nodePath, consoleInstall.mcpServerPath], { platform }) : null;
   const ownInstall = own ? { path: displayPath(own.root, homeDir, platform), version: consoleInstall.version } : null;
   // History that could not be written stays reliable for this observer.
@@ -52,7 +54,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
 
   async function observe() {
     const observedAt = now().toISOString();
-    const answer = await detectClients(installer);
+    const answer = await detectClients(installer, { presence });
     if (answer.status !== 'available') {
       return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [],
         ...(answer.diagnosticCode ? { diagnosticCode: answer.diagnosticCode } : {}) };
@@ -65,6 +67,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
       // sourceApplication: the client as FULI's other records name it (client links, capture), so a reader needs no mapping of its own.
       const sourceApplication = clientSourceApplication(client.id);
       const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
+        // The client still asks the person something itself the first time FULI is used in it (client-first-run.js).
+        ...(hasClientFirstRun(client.id) ? { firstRun: client.id } : {}),
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own (for DeepSeek Harness, a

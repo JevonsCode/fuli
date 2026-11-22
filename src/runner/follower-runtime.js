@@ -10,8 +10,10 @@ import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
 import { startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
+import { versionSkew, versionSkewLine } from './version-skew.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // `fuli start | stop | restart | status | open` on a runner (docs/runner.md):
@@ -37,7 +39,8 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
     } catch { state = null; }
     const ours = state?.kind === 'fuli-runner-console' && state.dataDir === input.paths.dataDir;
     return ours
-      ? { status: 'running', role: 'runner', url, pid: state.pid, host: state.host, outbox: state.outbox }
+      ? { status: 'running', role: 'runner', url, pid: state.pid, version: state.version ?? FULI_VERSION,
+        host: state.host, outbox: state.outbox }
       : { status: 'stopped', role: 'runner', url };
   }
   async function start(input) {
@@ -89,8 +92,24 @@ export function formatFollowerResult(command, result) {
   const lines = [result.status === 'stopped' ? 'This computer is a runner; its console is not running.'
     : `This computer is a runner. Console: ${result.url} (the host's FULI; 客户端接入 lists this computer's clients)`,
   ...(result.status === 'stopped' ? [] : [`Host: ${host}`,
-    ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
+    ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
+    ...(skewLine(result) ? [skewLine(result)] : []), `Outbox: ${result.outbox ?? 0} waiting.`])];
   return lines.join('\n');
+}
+
+// The host and this runner on different FULI versions (rec#144): said, never enforced.
+function skewLine(result) {
+  const skew = versionSkew({ hostVersion: result.host?.version ?? null, runnerVersion: result.version ?? FULI_VERSION });
+  return skew ? versionSkewLine(skew, result.host?.name ?? null) : null;
+}
+
+// This runner's host as it is now, for its own 客户端接入 page.
+export async function pairedHost(store, connection) {
+  const host = store.host();
+  if (!host) return null;
+  const reached = await connection.connect();
+  const hello = reached ? await connection.hello() : null;
+  return { name: host.name, reachable: Boolean(reached), version: hello?.version ?? null };
 }
 
 // The long-running process `fuli runner console` starts.
@@ -99,7 +118,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity });
   const served = await startFollowerConsole({ dataDir, port, store, connection,
-    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }) }) });
+    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }), host: () => pairedHost(store, connection) }) });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {
     connection.close();

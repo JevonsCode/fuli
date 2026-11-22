@@ -38,6 +38,10 @@ const details = ref<string | null>(null)
 let unmounted = false
 const clients = computed(() => clientTiles(observation.value))
 const summary = computed(() => connectionSummary(observation.value))
+// On a runner (docs/runner.md) its own clients are listed, its hooks do nothing
+// here, and the two computers can run different FULI versions (rec#144).
+const runner = computed(() => observation.value?.runner ?? null)
+const runnerSkew = computed(() => runner.value?.skew ?? null)
 const installs = computed(() => observation.value?.installs)
 const otherInstalls = computed(() => installs.value?.others ?? [])
 const detailClient = computed(() => clients.value.find(client => client.id === details.value))
@@ -155,7 +159,8 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       <!-- Reserved height: the summary appears without moving anything below it. -->
       <CardDescription class="connection-summary" data-connection-summary>
         <GrowthLoading v-if="bulk" variant="inline" data-connecting-all :label="t('settings.connection.clients.connectingAll', bulk)" />
-        <template v-else-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
+        <template v-else-if="observation?.available !== false && (summary.total || summary.notInstalled)">{{
+          t(summary.notInstalled ? 'settings.connection.summaryWithMissing' : 'settings.connection.summary', summary) }}</template>
       </CardDescription>
       <CardAction class="connection-actions">
         <!-- Its progress shows once, in the summary line; the button only waits. -->
@@ -175,6 +180,11 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
         <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
         <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
+        <UiNotice v-if="runner" tone="info" data-runner-clients>
+          {{ runner.hostName ? t('settings.connection.clients.runner.note', { host: runner.hostName }) : t('settings.connection.clients.runner.notPaired') }}
+          <template v-if="runnerSkew && runner"> {{ t(`settings.connection.clients.runner.${runnerSkew.older === 'runner' ? 'runnerOlder' : 'hostOlder'}`,
+            { host: runner.hostName ?? '', hostVersion: runner.hostVersion ?? '', runnerVersion: runner.version }) }}</template>
+        </UiNotice>
         <UiNotice v-if="installs && otherInstalls.length" tone="warning" data-two-installs>
           {{ t('settings.connection.clients.twoInstalls.notice', { count: otherInstalls.length + 1, version: installs.console.version ?? '—',
             clients: otherInstalls.flatMap(other => other.clients).join('、') }) }}
@@ -209,6 +219,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
                 </li>
               </ul>
               <p v-if="withoutLifecycle(client)" class="client-row__meta client-row__note" data-client-no-lifecycle>{{ t('settings.connection.parts.noLifecycle') }}</p>
+              <p v-if="client.firstRun" class="client-row__meta client-row__note" :data-client-first-run="client.firstRun">{{ t(`settings.connection.clients.firstRun.${client.firstRun}`) }}</p>
               <p v-for="path in client.custom?.mcpPaths" :key="path" class="client-row__meta" :title="path">{{ t('settings.connection.custom.where', { path }) }}</p>
               <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">

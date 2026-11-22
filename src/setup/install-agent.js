@@ -1,3 +1,4 @@
+import { clientFirstRunStep } from '../agents/client-first-run.js';
 import { inspectAgent } from '../agent-kits/client-detection.js';
 import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 
@@ -45,7 +46,11 @@ export async function installAgent(installer, agent) {
 // its configuration at launch.
 function connectedResult(agent, client) {
   const codes = client.actionCodes;
-  const nextSteps = [...client.actions.filter((_, index) => SHOWN_CODES.has(codes[index])), ...(client.nextSteps ?? [])];
+  // A client that still asks the person something the first time FULI is used
+  // in it says so here (client-first-run.js), e.g. Cursor's folder trust (rec#145).
+  const firstRun = clientFirstRunStep(agent.id);
+  const nextSteps = [...client.actions.filter((_, index) => SHOWN_CODES.has(codes[index])), ...(client.nextSteps ?? []),
+    ...(firstRun ? [firstRun] : [])];
   return {
     id: agent.id,
     label: agent.label,

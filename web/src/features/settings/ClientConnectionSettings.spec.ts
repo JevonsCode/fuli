@@ -99,7 +99,8 @@ it('sums the detected and hand-described clients FULI is in, and keeps the summa
   const wrapper = mount(ClientCards)
   expect(wrapper.find('[data-connection-summary]').exists()).toBe(true)
   await flushPromises()
-  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端')
+  // A client FULI knows of but did not find here is counted apart, never silently dropped (rec#90, rec#145).
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端，另有 1 个这台电脑上没装')
   expect(wrapper.findAll('[data-client-status]').map((row) => row.attributes('data-client-status'))).toEqual(['connected', 'not_connected', 'connected'])
   expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('配置文件：~/.acme/mcp.json')
   // The add tile closes the grid, after every client.
@@ -499,7 +500,7 @@ it('shows every capability on each tile: installed, needing an update, or not su
     .toBe('这个客户端不支持：不会自动开任务和收尾，要靠 Agent 按 FULI 的说明调用，也不会自动记录对话。')
   const tile = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).element.closest('li.client-row')!
   expect(tile('claude-code').querySelector('[data-client-no-lifecycle]')).toBeNull()
-  expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('不会自动记录对话')
+  expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('靠模型自己进入任务')
   // Each part is explained by the glossary's 「?」 and by its hover title.
   expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('data-term')).toBe('setting.clientPart.skills')
   expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('title')).toBe('需更新：教客户端里的 Agent 怎么用 FULI。')
