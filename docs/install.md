@@ -187,6 +187,7 @@ system locale. User data such as paths and space names is displayed unchanged.
 | `fuli restart [options]` | Restart local services using the same runtime options as `start` |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
 | `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
+| `fuli whoami [--project ID_OR_FOLDER] [--json] [--data-dir DIR]` | Read only: the space, project and lead FLA a folder belongs to, and whether this computer is the host or a runner; no token or address. On a runner the host answers, and its last answer is shown marked offline while it is away ([docs/runner.md](runner.md)) |
 | `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
 | `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
