@@ -4,6 +4,7 @@ import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
 import { addressedAgentId } from '../graphiti/fla-mention.js';
 import { markdownLink } from '../text/markdown-link.js';
+import { receiptHost } from './receipt-host.js';
 
 // The console origin every receipt link opens: always http. Chat clients such as
 // Claude Desktop show fuli:// links but never hand them to the system, so a
@@ -101,10 +102,30 @@ export function roundtableThreadUrl(application, threadId) {
 // itself (task-entry-introduction.js), already Markdown-escaped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
+// Whether this receipt carries its whole line, decided by FULI from what the
+// turn actually holds — never by the model judging how short its own reply is
+// (rec#146 item 3: 「短回复每条都附，噪音偏大」).
+//
+// A receipt earns the whole line, console link included, when it carries
+// something the person has not already been given in this conversation: the
+// first receipt of a conversation, anything retained this turn, a notice, a
+// collaborator or roundtable thread, an introduction, or a continuation. A
+// later turn that saved nothing and changed nothing signs with the FLA's name
+// alone. Callers opt in with `mayShorten`, so a surface that has not been
+// looked at keeps the line it always had.
+export function receiptForm({ mayShorten = false, opensConversation = false, turnReceipt = null,
+  notices = [], collaborators = [], roundtable = null, introduction = null, continuation = false } = {}) {
+  if (!mayShorten || opensConversation || turnReceipt || introduction || continuation) return 'full';
+  if (notices.length || collaborators.length) return 'full';
+  return (roundtable?.threads?.length || roundtable?.peers?.length) ? 'full' : 'short';
+}
+
 export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null,
-  roundtable = null, introduction = null }) {
+  roundtable = null, introduction = null, mayShorten = false, opensConversation = false, continuation = false }) {
+  const form = receiptForm({ mayShorten, opensConversation, turnReceipt, notices, collaborators,
+    roundtable, introduction, continuation });
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
@@ -114,12 +135,20 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     && !helpers.some(item => item.agentId === peer.agentId)) : [];
   const threads = (roundtable?.threads ?? []).map((threadId, index) =>
     markdownLink(index ? `圆桌对话详情 ${index + 1}` : '圆桌对话详情', roundtableThreadUrl(application, threadId)));
-  const build = () => ({ required: true, markdown: [owner
-    ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[agentLink(application, agentId, name, role),
+  // A short receipt signs with the FLA's name and no console link: the link
+  // was already given this conversation, and the reply it follows may be two
+  // words long. Everything else about the receipt is unchanged.
+  const ownerMark = () => form === 'short'
+    ? receiptText(agentLabel(name, role) || agentId)
+    : agentLink(application, agentId, name, role);
+  const issuedBy = receiptHost(application);
+  const build = () => ({ required: true, form, markdown: [owner
+    ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[ownerMark(),
       ...helpers.map(item => collaboratorLink(application, item)),
       ...peers.map(peer => agentLink(application, peer.agentId, peer.name))].join(' & ')}`
     : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · ')
       + (owner && introduction ? `\n${introduction}` : ''), owner,
+    ...(issuedBy ? { issued_by: issuedBy } : {}),
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),

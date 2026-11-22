@@ -126,7 +126,11 @@ export async function checkpointTaskKnowledge(application, {
         roundtable: roundtableTurn(task.token), introduction: introductionReceiptLine(task),
         notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application),
           unsavedRemember: decision.allowed ? null : remember }), ...await receiptFormatNotices(application, { taskId: task.token })],
-        turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) })),
+        turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }),
+        // A later checkpoint of a conversation already signed, that retained
+        // nothing and carries no notice, signs with the name alone: the reply
+        // it follows is often a two-word confirmation (rec#146 item 3).
+        mayShorten: true, opensConversation: conversation?.recovered_from === null })),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (amend && fingerprint !== task.checkpoint.fingerprint) {
