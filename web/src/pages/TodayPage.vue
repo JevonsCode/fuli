@@ -55,8 +55,7 @@ usePageRefresh(today.reload)
 <template>
   <section class="view today-view">
     <template v-if="scope.loading.value">
-      <GrowthLoading :label="t('overview.read.scope')" />
-      <p v-if="scope.slow.value" role="status">{{ t('overview.read.slow') }}</p>
+      <GrowthLoading :label="t('overview.read.scope')" :detail="scope.slow.value ? t('overview.read.slow') : undefined" />
     </template>
     <ProblemState v-else-if="scope.failed.value" :title="scope.problem.value.title" :detail="scope.problem.value.detail"
       :error="scope.error.value" :retrying="scope.retrying.value" :retrying-label="t('overview.read.scope')" @retry="scope.retry" />
