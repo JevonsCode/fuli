@@ -23,6 +23,15 @@ The external-knowledge live test temporarily downloads two public official docum
 repositories, validates read-only synchronization and retrieval, then removes the complete
 temporary directory. It is network-dependent and is not part of the default test suite.
 
+`npm run measure:recall-rate` measures how often the right project knowledge and the right
+preferences reach the Agent, over a fictional world with a stated right answer for every task:
+the preferences the entry delivers, the knowledge it recalls, and the searches an Agent makes for
+itself, each with its hit rate, its wrong-delivery rate and its byte and token cost. It takes about
+25 seconds and needs no Neo4j, no embedding model, no network and no model call — only a Python
+that can import the Provider (the `.venv` below, or `FULI_BENCHMARK_PYTHON=<path>`). The latest
+numbers and what the method cannot see are in `acceptance/recall-rate-baseline.md`;
+`acceptance/recall-rate/README.md` describes the cases.
+
 Provider validation:
 
 ```bash
