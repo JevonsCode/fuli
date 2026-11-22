@@ -15,6 +15,7 @@ import ProjectBoardSettings from './ProjectBoardSettings.vue'
 import ProjectChangeLog from './ProjectChangeLog.vue'
 import ProjectOrganizing from './ProjectOrganizing.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
+import ProjectWorkstreams from './ProjectWorkstreams.vue'
 import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
 import GuestLinksCard from '@/features/guest-links/GuestLinksCard.vue'
@@ -74,6 +75,7 @@ const createdDate = computed(() =>
       <ProjectOrganizing :key="`organizing-${project.project_id}`" class="project-organizing-card" :space-id="spaceId" :project-id="project.project_id" />
     </AdvancedOnly>
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
+    <ProjectWorkstreams :key="`workstreams-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
     <AdvancedOnly area="lan"><GuestLinksCard :key="`guests-${project.project_id}`" :project-id="project.project_id" /></AdvancedOnly>
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"
