@@ -117,10 +117,12 @@ records in the graph do not carry it yet.
 
 ## MCP sessions on the host
 
-Each FULI MCP process on a runner holds one MCP session on the host. No runner
-has a cap of its own, and neither does one address on the runner listener;
-the host keeps at most 64 sessions and 256 connections for all runners
-together, a backstop against something that opens them in a loop.
+Each FULI MCP process on a runner holds one MCP session on the host. The host
+keeps at most 64 sessions for all runners together, a backstop against
+something that opens them in a loop, and one runner may hold at most 48 of
+them: far more MCP processes than a computer runs, and well past the 16 a
+runner was once held to, but never all of them, so another computer always
+finds room. Connections are counted apart (see "Finding the host again").
 
 - A runner's MCP process ends its session on the host when it exits (its
   client closed stdin, SIGINT or SIGTERM, or the client disconnected): it sends
@@ -135,7 +137,11 @@ together, a backstop against something that opens them in a loop.
   loop. FULI tells every client's AI the same in its MCP instructions.
 - When the host answers but refuses a new session (the limit, or a failure on
   its side), the call answers `host_refused` with the HTTP status and the
-  host's reason. It is not taken for the host being away: no offline answer,
+  host's reason, as the host wrote it. At the session limit the host is the
+  only side that knows whose sessions are open, so its reason says how many
+  this computer holds, how many are open in all, and whether to close clients
+  here or on another runner; the runner never guesses that they are its own.
+  It is not taken for the host being away: no offline answer,
   no `runner-offline-` task token. A refusal of a runner the host does not
   know (403) is checked through hello as before (`runner_revoked`). The runner
   also writes it to its own diagnostics (`fuli diagnostics` on the runner,
@@ -155,23 +161,64 @@ seconds, done at the first answer), taking only private addresses from it. Any
 address is accepted only when it answers with the pinned certificate.
 
 Each address is tried both by the default route and from each physical
-adapter's own address (Wi-Fi, cable), and the route that answers is the one
-every later request takes. An office VPN often claims the other computer's
-subnet, so the default route goes into its tunnel and never arrives, while the
-Wi-Fi adapter reaches the host directly. The host's `hello` names its current
-addresses and the runner keeps up to 16, so each network the two meet on (home,
-office) is tried again next time. mDNS does not cross subnets: on a network
+adapter's own address (Wi-Fi, cable). **This helps on macOS only.** There,
+scoped routing makes the source address pick the adapter, so when a VPN claims
+the host's subnet and the default route disappears into its tunnel, the request
+bound to the Wi-Fi address still reaches the host directly. On Linux and
+Windows the route is chosen by the destination, so binding a source address
+does not change which adapter the request leaves by: there, a VPN that swallows
+the host's subnet needs `fuli runner add-address` with an address that is
+reachable through the VPN itself (see "Two computers on different networks").
+The route that answers is the one every later request takes.
+
+The host's `hello` names its current addresses and the runner keeps up to 16,
+newest first, dropping the one learned longest ago, so each network the two
+meet on (home, office, a VPN) is tried again next time and a host that moves
+once more is still learned. The address that last answered is kept apart and
+always tried. mDNS does not cross subnets: on a network
 where the two computers sit in different subnets, the first time there, tell
 the runner where the host is with `fuli runner add-address ADDRESS` (the host's
-`fuli runner list` shows its addresses); it is kept from then on. The
-listener closes a connection that has not finished its TLS handshake in 10
-seconds and holds at most 256 connections in all, with no share per address
-(see "MCP sessions on the host"). A client
+`fuli runner list` shows its addresses); it is kept from then on.
+
+The listener closes a connection that has not finished its TLS handshake in 10
+seconds and holds at most 256 connections over all the addresses it binds —
+counted across them, since it binds one server per address. Any device on the
+network can finish a handshake (the certificate it presents is the route's to
+judge, not the socket's), so one source address may hold at most 24
+connections until it has shown a paired runner's certificate; a paired
+runner's connections are not held to that share, however many MCP processes it
+runs. A client
 waits for the tool list when its MCP server starts: when the host has not
 answered within 4 seconds the runner answers with the list the host last gave,
-and tells the client to list again once the host's differs. A company
-network that isolates clients needs a cable or another shared network; no relay
-is used.
+and tells the client to list again once the host's differs.
+
+## Two computers on different networks
+
+There is no relay: the runner reaches the host directly or not at all. Two
+computers that are not on the same network (home and the office) need a VPN or
+mesh tool that puts them on one network — Tailscale, WireGuard, a company VPN
+that lets its clients reach each other. Then:
+
+1. Turn the VPN on, on both computers.
+2. On the host, run `fuli runner list`. It prints the addresses the host
+   listens on, the VPN's among them (Tailscale and many company VPNs hand out
+   addresses that start with `100.`).
+3. On the runner, run that one command with the host's VPN address:
+
+   ```
+   fuli runner add-address 100.84.12.9
+   ```
+
+   It is kept from then on, tried first, and the outbox is delivered at once.
+   (There is no button for this: the console has no runner page, and the
+   runner's console is the host's.)
+4. `fuli runner status` on the runner says whether the host answers and from
+   which address.
+
+An invitation can already carry such an address, so a runner that joins while
+both are on the VPN needs none of this. A company network that isolates its
+clients from each other blocks both computers equally: use a cable, another
+shared network, or a mesh tool that does not rely on the local network.
 
 ## Projects
 
@@ -202,10 +249,13 @@ A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
 call waits up to 20 seconds for that entry alone and answers `status:
 delivered` only when the host applied it, `queued_offline` otherwise. A call
-whose schema requires a task token (`resume_agent_conversation`) needs a task
-the host entered: it answers `offline_task_token`, saying to enter the task
-again, and sends nothing. Any other call is sent without the token, which the
-host never knew.
+whose schema requires a task token needs a task the host entered: it answers
+`offline_task_token`, saying to enter the task again, and sends nothing. That
+is every tool whose input schema makes `taskContextToken` required, which is
+most of the ones that act within a task — `resume_agent_conversation`,
+`role_work`, `assess_task_completion`, `agent_chat`, `run_delegated_action`
+and the rest — apart from `checkpoint_task_knowledge`, which is queued
+instead. Any other call is sent without the token, which the host never knew.
 
 The outbox is replayed oldest first whenever the host answers again (each MCP
 process checks every 30 seconds; `fuli runner sync` replays at once); only the

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { connect as tlsConnect } from 'node:tls';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -110,4 +111,34 @@ test('only checked addresses are written, whichever way they are learned', async
   const { store } = await pairedHost(t, { knownAddresses: ['192.168.1.187'] });
   store.learnHostAddresses([null, 42, { address: '10.0.0.1' }, '8.8.8.8'], { first: true });
   assert.deepEqual(store.host().addresses, ['192.168.1.187']);
+});
+
+// The listener's connection limits (docs/runner.md, "Finding the host again"):
+// the total is over every address it binds, and one address's share of the
+// connections a device that is not a paired runner may hold.
+test('an unknown device on the network cannot hold every connection, while a paired runner is not held to that share', async (t) => {
+  const [host, stranger, known] = await Promise.all([createDeviceCertificate(), createDeviceCertificate(),
+    createDeviceCertificate()].map(async (made) => deviceIdentity(await made)));
+  const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0,
+    sourceAllowed: () => true, isPairedDevice: (fingerprint) => fingerprint === known.fingerprint,
+    route: (_request, response) => { response.writeHead(204).end(); return true; } });
+  const open = [];
+  t.after(async () => {
+    for (const socket of open) socket.destroy();
+    await listener.close();
+  });
+
+  // A connection held open, as a client's MCP process holds one: resolves true while it lives.
+  const hold = (identity) => new Promise((resolve) => {
+    const socket = tlsConnect({ host: '127.0.0.1', port: listener.port, ...identity.tlsOptions,
+      rejectUnauthorized: false }, () => setTimeout(() => resolve(!socket.destroyed), 50));
+    open.push(socket);
+    socket.on('error', () => resolve(false));
+    socket.on('close', () => resolve(false));
+  });
+
+  // Far past one address's share of the connections an unknown device may hold.
+  const held = await Promise.all(Array.from({ length: 40 }, () => hold(stranger)));
+  assert.ok(held.filter(Boolean).length < 40, 'a device that shows no paired certificate is held to a share of this address');
+  assert.equal(await hold(known), true, 'a paired runner still gets through');
 });
