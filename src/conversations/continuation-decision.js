@@ -57,7 +57,7 @@ function unreadable(conversation) {
     note: '这一轮没能读到这位 FLA 的历史记录，所以没写续接；不是「没有历史」。' };
 }
 
-export function continuationDecision(conversation, { branch = null, statedByUser = false } = {}) {
+export function continuationDecision(conversation, { branch = null, statedByUser = false, personalProjectId = null } = {}) {
   if (!conversation || conversation.status === 'unassigned') return quiet(NO_CONTINUATION.no_conversation);
   if (conversation.status !== 'saved') {
     return conversation.status === 'capture_disabled' ? quiet(NO_CONTINUATION.no_conversation) : unreadable(conversation);
@@ -70,7 +70,13 @@ export function continuationDecision(conversation, { branch = null, statedByUser
   if (!elsewhere.length && !pointer) return quiet(NO_CONTINUATION.no_earlier_work);
   const picked = statedByUser ? stated(elsewhere, pointer) : recognised(elsewhere, branch);
   if (!picked.source) return quiet(picked.reason);
-  return { show: true, evidence: picked.evidence, from: picked.source,
+  // Which project the work belongs to and how far it got, so one continuation
+  // line answers 归哪个项目、做到哪一步 without a second read (Jevons 2026-11-18).
+  // The owner is this turn's own FLA, already named by the receipt.
+  const checkpoint = conversation.recovery?.latest_checkpoint ?? null;
+  return { show: true, evidence: picked.evidence,
+    from: { ...picked.source, personal_project_id: personalProjectId,
+      ...(checkpoint?.status ? { status: checkpoint.status } : {}) },
     carried: carriedContext(conversation.recovery, { compacted: conversation.compacted }),
     guidance: CONTINUATION_GUIDANCE };
 }
@@ -114,9 +120,9 @@ const byLastSeen = (a, b) => String(b?.last_seen ?? '').localeCompare(String(a?.
 // when, and the model it ran on — or why that model is unknown.
 function fromSession(row) {
   const model = modelProvenance(row.client, row.model);
-  return { conversation_id: row.conversation_id, client: row.client ?? null, client_label: sourceLabel(row.client),
+  return { conversation_id: row.conversation_id, ...where(row.client),
     session_id: row.session_id ?? null, session_short: shortSession(row.session_id), when: row.last_seen ?? null,
-    model: model.model, model_source: model.source, ...(model.note ? { model_note: model.note } : {}),
+    model: model.model, model_source: model.source, ...(model.reason ? { model_reason: model.reason } : {}),
     ...(row.working_directory ? { working_directory: row.working_directory } : {}),
     ...(row.title ? { title: title(row.title) } : {}) };
 }
@@ -126,12 +132,18 @@ function fromSession(row) {
 // model, so the model is honestly unknown rather than carried over from here.
 function fromPointer(pointer) {
   const client = pointer.client ?? null;
-  const model = modelProvenance(client, null);
-  return { conversation_id: pointer.id, client, client_label: sourceLabel(client),
+  return { conversation_id: pointer.id, ...where(client),
     session_id: pointer.session_id ?? null, session_short: shortSession(pointer.session_id),
-    when: pointer.updated_at ?? null, model: null, model_source: model.source,
-    model_note: client ? model.note : '未知（没有记下这段工作用的客户端）',
+    when: pointer.updated_at ?? null, model: null, model_source: 'unknown',
+    model_reason: client ? modelProvenance(client, null).reason : 'client_not_recorded',
     ...(pointer.title ? { title: title(pointer.title) } : {}) };
+}
+
+// A client FULI never recorded gets no invented label: the surface decides
+// what to show for an unknown one in its own language.
+function where(client) {
+  const known = typeof client === 'string' && client && client !== 'other' ? client : null;
+  return { client: client ?? null, client_label: known ? sourceLabel(known) : null };
 }
 
 function shortSession(sessionId) {

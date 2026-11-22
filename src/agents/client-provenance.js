@@ -1,5 +1,3 @@
-import { sourceLabel } from '../agent-kits/session-clients.js';
-
 // What each connected client actually tells FULI about a segment of work, read
 // off its own hook input rather than assumed (rec#147). A work segment records
 // the client, its native session, the model and the token usage; where a client
@@ -38,22 +36,18 @@ export function clientProvenance(client) {
   return CLIENT_PROVENANCE[client] ?? UNKNOWN_CLIENT;
 }
 
-// Why a segment has no model, in the words a person reads. `client_sends_none`
-// is a property of that client; `not_recorded` is a record written before FULI
-// kept the model, which is never backfilled with a guess.
-const MODEL_UNKNOWN = Object.freeze({
-  client_sends_none: client => `${sourceLabel(client)} 不提供模型信息`,
-  not_recorded: () => '未知（当时没记）'
-});
-
-// The model of one work segment, with where the value came from. A caller
-// shows `note` as is; it never falls back to a default model name.
+// The model of one work segment, with where the value came from. It never
+// falls back to a default model name. `reason` says why an unknown one is
+// unknown: `client_sends_none` is a property of that client, `not_recorded` a
+// record written before FULI kept the model, which is never backfilled.
+// Only the reason travels, never a rendered sentence: every surface shows it
+// in its own interface language (Jevons 2026-11-18: 该展示成英文就英文，
+// 该映射成中文就中文), so no zh/en string is stored or passed around.
 export function modelProvenance(client, model) {
   const known = typeof model === 'string' && model.trim() ? model.trim() : null;
   const reports = clientProvenance(client).model;
-  if (known) return { model: known, source: reports === 'actual' ? 'actual' : 'requested', note: null };
-  const reason = reports === 'none' ? 'client_sends_none' : 'not_recorded';
-  return { model: null, source: 'unknown', reason, note: MODEL_UNKNOWN[reason](client) };
+  if (known) return { model: known, source: reports === 'actual' ? 'actual' : 'requested', reason: null };
+  return { model: null, source: 'unknown', reason: reports === 'none' ? 'client_sends_none' : 'not_recorded' };
 }
 
 // Whether this client can ever supply the token usage of its own work, so a

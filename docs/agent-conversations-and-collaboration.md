@@ -49,13 +49,17 @@
 显示时 `conversation.continuation` 写清：
 
 - `from`：哪个客户端（`client_label`）、哪个会话（`session_short`，原生会话号前 8 位）、什么时候（`when`）、
-  当时用的模型（`model` 与 `model_source`）。
+  属于哪个项目（`personal_project_id`）、做到哪一步（`status`）、当时用的模型（`model` 与 `model_source`）。
 - `carried`：带过来了多少——有没有上次的工作小结、最近几条原文、更早的多少条折叠进了摘要。
 
 **模型一栏不猜。** 各客户端能给什么以它自己的钩子输入为准（`src/agents/client-provenance.js`）：
 Claude Code 从自己的 transcript 读实际回答的模型（`actual`）；Codex 给的是请求的模型（`requested`），
 实际回答的可能不是它；Cursor、OpenCode、DeepSeek Harness、Claude 桌面端根本不给模型，
-记录里写「未知」并注明是这个客户端不提供；更早、当时没记的写「未知（当时没记）」。两种都不回填估算值。
+记录里 `model_reason` 写 `client_sends_none`；更早、当时没记的写 `not_recorded`。两种都不回填估算值。
+
+接口里只传原因码，不传拼好的句子：界面按自己的语言说（Jevons 2026-11-18「该展示成英文就展示成英文，
+该映射展示成中文就该展示成中文」），所以没有中英文拼在一起的字符串被存下来或传出去。
+界面上没上报的数字显示 `-` 加一句原因，不写 0。
 
 这一轮没能记上（Provider 不可达、离线 token）时，`conversation.status` 不是 `saved`，
 带着它自己的 `reason` 和 guidance，入口不会把这种情况说成「没有历史」。

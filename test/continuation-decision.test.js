@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { carriedContext, continuationDecision } from '../src/conversations/continuation-decision.js';
-import { modelProvenance, reportsTokenUsage } from '../src/agents/client-provenance.js';
+import { clientsWithoutModel, modelProvenance, reportsTokenUsage } from '../src/agents/client-provenance.js';
 import { withRecoveredSource } from '../src/graphiti/task-knowledge-recall.js';
 
 const RECOVERY = { latest_checkpoint: { status: 'incomplete', summary: 'Parser sketched; writer not started.' },
@@ -43,15 +43,21 @@ test('a new session of the same client on the same branch is recognised as the s
   assert.equal(decision.from.model, 'synthetic-model-c');
   // Claude Code's model is read from the transcript the answer was written to.
   assert.equal(decision.from.model_source, 'actual');
+  assert.equal('model_reason' in decision.from, false);
 });
 
-test('another client on the same branch is the same work, and the line says which client and when', () => {
-  const decision = continuationDecision(fresh({ active_elsewhere: [elsewhere()] }), { branch: 'feature/amount-parser' });
+test('another client on the same branch is the same work, and the line says which client, when, which project and how far', () => {
+  const decision = continuationDecision(fresh({ active_elsewhere: [elsewhere()] }),
+    { branch: 'feature/amount-parser', personalProjectId: 'ledger-import' });
   assert.equal(decision.show, true);
   assert.equal(decision.from.client_label, 'Codex');
   assert.equal(decision.from.when, '2026-11-22T09:14:00Z');
   // Codex sends the model it asked for, which is not proof of what answered.
   assert.equal(decision.from.model_source, 'requested');
+  // One line answers which project it belongs to and how far it got (Jevons 2026-11-18).
+  assert.equal(decision.from.personal_project_id, 'ledger-import');
+  assert.equal(decision.from.status, 'incomplete');
+  assert.equal(decision.from.title, 'Amount parser for the ledger import');
   assert.equal(decision.carried.summary, true);
   assert.equal(decision.carried.recent_messages, 2);
 });
@@ -96,7 +102,8 @@ test('a stated continuation with no recent session falls back to the last conver
   assert.equal(decision.from.session_short, '0f7e4c1a');
   assert.equal(decision.from.model, null);
   assert.equal(decision.from.model_source, 'unknown');
-  assert.match(decision.from.model_note, /Cursor 不提供模型信息/);
+  // A reason code only: every surface says it in its own interface language.
+  assert.equal(decision.from.model_reason, 'client_sends_none');
 });
 
 test('a first session with no earlier work of this FLA shows nothing', () => {
@@ -142,7 +149,8 @@ test('a continuation with no recorded day or client still reads as a whole line'
   const marked = withRecoveredSource({ status: 'no_match', sourceMarker: {}, facts: [], entities: [] }, decision,
     { consoleUrl: 'http://127.0.0.1:2727', spaceId: 'space', agentId: 'lead' });
   assert.match(marked.sourceMarker.leadMarkdown, /FULI · 续接工作\]/);
-  assert.match(decision.from.model_note, /没有记下这段工作用的客户端/);
+  assert.equal(decision.from.client_label, null);
+  assert.equal(decision.from.model_reason, 'client_not_recorded');
 });
 
 test('what was carried is counted, not estimated', () => {
@@ -157,10 +165,15 @@ test('what was carried is counted, not estimated', () => {
 test('each client is credited only with what its own hook reports', () => {
   assert.equal(modelProvenance('codex', 'synthetic-model-s').source, 'requested');
   assert.equal(modelProvenance('claude_code', 'synthetic-model-c').source, 'actual');
+  // Claude Code does report a model, so a record without one simply predates the field.
   assert.equal(modelProvenance('claude_code', null).reason, 'not_recorded');
-  assert.match(modelProvenance('claude_code', null).note, /当时没记/);
   assert.equal(modelProvenance('opencode', null).reason, 'client_sends_none');
-  assert.match(modelProvenance('dsh', null).note, /DeepSeek Harness 不提供模型信息/);
+  assert.equal(modelProvenance('dsh', null).reason, 'client_sends_none');
   assert.equal(reportsTokenUsage('codex'), true);
   assert.equal(reportsTokenUsage('cursor'), false);
+  assert.deepEqual(clientsWithoutModel().sort(), ['antigravity', 'claude', 'cursor', 'dsh', 'kiro', 'opencode', 'other']);
+  // No rendered sentence crosses the boundary, so no zh/en string is stored or passed on.
+  for (const client of ['codex', 'cursor', 'claude_code']) {
+    assert.equal('note' in modelProvenance(client, null), false, client);
+  }
 });

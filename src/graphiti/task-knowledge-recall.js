@@ -478,8 +478,7 @@ export function withRecoveredSource(recall, continuation, { consoleUrl, spaceId,
 // guessed, and a missing one simply drops out of the line.
 function continuationLead({ client_label: label = null, when = null } = {}) {
   const day = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(when ?? ''));
-  const where = label && label !== 'unknown' ? `${label} 里` : '';
-  return `续接${where}${day ? `${day[2]}-${day[3]} 的` : ''}工作`;
+  return `续接${label ? `${label} 里` : ''}${day ? `${day[2]}-${day[3]} 的` : ''}工作`;
 }
 
 function recallWithoutSearch(status, plan) {

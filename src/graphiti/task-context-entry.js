@@ -138,6 +138,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   // person said so when they named this FLA this turn or arrived on a
   // checkpoint continuation prompt; a carried session binding is not saying so.
   const continuation = continuationDecision(conversation, { branch,
+    personalProjectId: preferences.context?.personal_project_id ?? null,
     statedByUser: Boolean(resumed) || ['named', 'picked'].includes(preferences[FLA_ROUTE]?.origin) });
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
