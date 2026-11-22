@@ -143,8 +143,11 @@
 | 修复后 | 4.61 ms |
 
 多 1.9 ms。rec#126 实测一次 `/v1/search` 在 #924 之后是 863 ms，所以这是约 0.2%，
-在噪声里。**没有在装好的真实实例上端到端量过**（这台机器上没有可用的隔离 Neo4j），
-只能这样说。顺带发现：`_term_weights` 和 `_relevance` 对同一条记录各做一次分词，
+在噪声里。**没有在真实实例上端到端量过**：这台机器上 Docker 没起，唯一的 Neo4j 是已安装
+的那个 FULI 正在用的，不能动。要端到端量（也顺便校验这套量法和真实 `/v1/search` 排序
+是否一致），按 rec#126 11-13 那条评论的做法：把 `native-runtime` 里的 Neo4j 5.26.28
+发行包解到另一个目录，换端口和数据目录起第二个实例。这是这份基线最大的待办。
+顺带发现：`_term_weights` 和 `_relevance` 对同一条记录各做一次分词，
 省掉重复这一半是现成的优化，但它同时影响实体那条路和已冻结的 `recall_weight_benchmark`，
 不在这次范围里。
 
@@ -158,6 +161,13 @@
   OpenCode code mode 会把每条界限渲染成 JSDoc）。所以 AI 看不到 `queries` 最多 10 个，
   发 11 个才收到 `-32602 ... maximum of 10 items`。这次把上限写进了工具说明的正文。
   rec#111 说的「5 个查询返回 500」已经不复现，5 个查询正常返回。
+- **`search_knowledge_graph` 要 `personalSpaceId`，而 AI 只能从入口拿到它。** 入口被预算
+  裁掉时，这个工具就没法调了。`search_current_project_knowledge` 收 `projectPath`——AI
+  永远知道自己在哪——没有这个问题。两个工具的入门门槛不一样。
+- **完整返回和被截断的返回，`retrieval_budget` 字段形状不同**：完整时只有
+  `{limit_bytes, complete: true}`，截断时才有 `returned_items` / `total_items`。
+  AI 要判断「我是不是拿全了」得处理两种形状。
+- **`scope_policy` 的 6 个布尔值每次调用都重发**（约 230 B），对单次调用没有可操作的信息。
 
 ## 已知不准之处
 
