@@ -387,7 +387,9 @@ as for every migration, and an older FULI then refuses that store.
   computer. While the host is away, every client's hook tells the model to
   enter the task through FULI's MCP server: Claude Code, Codex, OpenCode and
   DeepSeek Harness at each prompt, Cursor at session start (its prompt hook can
-  only show text to the person).
+  only show text to the person). Cursor gives its MCP server no session, so its
+  session-start instruction names Cursor's own session: the entry then gets a
+  task token, which `resume_agent_conversation` and the checkpoint need.
 - On Windows an ask from another computer (a runner's, or a paired device's)
   wakes only Claude Code, whose read-only wake has no shell; it never wakes
   Codex there, whose read-only sandbox is not verified to block the network on
