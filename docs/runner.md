@@ -426,8 +426,9 @@ as for every migration, and an older FULI then refuses that store.
 
 ## Limits of this beta
 
-- Runner and host must reach each other directly (same LAN, cable, or a network
-  both are on).
+- Runner and host must reach each other directly: the same LAN, a cable, or a
+  VPN or mesh tool both are on (see "Two computers on different networks").
+  FULI runs no relay, and will not.
 - The prompt hook and the turn's end (Stop) reach the host: the host enters the
   task at each prompt and, at the turn's end, checks its checkpoint and closes
   it, as a local hook would. The conversation's own text stays on the runner, so
