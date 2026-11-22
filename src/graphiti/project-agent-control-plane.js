@@ -1,3 +1,4 @@
+import { agentWorkLocations } from './agent-work-locations.js';
 import { listAgentWorkbenches, listTeamWorkbenches } from './project-agent-task-sheets.js';
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
@@ -320,9 +321,20 @@ export class ProjectAgentControlPlaneApplication {
     return recordProjectAgentTaskActivityWorkflow(this, input);
   }
 
+  // `workLocations` adds where this Agent worked (which clients, which models,
+  // how many segments each) to the same per-Agent view, rather than giving the
+  // same question a second tool (rec#147). The daily activity is unchanged
+  // without it, so an existing caller pays nothing.
   async viewProjectAgentActivity(input) {
     this.#assertSpace(input.personalSpaceId);
-    return viewProjectAgentActivityWorkflow(this, input);
+    const activity = await viewProjectAgentActivityWorkflow(this, input);
+    if (!input.workLocations) return activity;
+    return { ...activity, work_locations: await agentWorkLocations(this, input) };
+  }
+
+  async viewAgentWorkLocations(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return agentWorkLocations(this, input);
   }
 
   async getProjectAgentCoordinationPolicy(input) {
