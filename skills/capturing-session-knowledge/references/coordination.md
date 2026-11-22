@@ -2,6 +2,17 @@
 
 Part of the capturing-session-knowledge Skill; read SKILL.md first.
 
+## A durable workstream is not a task boundary
+
+Two things share the word. The `workstreamBoundary` of a coordination plan below is one task's
+split, and ends with that task. A **workstream** in `get_project_team` is durable: one of the
+project's unrelated lines of work (a page, a campaign, a small project sharing the repository),
+owned by one FLA so that its memory holds that line and not three
+(`docs/workstreams.md`). A project's lead opens one with `register_standing_assignment`
+`change: 'delegate'`; later tasks whose words or working folder name its terms reach its owner by
+themselves, and the entry's `standing_owner` says which line and who. Do not re-divide work that
+is already recorded, and do not open a workstream for a one-off request.
+
 ## Coordinate Project Agents
 
 Use a project Agent team only when the user requests delegation or the host's active delegation
