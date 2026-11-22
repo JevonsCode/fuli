@@ -31,6 +31,10 @@ const KEPT = Object.freeze({
   executionRequired: true, agentId: true, workKind: true, taskRevision: true, artifactRevision: true,
   evaluationId: true, requestFingerprint: true, evidenceFingerprint: true, policy: true, policyVersion: true,
   memoryRevision: true, client: true, model: true, sessionId: true, judgedBy: true, modelReceipt: true,
+  // Which computer judged it: absent on the host's own, 'runner' with that
+  // computer's name on one a runner's Tonborg made (runner-routing.js). Its
+  // fingerprint stays out; the name is what says which computer.
+  decidedOn: true, decidedAt: true, runner: ['name'],
   // rec#96: a delegated review, Tonborg's guess and its doubt are fixed values; its question is its own words.
   delegated: true, guess: new Set(GUESSES), doubt: new Set(DOUBTS),
   error: true, failure: ['stage', 'category', 'status', 'retryable', 'recovery'], guidance: true, workPackage: true, hard_deleted: true,

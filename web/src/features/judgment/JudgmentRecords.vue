@@ -365,6 +365,12 @@ function sourceLabel(record: JudgmentDecisionRecord) {
   return [clientLabel(record.client), record.model || ''].filter(Boolean).join(' · ')
 }
 
+// The computer a decision was judged on: the runner's name, or just that it
+// was a runner when the host never recorded a name for it.
+function decidedOnLabel(record: JudgmentDecisionRecord) {
+  return [judgmentText('workbench.decidedOnRunner'), record.runner?.name ?? ''].filter(Boolean).join(' · ')
+}
+
 function selectionLabel(record: JudgmentDecisionRecord) {
   if (!record.selection) return ''
   return [record.selection.executorId, record.selection.model, clientLabel(record.selection.client)].filter(Boolean).join(' · ')
@@ -458,6 +464,8 @@ function hasDetails(record: JudgmentDecisionRecord) {
           <div><dt>{{ judgmentText('workbench.policy') }}</dt><dd>{{ policySummary(record.policy) }}</dd></div>
           <div v-if="record.personalProjectId"><dt>{{ judgmentText('workbench.project') }}</dt><dd>{{ projectNames.get(record.personalProjectId) ?? record.personalProjectId }}</dd></div>
           <div v-if="record.client || record.model"><dt>{{ judgmentText('workbench.source') }}</dt><dd>{{ sourceLabel(record) }}</dd></div>
+          <!-- Only when another computer judged it: this one's own records say nothing, which is the usual case. -->
+          <div v-if="record.decidedOn === 'runner'" data-decided-on><dt>{{ judgmentText('workbench.decidedOn') }}</dt><dd>{{ decidedOnLabel(record) }}</dd></div>
           <div v-if="record.disposition"><dt>{{ judgmentText('workbench.disposition') }}</dt><dd>{{ judgmentText(`workbench.actions.${record.disposition}`) }}</dd></div>
           <div v-if="record.selection"><dt>{{ judgmentText('workbench.selection') }}</dt><dd>{{ selectionLabel(record) }}</dd></div>
           <div><dt> </dt><dd>{{ dateLabel(record.createdAt) }}</dd></div>
