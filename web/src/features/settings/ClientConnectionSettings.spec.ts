@@ -80,7 +80,7 @@ it('can retry a failed configuration request', async () => {
   wrapper.unmount()
 })
 
-it('on a runner says its hooks do nothing and which computer runs the older FULI (rec#144, rec#145)', async () => {
+it('on a runner says its hooks do nothing and which computer runs the older FULI (rec issues 144, 145)', async () => {
   const runner = { version: '0.28.1', hostName: 'Workshop Mac', hostReachable: true, hostVersion: '0.29.0',
     skew: { older: 'runner' as const } }
   routed(() => Response.json({ ...statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected', firstRun: 'cursor' }]), runner }))
@@ -127,7 +127,7 @@ it('sums the detected and hand-described clients FULI is in, and keeps the summa
   const wrapper = mount(ClientCards)
   expect(wrapper.find('[data-connection-summary]').exists()).toBe(true)
   await flushPromises()
-  // A client FULI knows of but did not find here is counted apart, never silently dropped (rec#90, rec#145).
+  // A client FULI knows of but did not find here is counted apart, never silently dropped (rec issues 90, 145).
   expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端，另有 1 个这台电脑上没装')
   expect(wrapper.findAll('[data-client-status]').map((row) => row.attributes('data-client-status'))).toEqual(['connected', 'not_connected', 'connected'])
   expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('配置文件：~/.acme/mcp.json')

@@ -39,7 +39,7 @@ let unmounted = false
 const clients = computed(() => clientTiles(observation.value))
 const summary = computed(() => connectionSummary(observation.value))
 // On a runner (docs/runner.md) its own clients are listed, its hooks do nothing
-// here, and the two computers can run different FULI versions (rec#144).
+// here, and the two computers can run different FULI versions (rec issue 144).
 const runner = computed(() => observation.value?.runner ?? null)
 const runnerSkew = computed(() => runner.value?.skew ?? null)
 const installs = computed(() => observation.value?.installs)
