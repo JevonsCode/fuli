@@ -165,6 +165,27 @@ test('multiple focused queries page every record without starving later query gr
   assert.equal(seen.size, 48);
 });
 
+test('a delivered record spends no bytes on fields that are null', async () => {
+  const app = application([{ ...record(), valid_at: null, invalid_at: null, reasoning_summary: null,
+    profile_aspect: null, preference_scope: null, key: null, last_feedback_at: null,
+    source_uris: [], attributes: undefined }]);
+  const page = await searchCurrentProjectKnowledge(app, resolution,
+    { queries: ['Aurora 发布流程'], limitPerQuery: 3 });
+  const item = page.results[0].entities[0];
+
+  for (const key of ['valid_at', 'reasoning_summary', 'profile_aspect', 'preference_scope', 'last_feedback_at']) {
+    assert.equal(key in item, false, `${key} was null and says nothing`);
+  }
+  // What a reader must still be able to tell apart stays: an empty list is
+  // not a missing one, and a historical version keeps saying it ended.
+  assert.deepEqual(item.source_uris, []);
+  assert.equal(item.id, 'aurora-runbook');
+  const historical = application([{ ...record(), invalid_at: '2026-05-01T00:00:00Z', summary: 'Old command.' }]);
+  const old = await searchCurrentProjectKnowledge(historical, resolution,
+    { queries: ['Aurora 发布流程'], limitPerQuery: 3, includeHistorical: true });
+  assert.equal(old.results[0].entities[0].invalid_at, '2026-05-01T00:00:00Z');
+});
+
 test('a page that fills up carries the best matches, not whichever query was asked first', async () => {
   // Each query's own results are already ranked; across queries they were
   // delivered in the order the queries were written. A weak first query then

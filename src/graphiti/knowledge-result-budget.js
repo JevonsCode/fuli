@@ -34,6 +34,14 @@ function itemPreview(item, textBytes) {
   return result;
 }
 
+// A search result carries about fifteen null fields — a valid_at nothing set,
+// a preference scope on something that is not a preference — and they are a
+// fifth of its bytes (rec#111). A missing field reads the same as a null one,
+// and the page is where those bytes are scarcest. Records only: a null
+// elsewhere in a search's own metadata may still be saying something.
+const withoutNullFields = item => (item && typeof item === 'object' && !Array.isArray(item)
+  ? Object.fromEntries(Object.entries(item).filter(([, value]) => value !== null)) : item);
+
 // How well this record matched. A result without one sorts last rather than
 // ahead of everything, and equal scores keep the order the queries were asked.
 const matchScore = item => (typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0);
@@ -76,7 +84,7 @@ export function budgetAutomaticRecall(value, { consoleUrl, compare }) {
 // this search's results is named in ids_not_found, not read.
 export function budgetKnowledgeSearch(value, { cursor, context, consoleUrl,
   toolName = 'search_knowledge_graph', view = 'full', ids = null } = {}) {
-  value = safeSearchValue(value);
+  value = mapGroups(safeSearchValue(value), items => items.map(withoutNullFields));
   const selection = ids?.length ? selectIds(value, ids) : null;
   if (selection) value = selection.value;
   if (view === 'index') value = indexValue(value);
