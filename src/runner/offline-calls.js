@@ -93,8 +93,9 @@ function notPaired(host) {
       + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
 }
 
-function failure(code, message) {
-  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message }) }] };
+// details: what else the caller needs to act on the failure, beside code and message.
+export function failure(code, message, details = {}) {
+  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, ...details }) }] };
 }
 
 // Whether a call may be made again after its connection dropped: a read; a
@@ -116,6 +117,20 @@ export function outcomeUnknownAnswer(tool) {
 export function deliveredAnswer(outboxId) {
   return envelope({ status: 'delivered', outboxId, runner: { offline: false,
     message: 'The host answered again; this checkpoint was delivered to it and saved.' } });
+}
+
+// The preferences the host last gave a task entry in this project, from any
+// of its folders, for Tonborg's judgment on this runner (local-routing.js):
+// { answeredAt, effective_preferences, active_conflicts } or null.
+export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
+  for (const { at, body } of store.taskEntries()) {
+    const value = resultValue(body);
+    const context = value?.context;
+    if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
+    return { answeredAt: at, effective_preferences: value.effective_preferences ?? [],
+      active_conflicts: value.active_conflicts ?? [] };
+  }
+  return null;
 }
 
 function folderEntry(value) {
@@ -146,7 +161,7 @@ function offlineNote(at, message) {
   return { offline: true, ...(at ? { answeredAt: at } : {}), message };
 }
 
-function envelope(value) {
+export function envelope(value) {
   const text = JSON.stringify(value);
   return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
 }

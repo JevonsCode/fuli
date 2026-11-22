@@ -108,8 +108,9 @@ export function judgmentFailure(error, stage) {
 }
 
 // Each top-level part of the judgment data is one evidence item, so the
-// port's egress check sees every part with its project.
-function judgmentRequest(call) {
+// port's egress check sees every part with its project. A runner's own
+// executor judgment builds its request here too (src/runner/local-routing.js).
+export function judgmentRequest(call) {
   const personalProjectId = call.scope.personalProjectId ?? null;
   return {
     role: 'tonborg', operation: call.operation, requestId: call.requestId,

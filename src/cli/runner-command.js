@@ -5,6 +5,7 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
+import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -118,8 +119,8 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
 }
 
 // Ends this computer's pairing: the store goes (the host, the answers, the
-// offline task tokens and the outbox), so the MCP entry no longer serves as a
-// runner. Checkpoints that never reached the host are knowledge the person
+// offline task tokens and the outbox), and so does the ledger of executor
+// decisions made here, so the MCP entry no longer serves as a runner. Checkpoints that never reached the host are knowledge the person
 // would lose: with any left it only says how many, unless --force. The host
 // lists the runner until the person revokes it there.
 async function leaveHost(dataDir, write, { force = false } = {}) {
@@ -130,7 +131,7 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
     host = store.host();
     const { queued, failedCount } = store.outbox();
     if (host && queued + failedCount > 0 && !force) {
-      write(`${queued} checkpoint(s) still wait for ${host.name} and ${failedCount} were refused by it; leaving deletes them. `
+      write(`${queued} outbox entries (checkpoints, executor decisions) still wait for ${host.name} and ${failedCount} were refused by it; leaving deletes them. `
         + 'Deliver them first (`fuli runner sync`, or join the same host again), or leave with --force.');
       return { exitCode: 1 };
     }
@@ -144,11 +145,12 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
   }
   try {
     rmSync(file, { force: true });
+    rmSync(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
   } catch {
     // A client's FULI process has it open: it is empty now and answers that this computer is not paired.
   }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
-  write(`Left ${host.name}. The pairing, the answers kept here and the outbox are deleted.`);
+  write(`Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
   write(`On ${host.name}, \`fuli runner revoke ${identity.fingerprint.slice(0, 16)}\` removes this computer from its list.`);
   write('The clients set up here keep their FULI MCP entry (it now answers that this computer is not paired); '
     + '`fuli uninstall` removes those entries.');
