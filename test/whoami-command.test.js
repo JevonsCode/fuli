@@ -84,6 +84,18 @@ test('a runner asks the host with its folder\'s facts, and keeps the answer for 
   assert.ok(projectIdentityCache(directory).last('/runner/blue-kettle'), 'the answer is kept under the folder asked about');
 });
 
+test('a refusal the console explains is repeated to the person, not swallowed', async (t) => {
+  const output = lines();
+  const result = await runWhoAmICommand([], {
+    env: { FULI_DATA_DIR: dataDir(t) }, write: output.write, cwd: () => '/work/gone',
+    isRunner: () => false,
+    fetchImpl: async () => ({ ok: false, status: 400,
+      json: async () => ({ error: { message: 'projectPath must be an existing absolute directory' } }) })
+  });
+  assert.equal(result.exitCode, 2);
+  assert.match(output.written.join('\n'), /the console answered 400: projectPath must be an existing absolute directory/);
+});
+
 test('a runner with no earlier answer says so instead of inventing one', async (t) => {
   const output = lines();
   const result = await runWhoAmICommand([], {

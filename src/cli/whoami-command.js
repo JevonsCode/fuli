@@ -39,7 +39,7 @@ export async function runWhoAmICommand(args, { env = process.env, write = writeL
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...asked, ...(workspace ? { workspace } : {}) })
     });
-    if (!reply.ok) throw new Error(`the console answered ${reply.status}`);
+    if (!reply.ok) throw new Error(await refusal(reply));
     answer = await reply.json();
   } catch (error) {
     failure = error instanceof Error ? error.message : 'the console did not answer';
@@ -62,6 +62,15 @@ export async function runWhoAmICommand(args, { env = process.env, write = writeL
   }
   return finish({ ...earlier.answer, computer: { role: 'runner', hostReachable: false },
     offline: true, answeredAt: earlier.at }, options, write);
+}
+
+// What the console refused with, when it said something a person can act on
+// (a folder that does not exist), otherwise just its status.
+async function refusal(reply) {
+  const body = await reply.json().catch(() => null);
+  const message = body?.error?.message ?? body?.message ?? body?.error;
+  return typeof message === 'string' && message ? `the console answered ${reply.status}: ${message}`
+    : `the console answered ${reply.status}`;
 }
 
 function finish(answer, options, write) {
