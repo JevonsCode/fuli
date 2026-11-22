@@ -21,8 +21,13 @@ async function pairedHost(t, { knownAddresses, announces = ['10.20.2.17', '192.1
   hostStore.pair({ code: 'synthetic-invitation-code-0003', fingerprint: runner.fingerprint, name: 'Runner B' });
   const routes = createRunnerRoutes({ app: {}, store: hostStore, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), hostAddresses: () => announces });
-  const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, route: routes.handle,
-    sourceAllowed: () => true });
+  const hellos = { count: 0 };
+  const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0,
+    sourceAllowed: () => true,
+    route: (request, response, context) => {
+      if (context.pathname.endsWith('/hello')) hellos.count += 1;
+      return routes.handle(request, response, context);
+    } });
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-addresses-')));
   const store = new RunnerStore(path.join(dir, RUNNER_FILE));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: knownAddresses });
@@ -33,7 +38,7 @@ async function pairedHost(t, { knownAddresses, announces = ['10.20.2.17', '192.1
     hostStore.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  return { store, runner, port: listener.port, dir };
+  return { store, runner, port: listener.port, dir, hellos };
 }
 
 test('a runner keeps the addresses the host names, so it looks there after the next network change', async (t) => {
@@ -116,6 +121,20 @@ test('only checked addresses are written, whichever way they are learned', async
 // The listener's connection limits (docs/runner.md, "Finding the host again"):
 // the total is over every address it binds, and one address's share of the
 // connections a device that is not a paired runner may hold.
+test('finding the host already asks it how things stand, so nothing asks a second time', async (t) => {
+  const { store, runner, hellos } = await pairedHost(t, { knownAddresses: ['127.0.0.1'] });
+  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [], bindAddresses: () => [] });
+  t.after(() => connection.close());
+  await connection.connect();
+  const found = hellos.count;
+
+  assert.equal((await connection.hello())?.name, 'Host A');
+  assert.equal(hellos.count, found, 'the search\'s own hello is the answer');
+  // A later one asks again: the counts it carries move.
+  assert.equal((await connection.hello())?.name, 'Host A');
+  assert.equal(hellos.count, found + 1);
+});
+
 test('an unknown device on the network cannot hold every connection, while a paired runner is not held to that share', async (t) => {
   const [host, stranger, known] = await Promise.all([createDeviceCertificate(), createDeviceCertificate(),
     createDeviceCertificate()].map(async (made) => deviceIdentity(await made)));

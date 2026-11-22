@@ -92,7 +92,8 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // via: the local address to connect from (an adapter's own), or null for the default route.
   async function probe(host, address, tls, signal, via = null) {
     const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16, ...(via ? { localAddress: via } : {}) });
-    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent, announced: [] };
+    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent,
+      announced: [], greeting: null };
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal });
       const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
@@ -101,6 +102,9 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       // Only addresses a host serves (private, or the VPN range it binds on a
       // VPN adapter), as the ones mDNS finds: no request goes anywhere else.
       candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter(isReachableHostAddress);
+      // What this hello said, for a caller that wants it (the sessions this
+      // runner holds): the search already asked, so nothing asks again.
+      candidate.greeting = body ?? null;
       return candidate;
     } catch (error) {
       agent.destroy();
@@ -148,11 +152,18 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     return { reachable: false };
   }
 
-  // The host's hello answer now (its name, version and the MCP sessions this
-  // runner holds there), or null when it does not answer.
+  // The host's hello answer (its name, version and the MCP sessions this
+  // runner holds there), or null when it does not answer. A search that just
+  // found the host already asked, so that answer is given once instead of
+  // asking again; a later call asks, since the counts move.
   async function hello() {
     const connection = await connect();
     if (!connection) return null;
+    if (connection.greeting) {
+      const greeting = connection.greeting;
+      connection.greeting = null;
+      return greeting;
+    }
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
         { signal: AbortSignal.any([AbortSignal.timeout(REQUEST_MS), closing.signal]) });
