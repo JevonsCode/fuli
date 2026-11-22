@@ -1,6 +1,7 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
+import { continuationDecision } from '../conversations/continuation-decision.js';
 import { workingBranch } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
@@ -128,9 +129,16 @@ export async function beginTaskFromPreferences(application, preferences, {
       // Ignore: the rule stays in the conversation; the entry goes on.
     }
   }
+  // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
+  const branch = task.projectAgentId ? await workingBranch(projectPath) : null;
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
-    // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
-    branch: task.projectAgentId ? await workingBranch(projectPath) : null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
+    branch, taskPrompt, resumed: Boolean(resumed || existingTask) }));
+  // Whether this turn picks up work from another session or client, and so
+  // whether the reply opens with a continuation line at all (rec#147). The
+  // person said so when they named this FLA this turn or arrived on a
+  // checkpoint continuation prompt; a carried session binding is not saying so.
+  const continuation = continuationDecision(conversation, { branch,
+    statedByUser: Boolean(resumed) || ['named', 'picked'].includes(preferences[FLA_ROUTE]?.origin) });
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
@@ -138,7 +146,10 @@ export async function beginTaskFromPreferences(application, preferences, {
   const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt,
     opensConversation ? delivered : null) : null;
   return withPreferenceScope({
-    conversation,
+    // Only a real continuation travels with the entry. A turn FULI could not
+    // record already says so in conversation.status and its guidance, so
+    // repeating it here would cost every such turn tokens for nothing.
+    conversation: continuation.show ? { ...conversation, continuation } : conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
     checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
@@ -148,7 +159,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences, ...(receipt ? { agent_receipt: receipt } : {}),
-    ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
+    ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, continuation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance()

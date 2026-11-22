@@ -32,8 +32,17 @@ export function sessionRecordsUrl(application, { sourceApplication = null, sessi
     + `item=${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(itemKey)}`;
 }
 
-export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
+// How FULI splits a session or moves work to another client (rec#147, Jevons
+// 2026-11-22: 「我们有 FULI 干嘛要这种接手文档」). The standing method, not a
+// per-turn instruction: this text is delivered by version reference, so saying
+// it here costs a task entry nothing.
+export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration. '
+  + 'To split a session, or move this work to another client or computer: call checkpoint_task_knowledge for the decisions so far, then open the target client and send `prompt` as its first message. '
+  + 'Never write a hand-off document, summary file or transfer note for this: FULI carries the context, and resume_agent_conversation reports in `carried` exactly how much of it came across.';
 
+// The method itself stays in CONTINUATION_GUIDANCE above, which every entry
+// sends as a version reference rather than text: spelling the steps out in each
+// receipt would cost every turn tokens for something that changes once a year.
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
     ...(conversationId ? { conversation_id: conversationId } : {}),

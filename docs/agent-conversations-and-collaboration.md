@@ -30,11 +30,49 @@
 更正与未完成事项。截断前缀不参与去重，省略数量可见。摘要最多占恢复预算的一半。
 摘录未经核实，可能漏掉无标记决定或误分类；原文始终是依据，旧摘录不能覆盖新用户指令。
 
+## 什么时候显示「续接」（rec#147）
+
+同一个原生会话一直干活，不显示任何续接：这个会话已经绑定了自己的对话，
+`conversation.recovered_from` 有值，入口不带 `conversation.continuation`，
+开头那行来源标记也不会写「续接」——恢复了多少上下文都一样。
+
+换了会话或换了客户端，只有**确定**是真续接才显示。确定只有两种依据：
+
+| 依据 | `evidence` | 判据 |
+| --- | --- | --- |
+| 人这一轮说了要在这里接着做 | `stated_by_user` | 本轮点名 FLA（`#FLA 姓名` / `@姓名` / 选择器），或带着 checkpoint 的接续提示进来。会话里一直绑着的那位不算「这一轮说了」 |
+| FULI 认出是同一件事 | `same_branch` | 这位 FLA 最近还有别的会话，和本会话在同一个项目、同一条 Git 分支上，且这条分支不是 `main` / `master` / `develop` 这类大家都在上面的主干 |
+
+同一条分支上有不止一段最近的工作时，分不清接的是哪一段，就不显示（`reason: ambiguous`）。
+其他情况（新会话做另一件事、这位 FLA 没有更早的工作）也不显示。
+
+显示时 `conversation.continuation` 写清：
+
+- `from`：哪个客户端（`client_label`）、哪个会话（`session_short`，原生会话号前 8 位）、什么时候（`when`）、
+  当时用的模型（`model` 与 `model_source`）。
+- `carried`：带过来了多少——有没有上次的工作小结、最近几条原文、更早的多少条折叠进了摘要。
+
+**模型一栏不猜。** 各客户端能给什么以它自己的钩子输入为准（`src/agents/client-provenance.js`）：
+Claude Code 从自己的 transcript 读实际回答的模型（`actual`）；Codex 给的是请求的模型（`requested`），
+实际回答的可能不是它；Cursor、OpenCode、DeepSeek Harness、Claude 桌面端根本不给模型，
+记录里写「未知」并注明是这个客户端不提供；更早、当时没记的写「未知（当时没记）」。两种都不回填估算值。
+
+这一轮没能记上（Provider 不可达、离线 token）时，`conversation.status` 不是 `saved`，
+带着它自己的 `reason` 和 guidance，入口不会把这种情况说成「没有历史」。
+
 ## 跨客户端接续
 
-1. 收尾保存真实结果，返回当前负责人、保存状态和 `conversation_id`。
-2. 在另一客户端选择同一授权范围和 FLA，取得该宿主当前 `taskContextToken`。
-3. 用 `resume_agent_conversation` 恢复指定会话；细节用 `read_agent_conversation` 分页补读。
+拆会话、换客户端、换电脑都不写交接文档——FULI 本来就带着上下文。做法固定三步：
+
+1. 先 `checkpoint_task_knowledge` 把关键决定记下来，返回当前负责人、保存状态和 `conversation_id`。
+2. 在目标客户端新开会话，把回执里 `continuation.prompt` 作为第一条消息发出去
+   （个人页也能直接复制）；它带着 FLA、项目和来源会话 ID。
+3. `resume_agent_conversation` 恢复该会话，返回的 `carried` 写明这次到底带过来了多少：
+   有没有工作小结、最近几条原文、更早的多少条已折叠（`folded_events`）、整段对话共多少条（`conversation_events`）。
+   细节用 `read_agent_conversation` 分页补读。
+
+这条做法写在入口规则的 `continuation_guidance` 一节里，按版本引用下发给所有客户端，
+每轮不额外花 Token；全文在 `fuli://rules/task-entry/continuation_guidance`。
 
 入口支持开头的 `#FLA 姓名` 或稳定的 `#FLA {agentId}`；`@` 留给客户端，任何位置的 `@` 都不切换身份。
 FULI 0.23 及更早写出的 `@{agentId}` 接续指令（任何 ID，例如 `@{employee.jefa}`）仍能识别，之后不再生成。同名、停用、项目不符
