@@ -17,6 +17,7 @@ import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { startupStageWriter } from '../local-runtime/startup-stage.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
@@ -40,7 +41,10 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     runtimeSettings,
     paths,
     env,
-    onProgress: write
+    onProgress: write,
+    // What the start is doing now, so a terminal is not left turning in
+    // silence through the provider and console waits (startup-stage.js).
+    onStage: startupStageWriter(write, env)
   };
   // A runner has no graph runtime; its commands manage its console entry (docs/runner.md).
   if (paths.dataDir && (dependencies.isRunner ?? isRunnerDataDirectory)(paths.dataDir)) {

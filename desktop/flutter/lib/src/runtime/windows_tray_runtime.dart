@@ -42,7 +42,7 @@ class WindowsTrayRuntime implements FuliRuntime {
   Future<RuntimeReport> status() => _action('status');
 
   @override
-  Future<RuntimeReport> start() => _action('start');
+  Future<RuntimeReport> start({StageListener? onStage}) => _action('start', onStage: onStage);
 
   @override
   Future<RuntimeReport> stop() => _action('stop');
@@ -51,17 +51,18 @@ class WindowsTrayRuntime implements FuliRuntime {
   bool get canChangePort => true;
 
   @override
-  Future<RuntimeReport> changePort() => _action('change-port');
+  Future<RuntimeReport> changePort({StageListener? onStage}) => _action('change-port', onStage: onStage);
 
-  Future<RuntimeReport> _action(String action) async {
+  Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    return parseControllerReply(await _run(_root!, action));
+    return parseControllerReply(await _run(_root!, action, onStage));
   }
 
   // detachedWithStdio keeps Windows from opening a console window for
   // node.exe under this GUI process; its exit code is not available, so the
-  // controller's JSON `ok` field carries the outcome.
-  Future<String> _run(String root, String action) async {
+  // controller's JSON `ok` field carries the outcome. Its lines are read as
+  // they arrive: the steps it reports while it works, then the result.
+  Future<String> _run(String root, String action, [StageListener? onStage]) async {
     try {
       final process = await Process.start(
         nodePathOf(root),
@@ -70,7 +71,13 @@ class WindowsTrayRuntime implements FuliRuntime {
         mode: ProcessStartMode.detachedWithStdio,
       );
       unawaited(process.stderr.drain<void>());
-      return await process.stdout.transform(utf8.decoder).join().timeout(_controllerTimeout);
+      final output = StringBuffer();
+      await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
+        output.writeln(line);
+        final stage = parseStageLine(line);
+        if (stage != null) onStage?.call(stage);
+      }).timeout(_controllerTimeout);
+      return output.toString();
     } on ProcessException catch (error) {
       return jsonEncode({'ok': false, 'status': 'unknown', 'error': error.message});
     } on TimeoutException {

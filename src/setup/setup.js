@@ -116,7 +116,8 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     noStart: options.noStart,
     allowProviderDowngrade: options.allowProviderDowngrade === true,
     env: dependencies.env ?? process.env,
-    onProgress: dependencies.onProgress
+    onProgress: dependencies.onProgress,
+    onStage: dependencies.onStage
   });
   // Every client is written through agent-installer (client-installer.js).
   const selected = plan.agents.filter(({ available, selected }) => available && selected !== false);

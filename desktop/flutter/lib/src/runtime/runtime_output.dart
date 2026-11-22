@@ -15,6 +15,7 @@ RuntimeReport parseControllerReply(String stdout) {
   final state = reply['state'];
   final error = reply['error'];
   final notice = reply['notice'];
+  final stage = reply['stage'];
   return RuntimeReport(
     _state(reply['status']),
     consolePort: state is Map ? _consolePort(state) : null,
@@ -22,7 +23,25 @@ RuntimeReport parseControllerReply(String stdout) {
     notice: notice is String && notice.isNotEmpty ? notice : null,
     portBlocked: reply['portBlocked'] == true,
     consoleStopped: state is Map && _consoleStopped(state),
+    stage: reply['ok'] == true || stage is! String || stage.isEmpty ? null : stage,
   );
+}
+
+/// The step a controller reports while it works: one `{"stage": "…"}` line of
+/// its own (src/desktop/desktop-controller.js `stageReporter`). The result
+/// line carries `ok`, so it is never mistaken for one of these.
+String? parseStageLine(String line) {
+  final text = line.trim();
+  if (!text.startsWith('{')) return null;
+  final Object? value;
+  try {
+    value = jsonDecode(text);
+  } on FormatException {
+    return null;
+  }
+  if (value is! Map || value.containsKey('ok')) return null;
+  final stage = value['stage'];
+  return stage is String && stage.isNotEmpty ? stage : null;
 }
 
 /// The installation's data directory and the key of its one-client lock.

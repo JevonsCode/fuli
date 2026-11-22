@@ -90,7 +90,18 @@ class FuliController extends ChangeNotifier {
   Future<void>? _checking;
   // The start, stop or port change running now.
   Future<RuntimeReport>? _runtimeCall;
+  // The step of the start running now and when it began (startup-stage.js), so
+  // the window says what FULI is doing and, when a step takes long, how long
+  // it has waited. Nothing here is guessed: the start reports each step itself.
+  String? _stage;
+  DateTime? _stageSince;
+  Timer? _stageTick;
   bool _disposed = false;
+
+  /// How long a step runs before the window adds what it is waiting on.
+  static const stageSlowAfter = Duration(seconds: 15);
+  // The waited time is retold this often; a calmer beat than one second.
+  static const _stageTickEvery = Duration(seconds: 5);
 
   /// Null until the first check finished.
   FuliSnapshot? get snapshot => _snapshot;
@@ -110,6 +121,17 @@ class FuliController extends ChangeNotifier {
   /// finishes, what is being done: the window waits for the console instead
   /// of showing the stopped FULI in between.
   String? get bringingUp => _bringingUp;
+
+  /// The step of the start running now, as the start reported it; null when
+  /// no start is running or it reported no step.
+  String? get startupStage => _stage;
+
+  /// How long that step has been waiting; null when no step is running.
+  Duration? get startupWaited {
+    final since = _stageSince;
+    return since == null ? null : _now().difference(since);
+  }
+
   Notice? get notice => _notice;
   Uri get consoleUri => Uri.parse('http://127.0.0.1:${_snapshot?.port ?? 2727}/');
 
@@ -354,7 +376,7 @@ class FuliController extends ChangeNotifier {
   Future<void> start() {
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
-      final report = await _call(runtime.start);
+      final report = await _call(() => runtime.start(onStage: _enterStage));
       _notice = _startFailure(report) ?? _notice;
     });
   }
@@ -364,13 +386,36 @@ class FuliController extends ChangeNotifier {
     final error = report.error;
     if (error == null) return null;
     final shown = ProviderConflict.parse(error)?.shown;
+    // Which step did not finish, when the start named one: a failure in the
+    // middle of a long start otherwise reads as if nothing had happened.
+    final step = strings.startupStage(report.stage ?? _stage);
     return Notice(
         shown != null
             ? strings.startFailedNewerData(shown.installed, shown.current)
             : report.portBlocked && runtime.canChangePort
                 ? strings.startFailedPortBlocked(error)
-                : strings.startFailed(error),
+                : step != null
+                    ? strings.startFailedAtStep(step, error)
+                    : strings.startFailed(error),
         error: true);
+  }
+
+  // The start says it has begun another step; the window follows it.
+  void _enterStage(String stage) {
+    if (_disposed) return;
+    _stage = stage;
+    _stageSince = _now();
+    _stageTick ??= Timer.periodic(_stageTickEvery, (_) {
+      if (!_disposed && _stageSince != null) notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void _forgetStage() {
+    _stage = null;
+    _stageSince = null;
+    _stageTick?.cancel();
+    _stageTick = null;
   }
 
   Future<void> stop() {
@@ -405,7 +450,7 @@ class FuliController extends ChangeNotifier {
         return;
       }
       _runtimePort = null;
-      _notice = _startFailure(await _call(runtime.start)) ?? _notice;
+      _notice = _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
     });
   }
 
@@ -414,7 +459,7 @@ class FuliController extends ChangeNotifier {
     if (!runtime.canChangePort) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.changingPort, () async {
-      final report = await _call(runtime.changePort);
+      final report = await _call(() => runtime.changePort(onStage: _enterStage));
       // The settings file names the new port now.
       _runtimePort = null;
       final error = report.error;
@@ -436,6 +481,7 @@ class FuliController extends ChangeNotifier {
       await _operate(label, body);
     } finally {
       _bringingUp = null;
+      _forgetStage();
       if (!_disposed) notifyListeners();
     }
   }
@@ -551,6 +597,7 @@ class FuliController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _stageTick?.cancel();
     super.dispose();
   }
 }

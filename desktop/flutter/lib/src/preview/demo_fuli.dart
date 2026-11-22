@@ -140,8 +140,11 @@ class DemoRuntime implements FuliRuntime {
   Future<RuntimeReport> status() async => RuntimeReport(_state);
 
   @override
-  Future<RuntimeReport> start() async {
+  Future<RuntimeReport> start({StageListener? onStage}) async {
+    // The preview shows the shape of a real start: a step, the wait, the next.
+    onStage?.call('graph_start');
     await startTakes?.call();
+    onStage?.call('console_start');
     api.reachable = true;
     return RuntimeReport(_state);
   }
@@ -156,7 +159,7 @@ class DemoRuntime implements FuliRuntime {
   bool get canChangePort => false;
 
   @override
-  Future<RuntimeReport> changePort() async => RuntimeReport(_state);
+  Future<RuntimeReport> changePort({StageListener? onStage}) async => RuntimeReport(_state);
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readStartupStageMarker, STAGE_MARKER_ENV, startupStageMarker } from '../local-runtime/startup-stage.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
@@ -58,11 +59,17 @@ export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
-  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold
+  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
+  onStage = () => {}
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
-  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
+  // The step running now, reported as it starts and kept for a failure, so the
+  // client says which step did not finish instead of only that a start failed.
+  let stage = null;
+  const atStage = (next) => { stage = next; onStage(next); };
+  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir], atStage);
   const inspect = async () => {
+    atStage('checking');
     const result = await invoke(['status', '--json']);
     if (![0, 1].includes(result.code)) throw cliError(result);
     let state;
@@ -104,6 +111,7 @@ export async function runTrayAction(action, context, {
         // A runner (docs/runner.md) starts only its console entry; it never sets up a FULI of its own.
         if ((await inspect()).status !== 'running') await command(['start']);
       } else if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+        atStage('first_setup');
         const setup = await invoke(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
         // A setup that failed names its error on stderr. One that finished but
         // reports "partial" exits 1 silently: right after the first start its
@@ -128,7 +136,10 @@ export async function runTrayAction(action, context, {
       // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
       try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
-    if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
+    if (['open', 'start-open', 'change-port'].includes(action)) {
+      atStage('console_open');
+      await command(['open']);
+    }
     if (action === 'stop') await command(['stop']);
     const state = await inspect();
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {
@@ -137,6 +148,8 @@ export async function runTrayAction(action, context, {
     return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
       ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}) };
   } catch (error) {
+    // The step that did not finish, read before the check below moves on.
+    const failedAt = stage;
     // A failed start can already own processes. Keep their CLI state and report
     // what is actually running; never kill by process name or delete the data.
     const state = await inspect().catch(() => null);
@@ -145,6 +158,7 @@ export async function runTrayAction(action, context, {
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
+      ...(failedAt ? { stage: failedAt } : {}),
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }
@@ -165,12 +179,38 @@ function cliError(result) {
     || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.');
 }
 
-function executeCli(context, args) {
+// The CLI writes its startup phase as a marker line (startup-stage.js) because
+// this client renders the phase itself; the lines are read as they arrive so
+// the window says what the start is doing while it is still doing it.
+function executeCli(context, args, onStage = () => {}) {
   return new Promise((resolveRun) => {
-    execFile(context.nodePath, [context.cliPath, ...args], {
-      cwd: context.packageRoot, env: process.env, windowsHide: true,
+    const child = execFile(context.nodePath, [context.cliPath, ...args], {
+      cwd: context.packageRoot, env: { ...process.env, [STAGE_MARKER_ENV]: '1' }, windowsHide: true,
       encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024
     }, (error, stdout, stderr) => resolveRun({ code: error ? error.code ?? 1 : 0, stdout,
       stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '') }));
+    followStageMarkers(child.stdout, onStage);
+  });
+}
+
+// How the tray and macOS entry points pass the phase on to their client: one
+// JSON line per phase as it starts, before the single result line the client
+// reads at the end (desktop/flutter/lib/src/runtime/runtime_output.dart).
+export function stageReporter(write = (line) => process.stdout.write(line)) {
+  return (stage) => write(startupStageMarker(stage) + '\n');
+}
+
+// Calls back with each startup phase the stream reports, line by line.
+export function followStageMarkers(stream, onStage) {
+  if (!stream) return;
+  let rest = '';
+  stream.setEncoding?.('utf8');
+  stream.on('data', (chunk) => {
+    const lines = (rest + chunk).split('\n');
+    rest = lines.pop() ?? '';
+    for (const line of lines) {
+      const stage = readStartupStageMarker(line);
+      if (stage) onStage(stage);
+    }
   });
 }

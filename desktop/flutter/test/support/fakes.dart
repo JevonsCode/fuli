@@ -25,6 +25,8 @@ class FixedRuntime implements FuliRuntime {
   RuntimeReport report;
   final int port;
   final List<String> calls = [];
+  /// The startup steps this runtime reports while a start runs.
+  List<String> stages = const [];
 
   @override
   Future<bool> locate() async => report.state != RuntimeState.notFound;
@@ -39,8 +41,11 @@ class FixedRuntime implements FuliRuntime {
   }
 
   @override
-  Future<RuntimeReport> start() async {
+  Future<RuntimeReport> start({StageListener? onStage}) async {
     calls.add('start');
+    for (final stage in stages) {
+      onStage?.call(stage);
+    }
     return report;
   }
 
@@ -54,7 +59,7 @@ class FixedRuntime implements FuliRuntime {
   bool get canChangePort => true;
 
   @override
-  Future<RuntimeReport> changePort() async {
+  Future<RuntimeReport> changePort({StageListener? onStage}) async {
     calls.add('change-port');
     return report;
   }

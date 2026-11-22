@@ -78,7 +78,8 @@ async function startUnlocked(input, deps) {
     noStart: false,
     allowProviderDowngrade: input.allowProviderDowngrade === true,
     env: input.env,
-    onProgress: input.onProgress
+    onProgress: input.onProgress,
+    onStage: input.onStage
   });
 
   if (input.open === true) await deps.openExternal(runtime.url);

@@ -21,6 +21,7 @@ import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconci
 import { formatShadowedLaunchers, inspectUpdateInstallation } from './update-installation.js';
 import { quoteShellArgument } from './shell-argument.js';
 import { portMoveSentence } from '../system/blocked-port-recovery.js';
+import { startupStageWriter } from '../local-runtime/startup-stage.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -52,7 +53,10 @@ export async function runSetupCommand(args, dependencies = {}) {
 
   const result = await applySetup(plan, options, {
     ...dependencies,
-    onProgress: write
+    onProgress: write,
+    // The phases of the first start, so a first setup is not silent through
+    // the database install and the provider wait (startup-stage.js).
+    onStage: startupStageWriter(write, dependencies.env ?? process.env)
   });
   write(formatSetupResult(result, plan, copy));
   // Stubbed setups in tests never read the data directory they name.

@@ -70,6 +70,8 @@ const CONSOLE_READY_INTERVAL_MS = 250;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
+  // What this start is doing now, for whoever is watching it (startup-stage.js).
+  const stage = typeof input.onStage === 'function' ? input.onStage : () => {};
   const requestedSettings = normalizeRuntimeSettings(input.runtimeSettings ??
     runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
       consolePort: input.port,
@@ -104,6 +106,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   if (lan && lanAddresses.length === 0) {
     throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');
   }
+  stage('graph_runtime');
   const selectedGraphRuntime = runtimeMode === 'native'
     ? await deps.ensureNativeRuntime({
         paths: input.paths,
@@ -148,6 +151,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   );
   if (portMoves.length) deps.backupSettings(input.paths, new Date(deps.now()));
   deps.writeRuntimeSettings(input.paths.runtimeSettingsPath, runtimeSettings);
+  stage('graph_start');
   if (runtimeMode === 'native') {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
@@ -161,8 +165,10 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       ...(input.buildProviders === false ? { build: false } : {})
     });
   }
+  stage('provider_wait');
   await waitForProviderHealth(urls.personal, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.personal}` });
   if (!input.personalOnly) await waitForProviderHealth(urls.workspace, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.workspace}` });
+  stage('graph_setup');
   if (input.paths.adaptiveRuntimeStatePath) {
     deps.writeAdaptiveState(
       input.paths.adaptiveRuntimeStatePath,
@@ -224,6 +230,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   // 体检 reads them from the runtime state while that console runs.
   const reportedMoves = portMoves.length ? { portMoves } : {};
   if (input.noStart) return { status: 'initialized', url: null, pid: null, ...reportedMoves };
+  stage('console_start');
   const existing = activeRuntimeState;
   const consoleStop = { signal: deps.stopProcess, isAlive: deps.isProcessAlive, health: deps.webHealth,
     owned: deps.consoleProcessOwned, waitForExit: deps.waitForExit, wait: deps.wait, now: deps.now };

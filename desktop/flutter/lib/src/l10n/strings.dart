@@ -89,6 +89,45 @@ class Strings {
   String get repairingOne => _t('正在修复…', 'Fixing…');
   String repairingMany(int count) => _t('正在修复 $count 件事…', 'Fixing ${_things(count)}…');
   String get starting => _t('正在启动 FULI…', 'Starting FULI…');
+  // The steps a start really goes through (src/local-runtime/startup-stage.js),
+  // shown under the loading mark while that step runs. An id this version does
+  // not know keeps the plain "starting" sentence rather than showing the id.
+  String? startupStage(String? stage) => switch (stage) {
+        'checking' => _t('正在看 FULI 现在的状态…', 'Checking what FULI is doing now…'),
+        'first_setup' => _t('第一次启动，正在安装 FULI…', 'First start: installing FULI…'),
+        'graph_runtime' => _t('正在准备图数据库…', 'Getting the graph database ready…'),
+        'graph_start' => _t('正在启动图数据库…', 'Starting the graph database…'),
+        'provider_wait' => _t('正在等 Provider 就绪…', 'Waiting for the Provider…'),
+        'graph_setup' => _t('正在核对知识图谱的设置…', 'Checking the knowledge graph setup…'),
+        'console_start' => _t('正在打开控制台…', 'Starting the console…'),
+        'console_open' => _t('正在打开控制台窗口…', 'Opening the console window…'),
+        _ => null,
+      };
+
+  /// A step that has been running longer than usual: how long it has waited,
+  /// what that step is actually up against, and what happens next. Only facts
+  /// the code can stand behind — no guessed progress and no invented estimate.
+  String startupStageSlow(String? stage, Duration waited) {
+    final waiting = _t('已经等了${_spell(waited)}。', 'Waiting ${_spell(waited)} so far.');
+    final why = switch (stage) {
+      'first_setup' || 'graph_runtime' =>
+        _t('第一次启动要下载并解压内置数据库，可能要几分钟。', 'A first start downloads and unpacks the built-in database; that can take a few minutes.'),
+      'graph_start' => _t('数据库正在恢复上次的存储。', 'The database is recovering the store it left behind.'),
+      'provider_wait' => _t('FULI 最多等 2 分钟，然后会告诉你卡在哪。', 'FULI waits up to 2 minutes, then says where it is stuck.'),
+      'console_start' => _t('FULI 最多等 1 分钟，然后会告诉你卡在哪。', 'FULI waits up to 1 minute, then says where it is stuck.'),
+      _ => _t('FULI 还在等这一步，没有卡死。', 'FULI is still waiting on this step; it has not given up.'),
+    };
+    return '$waiting${chinese ? '' : ' '}$why${chinese ? '可以先去忙别的，好了会自己进去。' : ' You can leave it; the window goes in by itself when it is ready.'}';
+  }
+
+  // "1 分 20 秒" / "1 min 20 s", from whole seconds only.
+  String _spell(Duration waited) {
+    final seconds = waited.inSeconds;
+    if (seconds < 60) return _t(' $seconds 秒', '$seconds seconds');
+    final minutes = seconds ~/ 60, rest = seconds % 60;
+    if (rest == 0) return _t(' $minutes 分钟', '$minutes min');
+    return _t(' $minutes 分 $rest 秒', '$minutes min $rest s');
+  }
   String get stopping => _t('正在停止 FULI…', 'Stopping FULI…');
   String get restarting => _t('正在重启 FULI…', 'Restarting FULI…');
   String get changingPort => _t('正在换端口并重启 FULI…', 'Moving FULI to another port and restarting it…');
@@ -113,6 +152,10 @@ class Strings {
   String get updateNotBack =>
       _t('FULI 还没有重新应答，稍后会再检查。', 'FULI has not answered again yet; it is checked again shortly.');
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
+  // Which step of the start did not finish. [step] is a startupStage sentence.
+  String startFailedAtStep(String step, String reason) => _t(
+      '没有启动成功，卡在「${step.replaceAll('…', '')}」：$reason',
+      'FULI did not start; it stopped at "${step.replaceAll('…', '')}": $reason');
   // The graph service here was set up by a newer FULI (runtime/provider_conflict.dart); nothing was changed.
   String startFailedNewerData(String installed, String current) => _t(
       '没有启动：这里的数据是更新的 FULI（$installed）保存的，现在是 $current。数据没有改动，更新 FULI 后再启动。',

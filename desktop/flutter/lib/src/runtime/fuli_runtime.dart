@@ -4,10 +4,17 @@
 
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
+/// Told which step of a start is running now, as the start reports it
+/// (src/local-runtime/startup-stage.js). The ids are that module's.
+typedef StageListener = void Function(String stage);
+
 class RuntimeReport {
-  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false});
+  const RuntimeReport(this.state,
+      {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false, this.stage});
 
   final RuntimeState state;
+  /// The step that did not finish, when a failed start named one.
+  final String? stage;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -31,12 +38,15 @@ abstract interface class FuliRuntime {
   Future<int> consolePort();
 
   Future<RuntimeReport> status();
-  Future<RuntimeReport> start();
+
+  /// [onStage] is called with each step of the start as it begins, so the
+  /// window says what FULI is doing instead of only that it is starting.
+  Future<RuntimeReport> start({StageListener? onStage});
   Future<RuntimeReport> stop();
 
   /// Whether [changePort] exists here (the Windows tray controller's `change-port`).
   bool get canChangePort;
 
   /// Moves the console to a free port Windows does not reserve and restarts FULI.
-  Future<RuntimeReport> changePort();
+  Future<RuntimeReport> changePort({StageListener? onStage});
 }
