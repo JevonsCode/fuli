@@ -71,25 +71,50 @@ test('a session the host refuses is said with its reason, not answered as if the
   await second.stop();
 });
 
+test('a new client on a runner resumes a conversation after many earlier clients came and went', async (t) => {
+  // The host's limit is small, as a full one was on a real runner: each earlier
+  // client entered a task and left; none may leave its session behind.
+  const pair = await pairedRunner(t, { maxMcpSessions: 2 });
+  for (let round = 0; round < 6; round += 1) {
+    const earlier = await pair.serve();
+    await earlier.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: `earlier ${round}` } });
+    await earlier.stop();
+  }
+
+  const fresh = await pair.serve();
+  const entry = await fresh.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'continue' } });
+  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the task was entered on the host, not offline');
+  const resumed = await fresh.client.callTool({ name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
+    input: { taskContextToken: 'host-token', conversationId: 'conversation-1' } } });
+
+  assert.equal(resumed.isError, undefined, resumed.content?.[0]?.text);
+  assert.equal(resumed.structuredContent.status, 'resumed');
+  assert.deepEqual(pair.calls.at(-1), { name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
+    input: { taskContextToken: 'host-token', conversationId: 'conversation-1' } } });
+});
+
 test('FULI tells a client\'s AI to close connections it no longer uses', () => {
   assert.match(MCP_CHAT_INSTRUCTIONS, /Close FULI connections and test scripts once unused; never reopen in a loop/);
 });
 
 // A runner paired with a real listener on loopback whose MCP side is reduced
-// to task entry. serve() starts one of the runner's MCP processes (its client
+// to task entry and fuli_call (calls: what reached it). serve() starts one of the runner's MCP processes (its client
 // side and stop()); sessions() is what the host's hello says of its sessions.
 async function pairedRunner(t, { maxMcpSessions } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-sessions-')));
   const host = deviceIdentity(await createDeviceCertificate());
   const store = new RunnerHostStore(':memory:');
+  const calls = [];
   const routes = createRunnerRoutes({ app: {}, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), ...(maxMcpSessions ? { maxMcpSessions } : {}),
     createMcp: () => {
       const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: [{ name: 'get_collaboration_preferences', inputSchema: { type: 'object' } }] }));
-      server.setRequestHandler(CallToolRequestSchema, () => {
-        const value = { effective_preferences: [], taskContextToken: 'host-token' };
+        tools: ['get_collaboration_preferences', 'fuli_call'].map((name) => ({ name, inputSchema: { type: 'object' } })) }));
+      server.setRequestHandler(CallToolRequestSchema, (request) => {
+        calls.push({ name: request.params.name, arguments: request.params.arguments });
+        const value = request.params.name === 'fuli_call' ? { status: 'resumed' }
+          : { effective_preferences: [], taskContextToken: 'host-token' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
       return server;
@@ -116,6 +141,7 @@ async function pairedRunner(t, { maxMcpSessions } = {}) {
     rmSync(base, { recursive: true, force: true });
   });
   return {
+    calls,
     sessions: async () => (await connection.hello()).mcpSessions,
     async serve() {
       const client = new Client({ name: 'codex', version: 'test' });
