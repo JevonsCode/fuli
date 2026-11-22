@@ -22,6 +22,7 @@ import { WorkSurfaceStore } from '../src/work-surfaces/store.js';
 import { DelegatedOperationLog } from '../src/agent-delegation/operation-log.js';
 import { VisitorAccessStore } from '../src/visitor-access/store.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { RoutingLedger } from '../src/runner/routing-ledger.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
 import { EmployeeManagementStore } from '../src/employees/management-policy.js';
@@ -54,6 +55,7 @@ const SQLITE_STORES = {
   'visitor-access': (path) => { const store = new VisitorAccessStore(path); void store.db; return () => store.close(); },
   'runner-host': (path) => { const store = new RunnerHostStore(path); void store.db; return () => store.close(); },
   runner: (path) => { const store = new RunnerStore(path); void store.db; return () => store.close(); },
+  'runner-routing': (path) => { const store = new RoutingLedger(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {
     const store = new EmployeeManagementStore(path); store.read('space', 'template'); return () => store.close();
   },

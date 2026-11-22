@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -20,11 +20,14 @@ import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../mcp/instructions.js'
 import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, hostOnlyAnswer, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, offlineTaskAnswer,
+  outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -49,30 +52,57 @@ const TOOLS_KEY = 'tools:list';
 const STREAM_LOST = /SSE stream disconnected|Failed to reconnect|Maximum reconnection attempts/;
 // withHost's answer for a call that changes something whose connection dropped after it was sent.
 const OUTCOME_UNKNOWN = Symbol('outcome unknown');
+// How long a closing process waits for the host to end its MCP session; past it, the host's idle timeout does.
+const END_SESSION_MS = 2000;
+// The same for a session this process stops using to open another (a dropped stream, a lost connection).
+const RETIRE_SESSION_MS = 1000;
+// The host's answer to a runner it does not know: looked into through hello (revoked), never a refusal to report.
+const NOT_PAIRED_STATUS = 403;
+
+// The host answered but would not open an MCP session (its session limit, a
+// failure on its side): the reason it gave, which the caller is told as it is
+// instead of answers kept for an unreachable host.
+class HostRefusal {
+  constructor(status, message) {
+    this.status = status;
+    // The JSON-RPC error the host sent, when the SDK's message carries one.
+    const body = String(message ?? '').match(/\{.*\}\s*$/s)?.[0];
+    let reason = null;
+    try { reason = body ? JSON.parse(body)?.error?.message : null; } catch { reason = null; }
+    this.reason = String(reason ?? message ?? '').slice(0, 200);
+  }
+}
 
 // lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
 // for, how soon after it was away, how long a tools/list waits for it, and how
-// long a checkpoint of an offline task waits for its own delivery. Without a
+// long a checkpoint of an offline task waits for its own delivery. modelFetch:
+// the fetch of this runner's own Tonborg model (local-routing.js). Without a
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
   const sessionId = nativeSession ?? mcpHostSessionId({});
-  const server = createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
+  // What the host refused or failed when this process opened its session, for `fuli diagnostics` here.
+  const record = diagnosticEventLog(dataDir).record;
+  const server = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
   let closing = null;
   const close = () => closing ??= (async () => {
     if (stdio) for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, close);
-    // First: a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
+    // First the host releases this process's MCP session (bounded), while the connection still carries it;
+    // then a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
+    await server.endHostSession();
     connection.close();
     await server.close();
+    await routing.close();
     store.close();
   })();
   const served = transport ?? new StdioServerTransport();
@@ -85,7 +115,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, connection };
 }
 
-function createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ store, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -93,8 +123,12 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
   const described = new Map();
   let client = null;
+  // The transport of client: it ends the session on the host (DELETE) when this process closes.
+  let clientTransport = null;
   let connecting = null;
   let unreachableUntil = 0;
+  // The code of the last session problem recorded, so a repeating one is recorded once until a session opens.
+  let lastProblem = null;
   let delivering = null;
   let closed = false;
   const stopping = new AbortController();
@@ -119,10 +153,17 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
         [TOOL_PROFILE_HEADER]: toolProfile } } });
     try {
       await created.connect(http);
-    } catch {
+    } catch (error) {
       await created.close().catch(() => {});
+      if (error instanceof StreamableHTTPError && error.code >= 400 && error.code !== NOT_PAIRED_STATUS) {
+        const refusal = new HostRefusal(error.code, error.message);
+        problem({ outcome: 'refused', code: 'host_refused', httpStatus: refusal.status, reason: refusal.reason });
+        return refusal;
+      }
+      problem({ outcome: 'failed', code: 'host_session_failed', reason: String(error?.message ?? error) });
       return helloThenOffline();
     }
+    lastProblem = null;
     if (closed) {
       await created.close().catch(() => {});
       return null;
@@ -137,11 +178,35 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     // flight) leaves that call waiting for an answer that cannot come: the
     // client is closed, so the call ends as ConnectionClosed (withHost).
     created.onerror = (error) => {
-      if (client === created && STREAM_LOST.test(String(error?.message ?? ''))) void created.close().catch(() => {});
+      if (client !== created || !STREAM_LOST.test(String(error?.message ?? ''))) return;
+      // The session is still the host's until it hears otherwise: end it before a new one is opened.
+      void retire(http, RETIRE_SESSION_MS).then(() => created.close()).catch(() => {});
     };
     client = created;
+    clientTransport = http;
     described.clear();
     return client;
+  }
+
+  // Ends this process's session on the host now (MCP's DELETE), so it does not
+  // hold one of the host's sessions until the idle timeout. Bounded: a host
+  // that does not answer releases it at that timeout instead.
+  async function endHostSession() {
+    if (client) await retire(clientTransport, END_SESSION_MS);
+  }
+
+  // Ends one session on the host (MCP's DELETE), waiting at most withinMs. A
+  // host that already dropped it answers 404, and one that does not answer
+  // releases it at its idle timeout.
+  async function retire(transport, withinMs) {
+    await Promise.race([transport.terminateSession().catch(() => {}), delay(withinMs, null, { ref: false })]);
+  }
+
+  // A session that could not be opened, recorded once until one opens again.
+  function problem(event) {
+    if (lastProblem === event.code) return;
+    lastProblem = event.code;
+    record({ component: 'mcp', operation: 'runner.session_open', ...event });
   }
 
   // The host refused or dropped the session (it may have revoked this runner
@@ -149,6 +214,8 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
   // addresses on a fresh connection, without mDNS. A revoked runner then says
   // so instead of answering from what it kept; true means the host answers.
   async function helloAgain() {
+    // A session this process stops using is ended first, unless the host already dropped it.
+    if (client) await retire(clientTransport, RETIRE_SESSION_MS);
     await client?.close().catch(() => {});
     client = null;
     connection.drop();
@@ -180,7 +247,7 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
   async function withHost(work, { repeat = true } = {}) {
     for (let attempt = 0; ; attempt += 1) {
       const host = await upstream();
-      if (!host) return null;
+      if (!host || host instanceof HostRefusal) return host;
       try {
         return await work(host);
       } catch (error) {
@@ -222,17 +289,23 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     return delivering;
   }
 
+  // The host's tools, and this runner's own while it chooses executors itself.
+  const withRunnerTools = (listed) => ({ ...listed,
+    tools: [...listed.tools.filter((tool) => tool.name !== OUTCOME_TOOL), ...routing.tools()] });
+
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const listing = withHost((host) => host.listTools()).then((listed) => {
+    // A host that refused the session lists nothing; its calls then say why.
+    const listing = withHost((host) => host.listTools()).then((answered) => {
+      const listed = answered instanceof HostRefusal ? null : answered;
       if (listed && !closed) store.rememberAnswer(TOOLS_KEY, 'tools/list', listed);
-      return listed;
+      return listed && withRunnerTools(listed);
     });
     const waited = new AbortController();
     const listed = await Promise.race([listing,
       delay(toolsWaitMs, null, { signal: waited.signal, ref: false }).catch(() => null)]);
     waited.abort();
     if (listed) return listed;
-    const known = store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) };
+    const known = withRunnerTools(store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) });
     // The host answered after the client was given the known list: it lists again when they differ.
     void listing.then((late) => {
       if (late && !closed && JSON.stringify(late) !== JSON.stringify(known)) return server.sendToolListChanged();
@@ -246,7 +319,8 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
   // only, at most CHECKPOINT_WAIT_MS; the round goes on without it.
   async function checkpointOffline(call) {
     const queued = offlineAnswer(store, { ...call, sourceApplication, sessionId });
-    if (queued.isError || !await upstream()) return queued;
+    const host = await upstream();
+    if (queued.isError || !host || host instanceof HostRefusal) return queued;
     const { outboxId } = queued.structuredContent;
     void deliverSoon();
     const deadline = now() + checkpointWaitMs;
@@ -261,8 +335,21 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     const asked = effectiveCall(name, args);
     const refused = hostOnlyAnswer(asked.tool);
     if (refused) return refused;
+    if (routing.handles(asked.tool)) {
+      // A task token names a task of the host's or of this runner's; a judgment here needs none.
+      const { taskContextToken: _token, ...input } = asked.input;
+      const answer = await routing.call(asked.tool, input, { sourceApplication, sessionId });
+      if (!answer.isError) void deliverSoon();
+      return answer;
+    }
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
+    // A call that cannot go without a task token (resume_agent_conversation) needs a task the host
+    // entered; sent without this computer's offline token the host would only say the token is missing.
+    if (offlineTask && needsHostTask(asked.tool)) {
+      const host = await upstream();
+      if (host && !(host instanceof HostRefusal)) return offlineTaskAnswer(asked.tool);
+    }
     // The host does not know a runner's offline token: other calls go without it.
     const sent = offlineTask ? withoutOfflineToken(name, args) : args;
     const call = effectiveCall(name, sent);
@@ -283,28 +370,33 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
         undefined, { timeout: CALL_TIMEOUT_MS, resetTimeoutOnProgress: true });
     }, { repeat: repeatable(call.tool) });
     if (answer === OUTCOME_UNKNOWN) return outcomeUnknownAnswer(call.tool);
+    if (answer instanceof HostRefusal) return hostRefusedAnswer(answer.status, answer.reason);
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
     if (store.outbox().queued) void deliverSoon();
     return answer;
   });
 
-  server.setRequestHandler(ListPromptsRequestSchema, async () =>
-    (await withHost((host) => host.listPrompts())) ?? { prompts: [] });
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const prompt = await withHost((host) => host.getPrompt(request.params));
-    if (!prompt) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
-    return prompt;
-  });
+  // A listing or read the host answered; a refused session lists nothing, and a read says why.
+  const listed = async (work) => {
+    const answer = await withHost(work);
+    return answer instanceof HostRefusal ? null : answer;
+  };
+  const read = async (work) => {
+    const answer = await withHost(work);
+    if (answer instanceof HostRefusal) {
+      throw new McpError(-32603, `Your FULI host refused a new MCP session (HTTP ${answer.status}: ${answer.reason})`);
+    }
+    if (!answer) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
+    return answer;
+  };
+  server.setRequestHandler(ListPromptsRequestSchema, async () => (await listed((host) => host.listPrompts())) ?? { prompts: [] });
+  server.setRequestHandler(GetPromptRequestSchema, (request) => read((host) => host.getPrompt(request.params)));
   server.setRequestHandler(ListResourcesRequestSchema, async () =>
-    (await withHost((host) => host.listResources())) ?? { resources: [] });
+    (await listed((host) => host.listResources())) ?? { resources: [] });
   server.setRequestHandler(ListResourceTemplatesRequestSchema, async () =>
-    (await withHost((host) => host.listResourceTemplates())) ?? { resourceTemplates: [] });
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const resource = await withHost((host) => host.readResource(request.params));
-    if (!resource) throw new McpError(-32603, 'Your FULI host is unreachable from this runner');
-    return resource;
-  });
+    (await listed((host) => host.listResourceTemplates())) ?? { resourceTemplates: [] });
+  server.setRequestHandler(ReadResourceRequestSchema, (request) => read((host) => host.readResource(request.params)));
 
   const timer = setInterval(() => { if (store.outbox().queued) void deliverSoon(); }, DELIVER_EVERY_MS);
   timer.unref?.();
@@ -319,7 +411,37 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     client = null;
     await close();
   };
+  server.endHostSession = endHostSession;
   return server;
+}
+
+// Tonborg's executor judgment on this runner while the person set it up here
+// (routing-setup.js): assess_agent_action is answered here, and so is the
+// outcome report, which a decision made here may get even after the setup
+// is gone. The judgment's modules load on the first call that needs them.
+function runnerRouting({ dataDir, store, fetchImpl }) {
+  let local = null;
+  const loaded = () => local ??= import('./local-routing.js')
+    .then(({ createLocalRouting }) => createLocalRouting({ dataDir, store, ...(fetchImpl ? { fetchImpl } : {}) }));
+  return {
+    handles: (tool) => tool === OUTCOME_TOOL || (tool === ASSESS_TOOL && routingRoleState(dataDir).state !== 'off'),
+    tools: () => (routingRoleState(dataDir).state === 'on' ? [OUTCOME_TOOL_DEFINITION] : []),
+    async call(tool, input, context) {
+      const routing = await loaded();
+      return tool === OUTCOME_TOOL ? routing.outcome(input, context) : routing.assess(input, context);
+    },
+    async close() {
+      if (local) (await local).close();
+    }
+  };
+}
+
+// The tools whose schema requires the host's task token (a checkpoint is queued instead).
+let hostTaskTools = null;
+function needsHostTask(tool) {
+  hostTaskTools ??= new Set(listAgentTools().filter((definition) => !QUEUED_TOOLS.has(definition.name)
+    && definition.inputSchema?.required?.includes('taskContextToken')).map(({ name }) => name));
+  return hostTaskTools.has(tool);
 }
 
 // The tools this version would list, for a runner that never reached its host yet.

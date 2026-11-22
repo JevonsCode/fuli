@@ -16,11 +16,12 @@ const HEADERS_TIMEOUT_MS = 10_000;
 // An MCP call may wait on the graph; a stream stays open while it answers.
 const REQUEST_TIMEOUT_MS = 5 * 60_000;
 const KEEP_ALIVE_TIMEOUT_MS = 30_000;
-const MAX_CONNECTIONS = 64;
-// One address cannot hold more than this many of them (a runner's MCP
-// processes each keep a few), and a connection that does not finish its TLS
-// handshake in HANDSHAKE_TIMEOUT_MS is closed.
-const MAX_CONNECTIONS_PER_ADDRESS = 24;
+// Connections of every address together: a backstop, no share per address,
+// since one runner is one address and each of its MCP processes keeps a few
+// (a request socket and its event stream). It leaves room for the 64 MCP
+// sessions the routes allow in all (host-routes.js). A connection that does
+// not finish its TLS handshake in HANDSHAKE_TIMEOUT_MS is closed.
+const MAX_CONNECTIONS = 256;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const MAX_HEADERS_COUNT = 50;
 
@@ -78,21 +79,6 @@ function runnerServer(createServer, tls, handler) {
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.maxConnections = MAX_CONNECTIONS;
   server.maxHeadersCount = MAX_HEADERS_COUNT;
-  const open = new Map();
-  server.on('connection', (socket) => {
-    const address = socket.remoteAddress ?? '';
-    const count = (open.get(address) ?? 0) + 1;
-    if (count > MAX_CONNECTIONS_PER_ADDRESS) {
-      socket.destroy();
-      return;
-    }
-    open.set(address, count);
-    socket.once('close', () => {
-      const left = open.get(address) - 1;
-      if (left > 0) open.set(address, left);
-      else open.delete(address);
-    });
-  });
   server.on('error', () => {});
   server.on('tlsClientError', () => {});
   return server;

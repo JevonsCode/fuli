@@ -115,6 +115,36 @@ what a call from another computer may do:
 The fingerprint is recorded with each ask and each applied checkpoint id; task
 records in the graph do not carry it yet.
 
+## MCP sessions on the host
+
+Each FULI MCP process on a runner holds one MCP session on the host. No runner
+has a cap of its own, and neither does one address on the runner listener;
+the host keeps at most 64 sessions and 256 connections for all runners
+together, a backstop against something that opens them in a loop.
+
+- A runner's MCP process ends its session on the host when it exits (its
+  client closed stdin, SIGINT or SIGTERM, or the client disconnected): it sends
+  MCP's `DELETE` for the session, waits for it at most 2 seconds, and the host
+  releases the session at once. A process that stops using a session to open
+  another (its connection dropped, a call lost its answer, the MCP relay
+  switched to a newly installed version) ends the old one the same way, waiting
+  at most 1 second. A process that is killed, or cut off before the `DELETE`
+  arrives, holds its session until it has been idle 30 minutes.
+- So close clients, MCP processes and test scripts once they are no longer
+  used, reuse one connection within a session, and never open new ones in a
+  loop. FULI tells every client's AI the same in its MCP instructions.
+- When the host answers but refuses a new session (the limit, or a failure on
+  its side), the call answers `host_refused` with the HTTP status and the
+  host's reason. It is not taken for the host being away: no offline answer,
+  no `runner-offline-` task token. A refusal of a runner the host does not
+  know (403) is checked through hello as before (`runner_revoked`). The runner
+  also writes it to its own diagnostics (`fuli diagnostics` on the runner,
+  operation `runner.session_open`, code `host_refused` with the status and
+  reason, or `host_session_failed`), once until a session opens again.
+- `fuli runner status`, and `fuli status` while the runner's console runs,
+  show how many sessions this runner holds on the host, and how many there are
+  in all against the limit.
+
 ## Finding the host again
 
 The host listens on its private LAN addresses and follows them as they change
@@ -135,7 +165,8 @@ where the two computers sit in different subnets, the first time there, tell
 the runner where the host is with `fuli runner add-address ADDRESS` (the host's
 `fuli runner list` shows its addresses); it is kept from then on. The
 listener closes a connection that has not finished its TLS handshake in 10
-seconds and holds at most 24 connections from one address (64 in all). A client
+seconds and holds at most 256 connections in all, with no share per address
+(see "MCP sessions on the host"). A client
 waits for the tool list when its MCP server starts: when the host has not
 answered within 4 seconds the runner answers with the list the host last gave,
 and tells the client to list again once the host's differs. A company
@@ -163,14 +194,18 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 | --- | --- |
 | Task entry (`begin_task_context`, `get_collaboration_preferences`) | The preferences the host last gave for that folder, marked offline, with a runner task token; nothing of the earlier task (its receipt, checkpoint duty or recall) |
 | `checkpoint_task_knowledge` | Queued in the outbox (`queued_offline`); the answer says so and never claims it was saved |
+| `assess_agent_action`, `report_routing_outcome` on a runner whose Tonborg chooses executors | Answered on the runner, online or not (see "Executor judgment on a runner") |
 | Other read-only tools | The last answer to the same call, marked offline, when there is one |
 | Anything else | `host_unreachable`, saying the host must be reachable for it |
 
 A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
 call waits up to 20 seconds for that entry alone and answers `status:
-delivered` only when the host applied it, `queued_offline` otherwise. Any
-other call is sent without the token, which the host never knew.
+delivered` only when the host applied it, `queued_offline` otherwise. A call
+whose schema requires a task token (`resume_agent_conversation`) needs a task
+the host entered: it answers `offline_task_token`, saying to enter the task
+again, and sends nothing. Any other call is sent without the token, which the
+host never knew.
 
 The outbox is replayed oldest first whenever the host answers again (each MCP
 process checks every 30 seconds; `fuli runner sync` replays at once); only the
@@ -201,12 +236,102 @@ something else is not repeated, since the host may already have run it: it
 answers `outcome_unknown`, so the Agent checks with a read before trying again.
 A call that timed out is never repeated.
 
+## Executor judgment on a runner
+
+The executors a runner can start are that computer's, so a runner may choose
+among them itself: Tonborg's executor judgment (`assess_agent_action`) then runs
+on the runner, with the runner's own model, whether or not the host answers.
+Only that judgment moves. Knowledge review, task acceptance and every write to
+knowledge or memory stay on the host, which remains the only store of the
+person's knowledge; the runner's Tonborg never approves anything itself.
+
+**Setting it up is the person's, on the runner.** Two files in the runner's
+data directory, and the key:
+
+- `model-backends.json`, the format the host's console saves
+  (`src/model-backends/config.js`), with `roles.tonborg` enabled and
+  `allowedOperations: ["executor_routing"]` only:
+
+  ```json
+  { "version": 1,
+    "connections": { "flash": { "protocol": "anthropic_messages", "endpoint": "https://gateway.example/v1",
+      "model": "deepseek-v4.1-flash", "secretRef": "runner-flash" } },
+    "roles": { "tonborg": { "enabled": true, "connection": "flash", "allowedOperations": ["executor_routing"],
+      "budget": { "maxTokensPerWindow": 2000000, "windowHours": 24 } } } }
+  ```
+
+  An enabled role needs a `budget` (its fields may be empty). A runner refuses a Tonborg role that also lists `knowledge_review` or
+  `task_acceptance` (`runner_routing_config_invalid`), and no other role is
+  ever called on a runner. `egress` is not read: setting this model up on the
+  runner is the person's approval to send it what a judgment needs (below).
+  `fuli models set-key <secretRef> --endpoint URL` saves the key on the runner,
+  for that endpoint only; `fuli models check tonborg` tries the connection.
+- `runner/executors.json`, the executors of this computer and the models each
+  can run, which only the person writes (FULI never does):
+
+  ```json
+  { "version": 1, "executors": [
+    { "executorId": "runner-codex", "displayName": "Codex on this runner", "client": "codex",
+      "capabilities": ["coding", "review"],
+      "models": [
+        { "model": "gpt-5.6-luna", "strategyModes": ["fast", "balanced"], "costRank": 1 },
+        { "model": "gpt-6.1-sol", "strategyModes": ["deep"], "costRank": 4, "note": "for hard bugs" } ] },
+    { "executorId": "runner-cli", "displayName": "Another CLI agent", "client": "other", "command": "my-agent",
+      "capabilities": ["coding"], "models": [ { "model": "deepseek-v4.1-flash", "costRank": 0 } ] } ] }
+  ```
+
+  `client` is one of FULI's client names (`codex`, `claude_code`, `cursor`,
+  `opencode`, …, `other`); `command`, when given, is the command that starts
+  it. Each judgment runs a local preflight first: an executor takes part only
+  while its command (or the one FULI starts that client with) is found on this
+  computer and it has every capability the task requires. The host's executor
+  directory is not read: its executors are another computer's.
+
+Without `model-backends.json` naming such a role, `assess_agent_action` goes to
+the host as before.
+
+**What the judgment reads and sends.** The request as asked (ids, objective,
+work kind, required capabilities, action), the executors that passed preflight
+with their declared models, the ones left out and why, the preferences the host
+last gave a task entry in that project (kept on the runner, see "What a runner
+keeps"), and the runner's latest decisions in the project with the outcomes
+reported for them. That is all its model receives; a task token never leaves the
+runner. Tonborg's memory, the Agent's executor policies and allowed clients,
+routing rules and earlier conversations live on the host and are not read here.
+
+**What it answers.** The same checks as on the host
+(`src/judgment/routing.js`): the choice must be an executor and model it was
+offered, and with no executor passing preflight the answer is `ask_user` with
+no model call. A record answers with `decidedOn: "runner"`, the `selection`
+(executor, model, client), `leftOut`, the model's receipt, and the same
+`requestId` gives the same decision again. A model that does not answer, a
+refusal or an exhausted budget fails the judgment (`judgment_failed` with the
+failure and receipt); nothing falls back to the host or a session. It is a
+recommendation: the caller starts the executor and records what really ran.
+
+**How a choice turned out.** When the chosen executor finished, the caller
+reports it once with `report_routing_outcome` (`decisionId`, `vote` up or down,
+`reason` from the real run). The runner lists that tool while its Tonborg is set
+up; through `fuli_call` it is reached the same way. A second report of the same
+decision answers `already_reported`. The next judgment on the runner reads it.
+
+**To the host.** Each decision and each outcome is an outbox entry (kept in
+`runner/routing.sqlite` too, 30 days, deleted by `fuli runner leave`), delivered
+oldest first like a checkpoint and applied once per entry id. The host keeps the
+decision among Tonborg's routing records (`decidedOn: "runner"`, with the
+runner's name and fingerprint), so the person sees it in Tonborg's workbench, and
+the outcome as that record's feedback marked `reportedBy: "runner:<fingerprint>"`,
+never as the person's vote. Tonborg's later judgments on the host read it with
+its other feedback. Bole's score card counts FLA task outcomes the graph
+records, which these are not.
+
 ## What a runner keeps
 
 The host's last answers to read-only calls, shown marked offline while the
 host is away and deleted after 30 days; the task tokens it gave out offline
-(30 days); and checkpoints waiting for the host, deleted once delivered (one
-the host refused for good stays listed for 30 days).
+(30 days); checkpoints and executor decisions waiting for the host, deleted once
+delivered (one the host refused for good stays listed for 30 days); and, when
+its Tonborg chooses executors, its decisions and their outcomes (30 days).
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops
@@ -226,6 +351,13 @@ which would drop them (checked before the invitation is used). The clients' MCP 
 answer that this computer is not paired); `fuli uninstall` removes them.
 
 ## Data format
+
+A runner whose Tonborg chooses executors adds `runner/routing.sqlite`
+(`runner-routing`, version 1): its decisions and their reported outcomes. An
+older FULI does not open it. Its outbox entries use the tools
+`runner_routing_decision` and `runner_routing_outcome`, which only a host of
+this version takes; an older host refuses them (`entry_invalid`) and they stay
+listed as refused.
 
 Runners add two stores: `runner/host.sqlite`, which every 0.29.0-beta.1 host
 created at console start, and `runner/runner.sqlite` on a runner. Version 1 is

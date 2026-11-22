@@ -148,6 +148,12 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
       pendingSessions: pendingSessions.size,
       closing: closeStarted
     }),
+    // How many sessions one owner holds open, beside all of them and the limit.
+    ownerStats: (owner) => ({
+      owned: [...sessions.values(), ...pendingSessions].filter((open) => open.owner === owner).length,
+      open: sessions.size + pendingSessions.size,
+      max: maxSessions
+    }),
     // Ends now every session whose owner is not in kept (a Set), open streams included.
     closeOwnersExcept(kept) {
       const owned = [...sessions.values(), ...pendingSessions].filter((entry) => !kept.has(entry.owner));

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
@@ -138,7 +139,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   const refusedLines = [];
   const refused = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: (line) => refusedLines.push(line) });
   assert.equal(refused.exitCode, 1);
-  assert.match(refusedLines.join('\n'), /1 checkpoint\(s\) still wait for Host A and 0 were refused by it; .*--force/);
+  assert.match(refusedLines.join('\n'), /1 outbox entries \(checkpoints, executor decisions\) still wait for Host A and 0 were refused by it; .*--force/);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), true);
   const lines = [];
 
@@ -147,7 +148,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   assert.equal(result.exitCode, 0);
   assert.match(lines.join('\n'), /keep their FULI MCP entry.*`fuli uninstall` removes those entries/s);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false);
-  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here and the outbox are deleted\./);
+  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted\./);
   assert.match(lines.join('\n'), /fuli runner revoke [0-9a-f]{16}/);
   const usage = [];
   await runRunnerCommand(['--help'], { write: (line) => usage.push(line) });
@@ -228,7 +229,7 @@ test('a replay that timed out is not sent again in the same delivery', async (t)
   assert.deepEqual(replays, [RUNNER_PATHS.replay]);
 });
 
-test('one address cannot hold more than its share of the runner listener\'s connections', async (t) => {
+test('one address may hold more connections than it once could: a runner\'s MCP processes are not capped per address', async (t) => {
   const identity = deviceIdentity(await createDeviceCertificate());
   const listener = await startRunnerListener({ identity, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: async () => false });
@@ -240,12 +241,10 @@ test('one address cannot hold more than its share of the runner listener\'s conn
     socket.on('error', () => {});
     socket.once('connect', () => resolve(socket));
   });
-  for (let index = 0; index < 24; index += 1) await open();
-  const extra = await open();
-  const closed = await Promise.race([new Promise((resolve) => extra.once('close', () => resolve(true))),
-    new Promise((resolve) => setTimeout(() => resolve(false), 2000))]);
-  assert.equal(closed, true);
-  assert.equal(sockets.slice(0, 24).filter((socket) => socket.destroyed).length, 0);
+  // Past the 24 one address was held to before.
+  for (let index = 0; index < 40; index += 1) await open();
+  await delay(200);
+  assert.equal(sockets.filter((socket) => socket.destroyed).length, 0);
 });
 
 test('closing the connection cuts a replay waiting on the host at once, and its entry stays queued', async (t) => {

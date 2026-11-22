@@ -175,6 +175,13 @@ export class RunnerStore {
     return row ? { at: row.at, body: JSON.parse(row.body) } : null;
   }
 
+  // Every kept task entry, newest first, as { at, body }: what the host last gave for each folder.
+  taskEntries() {
+    if (this.#missing()) return [];
+    return this.db.prepare(`SELECT at, body FROM answers WHERE key LIKE 'entry:%' AND at > ? ORDER BY at DESC`)
+      .all(this.#keptSince()).map((row) => ({ at: row.at, body: JSON.parse(row.body) }));
+  }
+
   beginOfflineTask({ token, projectPath, sourceApplication }) {
     immediateTransaction(this.db, () => {
       this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)

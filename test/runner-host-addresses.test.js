@@ -19,7 +19,7 @@ async function pairedHost(t, { knownAddresses }) {
   hostStore.invite({ code: 'synthetic-invitation-code-0003', name: 'Runner B' });
   hostStore.pair({ code: 'synthetic-invitation-code-0003', fingerprint: runner.fingerprint, name: 'Runner B' });
   const routes = createRunnerRoutes({ app: {}, store: hostStore, hostName: 'Host A', hostFingerprint: host.fingerprint,
-    withLease: (_owner, operation) => operation(), hostAddresses: () => ['10.18.182.17', '192.168.31.187'] });
+    withLease: (_owner, operation) => operation(), hostAddresses: () => ['10.20.2.17', '192.168.1.187'] });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, route: routes.handle,
     sourceAllowed: () => true });
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-addresses-')));
@@ -40,7 +40,7 @@ test('a runner keeps the addresses the host names, so it looks there after the n
   const connection = createHostConnection({ store, identity: runner, lookUp: async () => [], bindAddresses: () => [] });
   t.after(() => connection.close());
   assert.equal((await connection.connect()).address, '127.0.0.1');
-  assert.deepEqual(store.host().addresses, ['127.0.0.1', '10.18.182.17', '192.168.31.187']);
+  assert.deepEqual(store.host().addresses, ['127.0.0.1', '10.20.2.17', '192.168.1.187']);
 });
 
 test('each address is also tried from each adapter\'s own address, and a route that cannot be used does not stop the others', async (t) => {
@@ -56,12 +56,12 @@ test('each address is also tried from each adapter\'s own address, and a route t
 });
 
 test('the person names where the host is now; it is tried first and kept, and only a private IPv4 address is taken', async (t) => {
-  const { store } = await pairedHost(t, { knownAddresses: ['192.168.31.187'] });
-  store.learnHostAddresses(['10.18.182.17'], { first: true });
-  assert.deepEqual(store.host().addresses, ['10.18.182.17', '192.168.31.187']);
+  const { store } = await pairedHost(t, { knownAddresses: ['192.168.1.187'] });
+  store.learnHostAddresses(['10.20.2.17'], { first: true });
+  assert.deepEqual(store.host().addresses, ['10.20.2.17', '192.168.1.187']);
   // Again: no duplicate, still first.
-  store.learnHostAddresses(['10.18.182.17'], { first: true });
-  assert.deepEqual(store.host().addresses, ['10.18.182.17', '192.168.31.187']);
+  store.learnHostAddresses(['10.20.2.17'], { first: true });
+  assert.deepEqual(store.host().addresses, ['10.20.2.17', '192.168.1.187']);
   for (const bad of ['8.8.8.8', 'example.com', '']) {
     await assert.rejects(() => runRunnerCommand(['add-address', bad], { env: {}, write: () => {} }), /private IPv4/);
   }

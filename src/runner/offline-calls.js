@@ -93,8 +93,9 @@ function notPaired(host) {
       + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
 }
 
-function failure(code, message) {
-  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message }) }] };
+// details: what else the caller needs to act on the failure, beside code and message.
+export function failure(code, message, details = {}) {
+  return { isError: true, content: [{ type: 'text', text: JSON.stringify({ code, message, ...details }) }] };
 }
 
 // Whether a call may be made again after its connection dropped: a read; a
@@ -112,10 +113,40 @@ export function outcomeUnknownAnswer(tool) {
     + 'have been applied there, and it was not sent again. Check with a read before you repeat it.');
 }
 
+// The host answered but refused a new MCP session (its session limit, a
+// failure on its side): said as it is, never as the host being away.
+export function hostRefusedAnswer(status, reason) {
+  return failure('host_refused', `Your FULI host answered but refused a new MCP session (HTTP ${status}: ${reason}). `
+    + 'Nothing was sent. If it is the session limit, close FULI clients and MCP processes on this computer that you no '
+    + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
+}
+
+// A call that needs a task the host entered, made with this computer's
+// offline token while the host answers again: the task is entered again first.
+export function offlineTaskAnswer(tool) {
+  return failure('offline_task_token', `${tool} needs a task your FULI host entered, and this task was entered on this `
+    + 'computer while the host was away (a runner-offline- token the host never knew). The host answers again: enter the '
+    + `task again with get_collaboration_preferences, then call ${tool} with its taskContextToken.`);
+}
+
 // A queued checkpoint the host has now applied.
 export function deliveredAnswer(outboxId) {
   return envelope({ status: 'delivered', outboxId, runner: { offline: false,
     message: 'The host answered again; this checkpoint was delivered to it and saved.' } });
+}
+
+// The preferences the host last gave a task entry in this project, from any
+// of its folders, for Tonborg's judgment on this runner (local-routing.js):
+// { answeredAt, effective_preferences, active_conflicts } or null.
+export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
+  for (const { at, body } of store.taskEntries()) {
+    const value = resultValue(body);
+    const context = value?.context;
+    if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
+    return { answeredAt: at, effective_preferences: value.effective_preferences ?? [],
+      active_conflicts: value.active_conflicts ?? [] };
+  }
+  return null;
 }
 
 function folderEntry(value) {
@@ -146,7 +177,7 @@ function offlineNote(at, message) {
   return { offline: true, ...(at ? { answeredAt: at } : {}), message };
 }
 
-function envelope(value) {
+export function envelope(value) {
   const text = JSON.stringify(value);
   return { content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
 }

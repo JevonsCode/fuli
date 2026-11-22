@@ -14,6 +14,7 @@ import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
+import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
 import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
   SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
@@ -28,8 +29,13 @@ import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER
 // sent (caller-workspace.js). A checkpoint carrying an entry id, online or
 // replayed from the outbox, is applied once per runner and id; a second
 // delivery waits while it is applied (409) and gets the first answer after.
-const MCP_MAX_SESSIONS = 32;
-const MCP_SESSIONS_PER_RUNNER = 16;
+// So is each executor decision of a runner's own Tonborg and its outcome,
+// which go to this host's Tonborg ledger (judgment/runner-routing.js).
+// No runner has a cap of its own: each MCP process of a runner holds one
+// session and ends it on the host when it exits (runner-mcp.js), and one that
+// never does (killed, cut off) is released after MCP_SESSION_IDLE_MS idle.
+// The total is a backstop against a runaway, never a share per runner.
+const MCP_MAX_SESSIONS = 64;
 const MCP_SESSION_IDLE_MS = 30 * 60 * 1000;
 const MCP_SWEEP_MS = 60 * 1000;
 const MCP_SHUTDOWN_GRACE_MS = 2000;
@@ -37,8 +43,11 @@ const MCP_SHUTDOWN_GRACE_MS = 2000;
 const FOLDERS_PER_RUNNER = 64;
 // How often a runner's last-seen time is written.
 const SEEN_EVERY_MS = 60 * 1000;
-// The only tool a runner queues while its host is away.
-const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge']);
+// What a runner queues: checkpoints made while its host was away, and what
+// its own Tonborg decided and how each choice did (local-routing.js), which go
+// to this host's Tonborg ledger, never through an Agent tool.
+const ROUTING_ENTRIES = Object.freeze({ [ROUTING_DECISION_ENTRY]: 'decision', [ROUTING_OUTCOME_ENTRY]: 'outcome' });
+const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge', ...Object.keys(ROUTING_ENTRIES)]);
 // A task a runner entered while its host was away is entered again here at
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
@@ -52,15 +61,19 @@ const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 
 // consoleOrigin(): the host console's own loopback origin, or null before it listens.
 // runtimeConfigPath: this host's graph runtime configuration, which a forwarded prompt hook runs with.
+// recordRouting(kind, input, runner): keeps a runner Tonborg's decision or outcome (judgment/runner-routing.js).
+// maxMcpSessions: the backstop on MCP sessions of all runners together.
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
-  consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool, now = Date.now,
+  consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool,
+  recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
+  maxMcpSessions = MCP_MAX_SESSIONS, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [] }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
-  const sessions = createHttpSessionTransport({ label: 'Runner MCP', maxSessions: MCP_MAX_SESSIONS,
-    maxSessionsPerOwner: MCP_SESSIONS_PER_RUNNER, sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
+  const sessions = createHttpSessionTransport({ label: 'Runner MCP', maxSessions: maxMcpSessions,
+    sessionIdleTtlMs: MCP_SESSION_IDLE_MS,
     sessionSweepIntervalMs: MCP_SWEEP_MS, now });
 
   const lookup = (fingerprint) => (projectPath) => folders.get(fingerprint)?.get(projectPath) ?? null;
@@ -123,7 +136,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const answer = await forwardedHook(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
-      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses() });
+      // mcpSessions: how many MCP sessions this runner holds open here, beside all runners' and the limit.
+      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
+        mcpSessions: sessions.ownerStats(fingerprint) });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));
@@ -202,8 +217,13 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     const hostSessionId = runnerSession(entry.sessionId) ?? mcpHostSessionId({});
     const run = (toolName, input) => inWorkspace(fingerprint)(`runner-replay:${toolName}`,
       () => runTool(app, toolName, input, { sourceApplication, hostSessionId }));
+    const routing = ROUTING_ENTRIES[entry.tool];
     try {
       const outcome = await once(fingerprint, entry.id, entry.tool, async () => {
+        if (routing) {
+          const runner = { fingerprint, name: store.runners().find((known) => known.fingerprint === fingerprint)?.name ?? null };
+          return inWorkspace(fingerprint)(`runner-replay:${entry.tool}`, () => recordRouting(routing, entry.input, runner));
+        }
         let input = entry.input;
         if (entry.offlineTask) {
           const entered = await run('begin_task_context', { sessionId: hostSessionId,
