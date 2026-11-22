@@ -61,7 +61,7 @@ test('a session the host refuses is said with its reason, not answered as if the
   assert.equal(answer.isError, true);
   const refusal = JSON.parse(answer.content[0].text);
   assert.equal(refusal.code, 'host_refused');
-  assert.match(refusal.message, /HTTP 503: Runner MCP session limit reached/);
+  assert.match(refusal.message, /HTTP 503: Runner MCP session limit: this computer holds 1 of the host's 1 sessions/);
   assert.doesNotMatch(answer.content[0].text, /runner-offline-/);
 
   // The first process closing frees its session at once, so the next call reaches the host.
@@ -120,7 +120,39 @@ test('a refused session is written once to the runner\'s own diagnostics', async
   assert.equal(events.length, 1);
   assert.equal(events[0].code, 'host_refused');
   assert.equal(events[0].httpStatus, 503);
-  assert.match(events[0].reason, /session limit reached/);
+  assert.match(events[0].reason, /Runner MCP session limit/);
+});
+
+test('one runner cannot take every session, and the refusal says whose they are', async (t) => {
+  // Four sessions in all, three to one computer: the fourth is always there for another.
+  const pair = await pairedRunner(t, { maxMcpSessions: 4, maxMcpSessionsPerRunner: 3, runners: 2 });
+  const greedy = [];
+  for (let index = 0; index < 3; index += 1) {
+    const runner = await pair.serve();
+    await runner.client.listTools();
+    greedy.push(runner);
+  }
+  const fourth = await pair.serve();
+  const refused = JSON.parse((await fourth.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'next' } })).content[0].text);
+  assert.equal(refused.code, 'host_refused');
+  assert.match(refused.message, /this computer holds 3 of the host's 4 sessions, its share/, refused.message);
+  await fourth.stop();
+
+  // The other computer still gets in.
+  const other = await pair.serve({ on: 1 });
+  const entry = await other.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'mine' } });
+  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the other runner always has room');
+  assert.deepEqual(await pair.sessions(1), { owned: 1, open: 4, max: 4 });
+
+  // With the host full and none of them this computer's, the refusal says so instead of blaming it.
+  const another = await pair.serve({ on: 1 });
+  const full = JSON.parse((await another.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'next' } })).content[0].text);
+  assert.match(full.message, /4 of the host's 4 sessions are open, 1 of them this computer's/, full.message);
+  await another.stop();
+  await other.stop();
+  for (const runner of greedy) await runner.stop();
 });
 
 test('FULI tells a client\'s AI to close connections it no longer uses', () => {
@@ -131,7 +163,7 @@ test('FULI tells a client\'s AI to close connections it no longer uses', () => {
 // to task entry and fuli_call (calls: what reached it). serve() starts one of the runner's MCP processes (its client
 // side and stop()); sessions() is what the host's hello says of its sessions.
 // dropFirstCall: the host's first tool call loses every connection while it runs, its session left as it was.
-async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
+async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runners = 1, dropFirstCall = false } = {}) {
   const sockets = new Set();
   let dropping = dropFirstCall;
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-sessions-')));
@@ -140,6 +172,7 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
   const calls = [];
   const routes = createRunnerRoutes({ app: {}, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), ...(maxMcpSessions ? { maxMcpSessions } : {}),
+    ...(maxMcpSessionsPerRunner ? { maxMcpSessionsPerRunner } : {}),
     createMcp: () => {
       const server = new Server({ name: 'fuli', version: 'test' }, { capabilities: { tools: {} } });
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -159,24 +192,35 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
     } });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
     route: (request, response, context) => {
-      sockets.add(request.socket);
-      request.socket.once('close', () => sockets.delete(request.socket));
+      // One listener per keep-alive socket, not one per request on it.
+      if (!sockets.has(request.socket)) {
+        sockets.add(request.socket);
+        request.socket.once('close', () => sockets.delete(request.socket));
+      }
       return routes.handle(request, response, context);
     } });
-  const code = newInvitationCode();
-  store.invite({ code, name: 'Runner B' });
-  const dataDir = path.join(base, 'runner-data');
-  await joinHost({ dataDir, invitation: encodeInvitation({ name: 'Host A', addresses: ['127.0.0.1'], port: listener.port,
-    certPem: host.certPem, code }) });
-  const runnerStore = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  const connection = createHostConnection({ store: runnerStore, identity: await loadDeviceIdentity(path.join(dataDir, 'peer')),
-    lookUp: async () => [] });
+  // Each runner is its own computer: its own data directory, device identity and pairing.
+  const paired = [];
+  for (let index = 0; index < runners; index += 1) {
+    const code = newInvitationCode();
+    store.invite({ code, name: `Runner ${'BCDE'[index]}` });
+    const dataDir = path.join(base, `runner-data-${index}`);
+    await joinHost({ dataDir, invitation: encodeInvitation({ name: 'Host A', addresses: ['127.0.0.1'], port: listener.port,
+      certPem: host.certPem, code }) });
+    const runnerStore = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+    paired.push({ dataDir, runnerStore,
+      connection: createHostConnection({ store: runnerStore, identity: await loadDeviceIdentity(path.join(dataDir, 'peer')),
+        lookUp: async () => [] }) });
+  }
+  const { dataDir, runnerStore, connection } = paired[0];
   const running = new Set();
   // In this order, the folder last: Windows refuses to delete a SQLite file that is still open.
   t.after(async () => {
     for (const runner of running) await runner.stop();
-    connection.close();
-    runnerStore.close();
+    for (const one of paired) {
+      one.connection.close();
+      one.runnerStore.close();
+    }
     await listener.close();
     await routes.close();
     store.close();
@@ -185,11 +229,12 @@ async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
   return {
     calls,
     dataDir,
-    sessions: async () => (await connection.hello()).mcpSessions,
-    async serve() {
+    // on: which paired runner (0 by default), so two computers can be told apart.
+    sessions: async (on = 0) => (await paired[on].connection.hello()).mcpSessions,
+    async serve({ on = 0 } = {}) {
       const client = new Client({ name: 'codex', version: 'test' });
       const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-      const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide,
+      const served = await runRunnerMcp({ dataDir: paired[on].dataDir, sourceApplication: 'codex', transport: serverSide,
         lookUp: async () => [], retryAfterMs: 0 });
       await client.connect(clientSide);
       const runner = { client, stop: async () => {
