@@ -132,8 +132,17 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     in_scope_scores = {edge.uuid: meaning_scores[edge.uuid] for edge in edges if edge.uuid in meaning_scores}
     edges = [edge for edge in edges if edge.uuid in lexical_ids]
+    # A relationship's terms are weighed by how few of this search's own
+    # relationships carry them, exactly as an entity's are (rec#111). Without
+    # it, a query that names the project matches every fact in the project:
+    # the project's name is in all of them, so it tells them apart not at all.
+    edge_term_weights = _term_weights(
+        request.query,
+        [_edge_record(edge, names, edge_terms.get(edge.uuid)) for edge in edges],
+    )
     matched_edges = [
-        (_edge_relevance(request.query, edge, names, position, len(edges), edge_terms.get(edge.uuid)), edge)
+        (_edge_relevance(request.query, edge, names, position, len(edges),
+                         edge_terms.get(edge.uuid), edge_term_weights), edge)
         for position, edge in enumerate(edges)
     ]
     # Same score and weight: the closer match first (a band holds unequal matches).
@@ -1065,9 +1074,10 @@ def _relevance(query: str, record, term_weights: dict[str, float] | None = None)
     return round(score, 4)
 
 
-def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
-                    retrieval: dict | None = None) -> float:
-    lexical = _relevance(query, {
+def _edge_record(edge, names: dict[str, str], retrieval: dict | None = None) -> dict:
+    """What a relationship reads as to the scorer: its own name, its fact and
+    both endpoint names."""
+    return {
         **(retrieval or {}),
         'name': edge.name,
         'type': 'Relationship',
@@ -1078,7 +1088,12 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
         ])),
         'reasoning_summary': None,
         'profile_aspect': None,
-    })
+    }
+
+
+def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
+                    retrieval: dict | None = None, term_weights: dict[str, float] | None = None) -> float:
+    lexical = _relevance(query, _edge_record(edge, names, retrieval), term_weights)
     if lexical == 0:
         return 0.0
     semantic_order = max(0.0, (total - position) / max(total, 1)) * 0.5

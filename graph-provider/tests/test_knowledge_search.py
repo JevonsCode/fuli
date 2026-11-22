@@ -7,6 +7,7 @@ import pytest
 from fuli_graph.knowledge_search import (
     _dedupe_ranked_edges,
     _dedupe_ranked_entities,
+    _edge_record,
     _edge_relevance,
     _entity_search_result,
     _item_scope_metadata,
@@ -512,6 +513,65 @@ def test_edge_relevance_promotes_literal_match_without_losing_semantic_order():
 
     assert first_score == 0
     assert later_score > first_score
+
+
+def _synthetic_project_edges():
+    """One project's relationships: every one of them names the project, which
+    is therefore the one word that tells none of them apart."""
+    facts = [
+        ('STAGING_ADDRESS', '潮池账本的预发布环境地址是 https://staging.example.test。'),
+        ('RELEASE_RUNBOOK', '发布潮池账本：先打 tag，再跑发布命令，最后贴一份变更说明。'),
+        ('ERROR_CODE', '潮池账本的错误码一律用四位数字。'),
+        ('ONCALL_CHANNEL', '潮池账本的值班频道处理线上故障。'),
+        ('VERIFY_COMMAND', '潮池账本跑验收用项目自己的验收命令。'),
+        ('SETTLEMENT_RULE', '潮池账本的结算日按账户的本地时间计算。'),
+        ('REVIEW_OWNER', '潮池账本的接口改动由平台组拍板。'),
+        ('RETRY_POLICY', '潮池账本对账接口失败后退避重试三次。'),
+        ('IMPORT_FORMAT', '潮池账本的对账文件只收 UTF-8 的 CSV。'),
+        ('RATE_LIMIT', '潮池账本的对外接口每个租户每分钟六百次。'),
+    ]
+    return [SimpleNamespace(uuid=name, name=name, fact=fact,
+                            source_node_uuid=f'{name}-source', target_node_uuid=f'{name}-target')
+            for name, fact in facts]
+
+
+def test_naming_the_project_does_not_match_every_fact_in_it():
+    """rec#111: a relationship's terms are weighed like an entity's. Before, a
+    query carrying the project's name matched every fact the project stores."""
+    edges = _synthetic_project_edges()
+
+    def found(query):
+        weights = _term_weights(query, [_edge_record(edge, {}) for edge in edges])
+        scored = [(edge.name, _edge_relevance(query, edge, {}, position, len(edges), None, weights))
+                  for position, edge in enumerate(edges)]
+        return [name for name, score in sorted(scored, key=lambda item: -item[1]) if score > 0]
+
+    # The project's own name says nothing about which of its facts answers
+    # this, so it alone no longer carries a query that names something else.
+    assert found('潮池账本 发布流程 打 tag') == ['RELEASE_RUNBOOK']
+    assert found('潮池账本 错误码 约定') == ['ERROR_CODE']
+    assert found('潮池账本 值班 频道') == ['ONCALL_CHANNEL']
+    # A word that does tell them apart still matches on its own.
+    assert found('值班频道') == ['ONCALL_CHANNEL']
+    # A query that is only the project's name still matches every fact in it:
+    # the whole query is written in each one, and there is nothing better.
+    assert len(found('潮池账本')) == len(edges)
+    # Too few candidates to weigh: every term counts the same, as before.
+    assert _term_weights('潮池账本', [_edge_record(edge, {}) for edge in edges[:7]]) == {}
+
+
+def test_an_endpoint_name_is_weighed_with_the_fact_it_belongs_to():
+    """Endpoint names are part of what a relationship matches on, so they are
+    part of what the weighing sees: a shared endpoint tells nothing apart."""
+    edges = _synthetic_project_edges()
+    names = {edge.source_node_uuid: '潮池账本' for edge in edges}
+    records = [_edge_record(edge, names) for edge in edges]
+    weights = _term_weights('潮池账本 值班频道', records)
+
+    assert weights['值班'] > weights['潮池'], 'the shared endpoint name weighs least'
+    scored = [(edge.name, _edge_relevance('潮池账本 值班频道', edge, names, position, len(edges), None, weights))
+              for position, edge in enumerate(edges)]
+    assert [name for name, score in scored if score > 0] == ['ONCALL_CHANNEL']
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,7 @@ from graphiti_core.edges import EntityEdge
 from fuli_graph.knowledge_search import (
     _dedupe_ranked_edges,
     _dedupe_ranked_entities,
+    _edge_record,
     _edge_relevance,
     _entity_search_result,
     _ranked_records,
@@ -98,8 +99,11 @@ def _rank_facts(items, search):
         names[edge.target_node_uuid] = item.get('target_entity')
     by_id = {item['id']: item for item in items}
     edge_by_id = {edge.uuid: edge for edge in edges}
+    term_weights = _term_weights(
+        search['query'], [_edge_record(edge, names, _retrieval(by_id[edge.uuid])) for edge in edges])
     matched = [
-        (_edge_relevance(search['query'], edge, names, position, len(edges), _retrieval(by_id[edge.uuid])), edge)
+        (_edge_relevance(search['query'], edge, names, position, len(edges),
+                         _retrieval(by_id[edge.uuid]), term_weights), edge)
         for position, edge in enumerate(edges)
     ]
     ranked = [
