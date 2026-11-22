@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
+import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
 import { DATE_ONLY, formatDateTime } from '@/lib/date-time'
 import {
@@ -67,8 +68,20 @@ function ownerName(line: ProjectWorkstream) {
   return line.ownerName ?? line.ownerAgentId
 }
 
-function startedOn(line: ProjectWorkstream) {
-  return formatDateTime(line.startedAt, currentLocale(), DATE_ONLY, { missing: '' })
+// How far this line got, in one phrase: its latest task and when, or when the
+// line started when it has none yet. Never invented: a read that could not
+// answer says so rather than showing an empty line.
+function progress(line: ProjectWorkstream) {
+  const started = t('projects.workstreams.started',
+    { date: formatDateTime(line.startedAt, currentLocale(), DATE_ONLY, { missing: '' }) })
+  if (line.latestTask === undefined) return started
+  if (!line.latestTask) return `${started} · ${t('projects.workstreams.noTask')}`
+  const date = formatDateTime(line.latestTask.updatedAt, currentLocale(), DATE_ONLY, { missing: '' })
+  return t('projects.workstreams.latestTask', {
+    status: taskStatusLabel(line.latestTask.status ?? '', { unrecognized: t('projects.workstreams.unknownStatus') }),
+    title: line.latestTask.title ?? line.latestTask.taskId,
+    date,
+  })
 }
 
 async function load() {
@@ -179,8 +192,8 @@ function open() {
             <span class="project-workstreams-terms">{{ line.terms.join(' · ') }}</span>
           </div>
           <div class="project-workstreams-side">
-            <span class="ui-meta">
-              {{ t('projects.workstreams.started', { date: startedOn(line) }) }} ·
+            <span class="ui-meta project-workstreams-progress" data-workstream-progress>
+              {{ progress(line) }} ·
               {{ t(line.decidedBy === 'user' ? 'projects.workstreams.byYou' : 'projects.workstreams.byLead') }}
             </span>
             <label v-if="workstreams.length > 1" class="project-workstreams-merge">

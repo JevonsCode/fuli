@@ -10,6 +10,7 @@ import { createStandingAssignments } from '../src/standing-assignments/port.js';
 import { buildProjectTeam } from '../src/graphiti/project-team-view.js';
 import { registerStandingAssignment } from '../src/graphiti/standing-assignment-entry.js';
 import { loadProjectTeamContext } from '../src/graphiti/project-agent-team-context.js';
+import { agentWorkstreamLedger } from '../src/graphiti/agent-workstream-ledger.js';
 
 // docs/workstreams.md: one project carries several unrelated lines of work
 // that share its repository and release process. Each belongs to its own FLA,
@@ -159,6 +160,48 @@ test('the ledger names each line, its owner, who decided it and when it started'
   [{ name: '春促落地页', ownerAgentId: 'fla-ember', ownerName: 'Ember Vale', decidedBy: 'host',
     startedAt: '2026-11-23T01:00:00.000Z', ownerOnProject: true }]);
   port.close();
+});
+
+test('an explicit read of the team says how far each line got; task entry asks for no such read', async () => {
+  const { app } = fixture({ seed: [SPRING, COUPON] });
+  const reads = [];
+  app.personal.listProjectAgentTasks = async input => {
+    reads.push(input.agentId);
+    return input.agentId === 'fla-ember'
+      ? [{ task_id: 'task-1', title: '改头图', status: 'running', updated_at: '2026-11-23T02:00:00.000Z' }] : [];
+  };
+  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
+  assert.deepEqual(reads.sort(), ['fla-ember', 'fla-orin']);
+  assert.deepEqual(team.workstreams.map(line => [line.name, line.ownerName, line.latestTask?.title ?? null]).sort(),
+    [['优惠券中心', 'Orin Pike', null], ['春促落地页', 'Ember Vale', '改头图']]);
+  // The entry restores the roster without any of those reads.
+  reads.length = 0;
+  await loadProjectTeamContext(app, SPACE, PROJECT);
+  assert.deepEqual(reads, []);
+});
+
+test('a failed progress read leaves that line without a claim instead of failing the ledger', async () => {
+  const { app } = fixture({ seed: [SPRING] });
+  app.personal.listProjectAgentTasks = async () => { throw new Error('Synthetic Provider timeout'); };
+  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
+  assert.deepEqual(team.workstreams.map(line => [line.name, line.latestTask]), [['春促落地页', null]]);
+});
+
+test('one FLA\'s ledger covers the projects it leads and the lines it owns', async () => {
+  const { app } = fixture({ seed: [SPRING, COUPON] });
+  app.personal.listProjectAgentTasks = async input => (input.agentId === 'fla-orin'
+    ? [{ task_id: 'task-2', title: '接券接口', status: 'completed', updated_at: '2026-11-21T00:00:00.000Z' }] : []);
+  const lead = await agentWorkstreamLedger(app, SPACE, LEAD);
+  assert.deepEqual(lead.projects.map(project => [project.projectName, project.leads, project.workstreams.length]),
+    [['Campaigns', true, 2]]);
+  // A member sees only its own line, with the same four facts.
+  const member = await agentWorkstreamLedger(app, SPACE, 'fla-orin');
+  assert.deepEqual(member.projects.map(project => project.workstreams.map(line =>
+    [project.projectName, line.name, line.ownerName, line.latestTask?.status])),
+  [[['Campaigns', '优惠券中心', 'Orin Pike', 'completed']]]);
+  assert.equal(member.projects[0].leads, false);
+  // An FLA with no line of its own gets an empty ledger, not someone else's.
+  assert.deepEqual((await agentWorkstreamLedger(app, SPACE, 'fla-stranger')).projects, []);
 });
 
 // The lead's own division of its project's work (change delegate).

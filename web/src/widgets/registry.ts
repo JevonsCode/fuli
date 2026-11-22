@@ -36,6 +36,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
     slots: ['fla.overview'],
   },
+  'workstream-ledger': {
+    component: defineAsyncComponent(() => import('@/features/projects/WorkstreamLedgerWidget.vue')),
+    slots: ['fla.overview'],
+  },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),
     slots: ['shell.aboveDock'],

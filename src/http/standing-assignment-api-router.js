@@ -2,9 +2,13 @@ import { readJson, sendJson } from './response.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { correctStandingAssignmentInConsole } from '../graphiti/standing-assignment-correction.js';
 import { createWorkstreamInConsole } from '../graphiti/standing-assignment-workstream.js';
-import { positiveInteger } from '../validation/values.js';
+import { agentWorkstreamLedger } from '../graphiti/agent-workstream-ledger.js';
+import { positiveInteger, requiredString } from '../validation/values.js';
+
+const AGENT_ID_LIMIT = 200;
 
 const LIST_PATH = '/api/standing-assignments';
+const LEDGER_PATH = '/api/workstreams';
 const CHANGE_PATH = /^\/api\/standing-assignments\/([^/]+)\/(retire|reassign|terms)$/;
 const ACTIONS = Object.freeze({ retire: 'retire', reassign: 'reassign', terms: 'edit_terms' });
 
@@ -19,7 +23,8 @@ export async function handleStandingAssignmentRequest({ request, response, url, 
   const change = url.pathname.match(CHANGE_PATH);
   const list = url.pathname === LIST_PATH && request.method === 'GET';
   const create = url.pathname === LIST_PATH && request.method === 'POST';
-  if (!list && !create && !(change && request.method === 'POST')) return false;
+  const ledger = url.pathname === LEDGER_PATH && request.method === 'GET';
+  if (!list && !create && !ledger && !(change && request.method === 'POST')) return false;
   response.setHeader('Cache-Control', 'no-store');
   if (refuseRemoteDecision(request, response, 'Standing assignments are changed only on this computer')) return true;
   if (!app.standingAssignments) {
@@ -28,6 +33,13 @@ export async function handleStandingAssignmentRequest({ request, response, url, 
   }
   if (list) {
     sendJson(response, 200, { assignments: app.standingAssignments.list(app.config.personal.spaceId) });
+    return true;
+  }
+  // One FLA's ledger for the console widget: the lines of the projects it
+  // leads, and the lines it owns, each with how far it got.
+  if (ledger) {
+    sendJson(response, 200, await agentWorkstreamLedger(app, app.config.personal.spaceId,
+      requiredString(url.searchParams.get('agentId'), 'agentId', AGENT_ID_LIMIT)));
     return true;
   }
   const body = await readJson(request);

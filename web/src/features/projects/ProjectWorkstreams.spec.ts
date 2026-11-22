@@ -60,6 +60,20 @@ describe('ProjectWorkstreams', () => {
     panel.unmount()
   })
 
+  it('says how far each line got, and says so honestly when it cannot', async () => {
+    getJson.mockResolvedValue(team([
+      line({ latestTask: { taskId: 'task-1', title: 'New hero image', status: 'running',
+        updatedAt: '2026-11-23T02:00:00.000Z' } }),
+      line({ assignmentId: 'line-coupon', name: 'Coupon centre', latestTask: null }),
+    ]))
+    const panel = mountPanel()
+    await flushPromises()
+    const progress = panel.findAll('[data-workstream-progress]')
+    expect(progress[0].text()).toContain('New hero image')
+    expect(progress[1].text()).toContain(t('projects.workstreams.noTask'))
+    panel.unmount()
+  })
+
   it('changes the owner in one step, at the revision the page read', async () => {
     getJson.mockResolvedValue(team([line({ revision: 3 })]))
     const panel = mountPanel()

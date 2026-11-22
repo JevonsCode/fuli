@@ -333,7 +333,9 @@ export class ProjectAgentControlPlaneApplication {
   async getProjectTeam(input) {
     this.#assertSpace(input.personalSpaceId);
     if (!input.personalProjectId) throw new TypeError('personalProjectId is required');
-    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId);
+    // An explicit read of the team answers how far each workstream got
+    // (docs/workstreams.md); task entry reads the roster without it.
+    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId, { withProgress: true });
   }
 
   async updateProjectAgentCoordinationPolicy(input) {

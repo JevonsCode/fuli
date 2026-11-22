@@ -1,4 +1,5 @@
 import { FIXED_ROLES } from '../employees/fixed-roles.js';
+import { projectWorkstreams, withWorkstreamProgress } from './workstream-ledger.js';
 
 // One authoritative reading of a project's people. The coordination policy
 // owns the explicit hierarchy; active assignments decide who currently works
@@ -59,32 +60,9 @@ export function buildProjectTeam({ policy, agents, projectId, standingAssignment
     collaborators: collaborators.sort(byName),
     peers: peers.sort(byName),
     unavailableMemberIds: memberIds.filter(id => !assigned.has(id)),
-    workstreams: workstreamLedger(standingAssignments, projectId, leadId, assigned)
+    // The lead's ledger (workstream-ledger.js).
+    workstreams: projectWorkstreams(standingAssignments, projectId, leadId, assigned)
   };
-}
-
-// The lead's ledger (docs/workstreams.md): each line of work of this project,
-// who owns it, since when and who decided it. A workstream is a standing
-// assignment of this project whose Agent is not its lead; an assignment that
-// points at the lead routes work into the project and is not a line within
-// it. An owner that has left the project keeps its ID, so the person can
-// still move or end the work.
-function workstreamLedger(assignments, projectId, leadId, assigned) {
-  return (Array.isArray(assignments) ? assignments : [])
-    .filter(item => item.projectId === projectId && !item.retiredAt && item.leadAgentId !== leadId)
-    .map(item => ({
-      assignmentId: item.assignmentId,
-      name: item.responsibility,
-      terms: [...item.terms],
-      ownerAgentId: item.leadAgentId,
-      ownerName: assigned.get(item.leadAgentId)?.name ?? null,
-      ownerOnProject: assigned.has(item.leadAgentId),
-      decidedBy: item.source,
-      startedAt: item.createdAt,
-      changedAt: item.updatedAt,
-      revision: item.revision
-    }))
-    .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.assignmentId.localeCompare(right.assignmentId));
 }
 
 function activeAssignment(agent, projectId) {
@@ -115,14 +93,19 @@ function person(agent, assignment) {
   };
 }
 
-export async function loadProjectTeam(application, personalSpaceId, projectId) {
+// `withProgress` adds each workstream's latest task: one bounded read per
+// line, so only an explicit read asks for it. Task entry never does.
+export async function loadProjectTeam(application, personalSpaceId, projectId, { withProgress = false } = {}) {
   const [policy, agents] = await Promise.all([
     application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, projectId),
     application.personal.listProjectAgents(personalSpaceId, projectId, { status: 'active' })
   ]);
   const list = Array.isArray(agents) ? agents : agents?.agents ?? agents?.items ?? [];
-  return buildProjectTeam({ policy, agents: list, projectId,
+  const team = buildProjectTeam({ policy, agents: list, projectId,
     standingAssignments: standingAssignmentsFor(application) });
+  if (!withProgress) return team;
+  return { ...team,
+    workstreams: await withWorkstreamProgress(application, personalSpaceId, projectId, team.workstreams) };
 }
 
 // The local store's active assignments, or none: a FULI that cannot read it

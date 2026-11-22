@@ -25,6 +25,13 @@ export interface ProjectSubTeam {
  * `decidedBy` is 'user' when the person opened or confirmed it; a lead cannot
  * then change it.
  */
+export interface WorkstreamTask {
+  taskId: string
+  title: string | null
+  status: string | null
+  updatedAt: string | null
+}
+
 export interface ProjectWorkstream {
   assignmentId: string
   name: string
@@ -36,6 +43,8 @@ export interface ProjectWorkstream {
   startedAt: string
   changedAt: string
   revision: number
+  /** How far this line got: its owner's latest task. Absent on a read that did not ask for it. */
+  latestTask?: WorkstreamTask | null
 }
 
 export interface ProjectTeam {
@@ -57,6 +66,23 @@ export interface ProjectTeam {
 export function readProjectTeam(personalSpaceId: string, personalProjectId: string) {
   const query = new URLSearchParams({ personalSpaceId, personalProjectId })
   return getJson<ProjectTeam>(`/api/project-team?${query}`)
+}
+
+/** One FLA's ledger: the lines of the projects it leads, and the lines it owns. */
+export interface AgentWorkstreamLedger {
+  agentId: string
+  projects: {
+    projectId: string
+    projectName: string
+    /** True when this FLA leads the project, so the group is its whole ledger. */
+    leads: boolean
+    workstreams: ProjectWorkstream[]
+  }[]
+}
+
+export function readAgentWorkstreams(agentId: string) {
+  const query = new URLSearchParams({ agentId })
+  return getJson<AgentWorkstreamLedger>(`/api/workstreams?${query}`)
 }
 
 /** Opens a line of work for one member of this project. Local console only. */
