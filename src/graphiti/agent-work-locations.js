@@ -1,4 +1,5 @@
 import { modelProvenance } from '../agents/client-provenance.js';
+import { queryConversations } from './agent-conversations.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 
@@ -31,15 +32,39 @@ export const WORK_LOCATIONS_GUIDANCE = 'Segments counted from the conversations 
   + 'never merged into a named one; model_reason says why it is unknown. Show an unreported value as "-" with its '
   + 'reason, never as 0, and never estimate a model or a count FULI was not given.';
 
+// Without a project the Agent's own active projects are read first, so a
+// caller that knows only which FLA it is asking about (a console widget that
+// takes nothing but its place) needs one request, not one per project.
+const MAX_PROJECTS = 3;
+
 export async function agentWorkLocations(application, {
   personalSpaceId, personalProjectId = null, agentId, limit = DEFAULT_CONVERSATIONS
 } = {}) {
   const read = Math.min(Math.max(Number.isSafeInteger(limit) ? limit : DEFAULT_CONVERSATIONS, 1), MAX_CONVERSATIONS);
-  const answer = await application.personal.conversation('query', {
-    personal_space_id: personalSpaceId, personal_project_id: personalProjectId, agent_id: agentId,
-    source_application: null, mode: 'list', after: 0, limit: read
-  });
-  return summariseWorkLocations(Array.isArray(answer?.conversations) ? answer.conversations : [], read);
+  const scopes = personalProjectId ? [personalProjectId] : await agentProjects(application, personalSpaceId, agentId);
+  const pages = await Promise.all(scopes.map(async project => {
+    try {
+      // The shared list read, so each row already carries the prompt that
+      // continues it elsewhere and no second query is needed. ownerInspection:
+      // the person is reading their own records, not a client acting as the Agent.
+      const answer = await queryConversations(application, { personalProjectId: project, agentId,
+        ownerInspection: true, mode: 'list', after: 0, limit: read });
+      return Array.isArray(answer?.conversations) ? answer.conversations : [];
+      // One project this Agent may no longer read never empties the whole answer.
+    } catch { return []; }
+  }));
+  return summariseWorkLocations(pages.flat(), read * Math.max(scopes.length, 1));
+}
+
+// The Agent's active projects, newest assignment first, bounded. A global-only
+// Agent has none, and is then read in its global scope (project null).
+async function agentProjects(application, personalSpaceId, agentId) {
+  try {
+    const assignments = await application.listProjectAgentAssignments({ personalSpaceId, agentId, status: 'active' });
+    const projects = [...new Set((Array.isArray(assignments) ? assignments : [])
+      .map(item => item?.personalProjectId).filter(Boolean))].slice(0, MAX_PROJECTS);
+    return projects.length ? projects : [null];
+  } catch { return [null]; }
 }
 
 export function summariseWorkLocations(conversations, read = DEFAULT_CONVERSATIONS) {
@@ -65,6 +90,11 @@ export function summariseWorkLocations(conversations, read = DEFAULT_CONVERSATIO
     }
   }
   recent.sort((a, b) => String(b.when ?? '').localeCompare(String(a.when ?? '')));
+  // Continuing this work somewhere else is a different action from going back
+  // to the session that produced it, so it travels as its own field and the
+  // console gives it its own control (Jevons 2026-11-18). The prompt opens a
+  // new session; the original conversation stays where it is.
+  const newest = conversations.find(item => item?.continuation_prompt);
   return {
     rows: [...rows.values()]
       .map(({ conversations: ids, ...row }) => ({ ...row, conversations: ids.size }))
@@ -76,6 +106,8 @@ export function summariseWorkLocations(conversations, read = DEFAULT_CONVERSATIO
     // More conversations exist than were counted, so the totals are a floor.
     partial: conversations.length >= read,
     recent: recent.slice(0, MAX_RECENT),
+    continuation: newest ? { conversation_id: newest.id, prompt: newest.continuation_prompt,
+      opens: 'new_session', leaves_original: true } : null,
     guidance: WORK_LOCATIONS_GUIDANCE
   };
 }

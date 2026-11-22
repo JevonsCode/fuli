@@ -67,6 +67,23 @@ test('newest segment first, whichever conversation it belongs to', () => {
   assert.deepEqual(found.recent.map(segment => segment.client), ['cursor', 'codex']);
 });
 
+test('continuing elsewhere travels as its own field, separate from going back to a session', () => {
+  const found = summariseWorkLocations([
+    conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')],
+      { continuation_prompt: '#FLA {lead-1} 请在 FULI 项目继续工作。' }),
+    conversation('c2', [session('cursor', null, '2026-11-20T09:00:00Z')],
+      { continuation_prompt: '#FLA {lead-1} 另一段。' })
+  ]);
+  // The newest conversation's prompt, and what it does: a new session, with the
+  // original conversation left where it is.
+  assert.equal(found.continuation.conversation_id, 'c1');
+  assert.equal(found.continuation.opens, 'new_session');
+  assert.equal(found.continuation.leaves_original, true);
+  // The segment's own way back is the native session, kept apart from it.
+  assert.equal(found.recent[0].session_id, 'codex-2026-11-22T09:00:00Z');
+  assert.equal(summariseWorkLocations([conversation('c3', [])]).continuation, null);
+});
+
 test('a conversation with no session record counts nothing and invents nothing', () => {
   const found = summariseWorkLocations([conversation('c1', []), { id: 'c2', last_activity: null }]);
   assert.deepEqual(found.rows, []);
@@ -76,10 +93,11 @@ test('a conversation with no session record counts nothing and invents nothing',
 
 test('the read asks for this Agent in this scope and bounds how much it reads', async () => {
   const asked = [];
-  const application = { personal: { conversation: async (mode, request) => {
-    asked.push({ mode, request });
-    return { conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
-  } } };
+  const application = { config: { personal: { spaceId: 'space' } },
+    personal: { conversation: async (mode, request) => {
+      asked.push({ mode, request });
+      return { conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
+    } } };
   const found = await agentWorkLocations(application,
     { personalSpaceId: 'space', personalProjectId: 'ledger', agentId: 'lead-1', limit: 5000 });
   assert.equal(found.segments, 1);
@@ -89,4 +107,52 @@ test('the read asks for this Agent in this scope and bounds how much it reads', 
   assert.equal(asked[0].request.mode, 'list');
   // An outsized request is capped rather than passed to the Provider.
   assert.equal(asked[0].request.limit, 200);
+  assert.equal(asked.length, 1);
+});
+
+test('without a project the Agent\'s own active projects are read, bounded, in one call', async () => {
+  const asked = [];
+  const application = {
+    config: { personal: { spaceId: 'space' } },
+    listProjectAgentAssignments: async input => {
+      assert.equal(input.status, 'active');
+      return ['ledger', 'billing', 'reports', 'archive'].map(personalProjectId => ({ personalProjectId }));
+    },
+    personal: { conversation: async (mode, request) => {
+      asked.push(request.personal_project_id);
+      return { conversations: [conversation(`c-${request.personal_project_id}`,
+        [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
+    } }
+  };
+  const found = await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'lead-1' });
+  assert.deepEqual(asked, ['ledger', 'billing', 'reports']);
+  assert.equal(found.segments, 3);
+  assert.equal(found.conversations_read, 3);
+});
+
+test('an Agent with no project assignment is read in its global scope', async () => {
+  const asked = [];
+  const application = {
+    config: { personal: { spaceId: 'space' } },
+    listProjectAgentAssignments: async () => [],
+    personal: { conversation: async (mode, request) => {
+      asked.push(request.personal_project_id);
+      return { conversations: [] };
+    } }
+  };
+  await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'global-1' });
+  assert.deepEqual(asked, [null]);
+});
+
+test('one unreadable project never empties the whole answer', async () => {
+  const application = {
+    config: { personal: { spaceId: 'space' } },
+    listProjectAgentAssignments: async () => [{ personalProjectId: 'ledger' }, { personalProjectId: 'closed' }],
+    personal: { conversation: async (mode, request) => {
+      if (request.personal_project_id === 'closed') throw new Error('refused');
+      return { conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
+    } }
+  };
+  const found = await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'lead-1' });
+  assert.equal(found.segments, 1);
 });
