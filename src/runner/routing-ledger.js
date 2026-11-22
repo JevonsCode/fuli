@@ -49,13 +49,18 @@ export class RoutingLedger {
     return row ? decision(row) : null;
   }
 
-  // record: the decision as it is answered and sent; requestFingerprint tells a repeated request from another one.
+  // record: the decision as it is answered and sent; requestFingerprint tells a
+  // repeated request from another one. False when another MCP process of this
+  // computer saved a decision for the same request first (the lookup and the
+  // save are not one transaction, since the model answers between them): that
+  // one is the decision this request has, as a repeated requestId gets.
   save(record, requestFingerprint) {
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO decisions(id, space, project, request_id, request_fingerprint, body, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId, record.requestId,
-        requestFingerprint, JSON.stringify(record), record.createdAt);
+    return immediateTransaction(this.db, () => {
+      const saved = this.db.prepare(`INSERT OR IGNORE INTO decisions(id, space, project, request_id, request_fingerprint,
+        body, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId,
+        record.requestId, requestFingerprint, JSON.stringify(record), record.createdAt).changes === 1;
       this.db.prepare('DELETE FROM decisions WHERE created_at <= ?').run(new Date(this.now() - KEEP_MS).toISOString());
+      return saved;
     });
   }
 

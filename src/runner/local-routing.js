@@ -39,6 +39,11 @@ const FEEDBACK_LIMIT = 30;
 const REQUEST_ID_MAX = 256;
 const OUTCOME_GUIDANCE = 'A recommendation is not execution: start the chosen executor yourself and record what really ran. '
   + 'When it finished, report how the choice did with report_routing_outcome (decisionId, vote up or down, reason from the real run).';
+// A file of the person's own that this computer cannot read: nothing is judged
+// here and nothing is sent, rather than a judgment made on half a configuration
+// or one quietly handed back to the host as if nothing were set up here.
+const CONFIG_UNREADABLE = 'Tonborg\'s own configuration on this computer could not be read, so nothing was judged here '
+  + 'and nothing was sent to the host. Fix the file, or delete it to have the host judge this again.';
 const outcomeSchema = z.object({ decisionId: z.string().min(1).max(256), vote: z.enum(['up', 'down']),
   reason: z.string().trim().min(1).max(1000) }).strict();
 
@@ -68,7 +73,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
 
   async function assess(input, { sourceApplication, sessionId }) {
     const role = routingRoleState(dataDir);
-    if (role.state === 'invalid') return failure('runner_routing_config_invalid', role.error);
+    if (role.state === 'invalid') return failure('runner_routing_config_invalid', `${CONFIG_UNREADABLE} ${role.error}`);
     let request;
     try {
       request = parseRoutingRequest(input);
@@ -76,13 +81,10 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       return failure('invalid_input', error.message);
     }
     const requestFingerprint = sha256Bytes(Buffer.from(canonicalJson(request)));
-    const earlier = ledger.byRequest(request);
-    if (earlier) {
-      return earlier.requestFingerprint === requestFingerprint ? answer(earlier.record)
-        : failure('invalid_input', 'requestId already belongs to a different assess_agent_action request: pass a new requestId');
-    }
+    const earlier = kept(ledger.byRequest(request), requestFingerprint);
+    if (earlier) return earlier;
     const declared = readRunnerExecutors(dataDir);
-    if (declared.state === 'invalid') return failure('runner_routing_config_invalid', declared.error);
+    if (declared.state === 'invalid') return failure('runner_routing_config_invalid', `${CONFIG_UNREADABLE} ${declared.error}`);
     const required = [...new Set(request.requiredCapabilities.map((value) => value.toLowerCase()))];
     const { eligible, leftOut } = preflightExecutors(declared.state === 'ok' ? declared.executors : [], required);
     let judged;
@@ -95,13 +97,30 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       return failure('judgment_failed', FAILED_JUDGMENT_GUIDANCE, { failure: judgmentFailure(error, 'decision'),
         ...(error.modelReceipt ? { modelReceipt: compactReceipt(error.modelReceipt) } : {}) });
     }
-    const record = decisionRecord(request, judged, eligible, leftOut);
-    if (!record) {
-      return failure('judgment_failed', FAILED_JUDGMENT_GUIDANCE, { failure: judgmentFailure(new TypeError('not offered'), 'answer') });
+    let record;
+    try {
+      record = decisionRecord(request, judged, eligible, leftOut);
+    } catch (error) {
+      // The model answered, so its budget was spent: the receipt says so even though nothing is kept.
+      return failure('judgment_failed', FAILED_JUDGMENT_GUIDANCE, { failure: judgmentFailure(error, 'answer'),
+        ...(judged.modelReceipt ? { modelReceipt: compactReceipt(judged.modelReceipt) } : {}) });
     }
-    ledger.save(record, requestFingerprint);
+    // Another MCP process on this computer may have answered the same requestId
+    // meanwhile: the decision saved first is the one kept, answered and sent.
+    if (!ledger.save(record, requestFingerprint)) {
+      const saved = kept(ledger.byRequest(request), requestFingerprint);
+      if (saved) return saved;
+    }
     store.enqueue({ id: record.id, tool: ROUTING_DECISION_ENTRY, input: record, sourceApplication, sessionId });
     return answer(record);
+  }
+
+  // The decision already made for this request, or the refusal when the same
+  // requestId was used for another one; null when there is none.
+  function kept(earlier, requestFingerprint) {
+    if (!earlier) return null;
+    return earlier.requestFingerprint === requestFingerprint ? answer(earlier.record)
+      : failure('invalid_input', 'requestId already belongs to a different assess_agent_action request: pass a new requestId');
   }
 
   // The model's choice among the executors that passed preflight. Throws with
@@ -112,7 +131,9 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     const feedback = ledger.recent({ ...scope, limit: FEEDBACK_LIMIT }).filter((item) => item.outcome)
       .map(({ record, outcome }) => ({ id: record.id, workKind: record.workKind, objective: record.objective,
         disposition: record.disposition, selection: record.selection, summary: record.summary, outcome }));
-    const data = { task: request, eligible, ...(leftOut.length ? { leftOut } : {}),
+    // conversations: a runner reads none of the host's, so the model is shown
+    // an empty list, as the host's judgment shows one when it found none.
+    const data = { task: request, eligible, conversations: [], ...(leftOut.length ? { leftOut } : {}),
       ...(preferences ? { preferences } : {}), ...(feedback.length ? { feedback } : {}) };
     const key = `runner-routing:${request.personalProjectId}:${request.requestId}`;
     const result = await decide(judgmentRequest({ operation: ROUTING_OPERATION, scope,
@@ -127,14 +148,9 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       modelReceipt: result.modelReceipt };
   }
 
-  // What is answered, kept and sent; null when the choice was not one offered.
+  // What is answered, kept and sent; throws when the choice was not one offered.
   function decisionRecord(request, { selected, modelReceipt }, eligible, leftOut) {
-    let verified;
-    try {
-      verified = verifiedSelection(selected, eligible, []);
-    } catch {
-      return null;
-    }
+    const verified = verifiedSelection(selected, eligible, []);
     return { id: randomUUID(), kind: 'routing', decidedOn: 'runner', createdAt: now().toISOString(),
       personalSpaceId: request.personalSpaceId, personalProjectId: request.personalProjectId, requestId: request.requestId,
       target: request.action, agentId: request.agentId, workKind: request.workKind, objective: request.objective,
