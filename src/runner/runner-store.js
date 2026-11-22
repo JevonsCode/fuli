@@ -255,8 +255,18 @@ export class RunnerStore {
     this.db.prepare('UPDATE outbox SET claimed_until = NULL, last_error = ? WHERE id = ?').run(reason, id);
   }
 
+  // The newest checkpoints still waiting for the host: the work done on this
+  // computer that the host has not seen, which an offline resume carries over
+  // (offline-calls.js).
+  queuedCheckpoints(limit = 3) {
+    if (this.#missing()) return [];
+    return this.db.prepare(`SELECT id, input, queued_at FROM outbox WHERE state = 'queued'
+      AND tool = 'checkpoint_task_knowledge' ORDER BY seq DESC LIMIT ?`).all(limit)
+      .map((row) => ({ id: row.id, queuedAt: row.queued_at, input: JSON.parse(row.input) }));
+  }
+
   outbox() {
-    if (this.#missing()) return { queued: 0, failedCount: 0, failed: [] };
+    if (this.#missing()) return { queued: 0, failedCount: 0, failed: [], entries: [] };
     const queued = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'queued'").get().count;
     const failedCount = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'failed'").get().count;
     const failed = this.db.prepare(`SELECT id, tool, queued_at, last_error FROM outbox WHERE state = 'failed'

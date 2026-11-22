@@ -274,6 +274,7 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 | --- | --- |
 | Task entry (`begin_task_context`, `get_collaboration_preferences`) | The preferences the host last gave for that folder, marked offline, with a runner task token; nothing of the earlier task (its receipt, checkpoint duty or recall) |
 | `checkpoint_task_knowledge` | Queued in the outbox (`queued_offline`); the answer says so and never claims it was saved |
+| `resume_agent_conversation` | The recovery context the host last gave for that conversation, marked offline with when it was read, and the work logs of the checkpoints still waiting here (`undelivered_work`), saying how much was carried over. With neither, it says so and makes nothing up |
 | `assess_agent_action`, `report_routing_outcome` on a runner whose Tonborg chooses executors | Answered on the runner, online or not (see "Executor judgment on a runner") |
 | Other read-only tools | The last answer to the same call, marked offline, when there is one |
 | Anything else | `host_unreachable`, saying the host must be reachable for it |

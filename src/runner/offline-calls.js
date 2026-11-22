@@ -17,6 +17,12 @@ import { sha256Bytes } from '../security/digest.js';
 const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
 const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 export const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
+// Continuing an earlier conversation: the host holds it, so what this computer
+// can offer offline is the last recovery context it read for that conversation
+// and the checkpoints it has not been able to deliver yet (rec#144).
+const RESUME_TOOL = 'resume_agent_conversation';
+// How many waiting checkpoints an offline resume carries over.
+const RESUME_CHECKPOINTS = 3;
 // What an earlier task entry said about the folder rather than about its task.
 const FOLDER_ENTRY_FIELDS = ['effective_preferences', 'active_conflicts', 'deferred_conflicts', 'context', 'project_scope'];
 const OFFLINE_CHECKPOINT_GUIDANCE = 'Offline task: checkpoint only when there are capture candidates or a meaningful workLog. '
@@ -91,6 +97,7 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     return envelope({ status: 'queued_offline', outboxId: id, runner: offlineNote(null,
       'Your FULI host is unreachable. The checkpoint is queued on this computer and delivered when the host answers again.') });
   }
+  if (tool === RESUME_TOOL) return resumeOffline(store, input, host);
   const earlier = readOnly(tool) ? store.answer(answerKey(tool, input)) : null;
   if (earlier) {
     const value = resultValue(earlier.body);
@@ -100,6 +107,44 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
   }
   return failure('host_unreachable',
     'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.');
+}
+
+// Continuing a conversation while the host is away (rec#144: 「主机每天带回家、
+// runner 留在办公室接着干」). The host holds the conversation, so this computer
+// offers what it has of it: the recovery context the host last gave for this
+// very conversation, and the checkpoints it has not been able to deliver yet,
+// which are the work done here since. It says what it carried over and how old
+// it is, and invents nothing: with neither, it says there is nothing.
+function resumeOffline(store, input, host) {
+  const conversationId = typeof input.conversationId === 'string' ? input.conversationId : '';
+  const earlier = conversationId ? store.answer(answerKey(RESUME_TOOL, input)) : null;
+  const waiting = store.queuedCheckpoints(RESUME_CHECKPOINTS);
+  const carried = { recovered_from_cache: Boolean(earlier), undelivered_checkpoints: waiting.length };
+  if (!earlier && !waiting.length) {
+    return failure('host_unreachable', `FULI is on ${host.name}, which this computer cannot reach right now, and nothing `
+      + `of conversation ${conversationId || '(none named)'} is kept here: this computer never read it and has no `
+      + 'checkpoint waiting. Nothing is made up. Start from what the person says, or try again once the host answers.',
+    { conversation_id: conversationId, ...carried });
+  }
+  const value = earlier ? resultValue(earlier.body) : null;
+  return envelope({
+    ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}),
+    conversation_id: conversationId,
+    ...carried,
+    undelivered_work: waiting.map((entry) => ({ queued_at: entry.queuedAt, summary: checkpointSummary(entry.input) })),
+    runner: offlineNote(earlier?.at, `FULI is on ${host.name}, which this computer cannot reach right now, so this is not `
+      + `the host's answer. ${earlier ? `It is the recovery context ${host.name} last gave for this conversation, read `
+        + `${earlier.at}; anything said in it since is missing.` : 'Nothing of this conversation was read here.'}`
+      + ` ${waiting.length ? `${waiting.length} checkpoint(s) made here have not reached the host yet; their work logs are in `
+        + 'undelivered_work.' : 'No checkpoint is waiting here.'}`
+      + ' Tell the person this context is from this computer\'s cache and may be out of date.')
+  });
+}
+
+// The part of a queued checkpoint worth carrying over: what was done, kept short.
+function checkpointSummary(input) {
+  const log = typeof input?.workLog === 'string' ? input.workLog : '';
+  return log.length > 1200 ? `${log.slice(0, 1200)}…` : log;
 }
 
 // No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.
@@ -179,6 +224,7 @@ function folderEntry(value) {
 // read-only calls per exact input. Calls that change something are not kept.
 function answerKey(tool, input) {
   if (TASK_ENTRY_TOOLS.has(tool)) return `entry:${tool}:${input.projectPath ?? ''}`;
+  if (tool === RESUME_TOOL) return typeof input?.conversationId === 'string' ? `resume:${input.conversationId}` : null;
   if (!readOnly(tool)) return null;
   return `read:${tool}:${sha256Bytes(Buffer.from(canonicalJson(input ?? {})))}`;
 }
