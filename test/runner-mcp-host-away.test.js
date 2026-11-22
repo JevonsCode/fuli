@@ -179,6 +179,25 @@ test('once the host is back, calls under an offline token go to it and a checkpo
   assert.equal(runner.served.store.outbox().queued, 0);
 });
 
+test('a call that needs the host\'s task, made with an offline token once the host is back, says to enter the task again', async (t) => {
+  const runner = await pairedRunner(t);
+  await runner.hostAway();
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'offline' } });
+  const offlineToken = entry.structuredContent.taskContextToken;
+  const away = await runner.client.callTool({ name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
+    input: { taskContextToken: offlineToken, conversationId: 'conversation-1' } } });
+  assert.equal(JSON.parse(away.content[0].text).code, 'host_unreachable', 'while the host is away it is still away');
+
+  await runner.hostBack();
+  const back = await runner.client.callTool({ name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
+    input: { taskContextToken: offlineToken, conversationId: 'conversation-1' } } });
+  const answer = JSON.parse(back.content[0].text);
+  assert.equal(answer.code, 'offline_task_token');
+  assert.match(answer.message, /enter the task again with get_collaboration_preferences/);
+  assert.equal(runner.calls.some(({ name }) => name === 'fuli_call' || name === 'resume_agent_conversation'), false,
+    'nothing went to the host without its token');
+});
+
 test('a host slow to list its tools does not hold up the client: it gets the known list, then a list change', async (t) => {
   // Wide margins: a loaded CI machine is slow, and only "before the host answered" matters.
   const runner = await pairedRunner(t, { listDelayMs: 6000, toolsWaitMs: 200 });

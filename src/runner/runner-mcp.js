@@ -21,7 +21,8 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, offlineTaskAnswer,
+  outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -317,6 +318,12 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     }
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
+    // A call that cannot go without a task token (resume_agent_conversation) needs a task the host
+    // entered; sent without this computer's offline token the host would only say the token is missing.
+    if (offlineTask && needsHostTask(asked.tool)) {
+      const host = await upstream();
+      if (host && !(host instanceof HostRefusal)) return offlineTaskAnswer(asked.tool);
+    }
     // The host does not know a runner's offline token: other calls go without it.
     const sent = offlineTask ? withoutOfflineToken(name, args) : args;
     const call = effectiveCall(name, sent);
@@ -401,6 +408,14 @@ function runnerRouting({ dataDir, store, fetchImpl }) {
       if (local) (await local).close();
     }
   };
+}
+
+// The tools whose schema requires the host's task token (a checkpoint is queued instead).
+let hostTaskTools = null;
+function needsHostTask(tool) {
+  hostTaskTools ??= new Set(listAgentTools().filter((definition) => !QUEUED_TOOLS.has(definition.name)
+    && definition.inputSchema?.required?.includes('taskContextToken')).map(({ name }) => name));
+  return hostTaskTools.has(tool);
 }
 
 // The tools this version would list, for a runner that never reached its host yet.

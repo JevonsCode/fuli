@@ -121,6 +121,14 @@ export function hostRefusedAnswer(status, reason) {
     + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
 }
 
+// A call that needs a task the host entered, made with this computer's
+// offline token while the host answers again: the task is entered again first.
+export function offlineTaskAnswer(tool) {
+  return failure('offline_task_token', `${tool} needs a task your FULI host entered, and this task was entered on this `
+    + 'computer while the host was away (a runner-offline- token the host never knew). The host answers again: enter the '
+    + `task again with get_collaboration_preferences, then call ${tool} with its taskContextToken.`);
+}
+
 // A queued checkpoint the host has now applied.
 export function deliveredAnswer(outboxId) {
   return envelope({ status: 'delivered', outboxId, runner: { offline: false,

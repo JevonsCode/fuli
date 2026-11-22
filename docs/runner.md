@@ -195,8 +195,11 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
 call waits up to 20 seconds for that entry alone and answers `status:
-delivered` only when the host applied it, `queued_offline` otherwise. Any
-other call is sent without the token, which the host never knew.
+delivered` only when the host applied it, `queued_offline` otherwise. A call
+whose schema requires a task token (`resume_agent_conversation`) needs a task
+the host entered: it answers `offline_task_token`, saying to enter the task
+again, and sends nothing. Any other call is sent without the token, which the
+host never knew.
 
 The outbox is replayed oldest first whenever the host answers again (each MCP
 process checks every 30 seconds; `fuli runner sync` replays at once); only the
