@@ -312,7 +312,13 @@ data directory, and the key:
 
   An enabled role needs a `budget` (its fields may be empty). A runner refuses a Tonborg role that also lists `knowledge_review` or
   `task_acceptance` (`runner_routing_config_invalid`), and no other role is
-  ever called on a runner. `egress` is not read: setting this model up on the
+  ever called on a runner. A file this computer cannot read — broken JSON, a
+  field of the wrong shape, the same in `runner/executors.json` — answers
+  `runner_routing_config_invalid` too, saying nothing was judged here and
+  nothing was sent: a configuration of the person's that FULI cannot read is
+  not quietly handed back to the host, which would look as if the runner were
+  judging while it was not. Fix the file, or delete it to have the host judge
+  again. `egress` is not read: setting this model up on the
   runner is the person's approval to send it what a judgment needs (below).
   `fuli models set-key <secretRef> --endpoint URL` saves the key on the runner,
   for that endpoint only; `fuli models check tonborg` tries the connection.
@@ -352,12 +358,23 @@ routing rules and earlier conversations live on the host and are not read here.
 **What it answers.** The same checks as on the host
 (`src/judgment/routing.js`): the choice must be an executor and model it was
 offered, and with no executor passing preflight the answer is `ask_user` with
-no model call. A record answers with `decidedOn: "runner"`, the `selection`
+no model call. No conversation of the host's is read here, so the model is
+shown an empty list of them and `reuse_conversation` is never an answer it can
+give. The tool is listed on a runner with what it does here, not with the
+host's description. A record answers with `decidedOn: "runner"`, the `selection`
 (executor, model, client), `leftOut`, the model's receipt, and the same
-`requestId` gives the same decision again. A model that does not answer, a
-refusal or an exhausted budget fails the judgment (`judgment_failed` with the
-failure and receipt); nothing falls back to the host or a session. It is a
+`requestId` gives the same decision again (two MCP processes answering one
+`requestId` at the same moment keep the decision saved first). A model that
+does not answer, a refusal, an exhausted budget or a choice that was not
+offered fails the judgment (`judgment_failed` with the failure, and the
+model's receipt whenever the model was called, so the caller sees that its
+budget was spent); nothing falls back to the host or a session. It is a
 recommendation: the caller starts the executor and records what really ran.
+
+This computer must still be paired. Before it is, every call here answers
+`runner_not_paired`, and after the host revokes it `runner_revoked`, including
+`assess_agent_action` and `report_routing_outcome`: no model is called, nothing
+is queued, and a store `fuli runner leave` deleted is not made again.
 
 **How a choice turned out.** When the chosen executor finished, the caller
 reports it once with `report_routing_outcome` (`decisionId`, `vote` up or down,
@@ -367,13 +384,21 @@ decision answers `already_reported`. The next judgment on the runner reads it.
 
 **To the host.** Each decision and each outcome is an outbox entry (kept in
 `runner/routing.sqlite` too, 30 days, deleted by `fuli runner leave`), delivered
-oldest first like a checkpoint and applied once per entry id. The host keeps the
+oldest first like a checkpoint and applied once per entry id. The host checks
+the project as it does for a judgment of its own: a decision naming a project
+this FULI does not have, or an archived one, is refused for good
+(`project_not_found`) and stays listed as refused on the runner, where
+`fuli runner status` shows the reason. The host keeps the
 decision among Tonborg's routing records (`decidedOn: "runner"`, with the
-runner's name and fingerprint), so the person sees it in Tonborg's workbench, and
+runner's name and fingerprint), so Tonborg's workbench says which computer
+judged it (an Agent's view carries `decidedOn` and the runner's name; the
+fingerprint stays out, and a record with no `decidedOn` was judged on the
+host), and
 the outcome as that record's feedback marked `reportedBy: "runner:<fingerprint>"`,
-never as the person's vote. Tonborg's later judgments on the host read it with
-its other feedback. Bole's score card counts FLA task outcomes the graph
-records, which these are not.
+never as the person's vote. Once the person has voted on a record, a runner's
+report is kept in its feedback history but does not take their vote's place:
+Tonborg's later judgments on the host read the person's. Bole's score card
+counts FLA task outcomes the graph records, which these are not.
 
 ## What a runner keeps
 
@@ -395,10 +420,14 @@ checkpoints again and delivers them; joining another host deletes them, and
 answers at the host's address with another certificate: if the host was
 reinstalled, join again.
 
-`fuli runner leave` deletes it all; with checkpoints still waiting or refused
+`fuli runner leave` deletes it all, the decisions made here included; with
+checkpoints still waiting or refused
 it says how many and needs `--force`, and so does a `join` to another host,
 which would drop them (checked before the invitation is used). The clients' MCP entries stay (they then
 answer that this computer is not paired); `fuli uninstall` removes them.
+`model-backends.json` and `runner/executors.json` are the person's own files,
+so `leave` keeps them as they are and says so; they do nothing until this
+computer joins a host again.
 
 ## Data format
 

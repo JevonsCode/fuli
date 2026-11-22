@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,6 +13,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -21,7 +22,9 @@ import { RunnerHostStore } from '../src/runner/host-store.js';
 import { joinHost } from '../src/runner/join.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
+import { ROUTING_LEDGER_FILE, RoutingLedger } from '../src/runner/routing-ledger.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
+import { RUNNER_FILE } from '../src/runner/runner-store.js';
 
 // Tonborg's executor judgment on a runner (docs/runner.md, "Executor judgment
 // on a runner"): its own model, over its own executors, with or without the
@@ -41,7 +44,7 @@ test('with the host away, the runner\'s own Tonborg chooses among this computer\
   runner.hostAway();
 
   const answer = await runner.client.callTool({ name: 'fuli_call', arguments: { toolName: 'assess_agent_action',
-    input: { ...ASK, taskContextToken: 'runner-offline-x' } } });
+    input: { ...ASK, taskContextToken: 'host-token-1' } } });
 
   assert.equal(answer.isError, undefined, answer.content[0].text);
   const decision = answer.structuredContent;
@@ -54,7 +57,8 @@ test('with the host away, the runner\'s own Tonborg chooses among this computer\
   const sent = JSON.stringify(runner.model.requests[0]);
   assert.match(sent, /short answers/, 'the preferences the host last gave the project went with it');
   assert.match(sent, /runner-node/);
-  assert.doesNotMatch(sent, /runner-offline-x/, 'no task token leaves the runner');
+  // Neither the token the caller passed nor the one cached with those preferences.
+  assert.doesNotMatch(sent, /host-token-1/, 'no task token of the host\'s leaves the runner');
   assert.equal(runner.served.store.outbox().queued, 1);
 
   const again = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
@@ -91,6 +95,12 @@ test('once the host answers, the runner\'s decision and its outcome reach Tonbor
   assert.match(record.feedback.reportedBy, /^runner:/);
   assert.equal(record.feedback.decidedBy, undefined, 'a runner\'s report is not the person\'s vote');
 
+  // The workbench and an Agent both see which computer judged it.
+  const [shown] = (await runner.judgment.agent.records({ personalSpaceId: SPACE, personalProjectId: PROJECT })).records;
+  assert.equal(shown.decidedOn, 'runner');
+  assert.equal(shown.runner.name, 'Runner B');
+  assert.equal(shown.runner.fingerprint, undefined, 'the runner\'s key stays out of an Agent\'s view');
+
   // The same outcome delivered again (its answer was lost on the way) is applied once.
   const replayed = await runner.served.connection.postJson(RUNNER_PATHS.replay, { id: reported.structuredContent.outboxId,
     tool: 'runner_routing_outcome', input: { personalSpaceId: SPACE, ...report }, sourceApplication: 'codex', sessionId: null });
@@ -117,15 +127,174 @@ test('a runner model allowed more than executor routing is refused here; without
   assert.deepEqual(runner.calls.map(({ name }) => name), ['assess_agent_action']);
 });
 
+test('with the host answering, a runner that judges here never asks it', async (t) => {
+  const runner = await routingRunner(t);
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.structuredContent.decidedOn, 'runner');
+  assert.equal(runner.calls.some(({ name }) => name === 'assess_agent_action'), false, 'the host was never asked');
+});
+
+test('once the pairing is gone or revoked, nothing is judged here and no model is called', async (t) => {
+  const revoked = await routingRunner(t);
+  revoked.served.store.revoked();
+  const refused = await revoked.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(JSON.parse(refused.content[0].text).code, 'runner_revoked');
+  assert.equal(revoked.model.requests.length, 0, 'no model budget was spent');
+  assert.equal(revoked.served.store.outbox().queued, 0, 'nothing was queued for a host that will not take it');
+
+  const left = await routingRunner(t);
+  const ledgerFile = path.join(left.dataDir, 'runner', 'routing.sqlite');
+  left.served.store.leave();
+  rmSync(path.join(left.dataDir, RUNNER_FILE), { force: true });
+  rmSync(ledgerFile, { force: true });
+  const unpaired = await left.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(JSON.parse(unpaired.content[0].text).code, 'runner_not_paired');
+  assert.equal(left.model.requests.length, 0);
+  assert.equal(existsSync(path.join(left.dataDir, RUNNER_FILE)), false, 'the deleted runner store was not made again');
+  assert.equal(existsSync(ledgerFile), false, 'the deleted decision ledger was not made again');
+});
+
+test('`fuli runner leave` deletes the decisions made here and says what the person\'s own files leave behind', async (t) => {
+  const runner = await routingRunner(t);
+  await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const ledgerFile = path.join(runner.dataDir, 'runner', 'routing.sqlite');
+  assert.equal(existsSync(ledgerFile), true);
+  await runner.served.close();
+
+  const lines = [];
+  const result = await runRunnerCommand(['leave', '--force', '--data-dir', runner.dataDir], { write: (line) => lines.push(line) });
+  assert.equal(result.exitCode, 0);
+  assert.equal(existsSync(ledgerFile), false, 'the decisions made here are deleted');
+  assert.equal(existsSync(path.join(runner.dataDir, RUNNER_FILE)), false);
+  const said = lines.join('\n');
+  assert.match(said, /model-backends\.json/);
+  assert.match(said, /executors\.json/);
+});
+
+test('a model-backends.json that cannot be read says so, and names the file and the way back', async (t) => {
+  const runner = await routingRunner(t, { backends: '{ not json' });
+  const refused = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const { code, message } = JSON.parse(refused.content[0].text);
+  assert.equal(code, 'runner_routing_config_invalid');
+  assert.match(message, /model-backends\.json/);
+  assert.match(message, /nothing was judged/i);
+  assert.equal(runner.calls.length, 0, 'a broken file here is not quietly sent to the host');
+});
+
+test('runner/executors.json missing or unreadable is told apart, and neither calls the model', async (t) => {
+  const none = await routingRunner(t, { executors: null });
+  const asked = await none.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(asked.isError, undefined, asked.content[0].text);
+  assert.equal(asked.structuredContent.disposition, 'ask_user');
+  assert.equal(none.model.requests.length, 0, 'with no executor declared the model is never asked');
+
+  const broken = await routingRunner(t, { executors: '{"version": 1, "executors": [{ "executorId": "" }]}' });
+  const refused = await broken.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const { code, message } = JSON.parse(refused.content[0].text);
+  assert.equal(code, 'runner_routing_config_invalid');
+  assert.match(message, /executors\.json/);
+  assert.equal(broken.model.requests.length, 0);
+});
+
+test('a model that refuses or runs out of budget fails the judgment with its receipt', async (t) => {
+  const runner = await routingRunner(t, { reply: () => ({ status: 429, body: { error: { message: 'rate limited' } } }) });
+  const failed = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const body = JSON.parse(failed.content[0].text);
+  assert.equal(body.code, 'judgment_failed');
+  assert.equal(body.modelReceipt.status, 'failed');
+  assert.equal(runner.served.store.outbox().queued, 0);
+});
+
+test('nothing here offers a conversation to reuse, and a choice that is not offered says the model was paid', async (t) => {
+  const reuse = { ...CHOICE, disposition: 'reuse_conversation', conversationId: 'conversation-1' };
+  const runner = await routingRunner(t, { reply: () => ({ status: 200, body: { model: 'fake-flash', choices: [{ finish_reason: 'stop',
+    message: { content: JSON.stringify({ decision: 'propose', payload: reuse, reason: 'r', evidenceIds: ['eligible'], uncertainty: null }) } }],
+    usage: { prompt_tokens: 10, completion_tokens: 5 } } }) });
+  const failed = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const body = JSON.parse(failed.content[0].text);
+  assert.equal(body.code, 'judgment_failed');
+  assert.equal(body.modelReceipt.status, 'completed', 'the model answered, so its receipt says the budget was spent');
+  assert.match(runner.model.requests[0].messages.at(-1).content, /\{"id":"conversations","text":"\[\]"\}/,
+    'the model is told there is no conversation here to reuse');
+});
+
+test('two processes answering one requestId at once keep one decision instead of failing', async (t) => {
+  const runner = await routingRunner(t);
+  const first = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  // What a second MCP process does when it got past the lookup before the first saved: the same insert.
+  const ledger = new RoutingLedger(path.join(runner.dataDir, ROUTING_LEDGER_FILE));
+  t.after(() => ledger.close());
+  const clash = { ...first, id: 'another-process-decision' };
+  assert.doesNotThrow(() => ledger.save(clash, 'another-fingerprint'));
+  assert.equal(ledger.byRequest(ASK).record.id, first.id, 'the decision saved first is the one kept');
+});
+
+test('a decision naming a project the host does not have is refused there, with the reason on the runner', async (t) => {
+  const runner = await routingRunner(t, { projects: [] });
+  await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  let outbox = runner.served.store.outbox();
+  for (const deadline = Date.now() + 20_000; outbox.queued && Date.now() < deadline;) {
+    outbox = await deliverOutbox({ store: runner.served.store, connection: runner.served.connection });
+    await delay(50);
+  }
+  outbox = runner.served.store.outbox();
+  assert.equal(outbox.queued, 0, 'a refusal it cannot outlive is not retried for ever');
+  assert.equal(outbox.failed.length, 1);
+  assert.match(outbox.failed[0].reason, /project/);
+  assert.equal(runner.judgment.store().records(SPACE, { personalProjectId: PROJECT }).length, 0);
+});
+
+test('a runner\'s reported outcome is kept, but the person\'s own vote stays this record\'s feedback', async (t) => {
+  const runner = await routingRunner(t);
+  runner.hostAway();
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  runner.hostBack();
+  for (const deadline = Date.now() + 20_000; runner.served.store.outbox().queued && Date.now() < deadline;) {
+    await deliverOutbox({ store: runner.served.store, connection: runner.served.connection });
+    await delay(50);
+  }
+  const [saved] = runner.judgment.store().records(SPACE, { personalProjectId: PROJECT });
+  await runner.judgment.feedback({ personalSpaceId: SPACE, decisionId: saved.id, vote: 'down',
+    reason: 'It picked the wrong one.', expectedRevision: saved.feedback.revision });
+
+  const reported = await runner.client.callTool({ name: 'report_routing_outcome',
+    arguments: { decisionId: decision.id, vote: 'up', reason: 'Tests passed on the first run.' } });
+  assert.equal(reported.structuredContent.status, 'queued');
+  for (const deadline = Date.now() + 20_000; runner.served.store.outbox().queued && Date.now() < deadline;) {
+    await deliverOutbox({ store: runner.served.store, connection: runner.served.connection });
+    await delay(50);
+  }
+
+  const record = runner.judgment.store().get(SPACE, saved.id);
+  assert.equal(record.feedbackHistory.length, 2, 'the machine\'s report is kept');
+  assert.equal(record.feedbackHistory.at(-1).reportedBy.startsWith('runner:'), true);
+  assert.equal(record.feedback.vote, 'down', 'the person\'s vote still stands');
+  assert.equal(record.feedback.reason, 'It picked the wrong one.');
+  assert.equal(record.feedback.revision, 2, 'the next vote still writes on top of the whole history');
+});
+
+test('the runner lists assess_agent_action as it behaves here, beside its outcome tool', async (t) => {
+  const runner = await routingRunner(t);
+  const listed = await runner.client.listTools();
+  const assess = listed.tools.find((tool) => tool.name === 'assess_agent_action');
+  assert.match(assess.description, /runner/i);
+  assert.doesNotMatch(assess.description, /registered|authorized|preflighted|verified conversation/i);
+  assert.equal(listed.tools.filter((tool) => tool.name === 'report_routing_outcome').length, 1);
+});
+
 // A paired runner whose model-backends.json lets its Tonborg choose executors
 // (operations) and whose executors.json declares one executor it can start and one it cannot.
-async function routingRunner(t, { operations = ['executor_routing'] } = {}) {
+// backends/executors: what those two files hold instead; reply: the model's answer.
+// projects: the projects the host knows, for the scope check a decision passes there.
+async function routingRunner(t, { operations = ['executor_routing'], backends, executors, reply,
+  projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }] } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-routing-')));
-  const model = await fakeModel();
+  const model = await fakeModel(reply);
   const host = deviceIdentity(await createDeviceCertificate());
   const store = new RunnerHostStore(':memory:');
   const calls = [];
-  const judgment = createJudgmentService({ app: { config: { personal: { spaceId: SPACE } } }, openStore: () => new JudgmentStore() });
+  const judgment = createJudgmentService({ app: { config: { personal: { spaceId: SPACE } },
+    listPersonalProjects: async () => projects }, openStore: () => new JudgmentStore() });
   const routes = createRunnerRoutes({ app: { judgment }, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(),
     createMcp: () => {
@@ -154,14 +323,16 @@ async function routingRunner(t, { operations = ['executor_routing'] } = {}) {
   const dataDir = path.join(base, 'runner-data');
   await joinHost({ dataDir, invitation: encodeInvitation({ name: 'Host A', addresses: ['127.0.0.1'], port: listener.port,
     certPem: host.certPem, code }) });
-  writeFileSync(path.join(dataDir, 'model-backends.json'), JSON.stringify({ version: 1,
+  writeFileSync(path.join(dataDir, 'model-backends.json'), backends ?? JSON.stringify({ version: 1,
     connections: { flash: { protocol: 'openai_chat', endpoint: `${model.origin}/v1`, model: 'fake-flash' } },
     roles: { tonborg: { enabled: true, connection: 'flash', allowedOperations: operations, budget: {} } } }));
-  writeFileSync(path.join(dataDir, 'runner', 'executors.json'), JSON.stringify({ version: 1, executors: [
-    { executorId: 'runner-node', displayName: 'Node here', client: 'other', command: 'node', capabilities: ['coding'],
-      models: [{ model: 'flash-small', costRank: 1 }, { model: 'deep-large', costRank: 5 }] },
-    { executorId: 'nowhere', displayName: 'Not installed', client: 'other', command: 'fuli-test-no-such-command',
-      capabilities: ['coding'], models: [{ model: 'any' }] }] }));
+  if (executors !== null) {
+    writeFileSync(path.join(dataDir, 'runner', 'executors.json'), executors ?? JSON.stringify({ version: 1, executors: [
+      { executorId: 'runner-node', displayName: 'Node here', client: 'other', command: 'node', capabilities: ['coding'],
+        models: [{ model: 'flash-small', costRank: 1 }, { model: 'deep-large', costRank: 5 }] },
+      { executorId: 'nowhere', displayName: 'Not installed', client: 'other', command: 'fuli-test-no-such-command',
+        capabilities: ['coding'], models: [{ model: 'any' }] }] }));
+  }
   const projectPath = path.join(base, 'demo-project');
   mkdirSync(projectPath);
 
@@ -185,8 +356,9 @@ async function routingRunner(t, { operations = ['executor_routing'] } = {}) {
     hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
 }
 
-// An OpenAI-compatible endpoint on loopback that always makes CHOICE, keeping each request it got.
-async function fakeModel() {
+// An OpenAI-compatible endpoint on loopback that always makes CHOICE, keeping
+// each request it got. reply(count): another { status, body } for the answer.
+async function fakeModel(reply = null) {
   const requests = [];
   const server = createServer((request, response) => {
     // FULI asks a loopback model for its Ollama build; this one is none.
@@ -195,6 +367,11 @@ async function fakeModel() {
     request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
       requests.push(JSON.parse(body));
+      const answer = reply?.(requests.length);
+      if (answer) {
+        response.writeHead(answer.status, { 'content-type': 'application/json' });
+        return void response.end(JSON.stringify(answer.body));
+      }
       const content = JSON.stringify({ decision: 'propose', payload: CHOICE, reason: 'bounded edit', evidenceIds: ['eligible'],
         uncertainty: null });
       response.writeHead(200, { 'content-type': 'application/json' });
