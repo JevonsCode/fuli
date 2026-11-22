@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 560" width="640" height="560" role="img" aria-labelledby="before-title">
+  <title id="before-title">The FLA page before the redesign</title>
+  <style>
+    .f { fill: none }
+    .s { stroke: #9a9a93; stroke-width: 1 }
+    .d { stroke: #c8c8c0; stroke-width: 1; stroke-dasharray: 3 3 }
+    .t { fill: #4a4a46; font: 11px "Helvetica Neue", Arial, sans-serif }
+    .tm { fill: #8a8a84; font: 10px "Helvetica Neue", Arial, sans-serif }
+    .tb { fill: #2a2a28; font: 600 12px "Helvetica Neue", Arial, sans-serif }
+    .warn { fill: #b0442e; font: 10px "Helvetica Neue", Arial, sans-serif }
+    .fold { stroke: #b0442e; stroke-width: 1; stroke-dasharray: 5 4 }
+  </style>
+
+  <text class="tb" x="16" y="20">现在：配置在前，工作在后</text>
+  <text class="tm" x="16" y="36">1280 宽的窗口，第一屏到红线为止</text>
+
+  <!-- breadcrumb -->
+  <text class="tm" x="24" y="64">‹ 全部 Agent  ›  名字</text>
+
+  <!-- header card -->
+  <rect class="f s" x="16" y="76" width="608" height="96" rx="12"/>
+  <rect class="f s" x="32" y="92" width="56" height="56" rx="14"/>
+  <text class="tb" x="100" y="110">名字 ✎</text>
+  <rect class="f d" x="152" y="99" width="66" height="16" rx="8"/><text class="tm" x="158" y="111">FLA 000289</text>
+  <rect class="f d" x="226" y="99" width="40" height="16" rx="8"/><text class="tm" x="234" y="111">可用</text>
+  <rect class="f d" x="274" y="99" width="40" height="16" rx="8"/><text class="tm" x="282" y="111">测试</text>
+  <line class="s" x1="100" y1="124" x2="470" y2="124" stroke-dasharray="2 2"/>
+  <line class="s" x1="100" y1="136" x2="430" y2="136" stroke-dasharray="2 2"/>
+  <text class="warn" x="476" y="128">…职责被截断</text>
+  <text class="tm" x="100" y="156">建立档案 · 日期</text>
+  <rect class="f s" x="470" y="86" width="74" height="26" rx="8"/><text class="tm" x="480" y="103">复制 #FLA</text>
+  <rect class="f s" x="552" y="86" width="56" height="26" rx="8"/><text class="tm" x="568" y="103">设置</text>
+
+  <!-- kit -->
+  <text class="tb" x="16" y="196">起步包 1.0.0</text>
+  <rect class="f s" x="16" y="206" width="608" height="150" rx="12"/>
+  <text class="t" x="32" y="226">来源 · 许可证 · 干活清单 5 条 · 验收 9 条</text>
+  <text class="tm" x="32" y="244">还没定用哪些，点一下就启用</text>
+  <text class="tm" x="32" y="268">Skill</text>
+  <rect class="f d" x="32" y="276" width="100" height="22" rx="8"/>
+  <rect class="f d" x="140" y="276" width="124" height="22" rx="8"/>
+  <rect class="f d" x="272" y="276" width="146" height="22" rx="8"/>
+  <text class="tm" x="32" y="320">MCP（只是建议，不会自动连接）</text>
+  <rect class="f d" x="32" y="328" width="84" height="22" rx="8"/>
+  <rect class="f d" x="124" y="328" width="112" height="22" rx="8"/>
+  <rect class="f d" x="244" y="328" width="68" height="22" rx="8"/>
+  <text class="warn" x="436" y="226">配置占了第一屏</text>
+
+  <!-- fold -->
+  <line class="fold" x1="8" y1="372" x2="632" y2="372"/>
+  <text class="warn" x="540" y="368">第一屏到此</text>
+
+  <!-- task sheet -->
+  <text class="tb" x="16" y="396">任务单 1</text>
+  <rect class="f s" x="16" y="406" width="608" height="140" rx="12"/>
+  <circle class="f s" cx="44" cy="432" r="12"/><circle class="f s" cx="60" cy="432" r="12"/><circle class="f s" cx="76" cy="432" r="12"/>
+  <text class="t" x="100" y="428">任务标题</text>
+  <text class="tm" x="100" y="444">项目 · 3 位 FLA</text>
+  <text class="tm" x="548" y="432">待审核</text>
+  <rect class="f d" x="32" y="458" width="576" height="40" rx="8"/>
+  <text class="t" x="44" y="474">名字 · 协作</text>
+  <line class="s" x1="44" y1="486" x2="580" y2="486" stroke-dasharray="2 2"/>
+  <rect class="f d" x="32" y="504" width="576" height="32" rx="8"/>
+  <text class="t" x="44" y="520">另一位 · 协作</text>
+  <line class="s" x1="44" y1="530" x2="560" y2="530" stroke-dasharray="2 2"/>
+  <text class="warn" x="300" y="474">每行重复整段职责，看不出进度</text>
+</svg>
