@@ -291,6 +291,12 @@ export const SCENARIOS = {
 };
 
 export const VARIANTS = Object.freeze(Object.keys(FIXTURES));
+// `many` has more preferences than a host's inline limit can hold, so its
+// entries deliberately leave some out: the oracle above, which asks the model
+// to hold every one of them, cannot hold there. It is a cost measurement, and
+// the pass/fail gate skips it (run.js); what it must still show is that no
+// frame is unlocatable and nothing withdrawn is present.
+export const BOUNDED_VARIANTS = Object.freeze(['many']);
 
 export const runScenario = (name, variant = 'tiny') =>
   replayWorld(SCENARIOS[name], { items: FIXTURES[variant].defaults, fixture: FIXTURES[variant] });

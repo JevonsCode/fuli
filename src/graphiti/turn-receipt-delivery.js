@@ -32,14 +32,29 @@ export async function checkpointTurnReceipt(application, task, { memory = null, 
 }
 
 // The first reply of a new conversation says how many of the person's habits
-// FULI handed to the assistant with that entry, and links the list. 带上
-// (handed over), never 用了: FULI sees the hand-over, not what the AI applied.
-// delivery: { taskKey, count } of an entry that opened a conversation.
+// FULI put into that entry, and links the list. 准备 (made ready), never 用了:
+// FULI sees what it handed over, not what the AI applied — and what the host's
+// inline limit then left out is not in the conversation at all, so the line
+// never calls the whole set carried (rec#146 item 6). The entry frame replaces
+// this sentence with the split it can see once the fit has run
+// (entry-habits-line.js); here, off the entry path, only the resolved count is
+// known. delivery: { taskKey, count } of an entry that opened a conversation.
 function habitsLine(application, delivery) {
   if (!(delivery?.count >= 1)) return null;
-  return `FULI 习惯：这个新对话带上了你的 ${delivery.count} 条习惯 · `
+  return `${HABITS_LEAD}${preparedHabits(delivery.count)} · `
     + markdownLink('看看是哪几条', `${receiptConsoleUrl(application)}/habits/${delivery.taskKey.slice(0, TASK_KEY_PREFIX_LENGTH)}`);
 }
+
+// The lead that marks a habits line, and the sentence that follows it. Both are
+// shared with the entry frame's rewrite, so the two can never drift apart.
+export const HABITS_LEAD = 'FULI 习惯：';
+export const preparedHabits = count => `这个新对话为你准备了 ${count} 条习惯 · ${count} habits ready for this conversation`;
+
+// The same sentence once the entry knows what its host's inline limit left
+// room for: what the assistant has in front of it, and what it can read when a
+// task may touch it. Plain words, Chinese and English (rec#146 item 6).
+export const deliveredHabits = (inline, readable) =>
+  `这个新对话直接带上 ${inline} 条习惯，另外 ${readable} 条可以随时读 · ${inline} habits carried here, ${readable} more on request`;
 
 // A checkpoint, roundtable or pause receipt replaces the entry's, so a task
 // whose entry opened the conversation says it again from its stored row: one

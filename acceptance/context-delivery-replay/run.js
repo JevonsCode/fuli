@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BUCKETS, markdownTable, SCOPE_NOTES, summarize, UNIT_NOTE } from './report.js';
-import { runScenario, SCENARIOS, VARIANTS } from './scenarios.js';
+import { BOUNDED_VARIANTS, runScenario, SCENARIOS, VARIANTS } from './scenarios.js';
 
 const option = (args, name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 
@@ -40,7 +40,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   else {
     process.stdout.write(`Measured on ${result.commit ?? 'an unknown commit'}.\n\n${markdownTable(result.variants)}\n`);
   }
-  const failed = result.variants.some(({ scenarios }) => scenarios.some(item => item.checks.some(check => !check.pass)
-    || item.correctness.correct_turns !== item.correctness.delivered_turns));
+  // A bounded variant delivers less than the whole set on purpose, so it is
+  // held only to what a bounded frame must still be: every base locatable and
+  // nothing withdrawn still present.
+  const failed = result.variants.some(({ variant, scenarios }) => scenarios.some(item =>
+    BOUNDED_VARIANTS.includes(variant)
+      ? item.rereads_required > 0 || item.correctness.withdrawn_present.length > 0
+      : item.checks.some(check => !check.pass) || item.correctness.correct_turns !== item.correctness.delivered_turns));
   process.exitCode = failed ? 1 : 0;
 }

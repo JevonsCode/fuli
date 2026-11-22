@@ -108,9 +108,21 @@ scene switch's replaceable set but says nothing about it never being left out.
 Before D-69 every such item always stayed, and in rec#47 26 of 31 preferences
 did, more than the preview alone; now a boundary ranks first among the rest.
 
-What is left out is named as `preferences_omitted: { count, read: { tool:
-'read_task_preferences', arguments: { taskContextToken } } }`, and the label
-adds one sentence: read them before acting where one may apply. If the hard
+What is left out is named as `preferences_omitted: { count, index?, read: {
+tool: 'read_task_preferences', arguments: { taskContextToken }, call } }`, and
+the label adds one sentence: read them before acting where one may apply.
+`index` names every left-out preference, one short string each —
+`key — what it says`, plus `· 仅适用于 X` where the instruction states its own
+scope in prose (rec#137, rec#111). Before it, the only way to learn what
+existed was to page a whole revision at the 32 KiB MCP budget, which a task
+entry's own token rotation made impractical. The index is built after the hard
+rules and the three best-ranked preferences are in, so it never costs one of
+them its full body; where even then it does not fit, it falls back to the keys
+alone, and past that to the count. `read.call` is the short formula
+`fuli_call(toolName=tool, input=arguments)`: `read_task_preferences` is not a
+listed tool in the chat profile, and `fuli_call` takes the tool's arguments
+under `input` while `list_agent_interfaces` shows them at the top level, so
+following the schema alone failed validation on the first call. If the hard
 rules alone are longer than the budget (D-69, revising D-54), they are bounded
 the same way: the largest prefix whose complete frame fits, with nothing
 ranked after them. That prefix keeps the most specific rules first (Agent,
@@ -128,7 +140,8 @@ longer than the budget: the role is never cut) is the blocked frame
 (`inline_budget`). It used to list no preference at all (rec#128). It now
 lists the largest prefix of the same ranking that fits beside the token,
 closing fields and identity (hard rules first, most specific scope first,
-then the ranked rest), with `preferences_omitted` counting the rest. Its
+then the ranked rest), with `preferences_omitted` counting the rest and, where
+it fits beside them, naming each of them in the same index. Its
 lead, above the frame and in its guidance, says to apply them while
 recovering the rest and not to finish the task on them alone. Every blocked
 frame counts the active conflicts it leaves out as `active_conflicts_omitted`.
@@ -446,14 +459,26 @@ full frame.
 
 The receipt of the first task of a new conversation ends with one more line:
 
-    FULI 习惯：这个新对话带上了你的 N 条习惯 · [看看是哪几条](<console>/habits/<16 hex>)
+    FULI 习惯：这个新对话为你准备了 N 条习惯 · N habits ready for this conversation · [看看是哪几条](<console>/habits/<16 hex>)
 
-It says 带上 (handed over), never 用了 (applied): FULI sees the hand-over; only
-the reply shows whether the assistant followed them. N is the number of
+It says 准备 (made ready), never 用了 (applied): FULI sees what it handed over;
+only the reply shows whether the assistant followed them. N is the number of
 preference keys the entry's delivery record keeps for the task (the delivered
 `effective_preferences` with an id, deduplicated, at most 100): the same list
-the linked page shows. The Claude Code inline budget may show fewer inline;
-the rest are one `read_task_preferences` call away and still count. The link
+the linked page shows.
+
+A frame bounded to a host's inline limit replaces that sentence with the two
+numbers it can see once the fit has run (`src/conversations/entry-habits-line.js`,
+rec#146 item 6):
+
+    FULI 习惯：这个新对话直接带上 M 条习惯，另外 K 条可以随时读 · M habits carried here, K more on request · [看看是哪几条](...)
+
+M is `effective_preferences.length` of the delivered frame and K is
+`preferences_omitted.count`. Until this, a receipt read “你的 70 条习惯” beside
+eight delivered ones. Only that one sentence changes; the link and every other
+receipt line stay as they were. The receipt paths off the entry
+(`storedHabitsLine`, a checkpoint, roundtable or pause receipt) run before any
+fit and still say the resolved count. The link
 names the task by the first 16 hex characters of its delivery key; the page
 reads the local row (`GET /api/habit-deliveries/:taskKey`, owner reads only,
 404 once the row is past the 180-day retention).
@@ -480,9 +505,15 @@ reaches the reply (Cursor's prompt output has no context field).
 
 Protocol, lifecycle and ownership tests use explicit synthetic records.
 `npm run measure:context-delivery` replays the scenarios through the real hook
-entries with two synthetic fixtures, `tiny` and the fixed-seed `scaled` one
-(6–10 preferences of 120–400 B, 8–12 messages of 120–1500 B), and prints one
-table per fixture, with the uncached skeleton as a separate diagnostic. Both
+entries with three synthetic fixtures — `tiny`, the fixed-seed `scaled` one
+(6–10 preferences of 120–400 B, 8–12 messages of 120–1500 B) and `many`, the
+same generator with 73 preferences so the host's inline limit decides what the
+model sees (rec#111, rec#137) — and prints one table per fixture, with the
+uncached skeleton as a separate diagnostic, an `approxTokens` reading-cost hint
+beside the bytes, and how the inline limit resolved (turns blocked, bodies
+listed, items indexed, items omitted). `many` delivers less than the whole set
+on purpose, so the pass/fail gate holds it only to what a bounded frame must
+still be: every delta base locatable and nothing withdrawn still present. All
 fixtures get the Provider's own recovery window (back to the third user
 message, packed into the default 4000-byte `context_budget`), so the uncached
 baseline holds only what the Provider would return.

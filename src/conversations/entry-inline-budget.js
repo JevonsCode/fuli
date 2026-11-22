@@ -2,6 +2,8 @@ import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
+import { preferenceIndex, statedScopeMeetsTask } from './preference-index.js';
+import { withDeliveredHabits } from './entry-habits-line.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
 const INLINE_BUDGET = 'inline_budget';
@@ -11,6 +13,11 @@ const INLINE_BUDGET = 'inline_budget';
 // context passes its limit; every other entry is delivered as it is.
 export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry lists (preferences_omitted): '
   + 'read them with its read call before acting where one may apply.';
+// Added when the omission names every left-out item (preferences_omitted.index,
+// rec#137): one line each, so the model expands what may apply instead of
+// paging the whole revision to find out what exists.
+export const OMITTED_INDEX_LABEL = 'preferences_omitted.index names every one of them: "key — what it says", and '
+  + '"仅适用于 X" where the preference states its own scope. Read only the ones this task may touch.';
 // Added when hard rules are among them (D-69). A delta repeats it every turn,
 // so it asks for one read, not one per turn.
 export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferences_omitted.includes_always_inline): '
@@ -72,7 +79,9 @@ export function fitUncached(fit, value, render) {
 // identity, lists the largest prefix of the same ranking that fits beside them
 // with the rest counted, and recovers through read_task_preferences where the
 // reader can serve the task (taskPreferenceRead).
-export function inlineEntryFit(limit, length) {
+// `taskPrompt`: this turn's own words, so a preference that states its scope in
+// prose and has nothing to do with them ranks below the rest (rec#111).
+export function inlineEntryFit(limit, length, { taskPrompt = null } = {}) {
   return (whole, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
     // but delivers nothing: it does not fit. Size only grows with the entry,
@@ -92,27 +101,40 @@ export function inlineEntryFit(limit, length) {
       if (fits(attempt)) return attempt;
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
-    const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value));
+    const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value), taskPrompt);
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
-    const fitsAt = (level, selected) => fits(complete(withPreferences(level, selected, preferences.length)));
+    const fitsAt = (level, selected, index) => fits(complete(withPreferences(level, selected, preferences.length, index)));
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
-    // themselves at the leanest level.
-    const base = bounded.slice(levels.length - 1).find(level => fitsAt(level, new Set(kept)));
+    // themselves at the leanest level. The index is never part of this: a hard
+    // rule is delivered in full or not at all (D-69).
+    const base = bounded.slice(levels.length - 1).find(level => fitsAt(level, new Set(kept), false));
     const [level, fixed, order] = base ? [base, kept, ranked] : [bounded.at(-1), [], kept.length ? kept : ranked];
     const richer = bounded.slice(0, bounded.indexOf(level) + 1);
     const selection = count => new Set([...fixed, ...order.slice(0, count)]);
+    // Once the fixed set and the best-ranked few are in, naming every other
+    // preference comes before spelling more of them out (rec#137): the model
+    // then knows what exists and expands only what this task may touch. A line
+    // each where that fits, the keys alone where it does not, and a count
+    // alone where even those do not. The reserve keeps the index from taking
+    // the few items this task's own scene asked for (rec#111).
+    // Nothing is reserved where not even the hard rules fit: there `order` is
+    // the hard rules themselves, and reserving one of those would leave no
+    // room to name the rest at all.
+    const reserved = base ? Math.min(RESERVED_RANKED, order.length) : 0;
+    const indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail));
     // The largest prefix of `order` that fits; at a detail level that may be all of it.
     let low = 0;
     let high = order.length;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      if (fitsAt(level, selection(middle))) low = middle;
+      if (fitsAt(level, selection(middle), indexed)) low = middle;
       else high = middle - 1;
     }
-    const frame = candidate => low === order.length ? candidate : withPreferences(candidate, selection(low), preferences.length);
+    const frame = candidate => low === order.length ? candidate
+      : withPreferences(candidate, selection(low), preferences.length, indexed);
     for (const [index, candidate] of richer.entries()) {
       const attempt = deliver(frame(candidate));
       if (!fits(attempt)) continue;
@@ -133,18 +155,38 @@ export function inlineEntryFit(limit, length) {
     // still fits beside them, rather than none (rec#128).
     if (!preferences.length) return deliver(blockedPreferenceDelivery(value, INLINE_BUDGET));
     const ordered = [...kept, ...ranked];
-    const blocked = count => blockedPreferenceDelivery(value, INLINE_BUDGET,
-      selectedPreferences(value, new Set(ordered.slice(0, count)), preferences.length));
+    const blocked = (count, index) => withDeliveredHabits(blockedPreferenceDelivery(value, INLINE_BUDGET,
+      selectedPreferences(value, new Set(ordered.slice(0, count)), preferences.length, index)));
     let listed = 0;
     let most = ordered.length;
     while (listed < most) {
       const middle = Math.ceil((listed + most) / 2);
-      if (fits(deliver(blocked(middle)))) listed = middle;
+      if (fits(deliver(blocked(middle, false)))) listed = middle;
       else most = middle - 1;
     }
-    return deliver(blocked(listed));
+    // The same listed set, plus the richest index of everything else that fits
+    // beside it: a blocked frame is where knowing what exists matters most, and
+    // it still never costs one of the rules it lists.
+    let named = null;
+    indexDetail(detail => {
+      const attempt = deliver(blocked(listed, detail));
+      if (!fits(attempt)) return false;
+      named = attempt;
+      return true;
+    });
+    return named ?? deliver(blocked(listed, false));
   };
 }
+
+// The richest index tier the caller accepts, or false when none is taken.
+function indexDetail(accepts) {
+  return ['full', 'keys'].find(detail => accepts(detail)) ?? false;
+}
+
+// How many of the best-ranked preferences keep their full body before the
+// index of the rest is considered (rec#111): the task's own scene asked for
+// these, and reading them should not cost a second call.
+const RESERVED_RANKED = 3;
 
 // A more specific rule overrides a broader one, so it is the one the model is
 // least able to infer: hard rules that must be trimmed keep these first (D-69).
@@ -152,16 +194,20 @@ const SCOPE_SPECIFICITY = Object.freeze({ agent: 0, project: 1, global: 2 });
 const specificity = item => SCOPE_SPECIFICITY[item.preference_scope] ?? 3;
 
 // Indexes into effective_preferences: those that always stay, most specific
-// scope first, then the Provider's order, and the rest in rank order.
-function inlineRanking(preferences, workKind) {
+// scope first, then the Provider's order, and the rest in rank order. An item
+// whose instruction states a scope this task's own words never mention ranks
+// after the rest (statedScopeMeetsTask, rec#111): it is the one least likely to
+// belong here, and it is still named in the index with its applies_when.
+function inlineRanking(preferences, workKind, taskPrompt = null) {
   const kept = [], optional = [];
   preferences.forEach((item, index) => (preferenceAlwaysInline(item) ? kept : optional).push(index));
   kept.sort((a, b) => specificity(preferences[a]) - specificity(preferences[b]) || a - b);
-  const rank = index => [preferenceSceneReplaceable(preferences[index]) ? 1 : 0,
+  const rank = index => [statedScopeMeetsTask(preferences[index], taskPrompt) ? 0 : 1,
+    preferenceSceneReplaceable(preferences[index]) ? 1 : 0,
     preferenceNamesWorkKind(preferences[index], workKind) ? 0 : 1,
     preferences[index].confirmation_status === 'confirmed' ? 0 : 1, index];
   const ranked = optional.map(index => [rank(index), index])
-    .sort(([a], [b]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]).map(([, index]) => index);
+    .sort(([a], [b]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]).map(([, index]) => index);
   return { kept, ranked };
 }
 
@@ -180,18 +226,22 @@ function withoutPreferenceIds(value) {
     effective_preferences: value.effective_preferences.map(({ id: _id, item_kind: _kind, ...item }) => item) });
 }
 
-function withPreferences(level, selected, total) {
-  return copyPreferenceScope(level, { ...withoutCompleteClaims(level), ...selectedPreferences(level, selected, total) });
+function withPreferences(level, selected, total, indexed) {
+  return copyPreferenceScope(level, withDeliveredHabits({ ...withoutCompleteClaims(level),
+    ...selectedPreferences(level, selected, total, indexed) }));
 }
 
-// The listed subset and what it leaves out. The read is named only where the
-// reader can serve it (taskPreferenceRead, rec#128).
-function selectedPreferences(value, selected, total) {
+// The listed subset and what it leaves out: its count, its one-line index when
+// that fits (preference-index.js, rec#137), and the read that expands it, named
+// only where the reader can serve it (taskPreferenceRead, rec#128).
+function selectedPreferences(value, selected, total, indexed = false) {
   const read = taskPreferenceRead(value);
+  const index = indexed ? preferenceIndex(value.effective_preferences, selected, indexed) : [];
   return { effective_preferences: value.effective_preferences.filter((_, index) => selected.has(index)),
     preferences_omitted: { count: total - selected.size,
       ...(value.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
         ? { includes_always_inline: true } : {}),
+      ...(index.length ? { index } : {}),
       ...(read ? { read } : {}) } };
 }
 

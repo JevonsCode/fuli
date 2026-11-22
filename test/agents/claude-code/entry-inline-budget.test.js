@@ -20,6 +20,12 @@ const claudeEntry = async entry => (await claudeLifecycleOutput('UserPromptSubmi
   .hookSpecificOutput.additionalContext;
 const keys = items => (items ?? []).map(item => item.preference_key);
 const kind = instruction => /SYNTHETIC_(\w+?)_\d+/.exec(instruction)?.[1];
+// What an omission names as the way to read the rest: the tool, its own
+// arguments, and the one call a chat-profile client can copy (rec#137).
+const omittedRead = token => ({ tool: 'read_task_preferences', arguments: { taskContextToken: token },
+  call: 'fuli_call(toolName=tool, input=arguments)' });
+// The omission without its index, so a shape assertion stays about the shape.
+const omittedShape = ({ index: _index, ...rest }) => rest;
 
 test('a large entry fits inline: every hard rule, closing field and conflict stays, boundaries rank first, the rest is counted', async () => {
   const items = syntheticPreferences(60);
@@ -44,9 +50,11 @@ test('a large entry fits inline: every hard rule, closing field and conflict sta
   assert.equal(frame.agent_receipt.required, true);
   assert.equal(frame.active_conflicts.length, 1);
   assert.deepEqual(keys(frame.active_conflicts[0].alternatives), ['conflict-a', 'conflict-b']);
-  assert.deepEqual(frame.preferences_omitted, { count: 60 - sent.length,
-    read: { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-large' } } });
-  assert.ok(text.split('\n')[0].endsWith(OMITTED_PREFERENCES_LABEL));
+  assert.deepEqual(omittedShape(frame.preferences_omitted), { count: 60 - sent.length, read: omittedRead('task-large') });
+  // Every one of them is named, so nothing it left out is a mystery (rec#137).
+  assert.equal(frame.preferences_omitted.index.length, frame.preferences_omitted.count);
+  assert.deepEqual(frame.preferences_omitted.index.filter(line => sent.some(key => line.startsWith(`${key} `))), []);
+  assert.ok(text.split('\n')[0].includes(OMITTED_PREFERENCES_LABEL));
   assert.ok(text.indexOf('task-large') < 1000, 'the closing instruction still leads');
 });
 
@@ -192,9 +200,11 @@ test('hard rules alone over the inline limit are trimmed too: hard rules first, 
   const sent = keys(frame.effective_preferences);
   assert.ok(sent.length > 0 && sent.length < hard.length);
   assert.deepEqual(sent.filter(key => !keys(hard).includes(key)), [], 'no general item before every hard rule');
-  assert.deepEqual(frame.preferences_omitted, { count: 35 - sent.length, includes_always_inline: true,
-    read: { tool: 'read_task_preferences', arguments: { taskContextToken: 'task-large' } } });
-  assert.ok(text.split('\n')[0].endsWith(`${OMITTED_PREFERENCES_LABEL} ${ALWAYS_INLINE_OMITTED_LABEL}`));
+  assert.deepEqual(omittedShape(frame.preferences_omitted), { count: 35 - sent.length, includes_always_inline: true,
+    read: omittedRead('task-large') });
+  assert.ok(text.split('\n')[0].includes(ALWAYS_INLINE_OMITTED_LABEL));
+  // Trimmed hard rules are still named one by one, so none of them is a surprise.
+  assert.equal(frame.preferences_omitted.index.length, frame.preferences_omitted.count);
   assert.equal(frame.taskContextToken, 'task-large');
   assert.equal(frame.checkpoint_required, true);
 });

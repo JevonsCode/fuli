@@ -75,7 +75,7 @@ test('the first task of a new conversation keeps its habits line in the roundtab
     preferences: habits, opensConversation: false });
   const first = await withRoundtableReceipt(app, 'message_agent', { taskContextToken: 'turn-first' }, answered);
   assert.equal(first.agent_receipt.markdown, `FULI Agents：${LEAD} & ${NOVA} · ${THREAD('thread-1')}\n`
-    + `FULI 习惯：这个新对话带上了你的 1 条习惯 · [看看是哪几条](http://127.0.0.1:3999/habits/${taskKeyFor('turn-first').slice(0, 16)})`);
+    + `FULI 习惯：这个新对话为你准备了 1 条习惯 · 1 habits ready for this conversation · [看看是哪几条](http://127.0.0.1:3999/habits/${taskKeyFor('turn-first').slice(0, 16)})`);
   const later = await withRoundtableReceipt(app, 'message_agent', { taskContextToken: 'turn-later' }, answered);
   assert.equal(later.agent_receipt.markdown, `FULI Agents：${LEAD} & ${NOVA} · ${THREAD('thread-1')}`);
 });
