@@ -138,7 +138,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   const refusedLines = [];
   const refused = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: (line) => refusedLines.push(line) });
   assert.equal(refused.exitCode, 1);
-  assert.match(refusedLines.join('\n'), /1 checkpoint\(s\) still wait for Host A and 0 were refused by it; .*--force/);
+  assert.match(refusedLines.join('\n'), /1 outbox entries \(checkpoints, executor decisions\) still wait for Host A and 0 were refused by it; .*--force/);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), true);
   const lines = [];
 
@@ -147,7 +147,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   assert.equal(result.exitCode, 0);
   assert.match(lines.join('\n'), /keep their FULI MCP entry.*`fuli uninstall` removes those entries/s);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false);
-  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here and the outbox are deleted\./);
+  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted\./);
   assert.match(lines.join('\n'), /fuli runner revoke [0-9a-f]{16}/);
   const usage = [];
   await runRunnerCommand(['--help'], { write: (line) => usage.push(line) });

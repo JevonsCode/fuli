@@ -271,7 +271,7 @@ async function processGroupExited(pgid, stopped) {
 
 // On FULI's own PATH first; a desktop app's PATH is shorter than the person's shell's, so a command missing there is
 // looked for in the login shell's directories (login-shell-path.js).
-function whichCommand(name, platform) {
+export function whichCommand(name, platform = process.platform) {
   const result = spawnSync(platform === 'win32' ? 'where.exe' : 'which', [name], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) return platform === 'win32' ? null : findInLoginShellPath(name, { platform });
   // On Windows only real executables can be spawned without a shell.

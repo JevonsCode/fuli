@@ -120,7 +120,9 @@ export class JudgmentStore {
     const body = this.#clean(space, JSON.parse(row.body));
     const feedbackHistory = this.db.prepare('SELECT revision,vote,reason,created_at AS createdAt,relayed_by AS relayedBy,person_words AS personWords FROM judgment_feedback WHERE decision=? ORDER BY revision').all(id)
       .map(({ relayedBy, personWords, ...value }) => ({ ...(body.hard_deleted ? { ...value, reason: '' } : value),
-        ...(personWords !== null ? { decidedBy: 'person', relayedBy, personWords: body.hard_deleted ? '' : personWords } : {}) }));
+        ...(personWords !== null ? { decidedBy: 'person', relayedBy, personWords: body.hard_deleted ? '' : personWords }
+          // A runner's report of how its own choice did (runner-routing.js), not a vote of the person.
+          : relayedBy ? { reportedBy: relayedBy } : {}) }));
     const executionHistory = this.db.prepare('SELECT status,receipt,created_at AS createdAt FROM judgment_execution WHERE decision=? ORDER BY id').all(id)
       .map(value => ({ ...value, receipt: this.#clean(space, JSON.parse(value.receipt)) }));
     return { ...body, id, createdAt: row.created_at, feedbackHistory, executionHistory,
@@ -233,7 +235,8 @@ export class JudgmentStore {
       FROM judgment_execution e JOIN judgment_records r ON r.id = e.decision
       WHERE r.space=? AND e.status IN ('applied','undone') AND e.created_at >= ? AND e.created_at < ?`).get(space, from, to);
   }
-  // relay: the FLA that relayed the person's vote and their words (rec#80), or null.
+  // relay: the FLA that relayed the person's vote and their words (rec#80), or a runner's
+  // report of its own choice ({ relayedBy: 'runner:<fingerprint>', personWords: null }), or null.
   feedback(space, id, vote, reason, expectedRevision, relay = null) {
     return this.transaction(() => {
       const decision = this.get(space, id);
@@ -286,6 +289,12 @@ export class JudgmentStore {
       }
       return changed;
     }));
+  }
+  // The record a request key holds, or null.
+  recordFor(space, requestKey) {
+    this.#assertRecovery(space);
+    const row = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
+    return row ? this.get(space, row.id) : null;
   }
   // The records one request created, as request key prefix (its own items).
   requestRecords(space, requestKey) {

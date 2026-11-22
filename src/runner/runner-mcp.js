@@ -25,6 +25,7 @@ import { deliveredAnswer, effectiveCall, hostOnlyAnswer, isOfflineToken, offline
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+import { ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // FULI's MCP server on a runner (docs/runner.md): the same stdio entry a client
@@ -52,18 +53,20 @@ const OUTCOME_UNKNOWN = Symbol('outcome unknown');
 
 // lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
 // for, how soon after it was away, how long a tools/list waits for it, and how
-// long a checkpoint of an offline task waits for its own delivery. Without a
+// long a checkpoint of an offline task waits for its own delivery. modelFetch:
+// the fetch of this runner's own Tonborg model (local-routing.js). Without a
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
   const sessionId = nativeSession ?? mcpHostSessionId({});
-  const server = createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
+  const server = createRunnerServer({ store, connection, routing, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -73,6 +76,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     // First: a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
     connection.close();
     await server.close();
+    await routing.close();
     store.close();
   })();
   const served = transport ?? new StdioServerTransport();
@@ -85,7 +89,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, connection };
 }
 
-function createRunnerServer({ store, connection, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ store, connection, routing, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -222,17 +226,21 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     return delivering;
   }
 
+  // The host's tools, and this runner's own while it chooses executors itself.
+  const withRunnerTools = (listed) => ({ ...listed,
+    tools: [...listed.tools.filter((tool) => tool.name !== OUTCOME_TOOL), ...routing.tools()] });
+
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const listing = withHost((host) => host.listTools()).then((listed) => {
       if (listed && !closed) store.rememberAnswer(TOOLS_KEY, 'tools/list', listed);
-      return listed;
+      return listed && withRunnerTools(listed);
     });
     const waited = new AbortController();
     const listed = await Promise.race([listing,
       delay(toolsWaitMs, null, { signal: waited.signal, ref: false }).catch(() => null)]);
     waited.abort();
     if (listed) return listed;
-    const known = store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) };
+    const known = withRunnerTools(store.answer(TOOLS_KEY)?.body ?? { tools: localTools(toolProfile) });
     // The host answered after the client was given the known list: it lists again when they differ.
     void listing.then((late) => {
       if (late && !closed && JSON.stringify(late) !== JSON.stringify(known)) return server.sendToolListChanged();
@@ -261,6 +269,13 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     const asked = effectiveCall(name, args);
     const refused = hostOnlyAnswer(asked.tool);
     if (refused) return refused;
+    if (routing.handles(asked.tool)) {
+      // A task token names a task of the host's or of this runner's; a judgment here needs none.
+      const { taskContextToken: _token, ...input } = asked.input;
+      const answer = await routing.call(asked.tool, input, { sourceApplication, sessionId });
+      if (!answer.isError) void deliverSoon();
+      return answer;
+    }
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
     // The host does not know a runner's offline token: other calls go without it.
@@ -320,6 +335,27 @@ function createRunnerServer({ store, connection, sourceApplication, sessionId, n
     await close();
   };
   return server;
+}
+
+// Tonborg's executor judgment on this runner while the person set it up here
+// (routing-setup.js): assess_agent_action is answered here, and so is the
+// outcome report, which a decision made here may get even after the setup
+// is gone. The judgment's modules load on the first call that needs them.
+function runnerRouting({ dataDir, store, fetchImpl }) {
+  let local = null;
+  const loaded = () => local ??= import('./local-routing.js')
+    .then(({ createLocalRouting }) => createLocalRouting({ dataDir, store, ...(fetchImpl ? { fetchImpl } : {}) }));
+  return {
+    handles: (tool) => tool === OUTCOME_TOOL || (tool === ASSESS_TOOL && routingRoleState(dataDir).state !== 'off'),
+    tools: () => (routingRoleState(dataDir).state === 'on' ? [OUTCOME_TOOL_DEFINITION] : []),
+    async call(tool, input, context) {
+      const routing = await loaded();
+      return tool === OUTCOME_TOOL ? routing.outcome(input, context) : routing.assess(input, context);
+    },
+    async close() {
+      if (local) (await local).close();
+    }
+  };
 }
 
 // The tools this version would list, for a runner that never reached its host yet.
