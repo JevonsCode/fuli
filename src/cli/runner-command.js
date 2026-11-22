@@ -6,7 +6,7 @@ import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
-import { isGuestSourceAddress } from '../server/lan-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
@@ -55,7 +55,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     return consoleAction(action, rest, { baseUrl: localConsoleUrl({ dataDir, env }), fetchImpl, write });
   }
   if (action === 'join') {
-    const invitation = rest.find((value, index) => !value.startsWith('--') && !['--name', '--data-dir'].includes(rest[index - 1]));
+    const invitation = positional(rest, ['--name']);
     if (!invitation) throw new TypeError(`Missing invitation\n${USAGE}`);
     const joined = await joinRunner({ dataDir: paths().dataDir, invitation, name: option(rest, '--name') ?? null,
       force: rest.includes('--force') });
@@ -84,16 +84,17 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
   }
   if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
   if (action === 'status' || action === 'sync' || action === 'add-address') {
-    const named = action === 'add-address' ? rest.find((value) => !value.startsWith('--') && rest[rest.indexOf(value) - 1] !== '--data-dir') : null;
-    // A private IPv4 address only: the paired certificate is checked there anyway, but nothing is sent anywhere else.
-    if (action === 'add-address' && !isGuestSourceAddress(named ?? '')) {
-      throw new TypeError(`add-address takes the host's private IPv4 address (as 10.x, 172.16-31.x or 192.168.x)\n${USAGE}`);
+    const named = action === 'add-address' ? positional(rest) : null;
+    // An address a host serves: the paired certificate is checked there anyway, but nothing is sent anywhere else.
+    if (action === 'add-address' && !isReachableHostAddress(named ?? '')) {
+      throw new TypeError('add-address takes the host\'s private or VPN IPv4 address '
+        + `(as 10.x, 172.16-31.x, 192.168.x, or 100.64-127.x from Tailscale and the like)\n${USAGE}`);
     }
     const store = new RunnerStore(join(paths().dataDir, RUNNER_FILE));
     try {
       const host = store.host();
       if (!host) return void write('This computer is not a runner. Pair it with `fuli runner join INVITATION`.');
-      if (named) store.learnHostAddresses([named], { first: true });
+      if (named) store.learnHostAddresses([named]);
       if (host.revokedAt) {
         write(`${host.name} revoked this computer or does not know it (${host.revokedAt}).`);
         write(`${store.outbox().failedCount} checkpoint(s) wait here refused; joining ${host.name} again delivers them.`);
@@ -232,7 +233,7 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
     }
     return { exitCode: 0 };
   }
-  const fingerprint = args.find((value) => !value.startsWith('--') && args[args.indexOf(value) - 1] !== '--data-dir');
+  const fingerprint = positional(args);
   if (!fingerprint) throw new TypeError(`Missing fingerprint\n${USAGE}`);
   await read(await request('DELETE', `/api/runners/${encodeURIComponent(fingerprint.toLowerCase())}`));
   write('Revoked. That runner can no longer reach this FULI.');
@@ -242,4 +243,12 @@ async function consoleAction(action, args, { baseUrl, fetchImpl, write }) {
 function option(args, name) {
   const index = args.indexOf(name);
   return index >= 0 && index + 1 < args.length ? args[index + 1] : undefined;
+}
+
+// The one value an action takes, by its own position: not a flag and not the
+// value of one (indexOf would find the first equal value, so an address or a
+// fingerprint that repeats an option's value was read as that option's).
+function positional(args, takingValue = []) {
+  const valued = ['--data-dir', ...takingValue];
+  return args.find((value, index) => !value.startsWith('--') && !valued.includes(args[index - 1]));
 }

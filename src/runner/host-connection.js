@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
-import { isGuestSourceAddress } from '../server/lan-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 
 // A runner's way to its host (docs/runner.md). Every request is TLS 1.3 to
@@ -95,8 +95,9 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
       if (body?.error === NOT_PAIRED) store.revoked();
       if (answer.status !== 200) throw new Error(`hello ${answer.status}`);
-      // Only private addresses, as the ones mDNS finds: no request goes anywhere else.
-      candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter((known) => isGuestSourceAddress(known));
+      // Only addresses a host serves (private, or the VPN range it binds on a
+      // VPN adapter), as the ones mDNS finds: no request goes anywhere else.
+      candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter(isReachableHostAddress);
       return candidate;
     } catch (error) {
       agent.destroy();
@@ -204,11 +205,11 @@ async function lookUpHost(fingerprint, { waitMs = LOOK_MS,
   let discovery = null;
   try {
     discovery = createDiscovery({ serviceType: RUNNER_SERVICE_TYPE, adapters: () => discoveryAdapters(networkInterfaces) });
-    // Only an address the host's listener can serve (a private one): a pinned
-    // certificate is checked there anyway, but no request goes anywhere else.
+    // Only an address the host's listener can serve: a pinned certificate is
+    // checked there anyway, but no request goes anywhere else.
     discovery.browse({ onUp: (service) => {
       if (service.txt?.fp !== fingerprint) return;
-      for (const address of service.addresses ?? []) if (isGuestSourceAddress(address)) found.add(address);
+      for (const address of service.addresses ?? []) if (isReachableHostAddress(address)) found.add(address);
       if (found.size) heard.abort();
     }, onDown: () => {} });
     await delay(waitMs, null, { signal: heard.signal }).catch(() => {});
