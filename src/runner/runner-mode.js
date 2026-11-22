@@ -14,6 +14,18 @@ const RUNNER_STORE = join('runner', 'runner.sqlite');
 export const RUNNER_HOOK_CONTEXT = 'This computer is a FULI runner, so this hook loaded nothing. Before answering, call FULI\'s '
   + 'get_collaboration_preferences with projectPath=current directory and taskPrompt=current request; it reaches the FULI host.';
 
+// The same for a client whose MCP server cannot name its session (Cursor): its
+// session start hook is the only place the model learns the session, and a task
+// entered without it has no task token, so no call that needs one (resuming a
+// conversation, a checkpoint) can follow. sessionId: the client's own session.
+export function runnerSessionStartContext(sessionId) {
+  if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) return RUNNER_HOOK_CONTEXT;
+  return 'This computer is a FULI runner, so this hook loaded nothing. For every user task, before answering, call FULI\'s '
+    + `get_collaboration_preferences with sessionId=${JSON.stringify(sessionId)}, projectPath=current directory and `
+    + 'taskPrompt=current request; it reaches the FULI host and returns a taskContextToken. Pass the latest '
+    + 'taskContextToken to every FULI call, resume_agent_conversation and checkpoint_task_knowledge included.';
+}
+
 // Start, setup and FULI.app ask it too: on a runner they never set up a graph runtime.
 export function isRunnerDataDirectory(dataDir) {
   return existsSync(join(dataDir, RUNNER_STORE)) && !existsSync(join(dataDir, 'graph-runtime.json'));
