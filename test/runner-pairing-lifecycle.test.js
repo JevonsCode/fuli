@@ -188,7 +188,7 @@ async function tlsPair(t, route) {
   t.after(() => listener.close());
   const store = new RunnerStore(':memory:');
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
-  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [] });
+  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [], bindAddresses: () => [] });
   t.after(() => connection.close());
   return { store, connection, listener };
 }

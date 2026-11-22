@@ -18,6 +18,12 @@ import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 // PROBE_MS and mDNS stops at the first announcement. fetch() is what the MCP
 // client and the outbox use. close() ends every connection and any probe still
 // running, and nothing is opened after it.
+// Each address is also tried bound to each physical adapter's own address: a
+// VPN that claims the host's subnet (an office network where the two computers
+// sit in different subnets) sends the default route into its tunnel, while
+// the Wi-Fi or cable adapter reaches the host directly. The route that answers
+// is the one every later request takes. The host's hello names its addresses
+// now, kept for the next network change.
 // The pinned host answering that it does not know this runner (revoked, or
 // never paired there) ends the pairing here (runner-store.js revoked): nothing
 // is looked for, shown from cache or sent again until the runner joins again.
@@ -27,7 +33,8 @@ const REQUEST_MS = 15_000;
 // The host's answer to a runner it does not know (host-routes.js).
 const NOT_PAIRED = 'runner_unknown';
 
-export function createHostConnection({ store, identity, lookUp = lookUpHost, probeMs = PROBE_MS }) {
+export function createHostConnection({ store, identity, lookUp = lookUpHost, probeMs = PROBE_MS,
+  bindAddresses = () => discoveryAdapters(networkInterfaces) }) {
   let current = null;
   let finding = null;
   // Whether the last search reached an address whose certificate is not the paired one.
@@ -63,7 +70,10 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     const tls = pinnedTls(identity, { certPem: host.certPem, fingerprint: host.fingerprint });
     const stop = new AbortController();
     const signal = AbortSignal.any([stop.signal, AbortSignal.timeout(probeMs)]);
-    const probes = addresses.map((address) => probe(host, address, tls, signal));
+    let local = [];
+    try { local = bindAddresses(); } catch { local = []; }
+    const routes = [null, ...new Set(local)];
+    const probes = addresses.flatMap((address) => routes.map((via) => probe(host, address, tls, signal, via)));
     const winner = await Promise.any(probes).catch(() => null);
     stop.abort();
     for (const outcome of await Promise.allSettled(probes)) {
@@ -72,17 +82,21 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     if (!winner || closed) return false;
     current = winner;
     store.hostAnsweredAt(winner.address);
+    if (winner.announced.length) store.learnHostAddresses(winner.announced);
     return true;
   }
 
-  async function probe(host, address, tls, signal) {
-    const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16 });
-    const candidate = { address, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent };
+  // via: the local address to connect from (an adapter's own), or null for the default route.
+  async function probe(host, address, tls, signal, via = null) {
+    const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16, ...(via ? { localAddress: via } : {}) });
+    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent, announced: [] };
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal });
-      const body = answer.status === 403 ? await answer.json().catch(() => null) : await answer.body?.cancel();
+      const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
       if (body?.error === NOT_PAIRED) store.revoked();
       if (answer.status !== 200) throw new Error(`hello ${answer.status}`);
+      // Only private addresses, as the ones mDNS finds: no request goes anywhere else.
+      candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter((known) => isGuestSourceAddress(known));
       return candidate;
     } catch (error) {
       agent.destroy();

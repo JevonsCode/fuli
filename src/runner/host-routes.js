@@ -61,7 +61,9 @@ const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 // recordRouting(kind, input, runner): keeps a runner Tonborg's decision or outcome (judgment/runner-routing.js).
 export function createRunnerRoutes({ app, store, hostName, hostFingerprint, withLease, onPaired = () => {},
   consoleOrigin = () => null, runtimeConfigPath = null, runHook = runLifecycleEvent, createMcp = createMcpServer, runTool = runAgentTool,
-  recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner), now = Date.now }) {
+  recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner), now = Date.now,
+  // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
+  hostAddresses = () => [] }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -129,7 +131,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const answer = await forwardedHook(fingerprint, await readJson(request));
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
-      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION });
+      sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses() });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));

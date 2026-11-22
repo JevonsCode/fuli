@@ -14,6 +14,9 @@ import { REPLAY_WAIT_MS } from './protocol.js';
 // this runner is revoked or unknown ends what was read from it and holds the
 // waiting checkpoints refused; a pairing with another host, and `fuli runner
 // leave`, end everything kept for the old pairing.
+// How many of the host's addresses a runner keeps: enough for every network it is used on.
+const KNOWN_ADDRESSES = 16;
+
 export const RUNNER_FILE = 'runner/runner.sqlite';
 // An outbox entry a process claimed is its own for this long: past its wait for the host.
 const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
@@ -138,8 +141,20 @@ export class RunnerStore {
   hostAnsweredAt(address) {
     const host = this.host();
     if (!host) return;
-    const addresses = [address, ...host.addresses.filter((known) => known !== address)].slice(0, 8);
+    const addresses = [address, ...host.addresses.filter((known) => known !== address)].slice(0, KNOWN_ADDRESSES);
     this.db.prepare('UPDATE host SET last_address = ?, addresses = ? WHERE id = 1').run(address, JSON.stringify(addresses));
+  }
+
+  // Addresses the host says it has, or the person names (`fuli runner add-address`):
+  // kept after the ones known already, so each network the two computers meet on
+  // is remembered (home, office) and tried next time without being told again.
+  // first: put them ahead of the others, for an address the person just named.
+  learnHostAddresses(addresses, { first = false } = {}) {
+    const host = this.host();
+    if (!host) return;
+    const fresh = addresses.filter((address) => typeof address === 'string' && address && !host.addresses.includes(address));
+    const merged = first ? [...new Set([...addresses, ...host.addresses])] : [...host.addresses, ...fresh];
+    this.db.prepare('UPDATE host SET addresses = ? WHERE id = 1').run(JSON.stringify(merged.slice(0, KNOWN_ADDRESSES)));
   }
 
   rememberAnswer(key, tool, body) {
