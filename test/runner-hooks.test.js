@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { RUNNER_HOOK_CONTEXT } from '../src/runner/runner-mode.js';
+import { RUNNER_HOOK_CONTEXT, runnerSessionStartContext } from '../src/runner/runner-mode.js';
 
 // The installed hooks on a runner (docs/runner.md): a data directory with a
 // runner store and no graph runtime. Each hook loads nothing, contacts nothing,
@@ -49,13 +49,18 @@ for (const [client, entry, marker] of [['Claude Code', 'src/agents/claude-code/l
   });
 }
 
-test('on a runner Cursor\'s hook loads nothing, lets the prompt through and gives the same instruction at session start', async (t) => {
+test('on a runner Cursor\'s hook loads nothing, lets the prompt through and names its session at session start', async (t) => {
   const { dataDir, runtimeConfigPath } = runnerDataDirectory(t);
   const run = (event) => runHook('src/agents/cursor/lifecycle-hook.js', ['--runtime-config', runtimeConfigPath, '--event', event],
     JSON.stringify({ conversation_id: 'synthetic-session', prompt: 'synthetic request' }));
   const [start, prompt, stop] = [await run('sessionStart'), await run('beforeSubmitPrompt'), await run('stop')];
 
-  assert.deepEqual(JSON.parse(start.stdout), { additional_context: RUNNER_HOOK_CONTEXT });
+  // Cursor gives its MCP server no session: without it named here, an entry gets no task token,
+  // and no call that needs one (resume_agent_conversation) can follow.
+  assert.deepEqual(JSON.parse(start.stdout), { additional_context: runnerSessionStartContext('synthetic-session') });
+  assert.match(JSON.parse(start.stdout).additional_context,
+    /get_collaboration_preferences with sessionId="synthetic-session", projectPath=current directory/);
+  assert.match(JSON.parse(start.stdout).additional_context, /resume_agent_conversation/);
   assert.deepEqual(JSON.parse(prompt.stdout), { continue: true });
   assert.deepEqual(JSON.parse(stop.stdout), {});
   assert.deepEqual([start.exitCode, prompt.exitCode, stop.exitCode], [0, 0, 0]);
