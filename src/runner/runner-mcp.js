@@ -20,6 +20,7 @@ import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../mcp/instructions.js'
 import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, offlineTaskAnswer,
   outcomeUnknownAnswer, QUEUED_TOOLS,
@@ -53,6 +54,8 @@ const STREAM_LOST = /SSE stream disconnected|Failed to reconnect|Maximum reconne
 const OUTCOME_UNKNOWN = Symbol('outcome unknown');
 // How long a closing process waits for the host to end its MCP session; past it, the host's idle timeout does.
 const END_SESSION_MS = 2000;
+// The same for a session this process stops using to open another (a dropped stream, a lost connection).
+const RETIRE_SESSION_MS = 1000;
 // The host's answer to a runner it does not know: looked into through hello (revoked), never a refusal to report.
 const NOT_PAIRED_STATUS = 403;
 
@@ -85,7 +88,9 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
   const sessionId = nativeSession ?? mcpHostSessionId({});
   const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
-  const server = createRunnerServer({ store, connection, routing, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  // What the host refused or failed when this process opened its session, for `fuli diagnostics` here.
+  const record = diagnosticEventLog(dataDir).record;
+  const server = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -110,7 +115,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, connection };
 }
 
-function createRunnerServer({ store, connection, routing, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ store, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -122,6 +127,8 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
   let clientTransport = null;
   let connecting = null;
   let unreachableUntil = 0;
+  // The code of the last session problem recorded, so a repeating one is recorded once until a session opens.
+  let lastProblem = null;
   let delivering = null;
   let closed = false;
   const stopping = new AbortController();
@@ -149,10 +156,14 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     } catch (error) {
       await created.close().catch(() => {});
       if (error instanceof StreamableHTTPError && error.code >= 400 && error.code !== NOT_PAIRED_STATUS) {
-        return new HostRefusal(error.code, error.message);
+        const refusal = new HostRefusal(error.code, error.message);
+        problem({ outcome: 'refused', code: 'host_refused', httpStatus: refusal.status, reason: refusal.reason });
+        return refusal;
       }
+      problem({ outcome: 'failed', code: 'host_session_failed', reason: String(error?.message ?? error) });
       return helloThenOffline();
     }
+    lastProblem = null;
     if (closed) {
       await created.close().catch(() => {});
       return null;
@@ -167,7 +178,9 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
     // flight) leaves that call waiting for an answer that cannot come: the
     // client is closed, so the call ends as ConnectionClosed (withHost).
     created.onerror = (error) => {
-      if (client === created && STREAM_LOST.test(String(error?.message ?? ''))) void created.close().catch(() => {});
+      if (client !== created || !STREAM_LOST.test(String(error?.message ?? ''))) return;
+      // The session is still the host's until it hears otherwise: end it before a new one is opened.
+      void retire(http, RETIRE_SESSION_MS).then(() => created.close()).catch(() => {});
     };
     client = created;
     clientTransport = http;
@@ -179,10 +192,21 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
   // hold one of the host's sessions until the idle timeout. Bounded: a host
   // that does not answer releases it at that timeout instead.
   async function endHostSession() {
-    const transport = client ? clientTransport : null;
-    if (!transport) return;
-    await Promise.race([transport.terminateSession().catch(() => {}),
-      delay(END_SESSION_MS, null, { ref: false })]);
+    if (client) await retire(clientTransport, END_SESSION_MS);
+  }
+
+  // Ends one session on the host (MCP's DELETE), waiting at most withinMs. A
+  // host that already dropped it answers 404, and one that does not answer
+  // releases it at its idle timeout.
+  async function retire(transport, withinMs) {
+    await Promise.race([transport.terminateSession().catch(() => {}), delay(withinMs, null, { ref: false })]);
+  }
+
+  // A session that could not be opened, recorded once until one opens again.
+  function problem(event) {
+    if (lastProblem === event.code) return;
+    lastProblem = event.code;
+    record({ component: 'mcp', operation: 'runner.session_open', ...event });
   }
 
   // The host refused or dropped the session (it may have revoked this runner
@@ -190,6 +214,8 @@ function createRunnerServer({ store, connection, routing, sourceApplication, ses
   // addresses on a fresh connection, without mDNS. A revoked runner then says
   // so instead of answering from what it kept; true means the host answers.
   async function helloAgain() {
+    // A session this process stops using is ended first, unless the host already dropped it.
+    if (client) await retire(clientTransport, RETIRE_SESSION_MS);
     await client?.close().catch(() => {});
     client = null;
     connection.drop();

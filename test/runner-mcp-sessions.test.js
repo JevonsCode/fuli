@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -93,6 +93,36 @@ test('a new client on a runner resumes a conversation after many earlier clients
     input: { taskContextToken: 'host-token', conversationId: 'conversation-1' } } });
 });
 
+test('a connection lost in the middle of a call leaves one session on the host, not two', async (t) => {
+  const pair = await pairedRunner(t, { dropFirstCall: true });
+  const runner = await pair.serve();
+  await runner.client.listTools();
+
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'again' } });
+
+  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the call was made again on a fresh session');
+  assert.equal((await pair.sessions()).owned, 1, 'the session it stopped using was ended');
+  await runner.stop();
+  assert.equal((await pair.sessions()).owned, 0);
+});
+
+test('a refused session is written once to the runner\'s own diagnostics', async (t) => {
+  const pair = await pairedRunner(t, { maxMcpSessions: 1 });
+  const first = await pair.serve();
+  await first.client.listTools();
+  const second = await pair.serve();
+  for (let call = 0; call < 2; call += 1) {
+    await second.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'next' } });
+  }
+
+  const events = readFileSync(path.join(pair.dataDir, 'diagnostics', 'events.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    .filter((event) => event.operation === 'runner.session_open');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].code, 'host_refused');
+  assert.equal(events[0].httpStatus, 503);
+  assert.match(events[0].reason, /session limit reached/);
+});
+
 test('FULI tells a client\'s AI to close connections it no longer uses', () => {
   assert.match(MCP_CHAT_INSTRUCTIONS, /Close FULI connections and test scripts once unused; never reopen in a loop/);
 });
@@ -100,7 +130,10 @@ test('FULI tells a client\'s AI to close connections it no longer uses', () => {
 // A runner paired with a real listener on loopback whose MCP side is reduced
 // to task entry and fuli_call (calls: what reached it). serve() starts one of the runner's MCP processes (its client
 // side and stop()); sessions() is what the host's hello says of its sessions.
-async function pairedRunner(t, { maxMcpSessions } = {}) {
+// dropFirstCall: the host's first tool call loses every connection while it runs, its session left as it was.
+async function pairedRunner(t, { maxMcpSessions, dropFirstCall = false } = {}) {
+  const sockets = new Set();
+  let dropping = dropFirstCall;
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-sessions-')));
   const host = deviceIdentity(await createDeviceCertificate());
   const store = new RunnerHostStore(':memory:');
@@ -113,6 +146,11 @@ async function pairedRunner(t, { maxMcpSessions } = {}) {
         tools: ['get_collaboration_preferences', 'fuli_call'].map((name) => ({ name, inputSchema: { type: 'object' } })) }));
       server.setRequestHandler(CallToolRequestSchema, (request) => {
         calls.push({ name: request.params.name, arguments: request.params.arguments });
+        if (dropping) {
+          dropping = false;
+          setImmediate(() => { for (const socket of sockets) socket.destroy(); });
+          return new Promise(() => {});
+        }
         const value = request.params.name === 'fuli_call' ? { status: 'resumed' }
           : { effective_preferences: [], taskContextToken: 'host-token' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
@@ -120,7 +158,11 @@ async function pairedRunner(t, { maxMcpSessions } = {}) {
       return server;
     } });
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
-    route: routes.handle });
+    route: (request, response, context) => {
+      sockets.add(request.socket);
+      request.socket.once('close', () => sockets.delete(request.socket));
+      return routes.handle(request, response, context);
+    } });
   const code = newInvitationCode();
   store.invite({ code, name: 'Runner B' });
   const dataDir = path.join(base, 'runner-data');
@@ -142,6 +184,7 @@ async function pairedRunner(t, { maxMcpSessions } = {}) {
   });
   return {
     calls,
+    dataDir,
     sessions: async () => (await connection.hello()).mcpSessions,
     async serve() {
       const client = new Client({ name: 'codex', version: 'test' });

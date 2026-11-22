@@ -125,8 +125,11 @@ together, a backstop against something that opens them in a loop.
 - A runner's MCP process ends its session on the host when it exits (its
   client closed stdin, SIGINT or SIGTERM, or the client disconnected): it sends
   MCP's `DELETE` for the session, waits for it at most 2 seconds, and the host
-  releases the session at once. A process that is killed, or cut off before
-  the `DELETE` arrives, holds its session until it has been idle 30 minutes.
+  releases the session at once. A process that stops using a session to open
+  another (its connection dropped, a call lost its answer, the MCP relay
+  switched to a newly installed version) ends the old one the same way, waiting
+  at most 1 second. A process that is killed, or cut off before the `DELETE`
+  arrives, holds its session until it has been idle 30 minutes.
 - So close clients, MCP processes and test scripts once they are no longer
   used, reuse one connection within a session, and never open new ones in a
   loop. FULI tells every client's AI the same in its MCP instructions.
@@ -134,7 +137,10 @@ together, a backstop against something that opens them in a loop.
   its side), the call answers `host_refused` with the HTTP status and the
   host's reason. It is not taken for the host being away: no offline answer,
   no `runner-offline-` task token. A refusal of a runner the host does not
-  know (403) is checked through hello as before (`runner_revoked`).
+  know (403) is checked through hello as before (`runner_revoked`). The runner
+  also writes it to its own diagnostics (`fuli diagnostics` on the runner,
+  operation `runner.session_open`, code `host_refused` with the status and
+  reason, or `host_session_failed`), once until a session opens again.
 - `fuli runner status`, and `fuli status` while the runner's console runs,
   show how many sessions this runner holds on the host, and how many there are
   in all against the limit.
