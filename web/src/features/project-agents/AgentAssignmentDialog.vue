@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
@@ -46,7 +47,7 @@ const editing = computed(() => props.action !== 'assign')
 const projectOptions = computed(() => projectScopeOptions(props.projects, project => ({ meta: project.project_id })))
 const replacementOptions = computed(() => props.availableAgents
   .filter((agent) => agent.agentId !== props.agent?.agentId && agent.profile.status === 'active')
-  .map((agent) => ({ value: agent.agentId, label: agent.profile.displayName || agent.profile.name, meta: agent.profile.name })))
+  .map((agent) => ({ value: agent.agentId, label: agentDisplayName(agent), meta: agentDisplayName({ profile: { ...agent.profile, displayName: null } }) })))
 
 watch(() => [props.open, props.agent, props.assignment, props.action, props.defaultProjectId], () => {
   if (!props.open) return

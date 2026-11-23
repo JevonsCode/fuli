@@ -21,7 +21,7 @@ import KnowledgeItemEditPage from './KnowledgeItemEditPage.vue'
 function view(overrides = {}) {
   return { item_kind: 'entity', item_id: 'item-1', version: 4, title: 'Prefer short status lines',
     content: 'Prefer short status lines', type: 'PersonalPreference', profile_aspect: 'taste', category: 'taste',
-    scope: { kind: 'temporary', projects: [{ id: 'temporary-x', name: '临时会话', temporary: true }], status: 'undetermined' },
+    scope: { kind: 'temporary', projects: [{ id: 'temporary-x', name: null, temporary: true }], status: 'undetermined' },
     weight: { percent: 12, basis: { confirmation_status: 'pending', confirmed_by_person: false, qualified_use_count: 0,
       distinct_task_count: 0, source_count: 1, negative_evidence_count: 0 } },
     tags: [{ id: 't1', name: 'status', namespace: 'personal', status: 'active' }],
@@ -39,7 +39,7 @@ async function open(item = view()) {
   useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space', personalSpaces: [{ id: 'space', name: '我' }],
     personalProjects: [
       { project_id: 'alpha', personal_space_id: 'space', profile: { name: 'Alpha' } },
-      { project_id: 'temporary-x', personal_space_id: 'space', scope_type: 'temporary', profile: { name: '临时会话' } },
+      { project_id: 'temporary-x', personal_space_id: 'space', scope_type: 'temporary', profile: { name: '' } },
     ], projects: [], subscriptions: [] } as never
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/knowledge/item/:spaceId/:itemKind/:itemId', component: KnowledgeItemEditPage },
@@ -68,7 +68,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(wrapper.get('[data-item-category]').text()).toBe('品味')
     expect(wrapper.get('[data-item-source]').text()).toBe('你明确说的')
     expect(wrapper.get('[data-item-confirmation]').text()).toBe('待确认')
-    expect(wrapper.get('[data-item-scope]').text()).toContain('临时会话项目')
+    expect(wrapper.get('[data-item-scope]').text()).toContain('临时项目 #')
     expect(wrapper.get('[data-scope-undetermined]').text()).toBe('范围待确定')
     expect(wrapper.get('[data-item-weight]').text()).toContain('依据：用过 0 次 · 0 个任务 · 1 个来源')
     expect(wrapper.get('[data-item-weight]').text()).toContain('不能手动改')

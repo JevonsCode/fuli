@@ -110,6 +110,13 @@ product names.
 When a search finds nothing, try other words, then read `knowledge_index`: the project's titles, for
 you to judge by meaning.
 
+When the person says they already asked for something ("I already told you", 我已经说过了, 上次就讲过),
+keep it or explain why the kept one did not apply; see `references/capture.md`.
+
+What you write for the person leads with the conclusion and what you need from them; a choice is
+clickable (native choices, `request_agent_attention` options, else numbered options), a link is
+complete, and a diagram is drawn where a picture reads better (`task_guidance.human_facing_output`).
+
 Do not capture credentials, tokens, cookies, private keys, raw transcripts, temporary logs, command output, speculative conclusions, or disposable implementation details. Treat a correction as a replacement, not an additional conflicting fact.
 
 For a confirmed project decision, prefer `record_decision_trace` over a flat note. Preserve the

@@ -29,7 +29,7 @@ export const knowledgeQuickEditMessages = {
     scope: {
       title: '适用范围',
       global: '个人全局', projects: '项目：{names}', agent: 'FLA {agent}（{project}）',
-      temporary: '临时会话项目', unknown: '范围未知', undetermined: '范围待确定',
+      temporary: '临时项目', unknown: '范围未知', undetermined: '范围待确定',
       undeterminedHelp: '保存时没人选定范围，所以先放在当前会话的临时项目里，不会用到其他项目或 FLA。选好范围后才会移走。',
       choose: '应用到', optionGlobal: '个人全局', optionProjects: '指定项目（可多选）', optionAgent: '指定 FLA',
       projectsField: '项目', project: 'FLA 所在项目', agentLabel: 'FLA', noAgents: '这个项目还没有可选的 FLA',
@@ -153,7 +153,7 @@ export const knowledgeQuickEditMessages = {
     scope: {
       title: 'Where it applies',
       global: 'Personal, everywhere', projects: 'Projects: {names}', agent: 'FLA {agent} ({project})',
-      temporary: 'Temporary session project', unknown: 'Scope unknown', undetermined: 'Scope to decide',
+      temporary: 'Temporary project', unknown: 'Scope unknown', undetermined: 'Scope to decide',
       undeterminedHelp: 'Nobody chose a scope when it was saved, so it waits in this session\'s temporary project and is not used by other projects or FLAs. It moves only when you choose.',
       choose: 'Apply to', optionGlobal: 'Personal, everywhere', optionProjects: 'Chosen projects', optionAgent: 'One FLA',
       projectsField: 'Projects', project: 'The FLA\'s project', agentLabel: 'FLA', noAgents: 'This project has no FLA to choose yet',

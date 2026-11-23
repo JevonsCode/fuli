@@ -3,7 +3,8 @@ import { requiredString } from '../validation/values.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { assertPreviewed, leadName, personsConversation, previewOf, projectNamed, quoted,
   standingAssignmentsOf } from './standing-assignment-confirmation.js';
-import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
+import { nameableProjects } from './task-entry-project-mention.js';
 
 // The person corrects or ends a standing assignment (rec#29 F5, D-41 D7):
 // retire stops it routing and frees its terms, reassign points it with its

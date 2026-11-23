@@ -1,6 +1,7 @@
 import { getJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const PROJECT_DISCOVERY_LIMIT = 15
 const PROJECT_DISCOVERY_CONCURRENCY = 4
@@ -91,7 +92,7 @@ export async function discoverPersonalProjectResults({
       .sort((left, right) =>
         right.score - left.score
         || right.count - left.count
-        || left.project.profile.name.localeCompare(right.project.profile.name),
+        || projectDisplayName(left.project).localeCompare(projectDisplayName(right.project)),
       ),
     checked: outcomes.length,
     total: projects.length,

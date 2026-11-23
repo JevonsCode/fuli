@@ -22,6 +22,7 @@ import {
 } from './catalog'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionListbox } from '@/components/ui/listbox'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const props = defineProps<{
   open: boolean
@@ -48,7 +49,7 @@ const catalogError = ref('')
 const selected = computed(() => catalogTemplates.value.find((entry) => entry.id === props.templateId))
 const title = computed(() => t('employees.manageProjectsTitle', { name: selected.value?.name ?? '' }))
 const offeredProjects = computed(() => props.projects.filter((project) => project.profile.lifecycle !== 'archived'))
-const projectOptions = computed(() => offeredProjects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
+const projectOptions = computed(() => offeredProjects.value.map((project) => ({ id: project.project_id, name: projectDisplayName(project) })))
 // Named projects as before (an ID beside a name two share); temporary ones fold under one row.
 const projectChoices = computed(() => {
   const ids = new Map(projectSelectOptions(projectOptions.value).map(option => [option.value, option.meta]))

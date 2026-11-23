@@ -64,7 +64,7 @@ const participants = computed(() => props.task.participants.map(participant => {
   const agent = props.agents.find(item => item.agentId === participant.agentId)
   return {
     key: participant.agentId,
-    label: `${agent?.profile.displayName || agent?.profile.name || participant.agentId} · ${participantRoleLabel(participant.role)}`,
+    label: `${(agent && agentDisplayName(agent)) || participant.agentId} · ${participantRoleLabel(participant.role)}`,
   }
 }))
 

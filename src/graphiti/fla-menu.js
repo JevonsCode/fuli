@@ -1,3 +1,4 @@
+import { consoleLanguage } from '../app/console-language.js';
 import { identityKey } from '../text/name-identity.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
@@ -13,7 +14,6 @@ import { rankCandidates } from './fla-picker.js';
 // Provider still decide whether the chosen FLA may work.
 
 export const FLA_MENU_PREFIX = 'fla-';
-const MENU_LANGUAGES = Object.freeze(['zh-CN', 'en-US']);
 // Lengths in UTF-16 code units, as agent-installer counts them (Codex
 // prompt names at most 64), cut only between whole characters.
 const SLUG_LIMIT = 40;
@@ -74,11 +74,8 @@ export function flaMenuEntries(candidates, { sourceApplication, language, occupa
   });
 }
 
-// The console language the person chose, else this computer's.
-export function menuLanguage(setting, systemLocale = Intl.DateTimeFormat().resolvedOptions().locale) {
-  if (MENU_LANGUAGES.includes(setting)) return setting;
-  return /^zh\b/iu.test(systemLocale ?? '') ? 'zh-CN' : 'en-US';
-}
+// The console language the person chose, else this computer's (console-language.js).
+export const menuLanguage = consoleLanguage;
 
 // The occupation catalog's names by key, as the console shows them.
 export function occupationNameMap(catalog) {

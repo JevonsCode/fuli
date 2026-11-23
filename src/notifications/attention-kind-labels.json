@@ -1,0 +1,4 @@
+{
+  "zh-CN": { "question": "需要答复", "approval": "需要决定", "review": "需要验收", "permission": "需要权限", "blocked": "需要协助" },
+  "en-US": { "question": "Question", "approval": "Decision", "review": "Review", "permission": "Permission", "blocked": "Help needed" }
+}

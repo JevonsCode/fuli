@@ -50,6 +50,9 @@ test('a draft from kept experiences needs its work map and asks at most three qu
   assert.equal(app.attention.length, 1);
   assert.deepEqual([app.attention[0].kind, app.attention[0].agentId], ['question', 'fla-1']);
   assert.match(app.attention[0].detail, /1\. Which channel gets the release\?/);
+  // Two answers the person can click without typing; the written one still goes through 「其他」.
+  assert.deepEqual(app.attention[0].options, ['按你的判断来', '先别起草']);
+  for (const option of app.attention[0].options) assert.ok(app.attention[0].requestedAction.includes(option), option);
   // The person sees the work map with the steps; it is part of the version.
   const [shown] = app.agentWorkflows.overview({ personalSpaceId: 'space', agentId: 'fla-1' }).workflows;
   assert.deepEqual(shown.pending.workMap, { ...WORK_MAP, questions });
