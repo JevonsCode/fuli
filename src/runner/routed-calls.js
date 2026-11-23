@@ -1,4 +1,4 @@
-import { routeOfCall } from './call-routes.js';
+import { knownProjects, routeOfCall } from './call-routes.js';
 import { failure, TASK_ENTRY_TOOLS, taskTokenOf } from './offline-calls.js';
 import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 
@@ -17,7 +17,7 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 //
 // input: the call's arguments (through fuli_call, its input).
 export function routeRefusal({ routes, store, input }) {
-  const { scope, owner, byTask } = routeOfCall(routes, input ?? {});
+  const { scope, owner, byTask } = routeOfCall(routes, input ?? {}, { known: knownProjects(store, routes) });
   if (owner === LOCAL_OWNER) {
     return failure('scope_owned_here', `${scope} is routed to this computer, which cannot answer a scope it follows a host `
       + 'for yet (owning scopes on a computer that follows a host is not built yet). Point it at the host again with '

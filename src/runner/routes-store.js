@@ -18,7 +18,7 @@ export const ROUTES_FILE = 'runner/routes.sqlite';
 export const GLOBAL_SCOPE = 'global';
 export const DEFAULT_SCOPE = 'default';
 export const LOCAL_OWNER = 'local';
-const PROJECT_PREFIX = 'project:';
+export const PROJECT_PREFIX = 'project:';
 const HOST_PREFIX = 'host:';
 
 export const ROUTES_FORMAT = sqliteFormat({

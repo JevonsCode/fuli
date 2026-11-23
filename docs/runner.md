@@ -81,8 +81,11 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   included. `fuli runner leave` deletes the routes.
 - `fuli routes list` shows them; `fuli routes follow SCOPE HOST` points one scope at the paired
   host (its name, or 8 or more characters of its fingerprint); `fuli routes scope-of PATH` prints
-  the scope of a folder. A project's id is read from the folder on this computer: its repository's
-  origin key, which the owner matches a folder on, or the repository's own path when it has none.
+  the scope of a folder. Which project a folder is, is the host's answer by the host's own rules:
+  what the host last resolved for a folder of the same repository (kept from its task entries), else
+  the host's resolver itself (`resolvePersonalProjectPath`: repository root, a worktree's original
+  repository, the folder's name, a child project's marker) over the projects this computer knows.
+  A folder of no known project is `default`.
 - `fuli routes local SCOPE` is refused (`local_route_not_yet`) until owning a scope on a computer
   that follows a host is built (the next step), whatever this computer has: a FULI of its own beside
   a pairing is normal, and a route written now would give that scope a second owner once the next

@@ -56,16 +56,30 @@ test('a runner paired by an earlier version follows its host for everything, wit
   third.close();
 });
 
-test('a call\'s scope is read from the folder on this computer: global without one, the repository otherwise', (t) => {
+// Review of #1075: the scope of a folder is the host's answer by the host's own rules, never a second set.
+test('a call\'s scope is the project the host resolves its folder to, by the host\'s own rules', (t) => {
   const dataDir = dataDirectory(t, { paired: false });
-  assert.equal(callScope(null), 'global');
-  assert.equal(callScope(''), 'global');
-  const repository = path.join(dataDir, 'widgets');
-  mkdirSync(path.join(repository, '.git', 'x'), { recursive: true });
+  const repository = path.join(dataDir, 'checkouts', 'any-folder-name');
+  mkdirSync(path.join(repository, '.git'), { recursive: true });
   mkdirSync(path.join(repository, 'src'));
-  assert.equal(callScope(path.join(repository, 'src'), { remoteKey: () => 'example.test/team/widgets' }),
-    'project:example.test/team/widgets', 'the origin remote, as the owner matches it');
-  assert.equal(callScope(path.join(repository, 'src'), { remoteKey: () => null }), `project:path:${repository}`);
+  const plain = path.join(dataDir, 'notes');
+  mkdirSync(plain);
+  const widgets = path.join(dataDir, 'widgets');
+  mkdirSync(path.join(widgets, '.git'), { recursive: true });
+  const known = [{ id: 'widgets-project', folder: repository }, { id: 'widgets', folder: null }];
+
+  assert.equal(callScope(null, { known }), 'global');
+  assert.equal(callScope('', { known }), 'global');
+  // What the host itself answered for this repository, whatever the folder is called, from any folder of it.
+  assert.equal(callScope(repository, { known }), 'project:widgets-project');
+  assert.equal(callScope(`${repository}/`, { known }), 'project:widgets-project', 'a trailing slash is the same folder');
+  assert.equal(callScope(path.join(repository, 'src'), { known }), 'project:widgets-project');
+  // A folder the host never answered: the host's resolver, asked about the projects known here.
+  assert.equal(callScope(widgets, { known }), 'project:widgets', 'its repository root names a known project');
+  // A folder of no known project, a relative path, a path that is not a folder: no project.
+  assert.equal(callScope(plain, { known }), 'default');
+  assert.equal(callScope('relative/path', { known }), 'default');
+  assert.equal(callScope(path.join(dataDir, 'missing'), { known }), 'default');
 });
 
 test('a task\'s checkpoint goes to the computer that entered the task, whatever the routes became', () => {

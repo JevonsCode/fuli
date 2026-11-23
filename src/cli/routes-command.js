@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
-import { callScope, describeRoutes, openRoutes } from '../runner/call-routes.js';
+import { callScope, describeRoutes, knownProjects, openRoutes } from '../runner/call-routes.js';
 import { GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, scopeName } from '../runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -17,8 +17,8 @@ const USAGE = `fuli routes <action>  (Beta. Which parts of your FULI this comput
                                   start of its fingerprint; \`fuli runner status\` names it)
     local SCOPE                   own that scope on this computer (not built yet: refused, says why)
     scope-of PATH                 which scope a call in that folder belongs to
-  SCOPE is \`global\`, \`default\`, or \`project:<id>\`; a project's id is what
-  \`fuli routes scope-of PATH\` prints for a folder in it.
+  SCOPE is \`global\`, \`default\`, or \`project:<id>\`, a project's id as the host names it;
+  \`fuli routes scope-of PATH\` prints the scope of a folder by the host's own rules.
   Every action takes --data-dir DIR.`;
 // Owning a scope here means answering its calls from this computer's own FULI,
 // which a computer that follows a host does not have yet (step 3 of the design).
@@ -38,15 +38,16 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
   const dataDir = option(rest, '--data-dir');
   const paths = resolveSetupPaths({ dataDir, env });
   if (!action || action === '--help' || action === '-h') return void write(USAGE);
-  if (action === 'scope-of') {
-    const folder = named(rest);
-    if (!folder) throw new TypeError(`Missing PATH\n${USAGE}`);
-    write(callScope(folder));
-    return { exitCode: 0 };
-  }
   const routes = openRoutes(paths.dataDir);
   const runner = new RunnerStore(join(paths.dataDir, RUNNER_FILE));
   try {
+    if (action === 'scope-of') {
+      const folder = named(rest);
+      if (!folder) throw new TypeError(`Missing PATH\n${USAGE}`);
+      // The same answer a call in that folder gets (call-routes.js).
+      write(callScope(folder, { known: knownProjects(runner, routes) }));
+      return { exitCode: 0 };
+    }
     const host = runner.host();
     if (action === 'list') {
       const listed = describeRoutes(routes, { hostName: host?.name ?? null, hostFingerprint: host?.fingerprint ?? null });
