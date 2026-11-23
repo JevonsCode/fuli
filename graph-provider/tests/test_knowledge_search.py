@@ -7,6 +7,7 @@ import pytest
 from fuli_graph.knowledge_search import (
     _dedupe_ranked_edges,
     _dedupe_ranked_entities,
+    _edge_matches,
     _edge_relevance,
     _entity_search_result,
     _item_scope_metadata,
@@ -512,6 +513,25 @@ def test_edge_relevance_promotes_literal_match_without_losing_semantic_order():
 
     assert first_score == 0
     assert later_score > first_score
+
+
+def test_edge_matches_scores_each_candidate_as_edge_relevance_does():
+    """The recall-rate benchmark scores relationships through _edge_matches,
+    so it must be the search's own per-candidate scoring, nothing added."""
+    edges = [SimpleNamespace(uuid=name, name=name, fact=fact,
+                             source_node_uuid=f'{name}-source', target_node_uuid=f'{name}-target')
+             for name, fact in (('RELEASE_RUNBOOK', '发布潮池账本：先打 tag。'),
+                                ('ERROR_CODE', '潮池账本的错误码一律用四位数字。'),
+                                ('ONCALL_CHANNEL', '潮池账本的值班频道处理线上故障。'))]
+    terms = {'ERROR_CODE': {'retrieval_terms': ['错误码约定']}}
+
+    matched = _edge_matches('潮池账本 错误码', edges, {}, terms)
+
+    assert [edge.uuid for _, edge in matched] == [edge.uuid for edge in edges]
+    assert [score for score, _ in matched] == [
+        _edge_relevance('潮池账本 错误码', edge, {}, position, len(edges), terms.get(edge.uuid))
+        for position, edge in enumerate(edges)
+    ]
 
 
 @pytest.mark.asyncio
