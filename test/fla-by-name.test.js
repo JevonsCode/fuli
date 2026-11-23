@@ -397,6 +397,17 @@ test('a shared name continues the one FLA of this folder\'s project, or the one 
   assert.match(again.fla.notice, /；同名还有一位在 Gamma，这次用的是本会话正在继续的这位$/);
 });
 
+test('an FLA renamed because another had its name says its 原名, and the old name says where it went', async () => {
+  const renamed = { ...fla('jamie-c', 'Lyra Lane', '测试', 'project-c'), former_name: 'Jamie Ash' };
+  const { run } = fixture({ roster: [ADA, JAMIE, renamed, JADE] });
+  const kept = await run('#FLA Jamie Ash 继续');
+  assert.deepEqual(owner(kept), ['project-b', 'jamie']);
+  assert.equal(kept.fla.notice, '本会话由 Jamie Ash 继续项目 Beta 的工作；原名 Jamie Ash 的另一位现在叫 Lyra Lane（Gamma）');
+  const moved = await fixture({ roster: [ADA, JAMIE, renamed, JADE] }).run('#FLA Lyra Lane 继续');
+  assert.deepEqual(owner(moved), ['project-c', 'jamie-c']);
+  assert.equal(moved.fla.notice, '本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作');
+});
+
 test('a shared name is still asked when the folder cannot tell, each option with its project and recent task', async () => {
   const recent = (agent, title) => ({ ...agent, recent_task_title: title });
   // Two FLAs of the same name both in this folder's project.

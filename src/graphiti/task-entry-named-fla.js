@@ -3,6 +3,7 @@ import { choiceNumber, parseFlaMention } from './fla-mention.js';
 import { flaCandidates, flaChoice, namedAtOpening, narrowedByPartial, rankCandidates, roleCandidates,
   unavailableReason } from './fla-picker.js';
 import { withMenuNames } from './fla-menu.js';
+import { identityKey } from '../text/name-identity.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
@@ -178,9 +179,13 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (agent?.agentId === target.agentId) {
     const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
-    const continuing = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
-      : `本会话由 ${current.name} 继续其全局工作`;
-    const notice = request.sameName ? `${continuing}；${sameNameNotice(request.sameName)}` : continuing;
+    // A full-width bracket needs no space after it.
+    const called = agent.formerName ? `${current.name}（原名 ${agent.formerName}）` : `${current.name} `;
+    const continuing = current.projectId ? `本会话由 ${called}继续项目 ${current.project} 的工作`
+      : `本会话由 ${called}继续其全局工作`;
+    const notice = [continuing, request.sameName && sameNameNotice(request.sameName),
+      ...(request.renamed ?? []).map(item => `原名 ${current.name} 的另一位现在叫 ${item.name}（${item.project}）`)]
+      .filter(Boolean).join('；');
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
     return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
@@ -216,7 +221,7 @@ function unavailable(target, reason, markers) {
 // letters in order only narrow (D-68).
 function explicitRequest({ query }, ranked, roles, here, input) {
   const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), here, input) : null;
-  if (exact) return exact;
+  if (exact) return withRenamed(exact, ranked);
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
   const { close, items } = narrowedByPartial(query, available);
@@ -257,6 +262,18 @@ function single(named, { currentProjectId, sessionAgentId }) {
   }
   const here = named.filter(item => !item.role && currentProjectId && inProject(item));
   return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
+}
+
+// An FLA FULI renamed because another had its name (graph/23) is still
+// known by the old one for a while: naming the FLA that kept it says where
+// the renamed one went, so nobody continues the wrong one unnoticed.
+function withRenamed(request, ranked) {
+  if (request.state !== 'continue') return request;
+  const key = identityKey(request.target.name);
+  const renamed = [...new Map(ranked.filter(item => item.agentId !== request.target.agentId && item.formerName
+    && identityKey(item.formerName) === key).map(item => [item.agentId, item])).values()];
+  return renamed.length ? { ...request, renamed: renamed.map(item => ({ name: item.name, project: item.project })) }
+    : request;
 }
 
 // One sentence on the others a shared name also reaches, so the person sees

@@ -90,7 +90,7 @@ function candidate(agent, { project, assignment }) {
     occupationKey: agent.occupation?.role ?? null,
     responsibility: profile.responsibility ?? '', capabilities: profile.capabilities ?? [],
     status: profile.status ?? 'active', allowedClients: profile.allowed_clients ?? [],
-    recentWork: agent.recent_task_title ?? '',
+    recentWork: agent.recent_task_title ?? '', formerName: agent.former_name ?? null,
     recency: Math.max(0, ...[assignment?.updated_at, agent.current_task_running_since, agent.updated_at]
       .map(value => Date.parse(value ?? '')).filter(Number.isFinite)) };
 }
