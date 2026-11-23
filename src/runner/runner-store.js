@@ -51,7 +51,7 @@ export const RUNNER_FORMAT = sqliteFormat({
     columns: { revoked_at: 'TEXT' }
   }, {
     id: 'runner/3-host-last-seen', to: 3, kind: 'add-columns', table: 'host',
-    summary: 'when this computer last reached its host, so the console and `fuli status` can say when it last synced',
+    summary: 'when this computer last reached its host, so the console and `fuli status` can say when it last reached it',
     columns: { last_seen_at: 'TEXT' }
   }]
 });
@@ -151,6 +151,12 @@ export class RunnerStore {
     const addresses = [address, ...host.addresses.filter((known) => known !== address)].slice(0, KNOWN_ADDRESSES);
     this.db.prepare('UPDATE host SET last_address = ?, addresses = ?, last_seen_at = ? WHERE id = 1')
       .run(address, JSON.stringify(addresses), this.#nowIso());
+  }
+
+  // The host answered a request: when this computer last reached it.
+  hostSeen() {
+    if (this.#missing()) return;
+    this.db.prepare('UPDATE host SET last_seen_at = ? WHERE id = 1').run(this.#nowIso());
   }
 
   // Addresses the host says it has, or the person names (`fuli runner

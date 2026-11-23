@@ -48,10 +48,13 @@ export const SAME_NETWORK_LIMIT = Object.freeze({
 export async function followerStatus({ store, connection, dataDir = null, reach = true, reachable = null }) {
   const host = store.host();
   if (!host) return { paired: false, host: null, outbox: store.outbox(), capabilities: capabilities(dataDir) };
-  const reached = reach && !host.revokedAt ? await connection.connect() : null;
-  // connect() may have learned that this computer was revoked; read the row again.
+  // The host answering hello now, not a connection kept from earlier: a host
+  // that went away since is not shown as there (hello drops what does not answer).
+  const answered = reach && !host.revokedAt ? await connection.hello() : null;
+  const reached = answered ? connection.current : null;
+  // Looking for the host may have learned that this computer was revoked; read the row again.
   const after = store.host() ?? host;
-  const sessions = reached ? (await connection.hello())?.mcpSessions ?? null : null;
+  const sessions = answered?.mcpSessions ?? null;
   return {
     paired: true,
     host: { name: after.name, pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
@@ -81,9 +84,11 @@ export function followerLine(status) {
   if (revokedAt) return { zh: `${name} 已撤销这台电脑。`, en: `${name} revoked this computer.` };
   const where = reachable === null ? { zh: '未检查', en: 'not checked' }
     : reachable ? { zh: '在线', en: 'answering' } : { zh: '不在线', en: 'not reachable' };
-  const synced = status.host.lastSeenAt ?? status.host.answeredAt;
+  // When the host last answered anything this computer asked: when it was last reached, not when
+  // data was last exchanged, and named so.
+  const reachedAt = status.host.lastSeenAt ?? status.host.answeredAt;
   return {
-    zh: `跟随 ${name} · ${where.zh} · 上次同步 ${synced ?? '还没有'} · 待送 ${status.outbox.queued}`,
-    en: `Following ${name} · ${where.en} · last synced ${synced ?? 'never'} · ${status.outbox.queued} waiting`
+    zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}`,
+    en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting`
   };
 }

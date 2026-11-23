@@ -33,6 +33,9 @@ import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 const PROBE_MS = 2500;
 const LOOK_MS = 3000;
 const REQUEST_MS = 15_000;
+// How long a status question waits for hello on a kept connection.
+const HELLO_MS = 5000;
+const SEEN_EVERY_MS = 30_000;
 // The host's answer to a runner it does not know (host-routes.js).
 const NOT_PAIRED = 'runner_unknown';
 
@@ -92,8 +95,8 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // via: the local address to connect from (an adapter's own), or null for the default route.
   async function probe(host, address, tls, signal, via = null) {
     const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16, ...(via ? { localAddress: via } : {}) });
-    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent,
-      announced: [], greeting: null };
+    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: seenFetch(pinnedFetch(agent)),
+      agent, announced: [], greeting: null };
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal });
       const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
@@ -152,10 +155,13 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     return { reachable: false };
   }
 
-  // The host's hello answer (its name, version and the MCP sessions this
+  // The host's hello answer now (its name, version and the MCP sessions this
   // runner holds there), or null when it does not answer. A search that just
   // found the host already asked, so that answer is given once instead of
-  // asking again; a later call asks, since the counts move.
+  // asking again; a later call asks, since the counts move. A kept connection
+  // proves nothing about now: a host that stopped answering on it is dropped
+  // here, so the next question looks for the host again instead of saying it
+  // is there (review of #1069).
   async function hello() {
     const connection = await connect();
     if (!connection) return null;
@@ -166,11 +172,27 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     }
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
-        { signal: AbortSignal.any([AbortSignal.timeout(REQUEST_MS), closing.signal]) });
-      return answer.status === 200 ? await answer.json() : null;
-    } catch {
-      return null;
-    }
+        { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]) });
+      if (answer.status === 200) return await answer.json();
+      await answer.body?.cancel();
+    } catch { /* not answering: dropped below */ }
+    if (current === connection) drop();
+    return null;
+  }
+
+  // Every request the pinned host answered, whatever it answered, is a moment
+  // this computer reached it: what the console and `fuli status` show as
+  // 「上次连上」. Written at most once per SEEN_EVERY_MS.
+  let seenAt = 0;
+  function seenFetch(fetchImpl) {
+    return async (input, init) => {
+      const answer = await fetchImpl(input, init);
+      if (Date.now() - seenAt > SEEN_EVERY_MS) {
+        seenAt = Date.now();
+        try { store.hostSeen(); } catch { /* a store closed at shutdown */ }
+      }
+      return answer;
+    };
   }
 
   function close() {

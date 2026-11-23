@@ -78,7 +78,7 @@ function hostSection(host, hostPath) {
 <p class="note en">${escape(host.name)} revoked this computer. What it had read is deleted; the records waiting here are kept.
 Pair again with <code>fuli runner invite</code> there and <code>fuli runner join</code> here.</p>`;
   }
-  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，${host.reachable ? '现在在线' : '现在不在线'}；上次同步 ${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}。</p>
+  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，${host.reachable ? '现在在线' : '现在不在线'}；上次连上 ${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}。</p>
 <p class="note en">This computer follows <b>${escape(host.name)}</b>, ${host.reachable ? 'which answers now' : 'which does not answer now'}.</p>
 <p><a class="open" href="${escape(hostPath)}">打开 ${escape(host.name)} 的控制台 · Open its console →</a></p>
 ${host.reachable === false ? addAddress(host) : ''}`;

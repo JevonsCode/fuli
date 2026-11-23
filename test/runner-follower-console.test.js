@@ -84,7 +84,9 @@ async function pairedRunner(t, { clients = null } = {}) {
     rmSync(dataDir, { recursive: true, force: true });
   });
   return { entry, consoleSide, hostStore, runner, store, delivered,
-    setAway: (value) => { away = value; connection.drop(); } };
+    // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
+    // kept a dead connection).
+    setAway: (value) => { away = value; } };
 }
 
 function get(url, { headers = {}, method = 'GET', body = null } = {}) {
@@ -236,6 +238,19 @@ test('the entry answers only to this computer under its own name, and says when 
   const awayApi = await get(`${entry.url}/api/tasks`);
   assert.equal(JSON.parse(awayApi.text).error, 'host_unreachable');
   assert.equal(awayApi.headers['x-fuli-source'], 'unavailable');
+});
+
+test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
+  const { entry, setAway, store } = await pairedRunner(t);
+  const first = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(first.host.reachable, true);
+  assert.ok(store.host().lastSeenAt, 'reaching the host is recorded');
+  assert.match(first.line.zh, /在线 · 上次连上 /);
+  setAway(true);
+  const later = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(later.host.reachable, false, 'the kept connection is not taken for the host answering');
+  assert.match(later.line.zh, /不在线 · 上次连上 /);
+  assert.equal(later.host.lastSeenAt, store.host().lastSeenAt);
 });
 
 test('this computer\'s own console page says who it follows, what runs where and what waits', async (t) => {

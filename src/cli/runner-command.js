@@ -116,7 +116,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
         const reached = state.host.reachable;
         write(`Host: ${host.name} — ${reached ? `answering at ${state.host.address}:${host.port}`
           + `${state.host.via ? ` (from ${state.host.via})` : ''}` : 'not reachable now'}`);
-        write(`Last synced: ${state.host.lastSeenAt ?? 'never'}.`);
+        write(`Last reached: ${state.host.lastSeenAt ?? 'never'}.`);
         if (!reached && !named) {
           write('In another subnet (an office network, say) this computer cannot find the host by itself: '
             + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');

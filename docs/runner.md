@@ -82,7 +82,7 @@ why — with 「现在重试」 beside them. It also says plainly that this beta
 both computers are on.
 
 **A state band sits on top of every page.** One line: who this computer follows, online or not, when
-it last synced, how many records wait, and where this page's data came from. Where it came from is
+it last reached it (the last time the host answered anything), how many records wait, and where this page's data came from. Where it came from is
 not guessed: every answer this entry serves carries `x-fuli-source` (`local`, `host` or
 `unavailable`), and the band (`src/runner/follower-band.js`) reads that header off the page's own
 requests. `fuli status` and `fuli runner status` print the same facts from the same answer
