@@ -366,7 +366,7 @@ test('a connected client without a recent transcript stays unchecked, never gues
 });
 
 // A client installer and update journal in memory: what each repair did.
-function repairFixture(t, { clients, update = null, install = async ({ clientId }) => ({ id: clientId, status: 'connected' }) }) {
+function repairFixture(t, { clients, update = null, consoleUrl, install = async ({ clientId }) => ({ id: clientId, status: 'connected' }) }) {
   const state = { clients, update, connects: [] };
   const checkup = doctor(t, { observeClients: () => ({ clients: state.clients }), lastUpdate: () => state.update });
   const repair = createDoctorRepair({
@@ -379,7 +379,8 @@ function repairFixture(t, { clients, update = null, install = async ({ clientId 
         ? { ...entry, status: 'connected' } : entry);
       return result;
     },
-    recordClientsReconnected: (id) => { if (state.update?.id === id) state.update = { ...state.update, clients: 'reconnected' }; }
+    recordClientsReconnected: (id) => { if (state.update?.id === id) state.update = { ...state.update, clients: 'reconnected' }; },
+    consoleUrl
   });
   return { state, repair };
 }
@@ -418,6 +419,13 @@ test('a reconnection that fails is reported without paths, and the update\'s wor
   ]);
   assert.equal(state.update.clients, 'not_reconnected');
   assert.equal(outcome.doctor.overall, 'needs_person');
+});
+
+test('a reconnection that fails links the clients page, so an Agent that ran the repair can hand the person the way there', async (t) => {
+  const { repair } = repairFixture(t, { clients: [client('codex', 'changed')], consoleUrl: () => 'http://127.0.0.1:2799',
+    install: async ({ clientId }) => ({ id: clientId, status: 'partial' }) });
+  assert.deepEqual((await repair()).results, [{ id: 'client_outdated:codex', outcome: 'failed',
+    error: 'The client could not be reconnected; connect it again in Settings → Clients. http://127.0.0.1:2799/settings?tab=clients' }]);
 });
 
 test('only one repair runs at a time', async (t) => {

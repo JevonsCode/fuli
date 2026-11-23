@@ -1,3 +1,4 @@
+import { END_ORPHANS_FLAG } from '../native-runtime/orphan-services.js';
 import { localClockTime } from '../text/clock-time.js';
 
 // Why a start did not finish, for the failures a person can do something
@@ -12,6 +13,7 @@ const since = f => localClockTime(f.since, { date: true }) ?? f.since;
 // The recovery command (src/native-runtime/neo4j-recovery.js) shows its plan first.
 const RECOVER = ['运行 fuli graph runtime recover：它先说明要做什么，你确认后才做。',
   'Run `fuli graph runtime recover`: it says what it will do first, and does it only once you confirm.'];
+const ports = f => (f.services ?? []).map(service => service.port).join(', ');
 const UNLOCK = ['运行 fuli graph runtime unlock：它先核对没有 FULI 在用数据库，再解除这把锁。',
   'Run `fuli graph runtime unlock`: it checks that no FULI is using the database, then releases the lock.'];
 
@@ -39,6 +41,14 @@ const FAILURES = Object.freeze({
     next: f => f.holder === 'running'
       ? [`等进程 ${f.pid} 结束后再启动。`, `Start again once process ${f.pid} has ended.`]
       : f.holder === 'gone' ? interruptedNext(f) : UNLOCK
+  },
+  // A graph service this data directory started earlier, which FULI lost track
+  // of, holds its port (orphan-services.js); the desktop window offers 「结束它并启动」.
+  orphaned_graph_service: {
+    what: f => [`本数据目录之前启动的图服务还在运行，占着端口 ${ports(f)}（上次启动被中断后 FULI 没再记着它），这次没有启动任何东西。`,
+      `A graph service this data directory started earlier is still running on port ${ports(f)} (FULI lost track of it when an earlier start was interrupted); nothing was started.`],
+    next: () => [`运行 fuli start ${END_ORPHANS_FLAG}：它先结束这个图服务，再启动。`,
+      `Run \`fuli start ${END_ORPHANS_FLAG}\`: it ends that graph service, then starts.`]
   },
   // A graph port held by a process FULI's own record does not name (macos-ports.js).
   port_taken: {

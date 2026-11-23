@@ -79,6 +79,7 @@ async function startUnlocked(input, deps) {
     buildProviders,
     noStart: false,
     allowProviderDowngrade: input.allowProviderDowngrade === true,
+    ...(input.endOrphanedServices === true ? { endOrphanedServices: true } : {}),
     env: input.env,
     onProgress: input.onProgress,
     onStage: input.onStage

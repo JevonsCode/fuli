@@ -25,7 +25,8 @@ const heldPaths = computed(() => (props.card.heldPaths ?? []).map(shownText))
 <template>
   <section class="visit-section" data-visit-review-section :aria-label="t('visitRequests.result.title')">
     <h3 class="ui-group-label">{{ t('visitRequests.result.title') }}</h3>
-    <UiNotice v-if="card.review === 'held'" tone="warning" data-visit-held>
+    <UiNotice v-if="card.review === 'held'" tone="warning" data-visit-held
+      data-no-action="why the answer is held; the request's own 放行 / 拒绝 below decide it">
       <span class="visit-held-line">{{ heldText(card.holdReason) }}</span>
       <template v-if="heldPaths.length">
         <ul v-if="heldPaths.length <= HELD_PATHS_SHOWN" class="visit-held-paths" data-visit-held-paths>

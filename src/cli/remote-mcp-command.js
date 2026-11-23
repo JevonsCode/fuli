@@ -6,7 +6,7 @@ import {
   openSync,
   readFileSync
 } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import {
   bindRuntimeLeaseAgentTools,
@@ -16,6 +16,7 @@ import { openFederatedGraphApplication } from '../graphiti/federated-application
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
 import { createRemoteMcpHttpServer } from '../mcp/remote-http-server.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
+import { ownIssuer } from '../runner/task-issuer.js';
 
 const DEFAULT_REMOTE_MCP_PORT = 2728;
 const DEFAULT_REMOTE_MCP_MAX_SESSIONS = 8;
@@ -103,6 +104,8 @@ export async function runRemoteMcpCommand(args, dependencies = {}) {
     );
     remote = await (dependencies.createRemoteServer ?? createRemoteMcpHttpServer)({
       app,
+      // This installation's own name on the task tokens it issues (task-issuer.js).
+      taskIssuer: ownIssuer(dirname(runtimeConfigPath)),
       bearerToken,
       personalProjectId: options.personalProjectId,
       personalSpaceId: app.config.personal.spaceId,

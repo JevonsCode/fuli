@@ -221,8 +221,9 @@ test('the window\'s 解除这把锁并启动 releases first and starts only then
 
 test('every failure says what happened and the next step, in both languages', async () => {
   const facts = { since: '2026-11-22T17:24:35.000Z', pid: 4321, holder: 'unknown', lockPath: '/x/.neo4j-lifecycle.lock',
-    port: 7687, command: 'java', runningSeconds: 30_000, seconds: 60, logPath: '/x/logs/runtime.log' };
-  for (const code of ['native_recovery_needed', 'native_lifecycle_lock', 'port_taken', 'console_not_answering', 'console_exited',
+    port: 7687, command: 'java', runningSeconds: 30_000, seconds: 60, logPath: '/x/logs/runtime.log',
+    services: [{ port: 7687, pid: 4321, command: 'java' }] };
+  for (const code of ['native_recovery_needed', 'native_lifecycle_lock', 'orphaned_graph_service', 'port_taken', 'console_not_answering', 'console_exited',
     'console_port_reserved', 'provider_not_ready', 'provider_exited']) {
     const lines = (await formatStartupFailure({ ...facts, code })).split('\n');
     assert.equal(lines.length, 4, code);

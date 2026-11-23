@@ -6,6 +6,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -23,6 +24,7 @@ import { RunnerHostStore } from '../src/runner/host-store.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode } from '../src/runner/protocol.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
+import { hostOwner } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
@@ -83,7 +85,8 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
           ? { effective_preferences: ['short answers'], taskContextToken: 'host-token-1', checkpoint_required: true,
             agent_receipt: { required: true, markdown: 'earlier task receipt' } }
           : name === 'resume_agent_conversation'
-            ? (resumeAnswer ?? { recovery_context: `what ${input.conversationId} last held` })
+            ? (resumeAnswer ?? { recovery_context: `what ${input.conversationId} last held`,
+              next_call: { tool: 'read_task_preferences', arguments: { taskContextToken: input.taskContextToken } } })
             : { status: 'recorded' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
@@ -229,6 +232,97 @@ test('a conversation this computer never read, with nothing waiting, says so and
   assert.equal(failure.recovered_from_cache, false);
   assert.equal(failure.undelivered_checkpoints, 0);
   assert.match(failure.message, /Nothing is made up/);
+});
+
+// docs/runner-roles-design.md §10: a runner paired by an earlier version gets
+// `global → host` and `default → host`, and behaves exactly as it did.
+test('a runner of an earlier version follows its host for every scope and answers as before', async (t) => {
+  const runner = await pairedRunner(t);
+  assert.deepEqual(runner.served.routes.all().map((row) => row.scope), ['global', 'default']);
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'routed' } });
+  assert.equal(runner.calls.at(-1).name, 'get_collaboration_preferences', 'the host answered it');
+  // The token names the FULI that issued it (design §4.4), and the host gets its own token back.
+  const fingerprint = runner.served.store.host().fingerprint;
+  assert.equal(entry.structuredContent.taskContextToken, `fuli-from-${fingerprint.slice(0, 16)}.host-token-1`);
+  assert.equal(entry.structuredContent.agent_receipt.markdown, 'earlier task receipt', 'nothing else of the answer changes');
+  await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: entry.structuredContent.taskContextToken, workLog: 'synthetic' } });
+  assert.equal(runner.calls.at(-1).input.taskContextToken, 'host-token-1');
+  // A token passed as the host wrote it still goes back there; only its digest is kept here.
+  assert.match(runner.served.routes.taskOwner('host-token-1'), /^host:/);
+  assert.equal(runner.served.routes.db.prepare("SELECT COUNT(*) AS n FROM task_owners WHERE token_sha256 = 'host-token-1'")
+    .get().n, 0, 'the token itself is not stored');
+
+  // A token another FULI issued reaches nothing here.
+  const before = runner.calls.length;
+  const foreign = await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: `fuli-from-${'9'.repeat(16)}.host-token-1`, workLog: 'synthetic' } });
+  assert.equal(JSON.parse(foreign.content[0].text).code, 'task_owner_not_paired');
+  assert.equal(runner.calls.length, before);
+});
+
+// Review of #1075: a routes store this version cannot open stopped the whole MCP server from starting.
+test('routes this version cannot read leave the server up, and every call says why and what to do', async (t) => {
+  const runner = await pairedRunner(t, { serve: false });
+  const file = path.join(runner.dataDir, 'runner', 'routes.sqlite');
+  const newer = new DatabaseSync(file);
+  newer.exec('PRAGMA user_version = 99; CREATE TABLE IF NOT EXISTS routes(scope TEXT PRIMARY KEY);');
+  newer.close();
+  const client = new Client({ name: 'codex', version: 'test' });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const served = await runRunnerMcp({ dataDir: runner.dataDir, sourceApplication: 'codex', transport: serverSide,
+    lookUp: async () => [], retryAfterMs: 0 });
+  await client.connect(clientSide);
+  t.after(async () => { await client.close(); await served.close(); });
+  const answer = await client.callTool({ name: 'search_current_project_knowledge', arguments: { query: 'synthetic' } });
+  assert.equal(answer.isError, true);
+  const failure = JSON.parse(answer.content[0].text);
+  assert.equal(failure.code, 'routes_unavailable');
+  assert.match(failure.message, /fuli update/);
+  assert.equal(runner.calls.length, 0, 'nothing was sent anywhere');
+});
+
+// Review of #1075: an answer that repeats the token a call was made under shows it the way the client got it.
+test('an answer that repeats the call\'s task token shows it with the host\'s name, as the client was given it', async (t) => {
+  const runner = await pairedRunner(t);
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'routed' } });
+  const token = entry.structuredContent.taskContextToken;
+  const resumed = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: token, conversationId: 'conversation-1' } });
+  assert.equal(runner.calls.at(-1).input.taskContextToken, 'host-token-1', 'the host gets its own token');
+  assert.equal(resumed.structuredContent.next_call.arguments.taskContextToken, token);
+  assert.doesNotMatch(resumed.content[0].text.replaceAll(token, ''), /host-token-1/, 'never written the other way');
+});
+
+test('a scope routed to a computer this one is not paired with reaches nothing, and says where to fix it', async (t) => {
+  const runner = await pairedRunner(t);
+  runner.served.routes.set('global', hostOwner('f'.repeat(64)));
+  const before = runner.calls.length;
+  const answer = await runner.client.callTool({ name: 'search_current_project_knowledge', arguments: { query: 'synthetic' } });
+  assert.equal(answer.isError, true);
+  const failure = JSON.parse(answer.content[0].text);
+  assert.equal(failure.code, 'scope_owner_not_paired');
+  assert.match(failure.message, /fuli routes follow global/);
+  assert.equal(runner.calls.length, before, 'nothing was sent to the host paired now');
+
+  // A task entered on that other computer: its calls are not sent to this one's host either.
+  runner.served.routes.set('global', hostOwner(runner.served.store.host().fingerprint));
+  runner.served.routes.rememberTaskOwner('task-of-another-computer', hostOwner('f'.repeat(64)));
+  const checkpoint = await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: 'task-of-another-computer', workLog: 'synthetic' } });
+  assert.equal(JSON.parse(checkpoint.content[0].text).code, 'task_owner_not_paired');
+  assert.equal(runner.calls.length, before);
+  assert.equal(runner.served.store.outbox().queued, 0, 'and nothing was queued for a host that would apply it');
+});
+
+test('a scope marked as this computer\'s, on a computer without a FULI of its own, is refused instead of sent', async (t) => {
+  const runner = await pairedRunner(t);
+  runner.served.routes.set('global', 'local');
+  const answer = await runner.client.callTool({ name: 'search_current_project_knowledge', arguments: { query: 'synthetic' } });
+  assert.equal(JSON.parse(answer.content[0].text).code, 'scope_owned_here');
+  assert.equal(runner.calls.some(({ name }) => name === 'search_current_project_knowledge'), false);
 });
 
 test('an offline task entry repeats the folder\'s preferences, not the earlier task\'s receipt or checkpoint duty', async (t) => {
@@ -384,10 +478,10 @@ test('the runner\'s MCP process ends on its own when its client closes stdin, wi
   assert.notEqual(ended, null, 'the process exited after its client went away');
 });
 
-test('a host\'s MCP start (relay and server) loads none of the runner\'s MCP modules', () => {
+test('a host\'s MCP start (relay and server) loads none of the runner\'s MCP modules, its routes included', () => {
   const loaded = [...reachableModules('src/mcp-server.js', { dynamicImports: false })].map((file) => path.resolve(file));
   for (const runnerOnly of ['src/runner/runner-mcp.js', 'src/runner/host-connection.js',
-    'packages/roundtable/src/peer/nearby-discovery.js']) {
+    'packages/roundtable/src/peer/nearby-discovery.js', 'src/runner/call-routes.js', 'src/runner/routed-calls.js']) {
     assert.equal(loaded.includes(path.resolve(runnerOnly)), false, runnerOnly);
   }
 });

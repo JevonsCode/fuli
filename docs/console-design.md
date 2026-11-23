@@ -107,6 +107,16 @@ Attention requests appear in a selectable queue; mobile options retain the Agent
 
 Interaction references: [Apple loading guidance](https://developer.apple.com/design/human-interface-guidelines/loading) and [Material responsive navigation](https://m2.material.io/components/navigation-drawer/android) and [Material confirmation dialogs](https://github.com/material-components/material-components-web/blob/master/packages/mdc-dialog/README.md#confirmation-dialog).
 
+## Saying what to do next
+
+Jevons, 2026-11-23: 「我们 FULI 给人看的东西，都要清晰明了，文字讲重点，有需要就画图……只要是给人看的都要清晰明了，有交互的要方便交互，能点击的不输入。」 In the console that means three rules.
+
+- **One sentence says what the situation is.** A notice names the state in plain words, and counts things the way the person counts them. For example, named projects and temporary projects are counted apart; "1 of 288 projects" is not enough. No explanatory paragraph.
+- **Anything that is not possible, not in effect, waiting on the person or limited carries the action that deals with it.** That action is a button or link that goes straight to the place, opened at the right part: 「去选项目」 opens the role's form at 「可以发给服务的项目」, and 「重新监听」 restarts the listener. Where FULI cannot do it, there is 「让 AI 来做」, or the notice says exactly where and how (which computer, which app). Never "go to Settings and find it". A disabled control says why next to it and how to enable it, not only in a tooltip. A fix that would destroy something, such as turning a pairing off to restart it, is never the advice.
+- **Pick, don't type.** Where the answer comes from a known list (projects, task types, clients, folders FULI already knows), the person picks it. A code, an ID or a terminal command is never the person's input or the person's way out.
+
+`web/src/ui/notice-actions.spec.ts` holds every warning or error `UiNotice` to this. It needs an action inside (`#actions`, a `Button`, a `RouterLink` or `AiHelpButton`), or `data-no-action="<why>"` on the notice. The usual reason is an error right under the button the person just pressed, which tries again. The test's pending list names the notices still to fix and may only shrink. `web/src/i18n/no-terminal-commands.spec.ts` keeps terminal commands out of the copy.
+
 ## Do's and Don'ts
 
 - Keep the primary action visible; disclose secondary details.

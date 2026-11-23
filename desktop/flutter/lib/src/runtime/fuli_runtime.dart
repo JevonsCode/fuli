@@ -4,6 +4,16 @@
 
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
+/// A graph service of this installation's data that FULI lost track of when an
+/// earlier start was interrupted, still holding one of its ports
+/// (src/native-runtime/orphan-services.js): the port and the program's name.
+class OrphanedService {
+  const OrphanedService(this.port, this.command);
+
+  final int port;
+  final String? command;
+}
+
 /// Told which step of a start is running now, as the start reports it
 /// (src/local-runtime/startup-stage.js), and the longest it will wait when that
 /// step's wait has a fixed limit. The ids are that module's.
@@ -20,6 +30,17 @@ class StartupFailure {
 
   String? text(String key) => facts[key] is String ? facts[key] as String : null;
   int? number(String key) => facts[key] is int ? facts[key] as int : null;
+
+  /// The graph services an `orphaned_graph_service` failure names, which
+  /// [FuliRuntime.endOrphansAndStart] ends; empty for any other failure.
+  List<OrphanedService> get orphanedServices {
+    final services = facts['services'];
+    if (code != 'orphaned_graph_service' || services is! List) return const [];
+    return [
+      for (final item in services)
+        if (item is Map && item['port'] is int) OrphanedService(item['port'] as int, item['command'] is String ? item['command'] as String : null),
+    ];
+  }
 }
 
 /// What `fuli graph runtime recover` would do (src/native-runtime/neo4j-recovery.js):
@@ -128,4 +149,8 @@ abstract interface class FuliRuntime {
   /// Recovers with the plan the person confirmed ([digest]), then starts FULI.
   /// Nothing is done when the plan changed since it was shown.
   Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage});
+
+  /// Ends the graph services a failed start named ([StartupFailure.orphanedServices]) and starts FULI:
+  /// the controller's `end-orphans-start`, or `fuli start --end-orphaned-services`.
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage});
 }

@@ -96,6 +96,12 @@ class FixedRuntime implements FuliRuntime {
     calls.add('change-port');
     return report;
   }
+
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) async {
+    calls.add('end-orphans-start');
+    return report;
+  }
 }
 
 /// The window caption, recording what the window was asked to do.

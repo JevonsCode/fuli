@@ -202,6 +202,8 @@ class FuliController extends ChangeNotifier {
   }
 
   Notice? get notice => _notice;
+  /// The graph services the last start stopped at, which 「结束它并启动」 ends (empty otherwise).
+  List<OrphanedService> get orphanedServices => _lastFailure?.orphanedServices ?? const [];
   Uri get consoleUri => Uri.parse('http://127.0.0.1:${_snapshot?.port ?? 2727}/');
 
   FuliApi get _api => apiFor(_snapshot?.port ?? 2727);
@@ -462,6 +464,16 @@ class FuliController extends ChangeNotifier {
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
       final report = await _call(() => runtime.start(onStage: _enterStage));
+      _notice = await _startFailure(report) ?? _notice;
+    });
+  }
+
+  /// Ends the graph services the last start stopped at (the person confirmed it) and starts FULI.
+  Future<void> endOrphansAndStart() {
+    if (orphanedServices.isEmpty) return Future.value();
+    _stoppedByPerson = false;
+    return _bringUp(strings.endingOrphans, () async {
+      final report = await _call(() => runtime.endOrphansAndStart(onStage: _enterStage));
       _notice = await _startFailure(report) ?? _notice;
     });
   }

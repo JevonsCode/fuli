@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getJson } from '@/api/client'
+import { Button } from '@/components/ui/button'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { createDebouncedAction } from '@/lib/debounce'
@@ -76,7 +77,10 @@ async function pick(projectId: string) {
       :empty-label="t('settings.peer.noProjectFound')" :hint="found.more ? t('settings.peer.moreProjects') : undefined"
       :disabled="disabled || reading === 'project'" control-id="peer-add-project"
       @search="typed" @update:model-value="pick" />
-    <UiNotice v-if="error" tone="error" data-share-search-error>{{ error }}</UiNotice>
+    <UiNotice v-if="error" tone="error" data-share-search-error>
+      {{ error }}
+      <template #actions><Button size="sm" variant="outline" data-share-search-retry @click="search()">{{ t('common.actions.retry') }}</Button></template>
+    </UiNotice>
   </div>
 </template>
 

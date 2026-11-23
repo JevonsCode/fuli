@@ -127,7 +127,10 @@ onBeforeUnmount(() => {
         {{ t('console.update.stopAndRetry') }}
       </Button>
     </template>
-    <p v-if="notBack" role="alert" class="console-update-error">{{ t('console.update.notBack') }}</p>
+    <p v-if="notBack" role="alert" class="console-update-error">
+      {{ t('console.update.notBack') }}
+      <Button variant="link" size="sm" class="console-update-details" data-console-update-reload @click="props.reload()">{{ t('console.update.reloadPage') }}</Button>
+    </p>
     <Dialog v-model:open="detailsOpen">
       <DialogContent size="md" data-console-update-reason>
         <DialogHeader>

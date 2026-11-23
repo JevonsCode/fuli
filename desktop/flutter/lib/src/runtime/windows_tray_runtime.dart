@@ -73,6 +73,9 @@ class WindowsTrayRuntime implements FuliRuntime {
   Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) =>
       _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
 
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
+
   Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     return parseControllerReply(await _run(_root!, action, onStage, extra));

@@ -102,7 +102,7 @@ onBeforeUnmount(() => request?.abort())
           <template v-else>{{ t('debugTurns.issue.refresh') }}</template>
         </Button>
         <span class="sr-only" role="status">{{ report && copied === report ? t('debugTurns.issue.copied') : '' }}</span>
-        <UiNotice v-if="manualCopy" tone="warning">{{ t('debugTurns.issue.manual') }}</UiNotice>
+        <UiNotice v-if="manualCopy" tone="warning" data-no-action="the report is shown right below for the person to select and copy">{{ t('debugTurns.issue.manual') }}</UiNotice>
       </div>
     </div>
   </Card>
