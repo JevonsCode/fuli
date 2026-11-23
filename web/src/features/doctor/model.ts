@@ -110,6 +110,8 @@ const sinceLabel = (value: unknown) => {
   return time ? t('doctor.since', { time }) : ''
 }
 
+const graphStep = (data: DoctorItem['data']) => Array.isArray(data.steps) && data.steps.some(step => String(step).startsWith('graph/'))
+
 function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
   const title = tableLabel('doctor.kinds', item.kind) ?? t('doctor.kinds.other')
   const data = item.data
@@ -122,7 +124,8 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
     case 'data_format_blocked':
       return { title, subject: text(data.label), to: '/settings/data-format', hint: text(data.lastSeenAt)
         ? t('doctor.hints.dataFormatLastSeen', { time: formatDateTime(text(data.lastSeenAt), currentLocale(), DATE_TIME_MINUTE, { missing: '' }) })
-        : t('doctor.hints.dataFormat') }
+        // A graph step waits with the graph read-only: say so, and that one confirmation does it and can be undone.
+        : t(graphStep(data) ? 'doctor.hints.dataFormatGraph' : 'doctor.hints.dataFormat') }
     // An older install's Docker graph (src/system/graph-migration.js): moved from Settings.
     case 'graph_container':
       return { title, subject: '', to: '/settings?tab=system',

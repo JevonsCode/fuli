@@ -6,6 +6,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
 import { projectDiscoverySummary, type PersonalProjectDiscovery } from './project-discovery'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // A graph search with no hit: whether other projects hold matches, and links into them.
 const props = defineProps<{
@@ -37,7 +38,7 @@ const copy = computed(() => {
         }"
       >
         <span>
-          <strong>{{ match.project.profile.name }}</strong>
+          <strong>{{ projectDisplayName(match.project) }}</strong>
           <small>{{ t('knowledge.workspace.workspace.discovery.candidateCount', { count: match.count }) }}</small>
         </span>
         <b>{{ t('knowledge.workspace.workspace.discovery.enterProject') }}</b>

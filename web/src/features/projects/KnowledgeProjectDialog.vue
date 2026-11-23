@@ -13,6 +13,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { projectDisplayName } from './project-origin'
 
 type ProjectMode = 'create' | 'existing'
 type ConflictResolution = 'defer' | 'keep_target' | 'use_source' | 'coexist'
@@ -281,7 +282,7 @@ async function submit() {
     )
     const targetName = mode.value === 'create'
       ? newProjectName.value.trim()
-      : selectedProject.value?.profile.name
+      : (selectedProject.value && projectDisplayName(selectedProject.value))
         ?? t('projects.knowledgeDialog.relationActors.targetProject')
     emit('close')
     emit('saved', result, targetName)

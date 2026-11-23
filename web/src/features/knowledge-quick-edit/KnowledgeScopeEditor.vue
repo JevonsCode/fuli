@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
@@ -48,7 +49,7 @@ watch(() => draft.value.agentProjectId, async project => {
       personalProjectId: project, status: 'active' })}`)
     const list = Array.isArray(value) ? value : (value as { agents?: unknown[] })?.agents ?? []
     agents.value = (list as Array<{ agentId?: string; profile?: { name?: string } }>)
-      .filter(agent => agent.agentId).map(agent => ({ value: agent.agentId!, label: agent.profile?.name || agent.agentId! }))
+      .filter(agent => agent.agentId).map(agent => ({ value: agent.agentId!, label: (agent.profile?.name ? agentDisplayName({ profile: { name: agent.profile.name, displayName: null } }) : '') || agent.agentId! }))
   } catch {
     agents.value = []
   }

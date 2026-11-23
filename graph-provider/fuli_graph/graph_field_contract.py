@@ -151,6 +151,8 @@ NODE_FIELDS = {
         'b_description_en': 'string?', 'b_description_zh': 'string?', 'b_name_en': 'string?',
         'b_name_zh': 'string?', 'b_occupation_role': 'string?', 'b_occupation_updated_at': 'datetime?',
         'b_revision': 'integer?',
+        # graph/23-temporary-project-names
+        'b_name': 'string?', 'b_profile_json': 'string?', 'b_scope_type': 'string?',
         'b_fuli_ai_review_lock_version': 'integer?', 'b_fuli_confidence_score': 'float?',
         'b_fuli_distinct_task_count': 'integer?', 'b_fuli_inheritance_mode': 'string?',
         'b_fuli_inherited_project_ids': 'string[]?', 'b_fuli_qualified_use_count': 'integer?',

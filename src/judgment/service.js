@@ -8,6 +8,7 @@ import { agentJudgmentView } from './agent-view.js';
 import { acceptanceReviewVerdicts, judgedAcceptances } from './review-verdicts.js';
 import { recordRunnerDecision, recordRunnerOutcome, RUNNER_DECISION_SCHEMA, RUNNER_OUTCOME_SCHEMA } from './runner-routing.js';
 import { taskKnowledgeReader } from '../graphiti/knowledge-reader.js';
+import { projectDisplayName } from '../graphiti/project-display-name.js';
 
 const id = z.string().trim().min(1).max(256);
 // client: the client Tonborg is enabled for and the CLI an opted-in legacy
@@ -64,7 +65,9 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     const wanted = text.toLowerCase();
     try {
       return (await projects(personalSpaceId))
-        .filter(project => String(project.profile?.name ?? '').toLowerCase().includes(wanted))
+        // Its own name, or how a temporary one is shown in either language (「临时项目 #…」).
+        .filter(project => [project.profile?.name, projectDisplayName(project, 'zh-CN'), projectDisplayName(project, 'en-US')]
+          .some(name => String(name ?? '').toLowerCase().includes(wanted)))
         .map(projectIdOf);
     } catch {
       return [];

@@ -35,6 +35,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // 编排: every Agent of the space on one canvas. A name opens that Agent's
 // management page; a quick look (Peek) answers a quick question in place.
@@ -48,8 +49,11 @@ const roster = useProjectAgentRoster(spaceId)
 const agents = roster.agents
 const projects = computed(() => store.state?.personalProjects ?? [])
 const projectById = computed(() => new Map(projects.value.map((project) => [project.project_id, project])))
-const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
-const projectName = (projectId: string) => projectById.value.get(projectId)?.profile.name ?? projectId
+const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: projectDisplayName(project) })))
+const projectName = (projectId: string) => {
+  const project = projectById.value.get(projectId)
+  return project ? projectDisplayName(project) : projectId
+}
 
 const pageLoading = computed(() => roster.loading.value || (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading')))

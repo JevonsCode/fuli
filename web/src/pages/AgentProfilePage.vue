@@ -52,6 +52,7 @@ import { usePageTitle } from "@/layouts/page-title";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 import { usePageRefresh } from "@/layouts/page-refresh";
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // The Workbench and the management sections load only when their tab opens (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
@@ -83,8 +84,10 @@ const projects = computed(() =>
     (item) => item.personal_space_id === space.value,
   ),
 );
-const projectName = (id: string) =>
-  projects.value.find((item) => item.project_id === id)?.profile.name || id;
+const projectName = (id: string) => {
+  const project = projects.value.find((item) => item.project_id === id);
+  return (project && projectDisplayName(project)) || id;
+};
 
 const tasks = ref<ProjectAgentTaskRecord[]>([]);
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
@@ -174,7 +177,7 @@ const currentProjects = computed(() =>
     : [],
 );
 const conversationProjectRecords = computed(() => projects.value.filter((item) => currentProjects.value.includes(item.project_id)));
-const conversationProjects = computed(() => conversationProjectRecords.value.map((item) => ({ id: item.project_id, name: item.profile.name })));
+const conversationProjects = computed(() => conversationProjectRecords.value.map((item) => ({ id: item.project_id, name: projectDisplayName(item) })));
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
 const previousProjects = computed(() =>

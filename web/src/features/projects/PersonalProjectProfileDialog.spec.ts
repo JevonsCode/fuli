@@ -137,4 +137,24 @@ describe('PersonalProjectProfileDialog', () => {
     expect(putJson.mock.calls[0][1].profile).not.toHaveProperty('authors')
     wrapper.unmount()
   })
+
+  it('saves or archives a temporary project without making the person name it first', async () => {
+    const wrapper = mount(PersonalProjectProfileDialog, {
+      props: { project: {
+        project_id: `conversation-${'a'.repeat(64)}`, personal_space_id: 'synthetic-space', scope_type: 'temporary',
+        profile: { name: '会话项目 / Conversation project', lifecycle: 'active' },
+      } },
+    })
+    await flushPromises()
+    const field = wrapper.get('[data-project-name]')
+    // A name FULI once generated is not offered as the project's own; the display name is the hint.
+    expect((field.element as HTMLInputElement).value).toBe('')
+    expect(field.attributes('required')).toBeUndefined()
+    expect(field.attributes('placeholder')).toBe('临时项目 #aaaaaaaa')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(putJson).toHaveBeenCalledTimes(1)
+    expect(putJson.mock.calls[0][1].profile.name).toBe('')
+    wrapper.unmount()
+  })
 })

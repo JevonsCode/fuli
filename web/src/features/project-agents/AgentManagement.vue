@@ -22,6 +22,7 @@ import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgent
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
+import { projectDisplayName } from '@/features/projects/project-origin'
 import type {
   ProjectAgentActivityDay,
   ProjectAgentActivityResult,
@@ -58,7 +59,8 @@ const projects = computed(() => store.state?.personalProjects ?? [])
 const projectById = computed(() => new Map(projects.value.map((project) => [project.project_id, project])))
 function projectName(projectId: string | null | undefined) {
   if (!projectId) return t('projectAgents.notReported')
-  return projectById.value.get(projectId)?.profile.name ?? projectId
+  const project = projectById.value.get(projectId)
+  return project ? projectDisplayName(project) : projectId
 }
 
 const pageLoading = computed(() => !agent.value && (roster.loading.value || (!store.state

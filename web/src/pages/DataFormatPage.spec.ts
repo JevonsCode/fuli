@@ -135,6 +135,30 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
   })
 
+  it('offers a graph export command to copy before the confirm control, only when a graph step waits', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = await mountPage()
+    const confirm = wrapper.get('.data-format-confirm')
+    const backup = confirm.get('[data-graph-backup]')
+    expect(backup.text()).toContain('确认前图谱只读')
+    expect(backup.get('[data-graph-backup-command]').text()).toBe('fuli graph export --output fuli-graph-format-8')
+    const order = backup.element.compareDocumentPosition(confirm.get('[data-apply]').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await backup.get('[data-copy-graph-backup]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('fuli graph export --output fuli-graph-format-8')
+    expect(backup.get('[data-copy-graph-backup]').text()).toBe('已复制')
+    wrapper.unmount()
+
+    const sqliteOnly = plan()
+    sqliteOnly.stores = [sqliteOnly.stores[0]]
+    api.getJson.mockResolvedValue(sqliteOnly)
+    const other = await mountPage()
+    expect(other.find('[data-graph-backup]').exists()).toBe(false)
+    other.unmount()
+  })
+
   it('says who must be stopped before the apply and undo controls', async () => {
     const wrapper = await mountPage()
     const notices = wrapper.findAll('[data-external-writers]')
@@ -172,6 +196,23 @@ describe('DataFormatPage', () => {
     await wrapper.get('[data-confirm-undo]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
+  })
+
+  it('says how many unreadable records a step left, and how many later records an undo filled in', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators', unreadable: 2 }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-result="applied"]').text()).toContain('另有 2 条记录读不懂，原样留下。')
+
+    api.postJson.mockResolvedValueOnce({ status: 'rolled_back', version: 8, adapted: 3 })
+    await wrapper.get('[data-undo]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('另有 3 条之后写入的记录按旧版本的格式补齐')
   })
 
   it('keeps the unverified prune and says the audit log write failed', async () => {
@@ -258,7 +299,9 @@ describe('DataFormatPage', () => {
     vi.useFakeTimers()
     try {
       const wrapper = await mountPage()
-      expect(wrapper.text()).not.toMatch(/fuli migrate|终端/)
+      // Only the graph's pre-confirm export is a terminal command; no restore is.
+      const outsideGraphBackup = wrapper.text().replace(wrapper.get('[data-graph-backup]').text(), '')
+      expect(outsideGraphBackup).not.toMatch(/fuli migrate|终端/)
       api.getJson.mockResolvedValueOnce({ restore: null, stores: [{ label: 'task-schedules.sqlite', store: 'task-schedules',
         kind: 'sqlite', backups: [{ ref: 'format-backups/b1', version: 2, takenAt: '2026-10-01T08:00:00.000Z' }] }] })
       await wrapper.get('[data-restore-open]').trigger('click')
@@ -308,5 +351,21 @@ describe('DataFormatPage', () => {
     expect(api.postJson).toHaveBeenCalledWith('/api/data-format/rollback',
       { label: 'agent-roundtable.sqlite', migrationId: 'roundtable/9-x' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.text()).toContain('已撤销 roundtable/9-x，存储回到版本 8')
+  })
+
+  it('says what graph/23 changes in the person\'s words, and keeps a step it does not know as the Provider wrote it', async () => {
+    setLocale('zh-CN')
+    const temporaryNames = { ...plan(), stores: [{ ...plan().stores[1]!, step: { ...plan().stores[1]!.step,
+      id: 'graph/23-temporary-project-names', summary: 'a temporary project stores no name', fromVersion: 22, toVersion: 23, count: 259 } },
+    plan().stores[0]!] }
+    api.getJson.mockResolvedValue(temporaryNames)
+    const wrapper = await mountPage()
+    const [graph, other] = wrapper.findAll('[data-step-description]')
+    expect(graph!.text()).toContain('临时项目 #编号')
+    expect(graph!.text()).toContain('你起过名的项目不动')
+    expect(graph!.text()).toContain('撤销')
+    expect(other!.text()).toBe('identity keys')
+    expect(wrapper.get('[data-store-plan]').text()).toContain('259')
+    wrapper.unmount()
   })
 })

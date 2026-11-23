@@ -28,6 +28,7 @@ import BolePerformanceSummary from './BolePerformanceSummary.vue'
 import { refreshEmployeeCatalog } from './catalog'
 import { useBoleScoreCards } from './useBoleScoreCards'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 type UnknownRecord = Record<string, unknown>
 type AgentView = {
@@ -92,7 +93,7 @@ const tasksMayBeTruncated = computed(() => tasks.value.length >= taskLimit)
 let requestVersion = 0
 
 const openStatuses = new Set(['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'awaiting_review', 'blocked'])
-const projectNames = computed(() => new Map(props.projects.map((project) => [project.project_id, project.profile.name])))
+const projectNames = computed(() => new Map(props.projects.map((project) => [project.project_id, projectDisplayName(project)])))
 const activeAgents = computed(() => agents.value.filter((agent) => agent.status === 'active'))
 const openTasks = computed(() => tasks.value.filter((task) => openStatuses.has(task.status)))
 const workingAgentIds = computed(() => {
