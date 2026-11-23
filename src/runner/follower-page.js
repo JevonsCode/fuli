@@ -79,18 +79,26 @@ function hostSection(host, hostPath) {
 <p class="note en">${escape(host.name)} revoked this computer. What it had read is deleted; the records waiting here are kept.
 Pair again with <code>fuli runner invite</code> there and <code>fuli runner join</code> here.</p>`;
   }
-  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，${host.reachable ? '现在在线' : '现在不在线'}；上次连上 ${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}。</p>
-<p class="note en">This computer follows <b>${escape(host.name)}</b>, ${host.reachable ? 'which answers now' : 'which does not answer now'}.</p>
+  const now = REACH[String(host.reachable)];
+  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，<span data-reach>${now.zh}</span>；上次连上 ${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}。</p>
+<p class="note en">This computer follows <b>${escape(host.name)}</b>, <span data-reach-en>${now.en}</span>.</p>
 <p><a class="open" href="${escape(hostPath)}">打开 ${escape(host.name)} 的控制台 · Open its console →</a></p>
-${host.reachable === false ? addAddress(host) : ''}`;
+${addAddress(host, { hidden: host.reachable !== false })}`;
 }
 
 // The one next step when the host does not answer: tell this computer where it
 // is. The two computers reach each other directly (one LAN, or an address a VPN
 // or mesh tool gives them), and on a network where mDNS does not cross subnets
 // the address is the only thing missing. One button, then one field.
-function addAddress(host) {
-  return `<div class="away-step">
+// Whether the host answers, as this page says it; null: not known yet, being looked for.
+const REACH = {
+  true: { zh: '现在在线', en: 'which answers now' },
+  false: { zh: '现在不在线', en: 'which does not answer now' },
+  null: { zh: '正在找主机…', en: 'looking for it now…' }
+};
+
+function addAddress(host, { hidden = false } = {}) {
+  return `<div class="away-step" data-away-step${hidden ? ' hidden' : ''}>
   <p>连不上 ${escape(host.name)}？在那台电脑上运行 <code>fuli runner list</code>，把它显示的地址填到这里。</p>
   <p class="note en">If ${escape(host.name)} does not answer, run <code>fuli runner list</code> there and put the address it shows here.</p>
   <button type="button" data-address-open>添加主机地址 / Add the host's address</button>
@@ -162,7 +170,7 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 .away-step p{margin:0 0 6px}
 .away-step button{margin:4px 0 0}
 .away-step form{display:flex;gap:8px;align-items:center;margin-top:4px}
-.away-step form[hidden]{display:none}
+.away-step form[hidden],.away-step[hidden]{display:none}
 .away-step input{flex:0 1 14rem;padding:5px 9px;border:1px solid #d6d9de;border-radius:7px;font:inherit;font-size:13px}
 .away-step form button{margin:0}
 @media (prefers-color-scheme:dark){body{color:#e6e8ea;background:#111315}.note{color:#8b9099}.en{color:#71767d}
@@ -239,6 +247,25 @@ const PAGE_SCRIPT = [
   '    }',
   '  });',
   '}',
+  '',
+  '// Drawn before the host was looked for: ask now, and say what was found.',
+  'const REACH = ' + JSON.stringify(REACH) + ';',
+  'async function look() {',
+  '  try {',
+  `    const state = await (await fetch(${JSON.stringify(STATUS_PATH)})).json();`,
+  '    if (!state.host) return;',
+  '    const now = REACH[String(state.host.reachable)];',
+  '    for (const [selector, value] of [["[data-reach]", now.zh], ["[data-reach-en]", now.en], ["[data-line]", state.line.zh]]) {',
+  '      const element = document.querySelector(selector);',
+  '      if (element) element.textContent = value;',
+  '    }',
+  '    const dot = document.querySelector("#fuli-follower-band .dot");',
+  '    if (dot) dot.className = "dot " + (state.host.reachable ? "on" : "off");',
+  '    const step = document.querySelector("[data-away-step]");',
+  '    if (step) step.hidden = state.host.reachable !== false;',
+  '  } catch { /* this computer\'s console is restarting: the next look tries again */ }',
+  '}',
+  'void look();',
   '',
   '// A host page shown while the host was away opens by itself once the host answers again.',
   'if (document.body.dataset.requested) {',

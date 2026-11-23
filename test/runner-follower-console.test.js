@@ -288,6 +288,19 @@ test('a hello that goes unanswered once does not cut a live event stream from a 
   assert.equal(closed, false, 'the stream carried on the earlier connection is still open');
 });
 
+// Review of #1069: with the host away, `/local` waited for a whole search (up to about 8 seconds) before
+// it drew anything.
+test('this computer\'s own page is drawn at once while the host is away, and looks for it afterwards', async (t) => {
+  const { entry, setAway } = await pairedRunner(t);
+  setAway(true);
+  const started = Date.now();
+  const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.ok(Date.now() - started < 1500, `drawn in ${Date.now() - started} ms`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /正在找主机…/);
+  assert.match(page.text, /void look\(\)/, 'and the page asks right away');
+});
+
 test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
   const { entry, setAway, store } = await pairedRunner(t);
   const first = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
@@ -388,8 +401,10 @@ test('the named proxy and the console relay stay on the host\'s console, whateve
 test('「添加主机地址」 takes a private address from this computer\'s own page and nothing else', async (t) => {
   const { entry, store } = await pairedRunner(t, { nowhere: true });
   const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
-  assert.match(page.text, /添加主机地址/, 'the next step is offered while the host is away');
-  assert.match(page.text, /不在线/, 'the page says plainly that the host did not answer, never "not checked"');
+  assert.match(page.text, /添加主机地址/, 'the next step is there, shown once the page finds the host away');
+  assert.match(page.text, /正在找主机…/, 'drawn at once, saying it is looking for the host');
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, false,
+    'what the page then asks says plainly that the host did not answer');
   assert.match(page.text, /同一个 VPN/, 'how the two computers reach each other is said as it is');
   assert.doesNotMatch(page.text, /中继/, 'no relay is planned, so none is promised');
 

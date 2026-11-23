@@ -125,8 +125,11 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   }
 
   // The follower's own page: what this computer follows, what runs where, and what waits.
+  // Drawn at once from what is kept here (reachable not yet known): looking for
+  // the host can take seconds while it is away, and the page's own script asks
+  // and fills that in, saying meanwhile that it is looking (review of #1069).
   async function page(response, { requested = null } = {}) {
-    const state = await status();
+    const state = await status({ reach: false });
     response.setHeader(SOURCE_HEADER, 'local');
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested }));
