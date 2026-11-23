@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: string, components?: Record<string, string> }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: string, inWsl?: boolean, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
@@ -95,6 +95,22 @@ it('on a runner says its hooks do nothing and which computer runs the older FULI
   const first = wrapper.get('[data-client-first-run="cursor"]').text()
   expect(first).toContain('信任这个文件夹')
   expect(first).toContain('cursor-agent mcp enable fuli')
+  wrapper.unmount()
+})
+
+it('shows a client installed only inside WSL with why FULI cannot connect it, and does not count it as missing', async () => {
+  routed(() => Response.json(statusOf([
+    { id: 'codex', status: 'connected' },
+    { id: 'opencode', label: 'OpenCode', status: 'not_detected', detected: false, inWsl: true },
+    { id: 'kiro', label: 'Kiro', status: 'not_detected', detected: false },
+  ])))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const tile = wrapper.get('[data-client-status="not_detected"]')
+  expect(tile.text()).toContain('在 WSL 里')
+  expect(tile.text()).toContain('这台 Windows 上的 FULI 接不到它')
+  expect(tile.find('[data-connect-client]').exists()).toBe(false)
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端，另有 1 个这台电脑上没装')
   wrapper.unmount()
 })
 

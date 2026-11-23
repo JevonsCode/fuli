@@ -51,10 +51,17 @@ misses a client that has never written its configuration, which on a new compute
 in rec#145 a new Mac had Cursor and OpenCode installed with no `~/.cursor/mcp.json` and no `mcp`
 section in `opencode.json`, so `fuli setup`, `fuli runner join` and 「一键接入」 skipped both and
 only Codex was connected. The commands asked for are each client's own documented one —
-`cursor-agent` and `cursor`, `claude`, `codex`, `opencode`, `agy`, `dsh` — and they are asked of the
+`cursor-agent` and `cursor`, `claude`, `codex`, `opencode`, `agy` — and they are asked of the
 person's login shell (`src/agent-kits/cli-presence.js`), because FULI may run with a shorter `PATH`
 than their terminal. Answers are kept for a few minutes, and only clients agent-installer did not
-find are asked about, so a status read starts at most one shell per missing client.
+find are asked about. A status page never waits for that shell: it shows what the last probe found
+and starts the next one in the background, so a client found that way appears on the following
+read; `fuli setup` and a connection wait for the answer, because they write. On Windows only a
+command Windows itself runs counts: a client found only inside WSL reads its configuration from
+the Linux home, so it is never written under `%USERPROFILE%`. Its tile says 「在 WSL 里」 and that FULI
+on this Windows cannot reach it, and `fuli setup` names it to be set up inside WSL. DeepSeek
+Harness is not looked for by command — Linux has an unrelated `dsh` (distributed shell) — and is
+left to agent-installer, which finds it by its own folder.
 
 This is FULI's only detection of its own, and it decides nothing else: everything read or written
 in a client still goes through agent-installer. Checked with the real agent-installer 0.5.1 in a

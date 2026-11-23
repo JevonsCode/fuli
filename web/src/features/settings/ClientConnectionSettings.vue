@@ -135,6 +135,7 @@ function formatTime(value: string) {
 }
 function explanation(client: ClientTile) {
   if (awaitsFirstConnection(client)) return t('settings.connection.custom.notConnected')
+  if (client.inWsl && client.status === 'not_detected') return t('settings.connection.clients.explain.inWsl')
   if (client.status === 'unknown' && client.lastKnownStatus) {
     return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
   }
@@ -198,7 +199,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             <div class="client-row__body">
               <div class="client-row__head">
                 <strong :title="client.label">{{ client.label }}</strong>
-                <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
+                <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.inWsl && client.status === 'not_detected' ? 'inWsl' : client.status}`) }}</span>
                 <Button v-if="client.custom?.removable" size="icon-sm" variant="ghost" class="client-row__action" :data-remove-custom-client="client.id"
                   :disabled="busy" :loading="removing === client.id" :loading-label="t('settings.connection.custom.removing', { client: client.label })"
                   :title="t('settings.connection.custom.remove', { client: client.label })"

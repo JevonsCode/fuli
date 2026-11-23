@@ -127,8 +127,14 @@ export function formatSetupPreview(plan, options, copy = String) {
   ];
   // Listing a client is not the same as having it: a client FULI knows of but did
   // not find here is named, so "nothing to do" never passes for "all connected" (rec#90, rec#145).
-  const missing = plan.agents.filter(({ available }) => !available);
+  const missing = plan.agents.filter(({ available, inWsl }) => !available && !inWsl);
   if (missing.length) lines.push(`Not on this computer: ${missing.map(({ label }) => label).join(', ')}`);
+  // A client only inside WSL reads its configuration there: FULI on Windows cannot connect it.
+  const inWsl = plan.agents.filter(({ inWsl }) => inWsl);
+  if (inWsl.length) {
+    lines.push(`Installed only inside WSL, so FULI on this Windows cannot connect it: ${inWsl.map(({ label }) => label).join(', ')}. `
+      + 'Run fuli setup inside WSL for it.');
+  }
   if (
     runtimeMode !== 'native' &&
     plan.runtimeModeRecommendation?.recommendedMode === 'native'

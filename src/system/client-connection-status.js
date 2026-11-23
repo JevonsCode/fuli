@@ -54,7 +54,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
 
   async function observe() {
     const observedAt = now().toISOString();
-    const answer = await detectClients(installer, { presence });
+    // A status read never waits for a login shell: what the last probe found, the next one meanwhile.
+    const answer = await detectClients(installer, { presence, wait: false });
     if (answer.status !== 'available') {
       return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [],
         ...(answer.diagnosticCode ? { diagnosticCode: answer.diagnosticCode } : {}) };
@@ -69,6 +70,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
       const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
         // The client still asks the person something itself the first time FULI is used in it (client-first-run.js).
         ...(hasClientFirstRun(client.id) ? { firstRun: client.id } : {}),
+        // Installed only inside WSL: FULI on this Windows cannot connect it (client-presence.js).
+        ...(client.inWsl ? { inWsl: true } : {}),
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own (for DeepSeek Harness, a

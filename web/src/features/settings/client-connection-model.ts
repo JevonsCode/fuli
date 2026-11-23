@@ -12,8 +12,9 @@ export type FuliInstall = { path: string, version: string | null }
 export type ConfiguredInstall = FuliInstall & { exists: boolean, sameAsConsole: boolean }
 // firstRun: this client still asks the person something itself the first time
 // FULI is used in it; the id names which sentence to show.
+// inWsl: installed only inside WSL on this Windows computer, where FULI cannot write it.
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
-  firstRun?: string,
+  firstRun?: string, inWsl?: boolean,
   restartSessions?: number,
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
   overwritten?: boolean, configuredInstall?: ConfiguredInstall,
@@ -54,9 +55,10 @@ export function connectActionKey(status: ClientStatus): 'connect' | 'reconnect' 
   return status === 'skills_left' || status === 'removed' ? 'reconnect' : 'connect'
 }
 
-// The clients the list shows: those on this machine, plus any that FULI was in before.
+// The clients the list shows: those on this machine, plus any that FULI was in before,
+// plus one installed only inside WSL, whose tile says why FULI cannot connect it.
 export function shownClients(observation: ConnectionStatus | null): ClientObservation[] {
-  return (observation?.clients ?? []).filter((client) => client.status !== 'not_detected')
+  return (observation?.clients ?? []).filter((client) => client.status !== 'not_detected' || client.inWsl)
 }
 
 // One tile of the client grid: a detected client, or one the person described by hand (`custom`).
@@ -130,7 +132,7 @@ export function connectionSummary(observation: ConnectionStatus | null):
   { connected: number, total: number, notInstalled: number } {
   const clients = clientTiles(observation)
   return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length,
-    notInstalled: (observation?.clients ?? []).filter((client) => client.status === 'not_detected').length }
+    notInstalled: (observation?.clients ?? []).filter((client) => client.status === 'not_detected' && !client.inWsl).length }
 }
 
 // 「重启并更新」 replaces 「更新接入」 while the client runs, or FULI cannot tell, since it would write its old entry back (rec issue 106).

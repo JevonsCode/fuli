@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { createClientPresence } from '../src/agent-kits/client-presence.js';
@@ -20,12 +23,22 @@ const NEW_COMPUTER = [
   { id: 'kiro', name: 'Kiro', builtin: true, detected: false, platformSupported: true, state: 'not_connected',
     componentStates: [state('mcp', 'missing')] }
 ];
-// Only Cursor's own CLI is installed on this imaginary computer.
-const cliPresence = (installed) => createClientPresence({ presence: { find: async (command) => (installed.includes(command) ? 'native' : null) } });
+// The commands installed on this imaginary computer, and where: 'native' here, 'wsl' only inside WSL.
+const cliPresence = (installed, where = 'native') =>
+  createClientPresence({ presence: { find: async (command) => (installed.includes(command) ? where : null) } });
+// Every file a test writes goes into its own temporary folder, never a shared or real one.
+const scratch = (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-client-presence-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  return directory;
+};
+const observerOf = (t, presence, clients = NEW_COMPUTER) => createClientConnectionObserver({
+  installer: installerWith(clients), customClients: { removable: () => new Set() },
+  historyPath: join(scratch(t), 'history.json'), homeDir: scratch(t), presence });
 
 test('a client installed here but with no configuration yet still counts as on this computer', async () => {
   const presence = cliPresence(['cursor-agent']);
-  assert.deepEqual(await presence.installed(['cursor', 'kiro', 'opencode']), new Set(['cursor']));
+  assert.deepEqual(await presence.find(['cursor', 'kiro', 'opencode']), { installed: new Set(['cursor']), inWsl: new Set() });
   const answer = await detectClients(installerWith(NEW_COMPUTER), { presence });
   assert.deepEqual(answer.clients.map(({ id, detected }) => [id, detected]),
     [['codex', true], ['cursor', true], ['kiro', false]]);
@@ -43,10 +56,10 @@ test('a client that is not on this computer is never asked about twice, and a co
   assert.deepEqual(asked, ['cursor-agent', 'cursor']);
 });
 
-test('setup connects a client whose CLI is here, and names the ones that are not', async () => {
+test('setup connects a client whose CLI is here, and names the ones that are not', async (t) => {
   const presence = cliPresence(['cursor-agent']);
   const plan = await planLocalSetup(parseSetupOptions(['--yes']), {
-    resolvePaths: () => ({ dataDir: '/tmp/none', runtimeSettingsPath: null, adaptiveRuntimeSettingsPath: null }),
+    resolvePaths: () => ({ dataDir: scratch(t), runtimeSettingsPath: null, adaptiveRuntimeSettingsPath: null }),
     detect: () => detectAgents(installerWith(NEW_COMPUTER), { presence }),
     settingsExist: () => true
   });
@@ -78,16 +91,55 @@ test('setup connects a client whose CLI is here, and names the ones that are not
   assert.match(preview, /Not on this computer: Kiro/);
 });
 
-test('the console tells "installed but not connected" from "not installed", and counts both', async () => {
-  const observer = createClientConnectionObserver({
-    installer: installerWith(NEW_COMPUTER),
-    customClients: { removable: () => new Set() },
-    historyPath: '/tmp/fuli-test-does-not-exist/history.json',
-    presence: cliPresence(['cursor-agent'])
-  });
-  const observation = await observer.observe();
-  assert.deepEqual(observation.clients.map(({ id, status }) => [id, status]),
+test('the console tells "installed but not connected" from "not installed", and never waits for a shell to say so', async (t) => {
+  let release;
+  const shell = new Promise((resolve) => { release = resolve; });
+  const presence = createClientPresence({ presence: { find: async (command) => { await shell; return command === 'cursor-agent' ? 'native' : null; } } });
+  const observer = observerOf(t, presence);
+  // The first read answers at once from what is known (nothing yet) and starts the probe.
+  const first = await observer.observe();
+  assert.deepEqual(first.clients.map(({ id, status }) => [id, status]),
+    [['codex', 'connected'], ['cursor', 'not_detected'], ['kiro', 'not_detected']]);
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  // The next read shows what the probe found.
+  const next = await observer.observe();
+  assert.deepEqual(next.clients.map(({ id, status }) => [id, status]),
     [['codex', 'connected'], ['cursor', 'not_connected'], ['kiro', 'not_detected']]);
+});
+
+test('a client only inside WSL is not on this Windows computer for FULI: never written, and said apart', async (t) => {
+  const presence = cliPresence(['cursor-agent'], 'wsl');
+  const answer = await detectClients(installerWith(NEW_COMPUTER), { presence });
+  const cursor = answer.clients.find(({ id }) => id === 'cursor');
+  assert.deepEqual([cursor.detected, cursor.inWsl], [false, true]);
+  // One-click connect refuses it: writing it under %USERPROFILE% would connect nothing.
+  const connect = createClientInstaller({ installer: installerWith(NEW_COMPUTER), presence,
+    install: async () => assert.fail('a WSL-only client must not be written') });
+  await assert.rejects(() => connect({ clientId: 'cursor' }), /unavailable for automatic connection/);
+  // Setup does not connect it and says where it is instead.
+  const plan = await planLocalSetup(parseSetupOptions(['--yes']), {
+    resolvePaths: () => ({ dataDir: scratch(t), runtimeSettingsPath: null, adaptiveRuntimeSettingsPath: null }),
+    detect: () => detectAgents(installerWith(NEW_COMPUTER), { presence }), settingsExist: () => true });
+  assert.deepEqual(plan.agents.find(({ id }) => id === 'cursor'), { id: 'cursor', label: 'Cursor', available: false, inWsl: true,
+    integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing', skills: 'missing' } });
+  const preview = formatSetupPreview(plan, parseSetupOptions(['--yes']));
+  assert.match(preview, /Not on this computer: Kiro$/m);
+  assert.match(preview, /Installed only inside WSL, so FULI on this Windows cannot connect it: Cursor\. Run fuli setup inside WSL/);
+  // The console's tile carries it, waiting for the probe like any other.
+  const observer = observerOf(t, presence);
+  await observer.observe();
+  await new Promise((resolve) => setImmediate(resolve));
+  const tile = (await observer.observe()).clients.find(({ id }) => id === 'cursor');
+  assert.deepEqual([tile.status, tile.inWsl], ['not_detected', true]);
+});
+
+test('DeepSeek Harness is never taken for installed from a command named dsh alone', async () => {
+  const asked = [];
+  const presence = createClientPresence({ presence: { find: async (command) => { asked.push(command); return 'native'; } } });
+  const found = await presence.find(['dsh', 'cursor']);
+  assert.deepEqual([...found.installed], ['cursor']);
+  assert.equal(asked.includes('dsh'), false);
 });
 
 test('one-click connect writes a client whose CLI is here, and refuses one that is not installed', async () => {
