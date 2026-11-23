@@ -1,3 +1,7 @@
+import { X509Certificate } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 // A task token says which FULI issued it (docs/runner-roles-design.md §4.4),
 // so the calls and the checkpoint of a task go back to the computer that
 // entered it, whatever the routes became meanwhile. A token the host issues
@@ -38,16 +42,59 @@ export function withIssuedToken(name, args) {
 }
 
 // A task entry's answer with its token as the client is given it: naming the
-// host that issued it. Only the token fields change, the rest is the host's.
+// host that issued it, everywhere it appears (the token fields, and the calls
+// the answer suggests for recovery, such as read_task_preferences'), in the
+// text and in the structured answer alike, so the model never sees the token
+// written two ways. Whatever form the host's answer takes (JSON, or JSON with
+// a line after it), nothing else of it changes.
 export function answerWithIssuer(result, hostFingerprint) {
-  const content = Array.isArray(result?.content) ? result.content : [];
-  if (result?.isError || !hostFingerprint || content.length !== 1 || content[0]?.type !== 'text') return result;
-  let value;
-  try { value = JSON.parse(content[0].text); } catch { return result; }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
-  const fields = ['taskContextToken', 'task_context_token'].filter((field) => typeof value[field] === 'string');
-  if (!fields.length) return result;
-  for (const field of fields) value[field] = issuedToken(hostFingerprint, value[field]);
-  const text = JSON.stringify(value);
-  return { ...result, content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
+  if (result?.isError || !hostFingerprint) return result;
+  const raw = entryTokenIn(result);
+  if (!raw || readIssued(raw)) return result;
+  const issued = issuedToken(hostFingerprint, raw);
+  const swap = (text) => text.split(raw).join(issued);
+  return { ...result,
+    content: (Array.isArray(result.content) ? result.content : [])
+      .map((item) => (item?.type === 'text' && typeof item.text === 'string' ? { ...item, text: swap(item.text) } : item)),
+    ...(result.structuredContent === undefined ? {}
+      : { structuredContent: JSON.parse(swap(JSON.stringify(result.structuredContent))) }) };
+}
+
+// The task token a task entry was answered with, wherever the answer keeps it.
+function entryTokenIn(result) {
+  const structured = result?.structuredContent;
+  const named = structured?.taskContextToken ?? structured?.task_context_token;
+  if (typeof named === 'string' && named) return named;
+  for (const item of Array.isArray(result?.content) ? result.content : []) {
+    const match = item?.type === 'text' ? /"(?:taskContextToken|task_context_token)"\s*:\s*"([^"\\]{1,200})"/.exec(item.text) : null;
+    if (match) return match[1];
+  }
+  return null;
+}
+
+// On the FULI that issued it: a token the client was given with this FULI's
+// own name (a conversation begun on a computer that follows this one, and
+// continued here) is this FULI's own token; a token that names another FULI
+// is that FULI's, and never taken here. issuer: the start of this
+// installation's own fingerprint, or null where it has none. Answers
+// { args } or { elsewhere } (the issuer the token names).
+export function tokenIssuedHere(args, issuer) {
+  const token = args?.taskContextToken;
+  const read = readIssued(token);
+  if (!read) return { args };
+  if (issuer && read.issuer === issuer.slice(0, ISSUER_LENGTH).toLowerCase()) {
+    return { args: { ...args, taskContextToken: read.token } };
+  }
+  return { elsewhere: read.issuer };
+}
+
+// The start of this installation's own fingerprint, read from its device
+// certificate where it has one; never made here (only pairing makes one).
+export function ownIssuer(dataDir, { read = (path) => readFileSync(path, 'utf8') } = {}) {
+  // The SHA-256 of the certificate, as a pairing pins it (device-identity.js certificateFingerprint), read without
+  // loading the peer modules into every MCP start.
+  try {
+    const digest = new X509Certificate(read(join(dataDir, 'peer', 'device-cert.pem'))).fingerprint256;
+    return digest.replaceAll(':', '').toLowerCase().slice(0, ISSUER_LENGTH);
+  } catch { return null; }
 }

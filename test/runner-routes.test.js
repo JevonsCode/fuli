@@ -12,7 +12,7 @@ import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
-import { issuedToken, withIssuedToken } from '../src/runner/task-issuer.js';
+import { answerWithIssuer, issuedToken, tokenIssuedHere, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 // docs/runner-roles-design.md §3, §4, §10. Synthetic computers and folders only.
@@ -245,4 +245,27 @@ test('a console that cannot be reached and one that answers with an error are sa
     fetchImpl: async () => { throw new TypeError('fetch failed'); } }), { code: 'local_fuli_not_running' });
   await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', away], { write: () => {},
     readConfig: () => { throw new Error('synthetic: unreadable'); } }), { code: 'local_fuli_unreadable' });
+});
+
+// Review of #1075: a conversation begun on a follower and continued on the host carries the prefixed token.
+test('the FULI that issued a token takes it back with its own name on it, and refuses another FULI\'s', () => {
+  const own = 'ab'.repeat(8);
+  assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${own}.fuli-task-synthetic`, workLog: 'x' }, `${own}ffff`),
+    { args: { taskContextToken: 'fuli-task-synthetic', workLog: 'x' } });
+  assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${'cd'.repeat(8)}.fuli-task-synthetic` }, own),
+    { elsewhere: 'cd'.repeat(8) });
+  assert.deepEqual(tokenIssuedHere({ taskContextToken: 'fuli-task-synthetic' }, own), { args: { taskContextToken: 'fuli-task-synthetic' } });
+  assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${own}.x` }, null), { elsewhere: own },
+    'an installation without an identity issued no prefixed token');
+});
+
+test('an entry answer names its issuer wherever the token appears, recovery hints included', () => {
+  const entry = { taskContextToken: 'fuli-task-synthetic', entry_recovery: [{ tool: 'read_task_preferences',
+    arguments: { taskContextToken: 'fuli-task-synthetic' } }] };
+  const text = `${JSON.stringify(entry)}\nentry_incomplete={"reason":"entry_deadline"}`;
+  const answered = answerWithIssuer({ content: [{ type: 'text', text }], structuredContent: entry }, 'ab'.repeat(32));
+  const issued = `fuli-from-${'ab'.repeat(8)}.fuli-task-synthetic`;
+  assert.equal(answered.structuredContent.entry_recovery[0].arguments.taskContextToken, issued);
+  assert.equal(answered.content[0].text.split(issued).length - 1, 2, 'both mentions, in the text too');
+  assert.doesNotMatch(answered.content[0].text.replaceAll(issued, ''), /fuli-task-synthetic/, 'never written the other way');
 });
