@@ -1,112 +1,23 @@
-name: Desktop client
+name: Candidate desktop acceptance
 
-# The Flutter desktop client (desktop/flutter), the Windows tray package
-# that ships it (.github/actions/windows-tray, the same build a release
-# attaches) and the macOS .dmg (.github/actions/macos-app, also what a
-# release attaches). Builds here are workflow artifacts for testing; they are unsigned
-# (the .dmg is signed only when the Developer ID secrets exist).
 on:
-  pull_request:
-    paths:
-      - desktop/**
-      - scripts/build-windows-*.js
-      - scripts/package-windows-tray-release.js
-      - scripts/*macos*.js
-      - scripts/bundle-build.js
-      - src/desktop/**
-      - src/native-runtime/macos-assets.js
-      - src/native-runtime/bundle-manifest.js
-      - .github/actions/windows-tray/**
-      - .github/actions/macos-app/**
-      - .github/workflows/desktop-client.yml
-  push:
-    branches:
-      - main
-    paths:
-      - desktop/**
-      - scripts/build-windows-*.js
-      - scripts/package-windows-tray-release.js
-      - scripts/*macos*.js
-      - scripts/bundle-build.js
-      - src/desktop/**
-      - src/native-runtime/macos-assets.js
-      - src/native-runtime/bundle-manifest.js
-      - .github/actions/windows-tray/**
-      - .github/actions/macos-app/**
-      - .github/workflows/desktop-client.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: desktop/flutter
-
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: 3.41.9
-          cache: true
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
-
-  windows:
-    needs: test
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: 3.41.9
-          cache: true
-      - run: flutter pub get
-      - run: flutter build windows --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fuli-desktop-windows
-          path: desktop/flutter/build/windows/x64/runner/Release/
-          if-no-files-found: error
-          retention-days: 14
-
-  macos:
-    needs: test
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: 3.41.9
-          cache: true
-      - run: flutter pub get
-      - run: flutter build macos --release
-      # Zipped with ditto: an artifact upload would drop the framework symlinks inside FULI.app.
-      - run: ditto -c -k --keepParent build/macos/Build/Products/Release/FULI.app build/FULI-macos.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fuli-desktop-macos
-          path: desktop/flutter/build/FULI-macos.zip
-          if-no-files-found: error
-          retention-days: 14
-
-  # The zip a release attaches, built from this commit: the desktop client
-  # must be its only tray app (client/FULI.exe, started by the root Fuli.exe).
   windows-tray:
-    needs: test
+    timeout-minutes: 65
     runs-on: windows-latest
     defaults:
       run:
         working-directory: .
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: a1420abc6c9932d9c671dc87f4b4fe0f76be9df5
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -152,49 +63,66 @@ jobs:
             throw 'The second run did not find the chosen installation'
           }
           Write-Output "$($setup.Name) installed $($record.applicationVersion) at $($record.packageRoot)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fuli-windows-tray
-          path: ${{ steps.tray.outputs.release }}
-          if-no-files-found: error
-          retention-days: 7
+      - name: Verify Windows installer and portable archive digests
+        shell: pwsh
+        env:
+          CANDIDATE_RELEASE: ${{ steps.tray.outputs.release }}
+        run: |
+          $products = @(Get-ChildItem -LiteralPath $env:CANDIDATE_RELEASE -File | Where-Object { $_.Extension -in '.zip', '.exe' })
+          if ($products.Count -ne 2) { throw 'Expected one installer and one portable archive' }
+          foreach ($product in $products) {
+            $sum = (Get-FileHash -Algorithm SHA256 -LiteralPath $product.FullName).Hash.ToLowerInvariant()
+            $expected = ((Get-Content -LiteralPath ($product.FullName + '.sha256') -Raw).Trim() -split '\s+')[0]
+            if ($sum -ne $expected) { throw 'Candidate checksum does not match its manifest' }
+            Write-Output "CANDIDATE_PACKAGE sha256=$sum bytes=$($product.Length) name=$($product.Name)"
+          }
 
-  # The macOS .dmg (.github/actions/macos-app): FULI.app with Node, Java 21,
-  # Neo4j and the Provider's Python inside, for Apple silicon. Unsigned unless
-  # the Developer ID secrets exist. The smoke test mounts it, copies FULI.app
-  # out, and starts FULI from it with a temporary HOME, ephemeral ports and no
-  # Node, Java, Python or uv on PATH. A release attaches the same image (release.yml).
   macos-dmg:
-    needs: test
     runs-on: macos-15
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: .
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v6
+      - name: Read the candidate-only acceptance program
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Keep the test outside the product checkout
+        shell: bash
+        run: |
+          cp scripts/macos-app-smoke.js "$RUNNER_TEMP/candidate-macos-smoke.mjs"
+          cp acceptance/macos-installed-mcp-recovery.mjs "$RUNNER_TEMP/macos-installed-mcp-recovery.mjs"
+      - name: Check out the frozen product
+        uses: actions/checkout@v6
+        with:
+          ref: a1420abc6c9932d9c671dc87f4b4fe0f76be9df5
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           package-manager-cache: false
-      - run: npm ci
-      - id: mac
-        uses: ./.github/actions/macos-app
-        with:
-          certificate-p12: ${{ secrets.MACOS_CERT_P12 }}
-          certificate-password: ${{ secrets.MACOS_CERT_PASSWORD }}
-          apple-id: ${{ secrets.APPLE_ID }}
-          team-id: ${{ secrets.APPLE_TEAM_ID }}
-          app-password: ${{ secrets.APPLE_APP_PASSWORD }}
-      - name: Install and start FULI from the disk image
+      - name: Verify the source and runner
         shell: bash
         run: |
-          dmg="$(ls "${{ steps.mac.outputs.release }}"/*.dmg)"
-          ls -l "${{ steps.mac.outputs.release }}"
-          node scripts/macos-app-smoke.js "$dmg"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fuli-macos-dmg
-          path: ${{ steps.mac.outputs.release }}
-          if-no-files-found: error
-          retention-days: 7
+          test "$(git rev-parse HEAD)" = "a1420abc6c9932d9c671dc87f4b4fe0f76be9df5"
+          test "$(uname -m)" = arm64
+          sw_vers
+      - run: npm ci
+      - id: mac
+        name: Build the candidate Apple silicon disk image
+        uses: ./.github/actions/macos-app
+      - name: Verify, install and test the disk image on macOS
+        shell: bash
+        env:
+          CANDIDATE_RELEASE: ${{ steps.mac.outputs.release }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          images=("$CANDIDATE_RELEASE"/*.dmg)
+          test "${#images[@]}" -eq 1
+          dmg="${images[0]}"
+          expected="$(awk '{print $1; exit}' "$dmg.sha256")"
+          actual="$(shasum -a 256 "$dmg" | awk '{print $1}')"
+          test "$expected" = "$actual"
+          echo "CANDIDATE_PACKAGE sha256=$actual bytes=$(stat -f %z "$dmg") name=$(basename "$dmg")"
+          cp "$RUNNER_TEMP/candidate-macos-smoke.mjs" scripts/candidate-macos-smoke.mjs
+          cp "$RUNNER_TEMP/macos-installed-mcp-recovery.mjs" acceptance/macos-installed-mcp-recovery.mjs
+          node scripts/candidate-macos-smoke.mjs "$dmg"

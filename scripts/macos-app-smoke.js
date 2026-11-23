@@ -10,6 +10,8 @@ import { copyFile } from 'node:fs/promises';
 import { updateMacosAppFromRelease } from '../src/desktop/macos-app-update.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { DEFAULT_RUNTIME_SETTINGS, PORT_KEYS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
+import { DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, writeAdaptiveRuntimeSettings } from '../src/adaptive-runtime/settings.js';
+import { verifyInstalledMcpRecovery } from '../acceptance/macos-installed-mcp-recovery.mjs';
 
 // CI's check of a built FULI .dmg (.github/workflows/desktop-client.yml):
 // mount it, copy FULI.app out as a person would, and start FULI the way the
@@ -55,6 +57,8 @@ async function smokeMacosDmg(dmg) {
     await mkdir(dataDir, { recursive: true });
     writeRuntimeSettings(join(dataDir, 'runtime-settings.json'),
       { ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native', ports });
+    writeAdaptiveRuntimeSettings(join(dataDir, 'adaptive-runtime-settings.json'),
+      { ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true });
 
     const before = reply(await controller('status'));
     assert.equal(before.status, 'not_configured', JSON.stringify(before));
@@ -94,6 +98,8 @@ async function smokeMacosDmg(dmg) {
     assert.deepEqual((await readdir(join(root, 'Applications'))).sort(), ['FULI.app'], 'no staged or previous bundle is left');
     await command('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
     step('One-click update swapped FULI.app in place from the image, restarted FULI, and the console answers again');
+
+    await verifyInstalledMcpRecovery({ packageRoot, dataDir, home, env, port: ports.console, version });
 
     const stop = reply(await controller('stop'));
     assert.equal(stop.ok, true, 'stop failed: ' + stop.error);
