@@ -21,6 +21,7 @@ import { runConnectCommand } from './cli/connect-command.js';
 import { runPeerCommand } from './cli/peer-command.js';
 import { runRunnerCommand } from './cli/runner-command.js';
 import { runMcpCommand, startupMessage } from './cli/mcp-command.js';
+import { startupFailureLine } from './local-runtime/startup-failure-line.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
 import { runWorkspaceConnectionCommand } from './cli/workspace-connection-command.js';
@@ -120,6 +121,9 @@ if (isMainModule(import.meta.url, process.argv[1])) {
     })
     .catch((error) => {
       console.error(error.message);
+      // A failure a desktop client can act on carries its reason on one more line (startup-failure-line.js).
+      const line = startupFailureLine(error);
+      if (line) console.error(line);
       process.exitCode = 1;
     });
 }

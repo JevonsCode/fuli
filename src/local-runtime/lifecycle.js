@@ -35,7 +35,9 @@ const STOP_IDENTITY_TIMEOUT_MS = 10_000;
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
   // One start at a time per data directory: a later one finds FULI running.
-  const release = deps.lockStart(dataDirOf(input.paths));
+  // Waiting for another start is a phase of its own (startup-stage.js).
+  const release = deps.lockStart(dataDirOf(input.paths),
+    () => input.onStage?.('start_wait', { maxSeconds: CONSOLE_START_WAIT_MS / 1000 }));
   try {
     return await startUnlocked(input, deps);
   } finally {
@@ -337,9 +339,12 @@ function dataDirOf(paths) {
   return typeof paths?.graphRuntimeStatePath === 'string' ? dirname(paths.graphRuntimeStatePath) : null;
 }
 
-function lockConsoleStart(dataDir) {
+function lockConsoleStart(dataDir, onWait = () => {}) {
   if (!dataDir || !existsSync(dataDir)) return () => {};
   try {
+    try { return acquireConsoleStartLock(dataDir); }
+    catch (error) { if (error?.code !== 'file_lock_busy') throw error; }
+    onWait();
     return acquireConsoleStartLock(dataDir, { waitMs: CONSOLE_START_WAIT_MS });
   } catch (error) {
     if (error?.code !== 'file_lock_busy') throw error;

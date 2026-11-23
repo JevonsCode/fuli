@@ -95,7 +95,9 @@ test('native setup bypasses Docker and starts the native graph runtime', async (
       assert.equal(input.paths, PATHS);
       return nativeRuntime;
     },
-    startNativeProviders(paths, envPath, options) {
+    startNativeProviders(paths, envPath, { onStage, ...options }) {
+      // The native start reports its own waits (startup-stage.js).
+      assert.equal(typeof onStage, 'function');
       started.push({ paths, envPath, options });
     },
     async fetch(url, options = {}) {
@@ -863,7 +865,7 @@ test('a console that never answers is stopped after 60 s, saying what still runs
     assert.match(error.message, /C:\/Fuli\/logs\/runtime\.log/);
     // What happened only: the terminal words its retry, the window offers a button (startup-failure.js).
     assert.doesNotMatch(error.message, /Run the same command again/);
-    assert.deepEqual(error.startupFailure, { code: 'console_not_answering', seconds: 60, logPath: 'C:/Fuli/logs/runtime.log' });
+    assert.deepEqual(error.startupFailure, { code: 'console_not_answering', seconds: 60, logPath: 'C:/Fuli/logs/runtime.log', port: 2727 });
     return true;
   });
   assert.equal(elapsed(), 60_000, 'the wait ends at the deadline, not past it');

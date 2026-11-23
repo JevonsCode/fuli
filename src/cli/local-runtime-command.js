@@ -18,7 +18,7 @@ import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
-import { startupStageWriter } from '../local-runtime/startup-stage.js';
+import { startupStageWriter, withoutStageMarkers } from '../local-runtime/startup-stage.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
@@ -41,7 +41,8 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     lan: runtimeSettings.lanAccess,
     runtimeSettings,
     paths,
-    env,
+    // The services a start leaves running do not keep a client's ask for step lines.
+    env: withoutStageMarkers(env),
     onProgress: write,
     // What the start is doing now, so a terminal is not left turning in
     // silence through the provider and console waits (startup-stage.js).
@@ -70,7 +71,7 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   // the next step (startup-failure.js); a desktop client also gets it as a line.
   const result = ['start', 'restart'].includes(command)
     ? await reportingStartupFailure(() => handlers[command](input, dependencies.lifecycleDependencies),
-      { write, env, logPath: paths.logPath ?? null })
+      { logPath: paths.logPath ?? null })
     : await handlers[command](input, dependencies.lifecycleDependencies);
   const agentSetupCheck = agentSetup ? await agentSetup : null;
   const outputResult = agentSetupCheck
