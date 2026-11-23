@@ -28,23 +28,51 @@ const CONNECTOR = confirmed('synthetic-connector-runbook', 'Synthetic Connector 
 const RETRY = confirmed('synthetic-retry', '合成短信渠道的重试策略', '短信渠道最多重试 3 次，间隔 200 和 400 毫秒。');
 const recall = (prompt, byCategory, byOwnWords) => recallTaskKnowledge(application(byCategory, byOwnWords), { personalProjectId: PROJECT }, prompt);
 
-test('an unrelated confirmed item a category query found is a searched miss, with no 知识增强 marker', async () => {
+const indexed = result => (result.knowledge_index?.items ?? []).map(([id]) => id);
+
+test('an unrelated confirmed item a category query found is only a title, with no 知识增强 marker', async () => {
   for (const [prompt, item] of [
     ['先看看之前的约定，把代码摸底的结果整理一下交回主会话。', DUBBING],
     ['按我们的规范修复权限边界：访客不能读别的项目的知识。', RELEASE_NOTES],
     ['检查一下登录态是否过期，看看认证流程。', CONNECTOR]
   ]) {
     const result = await recall(prompt, [item]);
-    assert.notEqual(result.status, 'matched', prompt);
-    assert.deepEqual(result.entities ?? [], [], prompt);
-    // Never 「知识增强」. A category search that missed says 「已检索，未命中」; a
-    // search by the prompt's own words that found nothing relevant is
-    // reported as not needed, with no marker at all (rec#88).
+    assert.deepEqual(result.entities ?? [], [], `${prompt}: never whole`);
     assert.doesNotMatch(JSON.stringify(result), /知识增强/, prompt);
-    const marker = result.sourceMarker ?? result.noMatchSourceMarker;
-    if (marker) assert.match(marker.leadMarkdown, /已检索，未命中/, prompt);
-    else assert.equal(result.status, 'not_needed', prompt);
+    // Demoted, never dropped: the index names it by title.
+    assert.equal(result.status, 'indexed', prompt);
+    assert.deepEqual(indexed(result), [item.id], prompt);
   }
+});
+
+// Review of #1080: without an embedding model (FULI's default), a Chinese task
+// and an English item a category query found by its generic words share
+// nothing the check can see. Main showed these whole; dropping them was a
+// recall loss. They are now titles the Agent can read.
+test('a cross-language item only a generic category query found is demoted to a title, not lost', async () => {
+  const triage = confirmed('synthetic-incident-triage', 'Incident triage runbook', 'Page the on-call, then bisect the deploy.');
+  const refund = confirmed('synthetic-refund-decision', 'Refund handling decision', 'Refunds go back to the original payment method.',
+    { type: 'Decision' });
+  for (const [prompt, item] of [['线上报错了怎么处理', triage], ['照之前定好的做法来处理退款', refund]]) {
+    const result = await recall(prompt, [item]);
+    assert.deepEqual(indexed(result), [item.id], prompt);
+    assert.match(result.knowledge_index.items[0][1], new RegExp(item.name.split(' ')[0]), `${prompt}: by its title`);
+    assert.doesNotMatch(JSON.stringify(result), /知识增强/, prompt);
+  }
+});
+
+test('an item both a category query and the task\'s own words found counts as the task\'s own', async () => {
+  const triage = confirmed('synthetic-incident-triage', 'Incident triage runbook', 'Page the on-call, then bisect the deploy.');
+  const result = await recall('线上报错了怎么处理', [triage], [triage]);
+  assert.deepEqual(result.entities.map(item => item.key), ['synthetic-incident-triage']);
+  assert.equal(result.knowledge_index, undefined);
+  assert.match(result.sourceMarker.leadMarkdown, /知识增强/);
+});
+
+test('beside a whole match, a demoted item is still named in the index', async () => {
+  const result = await recall('按我们的约定，短信渠道也按重试策略来。', [DUBBING, RETRY]);
+  assert.deepEqual(result.entities.map(item => item.key), ['synthetic-retry']);
+  assert.deepEqual(indexed(result), ['synthetic-dubbing']);
 });
 
 test('a related item still comes through, by the task\'s own words or by the category they triggered', async () => {

@@ -154,7 +154,8 @@ export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
   // with none ("继续") has nothing to search for.
   if (!matched.length) {
     const own = ownClauseQueries(statementText);
-    return own.length ? { status: 'planned', trigger_categories: ['topic'], queries: own.slice(0, MAX_QUERIES) }
+    return own.length ? { status: 'planned', trigger_categories: ['topic'], queries: own.slice(0, MAX_QUERIES),
+      query_sources: own.slice(0, MAX_QUERIES).map(() => 'own') }
       : { status: 'not_needed', trigger_categories: [], queries: [] };
   }
   // Named targets already focus every query; otherwise the prompt's own
@@ -178,10 +179,15 @@ export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
     : unique([...ownClauseQueries(statementText), ...categoryQueries]);
   // The checks query goes out bare: a target's name would only dilute it.
   const verify = matched.some(({ category }) => category === 'verification');
+  const planned = [...queries.filter(query => !query.endsWith(VERIFY_QUERY)).slice(0, MAX_QUERIES), ...(verify ? [VERIFY_QUERY] : [])];
+  // Which queries carry a category's canned words rather than the task's own
+  // (recallCandidates holds what only those found to the task's words).
+  const canned = new Set([...categoryQueries, VERIFY_QUERY]);
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
-    queries: [...queries.filter(query => !query.endsWith(VERIFY_QUERY)).slice(0, MAX_QUERIES), ...(verify ? [VERIFY_QUERY] : [])]
+    queries: planned,
+    query_sources: planned.map(query => (canned.has(query) ? 'category' : 'own'))
   };
 }
 
@@ -271,16 +277,21 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   // A personal preference reaches a task only through its scoped
   // effective_preferences, never as recalled knowledge (rec#15 D-27.7).
   const results = settlements
-    .map((settlement, index) => ({ settlement, category: isCategoryQuery(plan.queries[index]) }))
+    .map((settlement, index) => ({ settlement, category: plan.query_sources?.[index] === 'category' }))
     .filter(({ settlement }) => settlement.status === 'fulfilled')
     .map(({ settlement: { value }, category }) => ({ category,
       facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(ownText).slice(0, 8192));
   const taskTerms = new Set([...contentTerms(ownText), ...categoryTerms(plan.trigger_categories)]);
-  const candidates = kind => recallCandidates(results, kind, focusTerms, taskTerms);
-  const factCandidates = confirmedFirst(candidates('facts'));
-  const entityCandidates = confirmedFirst(candidates('entities'));
+  const factFound = recallCandidates(results, 'facts', focusTerms, taskTerms);
+  const entityFound = recallCandidates(results, 'entities', focusTerms, taskTerms);
+  const factCandidates = confirmedFirst(factFound.candidates);
+  const entityCandidates = confirmedFirst(entityFound.candidates);
+  // What only a category query found and the task never touches: a title in
+  // the index, never a whole item with 「知识增强」 (review of #1080).
+  const demoted = [...rankedUnique(factFound.demoted, 'relationship').map(item => ({ item, kind: 'relationship' })),
+    ...rankedUnique(entityFound.demoted, 'entity').map(item => ({ item, kind: 'entity' }))];
   // rec#63: how often Agents used each candidate once shown reorders, within
   // the same place, by a bounded factor on the score; it never drops one.
   const prior = usagePriorLookup(application.recallImpressions, {
@@ -291,7 +302,9 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     entities: rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity)
   };
   // rec#88: a pending item the task names only in passing waits as a title.
-  const { facts, entities, weak } = relevantPending(ranked, ownText, { verifying: plan.trigger_categories.includes('verification') });
+  const relevant = relevantPending(ranked, ownText, { verifying: plan.trigger_categories.includes('verification') });
+  const { facts, entities } = relevant;
+  const weak = [...relevant.weak, ...demoted];
   if (!facts.length && !entities.length && weak.length) return weakPendingIndex(plan, weak);
   const pendingSlots = Object.entries({ facts, entities })
     .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
@@ -329,6 +342,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       ? { next: await projectStoresNothing(application, resolution.personalProjectId) ? EMPTY_NEXT : MISS_NEXT } : {}),
     ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
       ? { confirmed_use: CONFIRMED_USE } : {}),
+    ...(demoted.length && (facts.length || entities.length) ? { knowledge_index: titleIndex(demoted) } : {}),
     facts,
     entities
   };
@@ -379,18 +393,24 @@ function contentTerms(text) {
   return new Set([...words, ...han]);
 }
 
-// Only weakly related pending items matched: their titles, as the index tier lists them.
+// Only weakly related items matched — pending ones whose head did not match,
+// or confirmed ones only a category query found: their titles, as the index
+// tier lists them, with no 「知识增强」 marker.
 function weakPendingIndex(plan, weak) {
   return {
     status: 'indexed',
     trigger_categories: plan.trigger_categories,
     query_count: plan.queries.length,
     guidance: taskKnowledgeRetrievalGuidance(),
-    knowledge_index: { matched_in_search: weak.length, read: INDEX_READ,
-      items: weak.slice(0, MAX_INDEX_ITEMS).map(({ item, kind }) => [item.id, indexTitle(knowledgeItemTitle(item, kind))]) },
+    knowledge_index: titleIndex(weak),
     facts: [],
     entities: []
   };
+}
+
+function titleIndex(weak) {
+  return { matched_in_search: weak.length, read: INDEX_READ,
+    items: weak.slice(0, MAX_INDEX_ITEMS).map(({ item, kind }) => [item.id, indexTitle(knowledgeItemTitle(item, kind))]) };
 }
 
 async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
@@ -682,27 +702,30 @@ function confirmedByPeople(items) {
   return items.length > 0 && items.every((item) => item.confirmation_status === 'confirmed');
 }
 
-// What a recalled item has to have to reach the entry (rec#111). An item a
-// search by the task's own words found keeps the rule it always had: this
-// project's items are read on, and the rest only where the task names them.
-// An item that only a canned category query found ("认证 登录 … runbook") is
-// where the noise came from — a dubbing note for a code survey, release notes
-// for a permissions fix, a connector runbook for a receipt, each shown with
-// 「知识增强」 — so if it is confirmed (shown whole with that marker) it also
-// has to share something with the task: a name or identifier it names, a
+// What a recalled item has to have to reach the entry whole (rec#111). An
+// item a search by the task's own words found keeps the rule it always had:
+// this project's items are read on, and the rest only where the task names
+// them. An item that only a canned category query found ("认证 登录 … runbook")
+// is where the noise came from — a dubbing note for a code survey, release
+// notes for a permissions fix, a connector runbook for a receipt, each shown
+// with 「知识增强」 — so if it is confirmed (shown whole with that marker) it
+// also has to share something with the task: a name or identifier it names, a
 // word or pair of Chinese characters of its own text or of the category its
 // words triggered, or a meaning match the Provider's statistics stood behind.
-// Hits of the task's own words, a cross-language one included, are never
-// second-guessed here: denoising must not cost recall. A task with no
-// comparable words keeps what was found.
+// One that does not is demoted, never dropped: it is a title in the index, so
+// "线上报错了怎么处理" still learns an "Incident triage runbook" exists when
+// no embedding model connects the two (review of #1080). Hits of the task's
+// own words are never second-guessed, and an item both kinds of query found
+// counts as the task's own. A task with no comparable words keeps everything.
 function recallCandidates(results, kind, focusTerms, taskTerms) {
-  const ownIds = new Set(results.filter(result => !result.category)
-    .flatMap(result => result[kind] ?? []).map(item => item?.id).filter(Boolean));
-  const own = results.filter(result => !result.category).flatMap(result => result[kind] ?? []);
-  const fromCategory = results.filter(result => result.category).flatMap(result => result[kind] ?? [])
-    .filter(item => !ownIds.has(item?.id));
-  return [...filterRecallCandidates(own, focusTerms),
-    ...filterRecallCandidates(fromCategory, focusTerms).filter(item => categoryItemRelevant(item, focusTerms, taskTerms))];
+  const ownResults = results.filter(result => !result.category);
+  const ownIds = new Set(ownResults.flatMap(result => result[kind] ?? []).map(item => item?.id).filter(Boolean));
+  const own = ownResults.flatMap(result => result[kind] ?? []);
+  const fromCategory = filterRecallCandidates(results.filter(result => result.category).flatMap(result => result[kind] ?? [])
+    .filter(item => !ownIds.has(item?.id)), focusTerms);
+  const relevant = fromCategory.filter(item => categoryItemRelevant(item, focusTerms, taskTerms));
+  return { candidates: [...filterRecallCandidates(own, focusTerms), ...relevant],
+    demoted: fromCategory.filter(item => !relevant.includes(item)) };
 }
 
 function filterRecallCandidates(items, focusTerms) {
@@ -717,13 +740,6 @@ function categoryItemRelevant(item, focusTerms, taskTerms) {
   const focusTokens = recallFocusTokens(focusTerms);
   if (!focusTokens.length && !taskTerms.size) return true;
   return recallItemMatchesFocus(item, focusTokens) || sharesTaskTerms(item, taskTerms);
-}
-
-// A plan query built from a category's canned words (planTaskKnowledgeRecall),
-// as opposed to one of the task's own clauses.
-function isCategoryQuery(query) {
-  return typeof query === 'string'
-    && RECALL_INTENTS.some(intent => intent.queries.some(canned => query === canned || query.endsWith(` ${canned}`)));
 }
 
 const matchedByMeaning = item => item?.matched_by === 'semantic' || item?.matched_by === 'both';
