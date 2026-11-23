@@ -80,7 +80,7 @@ function hostSection(host, hostPath) {
 Pair again with <code>fuli runner invite</code> there and <code>fuli runner join</code> here.</p>`;
   }
   const now = REACH[String(host.reachable)];
-  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，<span data-reach>${now.zh}</span>；上次连上 ${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}。</p>
+  return `<p class="lead">本机跟随 <b>${escape(host.name)}</b>，<span data-reach>${now.zh}</span>；上次连上 <span data-reached>${escape(host.lastSeenAt ?? host.answeredAt ?? '还没有')}</span>。</p>
 <p class="note en">This computer follows <b>${escape(host.name)}</b>, <span data-reach-en>${now.en}</span>.</p>
 <p><a class="open" href="${escape(hostPath)}">打开 ${escape(host.name)} 的控制台 · Open its console →</a></p>
 ${addAddress(host, { hidden: host.reachable !== false })}`;
@@ -91,6 +91,10 @@ ${addAddress(host, { hidden: host.reachable !== false })}`;
 // or mesh tool gives them), and on a network where mDNS does not cross subnets
 // the address is the only thing missing. One button, then one field.
 // Whether the host answers, as this page says it; null: not known yet, being looked for.
+// How the page's own look for the host is retried before it says it was not found.
+export const LOOK_EVERY_MS = 3000;
+export const LOOK_TRIES = 10;
+
 const REACH = {
   true: { zh: '现在在线', en: 'which answers now' },
   false: { zh: '现在不在线', en: 'which does not answer now' },
@@ -250,20 +254,33 @@ const PAGE_SCRIPT = [
   '',
   '// Drawn before the host was looked for: ask now, and say what was found.',
   'const REACH = ' + JSON.stringify(REACH) + ';',
-  'async function look() {',
+  '// Asked again every LOOK_EVERY_MS while nothing could be learned (this computer\'s console was busy or',
+  '// restarting), at most LOOK_TRIES times; then the page says the host was not found, and offers the next step.',
+  `const LOOK_EVERY_MS = ${LOOK_EVERY_MS};`,
+  `const LOOK_TRIES = ${LOOK_TRIES};`,
+  'function show(reachable, state) {',
+  '  const now = REACH[String(reachable)];',
+  '  const values = [["[data-reach]", now.zh], ["[data-reach-en]", now.en]];',
+  '  if (state?.line) values.push(["[data-line]", state.line.zh]);',
+  '  const reached = state?.host?.lastSeenAt ?? state?.host?.answeredAt;',
+  '  if (reached) values.push(["[data-reached]", reached]);',
+  '  for (const [selector, value] of values) {',
+  '    const element = document.querySelector(selector);',
+  '    if (element) element.textContent = value;',
+  '  }',
+  '  const dot = document.querySelector("#fuli-follower-band .dot");',
+  '  if (dot) dot.className = "dot " + (reachable ? "on" : "off");',
+  '  const step = document.querySelector("[data-away-step]");',
+  '  if (step) step.hidden = reachable !== false;',
+  '}',
+  'async function look(tries = 1) {',
   '  try {',
   `    const state = await (await fetch(${JSON.stringify(STATUS_PATH)})).json();`,
   '    if (!state.host) return;',
-  '    const now = REACH[String(state.host.reachable)];',
-  '    for (const [selector, value] of [["[data-reach]", now.zh], ["[data-reach-en]", now.en], ["[data-line]", state.line.zh]]) {',
-  '      const element = document.querySelector(selector);',
-  '      if (element) element.textContent = value;',
-  '    }',
-  '    const dot = document.querySelector("#fuli-follower-band .dot");',
-  '    if (dot) dot.className = "dot " + (state.host.reachable ? "on" : "off");',
-  '    const step = document.querySelector("[data-away-step]");',
-  '    if (step) step.hidden = state.host.reachable !== false;',
-  '  } catch { /* this computer\'s console is restarting: the next look tries again */ }',
+  '    if (typeof state.host.reachable === "boolean") { show(state.host.reachable, state); return; }',
+  '  } catch { /* this computer\'s console is busy or restarting: asked again below */ }',
+  '  if (tries >= LOOK_TRIES) { show(false, null); return; }',
+  '  setTimeout(() => void look(tries + 1), LOOK_EVERY_MS);',
   '}',
   'void look();',
   '',
