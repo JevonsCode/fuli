@@ -141,15 +141,18 @@ export function hookAdditionalContextToolResult(
 
 export function errorToolResult(error) {
   const controlled = isControlledError(error);
-  const code = controlled ? error.code : 'internal_error';
+  const unexpected = controlled ? null : uncontrolledFailure(error);
+  const code = controlled ? error.code : unexpected.code;
   const message = controlled
     ? applicationErrorMessage(error)
-    : 'Tool execution failed';
+    : unexpected.message;
   const validationErrors = controlled ? reportedValidationErrors(error) : [];
+  const next = NEXT_STEPS[code];
   const structuredContent = {
     error: {
       code,
       message,
+      ...(next ? { next } : {}),
       ...(validationErrors.length ? { validationErrors } : {})
     }
   };
@@ -165,6 +168,44 @@ export function errorToolResult(error) {
     isError: true
   };
 }
+
+// What a failure FULI did not anticipate still says (the coordinator's count:
+// 32 get_collaboration_preferences failures in two weeks, every one
+// "internal_error: Tool execution failed", and every FULI tool said the same
+// while the console was not running). Only the kind of failure is read, from
+// the error and its causes; no message text of it is passed on.
+const REFUSED = new Set(['ECONNREFUSED', 'ENOENT', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
+const TIMED_OUT = new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+const DROPPED = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
+function uncontrolledFailure(error) {
+  const chain = [];
+  for (let item = error, depth = 0; item && typeof item === 'object' && depth < 8; item = item.cause, depth++) chain.push(item);
+  const codes = chain.map(item => item.code).filter(code => typeof code === 'string');
+  const names = chain.map(item => item.name);
+  if (codes.some(code => REFUSED.has(code)) || chain.some(item => /\bECONNREFUSED\b/.test(String(item.message ?? '')))) {
+    return { code: 'fuli_not_running', message: 'FULI did not answer on this computer (connection refused): it is not running, so nothing was done.' };
+  }
+  if (codes.some(code => TIMED_OUT.has(code)) || names.some(name => name === 'TimeoutError' || name === 'AbortError')) {
+    return { code: 'fuli_timeout', message: 'FULI did not answer in time, so whether this call finished is unknown.' };
+  }
+  if (codes.some(code => DROPPED.has(code))) {
+    return { code: 'fuli_connection_lost', message: 'The connection to FULI dropped, so whether this call finished is unknown.' };
+  }
+  return { code: 'internal_error', message: 'Tool execution failed inside FULI; it recorded where in its diagnostics.' };
+}
+
+// The one thing to do next, by code, for the failures an Agent meets most:
+// said in the result so it never has to guess from a code.
+const NEXT_STEPS = Object.freeze({
+  fuli_not_running: 'Tell the person FULI is not running and ask them to open it (the FULI app); retry once it is.',
+  fuli_timeout: 'Retry once with exactly the same arguments; if it times out again, tell the person FULI is slow to answer.',
+  fuli_connection_lost: 'Retry once with exactly the same arguments; a write that already finished is not repeated.',
+  provider_unavailable: 'FULI is running but its knowledge service is not ready (starting or stopped). Wait a moment and retry once; '
+    + 'if it stays unavailable, tell the person to check FULI\'s status page.',
+  provider_timeout: 'FULI\'s knowledge service did not answer in time. Retry once with the same arguments; if it fails again, tell the person.',
+  internal_error: 'Retry once with exactly the same arguments; if it fails again, tell the person FULI hit an internal error '
+    + '(read_diagnostic_events shows where).'
+});
 
 function reportedValidationErrors(error) {
   if (!Array.isArray(error?.validationErrors)) return [];
