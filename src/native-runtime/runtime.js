@@ -18,8 +18,10 @@ import {
 import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
-import { assertManagedNeo4jHome, neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
+import { processMatchesCommand } from './process-identity.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
@@ -40,7 +42,7 @@ import {
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
-import { isProcessAlive } from '../local-runtime/processes.js';
+import { isProcessAlive, processState } from '../local-runtime/processes.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { errorCode } from '../diagnostics/safe-event.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
@@ -86,14 +88,16 @@ export function createNativeGraphServices({
   wait = delay,
   now = () => new Date(),
   // A start that failed, in the data directory's diagnostics log (rec#73).
-  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {}
+  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {},
+  // The phase a start enters where it begins (src/local-runtime/startup-stage.js).
+  onStage = () => {}
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
-  const operation = action => platform === 'darwin' ? withNativeAssetOperation(paths, env, action) : action(env);
-  const start = options => operation(() => startUnlocked(options));
-  const stopProviders = () => operation(() => stopProvidersUnlocked());
-  const stopDatabases = () => operation(() => stopDatabasesUnlocked());
+  const operation = (name, action) => platform === 'darwin' ? withNativeAssetOperation(paths, env, action, { operation: name }) : action(env);
+  const start = options => operation('start', () => startUnlocked(options));
+  const stopProviders = () => operation('stop', () => stopProvidersUnlocked());
+  const stopDatabases = () => operation('stop', () => stopDatabasesUnlocked());
 
   async function startUnlocked({ providers: startProviders = true } = {}) {
     const startedAt = Date.now();
@@ -109,6 +113,7 @@ export function createNativeGraphServices({
     const startedDatabases = {};
     const startedProviders = {};
     try {
+      onStage('graph_start');
       for (const spec of specs) {
         await prepareInstance(spec);
         const existing = previousState.databases?.[spec.id];
@@ -135,6 +140,7 @@ export function createNativeGraphServices({
           startedDatabases[spec.id] = databases[spec.id];
         }
         persistProcessState(databases, providers);
+        onStage('database_wait');
         await waitForDatabase('127.0.0.1', spec.boltPort, databases[spec.id]);
         await verifyPortOwner(databases[spec.id], spec.boltPort);
         if (platform === 'darwin') {
@@ -170,6 +176,7 @@ export function createNativeGraphServices({
         }
       }
       persistProcessState(databases, providers);
+      onStage('provider_wait');
       for (const spec of specs) {
         await waitForProvider(spec.providerUrl, fetchImpl, wait, providers[spec.id]);
         await verifyPortOwner(providers[spec.id], spec.providerPort);
@@ -345,7 +352,8 @@ export function createNativeGraphServices({
     return spec;
   }
 
-  async function adminDatabase(spec, args) { return operation(() => adminDatabaseUnlocked(spec, args)); }
+  // A dump or load works on a database's files: an interrupted one is never taken over (neo4j-lifecycle-lock.js).
+  async function adminDatabase(spec, args) { return operation('admin', () => adminDatabaseUnlocked(spec, args)); }
 
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
@@ -447,13 +455,12 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   }
   const assetLock = join(input.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
   const recovery = join(input.paths.nativeRuntimeDir, 'neo4j-transaction.json');
-  releaseAbandonedNeo4jLifecycleLock(input.paths.nativeRuntimeDir, { isAlive: deps.isProcessAlive });
+  await releaseAbandonedNeo4jLifecycleLock(input.paths.nativeRuntimeDir);
   if (existsSync(assetLock) || existsSync(recovery)) {
     let owner = null;
     try { owner = readFileSync(join(assetLock, 'owner'), 'utf8'); } catch { /* Incomplete ownership is blocked. */ }
     if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) {
-      if (existsSync(recovery)) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
-      throw neo4jLifecycleLockError(input.paths.nativeRuntimeDir, { isAlive: deps.isProcessAlive });
+      throw await neo4jLifecycleLockError(input.paths.nativeRuntimeDir);
     }
   }
   const env = input.env ?? process.env;
@@ -502,9 +509,11 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   assertProviderUpgrade(saved?.providerVersion, expected.providerVersion, input.allowProviderDowngrade);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
-  deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
   if (!neo4jReady(input.paths, deps.pathExists, neo4jHome)) {
     if (upgradePending) throw pendingUpgrade();
+    // Said only when it happens: a start that finds Neo4j in place installs nothing.
+    deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
+    input.onStage?.('graph_install');
     await deps.installNeo4j({
       paths: input.paths,
       home: neo4jHome,
@@ -520,6 +529,7 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     saved?.providerFingerprint !== expected.providerFingerprint
   )) {
     deps.onProgress(input, 'Installing the native Graph Provider…');
+    input.onStage?.('graph_install');
     await deps.installProvider({
       uvCommand,
       venvPath: input.paths.nativeProviderVenvPath,
@@ -603,7 +613,6 @@ function nativeDependencies(overrides) {
     installNeo4j: installNativeNeo4j,
     installProvider,
     providerSourceFingerprint,
-    isProcessAlive,
     onProgress: (input, message) => input.onProgress?.(message),
     ...overrides
   };
@@ -785,7 +794,9 @@ async function secureMarker(path) {
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && isProcessAlive(pid)) {
+    // This installation's Neo4j runs as this user: a PID that is now another
+    // user's process is a stale file, as before EPERM counted as alive.
+    if (processState(pid) === 'running') {
       throw new Error('A live process is recorded in the Neo4j PID file without verified runtime ownership. Stop its verified owner before starting another copy.');
     }
     unlinkSync(spec.pidPath);
@@ -932,11 +943,6 @@ function tcpReady(host, port) {
     socket.once('connect', () => done(true));
     socket.once('error', () => done(false));
   });
-}
-
-async function processMatchesCommand(pid, command) {
-  const result = await commandResult('ps', ['-p', String(pid), '-o', 'command=']);
-  return result.status === 0 && result.stdout.includes(command);
 }
 
 export async function stopOwnedProcess(pid) {

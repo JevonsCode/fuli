@@ -36,7 +36,7 @@ async function describeProcess(pid) {
 }
 
 // ps elapsed time, [[dd-]hh:]mm:ss, in seconds; null when it is not one.
-export function elapsedSeconds(value) {
+function elapsedSeconds(value) {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(String(value ?? ''));
   if (!match) return null;
   const [, days = 0, hours = 0, minutes, seconds] = match.map(part => part === undefined ? undefined : Number(part));
