@@ -56,8 +56,9 @@ user names and passwords are dropped, local paths become `[path]`, and long opaq
   `internal_error`. A `failed` reason names the error's class, its cause's code and the first line of FULI's own code
   that raised it (`Tool execution failed (TypeError at src/…/module.js:51)`), never its message. A call whose runtime
   lease could not reach FULI's own console (refused, unreachable, timed out, never started) is `failed` with the
-  controlled code `runtime_unavailable` and the same sentence the Agent saw (rec#39): nothing ran, one retry, no old
-  token. It names a reason, never the console's address, port or error text.
+  controlled code `runtime_unavailable` and the same sentence the Agent saw (rec#39): nothing ran, no old token, and one
+  step chosen by what the automatic start recorded: stopped on purpose or gave up, tell the person to start FULI; a data
+  format update waiting, also to confirm it in Settings › Data format; nothing recorded or unreadable, one bounded retry. It names a reason, never the console's address, port or error text.
 - **Roundtable wakes**: a client woken for an ask (a local one or a paired device's) that did not answer, as `failed`
   with its detail code (`client_not_found`, `spawn_error`, `login_required`, `client_exit_nonzero`,
   `no_final_answer`, `output_too_large`, `timed_out`, `mcp_config_unreadable`), the client, a resumed or new session, and the exit code and
