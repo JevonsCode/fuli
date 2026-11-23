@@ -8,7 +8,7 @@ import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } fro
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 import { reportAgentService } from '../agent-services/agent-report.js';
 import { recordFlaLesson } from '../fla-growth/lessons.js';
-import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
+import { AGENT_WORKFLOW_HANDLERS, appSubmitted } from '../agent-workflows/agent-tools.js';
 import { callingAppOwner } from '../agent-apps/calling-owner.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
@@ -119,7 +119,11 @@ const HANDLERS = Object.freeze({
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
   call_employee_tool: (app, input) => employeeService(app).callTool(input),
-  submit_agent_app_version: async (app, input) => agentApps(app).submit({ ...input, ...await callingAppOwner(app, input) }),
+  // One owner for the submission and for what it settles (callingAppOwner refuses another FLA's agentId).
+  submit_agent_app_version: async (app, input) => {
+    const owner = await callingAppOwner(app, input);
+    return appSubmitted(app, owner, await agentApps(app).submit({ ...input, ...owner }));
+  },
   list_agent_apps: (app, input) => input.appId ? agentApps(app).read(input) : agentApps(app).list(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
   read_task_preferences: (app, input) => app.readTaskPreferences(input),

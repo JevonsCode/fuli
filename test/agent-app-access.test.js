@@ -120,6 +120,17 @@ test('the Agent tool submits and lists app versions but can never approve or cha
   assert.equal(byRoute.get('POST /api/agent-apps/:appId/reveal-export')?.access, 'agent_relayed');
 });
 
+test('a submitted app settles the repeats of the FLA and project of the calling task, also without agentId', async (t) => {
+  const { app } = fixture(t);
+  const deposits = [];
+  const withRepeats = { ...app, agentWorkflows: { depositApp: (owner, appId) => deposits.push([owner.agentId, owner.personalProjectId, appId]) } };
+  const submitted = await callAgentTool(withRepeats, 'submit_agent_app_version', submission());
+  assert.deepEqual(deposits, [['agent-jvs', 'garden', submitted.appId]]);
+  await assert.rejects(async () => callAgentTool(withRepeats, 'submit_agent_app_version',
+    { ...submission({ version: '1.0.1' }), agentId: 'agent-other' }), { code: 'agent_not_owner' });
+  assert.equal(deposits.length, 1, 'another FLA\'s agentId: nothing submitted, nothing settled');
+});
+
 test('an Agent on the chat profile submits through fuli_call and cannot reach an approval', async (t) => {
   const { app, service } = fixture(t);
   const server = createMcpServer(app, { env: {}, toolProfile: 'chat', registerResources: false });

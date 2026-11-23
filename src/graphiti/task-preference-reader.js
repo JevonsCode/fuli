@@ -4,7 +4,7 @@ import { ProviderRequestError } from './provider-client.js';
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
-import { taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { taskKnowledgeGuidance, withoutLeadOnlyRules } from './task-knowledge-guidance.js';
 import { taskJudgmentContext } from './task-entry-preferences.js';
 import { introductionReceiptLine } from './task-entry-introduction.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
@@ -104,7 +104,7 @@ export async function readTaskPreferences(application, {
     checkpoint_reason: task.checkpoint?.phase === 'complete' ? 'this task is already checkpointed'
       : RECOVERY_REASON,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance(),
+    task_guidance: withoutLeadOnlyRules(taskKnowledgeGuidance()),
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.display_name ?? null, role: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,

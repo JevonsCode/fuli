@@ -116,6 +116,21 @@ test('delivery rejects a budget that cannot hold the mandatory receipt', () => {
     error => error.code === 'validation' && /required Agent receipt/i.test(error.message));
 });
 
+// Jevons 11-23: the receipt ends every reply, so it never shows the person the
+// internal name of a scene FULI inferred. An Agent's own label still wins.
+test('a collaborator duty reads in the person\'s words, and an unknown scene says nothing at all', () => {
+  const receipt = taskAgentReceipt(application, { ...owner, collaborators: [
+    { agentId: 'reviewer', name: 'Nova', runs: [{ work_kind: 'test_validation', application: 'codex', session_id: 'a' }] },
+    { agentId: 'builder', name: 'Wren', runs: [{ work_kind: 'implementation', worker_label: '登录改造', application: 'codex', session_id: 'b' }] },
+    { agentId: 'drifter', name: 'Pax', runs: [{ work_kind: 'some_future_kind', application: 'codex', session_id: 'c' }] }
+  ] });
+  assert.match(receipt.markdown, /\[Nova\]\([^)]+\)（测试验证）/);
+  assert.match(receipt.markdown, /\[Wren\]\([^)]+\)（登录改造）/);
+  assert.doesNotMatch(receipt.markdown, /test_validation|implementation|some_future_kind/);
+  // Nothing to say about Pax's run, so the parentheses are left off rather than filled with the raw name.
+  assert.match(receipt.markdown, /\[Pax\]\([^)]+\)(?!（)/);
+});
+
 test('collaborator details remain one escaped line with only safe reported session links', () => {
   const receipt = taskAgentReceipt(application, { ...owner, collaborators: [
     { agentId: 'reviewer', name: 'Earlier' },

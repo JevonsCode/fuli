@@ -24,4 +24,20 @@ describe('the Jefa read status', () => {
     expect(wrapper.find('[data-jefa-read-chip]').exists()).toBe(false)
     expect(wrapper.find('.jefa-read-status').exists()).toBe(true)
   })
+
+  it('names why a project could not be read in words, never an error class or HTTP code', () => {
+    const at = '2026-10-21T00:00:00Z'
+    const failures = [
+      { projectId: 'p1', stage: 'board' as const, category: 'HTTP 403', at },
+      { projectId: 'p2', stage: 'board' as const, category: 'TimeoutError', at },
+      { projectId: 'p3', stage: 'board' as const, category: 'TypeError', at },
+      { projectId: 'p4', stage: 'board' as const, category: 'HTTP 503', at },
+    ]
+    const text = render({ loading: false, blocking: true, failures, projects: [] }).get('.jefa-read-details').text()
+    expect(text).toContain('没有权限')
+    expect(text).toContain('读取超时')
+    expect(text).toContain('读取失败')
+    expect(text).toContain('服务暂时不可用')
+    expect(text).not.toMatch(/HTTP|TypeError|TimeoutError/)
+  })
 })

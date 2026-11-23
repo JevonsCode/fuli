@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import { t, currentLocale } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { JefaReadFailure, JefaReadStage } from './useJefaBoardLoad'
+import { jefaReadFailureReason } from './jefa-read-failure'
 
 const props = defineProps<{
   loading: boolean; longWait: boolean; stage: JefaReadStage; timedOut: boolean
@@ -49,7 +50,7 @@ const projectName = (projectId: string) => props.projects.find(project => projec
     </div>
     <details v-if="!loading && failures.length" class="jefa-read-details">
       <summary>{{ t('employees.read.details') }}</summary>
-      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ item.category }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
+      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ jefaReadFailureReason(item.category) }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
     </details>
   </div>
 </template>
