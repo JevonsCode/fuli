@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { z } from 'zod'
 
 import { postJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { t } from '@/i18n'
@@ -12,7 +14,11 @@ import { t } from '@/i18n'
 // step FULI can take is its command for one folder; the card shows that
 // command and the folder before it runs, and says how it went.
 const props = defineProps<{ clientId: string, command: string }>()
-type Outcome = { status: 'approved' | 'not_installed' | 'no_answer' | 'failed', output?: string, waitedMs?: number }
+// What the step answered (src/agents/cursor/first-run.js), checked before it is shown.
+const outcomeSchema = z.looseObject({ status: z.enum(['approved', 'not_installed', 'no_answer', 'failed']),
+  output: z.string().optional(), waitedMs: z.number().optional() })
+const outcomeShape = shapeOf(outcomeSchema)
+type Outcome = z.infer<typeof outcomeSchema>
 
 const asking = ref(false)
 const folder = ref('')
@@ -26,7 +32,7 @@ async function run() {
   outcome.value = null
   failed.value = ''
   try {
-    outcome.value = await postJson<Outcome>('/api/system/client-connection/first-run', { clientId: props.clientId, folder: folder.value.trim() })
+    outcome.value = await postJson('/api/system/client-connection/first-run', { clientId: props.clientId, folder: folder.value.trim() }, outcomeShape)
   } catch (error) {
     failed.value = error instanceof Error ? error.message : String(error)
   } finally {
