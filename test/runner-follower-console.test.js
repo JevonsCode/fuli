@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -11,11 +11,16 @@ import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js'
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
-import { startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
+import { BAND_SOURCE } from '../src/runner/follower-band.js';
+import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
+import { ADDRESS_PATH, followerConsolePage, SYNC_PATH } from '../src/runner/follower-page.js';
+import { capabilityLines } from '../src/runner/follower-runtime.js';
+import { CAPABILITIES } from '../src/runner/follower-status.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { isRunnerDataDirectory, runnerRuntimeConfig } from '../src/runner/runner-mode.js';
 import { RunnerStore } from '../src/runner/runner-store.js';
 
 const identity = async () => deviceIdentity(await createDeviceCertificate());
@@ -42,7 +47,7 @@ async function hostConsole(t) {
       return;
     }
     response.writeHead(200, { 'content-type': 'text/html' });
-    response.end('<!doctype html><div id="app">host console</div>');
+    response.end('<!doctype html><html><head><title>FULI</title></head><body><div id="app">host console</div></body></html>');
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -50,8 +55,14 @@ async function hostConsole(t) {
   return { origin: `http://127.0.0.1:${server.address().port}`, seen };
 }
 
+// A connection that never finds the host and opens nothing: for a test that must not depend on
+// the network it runs on (the address a person adds would otherwise be tried for real).
+const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => null, drop() {}, close() {},
+  postJson: async () => ({ reachable: false }), current: null, pinFailed: false });
+
 // A host listener with one paired runner, and that runner's console entry.
-async function pairedRunner(t, { clients = null } = {}) {
+// nowhere: the entry's connection never reaches anything.
+async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -65,8 +76,10 @@ async function pairedRunner(t, { clients = null } = {}) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
-  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [] });
-  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients });
+  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner, lookUp: async () => [] });
+  const delivered = [];
+  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients,
+    deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
   t.after(async () => {
     await entry.close();
     connection.close();
@@ -76,7 +89,21 @@ async function pairedRunner(t, { clients = null } = {}) {
     hostStore.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { entry, consoleSide, hostStore, runner, setAway: (value) => { away = value; connection.drop(); } };
+  return { entry, consoleSide, hostStore, runner, store, delivered,
+    // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
+    // kept a dead connection).
+    setAway: (value) => { away = value; } };
+}
+
+// A request whose path is sent exactly as written (no URL normalisation on the way).
+function rawGet(base, rawPath) {
+  const { hostname, port } = new URL(base);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({ hostname, port, path: rawPath, method: 'GET', headers: { host: `127.0.0.1:${port}` } },
+      (response) => { response.resume(); response.on('end', () => resolve({ status: response.statusCode })); });
+    request.on('error', reject);
+    request.end();
+  });
 }
 
 function get(url, { headers = {}, method = 'GET', body = null } = {}) {
@@ -217,13 +244,190 @@ test('the entry answers only to this computer under its own name, and says when 
   assert.equal(status.host.reachable, true);
 
   setAway(true);
-  const awayPage = await get(`${entry.url}/`, { headers: { accept: 'text/html' } });
+  // A receipt link opened while the host is away says whose page it was and that it cannot be shown now.
+  const awayPage = await get(`${entry.url}/projects/synthetic`, { headers: { accept: 'text/html' } });
   assert.equal(awayPage.status, 503);
   assert.match(awayPage.text, /Host A/);
-  assert.match(awayPage.text, /outbox: <b>0<\/b>/);
+  assert.match(awayPage.text, /现在不在线/);
+  assert.match(awayPage.text, /\/projects\/synthetic/, 'it names the page that cannot be shown');
   assert.match(awayPage.text, /<span class="beta"[^>]*>Beta<\/span>/, 'runners are in testing and say so');
+  assert.equal(awayPage.headers['x-fuli-source'], 'unavailable');
   const awayApi = await get(`${entry.url}/api/tasks`);
   assert.equal(JSON.parse(awayApi.text).error, 'host_unreachable');
+  assert.equal(awayApi.headers['x-fuli-source'], 'unavailable');
+});
+
+test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
+  const { entry, setAway, store } = await pairedRunner(t);
+  const first = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(first.host.reachable, true);
+  assert.ok(store.host().lastSeenAt, 'reaching the host is recorded');
+  assert.match(first.line.zh, /在线 · 上次连上 /);
+  setAway(true);
+  const later = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(later.host.reachable, false, 'the kept connection is not taken for the host answering');
+  assert.match(later.line.zh, /不在线 · 上次连上 /);
+  assert.equal(later.host.lastSeenAt, store.host().lastSeenAt);
+});
+
+test('this computer\'s own console page says who it follows, what runs where and what waits', async (t) => {
+  const { entry, store } = await pairedRunner(t);
+  store.enqueue({ id: 'synthetic-entry-1', tool: 'checkpoint_task_knowledge', input: { workLog: 'synthetic work' },
+    sourceApplication: 'codex' });
+  const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.equal(page.status, 200);
+  assert.equal(page.headers['x-fuli-source'], 'local', 'its own page is its own');
+  assert.match(page.text, /Host A/);
+  assert.match(page.text, /什么跑在哪里/);
+  assert.match(page.text, /checkpoint_task_knowledge/, 'every waiting record is listed one by one');
+  assert.match(page.text, /同一个局域网，或同一个 VPN/, 'how the two computers reach each other is said here, not only in the docs');
+  assert.match(page.text, /href="\/remote\/host-a\/"/, 'the host\'s console is one link away');
+
+  // The state band is added to the host's own pages, and marks where the page's data came from.
+  const hostPage = await get(`${entry.url}/projects`, { headers: { accept: 'text/html' } });
+  assert.equal(hostPage.headers['x-fuli-source'], 'host');
+  assert.match(hostPage.text, /__fuli-follower\/band\.js/);
+  const band = await get(`${entry.url}/__fuli-follower/band.js`);
+  assert.equal(band.status, 200);
+  assert.match(band.headers['content-type'], /javascript/);
+  assert.match(band.text, /x-fuli-source/);
+});
+
+// docs/runner-roles-design.md §3: whose data it is has three answers, because a
+// scope one computer owns may be kept as a read-only copy on another.
+test('where data comes from has three answers: the host, this computer, and a read-only copy here', () => {
+  const capabilities = [{ id: 'own', where: 'local', offline: 'works', zh: '本机的', en: 'this computer\'s' },
+    { id: 'owned', where: 'host', offline: 'cached', zh: '主机的', en: 'the host\'s' },
+    { id: 'copy', where: 'replica', syncedAt: '2026-11-23T09:00:00.000Z', offline: 'cached',
+      zh: '只读副本', en: 'a read-only copy' }];
+  const page = followerConsolePage({ status: { paired: false, host: null,
+    outbox: { queued: 0, failedCount: 0, failed: [], entries: [] }, capabilities }, hostPath: '/local' });
+  assert.match(page, /本机只读副本（同步于 2026-11-23T09:00:00\.000Z）/);
+  assert.match(page, /<span class="where local">本机<\/span>/);
+  assert.match(page, /<span class="where host">主机<\/span>/);
+  assert.deepEqual(capabilityLines(capabilities).slice(1, 4), [
+    '  this computer · offline: works — this computer\'s',
+    '  the host · offline: the answer kept here — the host\'s',
+    '  a read-only copy here (synced 2026-11-23T09:00:00.000Z) · offline: the answer kept here — a read-only copy']);
+  // The band, which the host's own pages load, reads the same third value off `x-fuli-source`.
+  assert.match(BAND_SOURCE, /replica/);
+});
+
+test('`/remote/<host>/` reaches only the paired host, and lands on its own path', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  const named = await get(`${entry.url}/remote/host-a/projects/synthetic`, { headers: { accept: 'text/html' } });
+  assert.equal(named.status, 302);
+  assert.equal(named.headers.location, '/projects/synthetic');
+  const api = await get(`${entry.url}/remote/host-a/api/tasks`);
+  assert.equal(JSON.parse(api.text).url, '/api/tasks');
+  const seen = consoleSide.seen.length;
+
+  for (const route of ['/remote/attacker.example/api/tasks', '/remote/127.0.0.1:9/api/tasks',
+    '/remote//api/tasks', '/remote/other-host/api/tasks']) {
+    const refused = await get(`${entry.url}${route}`);
+    assert.equal(refused.status, 404, route);
+    assert.equal(JSON.parse(refused.text).error, 'unknown_host', route);
+  }
+  assert.equal(consoleSide.seen.length, seen, 'a host this computer is not paired with is never reached');
+});
+
+// Review of #1069: a doubled slash after the host's name, a raw `..`, and a malformed escape.
+test('the named proxy and the console relay stay on the host\'s console, whatever the path', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  await get(`${entry.url}/remote/host-a//evil.example/api/tasks`);
+  assert.equal(consoleSide.seen.at(-1).url, '/evil.example/api/tasks', 'a path of the console, never another address');
+  assert.equal(consoleSide.seen.at(-1).host, new URL(consoleSide.origin).host);
+  const seen = consoleSide.seen.length;
+  for (const raw of ['/../runner/1/mcp', '/../../replay', '/%2e%2e/runner/1/mcp']) {
+    const escaped = await rawGet(entry.url, raw);
+    assert.ok([400, 404].includes(escaped.status), `${raw}: ${escaped.status}`);
+  }
+  assert.equal(consoleSide.seen.length, seen, 'nothing outside the console was reached on the host');
+  assert.equal((await get(`${entry.url}/remote/%E0%A4%A/api/tasks`)).status, 400, 'a malformed escape is the caller\'s');
+  const badJson = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{not json',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(badJson.status, 400);
+});
+
+// The host does not answer: one button, then one field, instead of a dead end.
+test('「添加主机地址」 takes a private address from this computer\'s own page and nothing else', async (t) => {
+  const { entry, store } = await pairedRunner(t, { nowhere: true });
+  const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.match(page.text, /添加主机地址/, 'the next step is offered while the host is away');
+  assert.match(page.text, /不在线/, 'the page says plainly that the host did not answer, never "not checked"');
+  assert.match(page.text, /同一个 VPN/, 'how the two computers reach each other is said as it is');
+  assert.doesNotMatch(page.text, /中继/, 'no relay is planned, so none is promised');
+
+  const forged = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"192.0.2.20"}',
+    headers: { 'content-type': 'application/json', origin: 'https://attacker.example' } });
+  assert.equal(forged.status, 403);
+  const noOrigin = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"192.0.2.20"}',
+    headers: { 'content-type': 'application/json' } });
+  assert.equal(noOrigin.status, 405);
+  for (const address of ['198.51.100.7', 'host.example', '', '127.0.0.1\n10.0.0.1', '100.128.0.1']) {
+    const refused = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: JSON.stringify({ address }),
+      headers: { 'content-type': 'application/json', origin: entry.url } });
+    assert.equal(refused.status, 400, address);
+    assert.equal(JSON.parse(refused.text).error, 'not_a_private_address', address);
+  }
+  assert.deepEqual(store.host().addresses, ['127.0.0.1'], 'nothing outside a private network is kept');
+
+  const saved = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"10.0.0.20"}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(saved.status, 200);
+  assert.equal(JSON.parse(saved.text).reachable, false, 'it says plainly that the address did not answer');
+  assert.equal(store.host().addresses[0], '10.0.0.20', 'the address is tried first next time');
+  // A VPN's carrier-grade address (Tailscale and the like) is one a host is reached at, as with add-address.
+  const vpn = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"100.84.12.9"}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(vpn.status, 200);
+  assert.equal(store.host().addresses[0], '100.84.12.9');
+});
+
+test('「现在重试」 delivers now and only from this computer\'s own page', async (t) => {
+  const { entry, delivered } = await pairedRunner(t);
+  const forged = await get(`${entry.url}${SYNC_PATH}`, { method: 'POST', body: '{}',
+    headers: { 'content-type': 'application/json', origin: 'https://attacker.example' } });
+  assert.equal(forged.status, 403);
+  const noOrigin = await get(`${entry.url}${SYNC_PATH}`, { method: 'POST', body: '{}',
+    headers: { 'content-type': 'application/json' } });
+  assert.equal(noOrigin.status, 405);
+  assert.equal(delivered.length, 0);
+
+  const asked = await get(`${entry.url}${SYNC_PATH}`, { method: 'POST', body: '{}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(asked.status, 200);
+  assert.equal(delivered.length, 1);
+  assert.match(JSON.parse(asked.text).html, /Nothing is waiting/);
+});
+
+// Review of #1069: 「现在重试」 on a revoked computer said the host was unreachable.
+test('a revoked computer is told it was revoked, with the step that pairs it again, never that the host is away', async (t) => {
+  const { entry, hostStore, runner, store } = await pairedRunner(t);
+  hostStore.revoke(runner.fingerprint);
+  await get(`${entry.url}/api/tasks`);
+  assert.ok(store.host().revokedAt, 'the host said so');
+  const sync = await get(`${entry.url}${SYNC_PATH}`, { method: 'POST', body: '{}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(sync.status, 403);
+  const body = JSON.parse(sync.text);
+  assert.equal(body.error, 'runner_revoked');
+  assert.match(body.message, /撤销/);
+  assert.equal(body.action.command, 'fuli runner invite');
+  const api = await get(`${entry.url}/api/tasks`);
+  assert.equal(JSON.parse(api.text).error, 'runner_revoked');
+});
+
+test('the band opens this computer\'s own page, and a host page shown while away opens by itself later', async (t) => {
+  const { entry, setAway } = await pairedRunner(t);
+  const band = await get(`${entry.url}/__fuli-follower/band.js`);
+  assert.match(band.text, /line\.href = "\/local"/);
+  setAway(true);
+  const awayPage = await get(`${entry.url}/projects/synthetic`, { headers: { accept: 'text/html' } });
+  assert.match(awayPage.text, /<body data-requested="1">/);
+  assert.match(awayPage.text, /location\.reload\(\)/);
+  const own = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.doesNotMatch(own.text, /data-requested/, 'this computer\'s own page does not reload itself');
 });
 
 test('a revoked runner\'s console entry reaches nothing on the host', async (t) => {
@@ -239,7 +443,7 @@ function runnerDataDir(t) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-dir-')));
   mkdirSync(path.join(dataDir, 'runner'));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
-  store.saveHost({ name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] });
+  store.saveHost({ name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['10.0.0.20'] });
   store.close();
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   return dataDir;
@@ -251,12 +455,16 @@ test('on a runner, start, status and stop manage its console entry, never a grap
   const written = [];
   const runnerHandlers = Object.fromEntries(['start', 'stop', 'restart', 'status', 'open'].map((command) =>
     [command, async (input) => { calls.push([command, input.port]); return { status: 'running', url: `http://127.0.0.1:${input.port}`,
-      host: { name: 'Host A', reachable: true }, outbox: 2 }; }]));
+      host: { name: 'Host A', reachable: true }, outbox: { queued: 2 }, capabilities: CAPABILITIES,
+      line: { zh: '跟随 Host A · 在线 · 待送 2', en: 'Following Host A · answering · 2 waiting' } }; }]));
   const result = await runLocalRuntimeCommand('start', ['--data-dir', dataDir], { runnerHandlers, write: (line) => written.push(line),
     start: () => assert.fail('a runner never starts a graph runtime') });
   assert.equal(result.exitCode, 0);
   assert.deepEqual(calls, [['start', 2727]]);
-  assert.match(written.join('\n'), /This computer is a runner[\s\S]*Host: Host A, answering[\s\S]*Outbox: 2 waiting/);
+  // The same facts the console shows: who it follows, whether that computer answers, what waits, what runs where.
+  assert.match(written.join('\n'),
+    /This computer follows a FULI host[\s\S]*Following Host A · answering · 2 waiting[\s\S]*What runs where/);
+  assert.match(written.join('\n'), /this computer · offline: works — 客户端接入/);
 });
 
 test('FULI.app on a runner starts its console entry and never runs setup', async (t) => {
@@ -275,6 +483,43 @@ test('FULI.app on a runner starts its console entry and never runs setup', async
   assert.equal(result.ok, true);
   assert.ok(!invoked.includes('setup'), 'setup would give the runner a FULI of its own');
   assert.ok(invoked.includes('start'));
+});
+
+// docs/runner-roles-design.md §1.1: a computer that had a FULI of its own
+// before it joined a host kept `graph-runtime.json`, so it stopped counting as
+// a runner and its clients silently used an empty local FULI instead.
+test('a pairing, not a missing runtime file, makes a computer follow its host', async (t) => {
+  const dataDir = runnerDataDir(t);
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
+  assert.equal(isRunnerDataDirectory(dataDir), true);
+  assert.equal(runnerRuntimeConfig(['--runtime-config', path.join(dataDir, 'graph-runtime.json')]), true,
+    'its clients still reach FULI through the host');
+
+  const invoked = [];
+  let running = false;
+  const started = await runTrayAction('start', { dataDir }, {
+    runCli: async (_context, args) => {
+      invoked.push(args[0]);
+      if (args[0] === 'status') return { code: running ? 0 : 1, stdout: JSON.stringify({ status: running ? 'running' : 'stopped' }) };
+      if (args[0] === 'start') running = true;
+      return { code: 0, stdout: '', stderr: '' };
+    },
+    portBlocked: async () => false
+  });
+  assert.equal(started.ok, true);
+  assert.ok(!invoked.includes('setup'), 'the desktop start never sets a new FULI up over the pairing');
+
+  const written = [];
+  const result = await runSetupCommand(['--data-dir', dataDir, '--yes'], { write: (line) => written.push(line),
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    planSetup: () => assert.fail('a computer that follows a host plans no graph runtime') });
+  assert.equal(result.status, 'runner');
+  // `fuli update` runs `fuli setup --yes --connected-only` with the new version: the pairing stays.
+  const updated = await runSetupCommand(['--data-dir', dataDir, '--yes', '--connected-only'], { write: () => {},
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    planSetup: () => assert.fail('an update never sets a FULI up over the pairing') });
+  assert.equal(updated.status, 'runner');
+  assert.equal(isRunnerDataDirectory(dataDir), true);
 });
 
 test('fuli setup on a runner sets up its clients only', async (t) => {

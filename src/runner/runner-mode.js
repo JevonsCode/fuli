@@ -1,13 +1,24 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-// Whether a data directory belongs to a runner (docs/runner.md): it paired
-// with a host and has no graph runtime of its own. The MCP entry then serves
-// through the host and lifecycle hooks load nothing; at a prompt they tell the
-// model to enter the task through MCP instead (RUNNER_HOOK_CONTEXT). Only Node
-// built-ins load here: the thin hook entry decides with it before loading
-// anything else.
+// Whether a data directory follows a host (docs/runner.md): it paired with one.
+// The MCP entry then serves through the host and lifecycle hooks load nothing;
+// at a prompt they tell the model to enter the task through MCP instead
+// (RUNNER_HOOK_CONTEXT). Only Node built-ins load here: the thin hook entry
+// decides with it before loading anything else.
+//
+// The pairing alone decides, never the absence of `graph-runtime.json`: a
+// paired computer that a start or `fuli setup` later wrote a runtime file for
+// stopped counting as a runner, which silently ended the pairing for its
+// clients (docs/runner-roles-design.md §1.1). `fuli runner join` itself still
+// refuses a data directory that holds a FULI of its own. A runtime beside a pairing is now simply
+// a FULI that follows another one; `fuli runner leave` removes the pairing.
 const RUNNER_STORE = join('runner', 'runner.sqlite');
+// Written by `fuli runner leave` when it could not delete the store (a process
+// still has it open, as happens on Windows): the store is empty then, and this
+// says the pairing ended, so the computer is not taken for a follower for ever.
+// `fuli runner join` removes it.
+export const LEFT_MARKER = join('runner', 'left');
 
 // What every client's prompt hook says on a runner, where the client can put
 // model-visible text at a prompt.
@@ -26,9 +37,10 @@ export function runnerSessionStartContext(sessionId) {
     + 'taskContextToken to every FULI call, resume_agent_conversation and checkpoint_task_knowledge included.';
 }
 
-// Start, setup and FULI.app ask it too: on a runner they never set up a graph runtime.
+// Start, setup and FULI.app ask it too: on a runner they never set up a graph
+// runtime and never write over the pairing.
 export function isRunnerDataDirectory(dataDir) {
-  return existsSync(join(dataDir, RUNNER_STORE)) && !existsSync(join(dataDir, 'graph-runtime.json'));
+  return existsSync(join(dataDir, RUNNER_STORE)) && !existsSync(join(dataDir, LEFT_MARKER));
 }
 
 // The same, for a hook or MCP command line naming --runtime-config.
