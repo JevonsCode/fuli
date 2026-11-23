@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { projectDisplayName } from './project-display-name.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 
 const NEW_PROJECT = /^\s*(?:新项目|new project)\s*[:：]\s*([^\n\r,，。]{1,80})/i;
@@ -52,9 +53,7 @@ export async function nameableProjects(application) {
   return (await application.personal.listPersonalProjects(application.config.personal.spaceId)).filter(nameable);
 }
 
-export function projectDisplayName(project) {
-  return project.profile?.name || project.project_id;
-}
+export { projectDisplayName };
 
 // `writer` is who the purpose comes from: the person by default, an Agent for its own draft.
 export async function createProjectNamed(application, name, purpose, writer = PERSON_WRITER) {

@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 
 import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
 import { QUERY_REFUSED } from '../../packages/roundtable/src/peer/query-answer.js';
+import { applicationLanguage, isTemporaryProject, projectDisplayName } from './project-display-name.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
 import { activeAgentRequestSignal, activeRunnerCaller, activeSealedWorkerRequest } from '../app/agent-request-context.js';
@@ -27,7 +28,10 @@ const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line), wakeFolder = null } = {}) {
   const spaceId = () => app.config.personal.spaceId;
   const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
-    name: project.profile?.name ?? project.name ?? null, temporary: project.scope_type === 'temporary',
+    // A temporary project has no stored name; `temporary` is what says so, and
+    // the words are written for whoever shows them (project-display-name.js).
+    name: projectDisplayName(project, applicationLanguage(app)) || null,
+    temporary: isTemporaryProject(project),
     // The project task entry makes for a session it could not match: it has no repository and no name of its own.
     sessionOnly: SESSION_PROJECT_ID.test(project.project_id ?? '') || project.profile?.origin === 'conversation_fallback',
     archived: project.profile?.lifecycle === 'archived', repositories: ownRemotes(project) });
