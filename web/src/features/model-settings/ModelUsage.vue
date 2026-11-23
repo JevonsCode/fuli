@@ -8,17 +8,21 @@ import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import { UiSegmented } from '@/ui'
 import {
-  USAGE_WINDOWS, callParts, failureReasonsLine, readModelUsage, roleName, usageCells, usageRowNote, usageRows,
-  type ModelRoleId, type UsagePayload, type UsageRow, type UsageWindow,
+  USAGE_WINDOWS, callParts, failureReasonSides, formatIssueLines, readModelUsage, roleName, usageCells, usageConnection, usageRowNote, usageRows,
+  type ModelRolesPayload, type UsagePayload, type UsageRow, type UsageWindow,
 } from './model'
 
-// details: the role whose settings and connection test a failing row leads to.
-const emit = defineEmits<{ details: [role: ModelRoleId] }>()
+// roles: the settings, to find the connected model a row counted.
+const props = defineProps<{ roles: ModelRolesPayload | null }>()
+// model: the connection of the model a row counted, to show and test it.
+const emit = defineEmits<{ model: [connectionId: string] }>()
 
 // Usage from the ledger by role, model and time range. Model API calls and
 // fallbacks to the current session are listed apart. A value nothing returned
 // reads 没返回, never 0; tries that returned no usage get one note per row.
-// A row with failed calls says why they failed and leads to that model's settings.
+// A row with failed calls says why, on FULI's side and on the model
+// service's apart; only the service's lead to 「查看并测试」 that row's own
+// model. Which rules of FULI's check its answers broke open on request.
 // FULI bills nothing, so there is no cost here.
 const range = ref<UsageWindow>('7d')
 const payload = ref<UsagePayload | null>(null)
@@ -46,7 +50,8 @@ async function load() {
 
 const view = (row: UsageRow) => ({
   row, calls: callParts(row.group, locale.value), cells: usageCells(row.group, locale.value), note: usageRowNote(row.group, locale.value),
-  reasons: failureReasonsLine(row.group, locale.value),
+  reasons: failureReasonSides(row.group, locale.value), issues: formatIssueLines(row.group, locale.value),
+  connection: row.group.channel === 'model_api' ? usageConnection(row.group, props.roles) : null,
 })
 const views = computed(() => ({ model: rows.value.model.map(view), session: rows.value.session.map(view) }))
 
@@ -74,7 +79,8 @@ onBeforeUnmount(() => reading?.abort())
           :aria-label="list === 'model' ? t('modelSettings.usage.title') : undefined" :data-usage-list="list">
           <h3 v-if="list === 'session'" id="model-usage-session">{{ t('modelSettings.usage.session') }}</h3>
           <ul class="ui-list model-usage-rows">
-            <li v-for="{ row, calls, cells, note, reasons } in views[list]" :key="row.key" class="model-usage-row" :data-usage-row="row.key">
+            <li v-for="{ row, calls, cells, note, reasons, issues, connection } in views[list]" :key="row.key" class="model-usage-row"
+              :data-usage-row="row.key">
               <header>
                 <strong>{{ roleName(row.group.role) }}</strong>
                 <span v-if="row.group.model" class="model-usage-model" :title="row.group.provider ?? undefined">{{ row.group.model }}</span>
@@ -95,11 +101,18 @@ onBeforeUnmount(() => reading?.abort())
                 </div>
               </dl>
               <p v-if="note" class="model-usage-row-note" data-usage-row-note>{{ note }}</p>
-              <p v-if="reasons" class="model-usage-reasons" data-usage-failure-reasons>
-                <span>{{ reasons }}</span>
-                <Button v-if="list === 'model'" variant="link" size="sm" data-usage-failure-check @click="emit('details', row.group.role)">
-                  {{ t('modelSettings.usage.check', { name: roleName(row.group.role) }) }}</Button>
-              </p>
+              <div v-if="reasons.fuli || reasons.service" class="model-usage-reasons" data-usage-failure-reasons>
+                <p v-for="side in (['fuli', 'service'] as const)" v-show="reasons[side]" :key="side" :data-usage-failure-side="side">
+                  <span class="model-usage-side">{{ t(`modelSettings.usage.sides.${side}`) }}</span>
+                  <span>{{ reasons[side] }}</span>
+                  <Button v-if="side === 'service' && connection" variant="link" size="sm" data-usage-failure-check @click="emit('model', connection)">
+                    {{ t('modelSettings.usage.check', { model: row.group.model ?? '' }) }}</Button>
+                </p>
+                <details v-if="issues.length" class="ui-disclosure model-usage-issues" data-usage-format-issues>
+                  <summary>{{ t('modelSettings.usage.issues') }}</summary>
+                  <ul><li v-for="line in issues" :key="line"><code>{{ line }}</code></li></ul>
+                </details>
+              </div>
             </li>
           </ul>
         </section>
@@ -126,7 +139,12 @@ onBeforeUnmount(() => reading?.abort())
 .model-usage-note { display: inline-block; color: var(--color-muted); white-space: nowrap; }
 .model-usage-failed { margin-inline-start: 6px; color: var(--color-danger); font-size: 12px; }
 .model-usage-row-note { margin: 0; color: var(--color-muted); font-size: 12px; }
-.model-usage-reasons { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin: 0; color: var(--color-muted); font-size: 12px; }
+.model-usage-reasons { display: grid; gap: 2px; color: var(--color-muted); font-size: 12px; }
+.model-usage-reasons p { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin: 0; }
+.model-usage-side { color: var(--color-ink); font-weight: var(--weight-medium); }
+.model-usage-issues summary { inline-size: fit-content; cursor: pointer; }
+.model-usage-issues ul { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
+.model-usage-issues code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .model-usage-empty { display: grid; justify-items: start; gap: 8px; margin: 0; padding: 16px; border: 1px dashed var(--color-border);
   border-radius: var(--radius-card); color: var(--color-muted); font-size: 14px; }
 .model-usage-empty p { margin: 0; }

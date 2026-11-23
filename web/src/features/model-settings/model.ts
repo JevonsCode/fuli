@@ -458,6 +458,8 @@ export interface UsageGroup {
   unreportedFailedAttempts: number
   // failedRequests by why each one's last attempt ended, most first; absent from an older server.
   failureReasons?: { reason: string; requests: number }[]
+  // The rules of FULI's answer check this group's attempts broke ("payload.decisions[].doubt:invalid_value"), most first.
+  formatIssues?: { issue: string; attempts: number }[]
   tokens: Partial<Record<'input' | 'output' | 'total' | 'cachedInput' | 'cacheWriteInput' | 'reasoning', TokenCell>>
 }
 
@@ -511,18 +513,40 @@ export function callParts(group: UsageGroup, locale: string): { value: string; f
   }
 }
 
-// Why the failed calls failed, in one line (「回答不合格式 23 · 超时 12」), so
-// a failure count says whether to look at the model's answers or at the
-// service; empty without failures or a breakdown.
-const FAILURE_REASONS = ['invalid_output', 'timeout', 'network', 'rate_limited', 'server_error', 'output_token_limit', 'auth_failed'] as const
-export function failureReasonsLine(group: UsageGroup, locale: string): string {
-  if (!group.failedRequests) return ''
-  const counts = new Map<string, number>()
+// Why the failed calls failed, by whose side to look at (「没通过 FULI 的格式检查
+// 23 · 其他 3」 on FULI's, 「超时 12」 on the model service's), so a failure
+// of FULI's own check never reads as the service's. Unknown reasons count as
+// FULI's 其他: only a reason the service can be asked about leads to its test.
+// Each side is '' when it has none; both are without failures or a breakdown.
+const FULI_REASONS = ['invalid_output', 'invalid_items', 'output_token_limit'] as const
+const SERVICE_REASONS = ['timeout', 'stream_stalled', 'network', 'rate_limited', 'server_error', 'auth_failed', 'provider_billing',
+  'model_or_endpoint_not_found', 'invalid_response'] as const
+export function failureReasonSides(group: UsageGroup, locale: string): { fuli: string; service: string } {
+  if (!group.failedRequests) return { fuli: '', service: '' }
+  const counts = { fuli: new Map<string, number>(), service: new Map<string, number>() }
   for (const { reason, requests } of group.failureReasons ?? []) {
-    const key = (FAILURE_REASONS as readonly string[]).includes(reason) ? reason : 'other'
-    counts.set(key, (counts.get(key) ?? 0) + requests)
+    const [side, key] = (SERVICE_REASONS as readonly string[]).includes(reason) ? ['service', reason] as const
+      : ['fuli', (FULI_REASONS as readonly string[]).includes(reason) ? reason : 'other'] as const
+    counts[side].set(key, (counts[side].get(key) ?? 0) + requests)
   }
-  return [...counts].map(([key, count]) => `${t(`modelSettings.usage.reasons.${key}`)} ${formatCount(count, locale)}`).join(' · ')
+  const line = (side: Map<string, number>) =>
+    [...side].map(([key, count]) => `${t(`modelSettings.usage.reasons.${key}`)} ${formatCount(count, locale)}`).join(' · ')
+  return { fuli: line(counts.fuli), service: line(counts.service) }
+}
+
+// The rules of FULI's check a row's answers broke, each with how many tries broke it: 「payload.decisions[].doubt:invalid_value · 3 次」.
+export function formatIssueLines(group: UsageGroup, locale: string): string[] {
+  return (group.formatIssues ?? []).map(({ issue, attempts }) =>
+    t('modelSettings.usage.issue', { issue, count: formatCount(attempts, locale) }))
+}
+
+// The connected model a usage row counted (its protocol, host and model), for
+// 「查看并测试」; null when no connection names it any more, as after the
+// role moved to another model and this one was removed.
+export function usageConnection(group: UsageGroup, payload: ModelRolesPayload | null): string | null {
+  if (!group.provider || !group.model) return null
+  return payload?.roles.map(view => view.connection).find(connection => connection
+    && `${connection.protocol}@${connection.endpointHost}` === group.provider && connection.model === group.model)?.id ?? null
 }
 
 export interface UsageRow {

@@ -114,6 +114,13 @@ function edit(role: ModelRoleId, focus: 'projects' | null = null) {
 }
 
 const openUse = (use: ModelUseId) => { details.value = useRole(use) }
+// A usage row's 「查看并测试」: that model's row in 模型, with its 「测试连接」 focused.
+function showModel(connectionId: string) {
+  const row = [...pageRoot.value?.querySelectorAll<HTMLElement>('[data-model-connection-id]') ?? []]
+    .find(entry => entry.dataset.modelConnectionId === connectionId)
+  row?.scrollIntoView({ block: 'center' })
+  row?.querySelector<HTMLElement>('[data-model-connection-check]')?.focus({ preventScroll: true })
+}
 
 // A save whose change could not be written to the change history says so (rec#11 D-42).
 const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
@@ -228,7 +235,7 @@ onBeforeUnmount(() => {
         <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
           :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
-        <ModelUsage @details="role => { details = role }" />
+        <ModelUsage :roles="payload" @model="showModel" />
 
         <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
           @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />

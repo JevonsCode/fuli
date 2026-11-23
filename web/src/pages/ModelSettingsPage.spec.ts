@@ -41,7 +41,9 @@ const roles = (overrides: Record<string, unknown> = {}) => ({
 const usage = () => ({ groups: [
   { role: 'tonborg', provider: 'openai_chat@127.0.0.1:11434', model: 'qwen-test', actualModels: ['qwen-test'], channel: 'model_api',
     requests: 2, failedRequests: 1, attempts: 3, failedAttempts: 2, unreportedAttempts: 1, unreportedFailedAttempts: 1,
-    failureReasons: [{ reason: 'invalid_output', requests: 1 }],
+    failureReasons: [{ reason: 'stream_stalled', requests: 1 }],
+    // A try that broke FULI's check and was then repaired is no failed call, but its rule is still listed.
+    formatIssues: [{ issue: 'payload.decisions[].doubt:invalid_value', attempts: 1 }],
     tokens: { input: { reported: 1200, unknownAttempts: 1 }, output: { reported: 300, unknownAttempts: 2 }, cachedInput: { reported: 0, unknownAttempts: 1 },
       total: { reported: 1500, unknownAttempts: 2 } } },
   { role: 'bole', provider: null, model: null, actualModels: [], channel: 'session', requests: 1, failedRequests: 0, attempts: 1, failedAttempts: 0,
@@ -485,13 +487,20 @@ describe('ModelSettingsPage', () => {
     expect(session.text()).toContain('用量由客户端会话记录')
     expect(session.get('[data-usage-cell="input"] dd').text()).toBe('没返回')
     expect(session.find('[data-usage-row-note]').exists()).toBe(false)
-    // Why the calls failed, and the way to that model's settings and its connection test.
-    expect(model.get('[data-usage-failure-reasons] span').text()).toBe('回答不合格式 1')
+    // Why the calls failed, by side: only the model service's leads to testing the model this row counted.
+    expect(model.get('[data-usage-failure-side="service"]').text()).toBe('模型服务那边回答中途停住 1查看并测试 qwen-test')
+    expect(model.get('[data-usage-failure-side="fuli"]').isVisible()).toBe(false)
     expect(session.find('[data-usage-failure-reasons]').exists()).toBe(false)
-    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
+    // The rules FULI's check found broken open on request.
+    const issues = model.get('[data-usage-format-issues]')
+    expect(issues.attributes('open')).toBeUndefined()
+    expect(issues.get('summary').text()).toBe('格式检查明细')
+    expect(issues.get('li').text()).toBe('payload.decisions[].doubt:invalid_value · 1 次')
+    const test = wrapper.get('[data-model-connection-id="local-qwen"] [data-model-connection-check]')
+    const focus = vi.spyOn(test.element as HTMLElement, 'focus')
     await model.get('[data-usage-failure-check]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-model-use-details]').exists()).toBe(true)
+    expect(focus).toHaveBeenCalled()
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
 
     await wrapper.get('[data-value="today"]').trigger('click')
     await flushPromises()
