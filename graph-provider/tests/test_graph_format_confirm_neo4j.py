@@ -711,6 +711,51 @@ async def test_temporary_names_clear_only_what_fuli_generated(graph):
 
 
 @pytest.mark.asyncio
+async def test_after_an_undo_of_graph_23_a_graph_22_fuli_reads_every_project(graph):
+    """Confirm graph/23, open a temporary project the way graph/23 does (no
+    name), then undo: the journal puts its projects back, and the undo names
+    the new one as graph/22 would have, so
+    graph/22's rule (a stored profile's name is at least one character) reads
+    every project. The undo says how many it named."""
+    from pydantic import Field
+    from fuli_graph.models import ProjectProfile
+    from fuli_graph.temporary_project_scope import _SESSION_PROFILE
+
+    class Graph22Profile(ProjectProfile):
+        name: str = Field(min_length=1, max_length=160)
+
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(TEMPORARY_NAME_SEED)
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 22")
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        # What graph/23 writes for a session scope opened after the step.
+        await driver.execute_query(
+            "MATCH (space:FuliSpace {id: 'legacy-space'})"
+            "CREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {id: 'new-session', "
+            "project_id: 'temporary-' + $digest, name: '', scope_type: 'temporary', profile_json: $profile, "
+            "publication_key: 'synthetic-publication-new-session', created_at: datetime(), updated_at: datetime()})",
+            digest='1' * 64, profile=_SESSION_PROFILE.model_dump_json())
+        undone = await client.post('/v1/data-format/rollback', headers=REVIEW,
+                                   json={'migration_id': 'graph/23-temporary-project-names', 'entrypoint': 'cli'})
+        assert undone.status_code == 200, undone.text
+        assert undone.json()['adapted'] == 1, undone.json()
+
+    rows = {row['id']: row for row in await _rows(driver, TEMPORARY_NAME_READ)}
+    for row in rows.values():
+        Graph22Profile.model_validate_json(row['profile_json'])
+        assert row['name'].strip(), row
+    assert rows['new-session']['name'] == '临时会话 / Temporary session'
+    assert json.loads(rows['new-session']['profile_json'])['name'] == '临时会话 / Temporary session'
+    assert rows['fallback']['name'] == '会话项目 / Conversation project'
+    assert await _version(driver) == 22
+
+
+@pytest.mark.asyncio
 async def test_a_conversation_project_with_its_lead_a_task_and_knowledge_reads_as_temporary_after_the_step(graph):
     """Like the 259 on Jevons's computer: a conversation fallback saved as
     registered under FULI's name, with FLAs, a task and knowledge in it. After

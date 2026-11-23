@@ -174,6 +174,23 @@ describe('DataFormatPage', () => {
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
   })
 
+  it('says how many unreadable records a step left, and how many later records an undo filled in', async () => {
+    const wrapper = await mountPage()
+    api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
+      status: 'applied', migrationId: 'graph/9-group-id-separators', unreadable: 2 }] })
+    await wrapper.get('#data-format-reviewed').trigger('click')
+    await wrapper.get('[data-apply]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-result="applied"]').text()).toContain('另有 2 条记录读不懂，原样留下。')
+
+    api.postJson.mockResolvedValueOnce({ status: 'rolled_back', version: 8, adapted: 3 })
+    await wrapper.get('[data-undo]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-confirm-undo]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('另有 3 条之后写入的记录按旧版本的格式补齐')
+  })
+
   it('keeps the unverified prune and says the audit log write failed', async () => {
     const wrapper = await mountPage()
     api.postJson.mockResolvedValueOnce({ status: 'applied', skipped: [], results: [{ label: 'graph (personal)',
