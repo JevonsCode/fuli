@@ -133,9 +133,8 @@ A 全部暂停 may stop it; resuming does not restart it, so start it again your
 
 ## Work You Repeat
 
-When you are a task's FLA and notice work you keep doing the same way (a repeated
-`list_workflow_candidates` candidate, or steps you have followed across sessions), propose it as your
-own workflow with `propose_agent_workflow` instead of capturing the steps as knowledge. It waits for
+When you are a task's FLA and notice work you keep doing the same way (steps you have followed
+across sessions), propose it as your own workflow with `propose_agent_workflow` instead of capturing the steps as knowledge. It waits for
 the person to confirm on your home page; until then it is not active.
 
 When `list_agent_workflows` names a `draftable` topic (three or more experiences the person kept), you
