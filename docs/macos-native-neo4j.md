@@ -77,11 +77,10 @@ import).
   exists: the lock is renamed aside, its token checked, then removed.
 - A holder that still runs, including another user's process, keeps the lock.
 - An update, rollback, uninstall, dump or load lock is never taken over, nor
-  released from the window or by `unlock`. An update, rollback or uninstall stops
-  before it changes knowledge data but may leave a half-installed
-  `neo4j-assets/jvs-a-*` directory; a dump only reads; a load overwrites the
-  database and may leave it half written. The start's message says which, and
-  the exact manual steps: there is no command for these yet.
+  released by `unlock`. An update, rollback or uninstall stops before it changes
+  knowledge data but may leave a half-installed `neo4j-assets/jvs-a-*`
+  directory; a dump only reads; a load overwrites the database and may leave it
+  half written. `fuli graph runtime recover` (below) deals with these.
 - A lock that names no holder (taken before FULI recorded one) is released only
   on request: 「解除这把锁并启动」 in the desktop window, or
   `fuli graph runtime unlock`. Both run the same checks and keep the lock, saying
@@ -94,9 +93,9 @@ import).
   again right before it is moved, so a lock replaced since it was judged stays.
   A process killed mid-way leaves `.neo4j-lifecycle.lock.new-*` or `.stale-*`;
   the next lock clears those older than 10 minutes.
-- `neo4j-transaction.json` means a switch did not finish. No FULI command
-  finishes or undoes it: every start, stop and asset operation refuses to run
-  until a person recovers it. During `switching` the newer Neo4j may already have
+- `neo4j-transaction.json` means a switch did not finish. Every start, stop and
+  asset operation refuses to run until it is recovered with `fuli graph runtime
+  recover`. During `switching` the newer Neo4j may already have
   opened the store, which the older one may then not open; an upgrade's graph
   backup is in `backups/graph/before-neo4j-<version>-<time>`, named in the
   journal (`next.previousNeo4jAsset.graphBackup`). During `removing-assets` only
@@ -104,6 +103,32 @@ import).
   process groups, listeners and offline store formats before manually completing
   recovery. Recovery never copies or overwrites a database. Crash/power-loss
   recovery is an explicit operator step; there is no automatic database rollback.
+
+## Recovering an interrupted operation
+
+`fuli graph runtime recover` (`src/native-runtime/neo4j-recovery.js`; in the
+desktop window 「恢复并启动」) first prints what it would do and a digest; it does
+it only when confirmed, or with `--yes --expect <digest>`, and then only if
+nothing changed since. It refuses while the lock's holder runs, another FULI
+CLI or controller works on the data, or the running programs cannot be listed.
+The graph services `processes.json` records are stopped first, under the lock's
+own token.
+
+| What was interrupted | What recovery does |
+| --- | --- |
+| A switch (`switching`), descriptor still the older one | Undo: an update's candidate `jvs-a-*` moves to `native-runtime/recovered/`, the journal too, the lock is released |
+| A switch, descriptor already the newer one | Finish: keep it, archive the journal, release the lock. `--back-out` writes the older descriptor back only when the store format is still the one from before and the older programs are unchanged |
+| A switch, descriptor neither | Refused (`manifest_changed`): a person looks |
+| An uninstall (`removing-assets`) | Finish removing the program directories the journal names; knowledge data is not touched |
+| An update, rollback or uninstall before its journal | Check the programs in use still match their fingerprint; move unused `jvs-a-*` directories with FULI's receipt to `recovered/` (any other directory: refused); rename unfinished `backups/graph/before-neo4j-*.partial-*` to `.incomplete`; release the lock |
+| A dump | Release the lock |
+| A load | Release the lock and import the whole graph from the newest `backups/graph/before-import-*` the import took before it; without one, refused (`no_restore_point`) |
+
+Every step can run again: a recovery killed part way is planned and finished
+again. Directories are moved, not deleted, except an uninstall's program files.
+A step that fails is recorded in the diagnostics log; what each recovery did is
+kept in `native-runtime/recovered/recovery-<time>.json`. Recovery is for the
+person only: no Agent tool reaches it.
 
 ## Verification
 

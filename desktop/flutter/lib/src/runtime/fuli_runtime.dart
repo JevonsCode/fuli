@@ -22,10 +22,23 @@ class StartupFailure {
   int? number(String key) => facts[key] is int ? facts[key] as int : null;
 }
 
+/// What `fuli graph runtime recover` would do (src/native-runtime/neo4j-recovery.js):
+/// its kind and steps, the digest the person confirms, and the facts behind it.
+class RecoveryPlan {
+  const RecoveryPlan(this.kind, this.steps, this.digest, this.facts);
+
+  final String kind;
+  final List<Map<String, Object?>> steps;
+  final String? digest;
+  final Map<String, Object?> facts;
+
+  String? text(String key) => facts[key] is String ? facts[key] as String : null;
+}
+
 class RuntimeReport {
   const RuntimeReport(this.state,
       {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
-      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept});
+      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
@@ -38,6 +51,8 @@ class RuntimeReport {
   /// Why a confirmed 「解除这把锁并启动」 kept the lock, when it did
   /// (src/native-runtime/neo4j-lifecycle-lock.js): its reason and facts.
   final StartupFailure? lockKept;
+  /// The plan a recovery preview answered with.
+  final RecoveryPlan? recoveryPlan;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -79,4 +94,11 @@ abstract interface class FuliRuntime {
   /// Releases a database maintenance lock no start takes over by itself, after
   /// FULI's own checks, then starts FULI. The person confirmed it first.
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage});
+
+  /// What a recovery of an interrupted database operation would do; changes nothing.
+  Future<RuntimeReport> previewRecovery();
+
+  /// Recovers with the plan the person confirmed ([digest]), then starts FULI.
+  /// Nothing is done when the plan changed since it was shown.
+  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage});
 }

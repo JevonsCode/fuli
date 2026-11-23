@@ -108,7 +108,12 @@ void main() {
     expect(said({'holder': 'gone', 'operation': 'load'}), contains('数据库可能只写入了一半'));
     expect(said({'holder': 'gone', 'operation': 'load'}), isNot(contains('没有被改动')));
     expect(said({'holder': 'gone', 'operation': 'dump'}), contains('导出只读数据库'));
-    expect(said({'holder': 'gone', 'operation': 'update'}), contains('FULI 目前没有能解除这把锁的按钮'));
+    expect(said({'holder': 'gone', 'operation': 'update'}), contains('点「恢复并启动」'));
+    // 恢复 covers a switch journal and a lock an operation left; never a lock whose holder runs or that names none.
+    expect(zh.recoverable(const StartupFailure('native_recovery_needed', {})), isTrue);
+    expect(zh.recoverable(const StartupFailure('native_lifecycle_lock', {'holder': 'gone'})), isTrue);
+    expect(zh.recoverable(const StartupFailure('native_lifecycle_lock', {'holder': 'running'})), isFalse);
+    expect(zh.recoverable(const StartupFailure('native_lifecycle_lock', {'holder': 'unknown'})), isFalse);
     // Only a lock no holder is recorded for may be released by a person; never a
     // running holder's, nor one an update left (half-installed files).
     expect(zh.releasableLock(const StartupFailure('native_lifecycle_lock', {'holder': 'unknown'})), isTrue);
@@ -164,6 +169,19 @@ void main() {
       expect(text, isNot(contains(' / ')), reason: reason);
     }
     expect(zh.lockKept(const StartupFailure('asset_operation', {'operation': 'load'})), contains('一次数据库导入留下的'));
+  });
+
+  test('a recovery plan and every reason it will not run are said in one language', () {
+    for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'finish_uninstall', 'clear_interrupted', 'release_dump', 'restore_load']) {
+      final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1'}, {'do': 'release-lock'}], 'd', const {}));
+      expect(words.first, isNot(kind), reason: kind);
+      expect(words.join(), isNot(contains(' / ')), reason: kind);
+    }
+    expect(zh.recoveryPlanWords(const RecoveryPlan('clear_interrupted', [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1'}], 'd', {}))[1],
+        '· 把 jvs-a-1 移到 recovered 文件夹（不删）');
+    for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'manifest_changed', 'unknown_assets', 'no_restore_point', 'plan_changed']) {
+      expect(zh.recoveryRefused(reason, 7), startsWith('没有恢复：'), reason: reason);
+    }
   });
 
   test('a start stopped at a lock an update left offers no release', () async {

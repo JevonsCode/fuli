@@ -70,6 +70,22 @@ class FixedRuntime implements FuliRuntime {
   /// What 「解除这把锁并启动」 answers; [report] when null.
   RuntimeReport? releaseReport;
 
+  /// The plan a recovery preview answers with, and what the recovery answers.
+  RecoveryPlan? recoveryPlan;
+  RuntimeReport? recoverReport;
+
+  @override
+  Future<RuntimeReport> previewRecovery() async {
+    calls.add('recover-preview');
+    return RuntimeReport(RuntimeState.stopped, recoveryPlan: recoveryPlan);
+  }
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage}) async {
+    calls.add('recover-start $digest');
+    return recoverReport ?? report;
+  }
+
   @override
   Future<RuntimeReport> changePort({StageListener? onStage}) async {
     calls.add('change-port');

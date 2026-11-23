@@ -177,6 +177,7 @@ class Strings {
               'FULI did not start: the database maintenance lock has been held since $since with no record of who took it.'),
         },
       'port_taken' => _portTaken(failure),
+      'recovery_refused' => recoveryRefused(failure.text('reason'), failure.facts['pid']),
       'console_not_answering' => failure.number('stillRunningPid') != null
           ? _t('没有启动：控制台 $seconds 秒内没有应答，停它时也没停下来，进程 ${failure.number('stillRunningPid')} 可能还在。数据都在。',
               'FULI did not start: the console did not answer within $seconds s and did not end when stopped; process ${failure.number('stillRunningPid')} may still run. Your data is kept.')
@@ -201,9 +202,9 @@ class Strings {
     const keep = '在那之前不要删除数据库维护锁，也不要用别的版本的 FULI 打开这份数据。';
     const keepEn = 'Until then, do not remove the maintenance lock or open this data with another FULI version.';
     if (failure.text('phase') == 'removing-assets') {
-      return _t('没有启动：有一次数据库卸载没做完。卸载只删数据库程序文件，知识数据文件没有被改动。FULI 现在没有能完成这一步的办法，需要人来处理。$keep',
+      return _t('没有启动：有一次数据库卸载没做完。卸载只删数据库程序文件，知识数据文件没有被改动。点「恢复并启动」把它做完。$keep',
           'FULI did not start: a database uninstall did not finish. An uninstall removes only the database programs; your knowledge data files were not changed. '
-              'FULI has no way to finish this step yet, so a person needs to handle it. $keepEn');
+              'Choose Recover and start to finish it. $keepEn');
     }
     final from = failure.text('fromVersion'), to = failure.text('toVersion'), backup = failure.text('backupName');
     final versions = from != null && to != null ? _t('（$from → $to）', ' ($from → $to)') : '';
@@ -212,10 +213,10 @@ class Strings {
         : '';
     return _t(
         '没有启动：有一次数据库${_operation(failure.text('operation'))}$versions没做完。FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们，被新版本打开过之后旧版本可能再也打不开。$kept'
-            'FULI 现在没有能完成或撤销这一步的办法，需要人来恢复。$keep',
+            '点「恢复并启动」：先说明要做什么，你确认后才做。$keep',
         'FULI did not start: a database ${failure.text('operation') ?? 'switch'}$versions did not finish. FULI did not copy or replace your knowledge data files, '
             'but the newer database may already have opened them during the switch, and the older one may not open them again.$kept '
-            'FULI has no way to finish or undo this step yet, so a person needs to recover it. $keepEn');
+            'Choose Recover and start: it says what it will do first, and does it only once you confirm. $keepEn');
   }
 
   // A lock an operation left when it ended before any switch journal: what it
@@ -223,8 +224,8 @@ class Strings {
   String _interrupted(StartupFailure failure, String since) {
     // Until a recovery command exists, the exact manual steps are what the
     // terminal's start prints (src/local-runtime/startup-failure.js).
-    const none = 'FULI 目前没有能解除这把锁的按钮，需要人来处理；在终端里启动 FULI 时会列出要做的步骤。';
-    const noneEn = 'FULI has no button that releases this lock yet; a person needs to handle it, and starting FULI in a terminal lists the steps.';
+    const none = '点「恢复并启动」：先说明要做什么，你确认后才做。';
+    const noneEn = 'Choose Recover and start: it says what it will do first, and does it only once you confirm.';
     return switch (failure.text('operation')) {
       'load' => _t('没有启动：一次图数据库导入在 $since 中途停了，留下了维护锁。导入会覆盖数据库，所以数据库可能只写入了一半。$none',
           'FULI did not start: a graph database load stopped part way at $since and left its maintenance lock. A load overwrites the database, so it may be only half written. $noneEn'),
@@ -265,6 +266,62 @@ class Strings {
       failure.code == 'native_lifecycle_lock' && failure.text('holder') == 'unknown';
 
   // Fits the status bar's primary place (status_actions.dart `_primaryWidth`).
+  // What `fuli graph runtime recover` deals with: a switch journal, or a lock an
+  // update, rollback, uninstall, dump or load left (src/native-runtime/neo4j-recovery.js).
+  bool recoverable(StartupFailure failure) =>
+      failure.code == 'native_recovery_needed' || (failure.code == 'native_lifecycle_lock' && failure.text('holder') == 'gone');
+
+  String get recoverAndStart => _t('恢复并启动', 'Recover and start');
+  String get recoveryTitle => _t('恢复这次没做完的数据库操作？', 'Recover the unfinished database operation?');
+  String get recoveryConfirm => _t('恢复并启动', 'Recover and start');
+
+  /// The plan in the person's words: what it is, then each step; or why it will not.
+  List<String> recoveryPlanWords(RecoveryPlan plan) {
+    if (plan.kind == 'nothing') return [_t('没有要恢复的东西，点「启动 FULI」即可。', 'There is nothing to recover; choose Start FULI.')];
+    if (plan.kind == 'refused') return [recoveryRefused(plan.text('reason'), plan.facts['pid'])];
+    final what = switch (plan.kind) {
+      'undo_switch' => _t('新版本还没有生效：回到切换前的状态。', 'The newer version never took effect: go back to before the switch.'),
+      'finish_switch' => _t('新版本已经生效：保留它，把这次切换做完。', 'The newer version already took effect: keep it and finish the switch.'),
+      'back_out_switch' => _t('存储格式没有变：回到切换前的版本。', 'The store format did not change: return to the older version.'),
+      'finish_uninstall' => _t('把没做完的卸载做完：删掉剩下的数据库程序，知识数据不动。', 'Finish the uninstall: remove the remaining database programs; knowledge data is not touched.'),
+      'clear_interrupted' => _t('操作停在改动数据之前：把装了一半的东西放到一边，再解除锁。', 'It stopped before changing any data: set aside what it half installed, then release the lock.'),
+      'release_dump' => _t('导出只读数据库：直接解除它留下的锁。', 'A dump only reads the database: release the lock it left.'),
+      'restore_load' => _t('导入可能只写了一半：用导入前自动留下的备份整库恢复。', 'The load may be half written: restore the whole graph from the copy the import took first.'),
+      _ => plan.kind,
+    };
+    return [what, for (final step in plan.steps) '· ${_recoveryStep(step)}'];
+  }
+
+  String _recoveryStep(Map<String, Object?> step) {
+    String last(Object? path) => '$path'.split(RegExp(r'[\\/]')).last;
+    return switch (step['do']) {
+      'stop-services' => _t('停止 FULI 记录的图数据库和 Provider', 'Stop the graph database and Provider FULI recorded'),
+      'check-formats' => _t('确认存储格式和切换前一样', 'Check the store format is the one before the switch'),
+      'check-fingerprint' => _t('确认旧版本的数据库程序没有变', 'Check the older database programs did not change'),
+      'write-manifest' => _t('写回数据库描述文件', 'Write the database descriptor back'),
+      'move-aside' => _t('把 ${last(step['path'])} 移到 recovered 文件夹（不删）', 'Move ${last(step['path'])} to the recovered folder (not deleted)'),
+      'rename' => _t('把没写完的备份改名为 ${last(step['to'])}', 'Rename the unfinished backup to ${last(step['to'])}'),
+      'remove' => _t('删除数据库程序文件 ${last(step['path'])}', 'Delete the database programs in ${last(step['path'])}'),
+      'archive-journal' => _t('把切换记录移到 recovered 文件夹', 'Move the switch journal to the recovered folder'),
+      'release-lock' => _t('解除数据库维护锁', 'Release the database maintenance lock'),
+      'restore' => _t('从 ${last(step['from'])} 整库导入', 'Import the whole graph from ${last(step['from'])}'),
+      _ => '${step['do']}',
+    };
+  }
+
+  // Why a recovery will not run (src/cli/recovery-plan-text.js says the same in the terminal).
+  String recoveryRefused(String? reason, Object? pid) => switch (reason) {
+        'holder_running' => _t('没有恢复：进程 $pid 还在用数据库维护锁。', 'Not recovered: process $pid still holds the maintenance lock.'),
+        'fuli_running' => _t('没有恢复：另一个 FULI 命令（进程 $pid）正在用这份数据。', 'Not recovered: another FULI command (process $pid) is using this data.'),
+        'cannot_inspect' => _t('没有恢复：看不到正在运行的程序，没法确认没人在用。', 'Not recovered: the running programs could not be listed.'),
+        'manifest_changed' || 'unknown_journal' || 'assets_changed' =>
+          _t('没有恢复：数据库的记录和切换前后都对不上，需要人来看。', 'Not recovered: the database records match neither before nor after the switch; a person needs to look.'),
+        'unknown_assets' => _t('没有恢复：数据库程序目录里有不是 FULI 放的东西，没有动它。', 'Not recovered: the database programs folder holds something FULI did not put there; it was left alone.'),
+        'no_restore_point' => _t('没有恢复：导入前没有留下可用的备份，需要用原来的导出重新导入。', 'Not recovered: the import left no usable copy from before it; import the original export again.'),
+        'plan_changed' => _t('没有恢复：情况在你确认之后变了，什么都没做。再点一次看新的计划。', 'Not recovered: things changed after you confirmed, so nothing was done. Choose it again to see the new plan.'),
+        _ => _t('没有恢复。', 'Not recovered.'),
+      };
+
   String get releaseLockAndStart => _t('解除这把锁并启动', 'Unlock and start');
   String get releaseLockTitle => _t('解除数据库维护锁？', 'Release the database maintenance lock?');
   String get releaseLockBody => _t(

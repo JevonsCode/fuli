@@ -103,6 +103,15 @@ class StatusActions extends StatelessWidget {
     if (!snapshot.installed) {
       return FilledButton(onPressed: () => opener.open(installPage), child: Text(strings.installPage));
     }
+    // The last start stopped at an interrupted database operation: recovering
+    // it is the one way on, after the person saw the plan and confirmed it.
+    if (!snapshot.running && controller.recoverable) {
+      return FilledButton(
+        key: const Key('recover-start'),
+        onPressed: busy ? null : () => _confirmRecovery(context),
+        child: Text(strings.recoverAndStart),
+      );
+    }
     // The last start stopped at a maintenance lock a person may release: the
     // one way on, confirmed first; FULI's own checks decide (neo4j-lifecycle-lock.js).
     if (!snapshot.running && controller.releasableLock) {
@@ -138,5 +147,27 @@ class StatusActions extends StatelessWidget {
       ),
     );
     if (confirmed == true) await controller.releaseLockAndStart();
+  }
+
+  Future<void> _confirmRecovery(BuildContext context) async {
+    final plan = await controller.previewRecovery();
+    if (plan == null || !context.mounted) return;
+    final words = strings.recoveryPlanWords(plan);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.recoveryTitle),
+        content: SingleChildScrollView(child: Text(words.join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('recover-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.recoveryConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.recoverAndStart(plan);
   }
 }

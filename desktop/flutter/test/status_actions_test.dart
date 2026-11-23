@@ -67,6 +67,35 @@ void main() {
     expect(runtime.calls, contains('release-lock-start'));
   });
 
+  testWidgets('an interrupted database operation offers 恢复并启动: the plan first, nothing without the confirmation', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',
+        failure: StartupFailure('native_recovery_needed', {'operation': 'update', 'phase': 'switching'})))
+      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'archive-journal'}, {'do': 'release-lock'}], '0123456789abcdef', {});
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    final recover = find.byKey(const Key('recover-start'));
+    expect(find.descendant(of: primary, matching: recover), findsOneWidget);
+    expect(find.byKey(const Key('release-lock-start')), findsNothing);
+
+    await tester.tap(recover);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('新版本已经生效：保留它'), findsOneWidget);
+    expect(find.textContaining('· 解除数据库维护锁'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(runtime.calls.where((call) => call.startsWith('recover-start')), isEmpty);
+
+    await tester.tap(recover);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recover-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('recover-start 0123456789abcdef'));
+  });
+
   testWidgets('打开控制台 and 启动 / 停止 keep their places while work runs, ends, stops and starts', (tester) async {
     final updateStep = Completer<void>();
     final (api, runtime) = demoScenario('needs');

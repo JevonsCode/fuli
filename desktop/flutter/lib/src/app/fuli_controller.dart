@@ -143,6 +143,34 @@ class FuliController extends ChangeNotifier {
   /// 「解除这把锁并启动」 may release after FULI's checks.
   bool get releasableLock => _lastFailure != null && strings.releasableLock(_lastFailure!);
 
+  /// Whether the last start stopped at an interrupted database operation that
+  /// 「恢复并启动」 can bring back (`fuli graph runtime recover`).
+  bool get recoverable => _lastFailure != null && strings.recoverable(_lastFailure!);
+
+  /// What a recovery would do, for the person to confirm; null when it would
+  /// do nothing or refuses (the notice then says why). Changes nothing.
+  Future<RecoveryPlan?> previewRecovery() async {
+    if (!recoverable || _pending != null) return null;
+    final report = await runtime.previewRecovery();
+    final plan = report.recoveryPlan;
+    if (plan == null || plan.kind == 'refused' || plan.kind == 'nothing' || plan.digest == null) {
+      _notice = Notice(plan == null ? strings.actionFailed(report.error ?? '') : strings.recoveryPlanWords(plan).first, error: plan?.kind == 'refused');
+      if (!_disposed) notifyListeners();
+      return null;
+    }
+    return plan;
+  }
+
+  /// Recovers with the plan the person confirmed, then starts FULI.
+  Future<void> recoverAndStart(RecoveryPlan plan) {
+    final digest = plan.digest;
+    if (digest == null) return Future.value();
+    _stoppedByPerson = false;
+    return _bringUp(strings.starting, () async {
+      _notice = await _startFailure(await _call(() => runtime.recoverAndStart(digest, onStage: _enterStage))) ?? _notice;
+    });
+  }
+
   /// How long that step has been waiting; null when no step is running.
   Duration? get startupWaited {
     final since = _stageSince;
