@@ -140,7 +140,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     const { target, roleConfig, attempts, startedAt } = call;
 
     const contract = decisionContract(request);
-    const prompt = decisionPrompt(request, contract.providerSchema);
+    const prompt = decisionPrompt(request, { schema: contract.providerSchema, rules: contract.schema });
     const limits = callLimits(roleConfig.budget, request.budget);
     const deadline = startedAt + limits.timeoutMs;
     const formatKey = `${target.protocol} ${target.endpoint} ${target.model}`;
@@ -199,7 +199,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         if (!adapter.repairable || repairs >= REPAIR_LIMIT) return stop('configuration', 'invalid_output');
         repairs += 1;
         purpose = 'repair';
-        turns = repairTurns(turns, result.reply ?? '', verdict.issues, prompt.schema);
+        turns = repairTurns(turns, result.reply ?? '', verdict.issues, prompt.rules);
         continue;
       }
       const { failure } = verdict;

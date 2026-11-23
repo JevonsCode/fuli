@@ -41,6 +41,7 @@ const roles = (overrides: Record<string, unknown> = {}) => ({
 const usage = () => ({ groups: [
   { role: 'tonborg', provider: 'openai_chat@127.0.0.1:11434', model: 'qwen-test', actualModels: ['qwen-test'], channel: 'model_api',
     requests: 2, failedRequests: 1, attempts: 3, failedAttempts: 2, unreportedAttempts: 1, unreportedFailedAttempts: 1,
+    failureReasons: [{ reason: 'invalid_output', requests: 1 }],
     tokens: { input: { reported: 1200, unknownAttempts: 1 }, output: { reported: 300, unknownAttempts: 2 }, cachedInput: { reported: 0, unknownAttempts: 1 },
       total: { reported: 1500, unknownAttempts: 2 } } },
   { role: 'bole', provider: null, model: null, actualModels: [], channel: 'session', requests: 1, failedRequests: 0, attempts: 1, failedAttempts: 0,
@@ -484,6 +485,13 @@ describe('ModelSettingsPage', () => {
     expect(session.text()).toContain('用量由客户端会话记录')
     expect(session.get('[data-usage-cell="input"] dd').text()).toBe('没返回')
     expect(session.find('[data-usage-row-note]').exists()).toBe(false)
+    // Why the calls failed, and the way to that model's settings and its connection test.
+    expect(model.get('[data-usage-failure-reasons] span').text()).toBe('回答不合格式 1')
+    expect(session.find('[data-usage-failure-reasons]').exists()).toBe(false)
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
+    await model.get('[data-usage-failure-check]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(true)
 
     await wrapper.get('[data-value="today"]').trigger('click')
     await flushPromises()

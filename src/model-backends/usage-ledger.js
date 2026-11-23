@@ -160,6 +160,9 @@ export class ModelUsageLedger {
   // answered; attempts and failedAttempts count every try, retries included.
   // unreportedAttempts returned no token counts at all (the call threw, timed
   // out or was cut off); unreportedFailedAttempts are those that failed.
+  // failureReasons splits failedRequests by why each one's last attempt
+  // ended (invalid_output, timeout, network, ...), most first, so a failure
+  // count says whose side to look at.
   // FULI bills nothing, so usage carries no cost; budgets keep their own.
   usage({ role = null, from = null, to = null }) {
     const tokenColumns = TOKEN_FIELDS.map(([name, column]) =>
@@ -175,6 +178,7 @@ export class ModelUsageLedger {
       WHERE (?1 IS NULL OR role = ?1) AND (?2 IS NULL OR started_at >= ?2) AND (?3 IS NULL OR started_at < ?3)
       GROUP BY role, protocol, endpoint_host, requested_model, channel
       ORDER BY role, requested_model LIMIT ${MAX_GROUPS}`).all(role, from, to);
+    const reasons = this.#failureReasons({ role, from, to });
     return rows.map(row => ({
       role: row.role,
       provider: row.protocol ? `${row.protocol}@${row.endpoint_host}` : null,
@@ -189,10 +193,31 @@ export class ModelUsageLedger {
       failedRequests: row.failed_requests,
       unreportedAttempts: row.unreported_attempts,
       unreportedFailedAttempts: row.unreported_failed_attempts,
+      failureReasons: reasons.get(groupKey(row)) ?? [],
       tokens: Object.fromEntries(TOKEN_FIELDS
         .filter(([name]) => !SUBSET_FIELDS.has(name) || row[`${name}_reported`] !== null)
         .map(([name]) => [name, { reported: row[`${name}_reported`], unknownAttempts: row[`${name}_unknown`] }]))
     }));
+  }
+
+  // Failed requests of each usage group by the reason their last attempt
+  // ended with, in the same range: Map(groupKey -> [{ reason, requests }]).
+  #failureReasons({ role, from, to }) {
+    const range = alias => `(?1 IS NULL OR ${alias}.role = ?1) AND (?2 IS NULL OR ${alias}.started_at >= ?2) AND (?3 IS NULL OR ${alias}.started_at < ?3)`;
+    const rows = this.db.prepare(`SELECT role, protocol, endpoint_host, requested_model, channel,
+        COALESCE(failure_reason, failure_class, 'unknown') AS reason, COUNT(DISTINCT request_id) AS requests
+      FROM model_attempts a
+      WHERE ${range('a')} AND outcome != 'succeeded'
+        AND attempt_number = (SELECT MAX(attempt_number) FROM model_attempts b WHERE b.request_id = a.request_id AND ${range('b')})
+        AND NOT EXISTS (SELECT 1 FROM model_attempts s WHERE s.request_id = a.request_id AND s.outcome = 'succeeded' AND ${range('s')})
+      GROUP BY role, protocol, endpoint_host, requested_model, channel, reason
+      ORDER BY requests DESC, reason`).all(role, from, to);
+    const grouped = new Map();
+    for (const row of rows) {
+      const key = groupKey(row);
+      grouped.set(key, [...grouped.get(key) ?? [], { reason: row.reason, requests: row.requests }]);
+    }
+    return grouped;
   }
 
   // The latest answer of a role from one connection (its id, protocol and
@@ -241,3 +266,5 @@ export class ModelUsageLedger {
     this.database = null;
   }
 }
+
+const groupKey = row => JSON.stringify([row.role, row.protocol, row.endpoint_host, row.requested_model, row.channel]);

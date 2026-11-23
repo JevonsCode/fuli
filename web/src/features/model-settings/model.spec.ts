@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   endpointOrigin,
-  callParts, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProjects,
+  callParts, failureReasonsLine, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProjects,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -125,6 +125,14 @@ describe('model usage', () => {
     expect(callParts(group({ requests: 38, failedRequests: 19, attempts: 66, failedAttempts: 47 }), 'zh-CN'))
       .toEqual({ value: '38 次', failed: '19 次失败', note: '（含重试共试了 66 次）' })
     expect(callParts(group({ requests: 2, failedRequests: 0, attempts: 2 }), 'zh-CN')).toEqual({ value: '2 次', failed: '', note: '' })
+  })
+
+  it('says why failed calls failed, most first, with unknown reasons as other', () => {
+    expect(failureReasonsLine(group({ failedRequests: 38, failureReasons: [{ reason: 'invalid_output', requests: 23 },
+      { reason: 'timeout', requests: 12 }, { reason: 'unsettled', requests: 2 }, { reason: 'attempt_error', requests: 1 }] }), 'zh-CN'))
+      .toBe('回答不合格式 23 · 超时 12 · 其他 3')
+    expect(failureReasonsLine(group({ failedRequests: 0, failureReasons: [] }), 'zh-CN')).toBe('')
+    expect(failureReasonsLine(group({ failedRequests: 2 }), 'zh-CN'), 'an older server sends no breakdown').toBe('')
   })
 
   it('lists model calls and current-session fallbacks apart, with bars only for known totals', () => {

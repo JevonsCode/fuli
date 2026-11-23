@@ -34,6 +34,8 @@ export function decisionContract({ output, decisions, evidence }) {
   const reply = jsonSchemaToZod(modelSchema);
   const payload = jsonSchemaToZod(payloadSchema);
   return {
+    // The whole schema each reply is checked against, and the shape of it a provider's structured output takes.
+    schema: modelSchema,
     providerSchema: providerSchema(modelSchema),
     validateReply(text) {
       let value;

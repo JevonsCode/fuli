@@ -74,11 +74,19 @@ export async function readJsonBody(response, { maxBytes = MAX_RESPONSE_BYTES } =
   return JSON.parse(text);
 }
 
-export async function* serverSentEvents(response) {
+// A stream that began and then sends nothing for this long has stalled: the
+// endpoint keeps the connection open with nothing more coming. Ending the
+// attempt here as a timeout leaves the call's own time limit room for its one
+// retry, instead of waiting that limit out. Every token, reasoning delta and
+// keep-alive ping arrives as a chunk, so a model still answering never goes
+// this quiet; the wait for the first chunk is left to the call's time limit.
+export const STREAM_STALL_MS = 120_000;
+
+export async function* serverSentEvents(response, { stallMs = STREAM_STALL_MS } = {}) {
   const decoder = new TextDecoder();
   let buffer = '';
   let bytes = 0;
-  for await (const chunk of response.body ?? []) {
+  for await (const chunk of chunksUntilStalled(response.body, stallMs)) {
     bytes += chunk.byteLength;
     if (bytes > MAX_RESPONSE_BYTES) throw new ResponseFormatError('The model stream is too large');
     buffer += decoder.decode(chunk, { stream: true });
@@ -91,6 +99,34 @@ export async function* serverSentEvents(response) {
   }
   const last = parseEvent(buffer + decoder.decode());
   if (last) yield last;
+}
+
+async function* chunksUntilStalled(body, stallMs) {
+  if (!body) return;
+  const reader = body.getReader();
+  let started = false;
+  try {
+    for (;;) {
+      const { done, value } = started ? await beforeStall(reader.read(), stallMs) : await reader.read();
+      if (done) return;
+      started = true;
+      yield value;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+async function beforeStall(read, stallMs) {
+  let timer;
+  const stalled = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new DOMException('The model stream stalled', 'TimeoutError')), stallMs);
+  });
+  try {
+    return await Promise.race([read, stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function parseEvent(block) {

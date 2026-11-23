@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { readFailure, serverSentEvents } from '../src/model-backends/adapters/exchange.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
@@ -477,6 +478,21 @@ test('C8: an endpoint that ignores the schema is shown it in the repair, and in 
   assert.equal(calls[2].body.output_config, undefined);
 });
 
+test('C8: what the model reads of the schema carries the limits the reply is checked against', async () => {
+  // A long reason breaks maxLength, a limit a provider's structured output never receives.
+  const tooLong = answer({ reason: 'x'.repeat(3000) });
+  const { port, calls } = harness({ bole: role('claude', { budget: { ...role('claude').budget, maxInputTokens: 8000, maxOutputTokens: 2000 } }) },
+    { responses: [anthropicStream(tooLong), anthropicStream(answer()), anthropicStream(answer())] });
+  assert.equal((await port.decide(request())).modelReceipt.status, 'completed');
+  assert.doesNotMatch(JSON.stringify(calls[0].body.output_config), /maxLength/, 'the provider gets the shape only');
+  const [echo, correction] = calls[1].body.messages.slice(-2);
+  assert.equal(echo.content, tooLong, 'the repair shows the whole reply, not its first 2000 characters');
+  assert.match(correction.content, /reason: Too big: expected string to have <=240 characters/);
+  assert.match(correction.content, /"maxLength":240/);
+  await port.decide(request({ requestId: 'request-next' }));
+  assert.match(calls[2].body.system, /must match this JSON schema: .*"maxLength":240/, 'prompt mode writes out the whole schema');
+});
+
 test('C8: broken JSON gets exactly one repair attempt and a second invalid reply is never acted on', async () => {
   const repaired = harness({ bole: role('local') }, { responses: [openAiStream('{"decision": "propose", '), openAiStream(answer())] });
   const ok = await repaired.port.decide(request());
@@ -689,4 +705,37 @@ test('a key tied to one origin is not sent when its connection points elsewhere'
   const { modelReceipt: checked } = await port.checkConnection('bole');
   assert.equal(checked.reason, 'key_endpoint_mismatch');
   assert.deepEqual(calls, []);
+});
+
+test('usage splits failed calls by why their last attempt ended, so a failure count says where to look', async () => {
+  const invalid = answer({ payload: { choice: 'zed' } });
+  const { port } = harness({ bole: role('local') }, { responses: [
+    openAiStream(invalid), openAiStream(invalid),
+    json(503, { error: { message: 'busy' } }), json(503, { error: { message: 'busy' } }),
+    openAiStream(invalid), openAiStream(invalid),
+    openAiStream(answer()),
+    json(503, { error: { message: 'busy' } }), openAiStream(answer())
+  ] });
+  for (const requestId of ['a', 'b', 'c', 'd', 'e']) await port.decide(request({ requestId }));
+  const [group] = usageFor(port, 'bole');
+  assert.equal(group.failedRequests, 3);
+  assert.deepEqual(group.failureReasons, [{ reason: 'invalid_output', requests: 2 }, { reason: 'server_error', requests: 1 }],
+    'a call answered after a retry is no failure');
+});
+
+test('a stream that began and then went quiet is a timeout, so the call keeps time for its retry', async () => {
+  let pulls = 0;
+  const response = new Response(new ReadableStream({ pull(controller) {
+    pulls += 1;
+    if (pulls === 1) controller.enqueue(new TextEncoder().encode('data: {"type":"message_start"}\n\n'));
+    return new Promise(() => {});
+  } }));
+  const events = [];
+  await assert.rejects(async () => {
+    for await (const event of serverSentEvents(response, { stallMs: 20 })) events.push(event);
+  }, error => {
+    assert.deepEqual(readFailure(error), { failureClass: 'transient', reason: 'timeout', retryAfterMs: null });
+    return true;
+  });
+  assert.equal(events.length, 1, 'what arrived before the stall was read');
 });

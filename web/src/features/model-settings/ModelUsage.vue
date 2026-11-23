@@ -8,13 +8,17 @@ import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import { UiSegmented } from '@/ui'
 import {
-  USAGE_WINDOWS, callParts, readModelUsage, roleName, usageCells, usageRowNote, usageRows,
-  type UsagePayload, type UsageRow, type UsageWindow,
+  USAGE_WINDOWS, callParts, failureReasonsLine, readModelUsage, roleName, usageCells, usageRowNote, usageRows,
+  type ModelRoleId, type UsagePayload, type UsageRow, type UsageWindow,
 } from './model'
+
+// details: the role whose settings and connection test a failing row leads to.
+const emit = defineEmits<{ details: [role: ModelRoleId] }>()
 
 // Usage from the ledger by role, model and time range. Model API calls and
 // fallbacks to the current session are listed apart. A value nothing returned
 // reads 没返回, never 0; tries that returned no usage get one note per row.
+// A row with failed calls says why they failed and leads to that model's settings.
 // FULI bills nothing, so there is no cost here.
 const range = ref<UsageWindow>('7d')
 const payload = ref<UsagePayload | null>(null)
@@ -42,6 +46,7 @@ async function load() {
 
 const view = (row: UsageRow) => ({
   row, calls: callParts(row.group, locale.value), cells: usageCells(row.group, locale.value), note: usageRowNote(row.group, locale.value),
+  reasons: failureReasonsLine(row.group, locale.value),
 })
 const views = computed(() => ({ model: rows.value.model.map(view), session: rows.value.session.map(view) }))
 
@@ -69,7 +74,7 @@ onBeforeUnmount(() => reading?.abort())
           :aria-label="list === 'model' ? t('modelSettings.usage.title') : undefined" :data-usage-list="list">
           <h3 v-if="list === 'session'" id="model-usage-session">{{ t('modelSettings.usage.session') }}</h3>
           <ul class="ui-list model-usage-rows">
-            <li v-for="{ row, calls, cells, note } in views[list]" :key="row.key" class="model-usage-row" :data-usage-row="row.key">
+            <li v-for="{ row, calls, cells, note, reasons } in views[list]" :key="row.key" class="model-usage-row" :data-usage-row="row.key">
               <header>
                 <strong>{{ roleName(row.group.role) }}</strong>
                 <span v-if="row.group.model" class="model-usage-model" :title="row.group.provider ?? undefined">{{ row.group.model }}</span>
@@ -90,6 +95,11 @@ onBeforeUnmount(() => reading?.abort())
                 </div>
               </dl>
               <p v-if="note" class="model-usage-row-note" data-usage-row-note>{{ note }}</p>
+              <p v-if="reasons" class="model-usage-reasons" data-usage-failure-reasons>
+                <span>{{ reasons }}</span>
+                <Button v-if="list === 'model'" variant="link" size="sm" data-usage-failure-check @click="emit('details', row.group.role)">
+                  {{ t('modelSettings.usage.check', { name: roleName(row.group.role) }) }}</Button>
+              </p>
             </li>
           </ul>
         </section>
@@ -116,6 +126,7 @@ onBeforeUnmount(() => reading?.abort())
 .model-usage-note { display: inline-block; color: var(--color-muted); white-space: nowrap; }
 .model-usage-failed { margin-inline-start: 6px; color: var(--color-danger); font-size: 12px; }
 .model-usage-row-note { margin: 0; color: var(--color-muted); font-size: 12px; }
+.model-usage-reasons { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin: 0; color: var(--color-muted); font-size: 12px; }
 .model-usage-empty { display: grid; justify-items: start; gap: 8px; margin: 0; padding: 16px; border: 1px dashed var(--color-border);
   border-radius: var(--radius-card); color: var(--color-muted); font-size: 14px; }
 .model-usage-empty p { margin: 0; }

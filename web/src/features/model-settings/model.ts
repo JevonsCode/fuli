@@ -456,6 +456,8 @@ export interface UsageGroup {
   // Attempts that returned no token counts at all, and how many of them failed.
   unreportedAttempts: number
   unreportedFailedAttempts: number
+  // failedRequests by why each one's last attempt ended, most first; absent from an older server.
+  failureReasons?: { reason: string; requests: number }[]
   tokens: Partial<Record<'input' | 'output' | 'total' | 'cachedInput' | 'cacheWriteInput' | 'reasoning', TokenCell>>
 }
 
@@ -507,6 +509,20 @@ export function callParts(group: UsageGroup, locale: string): { value: string; f
     failed: group.failedRequests ? t('modelSettings.usage.failed', { count: formatCount(group.failedRequests, locale) }) : '',
     note: group.attempts > group.requests ? t('modelSettings.usage.tries', { count: formatCount(group.attempts, locale) }) : '',
   }
+}
+
+// Why the failed calls failed, in one line (「回答不合格式 23 · 超时 12」), so
+// a failure count says whether to look at the model's answers or at the
+// service; empty without failures or a breakdown.
+const FAILURE_REASONS = ['invalid_output', 'timeout', 'network', 'rate_limited', 'server_error', 'output_token_limit', 'auth_failed'] as const
+export function failureReasonsLine(group: UsageGroup, locale: string): string {
+  if (!group.failedRequests) return ''
+  const counts = new Map<string, number>()
+  for (const { reason, requests } of group.failureReasons ?? []) {
+    const key = (FAILURE_REASONS as readonly string[]).includes(reason) ? reason : 'other'
+    counts.set(key, (counts.get(key) ?? 0) + requests)
+  }
+  return [...counts].map(([key, count]) => `${t(`modelSettings.usage.reasons.${key}`)} ${formatCount(count, locale)}`).join(' · ')
 }
 
 export interface UsageRow {
