@@ -359,15 +359,23 @@ runner. Tonborg's memory, the Agent's executor policies and allowed clients,
 routing rules and earlier conversations live on the host and are not read here.
 
 The preferences go as the host's own judgment sends them
-(`src/judgment/preference-receipt.js`): each rule's key, scope, short text and
-authority, never its reasoning or attributes. The model port takes at most
-20,000 characters per part. A project with so many rules that even this does
-not fit is not judged here: as on the host when a rule may be missing, Tonborg
-answers `ask_user` without calling the model (evidence
-`preference_delivery:partial`), and says that removing `roles.tonborg` from
-`model-backends.json` on the runner has the host judge with all of them.
-Earlier decisions are only feedback, so they are sent newest first as many as
-fit, and the rest counted (`feedbackNotSent`). A request still too large to
+(`src/judgment/preference-receipt.js`): each rule's key, scope, short text,
+authority and where an inherited one comes from, never its reasoning or
+attributes. The model port takes at most 20,000 characters per part and 64
+parts. A project's rules can be more than one part holds (70 rules of 200
+characters each already are), so every rule and conflict goes, in the host's
+order, across as many parts as it takes: `preferences`, then `preferences_2`
+and on, each saying it continues `preferences`. As on the host, Tonborg does
+not recommend when a rule may be missing: it answers `ask_user` without
+calling the model when no task of the project was entered on this computer
+while the host answered (so it keeps none of the host's preferences for it;
+evidence `preference_delivery:unavailable`), when the host's own read for that
+task entry was cut (its flags are kept with it), or when even eight parts
+cannot hold every rule (`preference_delivery:partial`). Each says what the
+person can do; removing `roles.tonborg` from `model-backends.json` on the
+runner always has the host judge instead. Earlier decisions are only feedback,
+so they are sent newest first as many as fit, and the rest counted
+(`feedbackNotSent`). A request still too large to
 send (an `executors.json` at its limits, say) is refused on the runner before
 any model is called: `judgment_failed` with category `request_rejected` and
 `rejected` naming the part, nothing spent.

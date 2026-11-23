@@ -148,13 +148,14 @@ export function deliveredAnswer(outboxId) {
 
 // The preferences the host last gave a task entry in this project, from any
 // of its folders, for Tonborg's judgment on this runner (local-routing.js,
-// which makes them compact as the host does): { answeredAt, entry } or null.
+// which makes them compact as the host does): { answeredAt, entry, context }
+// or null; context carries what the host's read said it did not read in full.
 export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
   for (const { at, body } of store.taskEntries()) {
     const value = resultValue(body);
     const context = value?.context;
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
-    return { answeredAt: at, entry: { effective_preferences: value.effective_preferences ?? [],
+    return { answeredAt: at, context, entry: { effective_preferences: value.effective_preferences ?? [],
       active_conflicts: value.active_conflicts ?? [], scope_unknown: value.scope_unknown ?? [] } };
   }
   return null;

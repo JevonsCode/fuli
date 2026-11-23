@@ -32,11 +32,19 @@ export async function readJudgmentPreferences(app, { personalProjectId, projectA
   // An answer without its preference list is a failed read, never "no preferences".
   if (!Array.isArray(raw?.effective_preferences)) return { status: 'unavailable', scope, reason: 'preference_receipt_invalid' };
   const receipt = projectAgentCollaborationPreferences(raw, { personalProjectId }, { projectAgentId, taskScope });
-  const truncated = Object.entries(receipt.context.source_windows).filter(([, value]) => value !== false)
-    .map(([window]) => SOURCE_WINDOWS[window]);
-  if (receipt.context.source_truncated && !truncated.length) truncated.push('source');
+  const truncated = truncatedWindows(receipt.context);
   return { status: truncated.length ? 'partial' : 'complete', scope, ...compactPreferences(receipt),
     omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
+}
+
+// The source windows a preference read did not read in full, from its context
+// (source_windows, source_truncated), on the host and on a runner, which reads
+// them from the task entry it kept. An unknown window (null) counts as cut.
+export function truncatedWindows(context) {
+  const truncated = Object.entries(context?.source_windows ?? {}).filter(([, value]) => value !== false)
+    .map(([window]) => SOURCE_WINDOWS[window]);
+  if (context?.source_truncated && !truncated.length) truncated.push('source');
+  return truncated;
 }
 
 // What Tonborg's model reads of a task entry's preferences, on the host and on

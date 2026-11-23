@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { FAILED_JUDGMENT_GUIDANCE, judgmentFailure, judgmentRequest } from '../judgment/backend.js';
-import { compactPreferences, preferenceHold } from '../judgment/preference-receipt.js';
+import { compactPreferences, preferenceHold, truncatedWindows } from '../judgment/preference-receipt.js';
 import { parseRoutingRequest, ROUTING_SELECTION_SCHEMA, routingInstructions, verifiedSelection } from '../judgment/routing.js';
 import { parse, parseAnswer } from '../judgment/service.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
@@ -52,14 +52,21 @@ const NOT_JUDGED = 'Nothing was judged here and nothing was sent to the host.';
 const EXECUTORS_FIX = 'Fix runner/executors.json. Deleting it does not hand this back to the host: with no executor '
   + 'declared here, Tonborg answers ask_user. To have the host judge again, remove roles.tonborg from model-backends.json '
   + 'or delete that file.';
-// What one evidence item may hold: the model port refuses an item past
-// MAX_EVIDENCE_CHARS (model-backends/request.js) before any model is called.
-// The budget leaves room for the item's own fields (answeredAt, omitted).
+// The model port's limits (model-backends/request.js): at most
+// MAX_EVIDENCE_CHARS per evidence item, which it refuses before any model is
+// called, and 64 items. A judgment here uses at most seven items besides its
+// preferences, which may take MAX_PREFERENCE_PARTS (160,000 characters: far
+// past any project's rules).
 const MAX_EVIDENCE_CHARS = 20_000;
-// What the person can do when this computer cannot judge with every rule.
-const HOLD_NEXT_STEP = 'This project has more preferences than this computer\'s model can be given whole. '
+const MAX_PREFERENCE_PARTS = 8;
+// What the person can do when this computer cannot judge with every rule, by
+// why: no preferences of the host's kept here for this project, or more than
+// even MAX_PREFERENCE_PARTS hold.
+const NO_ENTRY_NEXT_STEP = 'This computer keeps no preferences of the host\'s for this project: no task in it was '
+  + 'entered here while the host answered. Enter one (get_collaboration_preferences in a folder of the project) '
+  + 'while the host answers, or have the host judge (remove roles.tonborg from model-backends.json on this computer).';
+const TOO_MANY_NEXT_STEP = 'This project has more preferences than this computer\'s model can be given whole. '
   + 'To have the host judge with all of them, remove roles.tonborg from model-backends.json on this computer.';
-const EVIDENCE_BUDGET_CHARS = 16_000;
 
 // The items of list, in its order, whose JSON fits within maxChars together;
 // one too big to fit is skipped, so it does not keep the smaller ones after it out.
@@ -75,16 +82,41 @@ function fitting(list, maxChars) {
   return kept;
 }
 
-// The preferences the host last gave this project, in the host's own compact
-// receipt (judgment/preference-receipt.js). A project with so many rules that
-// even that does not fit one evidence item is marked partial ('size_limit'),
-// and the host's own preferenceHold then stops the judgment before any model
-// is called, as it does on the host when a rule may be missing: Tonborg does
-// not recommend without rules that could change the choice.
-function deliveredPreferences({ answeredAt, entry }) {
-  const receipt = { answeredAt, status: 'complete', ...compactPreferences(entry), omitted: { truncated: [] } };
-  return JSON.stringify(receipt).length <= EVIDENCE_BUDGET_CHARS ? receipt
-    : { ...receipt, status: 'partial', omitted: { truncated: ['size_limit'] } };
+// The preferences the host last gave this project, as the host's own compact
+// receipt (judgment/preference-receipt.js), with what the host's read said it
+// did not read in full (the kept entry's own flags). The host sends that
+// receipt as one evidence item; a project's rules can be more than one item
+// holds, so here every conflict and rule goes, in the host's order, across as
+// many items as it takes: `preferences`, then `preferences_2`… each saying it
+// continues `preferences`. When even MAX_PREFERENCE_PARTS cannot hold them,
+// or one alone is too big for an item, the receipt is partial (size_limit).
+// A partial receipt stops the judgment through the host's own preferenceHold,
+// before any model is called: Tonborg does not recommend without a rule that
+// could change the choice. { receipt, parts }: receipt for preferenceHold,
+// parts the evidence items by key.
+function deliveredPreferences({ answeredAt, context, entry }) {
+  const { selected, scope_unknown: scopeUnknown, conflicts } = compactPreferences(entry);
+  const truncated = truncatedWindows(context);
+  const receipt = { answeredAt, status: truncated.length ? 'partial' : 'complete', scope_unknown: scopeUnknown,
+    omitted: { truncated } };
+  const tooMany = { receipt: { ...receipt, status: 'partial', omitted: { truncated: [...truncated, 'size_limit'] } }, parts: {} };
+  const fits = (part) => JSON.stringify(part).length <= MAX_EVIDENCE_CHARS;
+  const parts = [{ ...receipt, conflicts: [], selected: [] }];
+  for (const [field, items] of [['conflicts', conflicts], ['selected', selected]]) {
+    for (const item of items) {
+      parts.at(-1)[field].push(item);
+      if (fits(parts.at(-1))) continue;
+      parts.at(-1)[field].pop();
+      const next = { continues: 'preferences', conflicts: [], selected: [] };
+      next[field].push(item);
+      if (parts.length === MAX_PREFERENCE_PARTS || !fits(next)) return tooMany;
+      parts.push(next);
+    }
+  }
+  // A continuing part names only what it carries, so an empty list there is never read as "none".
+  const shown = parts.map((part, index) => (index ? Object.fromEntries(Object.entries(part)
+    .filter(([, value]) => !Array.isArray(value) || value.length)) : part));
+  return { receipt, parts: Object.fromEntries(shown.map((part, index) => [index ? `preferences_${index + 1}` : 'preferences', part])) };
 }
 
 // The model port refuses a request whose evidence it cannot take, before any
@@ -195,23 +227,27 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
   // its receipt when the model did not answer (a stop is never retried here).
   async function judge(request, eligible, leftOut) {
     const scope = { personalSpaceId: request.personalSpaceId, personalProjectId: request.personalProjectId };
+    // As on the host: no preferences to judge with, or some rule may be missing, and Tonborg does not recommend.
     const cached = projectPreferences(store, scope);
-    const preferences = cached ? deliveredPreferences(cached) : null;
-    const hold = preferences ? preferenceHold(preferences) : null;
+    const preferences = cached ? deliveredPreferences(cached)
+      : { receipt: { status: 'unavailable', reason: 'no_task_entry_kept' }, parts: {} };
+    const hold = preferenceHold(preferences.receipt);
     if (hold) {
+      const nextStep = !cached ? NO_ENTRY_NEXT_STEP
+        : preferences.receipt.omitted.truncated.includes('size_limit') ? TOO_MANY_NEXT_STEP : '';
       return { selected: { executorId: null, model: null, disposition: 'ask_user', conversationId: null,
-        summary: `${hold.summary} ${HOLD_NEXT_STEP}`, evidence: hold.evidence }, modelReceipt: null };
+        summary: `${hold.summary} ${nextStep}`.trim(), evidence: hold.evidence }, modelReceipt: null };
     }
     const recent = ledger.recent({ ...scope, limit: FEEDBACK_LIMIT }).filter((item) => item.outcome)
       .map(({ record, outcome }) => ({ id: record.id, workKind: record.workKind, objective: record.objective,
         disposition: record.disposition, selection: record.selection, summary: record.summary, outcome }));
     // Newest first, as many as fit one evidence item; the rest are counted, not dropped silently.
-    const feedback = fitting(recent, EVIDENCE_BUDGET_CHARS);
+    const feedback = fitting(recent, MAX_EVIDENCE_CHARS);
     const feedbackNotSent = recent.length - feedback.length;
     // conversations: a runner reads none of the host's, so the model is shown
     // an empty list, as the host's judgment shows one when it found none.
     const data = { task: request, eligible, conversations: [], ...(leftOut.length ? { leftOut } : {}),
-      ...(preferences ? { preferences } : {}), ...(feedback.length ? { feedback } : {}),
+      ...preferences.parts, ...(feedback.length ? { feedback } : {}),
       ...(feedbackNotSent ? { feedbackNotSent } : {}) };
     const key = `runner-routing:${request.personalProjectId}:${request.requestId}`;
     const call = judgmentRequest({ operation: ROUTING_OPERATION, scope,

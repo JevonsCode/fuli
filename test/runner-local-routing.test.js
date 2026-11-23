@@ -378,40 +378,64 @@ test('the runner lists assess_agent_action as it behaves here, beside its outcom
 // (operations) and whose executors.json declares one executor it can start and one it cannot.
 // backends/executors: what those two files hold instead; reply: the model's answer.
 // projects: the projects the host knows, for the scope check a decision passes there.
-// A project's preferences as a busy one has them: many rules, each with the
-// reasoning and attributes a task entry carries beside its short instruction.
-function manyPreferences(count, { instructionChars = 60 } = {}) {
-  return Array.from({ length: count }, (_, index) => ({
-    preference_key: `habit-${index}`, preference_scope: 'global',
-    instruction: `Rule ${index}: ${'keep the change small and say what was checked. '.repeat(4)}`.slice(0, instructionChars),
-    title: `Habit ${index}`, confirmation_status: 'confirmed', weight: 0.8,
-    reason: `Why habit ${index} holds: ${'the person asked for it after a long review. '.repeat(4)}`,
-    reasoning_summary: `Habit ${index} came from ${'several sessions where it mattered to the result. '.repeat(4)}`,
-    attributes: { source: 'example', note: 'x'.repeat(40) } }));
+// A project's preferences at a real one's size: count rules whose text runs
+// from 80 to 450 characters (about 200 on average), each with the reasoning
+// and attributes a task entry carries beside it; every fifth is inherited from
+// a parent project. Made-up words throughout.
+function realisticPreferences(count, { longest = 450 } = {}) {
+  const words = 'keep the change small, say what was checked, and ask before anything leaves this computer. ';
+  return Array.from({ length: count }, (_, index) => {
+    const chars = 80 + Math.round(((index * 37) % 100) / 99 * (longest - 80));
+    return { preference_key: `habit-${index}`, preference_scope: index % 3 ? 'global' : 'project',
+      instruction: `Rule ${index}: ${words.repeat(Math.ceil(chars / words.length))}`.slice(0, chars),
+      title: `Habit ${index}`, confirmation_status: index % 4 ? 'confirmed' : 'ai_confirmed', weight: 0.8,
+      ...(index % 5 === 0 ? { inherited_from_project_id: 'parent-project-of-the-example', scope_distance: 1 } : {}),
+      reason: `Why habit ${index} holds: ${'the person asked for it after a long review. '.repeat(4)}`,
+      reasoning_summary: `Habit ${index} came from ${'several sessions where it mattered to the result. '.repeat(4)}`,
+      attributes: { source: 'example', note: 'x'.repeat(40) } };
+  });
 }
 
-test('a big project\'s preferences go as the host sends them, compact, and the model is called', async (t) => {
-  const preferences = manyPreferences(80);
-  assert.ok(JSON.stringify(preferences).length > 30_000, 'the cache is as big as a real one');
-  const runner = await routingRunner(t, { preferences });
-  await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } });
+const CONFLICTS = [1, 2, 3].map((index) => ({ preference_key: `split-${index}`, preference_scope: 'project',
+  alternatives: [{ instruction: `Do ${index} one way.`, confirmation_status: 'confirmed' },
+    { instruction: `Do ${index} the other way.`, confirmation_status: 'confirmed' }] }));
+
+// Every rule key and conflict key in the preference evidence the model was sent, across its parts.
+function sentPreferenceKeys(request) {
+  const text = request.messages.at(-1).content;
+  const evidence = JSON.parse(text.slice(text.indexOf('DATA: ') + 6)).evidence;
+  const parts = evidence.filter((item) => item.id === 'preferences' || item.id.startsWith('preferences_'));
+  for (const item of evidence) assert.ok(item.text.length <= 20_000, `${item.id} fits the model port`);
+  const values = parts.map((item) => JSON.parse(item.text));
+  return { parts: parts.map((item) => item.id), rules: values.flatMap((value) => (value.selected ?? []).map((rule) => rule.key)),
+    conflicts: values.flatMap((value) => (value.conflicts ?? []).map((conflict) => conflict.key)), values };
+}
+
+test('a project with as many preferences as a real one is judged with every rule, in parts the model port takes', async (t) => {
+  const preferences = realisticPreferences(75);
+  const lengths = preferences.map((rule) => rule.instruction.length);
+  const average = lengths.reduce((sum, length) => sum + length, 0) / lengths.length;
+  assert.ok(Math.min(...lengths) >= 80 && Math.max(...lengths) >= 440 && average > 180 && average < 280, `average ${average}`);
+  const runner = await routingRunner(t, { preferences, conflicts: CONFLICTS });
 
   const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
   assert.equal(answer.isError, undefined, answer.content[0].text);
   assert.deepEqual(answer.structuredContent.selection, { executorId: 'runner-node', model: 'flash-small', client: 'other' });
-  assert.equal(runner.model.requests.length, 1, 'the request went out and the model answered');
-  const sent = runner.model.requests[0].messages.at(-1).content;
-  assert.match(sent, /Rule 79:/, 'every rule fits once it is compact');
-  assert.doesNotMatch(sent, /several sessions where it mattered/, 'reasoning stays in FULI, as on the host');
-  assert.doesNotMatch(sent, /size_limit/);
+  assert.equal(runner.model.requests.length, 1, 'the model was called');
+  const sent = sentPreferenceKeys(runner.model.requests[0]);
+  assert.ok(sent.parts.length > 1, 'more than one evidence item holds them');
+  assert.deepEqual(sent.rules, preferences.map((rule) => rule.preference_key), 'every rule went, in the host\'s order');
+  assert.deepEqual(sent.conflicts, CONFLICTS.map((conflict) => conflict.preference_key), 'every conflict went');
+  assert.equal(sent.values[0].status, 'complete');
+  assert.ok(sent.values.slice(1).every((value) => value.continues === 'preferences'));
+  const text = runner.model.requests[0].messages.at(-1).content;
+  assert.match(text, /parent-project-of-the-example/, 'where an inherited rule comes from goes with it');
+  assert.doesNotMatch(text, /several sessions where it mattered/, 'reasoning stays in FULI, as on the host');
 });
 
-test('rules too many to give the model whole stop the judgment here, as on the host, with no model call', async (t) => {
-  // 400 long rules: far past one evidence item even compact, so some rule would be missing.
-  const preferences = manyPreferences(400, { instructionChars: 190 });
-  const runner = await routingRunner(t, { preferences });
-  await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } });
-
+test('rules too many even in parts stop the judgment here, as on the host, with no model call', async (t) => {
+  // Far past what eight evidence items hold even compact.
+  const runner = await routingRunner(t, { preferences: realisticPreferences(800, { longest: 450 }) });
   const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
   assert.equal(answer.isError, undefined, answer.content[0].text);
   const decision = answer.structuredContent;
@@ -421,6 +445,26 @@ test('rules too many to give the model whole stop the judgment here, as on the h
   assert.match(decision.summary, /remove roles\.tonborg from model-backends\.json/, 'it says what the person can do');
   assert.equal(decision.modelReceipt, undefined, 'nothing was spent');
   assert.equal(runner.model.requests.length, 0, 'no model was called');
+});
+
+test('with no preferences of the host\'s kept for the project, nothing is judged here, as on the host', async (t) => {
+  const runner = await routingRunner(t, { entered: false });
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  assert.equal(decision.disposition, 'ask_user');
+  assert.deepEqual(decision.evidence, ['preference_delivery:unavailable']);
+  assert.match(decision.summary, /Enter one \(get_collaboration_preferences/, 'it says how to keep them');
+  assert.match(decision.summary, /remove roles\.tonborg/);
+  assert.equal(runner.model.requests.length, 0);
+});
+
+test('preferences the host itself could not read in full stop the judgment here too', async (t) => {
+  const runner = await routingRunner(t, { hostContext: { source_truncated: true,
+    source_windows: { candidates_truncated: true, project_ancestors_truncated: false, queued_conflicts_truncated: false } } });
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  assert.equal(decision.disposition, 'ask_user');
+  assert.deepEqual(decision.evidence, ['preference_delivery:partial']);
+  assert.match(decision.summary, /candidates truncated/, 'the host\'s own reason, from the kept entry\'s flags');
+  assert.equal(runner.model.requests.length, 0);
 });
 
 test('a request too large to send is refused here as what it is, and no model is called', async (t) => {
@@ -438,10 +482,14 @@ test('a request too large to send is refused here as what it is, and no model is
   assert.equal(runner.model.requests.length, 0, 'no model was called, so nothing was spent');
 });
 
-// preferences: what the host's task entry gives the project, as a task entry answers them.
+// preferences, conflicts: what the host's task entry gives the project, as a task entry answers them;
+// hostContext: more of that entry's context (what the host's read did not read in full).
+// entered: a task in the project was entered here while the host answered, as a client's hook does,
+// so this runner keeps the host's preferences for it (calls starts empty after it).
 async function routingRunner(t, { operations = ['executor_routing'], backends, executors, reply,
   projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }], preferences = [{ preference_key: 'answer-length',
-    preference_scope: 'global', instruction: 'short answers', confirmation_status: 'confirmed' }] } = {}) {
+    preference_scope: 'global', instruction: 'short answers', confirmation_status: 'confirmed' }], conflicts = [],
+  hostContext = {}, entered = true } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-routing-')));
   const model = await fakeModel(reply);
   const host = deviceIdentity(await createDeviceCertificate());
@@ -459,7 +507,7 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
         calls.push({ name: request.params.name, input: request.params.arguments });
         const value = request.params.name === 'get_collaboration_preferences'
           ? { effective_preferences: preferences, taskContextToken: 'host-token-1',
-            context: { personal_space_id: SPACE, personal_project_id: PROJECT } }
+            active_conflicts: conflicts, context: { personal_space_id: SPACE, personal_project_id: PROJECT, ...hostContext } }
           : { outcome: 'recommend', decidedOn: 'host' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
@@ -495,6 +543,10 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
   const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide,
     lookUp: async () => [], retryAfterMs: 0 });
   await client.connect(clientSide);
+  if (entered) {
+    await client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath, taskPrompt: 'first' } });
+    calls.length = 0;
+  }
   // In this order, the folder last: Windows refuses to delete a SQLite file that is still open.
   t.after(async () => {
     await client.close();
