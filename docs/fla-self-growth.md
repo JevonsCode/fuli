@@ -12,15 +12,18 @@
 
 ### 规矩放在哪
 
-任务入口的规则文本按版本引用、需要时才读全文（`src/conversations/entry-rules.js`）。
-`task_guidance` 这一段已经整段压成一个指针
-（`fuli://rules/task-entry/task_guidance`），压缩的条件是键的数量和共享文本完全一致
-（`src/conversations/task-context-view.js`）。所以在 `taskKnowledgeGuidance()` 里加一个
-键，入口每轮的字节数**一个不增**：指针还是那一个指针，只有 `rules_version` 变、资源全文
-变长。`test/token-budget.test.js` 盯着这个数。
+两处，一长一短：
 
-新键是 `human_facing_output`，和已有的 `human_attention` 并排：一个说什么时候找人，一个
-说找人时怎么写。
+- **短版在 MCP server instructions 里**，每个会话只发一次（`src/mcp/instructions.js`）：
+  「People: after sourceMarker lead, conclusion+asks first, short; diagram/table if clearer;
+  clickable choices not typing; receipt last.」——放在必需的来源标记之后、回执之前，和现有
+  规则不冲突。只放在按需读取的规则里不够：客户端 hook 每轮都说「普通任务不要读
+  `fuli://rules/task-entry`」，而这条恰恰是每个普通回复都要用的。chat 配置 1,327 → 1,460
+  字节（+133）；full 配置在 Claude Code 2 KiB 上限，删掉两句工具自己的描述已经说过的话换出
+  位置，仍是 2,048 字节。
+- **全文在 `task_guidance.human_facing_output`**，随 `task_guidance` 那一个指针下发，普通入口
+  每轮 0 字节，只有 `rules_version` 变。协作 worker 读不了资源、入口里是全文，但它只向
+  负责人汇报，三条新规则都不发给它（`task-context-view.js`），所以 worker 的入口也不变长。
 
 ### 规矩说什么
 
@@ -62,22 +65,42 @@ FULI 里零件都有，链条断了三处：
 
 ### 做法
 
-**判据**沿用活着的那套，不另起炉灶，也不复活退役的观察工具：同一位 FLA、同一项目、
-3 个以上已完成任务里步骤序列完全相同，或一个启用的工作流在 3 个任务里按同一版本跑完。
-确定、可解释、不调模型。门槛就用现有的 `MIN_TASKS = 3` / `MIN_STEPS = 3`：少于 3 步的
-不算一串活，少于 3 次不算长期做。一次性任务、小任务因此不会命中。
+**判据**在活着的那套（`tool-suggestions.js`）上改，不复活退役的观察工具。步骤标题是 AI 每次
+自己写的，逐字相同几乎从不出现，所以改成「同一类事」（`src/fla-growth/step-similarity.js`）：
 
-**提示放进入口，不多出待拍板。** 检测到重复时，除了现有那条给人的待拍板（选项改成人看得懂
-的「做成能跑的脚本 / 只记下这串步骤 / 不用」），再在 `agent-workflows.sqlite` 的
-`agent_growth_hints` 里记一行（格式 3，见下）。那位 FLA 在同一项目进任务时，入口多一个
-`fla_growth.repeated`：一句话说同样几步做了几次、调哪个工具、最小参数（约 240 字符）。最多
-出现两次（一次提醒、没沉淀再提醒一次）；它在这个项目提出任何工作流就不再出现；FULI 不替它
-建。没有重复时没有这个键，普通入口字节数不变。规则全文在 `task_guidance.self_deposit`，
-随 `task_guidance` 指针下发，每轮 0 字节。
+- 一步拆成词（拉丁字母词、数字记作 #）和汉字两两相连的字对，去掉虚词；两步共有一半以上
+  就算同一步（Jaccard ≥ 0.5）；
+- 两份计划都至少 3 步，长的那份 60% 以上的步骤能和另一份配上（不管先后），就算同一类事；
+- 同一位 FLA、同一项目，在它最近的已完成任务里（按页读到 500 个为止）有 3 个以上同一类事；
+  或某个已确认的工作流按同一版本跑通了 3 次。
 
-**下次真的被带上。** 一段对话的第一轮，入口在 `fla_growth.workflows` 里列这位 FLA 在这个
-项目里**已确认**的工作流（最多 3 个，只有名字和一句用途），步骤按需
-`read_agent_workflow`。待确认的提案不列，不会被说成「在用」。用完
+虚构数据上的表现（测试里逐条）：换说法（「Bump version to 1.4.2」对「Bump the version」）、
+调换顺序、多一步都算同一类；另一件事（读 bug、复现、写回归测试）、只有两步、三步里只有
+一步相同都不算。不调模型，不在入口上算，每小时在控制台那台电脑上跑一次。
+
+**提示只在开一段对话时出现，人只被问一次。**
+
+- 发现重复：在 `agent_growth_hints` 记一行（这类事的步骤、问人的请求和措辞、人的回答、入口
+  显示过几次、为它沉淀了什么）。
+- 问人：待决策里问一次「「X」这类事已做了 3 次以上，要沉淀下来吗？」，选项「只记下这串
+  步骤 / 做成能跑的脚本 / 不用」，说明里写清每个选项让 FLA 做什么、人怎么确认（脚本：到
+  Agents → 应用点「确认」，会打开终端，输入应用名）。这句说明会随人的回答一起转给 FLA。
+  同样措辞的请求还开着时，之后每小时不再碰图谱服务；措辞变了先撤回旧的（只撤没人回答过的）
+  再提新的；0.29 测试版那种「做成脚本 / 做成 Agent App」的旧请求撤回一次。
+- 告诉 FLA：它在这个项目**开一段新对话**时，入口多一个 `fla_growth.repeated`（约 258 字符），
+  同一段对话后面的消息不再带，一个重复最多带两段对话；人回答了就换成人的决定（选脚本：交
+  Agent 应用；选只记步骤：提出工作流，人的选择就算确认），再最多带两段对话；人选「不用」就
+  不再出现。
+- 沉淀了就停：FLA 提出的工作流只要和这个重复是同一类事，就把它记为已沉淀（不相关的提案
+  不算）；人拒绝那个提案，重复就回来。FLA 提出后，还开着的那条待决策自动撤回，人只在 FLA
+  页上确认一次；人先前已选「只记下这串步骤」的，提案直接按人的选择确认，不用再点。人选
+  「做成能跑的脚本」后 FLA 交了 Agent 应用，也算已沉淀。
+- 入口不付迁移的代价：入口先只读，有提示才写一行；库还是旧格式时入口什么都不带，迁移由
+  每小时那一次或控制台来做（`store.current`）。
+
+**下次真的被带上。** 开一段对话的那一轮，入口在 `fla_growth.workflows` 里列这位 FLA 在这个
+项目里**已确认**的工作流（最多 3 个，名字和用途的第一句，最长 120 字；最多约 888 字符），
+步骤按需 `read_agent_workflow`。待确认的提案不列，不会被说成「在用」。用完
 `record_agent_workflow_run`；走不通记 `stopped` / `failed` 并写原因。控制台工作流卡片显示
 「用过 N 次，跑通 M 次」，按运行记录数，没跑过就不显示。
 
@@ -117,27 +140,48 @@ Jevons 11-24：用户说「我已经…了，为什么你不…」「上次就�
 `src/graphiti/task-repeat-signal.js`，与 `task-remember.js` 并排），不调模型，只看人自己的
 原话（去掉宿主注入的提醒和粘贴的报告）。
 
-判据：句子里要有「是我之前说过/做过」或「你又这样了」的成分才算——
-「我已经说/讲/提/强调过（了）」「我早就/都/明明说了」「我说过」「上次/之前/刚才…说过/讲过」
-「不是说过了吗」「说了多少遍」「跟你说过」「我已经…了，为什么你还不/没…」（第二句必须是
-「你」）「怎么又忘/又用/又没」「又忘了」；英文「I already told/said/asked」「I've said this
-before」「as I said earlier」「didn't I tell you」「how many times do I」「I already X, why didn't
-you」「you keep forgetting」。单有「为什么」「已经」「上次」都不算。反例（测试里逐条）：
-「为什么这里不用 Redis？」「为什么你不用 Promise.all？」「我已经提交了代码，你看一下」
-「我已经装了 node，为什么还不能运行」「怎么又报错了？」「我写了一个函数」「我说了算」
-「Why don't you split this?」「I already pushed the branch」「Try again」。宁可少判。
+先去掉不是这个人自己说的话：宿主注入的块、引号（"…" “…” 「…」 『…』）和代码里的内容、
+日志行（时间戳或 ERROR/WARN/INFO 开头）、「日志：/工单：/报告：/反馈：」这类标签后面、
+「X 说：/问我：/写道：」和 "X wrote:/said:" 后面（X 不是「我/你」）。再跳过谈论这些词
+而不是在说的句子（如果、假如、帮我写、匹配、正则、regex、write a test）。
 
-命中时：入口带 `remember_guidance`（这一条的版本，636 字符，只在命中的那一轮），任务不会被
-自动收尾。先查 FULI 里有没有同样的内容：有就不重复存，一句话说明这次为什么没生效（没下发 /
-范围不对 / 下发了但没照做），最后一种写进 checkpoint 的 `workLog`；没有且内容和范围清楚，就
-这一轮用 `checkpoint_task_knowledge` 的 `remember` 记下（原话作 `quote`），一句话告诉人记了
-什么、用在哪；拿不准就用可点选的选项问一次（这个项目 / 所有地方 / 不用记）。全文在
-`task_guidance.repeat_signal`，每轮 0 字节。
+剩下的句子要同时指向「我之前说过/做过」和「你没照做」，或者抱怨「你又…」，才算：
+「我…说过了」；「我说过/讲了，别…」；「我跟你说过」（后面不是「的」）；「我之前让你别…」；
+「我已经…了（为什么）你还/又/怎么还在…」；「都说了别…」；「说好的…呢」；「不是让你/跟你说
+…吗」「不是跟你说过」；「上次就说过」；「说了/讲了多少遍/回」；「你又/老是把/忘/用…」；
+「你怎么又/还…」；「又忘了」「老是忘」；「上次你就是这么…」；「第三次了，别/还…」；
+「又来了，还是…」。英文："I told you"、"I said no"、"I've said this before"、"I mentioned
+it already"、"I asked you before"、"As/Like I said,"、"didn't I tell you"、"how many times do
+I / have you"、"I already X, why didn't you"、"you keep forgetting/ignoring"、"you forgot …
+again"、"we talked about this"、句首 "Again,"。单有「为什么」「已经」「上次」「我说过」都
+不算。
+
+不算的（测试里逐条）：「为什么这里不用 Redis？」「我已经装了 node，为什么还不能运行」
+「我之前说过要用 Redis，但现在想换成 Postgres，你觉得呢？」「上次跟你说过的那个方案，我们
+再评估一下利弊」「我刚才说了，你继续」「如果我已经说了要回滚…」「我明明说了要改成 3000，
+结果还是 8080，是不是配置缓存了？」「怎么又没网了」「怎么还不行」、引用 PM 和面试官的话、
+粘贴的工单和日志、让写匹配这些话的正则或测试、"I already said in the PR description…"、
+"You keep using the word "simply"…" 等，共 37 句；算的 43 句。
+
+命中时：入口带 `remember_guidance`（这一条的版本，787 字符，只在命中的那一轮），任务不会被
+自动收尾。规则：
+
+- 其实不是在抱怨之前说过的事，就当普通消息，不记、不问；
+- FULI 里已有同样的内容，就不重复存，一句话说明这次为什么没生效（没下发 / 范围不对 /
+  下发了但没照做），最后一种写进 checkpoint 的 `workLog`；
+- 没有，就这一轮用 `checkpoint_task_knowledge` 的 `remember` 记下，原话作 `quote`；拿不准
+  是这个项目还是所有地方，用 `scope: unsure`，不去问人；
+- 回复里一句话说「先记成一条待你确认的」和用在哪，不能说成「已记住」或「已生效」
+  （存下来的是待确认，`task-remember.js`）；
+- 只有要记什么本身拿不准时才问，给可点选的选项。
+
+全文在 `task_guidance.repeat_signal`，每轮 0 字节。
 
 ## 数据格式
 
 `agent-workflows.sqlite` 从格式 2 升到 3：新表 `agent_growth_hints`（自动迁移，`add-table`，
-旧数据不动）。旧版 FULI 打开格式 3 的文件时按现有规矩只读。
+旧数据不动；指纹已更新）。旧版 FULI 打开格式 3 的文件时按现有规矩只读。任务入口不会触发
+这次迁移。
 
 ## 相关记录
 
