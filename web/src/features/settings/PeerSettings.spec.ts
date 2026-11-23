@@ -562,3 +562,15 @@ it('a project with no lead links to where its lead is chosen', async () => {
   expect(link.findComponent(RouterLinkStub).props('to')).toMatch(/\/projects\/leadless-project\/overview$/)
   wrapper.unmount()
 })
+
+it('says when 重新监听 still could not listen, with what it ran into', async () => {
+  const failed = { ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '192.0.2.8', code: 'EADDRINUSE', addressAway: false } } }
+  server({ 'GET /api/peer': [failed], 'POST /api/peer/listen': [failed] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  await wrapper.get('[data-listen-again]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('还是没能在 192.0.2.8 上监听（EADDRINUSE）')
+  wrapper.unmount()
+})

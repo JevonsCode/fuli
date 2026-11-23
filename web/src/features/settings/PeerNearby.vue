@@ -93,7 +93,8 @@ async function clearAttempts() {
     <template v-if="nearby.on">
       <p>{{ t('settings.peer.nearbyAutoOff') }}</p>
       <p v-if="!nearby.canPair && coordinatorName && !nearby.limited">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
-      <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited>
+      <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited
+        data-no-action="once 「是我自己在试 / It was me」 is pressed, its confirmation shows right below in its place">
         {{ t('settings.peer.nearbyLimited', { window: nearby.attempts?.lastWindow ?? 0, day: nearby.attempts?.lastDay ?? 0 }) }}
         <template v-if="!clearAsked" #actions>
           <Button size="sm" variant="ghost" data-nearby-clear-ask @click="clearAsked = true">{{ t('settings.peer.clearAsk') }}</Button>

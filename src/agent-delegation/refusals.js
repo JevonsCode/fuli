@@ -12,6 +12,8 @@ const CATEGORY_NAMES = Object.freeze({
   model_settings: ['内置 Agent 模型', 'Built-in Agent models'], public_projects: ['公开分享看板', 'Public board sharing']
 });
 const ACCESS_OFF = 'Agent 使用已关闭：在 设置 › 访问 打开。 / Agent access is off; turn it on in Settings › Access.';
+// The page that turns it on, as a whole address: the person reads this in a chat, where a link is the way there.
+const settingsLink = (consoleUrl) => (consoleUrl ? ` ${consoleUrl}/settings?tab=ai` : '');
 const WORDS_NOT_FOUND = '在你这个会话最近的消息里没有找到这句话：FLA 要先在对话里问你，再原样转达你的话。 / '
   + 'These are not whole sentences from your recent messages of this session; the FLA asks you in chat first and passes your exact words.';
 const WORDS_REQUIRED = '这是你本人的决定：FLA 要先在对话里问你，再把你的原话作为 personWords 转达。 / '
@@ -31,10 +33,10 @@ export function delegableEntry(entry) {
 }
 
 // Names the one switch to turn on, so the Agent can tell the person exactly where (rec#123).
-export function categoryOffRefusal(category) {
+export function categoryOffRefusal(category, consoleUrl = null) {
   const [zh, en] = CATEGORY_NAMES[category];
   return new ApplicationError('delegation_category_off', `这一类已被你收回：在 设置 › AI 权限 › ${zh} 打开后 FLA 才能代你做。 / `
-    + `This category was taken back by you; turn it on in Settings › AI permissions › ${en}.`, { status: 403 });
+    + `This category was taken back by you; turn it on in Settings › AI permissions › ${en}.${settingsLink(consoleUrl)}`, { status: 403 });
 }
 
 // A relayed decision (rec#80) without the person's words, or with words FULI
@@ -47,6 +49,6 @@ export function personWordsNotFoundRefusal() {
   return new ApplicationError('person_words_not_found', WORDS_NOT_FOUND, { status: 403 });
 }
 
-export function agentAccessOffRefusal() {
-  return new ApplicationError('agent_access_disabled', ACCESS_OFF, { status: 403 });
+export function agentAccessOffRefusal(consoleUrl = null) {
+  return new ApplicationError('agent_access_disabled', `${ACCESS_OFF}${settingsLink(consoleUrl)}`, { status: 403 });
 }

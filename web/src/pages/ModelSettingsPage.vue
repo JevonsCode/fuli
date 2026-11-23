@@ -216,9 +216,9 @@ onBeforeUnmount(() => {
                 @click="load()">{{ t('modelSettings.readAgain') }}</Button>
             </template>
           </UiNotice>
-          <UiNotice v-if="stale" tone="error" data-model-stale>
+          <UiNotice v-if="stale && staleRole" tone="error" data-model-stale>
             {{ t('modelSettings.changed') }}
-            <template v-if="staleRole" #actions>
+            <template #actions>
               <Button size="sm" variant="outline" data-model-stale-edit @click="edit(staleRole)">{{ t('modelSettings.editAgain') }}</Button>
             </template>
           </UiNotice>

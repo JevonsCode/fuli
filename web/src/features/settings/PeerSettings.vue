@@ -95,7 +95,13 @@ async function listenAgain() {
   if (busy.value) return
   busy.value = 'listen'
   error.value = ''
-  try { applyStatus(await postJson('/api/peer/listen', {}, peerStatusShape)) }
+  try {
+    const next = await postJson('/api/peer/listen', {}, peerStatusShape)
+    applyStatus(next)
+    // Answered, yet still not listening: say so with what it ran into, not a silent repeat.
+    const still = next.coordinator?.listenFailure
+    if (still) error.value = t('settings.peer.listenStillFailed', { address: still.address, code: still.code })
+  }
   catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.listenAgainFailed')) }
   finally { busy.value = '' }
 }
@@ -340,7 +346,8 @@ function shareState(projectId: string) {
       </template>
 
       <template v-if="status && paired">
-        <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure>
+        <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure
+          data-no-action="only an address that is away goes without 重新监听: it comes back by itself">
           {{ t(status.coordinator.listenFailure.addressAway ? 'settings.peer.listenAway' : 'settings.peer.listenFailure',
             { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
           <template v-if="!status.coordinator.listenFailure.addressAway" #actions>
@@ -377,7 +384,7 @@ function shareState(projectId: string) {
         <section class="peer-block">
           <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
           <p>{{ t('settings.peer.sharesHint') }}</p>
-          <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared>
+          <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared data-no-action="says what pairing shared; the share list right below changes it">
             <span class="peer-notice-line">{{ t('settings.peer.autoShared', { projects: sharedAtPairing }) }}</span>
             <!-- A member cannot check the group: the coordinator says who else is in it. -->
             <span v-if="status.role === 'member'" class="peer-notice-line" data-member-group-limit>{{ t('settings.peer.memberGroupLimit') }}</span>
@@ -431,7 +438,7 @@ function shareState(projectId: string) {
           <PeerSharePicker :listed="rowIds" :disabled="Boolean(busy)" @pick="addProject" />
           <UiNotice v-if="status.lastPublish?.error" tone="warning" data-publish-error>
             {{ t('settings.peer.publishFailed', { reason: status.lastPublish.error }) }}
-            <template v-if="rows.length" #actions>
+            <template #actions>
               <Button size="sm" variant="outline" :disabled="Boolean(busy)" data-publish-retry @click="saveShares()">{{ t('settings.peer.publishAgain') }}</Button>
             </template>
           </UiNotice>

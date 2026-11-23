@@ -2,6 +2,7 @@
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
+import { RouterLink } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
@@ -9,7 +10,7 @@ import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-colo
 import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
-import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
+import { deliveryLabel, deliveryTone, reasonLabel, reasonPlace, viaLabel } from './roundtable-delivery'
 import { chatRunMarks } from './chat-runs'
 import { chatBubbles, postRecipients, tableSeats, threadName, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
@@ -126,6 +127,9 @@ watch(() => props.thread.messages.length, async (length, previous) => {
       <template v-if="recipients.length">
         <p v-for="item in blocked" :key="item.agentId" class="roundtable-blocked" role="status" data-roundtable-instant-blocked>
           {{ t('roundtable.instantBlocked', { name: item.name ?? item.agentId, reason: reasonLabel(item.instantBlocked) }) }}
+          <RouterLink v-if="reasonPlace(item.instantBlocked)" :to="reasonPlace(item.instantBlocked)!.to" data-roundtable-blocked-fix>
+            {{ t(reasonPlace(item.instantBlocked)!.label) }}
+          </RouterLink>
         </p>
         <p v-if="!subscribed" class="roundtable-recipients ui-meta">{{ t('roundtable.composer.to', { names: recipients.map(item => item.name).join('、') }) }}</p>
         <RoundtableComposer ref="composer" :mode="mode" :sending="sending" :switching="switching" :error="error"

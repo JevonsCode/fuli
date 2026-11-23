@@ -156,6 +156,23 @@ test('local-user-only changes stay refused even when the policy file is tampered
   assert.equal(port.read().categories.some(({ id }) => id === 'local_user_only'), false);
 });
 
+test('a refusal the person can undo links the console page that turns it on, at the console\'s current address', async (t) => {
+  let address = 'http://127.0.0.1:2799';
+  const port = createAgentDelegation(dataDir(t), { now: () => '2026-11-03T08:00:00.000Z', consoleUrl: () => address });
+  cleanup(t).ports.push(port);
+  port.setCategory('projects', false);
+  const off = await gate(port, 'POST', '/api/personal-projects/app/parent');
+  assert.equal(off.sent.body.code, 'delegation_category_off');
+  assert.ok(off.sent.body.error.endsWith(' http://127.0.0.1:2799/settings?tab=ai'), off.sent.body.error);
+  address = 'http://127.0.0.1:2800';
+  const access = await gate(port, 'PATCH', '/api/recall-policy', { agentAccess: false });
+  assert.equal(access.sent.body.code, 'agent_access_disabled');
+  assert.ok(access.sent.body.error.endsWith(' http://127.0.0.1:2800/settings?tab=ai'), access.sent.body.error);
+  // Without an address the refusal still names the page, and carries no broken link.
+  const plain = await gate(delegation(t), 'PATCH', '/api/recall-policy', { agentAccess: false });
+  assert.ok(plain.sent.body.error.endsWith('Settings › Access.'), plain.sent.body.error);
+});
+
 test('the gate passes the person\'s own requests and refuses delegation from another computer or with Agent access off', async (t) => {
   const port = delegation(t);
   const own = await gate(port, 'POST', '/api/knowledge/entity/item-a/hard-delete', { header: null });

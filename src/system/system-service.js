@@ -51,6 +51,7 @@ import { createCliPathControl } from '../desktop/cli-path.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { createWhatsNew } from '../whats-new/whats-new.js';
 import { desktopClientOpensLinks } from '../desktop/desktop-client-links.js';
+import { liveSourceConsoleUrl } from '../graphiti/source-marker.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -257,7 +258,7 @@ export function createSystemService({
     modelCapture,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id),
-      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir) }),
+      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir), consoleUrl: liveSourceConsoleUrl(runtimeConfigPath) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),
