@@ -99,36 +99,45 @@ import).
   opened the store, which the older one may then not open; an upgrade's graph
   backup is in `backups/graph/before-neo4j-<version>-<time>`, named in the
   journal (`next.previousNeo4jAsset.graphBackup`). During `removing-assets` only
-  program files are removed. Inspect the recorded old/new descriptors, actual
-  process groups, listeners and offline store formats before manually completing
-  recovery. Recovery never copies or overwrites a database. Crash/power-loss
-  recovery is an explicit operator step; there is no automatic database rollback.
+  program files are removed. Recovering a switch or an uninstall never copies or
+  overwrites a database; recovering an interrupted load does (below). Recovery
+  is an explicit step a person confirms; nothing rolls a database back by itself.
 
 ## Recovering an interrupted operation
 
 `fuli graph runtime recover` (`src/native-runtime/neo4j-recovery.js`; in the
-desktop window 「恢复并启动」) first prints what it would do and a digest; it does
-it only when confirmed, or with `--yes --expect <digest>`, and then only if
-nothing changed since. It refuses while the lock's holder runs, another FULI
-CLI or controller works on the data, or the running programs cannot be listed.
-The graph services `processes.json` records are stopped first, under the lock's
-own token.
+desktop window 「恢复并启动」) first prints what it would do and a digest. It
+acts only for a person: in a terminal (stdin is a TTY) after the prompt or with
+`--yes --expect <digest>`, or from the window, whose controller recovers after
+the person confirmed there. Without a terminal only `--preview` runs, and no
+MCP or Agent tool reaches it. It then acts only if nothing changed since the
+plan was shown. It refuses while the lock's holder runs, another FULI CLI or
+controller works on the data, or the running programs cannot be listed; a lock
+that names no holder (with a switch journal) waits the same 90 minutes as
+`unlock`. The graph services `processes.json` records are stopped first, under
+the lock's own token.
 
 | What was interrupted | What recovery does |
 | --- | --- |
-| A switch (`switching`), descriptor still the older one | Undo: an update's candidate `jvs-a-*` moves to `native-runtime/recovered/`, the journal too, the lock is released |
-| A switch, descriptor already the newer one | Finish: keep it, archive the journal, release the lock. `--back-out` writes the older descriptor back only when the store format is still the one from before and the older programs are unchanged |
-| A switch, descriptor neither | Refused (`manifest_changed`): a person looks |
-| An uninstall (`removing-assets`) | Finish removing the program directories the journal names; knowledge data is not touched |
-| An update, rollback or uninstall before its journal | Check the programs in use still match their fingerprint; move unused `jvs-a-*` directories with FULI's receipt to `recovered/` (any other directory: refused); rename unfinished `backups/graph/before-neo4j-*.partial-*` to `.incomplete`; release the lock |
+| A switch (`switching`), descriptor still the older one | Undo: an update's candidate `jvs-a-*` and the journal move aside, the lock is released |
+| A switch, descriptor already the newer one | Finish: the newer Neo4j starts once under the lock's token, answers the health check and stops, the store format must still be the one in the journal; then the journal moves aside. Back out (`--back-out`, or the window's second button): offered only when the journal has the older programs' fingerprint and they still match; it checks the store format, writes the older descriptor, starts the older Neo4j once and checks it, and writes the newer descriptor back if it does not start. A check that fails keeps the journal and the lock |
+| A switch, descriptor neither | Refused (`manifest_changed`) |
+| An uninstall (`removing-assets`) | Only when the descriptor is the journal's `previous`, or that with `status: uninstalled`: each remaining program directory, checked to be one FULI manages (`assertManagedNeo4jHome`, or a `jvs-a-*` with FULI's receipt, or one whose receipt the killed removal already took and that holds only that version's programs), moves aside. Runs again after being killed at any step |
+| An update, rollback or uninstall before its journal | The programs in use must still match their fingerprint (skipped when the descriptor says `uninstalled`: the lock alone is released); unused `jvs-a-*` directories with FULI's receipt, or an update's own candidate made while its lock was held and killed before its receipt, move aside (anything else: refused, `unknown_assets`); unfinished `backups/graph/before-neo4j-*.partial-*` is renamed `.incomplete` |
 | A dump | Release the lock |
-| A load | Release the lock and import the whole graph from the newest `backups/graph/before-import-*` the import took before it; without one, refused (`no_restore_point`) |
+| A load | The import records in the lock which copy it took before loading (`restorePoint`: `backups/graph/before-import-*`, the instances it holds, the instances being loaded). Recovery loads that very copy back under the lock's token, then moves aside the stores of instances that were empty before the import (no copy: a first import, or `graph migrate` into a new runtime), then releases the lock. A lock without that record, or a copy that is missing or does not match, is refused (`restore_point_unknown`, `restore_point_damaged`); FULI never picks another copy. What the import was bringing in is not kept |
 
-Every step can run again: a recovery killed part way is planned and finished
-again. Directories are moved, not deleted, except an uninstall's program files.
-A step that fails is recorded in the diagnostics log; what each recovery did is
-kept in `native-runtime/recovered/recovery-<time>.json`. Recovery is for the
-person only: no Agent tool reaches it.
+The lock stays until the last step, so a start is refused while a recovery is
+incomplete, and a recovery killed part way is planned and finished again.
+Nothing is deleted: each recovery moves what it sets aside to
+`native-runtime/recovered/<time>/` (keeping the paths relative to
+`native-runtime/`), copies the descriptor there before writing it, and moves
+the journal there; `recovered/recovery-<time>.json` records what it did. The
+plan lists each move with its size. Old folders are cleared by a recovery's
+plan only when at least 3 newer ones exist and they are over 30 days old; the
+records are kept. A failed step is recorded in the diagnostics log, and `fuli
+diagnostics` names the latest recovery record. The CLI's and the window's
+success message point to it too.
 
 ## Verification
 

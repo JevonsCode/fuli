@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { diagnosticEventsAnswer } from '../diagnostics/query.js';
+import { recoveryRecords } from '../native-runtime/recovered-dir.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { writeLine } from './terminal-io.js';
 
@@ -20,11 +21,18 @@ export async function runDiagnosticsCommand(args, dependencies = {}) {
   const options = parseDiagnosticsOptions(args);
   const env = dependencies.env ?? process.env;
   const write = dependencies.write ?? writeLine;
-  const { dataDir } = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
+  const { dataDir, nativeRuntimeDir } = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
   const answer = diagnosticEventsAnswer(diagnosticEventLog(dataDir),
     Object.fromEntries(FILTERS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]])));
-  write(options.json ? JSON.stringify(answer, null, 2) : formatDiagnostics(answer));
+  // The log keeps only what failed; what each graph runtime recovery did is in its own record.
+  const recoveries = nativeRuntimeDir ? recoveryRecords(nativeRuntimeDir) : null;
+  write(options.json ? JSON.stringify(answer, null, 2) : [formatDiagnostics(answer), ...recoveryLine(recoveries)].join('\n'));
   return { exitCode: answer.sourcesUnavailable.length ? UNREADABLE_EXIT_CODE : 0, answer };
+}
+
+function recoveryLine(recoveries) {
+  if (!recoveries) return [];
+  return [`Graph runtime recoveries: ${recoveries.count}; the latest is recorded in ${recoveries.latest}.`];
 }
 
 function parseDiagnosticsOptions(args) {

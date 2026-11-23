@@ -5,6 +5,9 @@ import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
 import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
 import { followStartupStages, startupStageMarker, wantsStageMarkers } from '../local-runtime/startup-stage.js';
 import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
+import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j-recovery.js';
+import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
+import { formatRecoveryPlan } from '../cli/recovery-plan-text.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
@@ -57,13 +60,19 @@ async function consolePortBlocked(context) {
     host: settings.lanAccess ? '0.0.0.0' : '127.0.0.1' }) !== null;
 }
 
+// The recovery the window confirms (neo4j-recovery.js), through the native runtime's own services.
+const nativeRecovery = {
+  plan: paths => planNativeRecovery({ paths, dependencies: nativeRecoveryServices({ paths }) }),
+  apply: (paths, digest) => applyNativeRecovery({ paths, digest, dependencies: nativeRecoveryServices({ paths }) })
+};
+
 // A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
-  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null
+  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -97,28 +106,31 @@ export async function runTrayAction(action, context, {
     }
   };
   // 「恢复并启动」: first the plan the window shows in the confirmation, then —
-  // with that plan's digest — the recovery itself (`fuli graph runtime recover`,
-  // which refuses when anything changed since), and an ordinary start.
-  if (action === 'recover-preview') {
-    const result = await invoke(['graph', 'runtime', 'recover', '--preview', '--json']);
-    const line = String(result.stdout ?? '').trim().split('\n').pop();
-    let plan = null;
-    try { plan = JSON.parse(line); } catch { /* answered below */ }
-    if (result.code !== 0 || !plan?.kind) {
-      const error = cliError(result);
-      return { ok: false, action, status: 'unknown', label: '状态未知 / Unknown', error: error.message,
-        ...(error.startupFailure ? { failure: error.startupFailure } : {}) };
-    }
-    return { ok: true, action, status: 'stopped', label: trayStateLabel({ status: 'stopped' }), recoveryPlan: plan };
-  }
-  if (action === 'recover-start') {
-    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error('recover-start needs the digest of the plan the person confirmed.');
-    try { await command(['graph', 'runtime', 'recover', '--yes', '--expect', recoveryDigest]); }
-    catch (error) {
+  // with the digest of the plan the person chose (it may be the alternative
+  // shown beside it) — the recovery itself (neo4j-recovery.js, which refuses
+  // when anything changed since), and an ordinary start. Done here, not through
+  // the CLI: the CLI recovers only for a person at a terminal.
+  let recoveryRecord = null;
+  if (action === 'recover-preview' || action === 'recover-start') {
+    const paths = resolveSetupPaths({ dataDir: context.dataDir });
+    const unknown = async (error, failure) => {
       const state = await inspect({ step: false }).catch(() => null);
       return { ok: false, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown',
-        state, error: error.message, ...(error.startupFailure ? { failure: error.startupFailure } : {}) };
+        state, error: error.message, ...(failure ? { failure } : {}) };
+    };
+    if (action === 'recover-preview') {
+      try { return { ok: true, action, status: 'stopped', label: trayStateLabel({ status: 'stopped' }), recoveryPlan: await recovery.plan(paths) }; }
+      catch (error) { return unknown(error); }
     }
+    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error('recover-start needs the digest of the plan the person confirmed.');
+    let recovered;
+    try { recovered = await recovery.apply(paths, recoveryDigest); }
+    catch (error) {
+      return unknown(error, error?.code === 'recover_step_failed'
+        ? { code: 'recovery_refused', reason: error.reason, step: error.step, record: error.record } : null);
+    }
+    if (recovered.kind === 'refused') return unknown(new Error(formatRecoveryPlan(recovered)), { code: 'recovery_refused', ...recovered });
+    recoveryRecord = recovered.record ?? null;
     action = 'start';
   }
   // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
@@ -194,7 +206,8 @@ export async function runTrayAction(action, context, {
       throw new Error('Fuli did not confirm that the selected runtime stopped.');
     }
     return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
-      ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}) };
+      ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}),
+      ...(recoveryRecord ? { recoveryRecord } : {}) };
   } catch (error) {
     // The step that did not finish, read before the check below moves on, and
     // what the start said it ran into (startup-failure-line.js), for the client
@@ -209,7 +222,7 @@ export async function runTrayAction(action, context, {
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
-      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}),
+      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}), ...(recoveryRecord ? { recoveryRecord } : {}),
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }

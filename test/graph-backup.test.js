@@ -91,10 +91,12 @@ test('failed graph import restores the target from an automatic rollback dump', 
   });
   const inputDir = join(root, 'source');
   const loaded = [];
+  const restorePoints = new Set();
   const adapter = {
     async stop() { return { resume: true }; },
     async dump(instance, destination) { await writeFile(destination, `old:${instance}`); },
     async load(instance, source, options = {}) {
+      restorePoints.add(JSON.stringify(options.restorePoint));
       loaded.push({ instance, body: await readFile(source, 'utf8'), rollback: options.rollback });
       if (instance === 'workspace' && !options.rollback) throw new Error('load failed');
     },
@@ -115,6 +117,12 @@ test('failed graph import restores the target from an automatic rollback dump', 
     { instance: 'workspace', body: 'old:workspace', rollback: true },
     { started: true }
   ]);
+  // Every load names the copy this import took first, so a killed one is restored from exactly it.
+  const [point] = [...restorePoints].map(text => JSON.parse(text));
+  assert.equal(restorePoints.size, 1);
+  assert.match(point.path, /[\\/]rollback[\\/]before-import-/);
+  assert.deepEqual([point.instances, point.loading], [['personal', 'workspace'], ['personal', 'workspace']]);
+  assert.deepEqual((await readGraphBackupManifest(point.path)).instances.map(({ id }) => id), ['personal', 'workspace']);
 });
 
 test('graph import does not claim an empty rollback bundle for a fresh target', async () => {
@@ -131,6 +139,7 @@ test('graph import does not claim an empty rollback bundle for a fresh target', 
     }
   });
   const loaded = [];
+  const restorePoints = [];
   const result = await importGraphData({
     inputDir,
     targetMode: 'native',
@@ -138,7 +147,7 @@ test('graph import does not claim an empty rollback bundle for a fresh target', 
     adapter: {
       async stop() { return { resume: false }; },
       async dump() { throw new Error('fresh target must not be dumped'); },
-      async load(_instance, source) { loaded.push(await readFile(source, 'utf8')); },
+      async load(_instance, source, options) { loaded.push(await readFile(source, 'utf8')); restorePoints.push(options.restorePoint); },
       async hasData() { return false; },
       async start() {}
     }
@@ -146,6 +155,8 @@ test('graph import does not claim an empty rollback bundle for a fresh target', 
 
   assert.deepEqual(loaded, ['new graph']);
   assert.equal(result.rollbackDir, null);
+  // A recovery of a load killed part way knows there is no copy: the target was empty.
+  assert.deepEqual(restorePoints, [{ path: null, instances: [], loading: ['personal'] }]);
 });
 
 test('credential reconciliation failure rolls imported graph data back', async () => {

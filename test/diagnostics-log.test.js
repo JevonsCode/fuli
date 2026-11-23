@@ -298,6 +298,16 @@ test('fuli diagnostics reads the data directory without the console', async (t) 
   await assert.rejects(runDiagnosticsCommand(['--data-dir', directory, '--level', 'info'], { env: {}, write: () => {} }),
     InvalidInputError);
   await assert.rejects(runDiagnosticsCommand(['--unknown'], { env: {}, write: () => {} }), /Usage: fuli diagnostics/);
+  assert.doesNotMatch(printed, /Graph runtime recoveries/);
+  // What a graph runtime recovery did is kept beside what it set aside; the text points there.
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(directory, 'native-runtime', 'recovered'), { recursive: true });
+  for (const stamp of ['2026-11-01T00-00-00-000Z', '2026-11-02T00-00-00-000Z']) {
+    await writeFile(join(directory, 'native-runtime', 'recovered', `recovery-${stamp}.json`), '{}');
+  }
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /Graph runtime recoveries: 2; the latest is recorded in .*recovery-2026-11-02T00-00-00-000Z\.json/);
 });
 
 test('migrate status lists the diagnostics log as absent until a failure is recorded', async (t) => {

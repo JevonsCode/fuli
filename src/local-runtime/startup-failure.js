@@ -96,12 +96,13 @@ function interrupted(f) {
     `A database ${f.operation ?? 'operation'} stopped part way at ${at}, before it changes any knowledge data, and left its maintenance lock; it may have left programs half installed.`];
 }
 
-// What `recover` does for it: a dump's lock is released, a load's database is
-// restored from the copy the import took first, an asset operation's leftovers
-// are set aside.
+// What `recover` does for it: a dump's lock is released, a load's graph goes
+// back to the copy that import took first, an asset operation's leftovers are
+// set aside.
 function interruptedNext(f) {
   return f.operation === 'load'
-    ? [`${RECOVER[0]}它会用导入前自动留下的备份整库恢复。`, `${RECOVER[1]} It restores the whole graph from the copy the import took first.`]
+    ? [`${RECOVER[0]}它会把图撤回到这次导入开始前：用导入前自动留下的备份整库恢复，这次要导入的内容之后需要重新导入。`,
+      `${RECOVER[1]} It takes the graph back to before this import: it restores the whole graph from the copy the import took first, and what was being imported needs importing again afterwards.`]
     : RECOVER;
 }
 

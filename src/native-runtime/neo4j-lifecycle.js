@@ -8,7 +8,7 @@ import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from '../storage/json-file.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
-import { assertManagedNeo4jHome, neo4jAssetFingerprint, assetContainer, managedNeo4jContainers } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import { acquireNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree } from './macos-ports.js';
 import { installNativeNeo4j } from './neo4j-install.js';
@@ -105,14 +105,7 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
     await lock.assertHeld(); await unchanged(paths.nativeRuntimeManifestPath, plan.bytes);
     if (await neo4jAssetFingerprint(current.neo4jHome) !== plan.fingerprint) throw new Error('Current Neo4j assets changed while stopping.');
     if (action === 'uninstall') {
-      // After a patch upgrade the retained assets are of the older patch.
-      const assets = [{ home: current.neo4jHome, version: current.neo4jVersion }, current.previousNeo4jAsset].filter(Boolean);
-      const versions = [...new Set(assets.map(({ version }) => version))];
-      const defaultHomes = await Promise.all(versions.map(version =>
-        assertManagedNeo4jHome(paths, join(paths.nativeRuntimeDir, `neo4j-community-${version}`), version)));
-      const containers = new Set([...defaultHomes, ...await managedNeo4jContainers(paths, versions),
-        ...assets.map(({ home }) => assetContainer(paths, home))]);
-      for (const { home, version } of assets) await assertManagedNeo4jHome(paths, home, version);
+      const containers = await uninstallContainers(paths, current);
       writeJsonFileAtomic(journal, { action, phase: 'removing-assets', previous: current });
       writeJsonFileAtomic(paths.nativeRuntimeManifestPath, { ...current, status: 'uninstalled' });
       const uninstalled = await readFile(paths.nativeRuntimeManifestPath);

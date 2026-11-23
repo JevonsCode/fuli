@@ -33,7 +33,9 @@ const journalPath = root => join(root, JOURNAL);
 // The holder is written beside the token before the lock appears: a directory
 // is prepared under a unique name and renamed into place, so a lock is never
 // seen without its owner and holder, and two takers cannot both succeed.
-export async function acquireNeo4jLifecycleLock(root, { operation, identify = ownIdentity } = {}) {
+// [details]: what else a later recovery needs to know about this operation
+// (a load records the copy its import took first: neo4j-recovery.js).
+export async function acquireNeo4jLifecycleLock(root, { operation, identify = ownIdentity, details = {} } = {}) {
   const path = lockPath(root), token = randomUUID();
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (!(await lstat(root)).isDirectory()) throw new Error('Neo4j runtime must not be a symbolic link.');
@@ -41,7 +43,7 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = ow
   await mkdir(prepared, { mode: 0o700 });
   try {
     await writeFile(join(prepared, 'owner'), token, { flag: 'wx', mode: 0o600 });
-    await writeFile(join(prepared, 'holder.json'), JSON.stringify({ ...await identify(), operation, at: new Date().toISOString() }),
+    await writeFile(join(prepared, 'holder.json'), JSON.stringify({ ...details, ...await identify(), operation, at: new Date().toISOString() }),
       { flag: 'wx', mode: 0o600 });
     try { await rename(prepared, path); }
     catch (error) {
@@ -65,9 +67,10 @@ async function ownIdentity() {
   return { pid: process.pid, command, startedAt };
 }
 
-// The lock as it stands, or null when there is none. [holder] is null for a
-// lock taken before FULI recorded its holder.
-function readLock(root) {
+// The lock as it stands, or null when there is none: since when, its token and
+// what it recorded about its holder. [holder] is null for a lock taken before
+// FULI recorded its holder.
+export function readLock(root) {
   const path = lockPath(root);
   let since;
   try { since = statSync(path).mtime; } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
@@ -137,8 +140,8 @@ async function withTakeover(root, identity, action) {
 // Moves the lock aside under a unique name, checks it is the one judged, then
 // removes it. Under the take-over directory the lock is read once more right
 // before it is moved: one replaced since it was judged is left where it is.
-// Answers whether it was removed.
-async function takeOver(root, owner, identity) {
+// Answers whether it was removed. A recovery releases a lock it dealt with this way.
+export async function takeOver(root, owner, identity = IDENTITY) {
   return withTakeover(root, identity, () => moveAside(root, owner));
 }
 
@@ -225,11 +228,17 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
   // the one it keeps for a rollback.
   const unfinished = unreferencedAssets(paths);
   if (unfinished) return { released: false, reason: 'unfinished_assets', directory: unfinished };
-  const ageMs = now() - lock.since.getTime();
-  if (ageMs < RELEASE_AFTER_MS) {
-    return { released: false, reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
-  }
+  const young = lockTooRecent(lock, now());
+  if (young) return { released: false, ...young };
   return await takeOver(root, lock.owner, identity) ? { released: true } : { released: false, reason: 'changed' };
+}
+
+// A lock that names no holder may still be in use by whoever took it: it is
+// released (or recovered) only once it is older than the longest operation
+// could take. The refusal, or null when it is old enough.
+export function lockTooRecent(lock, now) {
+  if (now - lock.since.getTime() >= RELEASE_AFTER_MS) return null;
+  return { reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
 }
 
 // Why something may still be using this native runtime, or null: the lock's
@@ -241,13 +250,8 @@ export async function runtimeInUse({ paths, lock = readLock(paths.nativeRuntimeD
   services = true }) {
   if (lock && await holderState(lock.holder, identity) === 'running') return { reason: 'holder_running', pid: lock.holder.pid };
   if (services) {
-    const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
-    for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
-      if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
-        && await identity.matches(entry.pid, entry.command)) {
-        return { reason: 'services_running', pid: entry.pid };
-      }
-    }
+    const [pid] = await runningGraphServices(paths, identity);
+    if (pid) return { reason: 'services_running', pid };
   }
   // The console server, MCP processes and hooks name the data too but take no lock.
   const processes = await listProcesses();
@@ -257,16 +261,15 @@ export async function runtimeInUse({ paths, lock = readLock(paths.nativeRuntimeD
   return other ? { reason: 'fuli_running', pid: other.pid } : null;
 }
 
-// The lock as it stands, for a recovery: since when, its token and what it
-// recorded about its holder; null without a lock.
-export function lifecycleLockOf(root) {
-  return readLock(root);
-}
-
-// Releases a lock a recovery has dealt with, the way a take-over does: one at
-// a time, and only the lock that was judged. Answers whether it was released.
-export function releaseLifecycleLock(root, owner, identity = IDENTITY) {
-  return takeOver(root, owner, identity);
+// The graph services processes.json records that still run as themselves (their PIDs).
+export async function runningGraphServices(paths, identity = IDENTITY) {
+  const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
+  const running = [];
+  for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
+    if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
+      && await identity.matches(entry.pid, entry.command)) running.push(entry.pid);
+  }
+  return running;
 }
 
 // The first neo4j-assets/jvs-a-* directory the manifest does not use, or null.

@@ -3,9 +3,9 @@ import { manageNativeNeo4j, planNativeNeo4j } from '../native-runtime/neo4j-life
 import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
 import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j-recovery.js';
-import { createNativeGraphServices, NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
-import { runGraphDataCommand } from './graph-data-command.js';
-import { formatRecoveryPlan } from './recovery-plan-text.js';
+import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
+import { NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
+import { formatRecoveryPlan, recoveredLine } from './recovery-plan-text.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { runSetupCommand } from './setup-command.js';
 import { writeLine } from './terminal-io.js';
@@ -70,17 +70,12 @@ async function unlock(paths, options, write, dependencies) {
 }
 
 // Brings the runtime back from an operation killed part way (neo4j-recovery.js):
-// shows the plan, and does it only when confirmed, or with --yes --expect <the
-// plan's digest> as the desktop controller sends after the person confirmed.
-// For the person only: no Agent tool reaches it (operating-fuli).
+// shows the plan, and does it only when a person confirms it in a terminal
+// (the prompt, or --yes --expect <the plan's digest>). Without a terminal only
+// the preview runs: the desktop window recovers through its controller after
+// the person confirmed there. For the person only: no Agent tool reaches it (operating-fuli).
 async function recover(paths, options, write, dependencies) {
-  const recovery = {
-    stopServices: (_paths, owner) => createNativeGraphServices({ paths,
-      env: { ...dependencies.env, FULI_NATIVE_ASSET_OPERATION: owner } }).stopDatabases(),
-    restore: from => (dependencies.importGraph ?? runGraphDataCommand)('import', ['--input', from, '--yes', '--data-dir', paths.dataDir],
-      { env: dependencies.env, write }),
-    ...dependencies.recovery
-  };
+  const recovery = { ...nativeRecoveryServices({ paths, env: dependencies.env }), ...dependencies.recovery };
   const plan = await (dependencies.planRecovery ?? planNativeRecovery)({ paths, backOut: options.backOut, dependencies: recovery });
   if (options.json && options.preview) {
     write(JSON.stringify(plan));
@@ -88,15 +83,27 @@ async function recover(paths, options, write, dependencies) {
   }
   write(formatRecoveryPlan(plan));
   if (plan.kind === 'nothing') return { status: 'nothing', exitCode: 0 };
-  if (plan.kind === 'refused') throw Object.assign(new Error(formatRecoveryPlan(plan)), { startupFailure: { code: 'recovery_refused', ...plan } });
+  if (plan.kind === 'refused') throw refusal(plan);
   if (options.preview) return { status: 'preview', exitCode: 0 };
+  if (!(dependencies.interactive ?? process.stdin.isTTY)) throw refusal({ kind: 'refused', reason: 'needs_person' });
   if (options.yes ? options.expect !== plan.digest : !await (dependencies.confirm ?? confirmAction)('Recover')) {
-    if (options.yes) throw Object.assign(new Error(formatRecoveryPlan({ kind: 'refused', reason: 'plan_changed' })),
-      { startupFailure: { code: 'recovery_refused', reason: 'plan_changed' } });
+    if (options.yes) throw refusal({ kind: 'refused', reason: 'plan_changed' });
     return { status: 'cancelled', exitCode: 1 };
   }
-  const result = await (dependencies.applyRecovery ?? applyNativeRecovery)({ paths, digest: plan.digest, backOut: options.backOut, dependencies: recovery });
-  if (result.kind === 'refused') throw Object.assign(new Error(formatRecoveryPlan(result)), { startupFailure: { code: 'recovery_refused', ...result } });
-  write('已恢复，可以启动 FULI 了。 / Recovered; FULI can start now.');
-  return { status: 'recovered', kind: result.kind, exitCode: 0 };
+  let result;
+  try {
+    result = await (dependencies.applyRecovery ?? applyNativeRecovery)({ paths, digest: plan.digest, backOut: options.backOut, dependencies: recovery });
+  } catch (error) {
+    if (error?.code !== 'recover_step_failed') throw error;
+    throw refusal({ kind: 'refused', reason: error.reason, step: error.step, record: error.record }, error);
+  }
+  if (result.kind === 'refused') throw refusal(result);
+  write(recoveredLine(result));
+  return { status: 'recovered', kind: result.kind, record: result.record ?? null, exitCode: 0 };
+}
+
+// Why it will not, in words and as the reason line a desktop client reads (startup-failure-line.js).
+function refusal(plan, cause) {
+  return Object.assign(new Error(formatRecoveryPlan(plan), cause ? { cause } : undefined),
+    { startupFailure: { code: 'recovery_refused', ...plan } });
 }

@@ -131,9 +131,14 @@ export async function importGraphData({
     } else {
       await rm(rollbackRoot, { recursive: true, force: true });
     }
+    // What a recovery of a load killed part way goes back to (neo4j-recovery.js):
+    // this copy (null when every instance was empty before), which instances it
+    // holds, and which this import overwrites.
+    const restorePoint = { path: rollbackReady ? rollbackRoot : null,
+      instances: rollbackEntries.map(({ id }) => id), loading: manifest.instances.map(({ id }) => id) };
     try {
       for (const entry of manifest.instances) {
-        await adapter.load(entry.id, join(source, entry.file), { rollback: false });
+        await adapter.load(entry.id, join(source, entry.file), { rollback: false, restorePoint });
       }
       if (typeof adapter.reconcile === 'function') {
         await adapter.reconcile({
@@ -147,7 +152,7 @@ export async function importGraphData({
       let rollbackError = null;
       for (const entry of rollbackEntries) {
         try {
-          await adapter.load(entry.id, entry.path, { rollback: true });
+          await adapter.load(entry.id, entry.path, { rollback: true, restorePoint });
         } catch (caught) {
           rollbackError ??= caught;
         }
@@ -187,6 +192,13 @@ export async function readGraphBackupManifest(inputDir) {
   validateMode(manifest.sourceMode, 'backup source mode');
   validateManifestInstances(manifest.instances);
   validateSelection(manifest.selection);
+  return manifest;
+}
+
+// A backup's manifest, once every file it names matches its checksum.
+export async function readVerifiedGraphBackup(inputDir) {
+  const manifest = await readGraphBackupManifest(inputDir);
+  await verifyBackupFiles(inputDir, manifest);
   return manifest;
 }
 
