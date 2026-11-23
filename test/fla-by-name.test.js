@@ -376,6 +376,42 @@ test('the same name in several projects asks among exactly those; one FLA in thi
   assert.deepEqual(outside.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Ada Lead — Beta — 负责人']);
 });
 
+test('a shared name continues the one FLA of this folder\'s project, or the one this session continues, and says who else has it', async () => {
+  const inGamma = context => { context.app.projectPathResolver = () => ({ ...FOLDER, personalProjectId: 'project-c' });
+    return context; };
+  const here = inGamma(fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE] }));
+  const entry = await here.run('#FLA Jamie Ash 你继续刚刚的问题');
+  assert.equal(entry.human_interaction, undefined, 'nobody is asked when the folder decides');
+  assert.deepEqual(owner(entry), ['project-c', 'jamie-c']);
+  assert.equal(entry.fla.notice, '本会话由 Jamie Ash 继续项目 Gamma 的工作；同名还有一位在 Beta，这次用的是当前项目的这位');
+  assert.ok(here.memoryReads().every(read => read.startsWith('jamie-c@')), 'the other Jamie is never loaded');
+  // The next turn stays with this Jamie and does not repeat the sentence.
+  assert.equal((await here.run('再跑一遍')).fla, undefined);
+  // The FLA this session continues wins over the folder.
+  const bound = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE] });
+  bound.app.projectPathResolver = () => ({ ...FOLDER, personalProjectId: 'project-b' });
+  assert.deepEqual(owner(await bound.run('#FLA Jamie Ash')), ['project-b', 'jamie']);
+  inGamma(bound);
+  const again = await bound.run('#FLA Jamie Ash 接着来');
+  assert.deepEqual(owner(again), ['project-b', 'jamie']);
+  assert.match(again.fla.notice, /；同名还有一位在 Gamma，这次用的是本会话正在继续的这位$/);
+});
+
+test('a shared name is still asked when the folder cannot tell, each option with its project and recent task', async () => {
+  const recent = (agent, title) => ({ ...agent, recent_task_title: title });
+  // Two FLAs of the same name both in this folder's project.
+  const first = fla('jamie-a', 'Jamie Ash', '开发', 'project-a', { updated: '2026-10-22T00:00:00Z' });
+  const second = fla('jamie-a2', 'Jamie Ash', '测试', 'project-a', { updated: '2026-10-21T00:00:00Z' });
+  const both = await fixture({ roster: [ADA, recent(first, '接入支付\n回调'), recent(second, '整理测试用例')] })
+    .run('#FLA Jamie Ash 继续');
+  assert.equal(both.fla.reason, 'same_name');
+  assert.deepEqual(both.human_interaction.options,
+    ['1. Jamie Ash — Alpha — 开发 · 最近：接入支付 回调', '2. Jamie Ash — Alpha — 测试 · 最近：整理测试用例']);
+  // Outside every project nothing decides either.
+  const outside = await fixture({ roster: [ADA, JAMIE, JAMIE_C] }).run('#FLA Jamie Ash 继续', { projectPath: null });
+  assert.equal(outside.fla.reason, 'same_name');
+});
+
 test('a pick from the client\'s /fla menu names exactly that FLA and project, even when the name is shared (11-08)', async () => {
   const { hook, memoryReads } = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE, JEFA] });
   // What the Claude Code adapter sends for /mcp__fuli__fla-jamie-ash-gamma (fla-menu-command.js).

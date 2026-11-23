@@ -536,6 +536,7 @@ class StoreProjectAgents:
             WITH space, agent, assignment_rows,
                  collect(DISTINCT {
                    task_id: task.task_id,
+                   title: task.title,
                    personal_project_id: task.personal_project_id,
                    status: participant.status,
                    updated_at: participant.updated_at,
@@ -1064,17 +1065,17 @@ class StoreProjectAgents:
             'blocked',
             'awaiting_review',
         }
-        tasks = [
+        worked = [
             dict(value)
             for value in (row.get('task_rows') or [])
             if value
             and value.get('task_id')
-            and value.get('status') in nonterminal
             and (
                 projection_project_id is None
                 or value.get('personal_project_id') == projection_project_id
             )
         ]
+        tasks = [item for item in worked if item.get('status') in nonterminal]
         priority = {
             'running': 0,
             'awaiting_review': 1,
@@ -1128,6 +1129,7 @@ class StoreProjectAgents:
             work_status=work_status,
             open_task_count=len(tasks),
             current_task_id=tasks[0]['task_id'] if tasks else None,
+            recent_task_title=_recent_task_title(tasks, worked),
             occupation=occupation_from_agent_node(raw),
             occupation_locked=raw['agent_id'] in BUILTIN_AGENT_OCCUPATIONS,
             # Only a stamped entry into running is a start time; rows written
@@ -1194,3 +1196,12 @@ class StoreProjectAgents:
             end_reason=raw.get('end_reason'),
             replaced_by_assignment_id=raw.get('replaced_by_assignment_id'),
         )
+
+
+def _recent_task_title(current: list[dict], worked: list[dict]) -> str | None:
+    """What the Agent is on now, else what it last worked on: a picker shows
+    it beside a name several FLAs share (task-entry-named-fla.js)."""
+    titled = [item for item in current if item.get('title')] or sorted(
+        (item for item in worked if item.get('title') and item.get('updated_at')),
+        key=lambda item: native_datetime(item['updated_at']).timestamp(), reverse=True)
+    return titled[0]['title'] if titled else None

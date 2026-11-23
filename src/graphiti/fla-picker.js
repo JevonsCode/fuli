@@ -1,6 +1,7 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
 import { ASSISTANT_AGENT_ID, FIXED_ROLES, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { identityKey } from '../text/name-identity.js';
+import { singleLineExcerpt } from '../text/single-line.js';
 import { termIndex } from '../standing-assignments/term-match.js';
 import { agentUnavailableReason } from './agent-availability.js';
 import { isPeerRoleAgent } from './project-team-view.js';
@@ -17,6 +18,8 @@ import { projectDisplayName } from './task-entry-project-mention.js';
 // Claude Code's native choice UI shows at most four options; the numbered
 // list other clients show stays the same four, so a number means one thing.
 const PICKER_OPTIONS = 4;
+// How much of an option's recent task title fits beside its name and project.
+const RECENT_WORK_CHARACTERS = 40;
 const GLOBAL_PROJECT = '全局';
 // Built-in roles that also work without a project (roleCandidates).
 const SPACE_ROLES = new Set([TONBORG_AGENT_ID]);
@@ -87,6 +90,7 @@ function candidate(agent, { project, assignment }) {
     occupationKey: agent.occupation?.role ?? null,
     responsibility: profile.responsibility ?? '', capabilities: profile.capabilities ?? [],
     status: profile.status ?? 'active', allowedClients: profile.allowed_clients ?? [],
+    recentWork: agent.recent_task_title ?? '',
     recency: Math.max(0, ...[assignment?.updated_at, agent.current_task_running_since, agent.updated_at]
       .map(value => Date.parse(value ?? '')).filter(Number.isFinite)) };
 }
@@ -189,14 +193,16 @@ export function namedInText(text, candidates) {
 }
 
 // The native single choice over the first PICKER_OPTIONS candidates, each
-// "n. name — project — occupation"; the question says how many more a longer
-// name would reach. No internal ID is shown. guidance: what a pick leads to.
+// "n. name — project — occupation · 最近：task" (the task it is on or last
+// worked on, from the same roster read); the question says how many more a
+// longer name would reach. No internal ID is shown. guidance: what a pick leads to.
 export function flaChoice(candidates, { title, question, guidance }) {
   const shown = candidates.slice(0, PICKER_OPTIONS);
   const more = candidates.length - shown.length;
   return { shown, more, interaction: nativeChoiceInteraction({ source: { kind: 'fla_picker' }, title, guidance,
     question: `${question}（姓名 — 项目 — 职业）${more ? `还有 ${more} 位，输入更多名字可缩小范围。` : ''}`,
-    options: shown.map(optionText) }) };
+    options: shown.map((item, index) => `${optionText(item, index)}${item.recentWork
+      ? ` · 最近：${singleLineExcerpt(item.recentWork, RECENT_WORK_CHARACTERS)}` : ''}`) }) };
 }
 
 // The native multi-select over at most PICKER_OPTIONS members (rec#55), each

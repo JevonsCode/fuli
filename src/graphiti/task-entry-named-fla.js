@@ -107,7 +107,8 @@ export async function namedFlaRequest(application, resolution, input, readSessio
         { currentProjectId, recentAgentId: previous?.agentId ?? null });
       const request = number !== null ? choose(open(ranked, input), 'choice_unknown')
         : explicitRequest(mention, ranked,
-          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId), resolution, input);
+          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId),
+          { currentProjectId, sessionAgentId: previous?.agentId ?? null }, input);
       if (request) return { ...request, ...asked };
     }
   }
@@ -177,8 +178,9 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (agent?.agentId === target.agentId) {
     const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
-    const notice = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
+    const continuing = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
       : `本会话由 ${current.name} 继续其全局工作`;
+    const notice = request.sameName ? `${continuing}；${sameNameNotice(request.sameName)}` : continuing;
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
     return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
@@ -212,8 +214,8 @@ function unavailable(target, reason, markers) {
 // a client menu's name for one (fla-menu.js), else the picker over FLAs,
 // narrowed by a partial name; a single close fit continues directly,
 // letters in order only narrow (D-68).
-function explicitRequest({ query }, ranked, roles, resolution, input) {
-  const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), resolution, input) : null;
+function explicitRequest({ query }, ranked, roles, here, input) {
+  const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), here, input) : null;
   if (exact) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
@@ -222,23 +224,48 @@ function explicitRequest({ query }, ranked, roles, resolution, input) {
   return items.length ? choose(items, 'partial') : choose(available, 'no_match');
 }
 
-function exactRequest(exact, resolution, input) {
+function exactRequest(exact, here, input) {
   if (!exact.length) return null;
   const named = open(exact, input);
   if (!named.length) {
     return { state: 'unavailable', target: target(exact[0]), reason: unavailableReason(exact[0], source(input)) };
   }
-  const only = single(named, resolution.personalProjectId ?? null);
-  return only ? { state: 'continue', target: target(only), origin: 'named' }
-    : choose(named, 'same_name', `有多位「${named[0].name}」，要继续哪一位？`);
+  const only = single(named, here);
+  if (!only) return choose(named, 'same_name', `有多位「${named[0].name}」，要继续哪一位？`);
+  const others = named.filter(item => item.agentId !== only.pick.agentId);
+  return { state: 'continue', target: target(only.pick), origin: 'named',
+    ...(others.length ? { sameName: { basis: only.basis, projects: [...new Set(others.map(item => item.project))] } } : {}) };
 }
 
-// One FLA in several projects, one of them this folder's, continues there.
-// Different FLAs sharing a name are always asked.
-function single(named, currentProjectId) {
-  if (named.length === 1) return named[0];
-  const here = named.filter(item => item.projectId === currentProjectId);
-  return here.length === 1 && named.every(item => item.agentId === named[0].agentId) ? here[0] : null;
+// Which of the FLAs (and placements) a name reaches continues without asking:
+// the only one; the one this session already continues; or the only FLA
+// working in this folder's project (a built-in role's project is only the
+// folder's, so it never decides this). Anything else is asked: no name is
+// guessed from recency. basis says why, for the notice.
+function single(named, { currentProjectId, sessionAgentId }) {
+  if (named.length === 1) return { pick: named[0], basis: 'only' };
+  const agents = new Set(named.map(item => item.agentId));
+  const inProject = item => item.projectId === currentProjectId;
+  if (agents.size === 1) {
+    const here = named.filter(inProject);
+    return here.length === 1 ? { pick: here[0], basis: 'only' } : null;
+  }
+  const session = named.filter(item => item.agentId === sessionAgentId);
+  if (session.length) {
+    const pick = session.length === 1 ? session[0] : session.filter(inProject).length === 1 ? session.find(inProject) : null;
+    return pick ? { pick, basis: 'session' } : null;
+  }
+  const here = named.filter(item => !item.role && currentProjectId && inProject(item));
+  return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
+}
+
+// One sentence on the others a shared name also reaches, so the person sees
+// who was not used (FLA names are unique from graph/23; a role may share one).
+function sameNameNotice({ basis, projects }) {
+  const who = basis === 'session' ? '本会话正在继续的这位' : '当前项目的这位';
+  const where = projects.join('、');
+  return projects.length === 1 ? `同名还有一位在 ${where}，这次用的是${who}`
+    : `同名还有 ${projects.length} 位（${where}），这次用的是${who}`;
 }
 
 function choose(candidates, reason, question = QUESTIONS[reason]) {

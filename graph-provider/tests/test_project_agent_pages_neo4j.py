@@ -53,3 +53,8 @@ async def test_pages_walk_the_full_roster_in_one_global_order():
         open_page = await client.get('/v1/project-agent-pages', params={'personal_space_id': space_id, 'work': 'open'})
         assert [item['agent_id'] for item in open_page.json()['items']] == ['charlie']
         assert open_page.json()['complete'] is True
+        # A picker shows what each FLA is on beside its name (task-entry-named-fla.js).
+        roster = {item['agent_id']: item for item in (await client.get(
+            '/v1/project-agents', params={'personal_space_id': space_id})).json()}
+        assert roster['charlie']['recent_task_title'] == 'Synthetic open work'
+        assert roster['alpha']['recent_task_title'] is None

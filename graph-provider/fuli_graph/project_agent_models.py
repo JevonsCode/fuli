@@ -301,6 +301,8 @@ class ProjectAgentRecord(StrictModel):
     work_status: ProjectAgentWorkStatus = 'idle'
     open_task_count: int = Field(default=0, ge=0)
     current_task_id: str | None = None
+    # The title of the task it is on, else the one it last worked on.
+    recent_task_title: str | None = None
     occupation: ProjectAgentOccupation | None = None
     occupation_locked: bool = False
     current_task_running_since: datetime | None = None
