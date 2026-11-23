@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -29,7 +30,7 @@ const agentRecords = useAgentRecords(
     ...(attention.lastReply ? [attention.lastReply.agentId] : [])]),
 )
 const names = computed<Record<string, string>>(() => Object.fromEntries(
-  Object.entries(agentRecords.records.value).map(([id, agent]) => [id, agent.profile.displayName || agent.profile.name]),
+  Object.entries(agentRecords.records.value).map(([id, agent]) => [id, agentDisplayName(agent)]),
 ))
 const selectedId = computed(() => props.openRequestId ?? '')
 const busy = ref('')

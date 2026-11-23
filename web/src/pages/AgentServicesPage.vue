@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -41,7 +42,7 @@ async function loadAgentNames() {
   try {
     const roster = agentValues(await getJson<unknown>(`/api/project-agents?${new URLSearchParams({ personalSpaceId: spaceId.value })}`))
       .map(value => normalizeAgent(value, spaceId.value))
-    agentNames.value = new Map(roster.map(agent => [agent.agentId, agent.profile.displayName ?? agent.profile.name]))
+    agentNames.value = new Map(roster.map(agent => [agent.agentId, agentDisplayName(agent)]))
   } catch {
     agentNames.value = new Map()
   }

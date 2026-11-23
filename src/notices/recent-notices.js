@@ -1,4 +1,6 @@
 import { dreamingRuns } from '../dreaming/scheduler.js';
+import { agentDisplayName } from '../graphiti/agent-display-name.js';
+import { applicationLanguage } from '../graphiti/project-display-name.js';
 import { PROMOTED_PURPOSE } from '../graphiti/topic-proposals.js';
 import { delegatedReviewList } from '../judgment/review-delegation.js';
 import { retrospectiveRuns } from '../retrospectives/runs.js';
@@ -116,7 +118,8 @@ async function teamChanges({ app, space, projectName }) {
   const href = agent => `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent.agentId)}`;
   // An FLA goes by its display name; its project is where it is assigned when the record names none itself.
   const projectOf = agent => agent.personalProjectId ?? agent.assignments?.[0]?.personalProjectId;
-  const params = agent => ({ name: agent.profile?.displayName ?? agent.profile?.name ?? agent.agentId, project: projectName(projectOf(agent)) });
+  const language = applicationLanguage(app);
+  const params = agent => ({ name: agentDisplayName(agent, language), project: projectName(projectOf(agent)) });
   const refs = agent => ({ agentId: agent.agentId, projectId: projectOf(agent) });
   return [
     ...active.filter(agent => agent.recruitedAt).map(agent => notice('fla_joined', agent.agentId, agent.recruitedAt, params(agent), href(agent), refs(agent))),
