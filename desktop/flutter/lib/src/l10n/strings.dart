@@ -163,22 +163,16 @@ class Strings {
   String? startFailedBecause(StartupFailure failure) {
     final since = _clock(failure.text('since'));
     final pid = failure.number('pid');
-    final operation = failure.text('operation');
     final seconds = failure.number('seconds') ?? 60;
     return switch (failure.code) {
       // A switch journal waits for recovery: never a reason to release the lock.
       // What happened, what state the data is in, what not to do: FULI has no
       // way to finish or undo the switch (src/native-runtime/neo4j-lifecycle.js).
-      'native_recovery_needed' => _t(
-          '没有启动：有一次数据库${_operation(operation)}没做完。知识数据还在原来的位置，没有被复制或覆盖。FULI 现在没有能完成或撤销这一步的办法，需要人来恢复；在那之前不要删除数据库维护锁，也不要用别的版本的 FULI 打开这份数据。',
-          'FULI did not start: a database ${operation ?? 'switch'} did not finish. Your knowledge data is still where it was and was not copied or overwritten. '
-              'FULI has no way to finish or undo this step yet, so a person needs to recover it; until then, do not remove the maintenance lock or open this data with another FULI version.'),
+      'native_recovery_needed' => _recoveryNeeded(failure),
       'native_lifecycle_lock' => switch (failure.text('holder')) {
           'running' => _t('没有启动：数据库维护锁从 $since 起被进程 $pid${_named(failure)}占着。等它结束后再点「启动 FULI」。',
               'FULI did not start: process $pid${_named(failure)} has held the database maintenance lock since $since. Choose Start FULI once it has ended.'),
-          'gone' => _t('没有启动：一次数据库${_operation(operation)}在 $since 中途停了，留下了维护锁；知识数据没有被改动。它可能留下了装了一半的文件，所以 FULI 不会解除这把锁，需要人来处理。',
-              'FULI did not start: a database ${operation ?? 'operation'} stopped part way at $since and left its maintenance lock; your knowledge data was not changed. '
-                  'It may have left files half installed, so FULI does not release the lock; a person needs to handle it.'),
+          'gone' => _interrupted(failure, since),
           _ => _t('没有启动：数据库维护锁从 $since 起一直没放开，没有记录是谁加的。',
               'FULI did not start: the database maintenance lock has been held since $since with no record of who took it.'),
         },
@@ -200,9 +194,52 @@ class Strings {
     };
   }
 
+  // A switch journal waits (src/native-runtime/neo4j-lifecycle-lock.js): what
+  // the code can show of the data, never a reason to release the lock. FULI has
+  // no way to finish or undo it, so the next step is said as it is.
+  String _recoveryNeeded(StartupFailure failure) {
+    const keep = '在那之前不要删除数据库维护锁，也不要用别的版本的 FULI 打开这份数据。';
+    const keepEn = 'Until then, do not remove the maintenance lock or open this data with another FULI version.';
+    if (failure.text('phase') == 'removing-assets') {
+      return _t('没有启动：有一次数据库卸载没做完。卸载只删数据库程序文件，知识数据文件没有被改动。FULI 现在没有能完成这一步的办法，需要人来处理。$keep',
+          'FULI did not start: a database uninstall did not finish. An uninstall removes only the database programs; your knowledge data files were not changed. '
+              'FULI has no way to finish this step yet, so a person needs to handle it. $keepEn');
+    }
+    final from = failure.text('fromVersion'), to = failure.text('toVersion'), backup = failure.text('backupName');
+    final versions = from != null && to != null ? _t('（$from → $to）', ' ($from → $to)') : '';
+    final kept = failure.facts['upgrade'] == true && backup != null
+        ? _t('升级前的图备份在 FULI 数据文件夹的 backups/graph/$backup。', ' The graph backup from before the upgrade is in backups/graph/$backup in the FULI data folder.')
+        : '';
+    return _t(
+        '没有启动：有一次数据库${_operation(failure.text('operation'))}$versions没做完。FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们，被新版本打开过之后旧版本可能再也打不开。$kept'
+            'FULI 现在没有能完成或撤销这一步的办法，需要人来恢复。$keep',
+        'FULI did not start: a database ${failure.text('operation') ?? 'switch'}$versions did not finish. FULI did not copy or replace your knowledge data files, '
+            'but the newer database may already have opened them during the switch, and the older one may not open them again.$kept '
+            'FULI has no way to finish or undo this step yet, so a person needs to recover it. $keepEn');
+  }
+
+  // A lock an operation left when it ended before any switch journal: what it
+  // can have changed, and that FULI has no button for it.
+  String _interrupted(StartupFailure failure, String since) {
+    // Until a recovery command exists, the exact manual steps are what the
+    // terminal's start prints (src/local-runtime/startup-failure.js).
+    const none = 'FULI 目前没有能解除这把锁的按钮，需要人来处理；在终端里启动 FULI 时会列出要做的步骤。';
+    const noneEn = 'FULI has no button that releases this lock yet; a person needs to handle it, and starting FULI in a terminal lists the steps.';
+    return switch (failure.text('operation')) {
+      'load' => _t('没有启动：一次图数据库导入在 $since 中途停了，留下了维护锁。导入会覆盖数据库，所以数据库可能只写入了一半。$none',
+          'FULI did not start: a graph database load stopped part way at $since and left its maintenance lock. A load overwrites the database, so it may be only half written. $noneEn'),
+      'dump' => _t('没有启动：一次图数据库导出在 $since 中途停了，留下了维护锁。导出只读数据库，知识数据没有被改动。$none',
+          'FULI did not start: a graph database dump stopped part way at $since and left its maintenance lock. A dump only reads the database; your knowledge data was not changed. $noneEn'),
+      final operation => _t(
+          '没有启动：一次数据库${_operation(operation)}在 $since 中途停了，留下了维护锁。它停在改动知识数据之前，数据没有被改动，但可能留下了装了一半的程序文件。$none',
+          'FULI did not start: a database ${operation ?? 'operation'} stopped part way at $since, before it changes any knowledge data, and left its maintenance lock; '
+              'it may have left programs half installed. $noneEn'),
+    };
+  }
+
   // The operation a lock or journal names, in a Chinese sentence.
   String _operation(String? operation) =>
-      const {'update': '更新', 'rollback': '回退', 'uninstall': '卸载', 'admin': '导出或导入'}[operation] ?? '切换';
+      const {'update': '更新', 'rollback': '回退', 'uninstall': '卸载', 'dump': '导出', 'load': '导入'}[operation] ?? '切换';
 
   // " (java)" / "（java）" when the holder's program is known.
   String _named(StartupFailure failure) {
@@ -248,7 +285,12 @@ class Strings {
       'too_recent' => _t('锁没有解除：它加上不久，一次数据库更新可能还在进行。${_clock(kept.text('releasableAt'))} 之后再试。',
           'The lock was kept: it is recent and a database update may still be running. Try again after ${_clock(kept.text('releasableAt'))}.'),
       'no_lock' => _t('锁已经不在了，点「启动 FULI」即可。', 'The lock is already gone; choose Start FULI.'),
-      _ => _t('锁没有解除：它在核对时被换掉了。', 'The lock was kept: it changed while it was being checked.'),
+      'asset_operation' => _t('锁没有解除：它是一次数据库${_operation(kept.text('operation'))}留下的，这个按钮不解除它。',
+          'The lock was kept: a database ${kept.text('operation') ?? 'operation'} left it, and this button does not release that.'),
+      'unfinished_assets' => _t('锁没有解除：有没装完的数据库程序，可能是一次被打断的更新留下的。',
+          'The lock was kept: unfinished database programs remain, possibly from an interrupted update.'),
+      'changed' => _t('锁没有解除：它在核对时被换掉了。', 'The lock was kept: it changed while it was being checked.'),
+      _ => _t('锁没有解除。', 'The lock was kept.'),
     };
   }
 

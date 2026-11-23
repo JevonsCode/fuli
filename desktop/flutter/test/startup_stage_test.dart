@@ -95,11 +95,20 @@ void main() {
     expect(said({'holder': 'running', 'command': 'node'}), contains('被进程 4321（node）占着'));
     expect(said({'holder': 'gone', 'operation': 'update'}), contains('中途停了'));
     expect(said({'holder': 'unknown'}), contains('没有记录是谁加的'));
-    final recovery = said({'operation': 'update', 'holder': 'gone'}, 'native_recovery_needed');
-    expect(recovery, contains('需要人来恢复'));
-    expect(recovery, contains('知识数据还在原来的位置'));
+    final recovery = said({'operation': 'update', 'phase': 'switching', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'upgrade': true,
+      'backupName': 'before-neo4j-5.26.28-2026-11-22T17-00-00-000Z'}, 'native_recovery_needed');
+    expect(recovery, contains('有一次数据库更新（5.26.0 → 5.26.28）没做完'));
+    expect(recovery, contains('FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们'));
+    expect(recovery, contains('backups/graph/before-neo4j-5.26.28-'));
     expect(recovery, contains('不要删除数据库维护锁'));
+    expect(recovery, isNot(contains('没有被覆盖')));
     expect(recovery, isNot(contains('解除')), reason: 'never a reason to release the lock');
+    expect(said({'operation': 'uninstall', 'phase': 'removing-assets'}, 'native_recovery_needed'), contains('知识数据文件没有被改动'));
+    // What an interrupted operation can have changed: a load may have half written the database.
+    expect(said({'holder': 'gone', 'operation': 'load'}), contains('数据库可能只写入了一半'));
+    expect(said({'holder': 'gone', 'operation': 'load'}), isNot(contains('没有被改动')));
+    expect(said({'holder': 'gone', 'operation': 'dump'}), contains('导出只读数据库'));
+    expect(said({'holder': 'gone', 'operation': 'update'}), contains('FULI 目前没有能解除这把锁的按钮'));
     // Only a lock no holder is recorded for may be released by a person; never a
     // running holder's, nor one an update left (half-installed files).
     expect(zh.releasableLock(const StartupFailure('native_lifecycle_lock', {'holder': 'unknown'})), isTrue);
@@ -145,6 +154,16 @@ void main() {
     await controller.releaseLockAndStart();
     expect(runtime.calls, contains('release-lock-start'));
     expect(controller.notice?.text, '锁没有解除：另一个 FULI 命令（进程 77）正在用这份数据。');
+  });
+
+  test('every reason a release keeps the lock is said in one language, never as "it changed"', () {
+    for (final reason in ['recovery_needed', 'holder_running', 'services_running', 'fuli_running', 'cannot_inspect', 'too_recent',
+      'no_lock', 'asset_operation', 'unfinished_assets']) {
+      final text = zh.lockKept(StartupFailure(reason, const {'pid': 7, 'operation': 'update', 'releasableAt': '2026-11-23T03:00:00.000Z'}));
+      expect(text, isNot(contains('换掉')), reason: reason);
+      expect(text, isNot(contains(' / ')), reason: reason);
+    }
+    expect(zh.lockKept(const StartupFailure('asset_operation', {'operation': 'load'})), contains('一次数据库导入留下的'));
   });
 
   test('a start stopped at a lock an update left offers no release', () async {

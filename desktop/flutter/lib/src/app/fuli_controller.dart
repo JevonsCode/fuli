@@ -98,8 +98,10 @@ class FuliController extends ChangeNotifier {
   String? _stage;
   int? _stageMaxSeconds;
   DateTime? _stageSince;
-  // The last start stopped at a maintenance lock a person may release (strings.releasableLock).
-  bool _releasableLock = false;
+  // What the last start, restart, port change or release stopped at: its code
+  // and facts, or null when it did not stop at a named cause. The one primary
+  // action after a failed start comes from it (status_actions.dart).
+  StartupFailure? _lastFailure;
   Timer? _stageTick;
   bool _disposed = false;
 
@@ -134,9 +136,12 @@ class FuliController extends ChangeNotifier {
   /// The longest that step will wait, when the start reported its limit.
   int? get startupMaxSeconds => _stageMaxSeconds;
 
+  /// Why the last start-like action stopped, when it named a cause.
+  StartupFailure? get lastFailure => _lastFailure;
+
   /// Whether the last start stopped at a database maintenance lock that
   /// 「解除这把锁并启动」 may release after FULI's checks.
-  bool get releasableLock => _releasableLock;
+  bool get releasableLock => _lastFailure != null && strings.releasableLock(_lastFailure!);
 
   /// How long that step has been waiting; null when no step is running.
   Duration? get startupWaited {
@@ -392,7 +397,7 @@ class FuliController extends ChangeNotifier {
   /// The person confirmed releasing the lock the last start stopped at: FULI
   /// checks that nothing uses it, releases it and starts (neo4j-lifecycle-lock.js).
   Future<void> releaseLockAndStart() {
-    if (!_releasableLock) return Future.value();
+    if (!releasableLock) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
       final report = await _call(() => runtime.releaseLockAndStart(onStage: _enterStage));
@@ -413,7 +418,7 @@ class FuliController extends ChangeNotifier {
   Future<Notice?> _startFailure(RuntimeReport report) async {
     final error = report.error;
     final failure = report.failure;
-    _releasableLock = failure != null && error != null && strings.releasableLock(failure);
+    _lastFailure = error == null ? null : failure;
     if (error == null) return null;
     final because = failure == null ? null : strings.startFailedBecause(failure);
     if (because != null) return Notice(because, error: true, logDirectory: await runtime.logDirectory());
@@ -495,6 +500,7 @@ class FuliController extends ChangeNotifier {
     _stoppedByPerson = false;
     return _bringUp(strings.changingPort, () async {
       final report = await _call(() => runtime.changePort(onStage: _enterStage));
+      _lastFailure = report.error == null ? null : report.failure;
       // The settings file names the new port now.
       _runtimePort = null;
       final error = report.error;

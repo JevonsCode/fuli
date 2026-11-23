@@ -78,8 +78,12 @@ class ShellCliRuntime implements FuliRuntime {
     final released = await _sh(_mode!, 'fuli graph runtime unlock --yes', _commandTimeout);
     if (released == null || released.exitCode != 0) {
       final after = await status();
-      final said = '${released?.stdout ?? ''}'.trim().split('\n').where((line) => line.trim().isNotEmpty).lastOrNull;
-      return RuntimeReport(after.state, consolePort: after.consolePort, error: said ?? 'fuli graph runtime unlock did not finish.');
+      // Why it kept the lock comes on its reason line (startup-failure-line.js) and is worded by this client.
+      final printed = readStartupFailure('${released?.stderr ?? ''}');
+      final kept = printed.failure;
+      return RuntimeReport(after.state, consolePort: after.consolePort,
+          error: printed.stderr.trim().isEmpty ? 'fuli graph runtime unlock did not finish.' : printed.stderr.trim(),
+          lockKept: kept?.code == 'lock_kept' && kept?.text('reason') != null ? StartupFailure(kept!.text('reason')!, kept.facts) : null);
     }
     return start(onStage: onStage);
   }
