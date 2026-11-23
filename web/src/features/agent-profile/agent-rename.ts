@@ -1,4 +1,5 @@
 import { ApiError, apiErrorCode, putJson } from '@/api/client'
+import type { WorkingProject } from '@/features/projects/project-origin'
 import type { ProjectAgentRecord } from '@/types'
 import { projectAgentShape } from './agent-record-shape'
 import { rememberRoleName } from './role-names'
@@ -21,15 +22,21 @@ export async function renameAgent(agent: Pick<ProjectAgentRecord, 'personalSpace
 /** Why a rename was refused because another Agent already has the name: who
  * (and the projects each works in) and free names, as the console API sends
  * them; null for any other failure. */
-export function nameTaken(error: unknown): { usedBy: { name: string; projects: string[] }[]; freeNames: string[] } | null {
+export function nameTaken(error: unknown): { usedBy: { name: string; projects: WorkingProject[] }[]; freeNames: string[] } | null {
   if (apiErrorCode(error) !== 'agent_name_taken' || !(error instanceof ApiError)) return null
   try {
     const body = JSON.parse(error.detail) as { usedBy?: unknown; freeNames?: unknown }
     const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
     const usedBy = Array.isArray(body.usedBy) ? body.usedBy.filter(item => typeof item?.name === 'string')
-      .map(item => ({ name: item.name as string, projects: strings(item.projects) })) : []
+      .map(item => ({ name: item.name as string, projects: workingProjects(item.projects) })) : []
     return { usedBy, freeNames: strings(body.freeNames) }
   } catch {
     return null
   }
+}
+
+function workingProjects(value: unknown): WorkingProject[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(item => typeof item?.projectId === 'string' && typeof item?.name === 'string')
+    .map(item => ({ projectId: item.projectId, name: item.name, scopeType: item.scopeType === 'temporary' ? 'temporary' : 'registered' }))
 }

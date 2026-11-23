@@ -211,6 +211,8 @@ async def test_no_suggestion_for_person_names_archived_or_system_agents(agent_id
     assert result.name_suggestion is None and store.calls == 0
 
 
+# A session's temporary project: no stored name, read by its number.
+TEMPORARY_PROJECT = 'temporary-' + 'c0' * 32
 ROSTER = {'employee.jefa': ('Jefa', None), 'employee.bole': ('Bole', '伯乐'), 'agent-ppt': ('PPT 专责', 'Iris Vale')}
 
 
@@ -269,7 +271,9 @@ class RenameStore(StoreProjectAgentRename):
                         agent_id: self.profile_json}
                 return [{'agent_id': key, 'profile_json': value} for key, value in rows.items()], None, None
             if 'ASSIGNED_AGENT' in query:
-                return [{'agent_id': other, 'projects': [{'project_id': 'p-saturn', 'name': 'Saturn'}]}
+                return [{'agent_id': other, 'projects': [
+                    {'project_id': 'p-saturn', 'name': 'Saturn'},
+                    {'project_id': TEMPORARY_PROJECT, 'name': None, 'scope_type': 'temporary'}]}
                         for other in parameters['agent_ids']], None, None
             if 'SET agent.profile_json' in query:
                 [row] = parameters['rows']
@@ -336,11 +340,14 @@ async def test_a_taken_name_is_refused_with_who_uses_it_where_and_free_names():
     with pytest.raises(HTTPException) as refused:
         await store.rename_project_agent({}, 'agent-ppt', ProjectAgentRename(personal_space_id='space',
                                                                              display_name='morgan vale'))
-    # The console reads the fields; an Agent reads the sentence.
+    # The console reads the fields and names a temporary project in its own
+    # language; an Agent reads the sentence, where it is its number.
     detail = refused.value.detail
-    assert detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Morgan Vale', 'projects': ['Saturn']}]
+    assert detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Morgan Vale', 'projects': [
+        {'project_id': TEMPORARY_PROJECT, 'name': '', 'scope_type': 'temporary'},
+        {'project_id': 'p-saturn', 'name': 'Saturn', 'scope_type': None}]}]
     assert detail['free_names'] and all(is_generated(free) for free in detail['free_names'])
-    assert re.fullmatch(r'agent_name_taken: .*; used by: Morgan Vale \(agent-other\) in Saturn; '
+    assert re.fullmatch(r'agent_name_taken: .*; used by: Morgan Vale \(agent-other\) in #c0c0c0c0, Saturn; '
                         r'free names: .+\. Choose one or propose another\.', detail['message'])
     assert not store.writes
 
@@ -362,8 +369,9 @@ async def test_a_refused_new_name_says_who_has_it():
                        projects={'agent-other': ['Alpha', 'Beta']})
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra north'))
-    assert refused.value.detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Lyra North',
-                                                'projects': ['Alpha', 'Beta']}]
+    assert refused.value.detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Lyra North', 'projects': [
+        {'project_id': 'p-Alpha', 'name': 'Alpha', 'scope_type': None},
+        {'project_id': 'p-Beta', 'name': 'Beta', 'scope_type': None}]}]
     # A role's built-in name is held by the role.
     roles = NamesStore({})
     with pytest.raises(HTTPException) as role:

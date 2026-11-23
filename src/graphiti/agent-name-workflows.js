@@ -1,4 +1,4 @@
-import { projectAgentNameChange } from './project-agent-mapping.js';
+import { projectAgentNameChange, workingProject } from './project-agent-mapping.js';
 
 // Every rename in a space, and settling the names FLAs share (graph-provider
 // store_project_agent_name_fixes.py): the plan says who keeps each shared name,
@@ -36,6 +36,6 @@ function nameChanges(value) {
 function nameFixPlan(value) {
   return { renames: value.renames, groups: value.groups.map(group => ({ name: group.name,
     members: group.members.map(member => ({ agentId: member.agent_id, name: member.name, status: member.status,
-      projects: member.projects ?? [], keeps: member.keeps, newName: member.new_name ?? null,
+      projects: (member.projects ?? []).map(workingProject), keeps: member.keeps, newName: member.new_name ?? null,
       gaveWay: member.gave_way ?? null })) })) };
 }

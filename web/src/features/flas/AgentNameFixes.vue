@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { t } from '@/i18n'
 import { UiDialog, UiNotice } from '@/ui'
+import { workingProjectNames } from '@/features/projects/project-origin'
 import { gaveWayText } from './name-changes'
 import { applyNameFixes, keepInstead, readNameFixPlan, type NameFixPlan } from './name-fixes'
 
@@ -94,14 +95,14 @@ async function apply() {
       <ul>
         <li v-for="member in group.members" :key="member.agentId" :data-name-fix-member="member.agentId">
           <template v-if="member.keeps">
-            <span class="name-fix-who">{{ member.name }}<small v-if="member.projects.length"> · {{ member.projects.join('、') }}</small></span>
+            <span class="name-fix-who">{{ member.name }}<small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
             <span class="name-fix-what">{{ t('flas.names.keeps') }}</span>
           </template>
           <template v-else>
             <label class="name-fix-who">
               <Checkbox :model-value="!leftOut.has(member.agentId)" :disabled="busy" data-name-fix-rename
                 @update:model-value="toggle(member.agentId, $event)" />
-              <span>{{ member.name }}<small v-if="member.projects.length"> · {{ member.projects.join('、') }}</small></span>
+              <span>{{ member.name }}<small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
             </label>
             <span class="name-fix-what">
               {{ leftOut.has(member.agentId) ? t('flas.names.unchanged') : t('flas.names.becomes', { name: member.newName ?? '' }) }}

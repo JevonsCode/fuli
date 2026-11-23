@@ -5,14 +5,16 @@ import { nameTaken } from './agent-rename'
 // A refused name as the console API sends it (src/http/error-mapping.js): the
 // fields are read as they are, never parsed out of the sentence.
 const refusal = (body: object) => new ApiError('409', 409, JSON.stringify(body))
+const SATURN = { projectId: 'p-saturn', name: 'Saturn', scopeType: 'registered' }
+const TEMPORARY = { projectId: `temporary-${'c0'.repeat(32)}`, name: '', scopeType: 'temporary' }
 
 describe('nameTaken', () => {
   it('reads who uses the name, where, and the free names from the fields', () => {
     expect(nameTaken(refusal({ error: 'agent_name_taken — …', code: 'agent_name_taken',
-      usedBy: [{ agentId: 'agent-x', name: 'Morgan Vale', projects: ['Saturn', 'Station Backup'] },
+      usedBy: [{ agentId: 'agent-x', name: 'Morgan Vale', projects: [SATURN, TEMPORARY, 'not a project'] },
         { agentId: 'employee.tonborg', name: 'Tonborg', projects: [] }],
       freeNames: ['Nora Lin', 'Theo Hart', '林夏'] }))).toEqual({
-      usedBy: [{ name: 'Morgan Vale', projects: ['Saturn', 'Station Backup'] }, { name: 'Tonborg', projects: [] }],
+      usedBy: [{ name: 'Morgan Vale', projects: [SATURN, TEMPORARY] }, { name: 'Tonborg', projects: [] }],
       freeNames: ['Nora Lin', 'Theo Hart', '林夏'] })
   })
 

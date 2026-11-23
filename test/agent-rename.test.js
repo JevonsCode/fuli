@@ -51,19 +51,23 @@ test('a renamed record carries its 原名 and name history, and the renames list
   assert.deepEqual(calls, [{ personal_space_id: 'space-a', until: '2026-11-23T00:00:00Z' }]);
 });
 
+// A temporary project stores no name: the console words it by its number.
+const TEMPORARY_PROVIDER = { project_id: `temporary-${'c0'.repeat(32)}`, name: '', scope_type: 'temporary' };
+const TEMPORARY = { projectId: `temporary-${'c0'.repeat(32)}`, name: '', scopeType: 'temporary' };
+
 test('settling shared names: the plan is read with the person\'s keepers, and only the agreed renames are sent', async () => {
   const sent = [];
   const plan = { renames: 1, groups: [{ name: 'Morgan Vale', members: [
-    { agent_id: 'morgan-a', name: 'Morgan Vale', status: 'active', projects: ['Saturn'], keeps: true, new_name: null, gave_way: null },
-    { agent_id: 'morgan-b', name: 'Morgan Vale', status: 'active', projects: ['Backup'], keeps: false, new_name: 'Nora Hill',
-      gave_way: 'less_recent' }] }] };
+    { agent_id: 'morgan-a', name: 'Morgan Vale', status: 'active', projects: [{ project_id: 'p-saturn', name: 'Saturn', scope_type: null }], keeps: true, new_name: null, gave_way: null },
+    { agent_id: 'morgan-b', name: 'Morgan Vale', status: 'active', projects: [TEMPORARY_PROVIDER], keeps: false,
+      new_name: 'Nora Hill', gave_way: 'less_recent' }] }] };
   const application = { personal: {
     agentNameFixPlan: async (space, keep) => { sent.push(['plan', space, keep]); return plan; },
     applyAgentNameFixes: async body => { sent.push(['apply', body]); return { renames: 0, groups: [] }; }
   } };
   const read = await agentNameFixPlan(application, { personalSpaceId: 'space-a', keep: ['morgan-a'] });
   assert.deepEqual(read.groups[0].members[1], { agentId: 'morgan-b', name: 'Morgan Vale', status: 'active',
-    projects: ['Backup'], keeps: false, newName: 'Nora Hill', gaveWay: 'less_recent' });
+    projects: [TEMPORARY], keeps: false, newName: 'Nora Hill', gaveWay: 'less_recent' });
   assert.deepEqual(await applyAgentNameFixes(application, { personalSpaceId: 'space-a', keep: [],
     renames: { 'morgan-b': 'Nora Hill' } }), { renames: 0, groups: [] });
   assert.deepEqual(sent, [['plan', 'space-a', ['morgan-a']],
@@ -73,7 +77,8 @@ test('settling shared names: the plan is read with the person\'s keepers, and on
 test('a refused name reaches the console with who has it and free names as fields, not only as a sentence', async () => {
   const detail = { code: 'agent_name_taken', message: 'agent_name_taken: another Agent in this personal space already '
     + 'uses this name; used by: Morgan (Vale) (agent-x) in Saturn | A; free names: Nora Lin. Choose one or propose another.',
-  used_by: [{ agent_id: 'agent-x', name: 'Morgan (Vale)', projects: ['Saturn | A'] }], free_names: ['Nora Lin'] };
+  used_by: [{ agent_id: 'agent-x', name: 'Morgan (Vale)', projects: [TEMPORARY_PROVIDER,
+    { project_id: 'p-a', name: 'Saturn | A', scope_type: null }] }], free_names: ['Nora Lin'] };
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async () => new Response(JSON.stringify({ detail }), { status: 409,
       headers: { 'content-type': 'application/json' } }) });
@@ -82,7 +87,8 @@ test('a refused name reaches the console with who has it and free names as field
   const { status, body } = mapHttpError(refused);
   assert.equal(status, 409);
   assert.equal(body.code, 'agent_name_taken');
-  assert.deepEqual(body.usedBy, [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: ['Saturn | A'] }]);
+  assert.deepEqual(body.usedBy, [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: [TEMPORARY,
+    { projectId: 'p-a', name: 'Saturn | A', scopeType: 'registered' }] }]);
   assert.deepEqual(body.freeNames, ['Nora Lin']);
   assert.match(body.error, /^agent_name_taken/u);
 });

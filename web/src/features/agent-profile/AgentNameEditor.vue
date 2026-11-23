@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord } from "@/types";
+import { workingProjectNames } from "@/features/projects/project-origin";
 import { UiIconButton } from "@/ui";
 import { MAX_AGENT_NAME, nameTaken, renameAgent } from "./agent-rename";
 import { isBuiltInRole } from "./fla-mention";
@@ -66,7 +67,7 @@ async function save(next: string | null) {
     freeNames.value = taken?.freeNames ?? [];
     error.value = holder
       ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
-        { name: saving.value, holder: holder.name, projects: holder.projects.join("、") })
+        { name: saving.value, holder: holder.name, projects: workingProjectNames(holder.projects) })
       : taken
         ? t("agentProfiles.name.taken", { name: saving.value })
         : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });

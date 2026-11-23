@@ -6,8 +6,10 @@ import { shapeOf } from '@/api/response-shape'
 // (src/graphiti/agent-name-workflows.js): who keeps it, what each other FLA
 // becomes and why. Reading changes nothing; the person may pick another
 // keeper (keep) or leave renames out, and one apply renames the rest.
+const workingProjectSchema = z.looseObject({ projectId: z.string(), name: z.string(),
+  scopeType: z.enum(['registered', 'temporary']) })
 const memberSchema = z.looseObject({ agentId: z.string(), name: z.string(), status: z.string(),
-  projects: z.array(z.string()), keeps: z.boolean(), newName: z.string().nullable(), gaveWay: z.string().nullable() })
+  projects: z.array(workingProjectSchema), keeps: z.boolean(), newName: z.string().nullable(), gaveWay: z.string().nullable() })
 const planSchema = z.looseObject({ renames: z.number(),
   groups: z.array(z.looseObject({ name: z.string(), members: z.array(memberSchema) })) })
 

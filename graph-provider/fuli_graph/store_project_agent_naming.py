@@ -29,7 +29,7 @@ from .project_agent_names import (
 )
 from .system_agents import SYSTEM_PROFILES
 from .system_hr_identity import LEGACY_HR_AGENT_ID
-from .temporary_project_scope import project_reference
+from .temporary_project_scope import project_reference, stored_project_name
 
 # FULI's own roles keep the names the Provider gives them.
 SYSTEM_NAMED = frozenset({*SYSTEM_PROFILES, LEGACY_HR_AGENT_ID})
@@ -102,7 +102,8 @@ async def name_taken(store, personal_space_id, names, agent_id, name, alternativ
     used_by = [{'agent_id': other, 'name': _called(names, other), 'projects': projects.get(other, [])}
                for other in holders]
     said = ' | '.join(f'{item["name"]} ({item["agent_id"]})'
-                      + (f' in {", ".join(item["projects"])}' if item['projects'] else '') for item in used_by)
+                      + (f' in {", ".join(_referred(item["projects"]))}' if item['projects'] else '')
+                      for item in used_by)
     return HTTPException(409, {
         'code': 'agent_name_taken',
         'message': 'agent_name_taken: another Agent in this personal space already uses this name; '
@@ -126,12 +127,24 @@ async def _working_projects(store, personal_space_id, agent_ids) -> dict[str, li
               (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(agent:FuliProjectAgent)
         WHERE agent.agent_id IN $agent_ids
         RETURN agent.agent_id AS agent_id,
-               collect(DISTINCT {project_id: project.project_id, name: project.name}) AS projects
+               collect(DISTINCT project {.project_id, .name, .scope_type, .profile_json}) AS projects
         ''',
         personal_space_id=personal_space_id, agent_ids=agent_ids, routing_='r',
     )
-    return {row['agent_id']: sorted(project_reference(item['project_id'], item['name'] or '')
-                                    for item in row['projects']) for row in records}
+    return {row['agent_id']: working_projects(row['projects']) for row in records}
+
+
+def working_projects(rows) -> list[dict]:
+    """The projects an Agent works in, as fields the console names in its own
+    language (a temporary project stores no name), in the order of how text
+    FULI writes refers to them."""
+    projects = [{'project_id': row['project_id'], 'name': stored_project_name(row.get('name'), row.get('profile_json')),
+                 'scope_type': row.get('scope_type')} for row in rows]
+    return sorted(projects, key=lambda item: (project_reference(item['project_id'], item['name']), item['project_id']))
+
+
+def _referred(projects) -> list[str]:
+    return [project_reference(item['project_id'], item['name']) for item in projects]
 
 
 async def with_person_name(store, request, *, recruitment_id=None):

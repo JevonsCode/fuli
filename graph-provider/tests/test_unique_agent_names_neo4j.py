@@ -176,8 +176,10 @@ async def test_the_upgrade_needs_nobody_and_the_person_settles_shared_names_in_o
         plan = (await client.get('/v1/project-agent-name-fixes', params={'personal_space_id': SPACE})).json()
         assert _settled(plan) == GIVING_WAY and plan['renames'] == len(GIVING_WAY)
         quinn = next(group for group in plan['groups'] if group['name'] == 'Quinn Shaw')
-        # A temporary project stores no name: it is referred to by its number.
-        assert [item['projects'] for item in quinn['members']] == [['Saturn'], ['#c0c0c0c0']]
+        # A temporary project stores no name: the console words it by its number.
+        assert [item['projects'] for item in quinn['members']] == [
+            [{'project_id': 'p-saturn', 'name': 'Saturn', 'scope_type': None}],
+            [{'project_id': CONVERSATION_PROJECT, 'name': '', 'scope_type': 'temporary'}]]
 
         # The person keeps Emery Fox for emery-b and leaves casey-b's rename out.
         chosen = (await client.get('/v1/project-agent-name-fixes', params={

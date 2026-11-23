@@ -59,7 +59,9 @@ the person, FULI's own roles included, stores the identity key of its shown name
 (`display_name_space_id`, `display_name_key`) under a uniqueness constraint, so two hires or renames
 racing for one name cannot both commit; the loser is named again or refused. A built-in role's
 built-in name stays reserved by the check. A refusal carries `used_by` (name, Agent ID, projects)
-and `free_names` as fields beside its sentence; the console shows them as they are. A rename keeps
+and `free_names` as fields beside its sentence. Each project there, as in the list of shared
+names, comes as its ID, stored name and `scope_type`, so the console names a temporary project
+the way it does everywhere (临时项目 #编号) and the sentence an Agent reads gives its number. A rename keeps
 the old name in the Agent's name history (`name_history_json`: name, until, `renamed` or
 `duplicate_name`, who kept it and why); records carry `nameHistory` and, for 30 days, `formerName`,
 which pages, the FLAs list and the `#FLA` notice show as 「原名 …」 on the turn that names the FLA,

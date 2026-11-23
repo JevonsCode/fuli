@@ -76,13 +76,15 @@ describe('AgentNameEditor', () => {
     // A name with brackets and a project name with separators are shown as they are.
     putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
       error: 'agent_name_taken — another Agent uses this name', freeNames: ['Nora Lin'],
-      usedBy: [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: ['Saturn | A; free names: B', 'Moon'] }] })))
+      usedBy: [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: [
+        { projectId: 'p-a', name: 'Saturn | A; free names: B', scopeType: 'registered' },
+        { projectId: `temporary-${'c0'.repeat(32)}`, name: '', scopeType: 'temporary' }] }] })))
     const wrapper = mount(AgentNameEditor, { props: { agent: { ...agent(), formerName: 'Morgan Vale' } } })
     expect(wrapper.get('[data-agent-former-name]').text()).toBe('原名 Morgan Vale')
     await edit(wrapper, 'morgan vale')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan (Vale)（Saturn | A; free names: B、Moon）的名字')
+    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan (Vale)（Saturn | A; free names: B、临时项目 #c0c0c0c0）的名字')
     expect(wrapper.findAll('[data-agent-name-free] button').map(button => button.text())).toEqual(['Nora Lin'])
     expect(mount(AgentNameEditor, { props: { agent: agent() } }).find('[data-agent-former-name]').exists()).toBe(false)
   })

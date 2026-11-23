@@ -1263,6 +1263,13 @@ function withoutUndefined(value) {
 }
 
 // One name an Agent was called until `until` (project_agent_name_history.py).
+// A project an Agent works in (graph-provider WorkingProject): a temporary one
+// stores no name, so the console words it by its number in its own language.
+export function workingProject(project) {
+  return { projectId: String(project?.project_id ?? ''), name: String(project?.name ?? '').slice(0, 160),
+    scopeType: project?.scope_type === 'temporary' ? 'temporary' : 'registered' };
+}
+
 export function projectAgentNameChange(change) {
   return { name: change.name, until: change.until, reason: change.reason,
     keptByAgentId: change.kept_by_agent_id ?? null, gaveWay: change.gave_way ?? null };

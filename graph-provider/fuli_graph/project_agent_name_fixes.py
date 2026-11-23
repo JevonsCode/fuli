@@ -19,7 +19,7 @@ recently; the one hired first. The others get a free generated name.
 from dataclasses import dataclass, field
 
 from .name_identity import identity_key
-from .project_agent_models import NameFixGroup, NameFixMember
+from .project_agent_models import NameFixGroup, NameFixMember, WorkingProject
 from .project_agent_names import free_nicknames
 from .store_project_agent_naming import SYSTEM_NAMED
 from .system_agents import SYSTEM_PROFILES
@@ -41,7 +41,7 @@ class NameHolder:
     work: int = 0
     recent: float = 0.0
     created: float = 0.0
-    projects: tuple[str, ...] = ()
+    projects: tuple[WorkingProject, ...] = ()
     names: frozenset[str] = field(default=frozenset())
 
     @property

@@ -5,6 +5,7 @@ import { recordProviderFailure } from '../diagnostics/provider-operation.js';
 import { graphReadPath, preferenceConflictsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
+import { workingProject } from './project-agent-mapping.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -1086,7 +1087,7 @@ function nameTakenFields(detail) {
   return { nameTaken: {
     usedBy: (Array.isArray(detail.used_by) ? detail.used_by : []).slice(0, 8).map(item => ({
       agentId: text(item?.agent_id), name: text(item?.name),
-      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(text) })),
+      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(workingProject) })),
     freeNames: detail.free_names.slice(0, 8).map(text) } };
 }
 

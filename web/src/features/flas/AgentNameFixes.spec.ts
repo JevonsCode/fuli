@@ -8,8 +8,12 @@ vi.mock('@/api/client', async (original) => ({ ...(await original<typeof import(
 const { default: AgentNameFixes } = await import('./AgentNameFixes.vue')
 
 // A synthetic plan as the console answers GET /api/project-agent-name-fixes.
-const member = (agentId: string, name: string, project: string, keeps: boolean, newName: string | null = null,
-  gaveWay: string | null = null) => ({ agentId, name, status: 'active', projects: [project], keeps, newName, gaveWay })
+// 'Station Backup' stands for a temporary project: it stores no name.
+const project = (name: string) => name === 'Station Backup'
+  ? { projectId: `temporary-${'c0'.repeat(32)}`, name: '', scopeType: 'temporary' }
+  : { projectId: `p-${name}`, name, scopeType: 'registered' }
+const member = (agentId: string, name: string, projectName: string, keeps: boolean, newName: string | null = null,
+  gaveWay: string | null = null) => ({ agentId, name, status: 'active', projects: [project(projectName)], keeps, newName, gaveWay })
 const PLAN = { renames: 2, groups: [
   { name: 'Morgan Vale', members: [member('morgan-a', 'Morgan Vale', 'Saturn', true),
     member('morgan-b', 'Morgan Vale', 'Station Backup', false, 'Nora Hill', 'less_recent')] },
@@ -37,7 +41,8 @@ describe('AgentNameFixes', () => {
     await flushPromises()
     const rows = [...document.querySelectorAll('[data-name-fix-member]')].map(row => row.textContent?.replace(/\s+/g, ' ').trim())
     expect(rows[0]).toBe('Morgan Vale · Saturn保留名字')
-    expect(rows[1]).toContain('Morgan Vale · Station Backup改为 Nora Hill Morgan Vale 最近更活跃')
+    // A temporary project reads as everywhere else in the console, by its number.
+    expect(rows[1]).toContain('Morgan Vale · 临时项目 #c0c0c0c0改为 Nora Hill Morgan Vale 最近更活跃')
     expect(document.querySelector('[data-name-fix-apply]')?.textContent?.trim()).toBe('全部处理（2 位改名）')
   })
 

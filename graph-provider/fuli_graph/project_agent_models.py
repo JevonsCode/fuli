@@ -322,12 +322,20 @@ class ProjectAgentNameChangesSeen(StrictModel):
     until: datetime
 
 
+class WorkingProject(StrictModel):
+    """A project an Agent works in, as the console names it: a temporary one
+    stores no name, so the console words it by its number in its own language."""
+    project_id: str
+    name: str = ''
+    scope_type: Literal['registered', 'temporary'] | None = None
+
+
 class NameFixMember(StrictModel):
     """One FLA of a shared name: whether it keeps it, and if not what it becomes and why."""
     agent_id: str
     name: str
     status: ProjectAgentStatus
-    projects: list[str] = Field(default_factory=list)
+    projects: list[WorkingProject] = Field(default_factory=list)
     keeps: bool
     new_name: str | None = None
     gave_way: NameGaveWay | None = None

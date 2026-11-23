@@ -17,14 +17,14 @@ from fastapi import HTTPException
 from neo4j.exceptions import ConstraintError
 
 from .name_identity import identity_key
-from .project_agent_models import NameFixApply, NameFixPlan, ProjectAgentNameChange
+from .project_agent_models import NameFixApply, NameFixPlan, ProjectAgentNameChange, WorkingProject
 from .project_agent_name_fixes import NameHolder, called_by, name_fix_plan, shared_names
 from .project_agent_name_history import name_history
 from .project_agent_names import is_generated_nickname, profile_shown_name
 from .provider_values import now_utc, stored_epoch
-from .store_project_agent_naming import lost_name_race
+from .store_project_agent_naming import lost_name_race, working_projects
 from .store_project_agent_rename import renamed_row, write_agent_names
-from .temporary_project_scope import is_temporary_project, project_reference
+from .temporary_project_scope import is_temporary_project
 
 # A lead FULI hired by itself is put on its project through a hiring task;
 # that task is no work of its own (default_project_lead.py).
@@ -49,7 +49,7 @@ WITH space, agent, count(DISTINCT task) AS tasks
 OPTIONAL MATCH (space)-[:CONTAINS_PROJECT]->(project:FuliPersonalProject)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
       (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(agent)
 RETURN agent.agent_id AS agent_id, tasks,
-       collect(DISTINCT project {.project_id, .name, .scope_type}) AS projects
+       collect(DISTINCT project {.project_id, .name, .scope_type, .profile_json}) AS projects
 '''
 
 _TURNS = '''
@@ -154,7 +154,7 @@ class StoreProjectAgentNameFixes:
         for agent_id in ids:
             record, profile, shown = rows[agent_id]
             history = name_history(record['name_history_json'])
-            projects = (work.get(agent_id) or {}).get('projects') or []
+            projects = working_projects((work.get(agent_id) or {}).get('projects') or [])
             turned = turns.get(agent_id) or {}
             holders.append(NameHolder(
                 agent_id=agent_id, name=shown, status=record['status'] or 'active',
@@ -166,8 +166,7 @@ class StoreProjectAgentNameFixes:
                 work=int((work.get(agent_id) or {}).get('tasks') or 0) + int(turned.get('turns') or 0),
                 recent=max(stored_epoch(turned.get('last_turn')), stored_epoch(record['updated_at'])),
                 created=stored_epoch(record['created_at']),
-                projects=tuple(sorted(project_reference(item['project_id'], item['name'] or '')
-                                      for item in projects)),
+                projects=tuple(WorkingProject(**item) for item in projects),
                 names=called_by(agent_id, shown)))
         return holders
 
