@@ -28,6 +28,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import { UiIcon, UiNotice, UiSegmented } from '@/ui'
 import AgentNameChanges from './AgentNameChanges.vue'
+import AgentNameFixes from './AgentNameFixes.vue'
 import FlaRow from './FlaRow.vue'
 import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, WORKING_FIRST_ORDER, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
@@ -236,6 +237,13 @@ function clearFilters() {
   projectFilter.value = []
 }
 const showFirstTask = computed(() => !busy.value && store.runtimeStatus === 'ready' && !formalProjectIds.value.length && !loadFailed.value)
+// Settling shared names renames FLAs: the roster and the renames reread.
+const nameRevision = ref(0)
+function namesSettled() {
+  nameRevision.value += 1
+  void roster.reload()
+}
+
 function retry() {
   void roster.reload()
   void work.load()
@@ -313,7 +321,8 @@ usePageRefresh(() => Promise.all([roster.reload(), work.load()]))
             data-flas-occupations-fill @click="fillOccupations">{{ t('flas.occupations.fill') }}</Button>
         </template>
       </UiNotice>
-      <AgentNameChanges :personal-space-id="space" />
+      <AgentNameFixes :personal-space-id="space" @settled="namesSettled" />
+      <AgentNameChanges :personal-space-id="space" :revision="nameRevision" />
       <ProjectAgentFirstTask v-if="showFirstTask" :personal-space-id="space" />
 
       <GrowthLoading v-if="firstLoading" :label="t('flas.loading')" />

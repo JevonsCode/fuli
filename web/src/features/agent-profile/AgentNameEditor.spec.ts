@@ -16,9 +16,11 @@ const agent = (agentId = 'agent-synthetic', name = 'Iris Vale', displayName: str
   createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
 }) as unknown as ProjectAgentRecord
 
+// The refusal as the console API sends it (src/http/error-mapping.js): the
+// sentence for Agents, and who has the name and free names as fields.
 const taken = new ApiError('409', 409, JSON.stringify({
-  error: 'agent_name_taken: another Agent in this personal space already uses this name; free names: Nora Lin, Theo Hart. Choose one or propose another.',
-  code: 'provider_error',
+  error: 'agent_name_taken — another Agent in this personal space already uses this name; free names — Nora Lin, Theo Hart. Choose one or propose another.',
+  code: 'agent_name_taken', usedBy: [], freeNames: ['Nora Lin', 'Theo Hart'],
 }))
 
 beforeEach(() => putJson.mockReset())
@@ -71,15 +73,16 @@ describe('AgentNameEditor', () => {
   })
 
   it('says who already has the name and where, and shows 原名 after a recent rename', async () => {
-    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'provider_error',
-      error: 'agent_name_taken: another Agent in this personal space already uses this name; used by: Morgan Vale '
-        + '(agent-x) in Saturn; free names: Nora Lin. Choose one or propose another.' })))
+    // A name with brackets and a project name with separators are shown as they are.
+    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
+      error: 'agent_name_taken — another Agent uses this name', freeNames: ['Nora Lin'],
+      usedBy: [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: ['Saturn | A; free names: B', 'Moon'] }] })))
     const wrapper = mount(AgentNameEditor, { props: { agent: { ...agent(), formerName: 'Morgan Vale' } } })
     expect(wrapper.get('[data-agent-former-name]').text()).toBe('原名 Morgan Vale')
     await edit(wrapper, 'morgan vale')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan Vale（Saturn）的名字')
+    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan (Vale)（Saturn | A; free names: B、Moon）的名字')
     expect(wrapper.findAll('[data-agent-name-free] button').map(button => button.text())).toEqual(['Nora Lin'])
     expect(mount(AgentNameEditor, { props: { agent: agent() } }).find('[data-agent-former-name]').exists()).toBe(false)
   })

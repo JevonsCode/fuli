@@ -1,34 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import { freeNamesOffered, nameHoldersOffered } from './agent-rename'
+import { nameTaken } from './agent-rename'
 
-// The refusal as the Provider words it (graph-provider/fuli_graph/store_project_agent_naming.py
-// _name_taken), passed through the console as { error, code }. If that wording changes,
-// this spec fails rather than the free names silently disappearing.
-const refusal = (text: string) => new ApiError('409', 409, JSON.stringify({ error: text, code: 'provider_error' }))
-const PROVIDER_TEXT = 'agent_name_taken: another Agent in this personal space already uses this name; '
-  + 'free names: Nora Lin, Theo Hart, 林夏. Choose one or propose another.'
+// A refused name as the console API sends it (src/http/error-mapping.js): the
+// fields are read as they are, never parsed out of the sentence.
+const refusal = (body: object) => new ApiError('409', 409, JSON.stringify(body))
 
-describe('nameHoldersOffered', () => {
-  it('reads who uses the name and where from the Provider’s refusal', () => {
-    const text = 'agent_name_taken: another Agent in this personal space already uses this name; '
-      + 'used by: Morgan Vale (agent-x) in Saturn, Station Backup | Tonborg (employee.tonborg); '
-      + 'free names: Nora Lin. Choose one or propose another.'
-    expect(nameHoldersOffered(refusal(text))).toEqual([
-      { name: 'Morgan Vale', projects: 'Saturn, Station Backup' }, { name: 'Tonborg', projects: '' }])
-    expect(freeNamesOffered(refusal(text))).toEqual(['Nora Lin'])
-    expect(nameHoldersOffered(refusal(PROVIDER_TEXT))).toEqual([])
-  })
-})
-
-describe('freeNamesOffered', () => {
-  it('reads the free names from the Provider’s refusal', () => {
-    expect(freeNamesOffered(refusal(PROVIDER_TEXT))).toEqual(['Nora Lin', 'Theo Hart', '林夏'])
+describe('nameTaken', () => {
+  it('reads who uses the name, where, and the free names from the fields', () => {
+    expect(nameTaken(refusal({ error: 'agent_name_taken — …', code: 'agent_name_taken',
+      usedBy: [{ agentId: 'agent-x', name: 'Morgan Vale', projects: ['Saturn', 'Station Backup'] },
+        { agentId: 'employee.tonborg', name: 'Tonborg', projects: [] }],
+      freeNames: ['Nora Lin', 'Theo Hart', '林夏'] }))).toEqual({
+      usedBy: [{ name: 'Morgan Vale', projects: ['Saturn', 'Station Backup'] }, { name: 'Tonborg', projects: [] }],
+      freeNames: ['Nora Lin', 'Theo Hart', '林夏'] })
   })
 
-  it('is an empty offer when the refusal lists none, and null for any other failure', () => {
-    expect(freeNamesOffered(refusal('agent_name_taken: another Agent already uses this name.'))).toEqual([])
-    expect(freeNamesOffered(refusal('agent_profile_changed: try again'))).toBeNull()
-    expect(freeNamesOffered(new Error('offline'))).toBeNull()
+  it('is null for any other failure', () => {
+    expect(nameTaken(refusal({ error: 'agent_profile_changed: try again', code: 'provider_error' }))).toBeNull()
+    expect(nameTaken(new Error('offline'))).toBeNull()
   })
 })

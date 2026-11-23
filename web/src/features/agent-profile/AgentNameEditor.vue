@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord } from "@/types";
 import { UiIconButton } from "@/ui";
-import { MAX_AGENT_NAME, freeNamesOffered, nameHoldersOffered, renameAgent } from "./agent-rename";
+import { MAX_AGENT_NAME, nameTaken, renameAgent } from "./agent-rename";
 import { isBuiltInRole } from "./fla-mention";
 import { agentDisplayName } from "./profile-model";
 
@@ -61,13 +61,13 @@ async function save(next: string | null) {
     emit("saved", await renameAgent(props.agent, name));
     close();
   } catch (cause) {
-    const offered = freeNamesOffered(cause);
-    const holder = nameHoldersOffered(cause)[0];
-    freeNames.value = offered ?? [];
+    const taken = nameTaken(cause);
+    const holder = taken?.usedBy[0];
+    freeNames.value = taken?.freeNames ?? [];
     error.value = holder
-      ? t(holder.projects ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
-        { name: saving.value, holder: holder.name, projects: holder.projects })
-      : offered
+      ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
+        { name: saving.value, holder: holder.name, projects: holder.projects.join("、") })
+      : taken
         ? t("agentProfiles.name.taken", { name: saving.value })
         : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });
     if (name === null) editing.value = false;

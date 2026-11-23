@@ -574,14 +574,15 @@ export interface AgentOccupation {
   updatedAt: string
 }
 
-/** One name an Agent was called until `until`: renamed by the person, or by FULI because another Agent had it. */
+/** One name an Agent was called until `until`: renamed by the person, or when the person settled a name it shared. */
 export interface AgentNameChange {
   name: string
   until: string
   reason: 'renamed' | 'duplicate_name'
   keptByAgentId: string | null
-  /** Why this Agent gave the name up (duplicate_name only). */
-  gaveWay: 'built_in_role' | 'dismissed' | 'test' | 'person_named' | 'less_work' | 'less_recent' | 'later' | null
+  /** Why this Agent gave a shared name up (duplicate_name only). */
+  gaveWay: 'built_in_role' | 'dismissed' | 'test' | 'person_named' | 'temporary_lead' | 'less_work' | 'less_recent'
+    | 'later' | 'person_chose' | null
 }
 
 export interface ProjectAgentRecord {

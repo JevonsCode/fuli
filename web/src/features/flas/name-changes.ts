@@ -1,63 +1,56 @@
 import { z } from 'zod'
-import { getJson } from '@/api/client'
+import { getJson, putJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
-import type { AgentNameChange } from '@/types'
 
-// The FLAs FULI renamed because another FLA of the space had the same name
-// (graph/23), while the rename is recent: one list, each with its 原名, who
-// kept the name and why this one gave it up. Shape follows
-// src/graphiti/project-agent-mapping.js agentRenamed.
-const renamedSchema = z.array(z.looseObject({
-  agentId: z.string(),
-  displayName: z.string(),
-  status: z.string(),
-  keptByName: z.string().nullish(),
-  change: z.looseObject({ name: z.string(), until: z.string(), gaveWay: z.string().nullish() }),
-}))
+// Every rename in the space, newest first (src/graphiti/agent-name-workflows.js):
+// a person's own, and each name the person settled for FLAs that shared it,
+// with who kept it and why. seenUntil: up to when the person has seen the
+// settled ones (知道了), kept with the space so every console agrees.
+const changeSchema = z.looseObject({ name: z.string(), until: z.string(), reason: z.string(),
+  gaveWay: z.string().nullish() })
+const changesSchema = z.looseObject({
+  seenUntil: z.string().nullable(),
+  items: z.array(z.looseObject({ agentId: z.string(), displayName: z.string(), status: z.string(),
+    keptByName: z.string().nullish(), change: changeSchema })),
+})
 
-export interface AgentRenamed {
-  agentId: string
-  displayName: string
-  status: string
-  keptByName?: string | null
-  change: Pick<AgentNameChange, 'name' | 'until'> & { gaveWay?: string | null }
+export type NameChanges = z.infer<typeof changesSchema>
+export type AgentRenamed = NameChanges['items'][number]
+
+export function readNameChanges(personalSpaceId: string): Promise<NameChanges> {
+  return getJson(`/api/project-agent-name-changes?${new URLSearchParams({ personalSpaceId })}`, shapeOf(changesSchema))
 }
 
-export async function readNameChanges(personalSpaceId: string): Promise<AgentRenamed[]> {
-  return getJson(`/api/project-agent-name-changes?${new URLSearchParams({ personalSpaceId })}`, shapeOf(renamedSchema))
+/** 知道了: the settled renames up to the newest one listed are seen. */
+export function markNameChangesSeen(personalSpaceId: string, changes: NameChanges): Promise<NameChanges> {
+  const until = settled(changes.items).map(item => item.change.until).sort().at(-1) ?? new Date().toISOString()
+  return putJson('/api/project-agent-name-changes/seen', { personalSpaceId, until }, shapeOf(changesSchema))
 }
 
-const WHY = new Set(['built_in_role', 'dismissed', 'test', 'person_named', 'less_work', 'less_recent', 'later'])
-
-/** Why this FLA gave its name up, in one short clause. */
-export function gaveWayText(item: AgentRenamed): string {
-  const rule = item.change.gaveWay && WHY.has(item.change.gaveWay) ? item.change.gaveWay : 'later'
-  return t(`flas.renamed.why.${rule}`, { kept: item.keptByName ?? item.change.name })
+/** The renames that settled a shared name, which the page announces once. */
+export function settled(items: AgentRenamed[]): AgentRenamed[] {
+  return items.filter(item => item.change.reason === 'duplicate_name')
 }
 
-const SEEN_KEY = 'fuli.flas.renamed.seen'
-
-/** The newest rename the person already dismissed in this browser, if any. */
-export function seenRename(): string {
-  try {
-    return localStorage.getItem(SEEN_KEY) ?? ''
-  } catch {
-    return ''
-  }
+/** The settled renames the person has not seen yet. */
+export function unseenRenames(changes: NameChanges): AgentRenamed[] {
+  const seen = changes.seenUntil ? Date.parse(changes.seenUntil) : -Infinity
+  return settled(changes.items).filter(item => Date.parse(item.change.until) > seen)
 }
 
-export function markRenamesSeen(items: AgentRenamed[]) {
-  const newest = items.map(item => item.change.until).sort().at(-1)
-  if (!newest) return
-  try {
-    localStorage.setItem(SEEN_KEY, newest)
-  } catch {
-    // The notice comes back next time; nothing is lost.
-  }
+const WHY = new Set(['built_in_role', 'dismissed', 'test', 'person_named', 'temporary_lead', 'less_work',
+  'less_recent', 'later', 'person_chose'])
+
+/** Why an FLA gave a shared name up, in one short clause; kept: who has the name now. */
+export function gaveWayText(gaveWay: string | null | undefined, kept: string): string {
+  return t(`flas.names.why.${gaveWay && WHY.has(gaveWay) ? gaveWay : 'later'}`, { kept })
 }
 
-/** The whole list again once a rename is newer than the last one dismissed here; else nothing. */
-export function unseenRenames(items: AgentRenamed[], seen: string): AgentRenamed[] {
-  return items.some(item => item.change.until > seen) ? items : []
+/** What one rename was, in one short clause after the FLA's current name. */
+export function changeText(item: AgentRenamed): string {
+  const former = t('flas.names.former', { name: item.change.name })
+  return item.change.reason === 'duplicate_name'
+    ? `${former} · ${gaveWayText(item.change.gaveWay, item.keptByName ?? item.change.name)}`
+    : `${former} · ${t('flas.names.renamedByPerson')}`
 }

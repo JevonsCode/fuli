@@ -1,4 +1,4 @@
-import { apiErrorReason, putJson } from '@/api/client'
+import { ApiError, apiErrorCode, putJson } from '@/api/client'
 import type { ProjectAgentRecord } from '@/types'
 import { projectAgentShape } from './agent-record-shape'
 import { rememberRoleName } from './role-names'
@@ -18,20 +18,18 @@ export async function renameAgent(agent: Pick<ProjectAgentRecord, 'personalSpace
   return record
 }
 
-/** Who already uses a refused name, and the projects each works in (the Provider's `used by:`). */
-export function nameHoldersOffered(error: unknown): { name: string; projects: string }[] {
-  const reason = apiErrorReason(error, '')
-  if (!reason.startsWith('agent_name_taken')) return []
-  const listed = reason.match(/used by:\s*(.*?); free names:/)?.[1] ?? ''
-  return listed.split(' | ').map(holder => holder.match(/^(.+?) \([^)]*\)(?: in (.+))?$/))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map(match => ({ name: match[1]!, projects: match[2] ?? '' }))
-}
-
-/** The free names offered when another Agent already uses this one, else null. */
-export function freeNamesOffered(error: unknown): string[] | null {
-  const reason = apiErrorReason(error, '')
-  if (!reason.startsWith('agent_name_taken')) return null
-  const listed = reason.match(/free names:\s*([^.]*)\./)?.[1] ?? ''
-  return listed.split(',').map(name => name.trim()).filter(Boolean)
+/** Why a rename was refused because another Agent already has the name: who
+ * (and the projects each works in) and free names, as the console API sends
+ * them; null for any other failure. */
+export function nameTaken(error: unknown): { usedBy: { name: string; projects: string[] }[]; freeNames: string[] } | null {
+  if (apiErrorCode(error) !== 'agent_name_taken' || !(error instanceof ApiError)) return null
+  try {
+    const body = JSON.parse(error.detail) as { usedBy?: unknown; freeNames?: unknown }
+    const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+    const usedBy = Array.isArray(body.usedBy) ? body.usedBy.filter(item => typeof item?.name === 'string')
+      .map(item => ({ name: item.name as string, projects: strings(item.projects) })) : []
+    return { usedBy, freeNames: strings(body.freeNames) }
+  } catch {
+    return null
+  }
 }

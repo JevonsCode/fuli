@@ -5,55 +5,64 @@ import { Button } from '@/components/ui/button'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { t } from '@/i18n'
 import { UiNotice } from '@/ui'
-import { gaveWayText, markRenamesSeen, readNameChanges, seenRename, unseenRenames, type AgentRenamed } from './name-changes'
+import { changeText, markNameChangesSeen, readNameChanges, unseenRenames, type NameChanges } from './name-changes'
 
-// After FULI gave FLAs that shared a name new ones (graph/23): one line on the
-// FLAs page says how many, and opens the whole list here, each FLA a link to
-// its page with its 原名 and why it gave the name up. 知道了 hides it in this
-// browser until another rename happens. A failed read shows nothing: the
-// renames themselves are on each FLA's page.
-const props = defineProps<{ personalSpaceId: string }>()
-const items = ref<AgentRenamed[]>([])
-const seen = ref(seenRename())
+// Renames on the FLAs page. Names the person settled for FLAs that shared
+// one are announced once (知道了 is kept with the space, so every console
+// agrees); after that a quiet 改名记录 keeps the whole list, a person's own
+// renames included, each FLA a link to its page. A failed read shows nothing:
+// each FLA's page still says its 原名. revision: reread after a settle.
+const props = defineProps<{ personalSpaceId: string; revision?: number }>()
+const changes = ref<NameChanges | null>(null)
 const open = ref(false)
-const shown = computed(() => unseenRenames(items.value, seen.value))
+const unseen = computed(() => changes.value ? unseenRenames(changes.value) : [])
+const listed = computed(() => unseen.value.length ? unseen.value : changes.value?.items ?? [])
 
-watch(() => props.personalSpaceId, async (space) => {
-  items.value = []
+watch(() => [props.personalSpaceId, props.revision] as const, async ([space]) => {
   if (!space) return
   try {
-    items.value = await readNameChanges(space)
+    changes.value = await readNameChanges(space)
   } catch {
-    items.value = []
+    changes.value = null
   }
 }, { immediate: true })
 
-function dismiss() {
-  markRenamesSeen(items.value)
-  seen.value = seenRename() || items.value.map(item => item.change.until).sort().at(-1) || ''
+async function dismiss() {
+  if (!changes.value) return
+  open.value = false
+  try {
+    changes.value = await markNameChangesSeen(props.personalSpaceId, changes.value)
+  } catch {
+    // The notice comes back on the next visit; nothing is lost.
+  }
 }
 </script>
 
 <template>
-  <UiNotice v-if="shown.length" tone="info" data-flas-renamed>
-    <p>{{ t('flas.renamed.summary', { count: shown.length }) }}</p>
-    <ul v-if="open" class="renamed-list">
-      <li v-for="item in shown" :key="item.agentId" data-flas-renamed-item>
-        <RouterLink :to="agentProfilePath(personalSpaceId, item.agentId)">{{ item.displayName }}</RouterLink>
-        <span>{{ t('flas.renamed.former', { name: item.change.name }) }} · {{ gaveWayText(item) }}</span>
-      </li>
-    </ul>
+  <UiNotice v-if="unseen.length" tone="info" data-flas-renamed>
+    <p>{{ t('flas.names.renamed', { count: unseen.length }) }}</p>
     <template #actions>
       <Button size="sm" variant="ghost" :aria-expanded="open" data-flas-renamed-toggle @click="open = !open">
-        {{ open ? t('flas.renamed.hide') : t('flas.renamed.show') }}
+        {{ open ? t('flas.names.hide') : t('flas.names.show') }}
       </Button>
-      <Button size="sm" variant="ghost" data-flas-renamed-dismiss @click="dismiss">{{ t('flas.renamed.dismiss') }}</Button>
+      <Button size="sm" variant="ghost" data-flas-renamed-dismiss @click="dismiss">{{ t('flas.names.dismiss') }}</Button>
     </template>
   </UiNotice>
+  <Button v-else-if="changes?.items.length" size="sm" variant="ghost" class="renamed-history" :aria-expanded="open"
+    data-flas-renamed-history @click="open = !open">
+    {{ t('flas.names.history', { count: changes.items.length }) }}
+  </Button>
+  <ul v-if="open && listed.length" class="renamed-list" data-flas-renamed-list>
+    <li v-for="item in listed" :key="`${item.agentId}:${item.change.until}`" data-flas-renamed-item>
+      <RouterLink :to="agentProfilePath(personalSpaceId, item.agentId)">{{ item.displayName }}</RouterLink>
+      <span>{{ changeText(item) }}</span>
+    </li>
+  </ul>
 </template>
 
 <style scoped>
-.renamed-list { display: grid; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.renamed-history { justify-self: start; color: var(--color-ink-soft); }
+.renamed-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-control); }
 .renamed-list li { display: flex; flex-wrap: wrap; gap: 4px 8px; }
 .renamed-list a { color: var(--color-ink); font-weight: var(--weight-medium); }
 .renamed-list span { color: var(--color-muted); }
