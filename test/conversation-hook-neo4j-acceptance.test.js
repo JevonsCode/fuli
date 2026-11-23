@@ -117,14 +117,6 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   assert.equal(first.context.project_agent_id, 'engineer');
   // A conversation with nothing to recover leaves out its null recovery fields (rec#46).
   assert.equal(first.conversation.recovery, undefined);
-  const initialized = await query({ mode: 'session', session_id: session });
-  assert.equal(initialized.initialized, true);
-  // The conversation this session is bound to, as the Provider keeps it. The entry names it only when its
-  // begin fit the hook's capture budget (750 ms here); a slower one says deferred, and the next hook saves it.
-  const firstConversationId = initialized.conversation_id;
-  assert.ok(first.conversation.conversation_id === firstConversationId || first.conversation.status === 'deferred',
-    JSON.stringify(first.conversation));
-  assert.equal(initialized.cursor, Buffer.byteLength(old));
   const marker = 'VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER';
   await appendFile(transcript, claudeRow(session, 'assistant', [
     { type: 'thinking', thinking: 'PRIVATE_THINKING_NOT_CAPTURED' }, { type: 'text', text: marker }
@@ -143,7 +135,16 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const stop = await hook('claude-code', 'Stop', { session_id: session, cwd: projectPath, transcript_path: transcript });
   assert.notEqual(stop.decision, 'block', 'pending checkpoint does not intercept completion');
   assert.deepEqual(stop, {}, 'explicit work was checkpointed before Stop; no second model turn is needed');
-  const saved = await query({ mode: 'events', conversation_id: initialized.conversation_id });
+  // The conversation this session is bound to, read only after its second hook: the entry names it when its
+  // begin fit the hook's capture budget (750 ms here); a slower one says deferred, and the next hook saves it.
+  const initialized = await query({ mode: 'session', session_id: session });
+  assert.equal(initialized.initialized, true);
+  const firstConversationId = initialized.conversation_id;
+  assert.equal(typeof firstConversationId, 'string');
+  assert.ok(first.conversation.conversation_id === firstConversationId || first.conversation.status === 'deferred',
+    JSON.stringify(first.conversation));
+  assert.ok(initialized.cursor >= Buffer.byteLength(old), 'the boundary starts after the earlier transcript');
+  const saved = await query({ mode: 'events', conversation_id: firstConversationId });
   assert.ok(saved.events.some(event => event.content === marker));
   assert.equal(saved.events.filter(event => event.role === 'user' && event.content === prompt).length, 1,
     'task entry and the native collector must not duplicate the user prompt');
