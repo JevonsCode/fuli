@@ -28,7 +28,35 @@ const NOT_REQUIRED = [
   [() => true, 'a routine fallback closes this task at the next entry of this session']
 ];
 
-export function checkpointReason({ required, remembering, updating, task, entryVia }) {
-  const facts = { remembering, updating, task, entryVia };
+function checkpointReason(facts, required) {
   return (required ? REQUIRED : NOT_REQUIRED).find(([holds]) => holds(facts))[1];
+}
+
+// Whether a task needs the model's checkpoint, and why. The entry that opens
+// the task decides it; a later read of the same task replays the same rule
+// from what the task keeps (taskCheckpointReplay), so the two never disagree.
+// A request to keep or change something is never a routine auto-closed task.
+export function taskCheckpoint({ remembering, updating, task, entryVia }) {
+  const autoClosed = !remembering && !updating
+    && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  const required = !autoClosed && task.checkpoint?.phase !== 'complete';
+  return { autoClosed, required, reason: checkpointReason({ remembering, updating, task, entryVia }, required) };
+}
+
+// What the person asked of the task at its entry, kept with it
+// (checkpoint_request): 'remember', 'update' or null.
+export function checkpointRequest({ remembering, updating }) {
+  return remembering ? 'remember' : updating ? 'update' : null;
+}
+
+// The entry's decision for an open task, replayed by a later read
+// (read_task_preferences, design T2): the same rule over what the task keeps,
+// through the entry it was opened by. A task kept before its request was
+// (checkpointRequest undefined) needs the checkpoint, as before. A routine
+// fallback's eligibility is decided at entry only, so such a task read later
+// needs one too: the conservative side.
+export function taskCheckpointReplay(task) {
+  if (task.checkpointRequest === undefined) return null;
+  return taskCheckpoint({ remembering: task.checkpointRequest === 'remember', updating: task.checkpointRequest === 'update',
+    task, entryVia: task.entryVia });
 }

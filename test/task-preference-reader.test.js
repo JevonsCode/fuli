@@ -392,3 +392,24 @@ test('a key held by an unresolved conflict or an unstated scope is named as such
   assert.deepEqual([delivery.in_conflict, delivery.scope_unknown, delivery.missing], [['rule-conflict'], ['rule-elsewhere'], ['rule-gone']]);
   assert.match(delivery.guidance, /apply no alternative until it is resolved/);
 });
+
+// Design T2: a read of an open task replays the decision of the entry that
+// opened it, instead of "required while the task is open", so a later turn
+// never contradicts the entry. A task kept before the request was recorded
+// still needs the checkpoint.
+test('a recovery read replays the entry\'s checkpoint decision', async () => {
+  const cases = [
+    [{}, true, 'set by the entry that opened this task'],
+    [{ entryVia: 'hook', checkpointRequest: null }, false, 'the Stop hook closes this task'],
+    [{ entryVia: 'hook', checkpointRequest: 'remember' }, true, 'this turn asks FULI to keep something'],
+    [{ entryVia: 'hook', checkpointRequest: 'update' }, true, 'this turn says something FULI keeps may have changed'],
+    [{ entryVia: 'tool', checkpointRequest: null }, true, 'no Stop hook closes a task entered through a tool']];
+  for (const [kept, required, reason] of cases) {
+    const f = fixture();
+    Object.assign(f.task, kept);
+    const read = { taskContextToken: f.task.token, sourceApplication: 'codex', sourceSessionId: SESSION, sourceSessionVerified: true };
+    for (const result of [await readTaskPreferences(f.app, read), await readTaskPreferences(f.app, { ...read, keys: ['rule-0'] })]) {
+      assert.deepEqual([result.checkpoint_required, result.checkpoint_reason], [required, reason], JSON.stringify(kept));
+    }
+  }
+});

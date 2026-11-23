@@ -261,3 +261,20 @@ test('entry assignment record keeps reporting constraints and drops unbounded in
   const replayed = applyAgentAssignment({}, taskAgentAssignment(context));
   assert.match(replayed.reporting_guidance, /Return results and blockers to reporting_lead_agent_id/);
 });
+
+// Design T2: what the person asked of the task at entry is kept with it, so a
+// later read replays the entry's checkpoint decision; a record kept before
+// that has no such key and is told apart from "asked nothing".
+test('a task keeps what the person asked of it at entry, and an older record says it never recorded that', async () => {
+  const sent = [];
+  const provider = { beginTaskContext: async request => { sent.push(request); return providerRecord({
+    token: request.token, checkpoint_request: request.checkpoint_request ?? null }); } };
+  const registry = new ProviderTaskContextRegistry(provider, 'space-1');
+  const begin = checkpointRequest => registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code',
+    entryVia: 'hook', ...(checkpointRequest ? { checkpointRequest } : {}) });
+  assert.equal((await begin('remember')).checkpointRequest, 'remember');
+  assert.equal(sent[0].checkpoint_request, 'remember');
+  assert.equal((await begin(null)).checkpointRequest, null);
+  assert.equal(Object.hasOwn(sent[1], 'checkpoint_request'), false);
+  assert.equal(taskRecord(providerRecord()).checkpointRequest, undefined);
+});

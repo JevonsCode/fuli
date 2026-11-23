@@ -15,7 +15,7 @@ import { validationError } from '../app/application-error.js';
 import { withStandingRoute } from './task-entry-standing-owner.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from './task-knowledge-guidance.js';
-import { checkpointReason } from './checkpoint-reason.js';
+import { checkpointRequest, taskCheckpoint } from './checkpoint-reason.js';
 import { taskGuidanceFor, taskSize } from './task-size.js';
 
 export async function beginTaskContext(application, {
@@ -100,6 +100,8 @@ export async function beginTaskFromPreferences(application, preferences, {
   // The folder the client works in, for the conversation's provenance.
   projectPath = null
 }, { existingTask = null, resumed = false, entryVia = 'tool' } = {}) {
+  const remembering = rememberRequested(taskPrompt);
+  const updating = updateRequested(taskPrompt);
   const task = existingTask ?? await application.taskContextRegistry.begin({
     sessionId,
     turnId,
@@ -113,16 +115,13 @@ export async function beginTaskFromPreferences(application, preferences, {
       preferences.standing_owner), preferences[FLA_ROUTE]),
     memoryRevision: preferences.project_agent_context?.memory?.revision ?? null,
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
-    entryVia
+    entryVia,
+    // Kept so a later read of the task replays this entry's checkpoint decision (design T2).
+    checkpointRequest: checkpointRequest({ remembering, updating })
   });
   // Only the Provider can establish that a fallback has no claim or worker /
   // coordination associations. Missing metadata keeps the legacy requirement.
-  // A request to keep something is never a routine auto-closed task.
-  const remembering = rememberRequested(taskPrompt);
-  const updating = updateRequested(taskPrompt);
-  const autoClosed = !remembering && !updating
-    && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
-  const checkpointRequired = !autoClosed && task.checkpoint?.phase !== 'complete';
+  const { autoClosed, required: checkpointRequired, reason } = taskCheckpoint({ remembering, updating, task, entryVia });
   // A task the Stop hook closes by itself has no model checkpoint to keep
   // what the person stated as a project rule: the entry keeps it, pending
   // review (task-stated-rules.js). Never fails the entry.
@@ -159,7 +158,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     checkpoint_required: checkpointRequired,
     // Why, in one short sentence: the flag flipped between turns with nothing
     // to explain it (rec#137).
-    checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, updating, task, entryVia }),
+    checkpoint_reason: reason,
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),

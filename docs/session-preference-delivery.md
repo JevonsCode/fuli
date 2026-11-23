@@ -329,6 +329,16 @@ task token. Never restart task entry to recover. Older clients that do not
 support continuation see incomplete delivery and must stop; small-result
 compatibility remains unchanged.
 
+A read of an open task replays the checkpoint decision of the entry that
+opened it (design T2): the task keeps what the person asked of it
+(`checkpoint_request`: `remember`, `update` or null, an optional field of the
+Provider's task record), and the reader applies the entry's own rule
+(`taskCheckpoint` in `src/graphiti/checkpoint-reason.js`) to it, so a task the
+Stop hook closes says so instead of turning `checkpoint_required` to true on a
+SessionStart restore or a host turn's refresh. A task kept before the field
+still says true, and so does a task entered through a tool, whose routine
+fallback eligibility only its entry knows.
+
 A hook that refreshes or restores its task in place reads through its own
 process, which holds the cursors. It joins every page of the revision into the
 complete result (`joinTaskPreferencePages`), with the task's own scope, then

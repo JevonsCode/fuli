@@ -25,6 +25,7 @@ export class ProviderTaskContextRegistry {
       memory_revision: input.memoryRevision ?? null,
       work_log_required: input.workLogRequired ?? false,
       entry_via: input.entryVia === 'hook' ? 'hook' : 'tool',
+      ...(input.checkpointRequest ? { checkpoint_request: input.checkpointRequest } : {}),
       ...(input.delegationToken ? { delegation_token: input.delegationToken } : {}),
       ...(input.preferenceScope !== undefined ? { preference_scope: scope } : {}),
       ...(input.agentAssignment ? { agent_assignment: parseTaskAgentAssignment(input.agentAssignment) } : {})
@@ -185,6 +186,9 @@ export function taskRecord(value) {
     entryVia: value.entry_via ?? 'tool',
     activityOrigin: taskActivityOrigin(value.activity_origin),
     routineAutoCloseEligible: value.routine_auto_close_eligible === true,
+    // What the person asked of the task at entry ('remember', 'update' or
+    // null); undefined for a task the Provider kept before it was recorded.
+    checkpointRequest: value.checkpoint_request === undefined ? undefined : value.checkpoint_request ?? null,
     preferenceScope: taskPreferenceScope(value.preference_scope),
     agentAssignment: storedAgentAssignment(value.agent_assignment),
     memoryRevision: value.memory_revision,
