@@ -393,7 +393,9 @@ update that README's tag and commit; set `version` and every platform's SHA-256 
 `test/windows-installed-client-config.test.js` (the pin, bundle, launcher and client detection tests
 download and verify the new assets; the client tests connect and remove every built-in client in a
 temporary home). To try an unreleased build first, point `FULI_AGENT_INSTALLER` (or
-`AGENT_INSTALLER_BIN`) at it; the tests use it too. A change to what the manifest asks for shows
+`AGENT_INSTALLER_BIN`) at it; the tests use it too. Without the executable those tests skip, except
+with `FULI_REQUIRE_AGENT_KITS=1`, which CI sets on its three node jobs: there a download that broke
+fails the run instead of passing as skipped. A change to what the manifest asks for shows
 in `test/fixtures/installer-manifest-snapshot.json` (`test/agent-kits/installer-manifest.test.js`).
 
 ## Common failure recovery
