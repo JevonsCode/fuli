@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runs first and alone: a commit that carries a personal address should be
-  # seen before anything else about the pull request.
+  # Needs nothing and installs nothing, so it is the first job to answer: a
+  # commit that carries a personal address should be seen before anything else.
   commit-identity:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -30,7 +30,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - run: node scripts/check-commit-identity.js "origin/${{ github.base_ref }}" HEAD
+      # A branch name is not shell text: it reaches the command as a variable.
+      - run: node scripts/check-commit-identity.js HEAD "origin/$BASE" origin/main
+        env:
+          BASE: ${{ github.base_ref }}
 
   node:
     runs-on: ubuntu-latest
