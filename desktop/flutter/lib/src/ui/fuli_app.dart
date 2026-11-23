@@ -120,7 +120,8 @@ class _WindowState extends State<_Window> {
           final slow = waited != null && waited >= FuliController.stageSlowAfter;
           return WaitingScreen(
             label: step ?? controller.pending ?? bringingUp,
-            detail: slow ? strings.startupStageSlow(controller.startupStage, waited) : null,
+            detail: slow ? strings.startupStageSlow(waited, controller.startupMaxSeconds) : null,
+            spokenDetail: slow ? strings.startupStageLimit(controller.startupMaxSeconds) : null,
             // A step that takes long can be looked into while it runs; it is not cancelled.
             actionLabel: slow ? strings.viewStartupLog : null,
             onAction: slow

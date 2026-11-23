@@ -132,15 +132,18 @@ void main() {
       child: MaterialApp(
         home: WaitingScreen(
             label: zh.startupStage('provider_wait')!,
-            detail: zh.startupStageSlow('provider_wait', const Duration(seconds: 95))),
+            detail: zh.startupStageSlow(const Duration(seconds: 95), 240),
+            spokenDetail: zh.startupStageLimit(240)),
       ),
     ));
     expect(find.text('正在等 Provider 就绪…'), findsOneWidget);
-    expect(find.text('已经等了 1 分 35 秒。FULI 最多等 2 分钟，然后会告诉你卡在哪。可以先去忙别的，好了会自己进去。'), findsOneWidget);
-    // Both lines reach a screen reader as one live status.
+    expect(find.text('已经等了 1 分 35 秒。最多等 4 分钟。'), findsOneWidget);
+    // One live status: the step and its limit. The waited time, which changes
+    // every few seconds, is shown but not announced again and again.
     final status = tester.getSemantics(find.byType(GrowthLoading));
     expect(status.label, contains('正在等 Provider 就绪…'));
-    expect(status.label, contains('已经等了 1 分 35 秒。'));
+    expect(status.label, contains('最多等 4 分钟。'));
+    expect(status.label, isNot(contains('已经等了')));
   });
 
   testWidgets('a slow step offers 查看启动日志 under its line, and nothing to cancel', (tester) async {
@@ -150,7 +153,7 @@ void main() {
       child: MaterialApp(
         home: WaitingScreen(
             label: zh.startupStage('provider_wait')!,
-            detail: zh.startupStageSlow('provider_wait', const Duration(seconds: 40)),
+            detail: zh.startupStageSlow(const Duration(seconds: 40), 240),
             actionLabel: zh.viewStartupLog,
             onAction: () => opened++),
       ),

@@ -71,40 +71,50 @@ class ShellCliRuntime implements FuliRuntime {
   Future<RuntimeReport> changePort({StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
+  // The CLI's own checked release (`fuli graph runtime unlock`), then a start.
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) async {
+    if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
+    final released = await _sh(_mode!, 'fuli graph runtime unlock --yes', _commandTimeout);
+    if (released == null || released.exitCode != 0) {
+      final after = await status();
+      final said = '${released?.stdout ?? ''}'.trim().split('\n').where((line) => line.trim().isNotEmpty).lastOrNull;
+      return RuntimeReport(after.state, consolePort: after.consolePort, error: said ?? 'fuli graph runtime unlock did not finish.');
+    }
+    return start(onStage: onStage);
+  }
+
   // `fuli start` and `fuli stop` print text, not JSON; the state afterwards
   // comes from `fuli status --json`. With [onStage] the CLI is asked for its
   // startup steps as machine-readable lines instead (startup-stage.js) and
   // they are read as they arrive.
   Future<RuntimeReport> _command(String command, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    StartupFailure? failure;
     final result = onStage == null
         ? await _sh(_mode!, command, _commandTimeout)
-        : await _shFollowing(_mode!, command, _commandTimeout, onStage, (reported) => failure = reported);
+        : await _shFollowing(_mode!, command, _commandTimeout, onStage);
     final after = await status();
     if (result != null && result.exitCode == 0) return after;
-    final stderr = '${result?.stderr ?? ''}'.trim();
+    // The reason a start can name comes on a line of its own (startup-failure-line.js).
+    final printed = readStartupFailure('${result?.stderr ?? ''}');
+    final stderr = printed.stderr.trim();
     final error = stderr.isEmpty
         ? '$command did not finish.'
         : stderr.substring(stderr.length > _errorTail ? stderr.length - _errorTail : 0);
-    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, failure: failure,
+    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, failure: printed.failure,
         autostartGaveUpAt: after.autostartGaveUpAt);
   }
 
   // Runs the command with FULI_STAGE_MARKERS set, so each startup step arrives
   // as its own line while the command is still running.
-  Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage,
-      void Function(StartupFailure) onFailure) async {
+  Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage) async {
     try {
       final process = await Process.start(_shell, [mode, command],
           environment: {...env, ...stageMarkersEnvironment});
       final errors = StringBuffer();
       final reading = process.stderr.transform(utf8.decoder).forEach(errors.write);
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
-        final stage = parseStageLine(line);
-        if (stage != null) onStage(stage);
-        final failure = parseFailureLine(line);
-        if (failure != null) onFailure(failure);
+        if (parseStageLine(line) case final step?) onStage(step.stage, step.maxSeconds);
       }).timeout(timeout);
       await reading;
       return ProcessResult(process.pid, await process.exitCode.timeout(timeout), '', errors.toString());

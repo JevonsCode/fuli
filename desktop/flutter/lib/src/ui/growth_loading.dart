@@ -11,13 +11,17 @@ enum GrowthLoadingVariant { page, inline }
 /// over the label for a whole view; [GrowthLoadingVariant.inline] sits beside
 /// an action.
 class GrowthLoading extends StatelessWidget {
-  const GrowthLoading({super.key, required this.label, this.detail, this.variant = GrowthLoadingVariant.inline});
+  const GrowthLoading({super.key, required this.label, this.detail, this.spokenDetail, this.variant = GrowthLoadingVariant.inline});
 
   final String label;
 
-  /// One small line under the label for a wait that is taking long: what it is
-  /// waiting on and how long it has waited. Only on the page variant.
+  /// One small line under the label for a wait that is taking long: how long it
+  /// has waited and the longest it will wait. Only on the page variant.
   final String? detail;
+
+  /// What a screen reader hears of [detail]: without the waited time, which
+  /// changes every few seconds and would be announced again each time.
+  final String? spokenDetail;
   final GrowthLoadingVariant variant;
 
   @override
@@ -29,7 +33,7 @@ class GrowthLoading extends StatelessWidget {
         : null;
     return Semantics(
       liveRegion: true,
-      label: note == null ? label : '$label $detail',
+      label: note == null || spokenDetail == null ? label : '$label $spokenDetail',
       excludeSemantics: true,
       child: page
           ? Column(mainAxisSize: MainAxisSize.min, children: [

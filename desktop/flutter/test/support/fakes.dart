@@ -47,7 +47,7 @@ class FixedRuntime implements FuliRuntime {
   Future<RuntimeReport> start({StageListener? onStage}) async {
     calls.add('start');
     for (final stage in stages) {
-      onStage?.call(stage);
+      onStage?.call(stage, null);
     }
     return report;
   }
@@ -60,6 +60,15 @@ class FixedRuntime implements FuliRuntime {
 
   @override
   bool get canChangePort => true;
+
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) async {
+    calls.add('release-lock-start');
+    return releaseReport ?? report;
+  }
+
+  /// What 「解除这把锁并启动」 answers; [report] when null.
+  RuntimeReport? releaseReport;
 
   @override
   Future<RuntimeReport> changePort({StageListener? onStage}) async {

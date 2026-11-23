@@ -28,20 +28,45 @@ RuntimeReport parseControllerReply(String stdout) {
     stage: !failed || stage is! String || stage.isEmpty ? null : stage,
     failure: failed ? _failure(reply['failure']) : null,
     autostartGaveUpAt: state is Map ? _gaveUpAt(state) : null,
+    lockKept: failed ? _failure(reply['lockRelease'], code: 'reason') : null,
   );
 }
 
-/// The failure a start reports on a line of its own (src/local-runtime/startup-failure.js),
-/// or null for any other line.
-StartupFailure? parseFailureLine(String line) {
+/// The step a line of a start's output reports (src/local-runtime/startup-stage.js
+/// `readStartupMarker`), with the longest it will wait when the start said so.
+/// The result line carries `ok`, so it is never one of these.
+({String stage, int? maxSeconds})? parseStageLine(String line) {
   final value = _jsonObject(line);
   if (value == null || value.containsKey('ok')) return null;
-  return _failure(value['failure']);
+  final stage = value['stage'];
+  if (stage is! String || stage.isEmpty) return null;
+  final max = value['maxSeconds'];
+  return (stage: stage, maxSeconds: max is int ? max : null);
 }
 
-StartupFailure? _failure(Object? value) {
-  if (value is! Map || value['code'] is! String) return null;
-  return StartupFailure(value['code'] as String, Map<String, Object?>.from(value));
+/// What a failed `fuli start` printed: its stderr without the reason line, and
+/// the reason (src/local-runtime/startup-failure-line.js), when it gave one.
+({String stderr, StartupFailure? failure}) readStartupFailure(String stderr) {
+  const prefix = 'FULI_STARTUP_FAILURE ';
+  StartupFailure? failure;
+  final kept = <String>[];
+  for (final line in const LineSplitter().convert(stderr)) {
+    if (!line.startsWith(prefix)) {
+      kept.add(line);
+      continue;
+    }
+    try {
+      failure = _failure(jsonDecode(line.substring(prefix.length)));
+    } on FormatException {
+      // A reason line that does not read leaves the message as it is.
+    }
+  }
+  return (stderr: kept.join('\n'), failure: failure);
+}
+
+StartupFailure? _failure(Object? value, {String code = 'code'}) {
+  if (value is! Map || value[code] is! String) return null;
+  return StartupFailure(value[code] as String, Map<String, Object?>.from(value));
 }
 
 // `autostart` of the status report (src/local-runtime/lifecycle.js), present
@@ -66,16 +91,6 @@ Map? _jsonObject(String line) {
 /// (src/local-runtime/startup-stage.js). Without it they print only their
 /// result, which every other caller of theirs reads whole.
 const stageMarkersEnvironment = {'FULI_STAGE_MARKERS': '1'};
-
-/// The step a controller reports while it works: one `{"stage": "…"}` line of
-/// its own (src/desktop/desktop-controller.js `stageReporter`). The result
-/// line carries `ok`, so it is never mistaken for one of these.
-String? parseStageLine(String line) {
-  final value = _jsonObject(line);
-  if (value == null || value.containsKey('ok')) return null;
-  final stage = value['stage'];
-  return stage is String && stage.isNotEmpty ? stage : null;
-}
 
 /// The installation's data directory and the key of its one-client lock.
 /// [currentPackageRoot] is set when this client runs from a version the

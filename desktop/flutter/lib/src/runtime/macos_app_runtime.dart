@@ -59,6 +59,9 @@ class MacosAppRuntime implements FuliRuntime {
   Future<RuntimeReport> changePort({StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
+
   // The controller's lines are read as they arrive: the steps it reports while
   // it works, then the one result line at the end.
   Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
@@ -70,8 +73,7 @@ class MacosAppRuntime implements FuliRuntime {
       final output = StringBuffer();
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
         output.writeln(line);
-        final stage = parseStageLine(line);
-        if (stage != null) onStage?.call(stage);
+        if (parseStageLine(line) case final step?) onStage?.call(step.stage, step.maxSeconds);
       }).timeout(_controllerTimeout);
       return parseControllerReply(output.toString());
     } on ProcessException catch (error) {

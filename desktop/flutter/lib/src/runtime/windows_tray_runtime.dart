@@ -58,6 +58,9 @@ class WindowsTrayRuntime implements FuliRuntime {
   @override
   Future<RuntimeReport> changePort({StageListener? onStage}) => _action('change-port', onStage: onStage);
 
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
+
   Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     return parseControllerReply(await _run(_root!, action, onStage));
@@ -80,8 +83,7 @@ class WindowsTrayRuntime implements FuliRuntime {
       final output = StringBuffer();
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
         output.writeln(line);
-        final stage = parseStageLine(line);
-        if (stage != null) onStage?.call(stage);
+        if (parseStageLine(line) case final step?) onStage?.call(step.stage, step.maxSeconds);
       }).timeout(_controllerTimeout);
       return output.toString();
     } on ProcessException catch (error) {
