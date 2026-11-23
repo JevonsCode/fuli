@@ -24,7 +24,7 @@ import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from '../src/runner/routing-ledger.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
-import { RUNNER_FILE } from '../src/runner/runner-store.js';
+import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 // Tonborg's executor judgment on a runner (docs/runner.md, "Executor judgment
 // on a runner"): its own model, over its own executors, with or without the
@@ -142,16 +142,27 @@ test('once the pairing is gone or revoked, nothing is judged here and no model i
   assert.equal(revoked.model.requests.length, 0, 'no model budget was spent');
   assert.equal(revoked.served.store.outbox().queued, 0, 'nothing was queued for a host that will not take it');
 
+  // `fuli runner leave` while a client's MCP process still runs: the pairing is gone, but on
+  // Windows the open store cannot be deleted, so it stays, emptied (runner-command.js leaveHost).
   const left = await routingRunner(t);
-  const ledgerFile = path.join(left.dataDir, 'runner', 'routing.sqlite');
   left.served.store.leave();
-  rmSync(path.join(left.dataDir, RUNNER_FILE), { force: true });
-  rmSync(ledgerFile, { force: true });
   const unpaired = await left.client.callTool({ name: 'assess_agent_action', arguments: ASK });
   assert.equal(JSON.parse(unpaired.content[0].text).code, 'runner_not_paired');
   assert.equal(left.model.requests.length, 0);
-  assert.equal(existsSync(path.join(left.dataDir, RUNNER_FILE)), false, 'the deleted runner store was not made again');
-  assert.equal(existsSync(ledgerFile), false, 'the deleted decision ledger was not made again');
+  assert.equal(existsSync(path.join(left.dataDir, ROUTING_LEDGER_FILE)), false, 'no decision ledger was made');
+});
+
+test('a runner store `fuli runner leave` deleted is not made again by queueing into it', (t) => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-left-')));
+  const file = path.join(dir, RUNNER_FILE);
+  const store = new RunnerStore(file);
+  t.after(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  assert.throws(() => store.enqueue({ id: 'entry-1', tool: 'runner_routing_decision', input: {}, sourceApplication: 'codex' }),
+    /no longer paired/);
+  assert.equal(existsSync(file), false);
 });
 
 test('`fuli runner leave` deletes the decisions made here and says what the person\'s own files leave behind', async (t) => {
@@ -223,10 +234,14 @@ test('two processes answering one requestId at once keep one decision instead of
   const first = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
   // What a second MCP process does when it got past the lookup before the first saved: the same insert.
   const ledger = new RoutingLedger(path.join(runner.dataDir, ROUTING_LEDGER_FILE));
-  t.after(() => ledger.close());
-  const clash = { ...first, id: 'another-process-decision' };
-  assert.doesNotThrow(() => ledger.save(clash, 'another-fingerprint'));
-  assert.equal(ledger.byRequest(ASK).record.id, first.id, 'the decision saved first is the one kept');
+  try {
+    const clash = { ...first, id: 'another-process-decision' };
+    assert.doesNotThrow(() => ledger.save(clash, 'another-fingerprint'));
+    assert.equal(ledger.byRequest(ASK).record.id, first.id, 'the decision saved first is the one kept');
+  } finally {
+    // Before the runner's folder is deleted: Windows refuses to delete a SQLite file still open.
+    ledger.close();
+  }
 });
 
 test('a decision naming a project the host does not have is refused there, with the reason on the runner', async (t) => {
