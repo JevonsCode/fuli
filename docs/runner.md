@@ -232,9 +232,12 @@ and the runner's 客户端接入 page, say which copy is older. The runner's sid
 sessions run (their MCP servers keep the version they started with until restarted), or the
 installed copy when none is open; the same release spelled differently (`v0.29.0`, build metadata)
 is not a difference. It is only said: a call both versions understand goes through as before, and
-nothing here refuses anything. When the runner is older the page offers 「复制给 AI 去更新」, a
-prompt for the person's own AI on this computer; when the host is older it says to update from the
-host's console, because a runner's page cannot run the host's update (the relay refuses it). The
+nothing here refuses anything. When the runner is older the page offers 「让 AI 来做：更新这台电脑的
+FULI」 (the console's one AI entry), which hands an AI client on this computer a prompt naming the
+host's exact version — `npm install --global fuli-context@<host version>`, `fuli restart`, which
+sessions to reopen, then `fuli runner status` — never "or newer", which would put the runner ahead
+and turn the notice around. When the host is older the page says to update from the host's
+console, because a runner's page cannot run the host's update (the relay refuses it). The
 host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
 runner's side only.
 

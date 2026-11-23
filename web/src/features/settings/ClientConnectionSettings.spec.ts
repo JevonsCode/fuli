@@ -93,12 +93,10 @@ it('on a runner says its hooks do nothing and which computer runs the older FULI
   expect(notice).toContain('可能漏')
   expect(notice).toContain('这台是 0.28.1，主机是 0.29.0')
   expect(notice).toContain('这台旧了')
-  // The update is one click: the prompt for the person's own AI, with the host's version in it.
-  const writeText = vi.fn(async (_text: string) => {})
-  vi.stubGlobal('navigator', { clipboard: { writeText } })
-  await wrapper.get('[data-copy-runner-update]').trigger('click')
-  expect(writeText.mock.calls[0]![0]).toContain('0.29.0')
-  expect(wrapper.get('[data-copy-runner-update]').text()).toBe('已复制')
+  // The update goes to the person's own AI through the one AI entry (UiAiButton).
+  const entry = wrapper.get('[data-runner-update]')
+  expect(entry.attributes('data-ai-entry')).toBe('')
+  expect(entry.attributes('aria-label')).toBe('让 AI 来做：更新这台电脑的 FULI')
   // Cursor's own first question is said on its tile, with the command that answers it ahead of time.
   const first = wrapper.get('[data-client-first-run="cursor"]').text()
   expect(first).toContain('信任这个文件夹')
@@ -157,7 +155,7 @@ it('says nothing about a runner on the host, and nothing about versions when the
   const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.get('[data-runner-clients]').text()).not.toContain('版本')
-  expect(wrapper.find('[data-copy-runner-update]').exists()).toBe(false)
+  expect(wrapper.find('[data-runner-update]').exists()).toBe(false)
   expect(wrapper.find('[data-client-first-run="codex"]').exists()).toBe(false)
   wrapper.unmount()
 })

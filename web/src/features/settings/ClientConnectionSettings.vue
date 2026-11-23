@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { deleteJson, postJson } from '@/api/client'
-import { useClipboardCopy } from '@/composables/useClipboardCopy'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +14,7 @@ import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import CustomClientDialog from './CustomClientDialog.vue'
+import RunnerUpdateAi from './RunnerUpdateAi.vue'
 import { ADD_CLIENT_QUERY_KEYS, addClientDraft, type AddClientDraft } from './add-client-prompt'
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
@@ -43,7 +43,6 @@ const summary = computed(() => connectionSummary(observation.value))
 // here, and the two computers can run different FULI versions (rec issue 144).
 const runner = computed(() => observation.value?.runner ?? null)
 const runnerSkew = computed(() => runner.value?.skew ?? null)
-const { copied: copiedPrompt, failed: copyPromptFailed, copy: copyPrompt } = useClipboardCopy()
 const installs = computed(() => observation.value?.installs)
 const otherInstalls = computed(() => installs.value?.others ?? [])
 const detailClient = computed(() => clients.value.find(client => client.id === details.value))
@@ -189,14 +188,10 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             { host: runner.hostName ?? '', hostVersion: runner.hostVersion ?? '', runnerVersion: runner.version }) }}</template>
           <!-- This computer's copy is older: the update is handed to the person's own AI here, since a
                runner's page cannot run the host's update (the relay refuses it, docs/runner.md). -->
-          <template v-if="runnerSkew?.older === 'runner' && runner" #actions>
-            <Button size="sm" variant="outline" data-copy-runner-update
-              @click="copyPrompt('runner-update', t('settings.connection.clients.runner.updatePrompt', { hostVersion: runner.hostVersion ?? '' }))">
-              {{ copiedPrompt === 'runner-update' ? t('settings.connection.custom.promptCopied') : t('settings.connection.clients.runner.updateAction') }}
-            </Button>
+          <template v-if="runnerSkew?.older === 'runner' && runner?.hostVersion" #actions>
+            <RunnerUpdateAi :host-version="runner.hostVersion" />
           </template>
         </UiNotice>
-        <p v-if="copyPromptFailed" role="alert">{{ t('settings.connection.custom.promptCopyFailed') }}</p>
         <UiNotice v-if="installs && otherInstalls.length" tone="warning" data-two-installs>
           {{ t('settings.connection.clients.twoInstalls.notice', { count: otherInstalls.length + 1, version: installs.console.version ?? '—',
             clients: otherInstalls.flatMap(other => other.clients).join('、') }) }}
