@@ -178,15 +178,11 @@ export function errorToolResult(error) {
 
 // What a failure FULI did not anticipate still says (the coordinator's count:
 // 32 get_collaboration_preferences failures in two weeks, every one
-// "internal_error: Tool execution failed", and every FULI tool said the same
-// while the console was not running). Only the kind of failure is read, from
-// the error and its causes; no message text of it is passed on.
-// Connection codes only. ENOENT is one too, but only from connect() to a local
-// socket: FULI reading a missing file throws the same code from inside a call
-// that may already have written something, and "nothing was done" would then
-// be false (review of #1076).
-const REFUSED = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
-const refusedConnection = item => REFUSED.has(item.code) || (item.code === 'ENOENT' && item.syscall === 'connect');
+// "internal_error: Tool execution failed"). Only the kind of failure is read,
+// from the error and its causes; no message text of it is passed on. A
+// refused connection is not one of these kinds: only the layer that connects
+// to FULI's own console may say FULI is not running (app/fuli-not-running.js),
+// and anything else refused is a failure inside FULI (review of #1076).
 const TIMED_OUT = new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 const DROPPED = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
 function uncontrolledFailure(error) {
@@ -194,14 +190,11 @@ function uncontrolledFailure(error) {
   for (let item = error, depth = 0; item && typeof item === 'object' && depth < 8; item = item.cause, depth++) chain.push(item);
   const codes = chain.map(item => item.code).filter(code => typeof code === 'string');
   const names = chain.map(item => item.name);
-  if (chain.some(refusedConnection) || chain.some(item => /\bECONNREFUSED\b/.test(String(item.message ?? '')))) {
-    return { code: 'fuli_not_running', message: 'FULI did not answer on this computer (connection refused): it is not running, so nothing was done.' };
-  }
   if (codes.some(code => TIMED_OUT.has(code)) || names.some(name => name === 'TimeoutError' || name === 'AbortError')) {
-    return { code: 'fuli_timeout', message: 'FULI did not answer in time, so whether this call finished is unknown.' };
+    return { code: 'fuli_timeout', message: 'This call did not finish in time, so whether it finished is unknown.' };
   }
   if (codes.some(code => DROPPED.has(code))) {
-    return { code: 'fuli_connection_lost', message: 'The connection to FULI dropped, so whether this call finished is unknown.' };
+    return { code: 'fuli_connection_lost', message: 'A connection dropped during this call, so whether it finished is unknown.' };
   }
   return { code: 'internal_error', message: 'Tool execution failed inside FULI; it recorded where in its diagnostics.' };
 }

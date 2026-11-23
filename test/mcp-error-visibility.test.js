@@ -1,3 +1,4 @@
+import { fuliNotRunning } from '../src/app/fuli-not-running.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
@@ -57,8 +58,9 @@ test('MCP error results do not expose validation details for uncontrolled failur
   }];
   const result = errorToolResult(error);
 
-  // A refused connection says FULI is not running, never its own message text.
-  assert.equal(result.structuredContent.error.code, 'fuli_not_running');
+  // An error that only mentions a refused connection is a failure inside FULI:
+  // only the console connection says FULI is not running (review of #1076).
+  assert.equal(result.structuredContent.error.code, 'internal_error');
   assert.doesNotMatch(result.structuredContent.error.message, /8787/);
   assert.equal(result.structuredContent.error.validationErrors, undefined);
 });
@@ -69,13 +71,13 @@ test('an unanticipated failure says which kind it was and what to do next', () =
   const caused = (code, name = 'Error') => Object.assign(new TypeError('fetch failed'),
     { cause: Object.assign(new Error('synthetic cause'), { code, name }) });
   const cases = [
-    [caused('ECONNREFUSED'), 'fuli_not_running', /not running, so nothing was done/],
-    // ENOENT only counts from connect() to a local socket (review of #1076).
-    [Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('synthetic cause'), { code: 'ENOENT', syscall: 'connect' }) }),
-      'fuli_not_running', /not running/],
+    // FULI's own call to another local service was refused: not "FULI is not running".
+    [caused('ECONNREFUSED'), 'internal_error', /recorded where in its diagnostics/],
     [Object.assign(new Error('synthetic'), { code: 'ENOENT', syscall: 'open', path: '/synthetic/missing.json' }), 'internal_error',
       /recorded where in its diagnostics/],
-    [Object.assign(new Error('synthetic'), { name: 'TimeoutError' }), 'fuli_timeout', /whether this call finished is unknown/],
+    // The console layer's own refusal (app/fuli-not-running.js).
+    [fuliNotRunning(), 'fuli_not_running', /not running, so nothing was done/],
+    [Object.assign(new Error('synthetic'), { name: 'TimeoutError' }), 'fuli_timeout', /whether it finished is unknown/],
     [Object.assign(new Error('synthetic'), { name: 'AbortError' }), 'fuli_timeout', /in time/],
     [caused('UND_ERR_HEADERS_TIMEOUT'), 'fuli_timeout', /in time/],
     [caused('ECONNRESET'), 'fuli_connection_lost', /dropped/],
