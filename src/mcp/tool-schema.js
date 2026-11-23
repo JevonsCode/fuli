@@ -1,14 +1,17 @@
 import * as z from 'zod/v4';
 
-export function jsonSchemaToZod(schema) {
-  if (Array.isArray(schema.type)) return nullableSchema(schema);
+// unknownKeys 'strip': an object closed with additionalProperties false drops
+// the keys it does not list instead of refusing them, as a model's answer is
+// read (model-backends/decision-contract.js): an extra field is ignored, never kept.
+export function jsonSchemaToZod(schema, options = {}) {
+  if (Array.isArray(schema.type)) return nullableSchema(schema, options);
   if (schema.enum) return z.enum(schema.enum);
-  if (schema.type === 'object') return objectToZod(schema);
+  if (schema.type === 'object') return objectToZod(schema, options);
   if (schema.type === 'string') return stringToZod(schema);
   if (schema.type === 'boolean') return z.boolean();
   if (schema.type === 'number') return numberToZod(schema, false);
   if (schema.type === 'integer') return numberToZod(schema, true);
-  if (schema.type === 'array') return arrayToZod(schema);
+  if (schema.type === 'array') return arrayToZod(schema, options);
   if (schema.type === 'null') return z.null();
   throw new TypeError(`Unsupported JSON schema type: ${schema.type}`);
 }
@@ -25,24 +28,25 @@ function stringToZod(schema) {
   return converted;
 }
 
-function objectToZod(schema) {
+function objectToZod(schema, options) {
   const required = new Set(schema.required ?? []);
   const shape = Object.fromEntries(
     Object.entries(schema.properties ?? {}).map(([name, property]) => {
-      const converted = jsonSchemaToZod(property);
+      const converted = jsonSchemaToZod(property, options);
       return [name, required.has(name) ? converted : converted.optional()];
     })
   );
-  return schema.additionalProperties === false ? z.strictObject(shape) : z.looseObject(shape);
+  if (schema.additionalProperties !== false) return z.looseObject(shape);
+  return options.unknownKeys === 'strip' ? z.object(shape) : z.strictObject(shape);
 }
 
-function nullableSchema(schema) {
+function nullableSchema(schema, options) {
   const types = schema.type;
   if (types.length !== 2 || !types.includes('null')) {
     throw new TypeError(`Unsupported JSON schema union: ${types.join(',')}`);
   }
   const valueType = types.find((type) => type !== 'null');
-  return jsonSchemaToZod({ ...schema, type: valueType }).nullable();
+  return jsonSchemaToZod({ ...schema, type: valueType }, options).nullable();
 }
 
 function numberToZod(schema, integer) {
@@ -52,8 +56,8 @@ function numberToZod(schema, integer) {
   return converted;
 }
 
-function arrayToZod(schema) {
-  let converted = z.array(jsonSchemaToZod(schema.items));
+function arrayToZod(schema, options) {
+  let converted = z.array(jsonSchemaToZod(schema.items, options));
   if (schema.minItems !== undefined) converted = converted.min(schema.minItems);
   if (schema.maxItems !== undefined) converted = converted.max(schema.maxItems);
   return converted;

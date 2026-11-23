@@ -29,6 +29,7 @@ export function attemptFailure(failure, { usage, actualModel = null }) {
 
 // The failure for an error raised while a response body was being read.
 export function readFailure(error) {
+  if (error instanceof StreamStalledError) return modelFailure('transient', 'stream_stalled');
   return error instanceof SyntaxError || error instanceof ResponseFormatError
     ? modelFailure('configuration', 'invalid_response') : transportFailure(error);
 }
@@ -74,19 +75,24 @@ export async function readJsonBody(response, { maxBytes = MAX_RESPONSE_BYTES } =
   return JSON.parse(text);
 }
 
-// A stream that began and then sends nothing for this long has stalled: the
-// endpoint keeps the connection open with nothing more coming. Ending the
-// attempt here as a timeout leaves the call's own time limit room for its one
-// retry, instead of waiting that limit out. Every token, reasoning delta and
-// keep-alive ping arrives as a chunk, so a model still answering never goes
-// this quiet; the wait for the first chunk is left to the call's time limit.
+// A stream whose answer began and then sends nothing for this long has
+// stalled: the endpoint keeps the connection open with nothing more coming.
+// Ending the attempt here (stream_stalled, retried like a timeout) leaves the
+// call's own time limit room for its one retry, instead of waiting that limit
+// out. The wait starts only once answer text arrived (answering(), which the
+// adapter passes): a reasoning model behind some OpenAI-compatible gateways
+// sends a role chunk, then thinks for minutes with no keep-alive before the
+// first word, and that quiet is not a stall. Until then only the call's time
+// limit bounds the stream, and its abort ends a read waiting for any chunk.
 export const STREAM_STALL_MS = 120_000;
 
-export async function* serverSentEvents(response, { stallMs = STREAM_STALL_MS } = {}) {
+class StreamStalledError extends Error {}
+
+export async function* serverSentEvents(response, { stallMs = STREAM_STALL_MS, answering }) {
   const decoder = new TextDecoder();
   let buffer = '';
   let bytes = 0;
-  for await (const chunk of chunksUntilStalled(response.body, stallMs)) {
+  for await (const chunk of chunksUntilStalled(response.body, stallMs, answering)) {
     bytes += chunk.byteLength;
     if (bytes > MAX_RESPONSE_BYTES) throw new ResponseFormatError('The model stream is too large');
     buffer += decoder.decode(chunk, { stream: true });
@@ -101,15 +107,16 @@ export async function* serverSentEvents(response, { stallMs = STREAM_STALL_MS } 
   if (last) yield last;
 }
 
-async function* chunksUntilStalled(body, stallMs) {
+// Each read waits at most stallMs once answering() says the answer began.
+// The consumer has handled every event before the next read, so answering()
+// sees the text so far.
+async function* chunksUntilStalled(body, stallMs, answering) {
   if (!body) return;
   const reader = body.getReader();
-  let started = false;
   try {
     for (;;) {
-      const { done, value } = started ? await beforeStall(reader.read(), stallMs) : await reader.read();
+      const { done, value } = answering() ? await beforeStall(reader.read(), stallMs) : await reader.read();
       if (done) return;
-      started = true;
       yield value;
     }
   } finally {
@@ -120,7 +127,7 @@ async function* chunksUntilStalled(body, stallMs) {
 async function beforeStall(read, stallMs) {
   let timer;
   const stalled = new Promise((resolve, reject) => {
-    timer = setTimeout(() => reject(new DOMException('The model stream stalled', 'TimeoutError')), stallMs);
+    timer = setTimeout(() => reject(new StreamStalledError('The model stream stalled')), stallMs);
   });
   try {
     return await Promise.race([read, stalled]);

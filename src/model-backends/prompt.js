@@ -39,10 +39,27 @@ function undecidedRule(decisions) {
   return undecided.length ? `When evidence is missing or conflicting, or no option fits, choose ${undecided.join(' or ')}. ` : '';
 }
 
+// Structured output takes the shape only (decision-contract.js), so with it
+// the model reads the counts and lengths it is checked against in one line.
 export function promptForMode(prompt, mode) {
-  return mode === 'prompt'
-    ? { ...prompt, system: `${prompt.system}\nThe reply must match this JSON schema: ${JSON.stringify(prompt.rules)}` }
-    : prompt;
+  if (mode === 'prompt') return { ...prompt, system: `${prompt.system}\nThe reply must match this JSON schema: ${JSON.stringify(prompt.rules)}` };
+  const limits = schemaLimits(prompt.rules);
+  return limits.length ? { ...prompt, system: `${prompt.system}\nLimits: ${limits.join('; ')}.` } : prompt;
+}
+
+// Each count, length and range of a schema, by path: "payload.decisions: exactly 10 items".
+function schemaLimits(schema, path = '') {
+  const own = [];
+  if (schema.maxLength !== undefined) own.push(`at most ${schema.maxLength} characters`);
+  if (schema.minItems !== undefined || schema.maxItems !== undefined) {
+    const { minItems: least = 0, maxItems: most } = schema;
+    own.push(least === most ? `exactly ${most} items` : most === undefined ? `at least ${least} items`
+      : least ? `${least} to ${most} items` : `at most ${most} items`);
+  }
+  if (schema.minimum !== undefined && schema.maximum !== undefined) own.push(`${schema.minimum} to ${schema.maximum}`);
+  const nested = [...Object.entries(schema.properties ?? {}).flatMap(([name, property]) => schemaLimits(property, path ? `${path}.${name}` : name)),
+    ...(schema.items ? schemaLimits(schema.items, `${path}[]`) : [])];
+  return [...(own.length ? [`${path}: ${own.join(', ')}`] : []), ...nested];
 }
 
 // The one bounded repair: the model sees its whole reply (an adapter never

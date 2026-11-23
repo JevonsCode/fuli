@@ -26,7 +26,9 @@ const outputSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('choice'), options: z.array(z.object({ id: key, description: z.string().trim().min(1).max(500) }).strict())
     .min(2).max(255).refine(options => new Set(options.map(option => option.id)).size === options.length, 'option IDs must be unique') }).strict(),
   z.object({ type: z.literal('score'), levels: z.array(z.string().trim().min(1).max(500)).min(2).max(10) }).strict(),
-  z.object({ type: z.literal('structured'), schema: z.looseObject({}) }).strict()
+  // items: payload[field] is a batch of one object per key (decision-contract.js batchCheck).
+  z.object({ type: z.literal('structured'), schema: z.looseObject({}),
+    items: z.object({ field: key, key }).strict().optional() }).strict()
 ]);
 
 const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable(), sessionRef: id.nullable() }).strict();

@@ -52,3 +52,15 @@ test('that way round still refuses a redirect and honours an abort', async (t) =
   controller.abort();
   await assert.rejects(pending, error => error.name === 'AbortError');
 });
+
+test('that way round a body still being read ends with why it was cut, so a time limit reads as a timeout', async (t) => {
+  const url = await server(t, (request, response) => {
+    request.resume();
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.write('data: {"part":1}\n\n');
+  });
+  const answer = await modelFetch(url, { method: 'POST', body: '{}', signal: AbortSignal.timeout(100) });
+  const reader = answer.body.getReader();
+  assert.equal((await reader.read()).done, false, 'the first chunk arrived');
+  await assert.rejects(reader.read(), error => error.name === 'TimeoutError');
+});
