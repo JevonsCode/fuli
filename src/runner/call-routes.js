@@ -1,7 +1,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 
-import { findRepositoryRoot, resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
+import { resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
 import { resultValue } from './offline-calls.js';
 import { DEFAULT_SCOPE, GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore } from './routes-store.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
@@ -16,9 +16,9 @@ import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 //
 // Which project a folder is, is the host's answer, by the host's own rules,
 // never a second set of them here: first what the host itself last resolved
-// for this folder (the project a task entry there named, kept on this computer,
-// which covers the origin-remote rules that need the host's project records);
-// then, for a folder the host never answered, the host's resolver itself
+// for this very folder (the project a task entry there named, kept on this
+// computer, which covers the origin-remote rules that need the host's project
+// records); then, for any other folder, the host's resolver itself
 // (project-path-context.js resolvePersonalProjectPath: the repository root,
 // a worktree's original repository, the folder's name, a child project's
 // marker), asked about the projects this computer knows of. A path the
@@ -30,12 +30,8 @@ export function callScope(projectPath, { known = [], resolve = resolvePersonalPr
   if (typeof projectPath !== 'string' || !projectPath.trim()) return GLOBAL_SCOPE;
   const asked = realPath(projectPath);
   if (!asked) return DEFAULT_SCOPE;
-  // The host resolves a folder by its repository: another folder of the same repository is the same project.
-  const root = repositoryOf(asked);
-  const byHost = known.find((project) => {
-    const folder = project.folder && realPath(project.folder);
-    return folder && (folder === asked || (root && repositoryOf(folder) === root));
-  });
+  // What the host itself answered for this very folder; any other folder is the resolver's to answer.
+  const byHost = known.find((project) => project.folder && realPath(project.folder) === asked);
   if (byHost) return `project:${byHost.id}`;
   let resolution;
   try { resolution = resolve(projectPath, [...new Set(known.map((project) => project.id))].map((id) => ({ project_id: id }))); }
@@ -59,9 +55,6 @@ export function knownProjects(store, routes) {
   return known;
 }
 
-function repositoryOf(folder) {
-  try { return findRepositoryRoot(folder); } catch { return null; }
-}
 
 // A folder as the host's resolver opens it: absolute, existing, its real path. Anything else is no folder.
 function realFolder(path) {

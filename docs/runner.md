@@ -81,11 +81,11 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   included. `fuli runner leave` deletes the routes.
 - `fuli routes list` shows them; `fuli routes follow SCOPE HOST` points one scope at the paired
   host (its name, or 8 or more characters of its fingerprint); `fuli routes scope-of PATH` prints
-  the scope of a folder. Which project a folder is, is the host's answer by the host's own rules:
-  what the host last resolved for a folder of the same repository (kept from its task entries), else
-  the host's resolver itself (`resolvePersonalProjectPath`: repository root, a worktree's original
-  repository, the folder's name, a child project's marker) over the projects this computer knows.
-  A folder of no known project is `default`.
+  the scope of a folder (a relative path from where it is run). Which project a folder is, is the
+  host's answer by the host's own rules: what the host last resolved for this very folder (kept from
+  its task entries), else the host's resolver itself (`resolvePersonalProjectPath`: repository root,
+  a worktree's original repository, the folder's name, a child project's marker) over the projects
+  this computer knows. A folder of no known project is `default`.
 - `fuli routes follow` first checks that this computer has no data of that scope already (design
   §7.1): on a computer with a FULI of its own, `global` and `default` are refused, and a project is
   refused when that FULI has it (`scope_has_local_data`). It asks the running FULI for the projects of
@@ -102,7 +102,9 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   back to the computer that entered the task whatever the routes became. A call whose owner this
   computer cannot reach is refused with the command that fixes it, never sent to another computer:
   `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope routed to this
-  computer, which nothing writes yet).
+  computer, which nothing writes yet). When the routes themselves cannot be read (a newer FULI wrote
+  them, the file is damaged, or it waits for a migration), the follower's MCP server still starts and
+  every call answers `routes_unavailable` with the reason and what to do; nothing is sent anywhere.
 - A task token says which FULI issued it (design §4.4): a token the host issues reaches the client
   as `fuli-from-<the host's fingerprint, 16 characters>.<the host's own token>`, and the host gets its
   own token back. A token passed as the host wrote it goes by the owner remembered for it here: only

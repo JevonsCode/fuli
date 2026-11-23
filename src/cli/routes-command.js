@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
@@ -49,7 +49,8 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
       const folder = named(rest);
       if (!folder) throw new TypeError(`Missing PATH\n${USAGE}`);
       // The same answer a call in that folder gets (call-routes.js).
-      write(callScope(folder, { known: knownProjects(runner, routes) }));
+      // A relative path is the person's, from where they run the command: made absolute here, as a client's would be.
+      write(callScope(resolvePath(process.cwd(), folder), { known: knownProjects(runner, routes) }));
       return { exitCode: 0 };
     }
     const host = runner.host();

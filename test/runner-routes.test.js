@@ -75,10 +75,13 @@ test('a call\'s scope is the project the host resolves its folder to, by the hos
 
   assert.equal(callScope(null, { known }), 'global');
   assert.equal(callScope('', { known }), 'global');
-  // What the host itself answered for this repository, whatever the folder is called, from any folder of it.
+  // What the host itself answered for this very folder, whatever the folder is called.
   assert.equal(callScope(repository, { known }), 'project:widgets-project');
   assert.equal(callScope(`${repository}/`, { known }), 'project:widgets-project', 'a trailing slash is the same folder');
-  assert.equal(callScope(path.join(repository, 'src'), { known }), 'project:widgets-project');
+  // Another folder of that repository is the resolver's to answer, never assumed the same project here.
+  assert.equal(callScope(path.join(repository, 'src'), { known }), 'default');
+  assert.equal(callScope(path.join(repository, 'src'), { known, resolve: () => ({ status: 'matched', personalProjectId: 'x' }) }),
+    'project:x', 'whatever the host\'s resolver says');
   // A folder the host never answered: the host's resolver, asked about the projects known here.
   assert.equal(callScope(widgets, { known }), 'project:widgets', 'its repository root names a known project');
   // A folder of no known project, a relative path, a path that is not a folder: no project.
@@ -268,4 +271,21 @@ test('an entry answer names its issuer wherever the token appears, recovery hint
   assert.equal(answered.structuredContent.entry_recovery[0].arguments.taskContextToken, issued);
   assert.equal(answered.content[0].text.split(issued).length - 1, 2, 'both mentions, in the text too');
   assert.doesNotMatch(answered.content[0].text.replaceAll(issued, ''), /fuli-task-synthetic/, 'never written the other way');
+});
+
+test('fuli routes scope-of takes a relative path from where it is run', async (t) => {
+  const dataDir = dataDirectory(t);
+  const folder = path.join(dataDir, 'notes');
+  mkdirSync(folder);
+  // A project this computer knows of by a route, which the host's resolver matches by the folder's name.
+  const routes = openRoutes(dataDir);
+  routes.set('project:notes', hostOwner(HOST.fingerprint));
+  routes.close();
+  const lines = [];
+  const before = process.cwd();
+  process.chdir(dataDir);
+  t.after(() => process.chdir(before));
+  await runRoutesCommand(['scope-of', 'notes', '--data-dir', dataDir], { write: (line) => lines.push(line) });
+  await runRoutesCommand(['scope-of', folder, '--data-dir', dataDir], { write: (line) => lines.push(line) });
+  assert.deepEqual(lines, ['project:notes', 'project:notes'], 'the same scope as its absolute path');
 });
