@@ -99,14 +99,15 @@ export function activeTeamAgent(team, agentId) {
 }
 
 // `withProgress` adds each workstream's latest task: one bounded read per
-// line, so only an explicit read asks for it. Task entry never does.
-export async function loadProjectTeam(application, personalSpaceId, projectId, { withProgress = false } = {}) {
-  const [policy, agents] = await Promise.all([
-    application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, projectId),
+// line, so only an explicit read asks for it. Task entry never does. `policy`:
+// the project's policy read this entry already started (project-policy-read.js).
+export async function loadProjectTeam(application, personalSpaceId, projectId, { withProgress = false, policy } = {}) {
+  const [read, agents] = await Promise.all([
+    policy ?? application.personal.getProjectAgentCoordinationPolicy(personalSpaceId, projectId),
     application.personal.listProjectAgents(personalSpaceId, projectId, { status: 'active' })
   ]);
   const list = Array.isArray(agents) ? agents : agents?.agents ?? agents?.items ?? [];
-  const team = buildProjectTeam({ policy, agents: list, projectId,
+  const team = buildProjectTeam({ policy: read, agents: list, projectId,
     standingAssignments: standingAssignmentsFor(application) });
   if (!withProgress) return team;
   return { ...team,

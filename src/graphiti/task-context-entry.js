@@ -3,7 +3,7 @@ import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
 import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
-import { WORKING_REPOSITORY } from './task-entry-workstream.js';
+import { WORKING_REPOSITORY, handoffWorkstream } from './task-entry-workstream.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
@@ -33,10 +33,12 @@ export async function beginTaskContext(application, {
   workflow,
   requiredCapabilities = [],
   // The model a client's prompt hook reported (Codex); like promptScene, hooks only, not in the tool schema.
-  clientModel = null,
-  // A project lead hands this task to one of its lines (docs/workstreams.md).
-  workstream = null
+  clientModel = null
 }) {
+  // A project lead hands this task to one of its lines with workKind
+  // "workstream:<name>" (docs/workstreams.md); that is no kind of work.
+  const workstream = handoffWorkstream(workKind);
+  if (workstream !== null) workKind = undefined;
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
   const readsCurrent = Boolean(!continuationToken && turnId && application.taskContextRegistry.current);
   const current = readsCurrent ? await application.taskContextRegistry.current(sessionId, sourceApplication) : null;
@@ -71,7 +73,8 @@ export async function beginTaskContext(application, {
     sessionId,
     turnId: existingTask?.turnId ?? turnId,
     taskPrompt,
-    projectAgentId: resumed?.projectAgentId ?? scopeRetry?.projectAgentId ?? projectAgentId,
+    // A hand-off in the turn the lead entered gives the task to another Agent; it is no retry of the lead's.
+    projectAgentId: resumed?.projectAgentId ?? (workstream === null ? scopeRetry?.projectAgentId : null) ?? projectAgentId,
     sourceApplication,
     sourceSessionId,
     workKind: preferenceScope.work_kind,
@@ -80,7 +83,7 @@ export async function beginTaskContext(application, {
     agentInvocation: true,
     agentToolName: 'begin_task_context',
     ...(clientModel ? { clientModel } : {}),
-    ...(workstream ? { workstream } : {}),
+    ...(workstream !== null ? { workstream } : {}),
     // Read above for a same-turn retry; the entry reuses it for the session's FLA binding.
     ...(readsCurrent ? { sessionTask: current } : {})
   });

@@ -9,6 +9,8 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { buildProjectTeam } from '../src/graphiti/project-team-view.js';
 import { registerStandingAssignment } from '../src/graphiti/standing-assignment-entry.js';
 import { loadProjectTeamContext } from '../src/graphiti/project-agent-team-context.js';
+import { policyReader, projectLeadOf } from '../src/graphiti/project-policy-read.js';
+import { handoffWorkstream } from '../src/graphiti/task-entry-workstream.js';
 import { agentWorkstreamLedger, projectWorkstreamLedger } from '../src/graphiti/agent-workstream-ledger.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleStandingAssignmentRequest } from '../src/http/standing-assignment-api-router.js';
@@ -156,8 +158,10 @@ test('later turns of the session stay with the line quietly; a new line or owner
   assert.equal(next.project_agent_context.project_agent_id, 'fla-ember');
   assert.equal(tasks.at(-1).projectAgentId, 'fla-ember');
   // Same line, same owner as the session's last turn: nothing is said again,
-  // and the task still counts on the line.
-  assert.equal(next.standing_owner, undefined);
+  // and the task still counts on the line. A short field without a notice
+  // keeps which line this is through a context compaction.
+  assert.deepEqual(next.standing_owner, { status: 'workstream', assignment_id: lineId(app)('春促落地页'),
+    workstream: '春促落地页' });
   assert.equal(next.owner_change, undefined);
   assert.doesNotMatch(next.agent_receipt.markdown, /工作线/);
   assert.deepEqual(tasks.at(-1).agentAssignment.match_basis.filter(item => item.startsWith('workstream:')),
@@ -176,14 +180,16 @@ test('a request that names the project keeps its lines', async () => {
   assert.equal(entry.project_agent_context.project_agent_id, 'fla-ember');
 });
 
+const lineMarkers = task => task.agentAssignment.match_basis.filter(item => item.startsWith('workstream:'));
+
 test('naming a line\'s owner: it works as itself, the turn counts on its line, and the name holds', async () => {
   const { app, run, requested, tasks } = fixture({ seed: [SPRING, COUPON] });
-  const entry = await run({ taskPrompt: '#FLA Ember Vale 改一下头图' });
+  const entry = await run({ taskPrompt: '#FLA Ember Vale 春促页 改一下头图' });
   assert.equal(entry.project_agent_context.project_agent_id, 'fla-ember');
   assert.equal(entry.project_agent_context.selection_reason, 'workstream_owner');
   assert.ok(requested.includes('owner:fla-ember'));
-  // The ledger sees it: the task carries its line, with no notice of its own.
-  assert.ok(tasks.at(-1).agentAssignment.match_basis.includes(`workstream:${lineId(app)('春促落地页')}`));
+  // The ledger sees it: the turn names its line, so the task carries it, with no notice of its own.
+  assert.deepEqual(lineMarkers(tasks.at(-1)), [`workstream:${lineId(app)('春促落地页')}`]);
   // The turn it is named says once that the name outranks the lines, and how back.
   assert.equal(entry.fla.notice,
     '本会话由 Ember Vale 继续项目 Campaigns 的工作；之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复');
@@ -191,6 +197,8 @@ test('naming a line\'s owner: it works as itself, the turn counts on its line, a
   const later = await run({ taskPrompt: '优惠券 列表空了' });
   assert.equal(later.project_agent_context.project_agent_id, 'fla-ember');
   assert.equal(later.standing_owner, undefined);
+  // Its work on another line's matter is not its line's progress.
+  assert.deepEqual(lineMarkers(tasks.at(-1)), []);
   assert.doesNotMatch(later.agent_receipt.markdown, /发 #FLA 结束/, 'said once, on the turn it was named');
   // #FLA 结束 gives the session back to the lines; the named turns carry no line on.
   const released = await run({ taskPrompt: '#FLA 结束' });
@@ -198,6 +206,10 @@ test('naming a line\'s owner: it works as itself, the turn counts on its line, a
   assert.equal(released.standing_owner, undefined);
   const routed = await run({ taskPrompt: '优惠券 列表空了' });
   assert.equal(routed.project_agent_context.project_agent_id, 'fla-orin');
+  // Nor is anything else it does while named.
+  await run({ taskPrompt: '#FLA Ember Vale 改一下 README' });
+  assert.equal(tasks.at(-1).projectAgentId, 'fla-ember');
+  assert.deepEqual(lineMarkers(tasks.at(-1)), []);
   // A member without a line is still held by the lead, as before.
   const plain = fixture({ seed: [SPRING] });
   const orin = await plain.run({ taskPrompt: '#FLA Orin Pike 看看' });
@@ -279,12 +291,19 @@ test('the owner of a line who left the project is named, not replaced', async ()
 
 test('the lead sees the lines as facts and the rule by reference; a project without lines carries neither', async () => {
   const divided = fixture({ seed: [SPRING, COUPON] });
-  const team = await loadProjectTeamContext(divided.app, SPACE, PROJECT);
+  const team = await loadProjectTeamContext(divided.app, SPACE, PROJECT, { agentId: LEAD });
   assert.deepEqual(team.workstreams.map(line => [line.workstream, line.owner_name]).sort(),
     [['优惠券中心', 'Orin Pike'], ['春促落地页', 'Ember Vale']]);
-  assert.match(team.workstream_guidance, /begin_task_context with workstream "<its name>"/);
+  assert.match(team.workstream_guidance, /begin_task_context with workKind "workstream:<its name>"/);
+  assert.match(team.workstream_guidance, /only when that entry returns workstream_handoff\.status handed_over/);
   assert.match(team.workstream_guidance, /never #FLA/);
-  const undivided = await loadProjectTeamContext(fixture().app, SPACE, PROJECT);
+  // Only the lead divides the project: an owner or a member sees the lines, never the rule.
+  for (const agentId of ['fla-ember', 'fla-orin', null]) {
+    const member = await loadProjectTeamContext(divided.app, SPACE, PROJECT, { agentId });
+    assert.equal(member.workstreams.length, 2);
+    assert.equal(member.workstream_guidance, undefined, String(agentId));
+  }
+  const undivided = await loadProjectTeamContext(fixture().app, SPACE, PROJECT, { agentId: LEAD });
   assert.equal(undivided.workstreams, undefined);
   assert.equal(undivided.workstream_guidance, undefined);
 });
@@ -545,6 +564,7 @@ test('the lead hands a task to a line by name: no #FLA binding, and the line car
   assert.equal(tasks.at(-1).projectAgentId, LEAD);
   const handed = await run({ taskPrompt: '头图换成春天的', workstream: '春促落地页' });
   assert.equal(handed.project_agent_context.project_agent_id, 'fla-ember');
+  assert.deepEqual(handed.workstream_handoff, { status: 'handed_over', workstream: '春促落地页' });
   assert.equal(handed.project_agent_context.selection_reason, 'workstream_owner');
   assert.deepEqual(handed.standing_owner.matched_on, ['handoff']);
   assert.equal(handed.standing_owner.notice,
@@ -555,19 +575,123 @@ test('the lead hands a task to a line by name: no #FLA binding, and the line car
   // The person's next words decide as lines do: another line's words move it.
   const quiet = await run({ taskPrompt: '再亮一点' });
   assert.equal(quiet.project_agent_context.project_agent_id, 'fla-ember');
-  assert.equal(quiet.standing_owner, undefined);
+  assert.equal(quiet.standing_owner.notice, undefined);
+  assert.equal(quiet.workstream_handoff, undefined);
   assert.equal((await run({ taskPrompt: '优惠券 列表空了' })).project_agent_context.project_agent_id, 'fla-orin');
-  // The same through begin_task_context, the call the guidance names.
+  // The same through begin_task_context, the call the guidance names: the
+  // hand-off rides on workKind, which then scopes nothing.
   const begun = fixture({ seed: [SPRING] });
-  await begun.app.beginTaskContext({ sessionId: 'synthetic-session', projectPath: '/synthetic/campaigns',
-    sourceApplication: 'codex', taskPrompt: '头图换成春天的', workstream: '春促落地页' });
+  await begun.run({ taskPrompt: '看一下这个页面' });
+  const entry = await begun.app.beginTaskContext({ sessionId: 'synthetic-session', turnId: 'turn-1',
+    projectPath: '/synthetic/campaigns', sourceApplication: 'codex', taskPrompt: '头图换成春天的',
+    workKind: 'workstream:春促落地页' });
   assert.equal(begun.tasks.at(-1).projectAgentId, 'fla-ember');
-  // A name no line has keeps the task with the lead and says so.
-  const unknown = fixture({ seed: [SPRING] });
+  assert.equal(entry.workstream_handoff.status, 'handed_over');
+  assert.notEqual(begun.tasks.at(-1).preferenceScope?.work_kind, 'workstream:春促落地页');
+  assert.equal(handoffWorkstream('implementation'), null);
+  assert.equal(handoffWorkstream('workstream: 春促落地页 '), '春促落地页');
+});
+
+const STILL_YOURS = /the task is still yours|so the task is still yours/;
+
+test('a hand-off that does not happen is always said, with why, and the task stays with its caller', async () => {
+  const notDone = (entry, status, reason) => {
+    assert.deepEqual([entry.workstream_handoff?.status, entry.workstream_handoff?.reason], [status, reason]);
+    assert.match(entry.workstream_handoff.guidance, STILL_YOURS);
+  };
+  // No line by that name, or one that was closed.
+  const unknown = fixture({ seed: [SPRING, COUPON] });
+  await unknown.run();
   const missing = await unknown.run({ taskPrompt: '头图', workstream: '秋促落地页' });
   assert.equal(missing.project_agent_context.project_agent_id, LEAD);
-  assert.deepEqual([missing.standing_owner.status, missing.standing_owner.workstream],
-    ['workstream_not_found', '秋促落地页']);
+  assert.equal(missing.workstream_handoff.workstream, '秋促落地页');
+  notDone(missing, 'workstream_not_found', 'no_such_workstream');
+  unknown.app.standingAssignments.correct(lineId(unknown.app)('优惠券中心'), { action: 'retire' },
+    { source: 'user', expectedRevision: 1 });
+  const closed = await unknown.run({ taskPrompt: '列表空了', workstream: '优惠券中心' });
+  assert.equal(closed.project_agent_context.project_agent_id, LEAD);
+  notDone(closed, 'workstream_not_found', 'no_such_workstream');
+  // A project without lines says so too, and still reads no lead for it.
+  const plain = fixture();
+  let policyReads = 0;
+  plain.app.personal.getProjectAgentCoordinationPolicy = async () => { policyReads += 1; return { team_lead_agent_id: LEAD }; };
+  await plain.run();
+  notDone(await plain.run({ taskPrompt: '头图', workstream: '春促落地页' }), 'workstream_not_found', 'no_workstreams');
+  assert.equal(policyReads, 0);
+  // The person's #FLA binding outranks it: the named FLA keeps the turn.
+  const bound = fixture({ seed: [SPRING, COUPON] });
+  await bound.run({ taskPrompt: '#FLA Ember Vale 看看' });
+  const held = await bound.run({ taskPrompt: '列表空了', workstream: '优惠券中心' });
+  assert.equal(held.project_agent_context.project_agent_id, 'fla-ember');
+  notDone(held, 'workstream_handoff_held', 'named_fla');
+  // So does a #FLA in the same request, and an explicit Agent.
+  const said = fixture({ seed: [SPRING] });
+  await said.run();
+  notDone(await said.run({ taskPrompt: '#FLA Orin Pike 看看', workstream: '春促落地页' }),
+    'workstream_handoff_held', 'named_fla');
+  const explicit = fixture({ seed: [SPRING] });
+  await explicit.run();
+  const pinned = await explicit.run({ taskPrompt: '头图', projectAgentId: LEAD, workstream: '春促落地页' });
+  assert.equal(pinned.project_agent_context.project_agent_id, LEAD);
+  notDone(pinned, 'workstream_handoff_held', 'explicit_agent');
+  // An owner who left the project cannot take it: the lead keeps it, never handed_over.
+  const left = fixture({ seed: [{ ...SPRING, owner: 'fla-former' }] });
+  await left.run();
+  const gone = await left.run({ taskPrompt: '头图', workstream: '春促落地页' });
+  assert.equal(gone.project_agent_context.project_agent_id, LEAD);
+  notDone(gone, 'workstream_handoff_held', 'workstream_owner_not_on_project');
+});
+
+test('only the lead hands work over: an owner or a worker asking is refused and keeps its turn', async () => {
+  // A line's owner, on its own line, asks to hand to another line.
+  const { app, run, tasks } = fixture({ seed: [SPRING, COUPON] });
+  await run({ taskPrompt: '春促页 的头图换一下' });
+  const owner = await run({ taskPrompt: '列表也看看', workstream: '优惠券中心' });
+  assert.equal(owner.project_agent_context.project_agent_id, 'fla-ember');
+  assert.deepEqual([owner.workstream_handoff.status, owner.workstream_handoff.reason],
+    ['workstream_handoff_refused', 'not_lead']);
+  assert.match(owner.workstream_handoff.guidance, /Only the project lead/);
+  assert.deepEqual(lineMarkers(tasks.at(-1)), [`workstream:${lineId(app)('春促落地页')}`]);
+  // A worker of the project (no line of its own) whose task the session holds.
+  const worker = fixture({ seed: [SPRING], members: { ...MEMBERS, 'fla-wren': 'Wren Ash' } });
+  worker.tasks.push({ token: 'fuli-task-synthetic-worker', sessionId: 'synthetic-session', personalProjectId: PROJECT,
+    projectAgentId: 'fla-wren', sourceApplication: 'codex', agentAssignment: { match_basis: [] } });
+  const refused = await worker.run({ taskPrompt: '头图', workstream: '春促落地页' });
+  assert.notEqual(refused.project_agent_context.project_agent_id, 'fla-ember');
+  assert.deepEqual(worker.requested, [null], 'no owner was asked for');
+  assert.equal(refused.workstream_handoff.status, 'workstream_handoff_refused');
+});
+
+test('#FLA 结束 with a request releases the name and routes the request by its lines', async () => {
+  const { run } = fixture({ seed: [SPRING, COUPON] });
+  await run({ taskPrompt: '#FLA Ember Vale 看看' });
+  const released = await run({ taskPrompt: '#FLA 结束 优惠券 列表空了' });
+  assert.equal(released.fla.status, 'released');
+  assert.equal(released.project_agent_context.project_agent_id, 'fla-orin');
+  assert.match(released.standing_owner.notice, /工作线「优惠券中心」由 Orin Pike 接手（因为提到「优惠券」）/);
+  // An FLA whose name starts with the word is still that FLA.
+  const named = fixture({ seed: [SPRING], members: { ...MEMBERS, 'fla-end': 'End Rivers' } });
+  const ender = await named.run({ taskPrompt: '#FLA End Rivers 看看' });
+  assert.notEqual(ender.fla?.status, 'released');
+  assert.equal(named.tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:fla-end ')), true);
+});
+
+test('one entry reads the project\'s lead once, shared by the routing and the team block', async () => {
+  const { app, run } = fixture({ seed: [SPRING, COUPON] });
+  let reads = 0;
+  const read = app.personal.getProjectAgentCoordinationPolicy;
+  app.personal.getProjectAgentCoordinationPolicy = async (...args) => { reads += 1; return read(...args); };
+  await run({ taskPrompt: '春促页 的头图换一下' });
+  assert.equal(reads, 1);
+  reads = 0;
+  await run({ taskPrompt: '#FLA Orin Pike 看看' });
+  assert.equal(reads, 1, 'the named turn\'s notice reads it once');
+  reads = 0;
+  const readPolicy = policyReader(app);
+  assert.equal(await projectLeadOf(readPolicy, PROJECT), LEAD);
+  const team = await loadProjectTeamContext(app, SPACE, PROJECT, { agentId: LEAD, readPolicy });
+  assert.equal(team.lead_agent_id, LEAD);
+  assert.equal(reads, 1);
 });
 
 test('a line\'s words outrank another line\'s folder: no question is asked', async t => {

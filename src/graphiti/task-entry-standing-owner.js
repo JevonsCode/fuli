@@ -42,8 +42,6 @@ const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which one this task belongs to, then begin the task again naming that project, or that FLA when the '
   + 'candidates are workstreams of one project.';
-const HANDOFF_MISSING_GUIDANCE = 'No active workstream of this project has this name or ID, so this task stayed with '
-  + 'you. Use a name from team.workstreams, or do the task yourself.';
 
 export async function withStandingOwner(application, resolution, input) {
   const matches = standingMatches(application, input.taskPrompt)
@@ -71,10 +69,6 @@ export async function withStandingOwner(application, resolution, input) {
 // predecessorName: the name of the session's earlier owner a line's notice
 // names (task-entry-workstream.js), when it was read.
 export function standingOwnerEntry(resolution, selection, predecessorName = null) {
-  if (resolution.workstreamNotFound) {
-    return { field: { status: 'workstream_not_found', workstream: resolution.workstreamNotFound,
-      guidance: HANDOFF_MISSING_GUIDANCE } };
-  }
   if (resolution.standingCandidates) {
     return { field: { status: 'clarification_required',
       // Workstreams of one project share its name, so each candidate also

@@ -34,7 +34,7 @@ async function collaborationPreferences(application, {
   sessionTask,
   // The model a client's prompt hook reported (Codex), for a #FLG join (rec#129); hooks only.
   clientModel = null,
-  // The lead's hand-off to a line of this project, by name (begin_task_context; docs/workstreams.md).
+  // The lead's hand-off to a line of this project, by name (begin_task_context workKind; docs/workstreams.md).
   workstream = null
 } = {}) {
   let projectResolution = await resolvePreferenceProject(application, { personalProjectId, projectPath });

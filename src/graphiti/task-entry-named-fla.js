@@ -9,6 +9,7 @@ import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
 import { projectHasLines } from './task-entry-workstream.js';
+import { policyReader } from './project-policy-read.js';
 import { TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
@@ -77,14 +78,19 @@ const QUESTIONS = Object.freeze({
 export async function namedFlaRequest(application, resolution, input, readSessionTask) {
   const parsed = parseFlaMention(input.taskPrompt);
   // `#FLG` addresses a group (task-entry-group-discussion.js), not one FLA.
-  const mention = parsed?.group ? null : parsed;
+  let mention = parsed?.group ? null : parsed;
   let task = null;
   try { task = await readSessionTask(); } catch { /* the binding cannot be proven; route as before */ }
   const stored = storedFla(task);
   const previous = stored.binding;
   // Internal Agent activity (a roundtable wake) neither starts nor ends one.
   if (hostInternalActivity(application, input)) return previous ? { state: 'carried', previous } : null;
-  if (mention?.release) return { state: 'released', previous };
+  if (mention?.release) {
+    // `#FLA 结束 <request>` releases and lets the request route as usual,
+    // unless the whole names an FLA (one called "End Rivers"): that FLA is named.
+    if (!mention.query || !await namesAnFla(application, mention.query, resolution)) return { state: 'released', previous };
+    mention = { explicit: true, query: mention.query };
+  }
   // A hand-off's `#FLA {agentId}` names its Agent and routes as before; reaching
   // another Agent ends the binding, a failed one keeps it.
   if (mention?.handoff) {
@@ -123,6 +129,19 @@ export async function namedFlaRequest(application, resolution, input, readSessio
   return { state: 'continue', target: previous, origin: 'session', previous };
 }
 
+// Whether a text names one of the person's FLAs or FULI's roles exactly, as
+// `#FLA <name>` would. A roster that cannot be read names none.
+async function namesAnFla(application, query, resolution) {
+  try {
+    const roster = await spaceRoster(application);
+    const ranked = flaCandidates(roster.agents, roster.projects, roster.spaceId);
+    const roles = roleCandidates(roster.agents, roster.projects, roster.spaceId, resolution.personalProjectId ?? null);
+    return namedAtOpening(query, withMenuNames([...ranked, ...roles])).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // The task scope a request routes to; null leaves routing to the folder, the
 // session and standing assignments (a release, a carried binding).
 export function namedFlaResolution(request) {
@@ -152,7 +171,8 @@ export function namedFlaTask(task) {
 // receipt sentence naming the FLA and project), interaction (the picker),
 // selection (replaces the selection when no FLA may work this turn) and the
 // markers the task stores.
-export async function namedFlaEntry(application, request, selection, sourceApplication = 'other') {
+// readPolicy: the entry's policy reader (project-policy-read.js).
+export async function namedFlaEntry(application, request, selection, sourceApplication = 'other', readPolicy = null) {
   const kept = request.previous ? [bindingMarker(request.previous)] : [];
   if (request.state === 'carried') return { view: null, notice: null, markers: kept };
   if (request.state === 'handoff') {
@@ -180,7 +200,7 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   if (agent?.agentId === target.agentId) {
     const current = { ...target, name: agentDisplayName(agent) || target.name };
     const notice = (current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
-      : `本会话由 ${current.name} 继续其全局工作`) + await linesClause(application, request, current.projectId);
+      : `本会话由 ${current.name} 继续其全局工作`) + await linesClause(application, request, current.projectId, readPolicy);
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
     return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
@@ -188,7 +208,7 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   if (agent && selection.requested_agent_id === target.agentId) {
     const lead = agentDisplayName(agent) || agent.agentId;
     const notice = `${target.name} 是项目 ${target.project} 的成员，本会话由负责人 ${lead} 持有并请 ${target.name} 处理`
-      + await linesClause(application, request, target.projectId);
+      + await linesClause(application, request, target.projectId, readPolicy);
     return { view: { status: 'held_by_lead', notice }, notice, markers: [bindingMarker(target, notice)] };
   }
   const reason = await whyUnavailable(application, target, selection, sourceApplication);
@@ -199,8 +219,9 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
 // Where lines of work divide the project (docs/workstreams.md), the turn an
 // FLA is named says once that the name outranks them, and how to give the
 // session back to them; its later bound turns do not repeat it.
-async function linesClause(application, request, projectId) {
-  if (request.origin === 'session' || !projectId || !await projectHasLines(application, projectId)) return '';
+async function linesClause(application, request, projectId, readPolicy) {
+  if (request.origin === 'session' || !projectId
+    || !await projectHasLines(application, projectId, readPolicy ?? policyReader(application))) return '';
   return '；之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复';
 }
 

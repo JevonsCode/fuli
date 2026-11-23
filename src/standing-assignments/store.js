@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { RETIRED_SHOWN } from './limits.js';
 
 // Standing assignments (rec#29 D-41.1): "from now on, <this work> goes to
 // <that Agent>", said once in any conversation and kept on this computer.
@@ -102,11 +103,12 @@ export class StandingAssignmentStore {
       ORDER BY created_at, assignment_id`).all(personalSpaceId).map(view);
   }
 
-  // A project's ended assignments, most recently ended first.
+  // A project's most recently ended assignments, at most RETIRED_SHOWN, latest first.
   listRetired(personalSpaceId, projectId) {
     if (!this.readable) return [];
     return this.db.prepare(`SELECT * FROM standing_assignments WHERE personal_space_id = ? AND project_id = ?
-      AND retired_at IS NOT NULL ORDER BY retired_at DESC, assignment_id`).all(personalSpaceId, projectId).map(view);
+      AND retired_at IS NOT NULL ORDER BY retired_at DESC, assignment_id LIMIT ?`)
+      .all(personalSpaceId, projectId, RETIRED_SHOWN).map(view);
   }
 
   // Every active term key of a space with the assignment it names.

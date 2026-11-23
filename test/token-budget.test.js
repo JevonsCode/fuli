@@ -250,14 +250,15 @@ const BASELINE = Object.freeze({
   // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
   // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
   // for reading it travel in the answer's own guidance.
-  // docs/workstreams.md: begin_task_context gains workstream, the lead's hand-off of a task to a line by
-  // name, so a lead no longer borrows the person's #FLA (which binds the session): 192,745 -> 192,888 B
-  // (+143 B), measured after merging main. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 192888,
+  // docs/workstreams.md: the lead's hand-off of a task to a line rides on begin_task_context's existing
+  // workKind ("workstream:<name>", told only to the lead of a divided project), so no Agent pays for a
+  // parameter of its own: unchanged at 192,745 B (a separate parameter measured +143 B).
+  fullToolSchemaBytes: 192745,
   // docs/workstreams.md: a divided project's entry names its lines and owners
-  // and refers to the dividing rule (two lines: +169 chars, measured); a
-  // project without lines adds nothing.
+  // (two lines: +91 chars, measured); only its lead's also refers to the
+  // dividing rule (+169 chars, measured). A project without lines adds nothing.
   workstreamEntryChars: 169,
+  workstreamMemberEntryChars: 91,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -532,16 +533,16 @@ async function measure() {
 }
 
 // docs/workstreams.md: what a divided project's entry adds to its team block,
-// two lines named with their owners and the dividing rule by reference, over
-// the same team without lines (which adds nothing).
+// two lines named with their owners, and for its lead the dividing rule by
+// reference, over the same team without lines (which adds nothing).
 function workstreamEntryChars() {
-  const team = lines => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
+  const team = (lines, lead) => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
     { agent_id: 'member', name: 'Ember Vale', role: 'member' }], guidance: TEAM_GUIDANCE,
   ...(lines ? { workstreams: [{ workstream: '春促落地页', owner_agent_id: 'member', owner_name: 'Ember Vale' },
     { workstream: '优惠券中心', owner_agent_id: 'other', owner_name: 'Orin Pike' }],
-  workstream_guidance: WORKSTREAM_GUIDANCE } : {}) });
-  const size = lines => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines) } })).length;
-  return { workstreamEntryChars: size(true) - size(false) };
+  ...(lead ? { workstream_guidance: WORKSTREAM_GUIDANCE } : {}) } : {}) });
+  const size = (lines, lead) => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines, lead) } })).length;
+  return { workstreamEntryChars: size(true, true) - size(false), workstreamMemberEntryChars: size(true, false) - size(false) };
 }
 
 // rec#82: the entry receipt's growth for a session with and without a confirmed migration,

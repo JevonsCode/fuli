@@ -18,7 +18,8 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
-import { WORKING_REPOSITORY, namedWorkstreamMarkers, workstreamPredecessor } from './task-entry-workstream.js';
+import { WORKING_REPOSITORY, namedWorkstreamMarkers, workstreamHandoffEntry, workstreamPredecessor } from './task-entry-workstream.js';
+import { entryPolicyReader } from './project-policy-read.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { introductionEntry } from './task-entry-introduction.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
@@ -171,8 +172,10 @@ async function entryPreferences(application, projectResolution, {
 }, selected, recordAgentViews, reads, { includeManagement = true, includeMessages = true } = {}) {
   // A named FLA's entry, said before anything of an Agent is loaded: when no
   // FLA may work this turn, no Agent is selected at all.
+  // The project's lead, read at most once for this entry (project-policy-read.js).
+  const readPolicy = entryPolicyReader(application, projectResolution);
   const fla = projectResolution.fla
-    ? await namedFlaEntry(application, projectResolution.fla, selected, sourceApplication) : null;
+    ? await namedFlaEntry(application, projectResolution.fla, selected, sourceApplication, readPolicy) : null;
   // An `#FLG` member choice loads no Agent either; its moderator is the one selected.
   const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
     fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
@@ -183,6 +186,8 @@ async function entryPreferences(application, projectResolution, {
   const ownerFrom = changedOwner(projectResolution, selection, Boolean(standing?.notice));
   // A line's new owner names whose records hold the session's earlier work (task-entry-workstream.js).
   const predecessor = workstreamPredecessor(projectResolution, selection);
+  // Whether the lead's hand-off happened, and why not when it did not.
+  const handoff = workstreamHandoffEntry(projectResolution, selection);
   const team = reads.management.then(management => {
     // Sealed workers already carry a coordinator's reporting contract. Ordinary
     // entry advertises team/judgment only with an available authorized manager.
@@ -192,7 +197,7 @@ async function entryPreferences(application, projectResolution, {
       selection?.agent ? loadProjectAgentContinuity(application, {
         projectId: projectResolution.personalProjectId, agent: selection.agent,
         sourceApplication, taskPrompt, selectionReason: selection.reason,
-        matchBasis: selection.match_basis, includeTeam
+        matchBasis: selection.match_basis, includeTeam, readPolicy
       }) : selection,
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null
     ]);
@@ -269,6 +274,7 @@ async function entryPreferences(application, projectResolution, {
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing?.field ? { standing_owner: standing.field } : {}),
+    ...(handoff ? { workstream_handoff: handoff } : {}),
     ...(ownerChange ? { owner_change: ownerChange.field } : {}),
     ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ?? joinedRounds ? { flg: group?.view ?? joinedRounds } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),

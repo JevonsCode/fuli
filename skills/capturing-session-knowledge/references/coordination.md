@@ -11,9 +11,11 @@ owned by one FLA so that its memory holds that line and not three
 (`docs/workstreams.md`). When a task belongs to a line, its owner is the turn's FLA: it works as
 itself with its own memory, and the entry's `standing_owner` says which line and who. A project's
 lead opens one with `register_standing_assignment` `change: 'delegate'` (then tells the person its
-`tell_user`), and hands a task to a line's owner with `begin_task_context` `workstream: "<its name>"`
+`tell_user`), and hands a task to a line's owner with `begin_task_context` `workKind: "workstream:<its name>"`
 and the request as taskPrompt, never with `#FLA`, which is the person's own choice and binds the
-session; the rule comes with the entry when the project has lines (`workstream_guidance`). Do not
+session. Only `workstream_handoff.status: handed_over` means the owner took it; any other status
+says why the task is still yours. Only the lead may hand over, and the rule comes with the lead's
+entry when the project has lines (`workstream_guidance`). Do not
 re-divide work that is already recorded, and do not open a workstream for a one-off request.
 
 ## Coordinate Project Agents

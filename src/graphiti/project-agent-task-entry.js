@@ -52,11 +52,12 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       contextRequest.delegation_session_id = delegation.sessionId;
     }
     // An FLA the person named that owns a line of this project works as
-    // itself, exactly as when the line matched, and the turn counts on its
-    // line in the ledger (docs/workstreams.md).
+    // itself, exactly as when the line matched; the turn counts on its line
+    // in the ledger only when it names that line (withNamedLine,
+    // docs/workstreams.md).
     const namedLine = named && !delegation ? lineOf(application, resolution.personalProjectId, named) : null;
     let value = namedLine ? await ownerContext(application, contextRequest, named) : null;
-    const namedWorkstreamId = value?.reason === 'workstream_owner' && value.agent ? namedLine.assignmentId : null;
+    const namedWorkstreamId = value?.reason === 'workstream_owner' && value.agent ? resolution.namedLineId ?? null : null;
     if (!value?.agent) value = await application.personal.resolveProjectAgentContext(contextRequest);
     // Internal Agent activity restores only its granted role; it never hires a lead.
     if (value?.reason === 'project_lead_required' && !delegation) {
@@ -183,9 +184,10 @@ async function resolveGlobalAgent(application, resolution, input) {
   }
 }
 
+// readPolicy: the entry's reader of the project's policy (project-policy-read.js), when it has one.
 export async function loadProjectAgentContinuity(application, {
   projectId, agent, sourceApplication = 'other', taskPrompt = null,
-  selectionReason = null, matchBasis = [], includeKnowledge = true, includeTeam = true
+  selectionReason = null, matchBasis = [], includeKnowledge = true, includeTeam = true, readPolicy = null
 }) {
   const scope = { personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId, agentId: agent.agentId };
@@ -203,7 +205,8 @@ export async function loadProjectAgentContinuity(application, {
       ? application.personal.getProjectAgentMemory({ ...memoryScope, limit: 1 })
       : Promise.resolve(null)]),
     ...(projectId ? [
-      ...(includeTeam ? [['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)]] : []),
+      ...(includeTeam ? [['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId,
+        { agentId: agent.agentId, readPolicy })]] : []),
       ['project', application.personal.getPersonalProject(scope.personalSpaceId, projectId)],
       ['tasks', application.personal.listProjectAgentTasks({ ...scope, limit: 4 })],
       ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
@@ -273,7 +276,7 @@ export const PROJECT_AGENT_CONTINUITY_GUIDANCE = 'Continue this task in the curr
 // Role instructions shared by task entry and same-task preference recovery.
 export function projectAgentRoleContext(agent, projectProfile) {
   return {
-    role: { name: agent.profile.displayName || agent.profile.name, responsibility: agent.profile.responsibility,
+    role: { name: agentDisplayName(agent), responsibility: agent.profile.responsibility,
       initial_preferences: [...(agent.profile.initialPreferences ?? [])],
       character: {
         judgment: boundedRoleText(agent.profile.character?.judgment, ROLE_TEXT_LIMITS.judgment),
