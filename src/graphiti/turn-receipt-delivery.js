@@ -41,6 +41,17 @@ function habitsLine(application, delivery) {
     + markdownLink('看看是哪几条', `${receiptConsoleUrl(application)}/habits/${delivery.taskKey.slice(0, TASK_KEY_PREFIX_LENGTH)}`);
 }
 
+// Whether this task's entry opened its conversation, from the row the entry
+// wrote (knowledge-impressions); null when there is no row or it cannot be read.
+export function entryOpenedConversation(application, task) {
+  try {
+    const row = application.recallImpressions?.delivery(taskKeyFor(task.token).slice(0, TASK_KEY_PREFIX_LENGTH));
+    return row ? Boolean(row.opensConversation) : null;
+  } catch {
+    return null;
+  }
+}
+
 // A checkpoint, roundtable or pause receipt replaces the entry's, so a task
 // whose entry opened the conversation says it again from its stored row: one
 // local primary-key read, off the entry path. Any other task, or a failing
