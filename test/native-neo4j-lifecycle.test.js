@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -74,7 +75,16 @@ test('unconfirmed candidate stop blocks restoration and preserves recovery evide
   await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /attention|stop/i);
   assert.notEqual((await f.manifest()).neo4jHome, f.current.neo4jHome);
   assert.ok(!f.events.includes('start-old'));
-  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /recovery|transaction/i);
+  // The lock stays with the journal, so nothing starts on the half-switched runtime until a recovery.
+  assert.ok(existsSync(join(f.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock')));
+  assert.ok(existsSync(join(f.paths.nativeRuntimeDir, 'neo4j-transaction.json')));
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /lock exists/i);
+});
+test('a switch that failed and rolled itself back releases its lock', async t => {
+  const f = await fixture(t, 'health');
+  await assert.rejects(manageNativeNeo4j({ paths: f.paths, action: 'update' }, f.deps), /restored/i);
+  assert.equal(existsSync(join(f.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock')), false);
+  assert.equal(existsSync(join(f.paths.nativeRuntimeDir, 'neo4j-transaction.json')), false);
 });
 test('failed old stop leaves the descriptor unchanged', async t => {
   const f = await fixture(t, 'stop-old');

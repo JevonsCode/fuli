@@ -154,7 +154,11 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
       await rm(journal);
       throw new Error('Neo4j switch failed; the previous assets were restored. Data was preserved.' + kept, { cause: error });
     }
-  } finally { await lock.release(); }
+  } finally {
+    // A switch whose own rollback did not finish leaves its journal: the lock
+    // stays with it, so nothing starts until `fuli graph runtime recover` ran.
+    if (!existsSync(journal)) await lock.release();
+  }
 }
 async function unchanged(path, bytes) {
   if (!(await readFile(path)).equals(bytes)) throw new Error('Native Neo4j descriptor changed concurrently; it was left untouched.');

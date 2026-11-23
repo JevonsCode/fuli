@@ -120,6 +120,67 @@ void main() {
     expect(controller.notice?.text, contains('/x/native-runtime/recovered/recovery-1.json'), reason: 'the record is pointed to');
   });
 
+  testWidgets('an import whose copy cannot be used offers 放弃这次导入… instead: its own words and button, nothing without the confirmation', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'lock',
+        failure: StartupFailure('native_lifecycle_lock', {'holder': 'gone', 'operation': 'load'})))
+      ..recoveryPlan = const RecoveryPlan('refused', [], null, {'kind': 'refused', 'reason': 'restore_point_damaged', 'why': 'missing', 'backupPath': '/x/b'});
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(controller.notice?.text, contains('找不到了'));
+    final abandon = find.byKey(const Key('abandon-import'));
+    expect(find.descendant(of: primary, matching: abandon), findsOneWidget);
+    expect(find.byKey(const Key('recover-start')), findsNothing);
+
+    runtime.recoveryPlan = const RecoveryPlan('abandon_load', [{'do': 'move-aside', 'path': '/x/native-runtime/personal/data/databases/neo4j', 'bytes': 1024}, {'do': 'release-lock'}],
+        'aaaaaaaaaaaaaaaa', {'copyProblem': 'missing', 'backupPath': '/x/b', 'instances': ['personal'], 'dataDir': '/x', 'copies': []});
+    await tester.tap(abandon);
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-preview'));
+    expect(find.textContaining('个人图谱会变成空的'), findsOneWidget);
+    expect(find.textContaining('没有可以导回的导入前副本'), findsOneWidget);
+    expect(find.text('放弃导入，清空这些图谱'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(runtime.calls.where((call) => call.startsWith('abandon-import-start')), isEmpty);
+    await tester.tap(abandon);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('abandon-import-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-start aaaaaaaaaaaaaaaa'));
+  });
+
+  testWidgets('a window running the fuli CLI shows the plan with the terminal command, and no button that would do nothing', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',
+        failure: StartupFailure('native_recovery_needed', {'operation': 'update', 'phase': 'switching'})))
+      ..recoversInTerminal = true
+      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef', {
+        'alternative': {'kind': 'back_out_switch', 'steps': [{'do': 'release-lock'}], 'digest': 'fedcba9876543210'},
+      });
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.text('在终端里完成'), findsOneWidget);
+    expect(find.byKey(const ValueKey('recovery-command fuli graph runtime recover')), findsOneWidget);
+    expect(find.byKey(const ValueKey('recovery-command fuli graph runtime recover --back-out')), findsOneWidget);
+    expect(find.byKey(const Key('copy-recovery-command')), findsOneWidget);
+    expect(find.byKey(const Key('recover-confirm')), findsNothing);
+    expect(find.byKey(const Key('recover-alternative')), findsNothing);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(runtime.calls.where((call) => call.startsWith('recover-start')), isEmpty);
+  });
+
   testWidgets('打开控制台 and 启动 / 停止 keep their places while work runs, ends, stops and starts', (tester) async {
     final updateStep = Completer<void>();
     final (api, runtime) = demoScenario('needs');

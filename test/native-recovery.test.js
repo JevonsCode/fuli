@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
 import { acquireNeo4jLifecycleLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
 import { applyNativeRecovery, planNativeRecovery } from '../src/native-runtime/neo4j-recovery.js';
 
@@ -36,7 +37,7 @@ function deps(overrides = {}) {
   const log = [];
   return { log, dependencies: { identity: gone, listProcesses: async () => [], fingerprint: async () => 'fp',
     storeFormats: async () => ({ 'personal:neo4j': 'aligned' }), stopServices: async () => log.push('stop'),
-    checkStart: async (descriptor) => log.push(`start ${descriptor.neo4jVersion}`),
+    checkStart: async (descriptor) => log.push(`start ${descriptor?.neo4jVersion}`),
     restore: async ({ from }) => log.push(`restore ${from}`), log: () => ({ record: (event) => log.push(`${event.operation} ${event.code}`) }),
     now: () => NOW, ...overrides } };
 }
@@ -44,6 +45,15 @@ function deps(overrides = {}) {
 async function recover(paths, d, options = {}) {
   const plan = await planNativeRecovery({ paths, dependencies: d.dependencies, ...options });
   return { plan, result: plan.digest ? await applyNativeRecovery({ paths, digest: plan.digest, dependencies: d.dependencies, ...options }) : plan };
+}
+
+// The recovery killed right after its [k]th step finished, before that step was
+// recorded. now() is read once for the plan, once for the folder's name, then
+// after each step; failing there leaves exactly what those k steps did, as a
+// kill would (no step's own clean-up runs).
+function killedAfter(k, overrides = {}) {
+  let calls = 0;
+  return deps({ ...overrides, now: () => { calls += 1; if (calls > 1 + k) throw new Error('killed'); return NOW; } });
 }
 
 // What a step that did not finish says, after its record was kept.
@@ -135,7 +145,7 @@ test('backing out is offered beside finishing, writes the older descriptor back 
   const plan = await planNativeRecovery({ paths: offered.paths, dependencies: d.dependencies });
   assert.equal(plan.alternative.kind, 'back_out_switch');
   assert.deepEqual(plan.alternative.steps.map(step => step.do),
-    ['check-formats', 'check-fingerprint', 'write-manifest', 'check-start', 'move-aside', 'archive-journal', 'release-lock']);
+    ['check-formats', 'check-fingerprint', 'mark-backing-out', 'write-manifest', 'check-start', 'move-aside', 'archive-journal', 'release-lock']);
   // The window confirms the alternative by its own digest.
   const result = await applyNativeRecovery({ paths: offered.paths, digest: plan.alternative.digest, dependencies: d.dependencies });
   assert.equal(result.kind, 'back_out_switch');
@@ -163,6 +173,74 @@ test('backing out is offered beside finishing, writes the older descriptor back 
   const reformatted = await newerInPlace(t);
   assert.equal((await planNativeRecovery({ paths: reformatted.paths,
     dependencies: deps({ storeFormats: async () => ({ 'personal:neo4j': 'block' }) }).dependencies })).alternativeRefused, 'format_changed');
+});
+
+test('a switch journal whose lock is gone is finished or backed out under a lock the recovery takes, through the services\' real lock check', async (t) => {
+  // The services' own gate (neo4j-asset-state.js): with a switch journal, only the lock's token gets through.
+  const gate = (paths, started) => (descriptor, owner) => withNativeAssetOperation(paths, owner ? { FULI_NATIVE_ASSET_OPERATION: owner } : {},
+    async () => { started.push(descriptor.neo4jVersion); }, { operation: 'start', identity: gone });
+  for (const backOut of [false, true]) {
+    // The switch's own failed rollback released the lock (before FULI kept it), or a person removed it.
+    const orphan = await newerInPlace(t);
+    await orphan.lock.release();
+    const started = [];
+    const { plan, result } = await recover(orphan.paths, deps({ checkStart: gate(orphan.paths, started) }), { backOut });
+    assert.equal(plan.kind, backOut ? 'back_out_switch' : 'finish_switch');
+    assert.equal(result.status, 'recovered');
+    assert.deepEqual(started, [backOut ? '5.26.0' : '5.26.28']);
+    assert.equal(existsSync(join(orphan.root, LOCK)), false);
+    assert.deepEqual(manifestOf(orphan.paths), backOut ? orphan.previous : orphan.next);
+  }
+  // Without a token the same gate refuses: what a recovery that took no lock would have run into.
+  const bare = await newerInPlace(t);
+  await bare.lock.release();
+  await assert.rejects(withNativeAssetOperation(bare.paths, {}, async () => {}, { operation: 'start', identity: gone }), /needs recovery/);
+  // A check that fails keeps the recovery's own lock; running again plans the same and finishes.
+  const stopped = await stoppedAt(recover(bare.paths, deps({ checkStart: async () => { throw new Error('no answer'); } })));
+  assert.equal(stopped.reason, 'start_failed');
+  assert.equal(JSON.parse(readFileSync(join(bare.root, LOCK, 'holder.json'), 'utf8')).operation, 'recover');
+  const started = [];
+  assert.equal((await recover(bare.paths, deps({ checkStart: gate(bare.paths, started) }))).result.status, 'recovered');
+  assert.deepEqual(started, ['5.26.28']);
+  assert.equal(existsSync(join(bare.root, LOCK)), false);
+  // Killed after the journal went but before its lock did: only that lock is left to release.
+  const late = runtime(t);
+  await acquireNeo4jLifecycleLock(late.root, { operation: 'recover', identify: holderIdentity });
+  const left = await recover(late.paths, deps());
+  assert.deepEqual([left.plan.kind, left.plan.steps.map(step => step.do)], ['finish_recovery', ['release-lock']]);
+  assert.equal(existsSync(join(late.root, LOCK)), false);
+});
+
+test('a back-out killed after any of its steps continues when run again: never taken for an undo, and the older version is still checked', async (t) => {
+  const order = ['check-formats', 'check-fingerprint', 'mark-backing-out', 'write-manifest', 'check-start', 'move-aside', 'archive-journal', 'release-lock'];
+  const expected = ['back_out_switch', 'back_out_switch', 'back_out_switch', 'continue_back_out', 'continue_back_out', 'continue_back_out', 'clear_interrupted', 'nothing'];
+  for (let k = 1; k <= order.length; k += 1) {
+    const s = await newerInPlace(t);
+    const shown = await planNativeRecovery({ paths: s.paths, backOut: true, dependencies: deps().dependencies });
+    assert.deepEqual(shown.steps.map(step => step.do), order);
+    const killed = await stoppedAt(applyNativeRecovery({ paths: s.paths, digest: shown.digest, backOut: true, dependencies: killedAfter(k).dependencies }));
+    assert.equal(JSON.parse(readFileSync(killed.record, 'utf8')).steps.length, k - 1, `killed after ${order[k - 1]}`);
+    const d = deps();
+    const { plan, result } = await recover(s.paths, d, { backOut: true });
+    assert.equal(plan.kind, expected[k - 1], `killed after ${order[k - 1]}`);
+    if (plan.kind === 'continue_back_out') {
+      assert.equal(plan.steps[0].do, 'check-start');
+      assert.deepEqual(d.log, ['start 5.26.0'], 'the older version is checked on the store the newer one opened');
+    }
+    if (result.status) assert.equal(result.status, 'recovered');
+    assert.deepEqual(manifestOf(s.paths), s.previous);
+    assert.equal(existsSync(join(s.root, 'neo4j-transaction.json')), false);
+    assert.equal(existsSync(join(s.root, 'neo4j-assets', 'jvs-a-2222')), false, 'the newer programs are set aside');
+    assert.equal(existsSync(join(s.root, LOCK)), false);
+  }
+  // Continued, and the older version does not start: the newer descriptor is written back and finishing is offered again.
+  const s = await newerInPlace(t);
+  const shown = await planNativeRecovery({ paths: s.paths, backOut: true, dependencies: deps().dependencies });
+  await stoppedAt(applyNativeRecovery({ paths: s.paths, digest: shown.digest, backOut: true, dependencies: killedAfter(order.indexOf('write-manifest') + 1).dependencies }));
+  assert.equal((await stoppedAt(recover(s.paths, deps({ checkStart: async () => { throw new Error('store too new'); } })))).reason, 'start_failed');
+  assert.deepEqual(manifestOf(s.paths), s.next);
+  const again = await planNativeRecovery({ paths: s.paths, dependencies: deps().dependencies });
+  assert.deepEqual([again.kind, again.alternative?.kind], ['finish_switch', 'back_out_switch']);
 });
 
 test('a descriptor matching neither side of the switch, or a journal that is empty, damaged or partial, is refused', async (t) => {
@@ -303,7 +381,7 @@ test('a load goes back to the copy its own import took, keeps the lock until the
   } });
   const { plan, result } = await recover(load.paths, d);
   assert.equal(plan.kind, 'restore_load');
-  assert.deepEqual(plan.steps.map(step => step.do), ['restore', 'move-aside', 'move-aside', 'release-lock']);
+  assert.deepEqual(plan.steps.map(step => step.do), ['restore', 'move-aside', 'move-aside', 'check-start', 'release-lock']);
   assert.deepEqual(plan.restorePoint, { path: load.copy, createdAt: '2026-11-22T00:00:00.000Z', instances: ['personal'] });
   assert.deepEqual(plan.emptied, ['workspace']);
   assert.deepEqual(seen, [{ from: load.copy, instances: ['personal'], owner: load.lock.token, locked: true }],
@@ -334,7 +412,80 @@ test('a load that cannot say which copy its import took, or whose copy is gone, 
   assert.ok(existsSync(join(gone.root, LOCK)), 'a half-written load keeps its lock');
   // Everything was empty before (a first import, or `graph migrate` into a new runtime): no copy, the stores go aside.
   const fresh = await plan(await interruptedLoad(t, { path: null, instances: [], loading: ['workspace'] }));
-  assert.deepEqual([fresh.kind, fresh.restorePoint, fresh.steps.map(step => step.do)], ['restore_load', null, ['move-aside', 'move-aside', 'release-lock']]);
+  assert.deepEqual([fresh.kind, fresh.restorePoint, fresh.steps.map(step => step.do)], ['restore_load', null, ['move-aside', 'move-aside', 'check-start', 'release-lock']]);
+});
+
+test('a restored load must start and answer before its lock goes; a copy that fails its checks says so', async (t) => {
+  const load = await interruptedLoad(t);
+  const stopped = await stoppedAt(recover(load.paths, deps({ checkStart: async () => { throw new Error('no answer'); } })));
+  assert.deepEqual([stopped.reason, stopped.planKind], ['start_failed', 'restore_load']);
+  assert.ok(existsSync(join(load.root, LOCK)), 'nothing starts on a graph that did not answer');
+  const damaged = await interruptedLoad(t);
+  const bad = await stoppedAt(recover(damaged.paths, deps({ restore: async () => { throw Object.assign(new Error('checksum'), { copyDamaged: true }); } })));
+  assert.deepEqual([bad.reason, bad.facts.why, bad.facts.backupPath], ['restore_point_damaged', 'damaged', damaged.copy]);
+  assert.ok(existsSync(join(damaged.root, LOCK)));
+});
+
+// A load whose stores were being written in both instances.
+function bothStores(load) {
+  for (const instance of [load.paths.nativePersonalDir, load.paths.nativeWorkspaceDir]) {
+    for (const store of ['databases', 'transactions']) mkdirSync(join(instance, 'data', store, 'neo4j'), { recursive: true });
+  }
+  return load;
+}
+
+test('an import whose copy is unknown, gone or damaged is abandoned only on request: its half-written databases move aside and the copies left are listed', async (t) => {
+  const abandon = paths => planNativeRecovery({ paths, abandonImport: true, dependencies: deps().dependencies });
+  // An older FULI's lock that names no copy: every graph counts, and says so.
+  const unknown = await interruptedLoad(t, null);
+  assert.equal((await planNativeRecovery({ paths: unknown.paths, dependencies: deps().dependencies })).reason, 'restore_point_unknown');
+  const plan = await abandon(unknown.paths);
+  assert.deepEqual([plan.kind, plan.copyProblem, plan.allInstances, plan.instances], ['abandon_load', 'unrecorded', true, ['personal', 'workspace']]);
+  assert.deepEqual(plan.steps.map(step => step.do), ['move-aside', 'move-aside', 'release-lock']);
+  assert.deepEqual(plan.copies.map(copy => copy.path), [join(unknown.paths.graphBackupDir, 'before-import-2026-11-22T09-00-00-000Z-b'), unknown.copy],
+    'the copies an import can bring back, newest first');
+  assert.equal(plan.copies[0].createdAt, '2026-11-22T00:00:00.000Z');
+  const { result } = await recover(unknown.paths, deps(), { abandonImport: true });
+  assert.equal(result.status, 'recovered');
+  assert.ok(existsSync(join(folderOf(unknown.root), 'workspace', 'data', 'databases', 'neo4j')), 'moved aside, not deleted');
+  assert.equal(existsSync(join(unknown.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j')), false);
+  assert.equal(existsSync(join(unknown.root, LOCK)), false);
+
+  // Its own copy is gone: that copy is not offered back.
+  const gone = bothStores(await interruptedLoad(t));
+  rmSync(gone.copy, { recursive: true });
+  const missing = await abandon(gone.paths);
+  assert.deepEqual([missing.copyProblem, missing.backupPath, missing.allInstances, missing.instances], ['missing', gone.copy, false, ['personal', 'workspace']]);
+  assert.deepEqual(missing.copies.map(copy => copy.path), [join(gone.paths.graphBackupDir, 'before-import-2026-11-22T09-00-00-000Z-b')]);
+
+  // Its checksums do not match: the ordinary plan would restore it, abandoning checks it first.
+  const corrupt = await interruptedLoad(t);
+  writeFileSync(join(corrupt.copy, 'personal.dump'), 'not the dump that was taken');
+  assert.equal((await planNativeRecovery({ paths: corrupt.paths, dependencies: deps().dependencies })).kind, 'restore_load');
+  assert.equal((await abandon(corrupt.paths)).copyProblem, 'damaged');
+
+  // A copy that can be used, or no import at all: nothing to abandon.
+  assert.equal((await abandon((await interruptedLoad(t, { path: null, instances: [], loading: ['workspace'] })).paths)).reason, 'restore_point_usable');
+  const dump = runtime(t);
+  await acquireNeo4jLifecycleLock(dump.root, { operation: 'dump', identify: holderIdentity });
+  assert.equal((await abandon(dump.paths)).reason, 'no_import');
+});
+
+test('abandoning an import killed after any of its steps is finished by running it again', async (t) => {
+  for (let k = 1; k <= 5; k += 1) {
+    const load = bothStores(await interruptedLoad(t));
+    rmSync(load.copy, { recursive: true });
+    const shown = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+    assert.deepEqual(shown.steps.map(step => step.do), ['move-aside', 'move-aside', 'move-aside', 'move-aside', 'release-lock']);
+    await stoppedAt(applyNativeRecovery({ paths: load.paths, digest: shown.digest, abandonImport: true, dependencies: killedAfter(k).dependencies }));
+    const { plan, result } = await recover(load.paths, deps(), { abandonImport: true });
+    if (k === 5) assert.equal(plan.kind, 'nothing', 'killed after its lock went: nothing is left');
+    else assert.deepEqual([plan.kind, plan.steps.length, result.status], ['abandon_load', 5 - k, 'recovered']);
+    for (const instance of ['personal', 'workspace']) {
+      for (const store of ['databases', 'transactions']) assert.ok(existsSync(join(folderOf(load.root), instance, 'data', store, 'neo4j')), `${k}: ${instance} ${store}`);
+    }
+    assert.equal(existsSync(join(load.root, LOCK)), false);
+  }
 });
 
 test('a dump releases its lock', async (t) => {
@@ -415,26 +566,33 @@ test('old recovery folders are cleared only past the clean-up rule, and only aft
   for (const stamp of stamps) mkdirSync(join(root, 'recovered', stamp, 'neo4j-assets'), { recursive: true });
   mkdirSync(join(root, 'recovered', 'kept-by-a-person'));
   await acquireNeo4jLifecycleLock(root, { operation: 'dump', identify: holderIdentity });
-  const { plan } = await recover(paths, deps());
-  assert.deepEqual(plan.steps.filter(step => step.do === 'prune').map(step => step.path),
-    [join(root, 'recovered', stamps[0]), join(root, 'recovered', stamps[1])], 'beyond the 3 newest and over 30 days old');
+  // The oldest cannot be deleted: the recovery still counts, and says what stayed.
+  chmodSync(join(root, 'recovered', stamps[0]), 0o500);
+  const { plan, result } = await recover(paths, deps());
+  chmodSync(join(root, 'recovered', stamps[0]), 0o700);
+  assert.deepEqual(plan.steps.map(step => step.do), ['release-lock', 'prune', 'prune'], 'deleted only once the lock is released');
+  assert.deepEqual(plan.steps.filter(step => step.do === 'prune').map(step => [step.path, step.keepRuns, step.keepDays]),
+    [[join(root, 'recovered', stamps[0]), 3, 30], [join(root, 'recovered', stamps[1]), 3, 30]], 'beyond the 3 newest and over 30 days old');
+  assert.equal(result.status, 'recovered');
+  assert.deepEqual(result.notDeleted.map(({ path }) => path), [join(root, 'recovered', stamps[0])]);
+  assert.equal(existsSync(join(root, LOCK)), false, 'a folder that stays never keeps the lock');
   const left = readdirSync(join(root, 'recovered'));
   for (const stamp of stamps.slice(2)) assert.ok(left.includes(stamp));
   assert.ok(left.includes('kept-by-a-person'), 'nothing else is touched');
-  assert.equal(left.includes(stamps[0]), false);
+  assert.equal(left.includes(stamps[1]), false);
 });
 
 test('fuli graph runtime recover shows the plan, recovers only for a person at a terminal, and says why it will not', async () => {
-  const { runNativeRuntimeCommand } = await import('../src/cli/native-runtime-command.js');
+  const { parseNativeRuntimeOptions, runNativeRuntimeCommand } = await import('../src/cli/native-runtime-command.js');
   const { readStartupFailure, startupFailureLine } = await import('../src/local-runtime/startup-failure-line.js');
   const written = [];
   const plan = { kind: 'release_dump', operation: 'dump', steps: [{ do: 'release-lock' }], digest: '0123456789abcdef' };
   const applied = [];
-  const run = (args, { planned = plan, interactive = true, apply } = {}) => runNativeRuntimeCommand(args, { platform: 'darwin',
-    write: line => written.push(line), interactive,
+  const run = (args, { planned = plan, interactive = true, apply, typed = '' } = {}) => runNativeRuntimeCommand(args, { platform: 'darwin',
+    write: line => written.push(line), interactive, confirmAbandon: async () => typed === 'abandon',
     resolvePaths: () => ({ dataDir: '/x/fuli-data', nativeRuntimeDir: '/x/fuli-data/native-runtime' }),
     planRecovery: async () => planned,
-    applyRecovery: apply ?? (async ({ digest }) => { applied.push(digest); return { ...planned, status: 'recovered', record: '/x/r/recovery-1.json' }; }) });
+    applyRecovery: apply ?? (async ({ digest, abandonImport }) => { applied.push(abandonImport ? `abandon ${digest}` : digest); return { ...planned, status: 'recovered', record: '/x/r/recovery-1.json' }; }) });
   const reasonOf = error => readStartupFailure(startupFailureLine(error)).failure.reason;
   assert.deepEqual(await run(['recover', '--preview', '--json'], { interactive: false }), { status: 'preview', exitCode: 0 });
   assert.deepEqual(JSON.parse(written.at(-1)), plan);
@@ -449,7 +607,16 @@ test('fuli graph runtime recover shows the plan, recovers only for a person at a
   await assert.rejects(run(['recover', '--yes', '--expect', 'ffffffffffffffff']), (error) => reasonOf(error) === 'plan_changed');
   assert.deepEqual(applied, ['0123456789abcdef']);
   await assert.rejects(run(['recover', '--yes', '--expect', '0123456789abcdef'], { planned: { kind: 'refused', reason: 'restore_point_damaged', backupPath: '/x/b' } }),
-    /不见了或不完整/);
+    /已损坏.+--abandon-import/);
+  // Abandoning an import takes the typed word in a terminal: never --yes, never without a terminal.
+  const abandon = { kind: 'abandon_load', copyProblem: 'missing', backupPath: '/x/b', instances: ['personal'], allInstances: false,
+    dataDir: '/x/fuli-data', copies: [], steps: [{ do: 'release-lock' }], digest: 'aaaaaaaaaaaaaaaa' };
+  await assert.rejects(run(['recover', '--abandon-import', '--yes', '--expect', 'aaaaaaaaaaaaaaaa'], { planned: abandon }), (error) => reasonOf(error) === 'abandon_needs_typing');
+  await assert.rejects(run(['recover', '--abandon-import'], { planned: abandon, interactive: false, typed: 'abandon' }), (error) => reasonOf(error) === 'needs_person');
+  assert.equal((await run(['recover', '--abandon-import'], { planned: abandon, typed: 'y' })).status, 'cancelled');
+  assert.equal((await run(['recover', '--abandon-import'], { planned: abandon, typed: 'abandon' })).status, 'recovered');
+  assert.deepEqual(applied, ['0123456789abcdef', 'abandon aaaaaaaaaaaaaaaa']);
+  assert.throws(() => parseNativeRuntimeOptions(['recover', '--back-out', '--abandon-import']), /choose one/);
   // A step that did not finish: its reason, the record, and that running it again continues.
   const failed = Object.assign(new Error('stopped'), { code: 'recover_step_failed', step: 'restore', reason: 'restore_failed', record: '/x/r/recovery-2.json' });
   await assert.rejects(run(['recover', '--yes', '--expect', '0123456789abcdef'], { apply: async () => { throw failed; } }), (error) => {
@@ -463,7 +630,8 @@ test('every reason a recovery gives is said in both languages, with a next step'
   const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
   for (const reason of ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
     'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
-    'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'lock_changed', 'step_failed', 'plan_changed', 'needs_person']) {
+    'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'restore_point_usable', 'no_import', 'abandon_needs_typing',
+    'lock_changed', 'step_failed', 'plan_changed', 'needs_person']) {
     const text = formatRecoveryPlan({ kind: 'refused', reason, pid: 7, path: '/x/native-runtime/neo4j-assets/jvs-a-1', directory: 'neo4j-assets/jvs-a-1' });
     assert.match(text, /^没有恢复：.+ \/ Not recovered: .+/s, reason);
     assert.doesNotMatch(text, new RegExp(`：${reason} /`), reason);
@@ -476,6 +644,18 @@ test('every reason a recovery gives is said in both languages, with a next step'
   assert.match(load, /workspace 在导入前是空的，恢复后也是空的/);
   assert.match(load, /5\.0 MB/);
   assert.doesNotMatch(load, /(?<!不)删除/);
+  // Giving up an import says why the copy cannot be used, which graphs end up empty, where the databases go, and how to import back.
+  const abandon = formatRecoveryPlan({ kind: 'abandon_load', copyProblem: 'damaged', backupPath: '/x/b/before-import-1', instances: ['personal', 'workspace'],
+    allInstances: true, dataDir: '/x/fuli-data', copies: [{ path: '/x/fuli-data/backups/graph/before-import-0', createdAt: '2026-11-20T00:00:00.000Z', bytes: 2048, instances: ['personal'] }],
+    steps: [{ do: 'move-aside', path: '/x/fuli-data/native-runtime/personal/data/databases/neo4j', bytes: 1024 }, { do: 'release-lock' },
+      { do: 'prune', path: '/x/fuli-data/native-runtime/recovered/2026-09-01T00-00-00-000Z', bytes: 1024, keepRuns: 4, keepDays: 40 }] });
+  assert.match(abandon, /已损坏（读不出或校验和不对）：\/x\/b\/before-import-1/);
+  assert.match(abandon, /没有记下导入的是哪些图谱，所以按全部图谱处理/);
+  assert.match(abandon, /personal、workspace 会变成空的图谱/);
+  assert.match(abandon, /fuli graph import --input "\/x\/fuli-data\/backups\/graph\/before-import-0" --data-dir "\/x\/fuli-data" --yes/);
+  assert.match(abandon, /永久删除旧的恢复文件夹 .+超过 40 天，之后又有至少 4 次恢复/, 'the clean-up says it deletes, by the rule the plan carries');
+  assert.match(formatRecoveryPlan({ ...JSON.parse(JSON.stringify({ kind: 'abandon_load', copyProblem: 'missing', backupPath: '/x/b', instances: ['personal'], dataDir: '/x/d', copies: [], steps: [] })) }),
+    /里没有可以导回的导入前副本/);
 });
 
 test('the window\'s 恢复并启动 previews the plan, then recovers with the chosen plan\'s digest and starts', async () => {
@@ -491,6 +671,9 @@ test('the window\'s 恢复并启动 previews the plan, then recovers with the ch
     apply: async (_paths, digest) => { calls.push(`recover ${digest}`); return { kind: 'release_dump', status: 'recovered', record: '/x/r.json' }; } };
   const preview = await runTrayAction('recover-preview', context, { runCli, recovery });
   assert.equal(preview.recoveryPlan.digest, '0123456789abcdef');
+  // The state it reports is the one FULI is in, not assumed.
+  const degraded = async (_context, args) => ({ code: 0, stdout: JSON.stringify({ status: args[0] === 'status' ? 'degraded' : 'x' }), stderr: '' });
+  assert.equal((await runTrayAction('recover-preview', context, { runCli: degraded, recovery })).status, 'degraded');
   const started = await runTrayAction('recover-start', context, { runCli, recovery, recoveryDigest: '0123456789abcdef', otherConsole: () => null,
     holdAdoption: () => null, portBlocked: async () => false });
   assert.ok(calls.indexOf('recover 0123456789abcdef') < calls.findIndex(call => call.startsWith('setup')), 'it starts only after the recovery');
@@ -500,4 +683,12 @@ test('the window\'s 恢复并启动 previews the plan, then recovers with the ch
   const refused = await runTrayAction('recover-start', context, { runCli, recovery: refusing, recoveryDigest: '0123456789abcdef' });
   assert.deepEqual([refused.ok, refused.failure.code, refused.failure.reason], [false, 'recovery_refused', 'plan_changed']);
   await assert.rejects(runTrayAction('recover-start', context, { runCli, recovery }), /needs the digest/);
+  // 「放弃这次导入…」 asks for the abandoning plan and applies it by its own digest.
+  const choices = [];
+  const abandoning = { plan: async (_paths, choice) => { choices.push(['plan', choice]); return { kind: 'abandon_load', steps: [], digest: 'aaaaaaaaaaaaaaaa' }; },
+    apply: async (_paths, digest, choice) => { choices.push([digest, choice]); return { kind: 'abandon_load', status: 'recovered', record: '/x/r.json' }; } };
+  await runTrayAction('abandon-import-preview', context, { runCli, recovery: abandoning });
+  await runTrayAction('abandon-import-start', context, { runCli, recovery: abandoning, recoveryDigest: 'aaaaaaaaaaaaaaaa', otherConsole: () => null,
+    holdAdoption: () => null, portBlocked: async () => false });
+  assert.deepEqual(choices, [['plan', { abandonImport: true }], ['aaaaaaaaaaaaaaaa', { abandonImport: true }]]);
 });

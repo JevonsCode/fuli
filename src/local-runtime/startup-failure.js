@@ -78,12 +78,14 @@ const FAILURES = Object.freeze({
   }
 });
 
-// An asset operation or a dump/load that ended without releasing its lock and
-// before any switch journal: what it can have changed. FULI has no command
-// that releases such a lock (`unlock` refuses it), so the next step is the
-// exact manual one.
+// An asset operation, a dump/load or a recovery that ended without releasing
+// its lock and before (or after) any switch journal: what it can have changed.
+// `unlock` refuses such a lock; `recover` deals with it (interruptedNext).
 function interrupted(f) {
   const at = since(f);
+  if (f.operation === 'recover') {
+    return [`一次恢复在 ${at} 中途停了，留下了它加的维护锁。`, `A recovery stopped part way at ${at} and left the maintenance lock it took.`];
+  }
   if (f.operation === 'load') {
     return [`一次图数据库导入在 ${at} 中途停了，留下了维护锁。导入会覆盖数据库，所以数据库可能只写入了一半。`,
       `A graph database load stopped part way at ${at} and left its maintenance lock. A load overwrites the database, so it may be only half written.`];
@@ -111,7 +113,7 @@ const versionsZh = f => f.fromVersion && f.toVersion ? `（${f.fromVersion} → 
 const versionsEn = f => f.fromVersion && f.toVersion ? ` (${f.fromVersion} → ${f.toVersion})` : '';
 
 function operationZh(operation) {
-  return { update: '更新', rollback: '回退', uninstall: '卸载', dump: '导出', load: '导入' }[operation] ?? '切换';
+  return { update: '更新', rollback: '回退', uninstall: '卸载', dump: '导出', load: '导入', recover: '恢复' }[operation] ?? '切换';
 }
 
 function retry(f) {

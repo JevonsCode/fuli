@@ -1,17 +1,19 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { readGraphBackupManifest } from '../backup/graph-backup.js';
+import { readGraphBackupManifest, readVerifiedGraphBackup } from '../backup/graph-backup.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
-import { lockTooRecent, readLock, runningGraphServices, runtimeInUse, takeOver } from './neo4j-lifecycle-lock.js';
+import {
+  acquireNeo4jLifecycleLock, lockTooRecent, readLock, runningGraphServices, runtimeInUse, takeOver
+} from './neo4j-lifecycle-lock.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
 import {
-  diskSize, expiredRecoveryFolders, isRecoveryFolder, recoveryFolder, recoveryRecordPath, recoveryStamp
+  diskSize, expiredRecoveryFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp
 } from './recovered-dir.js';
 
 // `fuli graph runtime recover`: brings a native runtime back from an operation
@@ -21,12 +23,16 @@ import {
 // with that digest, after checking again that nothing uses the runtime and
 // that the plan is still the same.
 //
-// The lock stays until the last step: a start is refused while it is there,
-// and a recovery killed part way is planned and finished again. Nothing is
-// deleted: what is set aside moves to native-runtime/recovered/<time>/, the
-// descriptor is copied there before it is written, an unfinished export is
-// renamed `.incomplete` (recovered-dir.js). Only a load is restored over: the
-// whole graph, from the copy that very import took before it.
+// The lock stays until its step, near the end: a start is refused while it is
+// there, and a recovery killed part way is planned and finished again. What is
+// set aside moves to native-runtime/recovered/<time>/, the descriptor is copied
+// there before it is written, an unfinished export is renamed `.incomplete`.
+// Two things overwrite or delete: a load is restored over (the whole graph,
+// from the copy that very import took before it), and after the lock is
+// released old recovered/<time>/ folders are permanently deleted by the
+// clean-up rule (recovered-dir.js), each one listed in the plan first.
+// Abandoning an import whose copy cannot be used (abandonImport) is asked for
+// on its own and moves the half-written databases aside.
 
 const JOURNAL = 'neo4j-transaction.json';
 const ASSET_OPERATIONS = new Set(['update', 'rollback', 'uninstall']);
@@ -36,8 +42,9 @@ const INSTANCES = new Set(['personal', 'workspace']);
 // { kind: 'refused', reason, … }. An unfinished switch whose newer descriptor
 // is in place can be finished or backed out: the plan is one of them ([backOut]
 // picks which) and carries the other as [alternative] when it is possible, or
-// why not as [alternativeRefused].
-export async function planNativeRecovery({ paths, backOut = false, dependencies = {} }) {
+// why not as [alternativeRefused]. [abandonImport]: plan giving up an
+// interrupted load whose copy cannot be used instead (planAbandon).
+export async function planNativeRecovery({ paths, backOut = false, abandonImport = false, dependencies = {} }) {
   const deps = recoveryDependencies(dependencies);
   const root = paths.nativeRuntimeDir;
   const lock = readLock(root);
@@ -56,13 +63,18 @@ export async function planNativeRecovery({ paths, backOut = false, dependencies 
   // the way a stop would (only processes that are still this runtime's).
   const running = await runningGraphServices(paths, deps.identity);
   if (running.length && !lock?.owner) return refused('cannot_stop_services', { pid: running[0] });
+  // Old recovery folders are deleted only once the lock is released: one that
+  // cannot be deleted never keeps FULI from starting.
   const context = { paths, deps, lock, stop: running.length ? [{ do: 'stop-services' }] : [],
-    end: [...expiredRecoveryFolders(root, deps.now()).map(folder => ({ do: 'prune', ...folder })), { do: 'release-lock' }] };
+    end: [{ do: 'release-lock' }, ...expiredRecoveryFolders(root, deps.now()).map(folder => ({ do: 'prune', ...folder }))] };
+  const operation = journal ? null : lock.holder.operation;
+  if (abandonImport && operation !== 'load') return refused('no_import', { operation });
   if (journal) return planJournal(context, journal.value, backOut);
-  const operation = lock.holder.operation;
   if (ASSET_OPERATIONS.has(operation)) return planInterruptedAssets(context);
   if (operation === 'dump') return planned('release_dump', [...context.stop, ...context.end], { operation });
-  if (operation === 'load') return planLoad(context);
+  if (operation === 'load') return planLoad(context, abandonImport);
+  // A recovery's own lock (applyNativeRecovery) whose journal is already archived: only the lock is left.
+  if (operation === 'recover') return planned('finish_recovery', [...context.stop, ...context.end], { operation });
   // A start's or stop's lock is taken over by the next start by itself.
   return planned('nothing', []);
 }
@@ -91,6 +103,13 @@ async function planJournal(context, journal, backOut) {
   }
   const candidate = await candidateOf(paths, journal);
   if (candidate === null) return refused('unmanaged_path', facts);
+  if (isDeepStrictEqual(manifest, journal.previous) && journal.backingOut === true) {
+    // A back-out killed after it wrote the older descriptor back: the newer
+    // Neo4j already opened the store, so whether the older one still opens it
+    // is checked now, and the newer descriptor is written back if it does not.
+    return planned('continue_back_out', [...stop, { do: 'check-start', version: journal.previous.neo4jVersion, revert: journal.next },
+      ...candidate, archive, ...end], facts);
+  }
   if (isDeepStrictEqual(manifest, journal.previous)) {
     // The newer descriptor was never written, so the newer Neo4j never ran:
     // undo, as the switch's own rollback would.
@@ -106,6 +125,9 @@ async function planJournal(context, journal, backOut) {
   const back = blocked ? null : planned('back_out_switch', [...stop,
     { do: 'check-formats', formats: journal.storeFormats },
     { do: 'check-fingerprint', home: journal.previous.neo4jHome, fingerprint: journal.previous.neo4jAssetFingerprint },
+    // Recorded before the older descriptor is written: a back-out killed after
+    // that is continued, never mistaken for a switch that never took effect.
+    { do: 'mark-backing-out' },
     { do: 'write-manifest', value: journal.previous },
     // The older version must start on this store, or the newer descriptor is written back.
     { do: 'check-start', version: journal.previous.neo4jVersion, revert: journal.next },
@@ -207,35 +229,78 @@ function interruptedCandidate(container, name, lock) {
 // A load overwrites a database, so a killed one may have left it half written.
 // The lock names the copy that import took right before it (graph-backup.js);
 // the whole graph goes back to it, and an instance that was empty before the
-// import is made empty again by moving its half-written store aside. A load
-// that names no copy is refused: FULI does not guess which copy is the right one.
-async function planLoad({ paths, lock, stop, end }) {
+// import is made empty again by moving its half-written store aside. Neo4j
+// then starts once and answers before the lock goes. A load whose copy cannot
+// be used is refused: FULI does not guess which copy is the right one, and
+// abandoning the import is the person's own choice ([abandonImport]).
+async function planLoad(context, abandonImport) {
+  const { paths, lock, stop, end } = context;
   const point = lock.holder.restorePoint;
   const facts = { operation: 'load' };
-  if (!point || !Array.isArray(point.loading) || !Array.isArray(point.instances)
-    || ![...point.loading, ...point.instances].every(id => INSTANCES.has(id))) return refused('restore_point_unknown', facts);
-  let copy = null;
-  if (point.path !== null) {
-    if (typeof point.path !== 'string' || !inside(paths.graphBackupDir, point.path) || !basename(point.path).startsWith('before-import-')) {
-      return refused('restore_point_unknown', facts);
-    }
-    let manifest;
-    try { manifest = await readGraphBackupManifest(point.path); }
-    catch { return refused('restore_point_damaged', { ...facts, backupPath: point.path }); }
-    const ids = manifest.instances.map(({ id }) => id);
-    if (!isDeepStrictEqual([...ids].sort(), [...point.instances].sort())) return refused('restore_point_damaged', { ...facts, backupPath: point.path });
-    copy = { path: point.path, createdAt: manifest.createdAt, instances: ids };
-  }
+  // Abandoning is only for a copy that cannot be used, so its checksums are checked first.
+  const copy = await restoreCopy(paths, point, { verify: abandonImport });
+  if (abandonImport) return copy.unusable ? planAbandon(context, point, copy.unusable) : refused('restore_point_usable', { ...facts, backupPath: copy.path ?? null });
+  if (copy.unusable) return refused(copy.unusable.reason, { ...facts, ...copy.unusable });
   const emptied = point.loading.filter(id => !point.instances.includes(id));
   const steps = [...stop];
-  if (copy) steps.push({ do: 'restore', from: copy.path, instances: copy.instances });
-  for (const id of emptied) {
-    const instance = id === 'personal' ? paths.nativePersonalDir : paths.nativeWorkspaceDir;
-    for (const store of [join(instance, 'data', 'databases', 'neo4j'), join(instance, 'data', 'transactions', 'neo4j')]) {
-      if (existsSync(store)) steps.push(moveAside(store));
-    }
+  if (copy.path) steps.push({ do: 'restore', from: copy.path, instances: copy.instances });
+  for (const id of emptied) for (const store of storesOf(paths, id)) if (existsSync(store)) steps.push(moveAside(store));
+  steps.push({ do: 'check-start', version: readManifest(paths)?.neo4jVersion ?? null });
+  return planned('restore_load', [...steps, ...end], { ...facts, backupPath: copy.path ?? null,
+    restorePoint: copy.path ? { path: copy.path, createdAt: copy.createdAt, instances: copy.instances } : null, emptied });
+}
+
+// The copy a load's lock names: { path, createdAt, instances }, { path: null }
+// when every instance was empty before, or { unusable: { reason, why, backupPath } }.
+// why: 'unrecorded' (the lock names none it can read), 'missing' or 'damaged'.
+async function restoreCopy(paths, point, { verify }) {
+  if (!point || !Array.isArray(point.loading) || !Array.isArray(point.instances)
+    || ![...point.loading, ...point.instances].every(id => INSTANCES.has(id))) return { unusable: { reason: 'restore_point_unknown', why: 'unrecorded' } };
+  if (point.path === null) return { path: null };
+  if (typeof point.path !== 'string' || !inside(paths.graphBackupDir, point.path) || !basename(point.path).startsWith('before-import-')) {
+    return { unusable: { reason: 'restore_point_unknown', why: 'unrecorded' } };
   }
-  return planned('restore_load', [...steps, ...end], { ...facts, backupPath: copy?.path ?? null, restorePoint: copy, emptied });
+  const damaged = why => ({ unusable: { reason: 'restore_point_damaged', why, backupPath: point.path } });
+  if (!existsSync(point.path)) return damaged('missing');
+  let manifest;
+  try { manifest = await (verify ? readVerifiedGraphBackup : readGraphBackupManifest)(point.path); }
+  catch { return damaged('damaged'); }
+  const ids = manifest.instances.map(({ id }) => id);
+  if (!isDeepStrictEqual([...ids].sort(), [...point.instances].sort())) return damaged('damaged');
+  return { path: point.path, createdAt: manifest.createdAt, instances: ids };
+}
+
+// Giving up an interrupted load whose own copy cannot be used: the databases
+// it was writing — every instance when an older lock does not say which — move
+// aside whole (nothing is deleted), so those graphs start empty, and the lock
+// goes. The plan lists the before-import copies an import can bring back.
+function planAbandon({ paths, stop, end }, point, unusable) {
+  const named = Array.isArray(point?.loading) && point.loading.length > 0 && point.loading.every(id => INSTANCES.has(id));
+  const instances = named ? [...new Set(point.loading)] : [...INSTANCES];
+  const steps = [...stop];
+  for (const id of instances) for (const store of storesOf(paths, id)) if (existsSync(store)) steps.push(moveAside(store));
+  return planned('abandon_load', [...steps, ...end], { operation: 'load', copyProblem: unusable.why, backupPath: unusable.backupPath ?? null,
+    instances, allInstances: !named, dataDir: paths.dataDir, copies: importCopies(paths, unusable.backupPath) });
+}
+
+// An instance's database and its transaction logs.
+function storesOf(paths, id) {
+  const instance = id === 'personal' ? paths.nativePersonalDir : paths.nativeWorkspaceDir;
+  return [join(instance, 'data', 'databases', 'neo4j'), join(instance, 'data', 'transactions', 'neo4j')];
+}
+
+// The copies earlier imports took before they started (backups/graph/before-import-*),
+// newest first, except [unusable]; each one `fuli graph import` can load back.
+function importCopies(paths, unusable) {
+  const copies = [];
+  for (const name of listNames(paths.graphBackupDir).filter(name => name.startsWith('before-import-')).sort().reverse()) {
+    const path = join(paths.graphBackupDir, name);
+    const manifest = path === unusable ? null : readJsonOrNull(join(path, 'manifest.json'));
+    if (!Array.isArray(manifest?.instances)) continue;
+    copies.push({ path, createdAt: typeof manifest.createdAt === 'string' ? manifest.createdAt : null, bytes: diskSize(path),
+      instances: manifest.instances.map(({ id }) => id) });
+  }
+  return copies;
 }
 
 const moveAside = path => ({ do: 'move-aside', path, bytes: diskSize(path) });
@@ -255,10 +320,6 @@ function inside(parent, path) {
   return Boolean(rel) && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
-function listNames(directory) {
-  try { return readdirSync(directory); } catch { return []; }
-}
-
 function planned(kind, steps, facts = {}) {
   return { kind, ...facts, steps, digest: createHash('sha256').update(JSON.stringify({ kind, steps })).digest('hex').slice(0, 16) };
 }
@@ -269,36 +330,55 @@ function refused(reason, facts = {}) {
 
 // Does what the plan with [digest] said — the plan shown, or the alternative
 // shown beside it — once nothing has changed since. The lock's token re-enters
-// the operations it holds back (stop, start, load), and the lock goes last.
-export async function applyNativeRecovery({ paths, digest, backOut = false, dependencies = {} }) {
+// the operations it holds back (stop, start, load); a switch journal whose lock
+// is gone, or names no token, gets a lock of the recovery's own first. The
+// lock goes near the end; deleting old recovery folders after it never fails
+// the recovery (what was not deleted is in the result and the record).
+export async function applyNativeRecovery({ paths, digest, backOut = false, abandonImport = false, dependencies = {} }) {
   const deps = recoveryDependencies(dependencies);
-  const shown = await planNativeRecovery({ paths, backOut, dependencies });
+  const shown = await planNativeRecovery({ paths, backOut, abandonImport, dependencies });
   if (shown.kind === 'refused' || shown.kind === 'nothing') return shown;
   const plan = [shown, shown.alternative].find(candidate => candidate?.digest === digest);
   if (!plan) return refused('plan_changed', { digest: shown.digest });
   const root = paths.nativeRuntimeDir;
   const stamp = recoveryStamp(deps.now());
-  const context = { paths, root, deps, owner: readLock(root)?.owner ?? null, folder: recoveryFolder(root, stamp) };
-  const done = [];
+  const owner = await lockToken(root, deps);
+  if (!owner) return refused('lock_changed');
+  const context = { paths, root, deps, owner, folder: recoveryFolder(root, stamp) };
+  const done = [], notDeleted = [];
   for (const step of plan.steps) {
     try {
       await runStep(step, context);
       done.push({ ...step, at: new Date(deps.now()).toISOString() });
     } catch (error) {
+      if (step.do === 'prune') { notDeleted.push({ path: step.path, error: error?.message ?? String(error) }); continue; }
       const reason = error?.reason ?? 'step_failed';
       deps.log(paths).record({ component: 'provider', operation: `native.recover.${step.do}`, outcome: 'failed',
         code: reason, reason: `the recovery step ${step.do} did not finish` });
       const record = keepRecord(root, stamp, plan, done, { stoppedAt: step.do, reason });
       throw Object.assign(new Error(`The recovery stopped at ${step.do} (${reason}); what was done is in ${record}, the lock is kept, and running the recovery again continues it.`),
-        { cause: error, code: 'recover_step_failed', step: step.do, reason, record });
+        { cause: error, code: 'recover_step_failed', step: step.do, reason, record, planKind: plan.kind, facts: error?.facts ?? {} });
     }
   }
   const { alternative, alternativeRefused, ...result } = plan;
-  return { ...result, status: 'recovered', record: keepRecord(root, stamp, plan, done) };
+  return { ...result, status: 'recovered', ...(notDeleted.length ? { notDeleted } : {}),
+    record: keepRecord(root, stamp, plan, done, null, notDeleted) };
 }
 
-function stepFailed(reason, message, cause) {
-  return Object.assign(new Error(message, cause ? { cause } : undefined), { reason });
+// The token the steps run under: the lock's own, or — when a switch journal
+// outlived its lock (a switch whose own rollback failed before FULI kept the
+// lock, or a lock a person removed) or the lock names no token — one this
+// recovery takes. null when the lock changed meanwhile.
+async function lockToken(root, deps) {
+  const lock = readLock(root);
+  if (lock?.owner) return lock.owner;
+  if (lock && !await takeOver(root, null, deps.identity)) return null;
+  try { return (await acquireNeo4jLifecycleLock(root, { operation: 'recover' })).token; }
+  catch { return null; }
+}
+
+function stepFailed(reason, message, cause, facts) {
+  return Object.assign(new Error(message, cause ? { cause } : undefined), { reason, ...(facts ? { facts } : {}) });
 }
 
 async function runStep(step, context) {
@@ -324,6 +404,11 @@ async function runStep(step, context) {
         if (step.revert) writeManifest(context, step.revert);
         throw stepFailed('start_failed', `Neo4j ${step.version} did not start and answer its health check.`, error);
       }
+    case 'mark-backing-out': {
+      const journal = readJsonFile(join(root, JOURNAL), null);
+      if (!journal) throw stepFailed('unknown_journal', 'The switch journal is gone.');
+      return writeJsonFileAtomic(join(root, JOURNAL), { ...journal, backingOut: true });
+    }
     case 'write-manifest': return writeManifest(context, step.value);
     case 'move-aside': {
       if (!inside(root, step.path)) throw stepFailed('unmanaged_path', 'Only what is inside the native runtime is set aside.');
@@ -342,9 +427,13 @@ async function runStep(step, context) {
     }
     case 'restore':
       try { return await deps.restore({ from: step.from, instances: step.instances }, owner); }
-      catch (error) { throw stepFailed('restore_failed', `The graph could not be restored from ${step.from}.`, error); }
+      catch (error) {
+        // A copy whose checksums do not match can never be restored: abandoning the import is the way on.
+        if (error?.copyDamaged) throw stepFailed('restore_point_damaged', `The copy ${step.from} is damaged.`, error, { why: 'damaged', backupPath: step.from });
+        throw stepFailed('restore_failed', `The graph could not be restored from ${step.from}.`, error);
+      }
     case 'prune':
-      if (!isRecoveryFolder(root, step.path)) throw stepFailed('unmanaged_path', 'Only an old recovery folder is cleared.');
+      if (!isRecoveryFolder(root, step.path)) throw stepFailed('unmanaged_path', 'Only an old recovery folder is deleted.');
       return rm(step.path, { recursive: true, force: true });
     case 'release-lock': {
       if (!readLock(root)) return;
@@ -366,11 +455,12 @@ function writeManifest({ paths, folder }, value) {
 }
 
 // What this recovery did, step by step, beside what it set aside: the record
-// of a step that worked (the diagnostics log keeps only what failed). Answers its path.
-function keepRecord(root, stamp, plan, done, stopped = null) {
+// of a step that worked (the diagnostics log keeps only what failed), and the
+// old folders that could not be deleted. Answers its path.
+function keepRecord(root, stamp, plan, done, stopped = null, notDeleted = []) {
   const path = recoveryRecordPath(root, stamp);
   writeJsonFileAtomic(path, { version: 1, kind: plan.kind, digest: plan.digest, folder: recoveryFolder(root, stamp),
-    outcome: stopped ? 'stopped' : 'recovered', ...(stopped ?? {}), steps: done });
+    outcome: stopped ? 'stopped' : 'recovered', ...(stopped ?? {}), steps: done, ...(notDeleted.length ? { notDeleted } : {}) });
   return path;
 }
 

@@ -7,14 +7,15 @@ import { join } from 'node:path';
 // the descriptor as it was before the recovery wrote it; beside it,
 // recovered/recovery-<time>.json records what that recovery did.
 //
-// Moved programs take hundreds of MB, so a recovery also clears old folders:
-// one is cleared only when at least KEEP_RUNS newer ones exist and it is older
-// than KEEP_DAYS. The recovery's plan lists each one before anything happens.
-// The records are small and always kept.
+// Moved programs take hundreds of MB, so a recovery also permanently deletes
+// old folders, after it released the lock: one goes only when at least
+// KEEP_RUNS newer ones exist and it is older than KEEP_DAYS. The recovery's
+// plan lists each one, with both numbers, before anything happens. The
+// records are small and always kept.
 
-export const RECOVERED = 'recovered';
-export const KEEP_RUNS = 3;
-export const KEEP_DAYS = 30;
+const RECOVERED = 'recovered';
+const KEEP_RUNS = 3;
+const KEEP_DAYS = 30;
 const DAY_MS = 24 * 60 * 60_000;
 const STAMP = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/;
 
@@ -41,13 +42,14 @@ export function diskSize(path) {
   return names.reduce((total, name) => total + diskSize(join(path, name)), 0);
 }
 
-// The recovery folders the clean-up rule clears now, oldest first, with their size.
+// The recovery folders the clean-up rule deletes now, oldest first, with their
+// size and the rule itself (the words of the plan name both numbers).
 export function expiredRecoveryFolders(root, now) {
   const folders = listNames(join(root, RECOVERED)).filter(name => STAMP.test(name)).sort().reverse();
   return folders.slice(KEEP_RUNS)
     .filter(name => now - stampTime(name) >= KEEP_DAYS * DAY_MS)
     .reverse()
-    .map(name => ({ path: recoveryFolder(root, name), bytes: diskSize(recoveryFolder(root, name)) }));
+    .map(name => ({ path: recoveryFolder(root, name), bytes: diskSize(recoveryFolder(root, name)), keepRuns: KEEP_RUNS, keepDays: KEEP_DAYS }));
 }
 
 // Whether [path] is one of the recovery folders, so a clean-up never reaches anything else.
@@ -67,6 +69,7 @@ function stampTime(name) {
   return Date.parse(`${day}T${hours}:${minutes}:${seconds}.${millis}Z`);
 }
 
-function listNames(directory) {
+// The names in [directory]; none when it is missing or unreadable.
+export function listNames(directory) {
   try { return readdirSync(directory); } catch { return []; }
 }

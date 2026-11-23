@@ -28,10 +28,13 @@ export function nativeRecoveryServices({ paths, env = process.env }) {
     // The whole graph back from an import's own copy, the way the import's
     // rollback loads it (graph-backup.js): checksums first, no new copy of the
     // half-written store.
+    // A copy that fails its checks is marked [copyDamaged]: it will never restore.
     restore: async ({ from, instances }, owner) => {
-      const manifest = await readVerifiedGraphBackup(from);
+      let manifest;
+      try { manifest = await readVerifiedGraphBackup(from); }
+      catch (error) { throw Object.assign(new Error(`The copy ${from} failed its checks.`, { cause: error }), { copyDamaged: true }); }
       if (manifest.instances.map(({ id }) => id).sort().join() !== [...instances].sort().join()) {
-        throw new Error('The copy holds other graph instances than the plan said.');
+        throw Object.assign(new Error('The copy holds other graph instances than the plan said.'), { copyDamaged: true });
       }
       const adapter = await createGraphBackupAdapter({ mode: 'native', paths,
         createNativeServices: options => services(owner, options) });

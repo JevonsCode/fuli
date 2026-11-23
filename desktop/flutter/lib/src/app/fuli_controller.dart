@@ -147,13 +147,23 @@ class FuliController extends ChangeNotifier {
   /// 「恢复并启动」 can bring back (`fuli graph runtime recover`).
   bool get recoverable => _lastFailure != null && strings.recoverable(_lastFailure!);
 
-  /// What a recovery would do, for the person to confirm; null when it would
-  /// do nothing or refuses (the notice then says why). Changes nothing.
-  Future<RecoveryPlan?> previewRecovery() async {
-    if (!recoverable || _pending != null) return null;
-    final report = await runtime.previewRecovery();
+  /// Whether a recovery stopped at an interrupted import whose own copy cannot
+  /// be used, so 「放弃这次导入…」 is the way on.
+  bool get abandonableImport => _lastFailure != null && strings.abandonableImport(_lastFailure!);
+
+  /// Whether the person confirms a recovery in a terminal, not in this window.
+  bool get recoversInTerminal => runtime.recoversInTerminal;
+
+  /// What a recovery would do (or, with [abandonImport], giving up the
+  /// interrupted import), for the person to confirm; null when it would do
+  /// nothing or refuses: the notice then says why, and the refusal becomes
+  /// what the primary action follows. Changes nothing.
+  Future<RecoveryPlan?> previewRecovery({bool abandonImport = false}) async {
+    if (!(abandonImport ? abandonableImport : recoverable) || _pending != null) return null;
+    final report = await runtime.previewRecovery(abandonImport: abandonImport);
     final plan = report.recoveryPlan;
     if (plan == null || plan.kind == 'refused' || plan.kind == 'nothing' || plan.digest == null) {
+      if (plan?.kind == 'refused') _lastFailure = StartupFailure('recovery_refused', plan!.facts);
       _notice = Notice(plan == null ? strings.actionFailed(report.error ?? '') : strings.recoveryPlanWords(plan).first,
           error: plan?.kind == 'refused', logDirectory: plan?.kind == 'refused' ? await runtime.logDirectory() : null);
       if (!_disposed) notifyListeners();
@@ -163,13 +173,14 @@ class FuliController extends ChangeNotifier {
   }
 
   /// Recovers with the plan the person chose (the one shown, or the
-  /// alternative beside it), then starts FULI; says where the record is.
-  Future<void> recoverAndStart(RecoveryPlan plan) {
+  /// alternative beside it; [abandonImport] for giving up the import), then
+  /// starts FULI; says where the record is.
+  Future<void> recoverAndStart(RecoveryPlan plan, {bool abandonImport = false}) {
     final digest = plan.digest;
     if (digest == null) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
-      final report = await _call(() => runtime.recoverAndStart(digest, onStage: _enterStage));
+      final report = await _call(() => runtime.recoverAndStart(digest, abandonImport: abandonImport, onStage: _enterStage));
       final record = report.recoveryRecord;
       _notice = await _startFailure(report) ?? (record != null ? Notice(strings.recovered(record)) : _notice);
     });

@@ -7,7 +7,6 @@ import { followStartupStages, startupStageMarker, wantsStageMarkers } from '../l
 import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j-recovery.js';
 import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
-import { formatRecoveryPlan } from '../cli/recovery-plan-text.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
@@ -24,7 +23,8 @@ import { findNpmCopies } from './npm-copies.js';
 // and the macOS app (macos-controller.js) only differ in how they find the
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start', 'recover-preview', 'recover-start']);
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start', 'recover-preview', 'recover-start',
+  'abandon-import-preview', 'abandon-import-start']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -60,10 +60,11 @@ async function consolePortBlocked(context) {
     host: settings.lanAccess ? '0.0.0.0' : '127.0.0.1' }) !== null;
 }
 
-// The recovery the window confirms (neo4j-recovery.js), through the native runtime's own services.
+// The recovery the window confirms (neo4j-recovery.js), through the native
+// runtime's own services; [choice]: { abandonImport } for 「放弃这次导入…」.
 const nativeRecovery = {
-  plan: paths => planNativeRecovery({ paths, dependencies: nativeRecoveryServices({ paths }) }),
-  apply: (paths, digest) => applyNativeRecovery({ paths, digest, dependencies: nativeRecoveryServices({ paths }) })
+  plan: (paths, choice = {}) => planNativeRecovery({ paths, ...choice, dependencies: nativeRecoveryServices({ paths }) }),
+  apply: (paths, digest, choice = {}) => applyNativeRecovery({ paths, digest, ...choice, dependencies: nativeRecoveryServices({ paths }) })
 };
 
 // A stubbed CLI never looks for npm copies on the machine running the test.
@@ -105,31 +106,34 @@ export async function runTrayAction(action, context, {
       throw new Error('启动命令都结束了，但 FULI 没有进入运行状态。 / The start finished, but FULI did not reach its running state.');
     }
   };
-  // 「恢复并启动」: first the plan the window shows in the confirmation, then —
-  // with the digest of the plan the person chose (it may be the alternative
-  // shown beside it) — the recovery itself (neo4j-recovery.js, which refuses
-  // when anything changed since), and an ordinary start. Done here, not through
-  // the CLI: the CLI recovers only for a person at a terminal.
+  // 「恢复并启动」 (and 「放弃这次导入…」, abandon-import-*): first the plan the
+  // window shows in the confirmation, then — with the digest of the plan the
+  // person chose (it may be the alternative shown beside it) — the recovery
+  // itself (neo4j-recovery.js, which refuses when anything changed since), and
+  // an ordinary start. Done here, not through the CLI: the CLI recovers only
+  // at a terminal. The window words a refusal from its reason itself.
   let recoveryRecord = null;
-  if (action === 'recover-preview' || action === 'recover-start') {
+  const recovering = { 'recover-preview': 'preview', 'recover-start': 'start', 'abandon-import-preview': 'preview', 'abandon-import-start': 'start' }[action];
+  if (recovering) {
     const paths = resolveSetupPaths({ dataDir: context.dataDir });
-    const unknown = async (error, failure) => {
+    const choice = action.startsWith('abandon-import') ? { abandonImport: true } : {};
+    const reply = async (ok, fields) => {
       const state = await inspect({ step: false }).catch(() => null);
-      return { ok: false, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown',
-        state, error: error.message, ...(failure ? { failure } : {}) };
+      return { ok, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown', state, ...fields };
     };
-    if (action === 'recover-preview') {
-      try { return { ok: true, action, status: 'stopped', label: trayStateLabel({ status: 'stopped' }), recoveryPlan: await recovery.plan(paths) }; }
+    const unknown = (error, failure) => reply(false, { error: error.message, ...(failure ? { failure } : {}) });
+    if (recovering === 'preview') {
+      try { return reply(true, { recoveryPlan: await recovery.plan(paths, choice) }); }
       catch (error) { return unknown(error); }
     }
-    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error('recover-start needs the digest of the plan the person confirmed.');
+    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error(`${action} needs the digest of the plan the person confirmed.`);
     let recovered;
-    try { recovered = await recovery.apply(paths, recoveryDigest); }
+    try { recovered = await recovery.apply(paths, recoveryDigest, choice); }
     catch (error) {
       return unknown(error, error?.code === 'recover_step_failed'
-        ? { code: 'recovery_refused', reason: error.reason, step: error.step, record: error.record } : null);
+        ? { code: 'recovery_refused', ...error.facts, reason: error.reason, step: error.step, record: error.record, planKind: error.planKind } : null);
     }
-    if (recovered.kind === 'refused') return unknown(new Error(formatRecoveryPlan(recovered)), { code: 'recovery_refused', ...recovered });
+    if (recovered.kind === 'refused') return unknown(new Error(`The recovery was refused (${recovered.reason}).`), { code: 'recovery_refused', ...recovered });
     recoveryRecord = recovered.record ?? null;
     action = 'start';
   }

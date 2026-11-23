@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/fuli_condition.dart';
 import '../app/fuli_controller.dart';
@@ -113,6 +114,15 @@ class StatusActions extends StatelessWidget {
         child: Text(strings.recoverAndStart),
       );
     }
+    // The import's own copy cannot be used: giving the import up is the way on,
+    // a choice of its own, never 「恢复并启动」.
+    if (!snapshot.running && controller.abandonableImport) {
+      return FilledButton(
+        key: const Key('abandon-import'),
+        onPressed: busy ? null : () => _confirmAbandon(context),
+        child: Text(strings.abandonImport),
+      );
+    }
     // The last start stopped at a maintenance lock a person may release: the
     // one way on, confirmed first; FULI's own checks decide (neo4j-lifecycle-lock.js).
     if (!snapshot.running && controller.releasableLock) {
@@ -156,6 +166,9 @@ class StatusActions extends StatelessWidget {
     final plan = await controller.previewRecovery();
     if (plan == null || !context.mounted) return;
     final alternative = plan.alternative;
+    if (controller.recoversInTerminal) {
+      return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative)]);
+    }
     final other = strings.recoveryAlternativeWords(plan);
     final words = [...strings.recoveryPlanWords(plan), if (other != null) ...['', other]];
     final switching = plan.kind == 'finish_switch' || plan.kind == 'back_out_switch';
@@ -184,4 +197,64 @@ class StatusActions extends StatelessWidget {
     );
     if (chosen != null) await controller.recoverAndStart(chosen);
   }
+
+  // Giving up the import: what happens to which graphs and how to import back
+  // come first; its button says it empties them.
+  Future<void> _confirmAbandon(BuildContext context) async {
+    final plan = await controller.previewRecovery(abandonImport: true);
+    if (plan == null || !context.mounted) return;
+    if (controller.recoversInTerminal) return _showInTerminal(context, plan, [_command(plan)]);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.abandonImportTitle),
+        content: SingleChildScrollView(child: SelectableText(strings.recoveryPlanWords(plan).join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('abandon-import-confirm'),
+            style: FilledButton.styleFrom(backgroundColor: FuliColors.danger),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.abandonImportConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.recoverAndStart(plan, abandonImport: true);
+  }
+
+  // The `fuli` CLI recovers only at a terminal: the plan, and the command to
+  // run there (copyable), with no button that would do nothing.
+  Future<void> _showInTerminal(BuildContext context, RecoveryPlan plan, List<String> commands) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(strings.recoveryInTerminalTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text([...strings.recoveryPlanWords(plan), '', strings.recoveryInTerminal].join('\n')),
+                const SizedBox(height: FuliSpace.space4),
+                for (final command in commands) SelectableText(command, key: ValueKey('recovery-command $command')),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              key: const Key('copy-recovery-command'),
+              onPressed: () => Clipboard.setData(ClipboardData(text: commands.first)),
+              child: Text(strings.copyCommand),
+            ),
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.close)),
+          ],
+        ),
+      );
+
+  // The terminal command that does [plan] (src/cli/native-runtime-command.js).
+  String _command(RecoveryPlan plan) => switch (plan.kind) {
+        'abandon_load' => 'fuli graph runtime recover --abandon-import',
+        'back_out_switch' => 'fuli graph runtime recover --back-out',
+        _ => 'fuli graph runtime recover',
+      };
 }

@@ -172,7 +172,8 @@ void main() {
   });
 
   test('a recovery plan and every reason it will not run are said in one language, with a next step', () {
-    for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'finish_uninstall', 'clear_interrupted', 'release_dump', 'restore_load']) {
+    for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'continue_back_out', 'finish_uninstall', 'clear_interrupted', 'release_dump',
+      'restore_load', 'finish_recovery', 'abandon_load']) {
       final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1', 'bytes': 3 * 1024 * 1024}, {'do': 'release-lock'}], 'd', const {}));
       expect(words.first, isNot(kind), reason: kind);
       expect(words.join(), isNot(contains(' / ')), reason: kind);
@@ -196,9 +197,9 @@ void main() {
     expect(zh.recoveryAlternativeWords(const RecoveryPlan('finish_switch', [], 'd', {'alternativeRefused': 'no_fingerprint'})), contains('不能撤回'));
     for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
       'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
-      'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'lock_changed', 'step_failed', 'plan_changed']) {
+      'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'restore_point_usable', 'no_import', 'lock_changed', 'step_failed', 'plan_changed']) {
       final said = zh.recoveryRefused(reason, const {'pid': 7, 'directory': 'neo4j-assets/jvs-a-1', 'step': 'restore'});
-      expect(said, startsWith('没有恢复：'), reason: reason);
+      expect(said, matches(RegExp('^没有(恢复|放弃)：')), reason: reason);
       expect(said, isNot(contains(reason)), reason: reason);
       expect(said, isNot(contains('fuli ')), reason: '$reason: never a command to type');
     }
@@ -206,6 +207,25 @@ void main() {
     expect(zh.recoverable(const StartupFailure('recovery_refused', {'reason': 'restore_failed'})), isTrue);
     expect(zh.recoverable(const StartupFailure('recovery_refused', {'reason': 'manifest_changed'})), isFalse);
     expect(zh.releasableLock(const StartupFailure('recovery_refused', {'reason': 'no_holder'})), isTrue);
+    // An import whose copy cannot be used offers abandoning it, never 恢复并启动 again.
+    for (final reason in ['restore_point_unknown', 'restore_point_damaged']) {
+      expect(zh.abandonableImport(StartupFailure('recovery_refused', {'reason': reason})), isTrue, reason: reason);
+      expect(zh.recoverable(StartupFailure('recovery_refused', {'reason': reason})), isFalse, reason: reason);
+    }
+    // Abandoning says why the copy cannot be used, what ends up empty, and the copies an import can bring back.
+    final abandon = zh.recoveryPlanWords(const RecoveryPlan('abandon_load', [], 'd', {
+      'copyProblem': 'damaged', 'backupPath': '/x/b', 'instances': ['personal', 'workspace'], 'allInstances': true, 'dataDir': '/x',
+      'copies': [{'path': '/x/backups/graph/before-import-0', 'createdAt': '2026-11-20T00:00:00.000Z', 'bytes': 2048, 'instances': ['personal']}],
+    })).join('\n');
+    expect(abandon, contains('已损坏（读不出或校验和不对）：/x/b'));
+    expect(abandon, contains('按全部图谱处理'));
+    expect(abandon, contains('个人图谱、工作区图谱会变成空的'));
+    expect(abandon, contains('fuli graph import --input "/x/backups/graph/before-import-0" --data-dir "/x" --yes'));
+    // Clearing old recovery folders says it deletes them, by the rule the plan carries.
+    expect(zh.recoveryPlanWords(const RecoveryPlan('release_dump', [{'do': 'prune', 'path': '/x/recovered/a', 'bytes': 1024, 'keepDays': 40, 'keepRuns': 4}], 'd', {}))[1],
+        contains('永久删除一个旧的恢复文件夹（a，1.0 KB：超过 40 天，之后又有至少 4 次恢复'));
+    // A restored load that does not start says so, not the switch's two choices.
+    expect(zh.recoveryRefused('start_failed', const {'planKind': 'restore_load'}), contains('已经从导入前的副本恢复'));
   });
 
   test('a start stopped at a lock an update left offers no release', () async {

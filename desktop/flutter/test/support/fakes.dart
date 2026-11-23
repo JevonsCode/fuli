@@ -74,15 +74,19 @@ class FixedRuntime implements FuliRuntime {
   RecoveryPlan? recoveryPlan;
   RuntimeReport? recoverReport;
 
+  /// Whether this runtime recovers only in a terminal (the `fuli` CLI).
   @override
-  Future<RuntimeReport> previewRecovery() async {
-    calls.add('recover-preview');
+  bool recoversInTerminal = false;
+
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) async {
+    calls.add(abandonImport ? 'abandon-import-preview' : 'recover-preview');
     return RuntimeReport(RuntimeState.stopped, recoveryPlan: recoveryPlan);
   }
 
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage}) async {
-    calls.add('recover-start $digest');
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) async {
+    calls.add('${abandonImport ? 'abandon-import-start' : 'recover-start'} $digest');
     return recoverReport ?? report;
   }
 

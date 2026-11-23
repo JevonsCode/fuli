@@ -62,11 +62,16 @@ class WindowsTrayRuntime implements FuliRuntime {
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
   @override
-  Future<RuntimeReport> previewRecovery() => _action('recover-preview');
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) =>
+      _action(abandonImport ? 'abandon-import-preview' : 'recover-preview');
+
+  // The controller recovers in its own process, after the confirmation here.
+  @override
+  bool get recoversInTerminal => false;
 
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage}) =>
-      _action('recover-start', onStage: onStage, extra: [digest]);
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) =>
+      _action(abandonImport ? 'abandon-import-start' : 'recover-start', onStage: onStage, extra: [digest]);
 
   Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);

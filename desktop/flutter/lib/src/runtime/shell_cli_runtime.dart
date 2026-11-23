@@ -72,24 +72,25 @@ class ShellCliRuntime implements FuliRuntime {
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
   @override
-  Future<RuntimeReport> previewRecovery() async {
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    final result = await _sh(_mode!, 'fuli graph runtime recover --preview --json', _commandTimeout);
+    final result = await _sh(_mode!, 'fuli graph runtime recover --preview --json${abandonImport ? ' --abandon-import' : ''}', _commandTimeout);
     final plan = parseRecoveryPlan('${result?.stdout ?? ''}'.trim().split('\n').last);
-    return RuntimeReport(RuntimeState.stopped, recoveryPlan: plan,
+    final after = await status();
+    return RuntimeReport(after.state, consolePort: after.consolePort, recoveryPlan: plan,
         error: plan == null ? 'fuli graph runtime recover did not answer.' : null);
   }
 
   // The CLI recovers only for a person typing in a terminal
   // (src/cli/native-runtime-command.js); the FULI app recovers through its own
-  // controller. A window running the `fuli` CLI says where to do it.
+  // controller. The window shows this one the command to run there instead of
+  // a confirmation (status_actions.dart), so nothing asks it to recover.
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage}) async {
-    if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    final after = await status();
-    return RuntimeReport(after.state, consolePort: after.consolePort,
-        error: 'Run `fuli graph runtime recover` in Terminal: it shows the same plan and recovers once you confirm.');
-  }
+  bool get recoversInTerminal => true;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) async =>
+      const RuntimeReport(RuntimeState.unknown, error: 'The fuli CLI recovers only in Terminal.');
 
   // The CLI's own checked release (`fuli graph runtime unlock`), then a start.
   @override

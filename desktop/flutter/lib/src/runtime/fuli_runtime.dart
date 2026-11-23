@@ -111,10 +111,16 @@ abstract interface class FuliRuntime {
   /// FULI's own checks, then starts FULI. The person confirmed it first.
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage});
 
-  /// What a recovery of an interrupted database operation would do; changes nothing.
-  Future<RuntimeReport> previewRecovery();
+  /// What a recovery of an interrupted database operation would do; changes
+  /// nothing. [abandonImport]: the plan for giving up an interrupted import
+  /// whose own copy cannot be used instead.
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false});
+
+  /// Whether a recovery is confirmed in a terminal rather than in this window:
+  /// the `fuli` CLI recovers only there (src/cli/native-runtime-command.js).
+  bool get recoversInTerminal;
 
   /// Recovers with the plan the person confirmed ([digest]), then starts FULI.
   /// Nothing is done when the plan changed since it was shown.
-  Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage});
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage});
 }
