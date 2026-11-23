@@ -22,8 +22,8 @@ import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createHostConnection } from './host-connection.js';
-import { deliveredAnswer, effectiveCall, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer, offlineTaskAnswer,
-  outcomeUnknownAnswer, QUEUED_TOOLS,
+import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer,
+  offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -82,7 +82,6 @@ class HostRefusal {
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
   transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
-  store.pruneRefused();
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
@@ -374,7 +373,9 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
     if (store.outbox().queued) void deliverSoon();
-    return answer;
+    // Task entry says where it was answered, so the client's AI never takes a
+    // follower for a computer without a FULI (rec#144).
+    return hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
   });
 
   // A listing or read the host answered; a refused session lists nothing, and a read says why.

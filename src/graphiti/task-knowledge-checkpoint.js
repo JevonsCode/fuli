@@ -19,6 +19,7 @@ import { ownerChangeReceiptNotices } from './task-entry-owner-change.js';
 import { introductionReceiptLine } from './task-entry-introduction.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
+import { ruleTextView } from '../conversations/entry-rules.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
@@ -116,8 +117,8 @@ export async function checkpointTaskKnowledge(application, {
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     // A task without an owner says why, as its entry did.
     const unassigned = task.projectAgentId ? null : storedUnassignment(task);
-    return { ...interaction, ...result, conversation, ...(triaged ? { triage: triaged } : {}),
-      agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
+    return { ...interaction, ...result, conversation: withRuleReference(conversation), ...(triaged ? { triage: triaged } : {}),
+      agent_receipt: sharedContinuation(taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, role: team.role, sourceApplication: task.sourceApplication,
         assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
@@ -125,7 +126,7 @@ export async function checkpointTaskKnowledge(application, {
         roundtable: roundtableTurn(task.token), introduction: introductionReceiptLine(task),
         notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application),
           unsavedRemember: decision.allowed ? null : remember }), ...await receiptFormatNotices(application, { taskId: task.token })],
-        turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
+        turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) })),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (amend && fingerprint !== task.checkpoint.fingerprint) {
@@ -255,4 +256,18 @@ function canonicalCheckpoint(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [
     key, canonicalCheckpoint(value[key])
   ]));
+}
+
+// The continuation rules travel by version, as every task entry names them,
+// rather than in full twice per checkpoint (agent_receipt and the
+// conversation's own receipt). A sealed worker, which cannot read the rule
+// resources, keeps the text, as its entry does (task-context-view.js).
+function sharedContinuation(receipt) {
+  if (!receipt?.continuation?.guidance || activeSealedWorkerRequest()) return receipt;
+  return { ...receipt, continuation: { ...receipt.continuation,
+    guidance: ruleTextView(receipt.continuation.guidance, 'continuation_guidance') } };
+}
+
+function withRuleReference(conversation) {
+  return conversation?.receipt ? { ...conversation, receipt: sharedContinuation(conversation.receipt) } : conversation;
 }

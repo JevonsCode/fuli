@@ -13,7 +13,6 @@ import { createClientFirstRunAction } from '../system/client-first-run-action.js
 import { createClientInstaller } from '../system/client-connection-install.js';
 import { createClientRestart } from '../system/client-restart.js';
 import { createCustomClients } from '../system/custom-client-connection.js';
-import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 
 // The clients on a runner (docs/runner.md), for its console's 客户端接入:
 // detected, connected and added here, with the same entries `fuli runner join`
@@ -21,12 +20,13 @@ import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 // computer's Codex, Cursor and the rest instead of the host's. The same parts
 // as the console's system service, without anything of a graph runtime.
 // paths: resolveSetupPaths() for the runner's data directory.
-// host(): this runner's host as it is right now ({ name, reachable, version })
-// or null when it is not paired. The page says it, because a runner's clients
-// behave differently from a host's: their lifecycle hooks do nothing here, so
-// every task entry depends on the Agent calling FULI (docs/runner.md), and the
-// two computers can be on different FULI versions (rec#144).
-export function createRunnerClients({ paths, apps = clientApps(), host = null,
+// status(): this follower's one status (follower-status.js), or null. The page
+// says it, because a runner's clients behave differently from a host's: their
+// lifecycle hooks do nothing here, so every task entry depends on the Agent
+// calling FULI (docs/runner.md), and the two computers can be on different FULI
+// versions (rec#144). The versions and which side is older come from that same
+// status, so this page, `fuli status` and `fuli runner status` never differ.
+export function createRunnerClients({ paths, apps = clientApps(), status = null,
   agentKits = agentKitPorts(paths, { runtimeConfigPath: paths.graphRuntimeConfigPath }) }) {
   const runtimeConfigPath = paths.graphRuntimeConfigPath;
   const customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir });
@@ -45,11 +45,12 @@ export function createRunnerClients({ paths, apps = clientApps(), host = null,
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
     clientConnectionStatus: async (options) => {
-      const [observation, paired] = await Promise.all([observer.observe(options), host ? host() : null]);
-      const skew = runnerVersionSkew({ hostVersion: paired?.version ?? null, runnerVersions: runningRunnerVersions(runtimeConfigPath) });
-      return { ...observation, runner: { version: skew?.runnerVersion ?? runningRunnerVersions(runtimeConfigPath)[0],
-        hostName: paired?.name ?? null, hostReachable: paired?.reachable === true, hostVersion: paired?.version ?? null,
-        ...(skew ? { skew: { older: skew.older } } : {}) } };
+      const [observation, follower] = await Promise.all([observer.observe(options), status ? status() : null]);
+      const versions = follower?.versions ?? null;
+      const skew = versions?.skew ?? null;
+      return { ...observation, runner: { version: skew?.runnerVersion ?? versions?.runner?.[0] ?? FULI_VERSION,
+        hostName: follower?.paired ? follower.host.name : null, hostReachable: follower?.host?.reachable === true,
+        hostVersion: versions?.host ?? null, ...(skew ? { skew: { older: skew.older } } : {}) } };
     },
     connectClient,
     runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),

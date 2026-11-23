@@ -2,95 +2,260 @@ import { createServer as createHttpServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
 import { handleClientConnectionRequest } from '../http/client-connection-api-router.js';
-import { sendJson } from '../http/response.js';
+import { readJson, sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { listenServer } from '../server/listen.js';
-import { resolveSetupPaths } from '../setup/paths.js';
+import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
+import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, SYNC_PATH } from './follower-page.js';
+import { followerLine, followerStatus } from './follower-status.js';
+import { deliverOutbox } from './outbox-delivery.js';
 import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
-import { runningRunnerVersions } from './version-skew.js';
 
-// A runner's console entry (docs/runner.md): on this computer's loopback, at
-// the port its own console would use, so FULI.app, `fuli open` and the
-// receipt links the host gives (http://127.0.0.1:<port>/…) open the host's
-// console. Each request goes to the host over the paired channel as it is
-// (console-relay.js on the host); while the host is away, a page says so and
-// how many writes wait in the outbox. STATUS_PATH answers here, never from the
-// host: it is how `fuli status` and the app know this entry is running.
-// 客户端接入 (/api/system/client-connection…) answers here from `clients`
-// (runner-clients.js): the clients that matter on a runner are its own.
-export const STATUS_PATH = '/__fuli-runner/status';
+// A follower's console entry (docs/runner.md, docs/runner-roles-design.md §5):
+// on this computer's loopback, at the port its own console would use, so
+// FULI.app, `fuli open` and the receipt links the host gives
+// (http://127.0.0.1:<port>/…) all open here.
+//
+// What is this computer's and what is the host's:
+//
+// - LOCAL_PATH is this computer's own console page: who it follows, what runs
+//   where, and every record still waiting for the host, with 「现在重试」. It
+//   opens whether or not the host answers, and is what a path the host cannot
+//   serve falls back to.
+// - `/remote/<host>/…` names the host a page belongs to. It reaches only a
+//   host this computer is paired with, over that pairing's channel; any other
+//   name reaches nothing. An HTML page under it is answered with the host's own
+//   path on this origin, because the host's console is one page application
+//   that reads its own absolute paths.
+// - Every other path is the host's, carried over the paired channel as it is
+//   (console-relay.js on the host), with this computer's state band added to
+//   its HTML (follower-band.js).
+// - STATUS_PATH answers here, never from the host: it is how `fuli status` and
+//   the app know this entry is running, and what the band reads.
+// - 客户端接入 (/api/system/client-connection…) answers here from `clients`
+//   (runner-clients.js): the clients that matter on a follower are its own.
+//
+// Every answer carries SOURCE_HEADER, so the band can say where this page's
+// data came from instead of the person having to know.
+export { STATUS_PATH } from './follower-band.js';
+export const LOCAL_PATH = '/local';
+const REMOTE_PREFIX = '/remote/';
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'upgrade',
   'transfer-encoding', 'host', 'origin', 'referer']);
+// An HTML page is read into memory to add the band; a larger one is passed through as it is.
+const INJECT_LIMIT = 4 * 1024 * 1024;
 
 
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  createServer = createHttpServer }) {
+  createServer = createHttpServer, deliver = deliverOutbox }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
     handle(request, response).catch(() => {
-      if (!response.headersSent) sendJson(response, 500, { error: 'internal_error' });
+      if (!response.headersSent) local(response, 500, { error: 'internal_error' });
       else response.destroy();
     });
   });
 
+  const local = (response, status, body) => {
+    response.setHeader(SOURCE_HEADER, 'local');
+    sendJson(response, status, body);
+  };
+  // reachable: what this request already learned, for a caller that must not open the connection again.
+  const status = ({ reach = true, reachable = null } = {}) =>
+    followerStatus({ store, connection, dataDir, reach, reachable });
+
   async function handle(request, response) {
     // Only this computer, under its own name: another site's page cannot rebind a name onto it.
     if (!LOOPBACK.has(request.socket?.remoteAddress) || !authorities.has(String(request.headers.host ?? '').toLowerCase())) {
-      sendJson(response, 403, { error: 'forbidden' });
+      local(response, 403, { error: 'forbidden' });
       return;
     }
     // Another site's page may not act on the host through this entry: its Origin is refused here,
     // before the channel, where the host could no longer tell it from this computer's own page.
     const origin = request.headers.origin;
-    if (origin !== undefined && !authorities.has(originAuthority(origin))) {
-      sendJson(response, 403, { error: 'cross_origin' });
+    const sameOrigin = origin !== undefined && authorities.has(originAuthority(origin));
+    if (origin !== undefined && !sameOrigin) {
+      local(response, 403, { error: 'cross_origin' });
       return;
     }
-    const url = new URL(request.url ?? '/', 'http://runner.invalid');
-    if (clients && await handleClientConnectionRequest({ request, response, url, system: clients })) return;
-    const host = store.host();
+    let url;
+    try { url = new URL(request.url ?? '/', 'http://runner.invalid'); } catch {
+      local(response, 400, { error: 'bad_path' });
+      return;
+    }
+    if (clients && await localSource(response, () =>
+      handleClientConnectionRequest({ request, response, url, system: clients }))) return;
     if (url.pathname === STATUS_PATH) {
-      const reached = host ? await connection.connect() : null;
-      // The host's own FULI version comes with its hello: `fuli status` says when the two differ (rec#144).
-      const hello = reached ? await connection.hello() : null;
-      // runnerVersions: what talks to the host from here (version-skew.js), the one source `fuli status` compares.
-      sendJson(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
-        runnerVersions: runningRunnerVersions(resolveSetupPaths({ dataDir }).graphRuntimeConfigPath),
-        host: host ? { name: host.name, reachable: Boolean(reached), address: reached?.address ?? null,
-          ...(hello?.version ? { version: hello.version } : {}),
-          ...(hello?.mcpSessions ? { mcpSessions: hello.mcpSessions } : {}) } : null,
-        outbox: store.outbox().queued });
+      const state = await status();
+      local(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
+        ...state, line: followerLine(state) });
       return;
     }
-    const reached = host ? await connection.connect() : null;
-    if (!reached) return away(request, response, host);
-    const target = new URL(`${RUNNER_PATHS.console}${request.url ?? '/'}`, reached.origin);
+    if (url.pathname === BAND_PATH) {
+      response.setHeader(SOURCE_HEADER, 'local');
+      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      response.end(BAND_SOURCE);
+      return;
+    }
+    if (url.pathname === SYNC_PATH) return void await syncNow(request, response, sameOrigin);
+    if (url.pathname === ADDRESS_PATH) return void await addHostAddress(request, response, sameOrigin);
+    if (url.pathname === LOCAL_PATH || url.pathname === `${LOCAL_PATH}/`) return void await page(response);
+    const host = store.host();
+    const named = url.pathname.startsWith(REMOTE_PREFIX) ? namedHost(url.pathname, host) : null;
+    if (named?.error) {
+      local(response, named.status ?? 404, { error: named.error, message: 'This computer carries only the console of the '
+        + 'host it is paired with. `fuli runner status` names it.' });
+      return;
+    }
+    // A page of the host, asked for by the host's name: answered at the host's own path on this
+    // origin, which the console's single page application reads (docs/runner-roles-design.md §5).
+    if (named && wantsHtml(request)) {
+      response.setHeader(SOURCE_HEADER, 'local');
+      response.writeHead(302, { location: `${named.path}${url.search}` });
+      response.end();
+      return;
+    }
+    const path = named ? `${named.path}${url.search}` : (request.url ?? '/');
+    const reached = host && !host.revokedAt ? await connection.connect() : null;
+    if (!reached) return void await away(request, response, host, path);
+    await relay(request, response, reached, path, host);
+  }
+
+  // The follower's own page: what this computer follows, what runs where, and what waits.
+  async function page(response, { requested = null } = {}) {
+    const state = await status();
+    response.setHeader(SOURCE_HEADER, 'local');
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested }));
+  }
+
+  // `现在重试`: delivers what waits now, and answers with this computer's new state.
+  async function syncNow(request, response, sameOrigin) {
+    // A write needs this computer's own page to have asked: a request with no Origin at all
+    // is a program on this computer, which has `fuli runner sync`.
+    if (request.method !== 'POST' || !sameOrigin) {
+      local(response, 405, { error: 'post_from_this_console' });
+      return;
+    }
+    const host = store.host();
+    // Revoked is said as revoked, never as the host being away (review of #1069).
+    const refusal = unpairedAnswer(host);
+    if (refusal) {
+      local(response, refusal.status, refusal.body);
+      return;
+    }
+    const reached = await connection.connect();
+    if (!reached) {
+      local(response, 503, { error: 'host_unreachable', message: `${host.name} 现在不在线，记录还在这里等着；它回来后会自动送出。`
+        + ` / ${host.name} does not answer now; the records wait here and go once it answers.` });
+      return;
+    }
+    const result = await deliver({ store, connection });
+    const state = await status({ reach: false, reachable: true });
+    local(response, 200, { delivered: result.delivered, refused: result.refused, queued: result.queued,
+      html: outboxHtml(state.outbox), line: followerLine(state) });
+  }
+
+  // 「添加主机地址」: where the host is, when this computer cannot find it by
+  // itself (the two are on one network but in different subnets, or on a VPN,
+  // so mDNS does not carry). Only an address a host can be reached at on a LAN
+  // or VPN, exactly what `fuli runner add-address` takes:
+  // the paired certificate is checked there anyway, but no request of this
+  // computer's is ever sent anywhere else.
+  async function addHostAddress(request, response, sameOrigin) {
+    if (request.method !== 'POST' || !sameOrigin) {
+      local(response, 405, { error: 'post_from_this_console' });
+      return;
+    }
+    if (!store.host()) {
+      local(response, 503, { error: 'not_paired' });
+      return;
+    }
+    let asked;
+    try { asked = await readJson(request); } catch {
+      local(response, 400, { error: 'invalid_json', message: '请求的内容读不懂。 / The request could not be read.' });
+      return;
+    }
+    const address = String(asked?.address ?? '').trim();
+    if (!isReachableHostAddress(address)) {
+      local(response, 400, { error: 'not_a_private_address',
+        message: '只填主机在局域网或 VPN 里的地址：10.x、172.16-31.x、192.168.x，或 Tailscale 这类工具给的 100.64-127.x。'
+          + ' / The host\'s address on your LAN or VPN only: 10.x, 172.16-31.x, 192.168.x, or 100.64-127.x from Tailscale and the like.' });
+      return;
+    }
+    store.learnHostAddresses([address]);
+    connection.drop();
+    const state = await status();
+    local(response, 200, { reachable: state.host?.reachable ?? false, line: followerLine(state) });
+  }
+
+  // Marks an answer this computer gave itself, when it gave one.
+  async function localSource(response, answer) {
+    response.setHeader(SOURCE_HEADER, 'local');
+    const handled = await answer();
+    if (!handled) response.removeHeader(SOURCE_HEADER);
+    return handled;
+  }
+
+  async function relay(request, response, reached, path, host) {
+    const target = new URL(`${RUNNER_PATHS.console}${path}`, reached.origin);
+    // `/../..` sent raw by a program on this computer would leave the console's prefix and reach the
+    // host's other runner paths (`/runner/1/mcp`, `/replay`): only the console is carried.
+    if (target.origin !== reached.origin || !target.pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
+      local(response, 400, { error: 'not_console_path' });
+      return;
+    }
     const headers = Object.fromEntries(Object.entries(request.headers).filter(([name]) => !HOP_HEADERS.has(name)));
-    if (origin !== undefined) headers[SAME_ORIGIN_HEADER] = '1';
+    if (request.headers.origin !== undefined) headers[SAME_ORIGIN_HEADER] = '1';
+    // A page the band is added to is read as it is written: no compressed body to rewrite.
+    if (wantsHtml(request)) headers['accept-encoding'] = 'identity';
     const upstream = httpsRequest(target, { method: request.method, agent: reached.agent, headers }, (answer) => {
-      response.writeHead(answer.statusCode ?? 502, Object.fromEntries(Object.entries(answer.headers)
-        .filter(([name]) => !HOP_HEADERS.has(name))));
-      answer.pipe(response);
+      const outgoing = { ...Object.fromEntries(Object.entries(answer.headers).filter(([name]) => !HOP_HEADERS.has(name))),
+        [SOURCE_HEADER]: 'host' };
+      if (!bandable(answer)) {
+        response.writeHead(answer.statusCode ?? 502, outgoing);
+        answer.pipe(response);
+        return;
+      }
+      collect(answer).then((body) => {
+        const page = body === null ? null : withBand(body.toString('utf8'));
+        if (page === null) {
+          response.writeHead(answer.statusCode ?? 502, outgoing);
+          response.end(body ?? undefined);
+          return;
+        }
+        const bytes = Buffer.from(page, 'utf8');
+        response.writeHead(answer.statusCode ?? 502, { ...outgoing, 'content-length': String(bytes.length) });
+        response.end(bytes);
+      }).catch(() => response.destroy());
     });
     upstream.on('error', () => {
       connection.drop();
-      if (!response.headersSent) away(request, response, host);
+      if (!response.headersSent) void away(request, response, host, path);
       else response.destroy();
     });
     response.on('close', () => upstream.destroy());
     request.pipe(upstream);
   }
 
-  function away(request, response, host) {
-    const queued = store.outbox().queued;
-    if (!String(request.headers.accept ?? '').includes('text/html')) {
-      sendJson(response, 503, { error: host ? 'host_unreachable' : 'not_paired', outbox: queued });
+  // The host is away (or this computer was revoked): a page says so and shows
+  // this computer's own console, which works without the host; an API call says
+  // it plainly, as it always did.
+  async function away(request, response, host, path) {
+    if (!wantsHtml(request)) {
+      response.setHeader(SOURCE_HEADER, 'unavailable');
+      const refusal = unpairedAnswer(host);
+      sendJson(response, refusal?.status ?? 503, { ...(refusal?.body ?? { error: 'host_unreachable' }),
+        outbox: store.outbox().queued });
       return;
     }
+    const state = await status({ reach: false, reachable: false });
+    response.setHeader(SOURCE_HEADER, 'unavailable');
     response.writeHead(503, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(awayPage({ hostName: host?.name ?? null, queued }));
+    response.end(followerConsolePage({ status: state, hostPath: hostPath(state.host), requested: path }));
   }
 
   await listenServer(server, port, '127.0.0.1');
@@ -102,6 +267,80 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   }) };
 }
 
+// Not paired, or revoked: the answer for it, said as what it is. null while paired.
+// The person acts on the host (a new invitation), then joins here; the page
+// offers that command to copy, as nothing can be done with one click here.
+const JOIN_AGAIN = { command: 'fuli runner invite',
+  zh: '在主机上运行这条命令生成新邀请，再在这台电脑上运行它打印的 fuli runner join …。',
+  en: 'Run this on the host for a new invitation, then run the `fuli runner join …` it prints on this computer.' };
+function unpairedAnswer(host) {
+  if (!host) {
+    return { status: 409, body: { error: 'not_paired', message: '这台电脑还没有跟随任何主机。 / This computer follows no host.',
+      action: JOIN_AGAIN } };
+  }
+  if (!host.revokedAt) return null;
+  return { status: 403, body: { error: 'runner_revoked',
+    message: `${host.name} 已撤销这台电脑，记录不会再送出，直到重新加入同一台主机。`
+      + ` / ${host.name} revoked this computer; nothing is sent until it joins the same host again.`,
+    action: JOIN_AGAIN } };
+}
+
+// `/remote/<host>/<path>` → the path on that host, or why it reaches nothing.
+// The name is the host's as this computer knows it (its own name, or the start
+// of the fingerprint the pairing pinned); nothing else is ever reached.
+function namedHost(pathname, host) {
+  const [name, ...rest] = pathname.slice(REMOTE_PREFIX.length).split('/');
+  let asked;
+  try { asked = decodeURIComponent(name ?? '').toLowerCase(); } catch { return { error: 'bad_path', status: 400 }; }
+  if (!host) return { error: 'not_paired' };
+  if (!asked || ![hostSlug(host.name), host.name.toLowerCase(), host.fingerprint.slice(0, 16)].includes(asked)) {
+    return { error: 'unknown_host' };
+  }
+  // One leading slash and no empty segments, as console-relay.js reads them on the host.
+  return { path: `/${rest.filter(Boolean).join('/')}${rest.length > 1 && rest.at(-1) === '' ? '/' : ''}` };
+}
+
+function hostSlug(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'host';
+}
+
+function hostPath(host) {
+  return host ? `${REMOTE_PREFIX}${encodeURIComponent(hostSlug(host.name))}/` : LOCAL_PATH;
+}
+
+function wantsHtml(request) {
+  return String(request.headers.accept ?? '').includes('text/html');
+}
+
+// An HTML answer small enough to read as a whole, written as it is (not compressed).
+function bandable(answer) {
+  const encoding = String(answer.headers['content-encoding'] ?? '').toLowerCase();
+  const length = Number(answer.headers['content-length'] ?? Number.NaN);
+  return String(answer.headers['content-type'] ?? '').includes('text/html')
+    && (!encoding || encoding === 'identity') && !(length > INJECT_LIMIT);
+}
+
+function collect(answer) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    answer.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > INJECT_LIMIT) { answer.destroy(); reject(new Error('page too large')); return; }
+      chunks.push(chunk);
+    });
+    answer.on('end', () => resolve(Buffer.concat(chunks)));
+    answer.on('error', reject);
+  });
+}
+
+// The band goes last in the head, so the page's own styles are already there; a
+// page without a head is left as it is.
+function withBand(html) {
+  const head = html.toLowerCase().indexOf('</head>');
+  return head === -1 ? null : `${html.slice(0, head)}${bandTag()}${html.slice(head)}`;
+}
+
 function originAuthority(origin) {
   try {
     const url = new URL(origin);
@@ -109,20 +348,4 @@ function originAuthority(origin) {
   } catch {
     return null;
   }
-}
-
-function awayPage({ hostName, queued }) {
-  const escape = (value) => String(value).replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
-  const title = hostName ? `${escape(hostName)} 暂时连不上 · The host is away` : '这台电脑还没有配对主机 · Not paired';
-  const body = hostName
-    ? `<p>这台电脑是运行机，复利在主机 <b>${escape(hostName)}</b> 上。主机回来后这个页面会显示它的控制台。</p>
-<p>This computer is a runner; its FULI is on <b>${escape(hostName)}</b>. Its console shows here once the host answers.</p>
-<p>待补交的记录 / Waiting in the outbox: <b>${queued}</b></p>`
-    : '<p>运行 <code>fuli runner join</code> 和主机配对。 / Pair with a host with <code>fuli runner join</code>.</p>';
-  return `<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<meta http-equiv="refresh" content="15"><title>FULI</title>
-<style>body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222}
-.beta{display:inline-block;margin-left:8px;padding:0 6px;border-radius:999px;font-size:11px;font-weight:600;line-height:18px;vertical-align:middle;color:#3b5bdb;background:#e8edff}
-@media (prefers-color-scheme:dark){body{background:#111;color:#ddd}.beta{color:#a5b8ff;background:#1f2a4d}}</style></head>
-<body><h1 style="font-size:20px">${title}<span class="beta" title="测试中的功能 · In testing">Beta</span></h1>${body}</body></html>`;
 }

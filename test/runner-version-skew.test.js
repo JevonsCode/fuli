@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { runnerVersionSkew, runningRunnerVersions, versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
+import { followerStatus } from '../src/runner/follower-status.js';
 
 test('a runner and its host on different FULI versions: which one is older', () => {
   assert.equal(versionSkew({ hostVersion: '0.29.0', runnerVersion: '0.29.0' }), null);
@@ -49,19 +50,22 @@ test('the line says which copy is older and never claims a call is blocked', () 
   assert.match(hostOlder, /Studio is older; update FULI there/);
 });
 
-test('fuli status on a runner shows the host, the skew and the outbox, and nothing when the versions match', () => {
-  const running = { status: 'running', role: 'runner', url: 'http://127.0.0.1:2727', runnerVersions: ['0.28.1'], outbox: 2,
-    host: { name: 'Studio', reachable: true, version: '0.29.0' } };
-  const shown = formatFollowerResult('status', running);
-  assert.match(shown, /This computer is a runner/);
-  assert.match(shown, /Host: Studio, answering/);
-  assert.match(shown, /FULI versions differ: this runner runs 0\.28\.1, Studio runs 0\.29\.0/);
-  assert.match(shown, /Outbox: 2 waiting\./);
-  const same = formatFollowerResult('status', { ...running, host: { ...running.host, version: '0.28.1' } });
-  // `fuli status` reads the same versions the entry process reports for the open sessions.
-  assert.match(formatFollowerResult('status', { ...running, runnerVersions: ['0.29.0', '0.28.1'] }), /this runner runs 0\.28\.1/);
-  assert.doesNotMatch(same, /versions differ/);
-  // A host that does not answer tells nothing about its version, so nothing is said.
-  const away = formatFollowerResult('status', { ...running, host: { name: 'Studio', reachable: false } });
-  assert.doesNotMatch(away, /versions differ/);
+test('the follower\'s one status carries both versions and the skew, and fuli status prints it', async () => {
+  const store = { host: () => ({ name: 'Studio', pairedAt: '2026-11-20T08:00:00.000Z', revokedAt: null }), outbox: () => ({ queued: 2, failed: [] }),
+    answeredAt: () => null, answerUsage: () => ({ count: 0, bytes: 0, maxCount: 5000, maxBytes: 64 * 1024 * 1024 }) };
+  const connection = (version) => ({ hello: async () => ({ version }), current: { address: '192.0.2.20' }, pinFailed: false });
+  // No data folder: the installed copy is this computer's version.
+  const older = await followerStatus({ store, connection: connection('99.0.0') });
+  assert.deepEqual(older.versions.host, '99.0.0');
+  assert.equal(older.versions.skew.older, 'runner');
+  const shown = formatFollowerResult('status', { status: 'running', url: 'http://127.0.0.1:2727', host: older.host,
+    line: { en: 'Following Studio · answering' }, versions: older.versions, capabilities: [] });
+  assert.match(shown, /FULI versions differ: this runner runs .+, Studio runs 99\.0\.0/);
+  // The same release on both sides says nothing; neither does a host that did not answer.
+  const same = await followerStatus({ store, connection: connection(older.versions.runner[0]) });
+  assert.equal(same.versions.skew, null);
+  const away = await followerStatus({ store, connection: { hello: async () => null, current: null, pinFailed: false } });
+  assert.deepEqual([away.versions.host, away.versions.skew], [null, null]);
+  assert.doesNotMatch(formatFollowerResult('status', { status: 'running', url: 'http://127.0.0.1:2727', host: away.host,
+    line: { en: 'Following Studio · not reachable' }, versions: away.versions, capabilities: [] }), /versions differ/);
 });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,6 +7,7 @@ import test from 'node:test';
 import { runWhoAmICommand } from '../src/cli/whoami-command.js';
 import { projectIdentity } from '../src/system/project-identity.js';
 import { projectIdentityCache } from '../src/system/project-identity-cache.js';
+import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 // A made-up space, project and FLA; no real names or paths anywhere here.
 const ANSWER = Object.freeze({
@@ -109,6 +110,20 @@ test('a refusal the console explains is repeated to the person, not swallowed', 
   });
   assert.equal(result.exitCode, 2);
   assert.match(output.written.join('\n'), /the console answered 400: projectPath must be an existing absolute directory/);
+});
+
+test('a host that revoked this computer is not "away": its earlier answers are not shown', async (t) => {
+  const directory = dataDir(t);
+  projectIdentityCache(directory).remember('/runner/blue-kettle', ANSWER);
+  mkdirSync(join(directory, 'runner'), { recursive: true });
+  const store = new RunnerStore(join(directory, RUNNER_FILE));
+  store.saveHost({ name: 'Host A', fingerprint: 'f'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] });
+  store.revoked();
+  store.close();
+  const output = lines();
+  const result = await runWhoAmICommand([], { env: { FULI_DATA_DIR: directory }, write: output.write, cwd: () => '/runner/blue-kettle',
+    isRunner: () => true, workspaceFacts: async () => ({ version: 1 }), fetchImpl: async () => { throw new Error('host refused'); } });
+  assert.equal(result.exitCode, 2);
 });
 
 test('a runner with no earlier answer says so instead of inventing one', async (t) => {

@@ -30,11 +30,66 @@
 更正与未完成事项。截断前缀不参与去重，省略数量可见。摘要最多占恢复预算的一半。
 摘录未经核实，可能漏掉无标记决定或误分类；原文始终是依据，旧摘录不能覆盖新用户指令。
 
+## 什么时候显示「续接」（rec#147）
+
+同一个原生会话一直干活，不显示任何续接：这个会话已经绑定了自己的对话，
+`conversation.recovered_from` 有值，入口不带 `conversation.continuation`，
+开头那行来源标记也不会写「续接」——恢复了多少上下文都一样。
+
+换了会话或换了客户端，只有**确定**是真续接才显示。确定只有两种依据：
+
+| 依据 | `evidence` | 判据 |
+| --- | --- | --- |
+| 人说了要接哪一段 | `stated_by_user` | 第一条消息是 FULI 的接续指令，点名这位 FLA **和**它的某个对话（`#FLA {agentId}` 加 `conversationId`），或显式调用 `resume_agent_conversation`。按那个对话 ID 找来源，不看时间窗口。只点名 FLA、交一件新任务，是指定谁来做，**不算续接** |
+| FULI 认出是同一件事 | `same_branch` | 这位 FLA 最近 7 天还有别的会话，和本会话在同一个仓库目录、同一条 Git 分支上，且这条分支不是 `main`、`master`、`develop`、`release`、`staging`、`test`、`prod`、`production`、`gh-pages` 这类多人共用的长期分支 |
+
+接续指令里的 `#FLA {agentId}` 在新会话里不会换人：这一轮由谁负责仍按工作目录定。所以接续指令点名的必须正好是这个目录的负责人，才显示续接；成员 FLA 写的接续指令拿到别处用时，这一轮仍照常干活，只是开头不写续接。
+
+不显示的情况一律不解释：同一条分支上有不止一段工作（分不清接哪段）、读不到分支（不在 Git 里、detached HEAD、读取超时）、
+读不到点名的那个对话、新会话做另一件事、这位 FLA 没有更早的工作。
+
+只有本会话第一轮、且有点名的对话或可比较的非主干分支时，入口才多读一次这位 FLA 最近 20 个对话；
+超过 500 ms 或出错就当没有，不拖慢入口。
+
+显示时 `conversation.continuation` 写清：
+
+- `from`：哪个客户端（`client_label`）、哪个会话（`session_short`，原生会话号前 8 位）、什么时候（`when`）、
+  属于哪个项目（`personal_project_id`）、来源对话做到哪一步（`status`）、当时用的模型（`model` 与 `model_source`）。
+- `context: not_loaded`：入口时来源对话的内容还没进上下文。`resume_agent_conversation` 才把它带过来，
+  它的回答里有同样的 `continuation`，`carried` 数清带过来多少。
+
+开头那行写成「◇ FULI · 续接 Codex 里 11-22 的工作」，日期按这台电脑的时区，和别的 FULI 来源标记一样用中文。
+
+**模型一栏不猜。** 写的是 FULI 自己读到了什么（`src/agents/client-provenance.js`），不替客户端下结论：
+Claude Code 从自己的对话记录读实际回答的模型（`actual`）；Codex 给的是请求的模型（`requested`），实际回答的可能不是它。
+Cursor、OpenCode、DeepSeek Harness、Claude 桌面端的 FULI 钩子不读模型，`model_reason` 写 `not_read`——
+这只说明 FULI 没读，**不等于客户端不提供**，还没核实过。FULI 读、但这一段没有的写 `not_recorded`
+（更早的记录，或第一轮对话记录里还没有回答，所以只有一轮的 Claude Code 会话会一直是这个）；
+不知道是哪个客户端的写 `client_not_recorded`。都不回填估算值。
+
+同一个会话中途换了模型，记录只留最后一次读到的那个（Provider 按会话覆盖），统计会全部算在那个模型名下。
+
+接口里只传原因码，不传拼好的句子：界面按自己的语言说（Jevons 2026-11-18「该展示成英文就展示成英文，
+该映射展示成中文就该展示成中文」），所以没有中英文拼在一起的字符串被存下来或传出去。
+界面上没上报的数字显示 `-` 加一句原因，不写 0。
+
+这一轮没能记上（Provider 不可达、离线 token）时，`conversation.status` 不是 `saved`，
+带着它自己的 `reason` 和 guidance，入口不会把这种情况说成「没有历史」。
+
 ## 跨客户端接续
 
-1. 收尾保存真实结果，返回当前负责人、保存状态和 `conversation_id`。
-2. 在另一客户端选择同一授权范围和 FLA，取得该宿主当前 `taskContextToken`。
-3. 用 `resume_agent_conversation` 恢复指定会话；细节用 `read_agent_conversation` 分页补读。
+拆会话、换客户端、换电脑都不写交接文档——FULI 本来就带着上下文。做法固定三步：
+
+1. 先 `checkpoint_task_knowledge` 把关键决定记下来，返回当前负责人、保存状态和 `conversation_id`。
+2. 在目标客户端新开会话，把回执里 `continuation.prompt` 作为第一条消息发出去
+   （个人页也能直接复制）；它带着 FLA、项目和来源会话 ID。
+3. `resume_agent_conversation` 恢复该会话，返回的 `carried` 写明这次到底带过来了多少：
+   有没有工作小结、最近几条原文、更早的折叠到第几号（`folded_through`）、最后一条是第几号（`last_sequence`）。
+   后两个是事件序号不是条数：删除或撤回过的事件留空号，所以序号可能比实际条数大。
+   细节用 `read_agent_conversation` 分页补读。
+
+这条做法写在入口规则的 `continuation_guidance` 一节里，按版本引用下发给所有客户端，
+每轮不额外花 Token；全文在 `fuli://rules/task-entry/continuation_guidance`。
 
 入口支持开头的 `#FLA 姓名` 或稳定的 `#FLA {agentId}`；`@` 留给客户端，任何位置的 `@` 都不切换身份。
 FULI 0.23 及更早写出的 `@{agentId}` 接续指令（任何 ID，例如 `@{employee.jefa}`）仍能识别，之后不再生成。同名、停用、项目不符

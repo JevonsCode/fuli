@@ -1,8 +1,9 @@
 import { existsSync, statSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { describeWorkspace } from '../graphiti/workspace-facts.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { projectIdentityCache } from '../system/project-identity-cache.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { localConsoleUrl } from './console-url.js';
@@ -58,7 +59,8 @@ export async function runWhoAmICommand(args, { env = process.env, write = writeL
   }
   // The host is away, or no console is running here: the earlier answer is better
   // than nothing, as long as it says it is earlier (rec#144).
-  const earlier = runner ? cache.last(key) : null;
+  // A host that revoked this computer is not away: its earlier answers are not shown as if it were.
+  const earlier = runner && !revoked(paths.dataDir) ? cache.last(key) : null;
   if (!earlier) {
     write(runner
       ? `No answer: ${failure}. The host has not answered this folder before, so nothing is kept here. `
@@ -90,6 +92,13 @@ async function refusal(reply) {
   const message = body?.error?.message ?? body?.message ?? body?.error;
   return typeof message === 'string' && message ? `the console answered ${reply.status}: ${message}`
     : `the console answered ${reply.status}`;
+}
+
+function revoked(dataDir) {
+  const file = join(dataDir, RUNNER_FILE);
+  if (!existsSync(file)) return false;
+  const store = new RunnerStore(file);
+  try { return Boolean(store.host()?.revokedAt); } finally { store.close(); }
 }
 
 function finish(answer, options, write, exitCode) {
