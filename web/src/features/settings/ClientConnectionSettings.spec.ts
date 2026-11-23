@@ -128,11 +128,15 @@ it('shows each client’s configuration status in plain words without claiming i
   wrapper.unmount()
 })
 
-it('says when agent-installer could not detect anything instead of listing no clients', async () => {
-  routed(() => Response.json({ ...statusOf(), available: false }))
+it('says when agent-installer could not detect anything instead of listing no clients, and checks again from the notice', async () => {
+  const calls = routed(() => Response.json({ ...statusOf(), available: false }))
   const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.find('[data-detection-unavailable]').exists()).toBe(true)
+  const before = statusCalls(calls)
+  await wrapper.get('[data-detection-unavailable] [data-check-again]').trigger('click')
+  await flushPromises()
+  expect(statusCalls(calls)).toBe(before + 1)
   expect(wrapper.find('[data-client-status]').exists()).toBe(false)
   expect(wrapper.get('[data-connection-summary]').text()).toBe('')
   expect(wrapper.find('[data-add-custom-client]').exists()).toBe(false)

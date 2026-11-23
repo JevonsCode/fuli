@@ -173,8 +173,16 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       <section class="connection-section" aria-labelledby="client-connection-detected">
         <h3 id="client-connection-detected" class="ui-group-label">{{ t('settings.connection.clients.title') }}</h3>
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
-        <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
-        <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
+        <UiNotice v-if="checkError" tone="warning" data-check-error>
+          {{ t('settings.connection.clients.checkError') }}
+          <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
+            data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
+        </UiNotice>
+        <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>
+          {{ t('settings.connection.clients.unavailable') }}
+          <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
+            data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
+        </UiNotice>
         <UiNotice v-if="installs && otherInstalls.length" tone="warning" data-two-installs>
           {{ t('settings.connection.clients.twoInstalls.notice', { count: otherInstalls.length + 1, version: installs.console.version ?? '—',
             clients: otherInstalls.flatMap(other => other.clients).join('、') }) }}
