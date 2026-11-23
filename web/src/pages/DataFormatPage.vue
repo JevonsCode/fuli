@@ -114,7 +114,10 @@ async function dismissNotice(id: string) {
 }
 
 function resultText(result: MigrationResult) {
-  if (result.status === 'applied') return t('dataFormat.resultApplied', { id: result.migrationId })
+  if (result.status === 'applied') {
+    const applied = t('dataFormat.resultApplied', { id: result.migrationId })
+    return result.unreadable ? `${applied} ${t('dataFormat.resultUnreadable', { count: result.unreadable })}` : applied
+  }
   if (result.status === 'already_applied') return t('dataFormat.resultAlready', { id: result.migrationId })
   return t('dataFormat.resultFailed', { message: result.message ?? result.code ?? '' })
 }
@@ -129,7 +132,8 @@ async function confirmUndo(entry: UndoableMigration) {
     const result = await undoMigration(entry.label, entry.migrationId)
     pruneUnknown.value = pruneUnverified(result.pruned)
     auditFailure.value = pruneAuditError(result.pruned)
-    undoMessage.value = t('dataFormat.undone', { id: entry.migrationId, version: result.version })
+    undoMessage.value = [t('dataFormat.undone', { id: entry.migrationId, version: result.version }),
+      ...(result.adapted ? [t('dataFormat.undoneAdapted', { count: result.adapted })] : [])].join(' ')
     undoTarget.value = null
     await load()
   } catch (cause) {

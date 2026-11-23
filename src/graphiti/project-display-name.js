@@ -26,14 +26,19 @@ const WORDS = Object.freeze({ 'zh-CN': '临时项目', 'en-US': 'Temporary proje
 
 /**
  * A project FULI opened by itself. Its scope_type says so first, as the
- * Provider stores it. A generated ID with no name of its own counts too: a
- * conversation fallback a graph waiting for graph/23 has not marked yet, or a
- * caller holding only an ID. A conversation project a person named is theirs.
+ * Provider stores it. A conversation project a person named is theirs.
+ *
+ * Compatibility: a generated ID with no name of its own counts too, for a
+ * conversation fallback a graph waiting for graph/23 has not marked yet, and
+ * for a caller holding only an ID. graph/23 marks every one of them
+ * temporary; remove the ID check with GENERATED_NAMES once no supported FULI
+ * opens a graph below 23, after checking no caller passes a bare ID (the same
+ * fallback is in the Provider's is_temporary_project and the console's
+ * project-origin.ts).
  */
 export function isTemporaryProject(project) {
   if (!project) return false;
   if ((project.scope_type ?? project.scopeType) === 'temporary') return true;
-  if (project.profile?.origin === 'conversation_fallback') return true;
   return TEMPORARY_ID.test(project.project_id ?? project.id ?? '') && !givenProjectTitle(project);
 }
 

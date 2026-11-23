@@ -26,7 +26,7 @@ export const NUMBER_LENGTH = 8
 export interface ProjectNaming {
   project_id: string
   scope_type?: PersonalProject['scope_type']
-  profile?: { name?: string | null, origin?: string | null } | null
+  profile?: { name?: string | null } | null
   updated_at?: string | null
   created_at?: string | null
 }

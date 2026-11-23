@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import Field
 
 from .models import ProjectProfile, SourceApplication, StrictModel
-from .provider_values import now_utc, stable_uuid
+from .provider_values import json_object, now_utc, stable_uuid
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
@@ -63,11 +63,26 @@ def conversation_fallback_project_id(space_id: str, source_application: str, ses
     return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
 
 
+def stored_project_name(name_column: str | None, profile_json) -> str:
+    """The name a project holds: its profile's, as the console and Node read it
+    (web temporary-project-name.ts, src/graphiti/project-display-name.js), and
+    the `name` column only where the profile has no name field at all. The two
+    disagree only in a graph an earlier FULI or another tool wrote."""
+    profile = json_object(profile_json)
+    return str(profile['name'] if isinstance(profile.get('name'), str) else name_column or '')
+
+
 def is_temporary_project(project_id: str, scope_type: str | None, name: str | None) -> bool:
     """Whether a project is one FULI opened by itself. Its scope_type says so
-    first. A generated ID still holding no name or a generated one counts too:
-    that is a conversation fallback a graph waiting for graph/23 has not marked
-    yet. A conversation project a person named stays theirs."""
+    first. `name`: stored_project_name.
+
+    Compatibility, not a rule of its own: a generated ID still holding no name
+    or a generated one counts too. That is a conversation fallback a graph
+    waiting for graph/23 has not marked yet; graph/23 marks every one of them
+    temporary. Remove this fallback together with the generated names once no
+    supported FULI opens a graph below 23 (the same fallback lives in Node's
+    project-display-name.js and the console's project-origin.ts). A
+    conversation project a person named stays theirs."""
     if scope_type == 'temporary':
         return True
     return bool(_GENERATED_ID.match(project_id)) and (name or '').strip() in ('', *GENERATED_NAMES)

@@ -109,7 +109,10 @@ def _page_query(order: TaskPageOrder, sort: TaskPageSort) -> tuple[str, str]:
           running_since: participant.running_since
         }}) AS participant_rows
         OPTIONAL MATCH (task)-[:ROUTED_BY]->(decision:FuliProjectAgentRoutingDecision)
-        RETURN task, at, participant_rows, [] AS event_rows, decision
+        RETURN task, at, participant_rows, [] AS event_rows, decision,
+               head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliSpace)-[:CONTAINS_PROJECT]->
+                    (scope_project:FuliPersonalProject {{project_id: task.personal_project_id}})
+                    | scope_project.scope_type]) AS project_scope_type
         ORDER BY at {direction}, task.task_id
     '''
     return match, page

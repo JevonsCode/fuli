@@ -8,7 +8,9 @@
   journal records what the step may change, the step runs, and the ledger
   event and the new version are written. An interruption changes nothing.
 - rollback: undoes the latest confirmed step from its journal, only while
-  every record it changed is still what it left, and moves the version back.
+  every record it changed is still what it left, brings records written since
+  into the form the earlier version reads (a step's after_undo), and moves the
+  version back.
   A whole-graph restore is a separate, offline operation (fuli graph import).
 
 The provider exposes apply and rollback only to the human-review channel;
@@ -188,7 +190,8 @@ async def apply_graph_migration(
                 'The graph changed while the migration was starting. Nothing was changed; run the '
                 'preview again and confirm what it shows.', [migration.id],
             )
-        await migration.apply(queries, settings, apply_id=apply_id)
+        # A step may leave records it cannot read safely, and says how many.
+        unreadable = ((await migration.apply(queries, settings, apply_id=apply_id)) or {}).get('unreadable', 0)
         if await migration.pending(queries, settings):
             raise RuntimeError(f'{migration.id} left records it should have changed')
         journaled = await close_journal(queries, migration, apply_id=apply_id)
@@ -199,13 +202,15 @@ async def apply_graph_migration(
             backup_ref=f'undo journal {apply_id}' if migration.journal.reversible else None,
             detail=(f'confirmed locally ({actor["entrypoint"]}, presence unverified): '
                     f'{plan["step"]["count"]} records; {journaled["records"]} journaled, '
-                    f'{journaled["created"]} created; {undo}'),
+                    f'{journaled["created"]} created; '
+                    + (f'{unreadable} unreadable records left unchanged; ' if unreadable else '') + undo),
         )
         await stamp_graph_version(queries, migration.to_version, owner=run.owner, now=now,
                                   until=run.until())
         return {'status': 'applied', 'store': 'graph', 'migrationId': migration.id,
                 'applyId': apply_id, 'count': plan['step']['count'],
                 'fromVersion': migration.from_version, 'toVersion': migration.to_version,
+                'unreadable': unreadable,
                 'backupRef': f'undo journal {apply_id}' if migration.journal.reversible else None}
 
     return await _locked(driver, settings, now, lock_wait_seconds, sleep, operation)
@@ -346,14 +351,18 @@ async def rollback_graph_migration(
                 'separate operation.', [migration_id],
             )
         restored = await undo_journal(queries, header, migration, undone_at=now())
+        adapted = await migration.after_undo(queries) if migration.after_undo else 0
         await record_graph_event(
             queries, ledger_step(migration), 'rolled_back', owner=run.owner, now=now,
             detail=(f'undone locally ({actor["entrypoint"]}, presence unverified): {restored} '
-                    f'records restored from undo journal {header.apply_id}'),
+                    f'records restored from undo journal {header.apply_id}'
+                    + (f'; {adapted} later records written as format {header.from_version} reads them'
+                       if adapted else '')),
         )
         await lower_graph_version(queries, header.from_version, owner=run.owner, now=now,
                                   current=version)
         return {'status': 'rolled_back', 'store': 'graph', 'migrationId': migration_id,
-                'applyId': header.apply_id, 'rows': restored, 'version': header.from_version}
+                'applyId': header.apply_id, 'rows': restored, 'adapted': adapted,
+                'version': header.from_version}
 
     return await _locked(driver, settings, now, lock_wait_seconds, sleep, operation)

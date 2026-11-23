@@ -15,12 +15,15 @@ from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRA
 from fuli_graph.graph_format_temporary_names import (
     GENERATED_NAMES,
     TEMPORARY_NAME_JOURNAL,
-    _without_name,
+    _with_name,
     apply_temporary_names,
+    name_for_graph_22,
     pending_temporary_names,
 )
 from fuli_graph.models import PersonalProjectUpsert, ProjectProfile
-from fuli_graph.temporary_project_scope import _SESSION_PROFILE, _TASK_PROFILE, is_temporary_project, project_reference
+from fuli_graph.temporary_project_scope import (
+    _SESSION_PROFILE, _TASK_PROFILE, is_temporary_project, project_reference, stored_project_name,
+)
 
 STEP = 'graph/23-temporary-project-names'
 
@@ -75,7 +78,7 @@ async def test_apply_clears_both_names_and_marks_the_project_temporary():
                          'boundaries': ['Synthetic boundary.'], 'lifecycle': 'active'}, ensure_ascii=False)
     driver = RecordingDriver([{'id': 'node-a', 'profile_json': stored},
                               {'id': 'node-c', 'profile_json': json.dumps({'name': 'Synthetic own words'})}])
-    await apply_temporary_names(driver, None)
+    assert await apply_temporary_names(driver, None) == {'unreadable': 0}
     (_, _), (write, parameters) = driver.calls
     assert "item.name = ''" in write and "item.scope_type = 'temporary'" in write
     (row,) = parameters['rows']
@@ -92,7 +95,75 @@ async def test_apply_with_nothing_left_writes_nothing():
 
 def test_only_the_name_changes_inside_the_profile_and_its_order_stays():
     stored = '{"purpose": "Synthetic purpose.", "name": "临时任务 / Temporary task", "lifecycle": "active"}'
-    assert _without_name(stored) == '{"purpose": "Synthetic purpose.", "name": "", "lifecycle": "active"}'
+    assert _with_name(stored, '') == '{"purpose": "Synthetic purpose.", "name": "", "lifecycle": "active"}'
+
+
+@pytest.mark.asyncio
+async def test_a_profile_that_is_not_a_json_object_is_left_counted_and_never_pending():
+    # Broken JSON, "null" and a list: rewriting them is not safe, and they must not
+    # keep the step pending (the graph would stay read-only for good).
+    driver = RecordingDriver([{'id': 'node-a', 'profile_json': profile('')},
+                              {'id': 'broken', 'profile_json': '{not json'},
+                              {'id': 'null', 'profile_json': 'null'},
+                              {'id': 'list', 'profile_json': '["临时任务 / Temporary task"]'}])
+    assert await pending_temporary_names(driver, None) == ['node-a']
+    assert await apply_temporary_names(driver, None) == {'unreadable': 3}
+    _, parameters = driver.calls[-1]
+    assert [row['id'] for row in parameters['rows']] == ['node-a']
+
+
+@pytest.mark.asyncio
+async def test_after_an_undo_every_unnamed_project_gets_the_name_graph_22_would_have_written():
+    session = json.dumps({'name': '', 'purpose': _SESSION_PROFILE.purpose}, ensure_ascii=False)
+    task = json.dumps({'name': '', 'purpose': _TASK_PROFILE.purpose}, ensure_ascii=False)
+    driver = RecordingDriver([
+        {'id': 'new-session', 'project_id': 'temporary-' + 'a' * 64, 'name': '', 'profile_json': session},
+        {'id': 'new-task', 'project_id': 'temporary-' + 'b' * 64, 'name': None, 'profile_json': task},
+        {'id': 'cleared-fallback', 'project_id': 'conversation-' + 'c' * 64, 'name': '', 'profile_json': profile('')},
+        # The profile names it; graph/22 keeps the column equal to it.
+        {'id': 'column-only', 'project_id': 'synthetic-x', 'name': '', 'profile_json': profile('Synthetic own')},
+        {'id': 'named', 'project_id': 'synthetic-y', 'name': 'Synthetic named', 'profile_json': profile('Synthetic named')},
+        {'id': 'broken', 'project_id': 'temporary-' + 'd' * 64, 'name': '', 'profile_json': 'null'},
+    ])
+    assert await name_for_graph_22(driver) == 4
+    (_, _), (write, parameters) = driver.calls
+    assert 'item.name = row.name' in write and 'item.profile_json = row.profile_json' in write
+    named = {row['id']: (row['name'], json.loads(row['profile_json'])) for row in parameters['rows']}
+    assert named['new-session'] == ('临时会话 / Temporary session',
+                                    {'name': '临时会话 / Temporary session', 'purpose': _SESSION_PROFILE.purpose})
+    assert named['new-task'][0] == '临时任务 / Temporary task'
+    assert named['cleared-fallback'][0] == '会话项目 / Conversation project'
+    assert named['column-only'][0] == 'Synthetic own'
+    # graph/22's own rule: a stored profile needs a name.
+    for name, stored in named.values():
+        assert stored['name'] == name and name.strip()
+
+
+@pytest.mark.asyncio
+async def test_after_an_undo_with_every_project_named_nothing_is_written():
+    driver = RecordingDriver([{'id': 'named', 'project_id': 'synthetic-y', 'name': 'Synthetic named',
+                               'profile_json': profile('Synthetic named')}])
+    assert await name_for_graph_22(driver) == 0
+    assert len(driver.calls) == 1, 'only the read'
+
+
+def test_the_undo_of_graph_23_names_what_it_did_not_journal():
+    step = next(migration for migration in GRAPH_MIGRATIONS if migration.id == STEP)
+    assert step.after_undo is name_for_graph_22
+    assert all(migration.after_undo is None for migration in GRAPH_MIGRATIONS if migration.id != STEP)
+
+
+def test_the_profile_name_decides_as_in_node_and_the_console():
+    # The `mismatched` seed: the column says FULI's name, the profile a person's.
+    conversation = 'conversation-' + '9' * 64
+    name = stored_project_name('会话项目 / Conversation project', profile('Synthetic own words'))
+    assert name == 'Synthetic own words'
+    assert is_temporary_project(conversation, None, name) is False
+    # An empty profile name is the project's name, as Node's `profile.name ?? name` reads it.
+    assert stored_project_name('会话项目 / Conversation project', profile('')) == ''
+    # Only a profile with no name field at all falls back to the column.
+    assert stored_project_name('Synthetic column', json.dumps({'purpose': 'x'})) == 'Synthetic column'
+    assert stored_project_name('Synthetic column', 'not json') == 'Synthetic column'
 
 
 def test_the_undo_journal_keeps_everything_it_restores():
@@ -176,3 +247,13 @@ def test_a_project_is_temporary_by_its_scope_type_or_an_unnamed_generated_id_nev
     # Readable IDs a person's project name makes ('Temporary fix', 'Conversation notes').
     assert is_temporary_project('temporary-fix', 'registered', 'Temporary fix') is False
     assert is_temporary_project('conversation-notes', None, 'Conversation notes') is False
+
+
+def test_a_task_reads_its_projects_scope_as_it_is_now_not_as_it_was_when_created():
+    # Tasks copied scope_type when they were created; graph/23 marks their
+    # conversation project temporary afterwards.
+    from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
+    scope = StoreProjectAgentTaskReads._scope_type
+    assert scope({'project_scope_type': 'temporary'}, {'scope_type': 'registered'}) == 'temporary'
+    assert scope({'project_scope_type': None}, {'scope_type': 'temporary'}) == 'temporary'
+    assert StoreProjectAgentTaskReads._task_read_query('').count('project_scope_type') == 1

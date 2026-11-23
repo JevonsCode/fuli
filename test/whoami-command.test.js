@@ -189,8 +189,13 @@ test('a temporary project, which stores no name, is named the way FULI names it 
       listPersonalProjects: async () => [{ project_id: temporaryId, scope_type: 'temporary', name: '', profile: { name: '' } }],
       getProjectAgentCoordinationPolicy: async () => ({}),
       getProjectAgent: async () => null
-    }
+    },
+    // The language the person reads FULI in.
+    flaMenuSettings: () => ({ language: 'zh-CN' })
   };
   const answer = await projectIdentity(app, { personalProjectId: temporaryId });
   assert.deepEqual(answer.project, { id: temporaryId, name: '临时项目 #cccccccc' });
+  app.flaMenuSettings = () => ({ language: 'en-US' });
+  const english = await projectIdentity(app, { personalProjectId: temporaryId });
+  assert.deepEqual(english.project, { id: temporaryId, name: 'Temporary project #cccccccc' });
 });

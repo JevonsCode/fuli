@@ -16,12 +16,18 @@ test('a temporary project is known by its scope_type first, never by its name or
   assert.equal(isTemporaryProject(project(temporaryId('a'), '')), true, 'a generated ID with no name of its own');
   assert.equal(isTemporaryProject(project(conversationId('b'), '会话项目 / Conversation project', { scope_type: 'registered' })), true,
     'a conversation fallback a graph waiting for graph/23 has not marked yet');
-  assert.equal(isTemporaryProject(project('synthetic-y', '', { profile: { origin: 'conversation_fallback' } })), true);
   // A conversation project a person named is theirs: a roundtable target, a board of its own.
   assert.equal(isTemporaryProject(project(conversationId('c'), 'Synthetic garden notes', { scope_type: 'registered' })), false);
   // IDs a person's project names make ('Temporary fix', 'Conversation notes').
   assert.equal(isTemporaryProject(project('temporary-fix', 'Temporary fix', { scope_type: 'registered' })), false);
   assert.equal(isTemporaryProject(project('conversation-notes', 'Conversation notes')), false);
+});
+
+test('the profile name decides when it and the name column disagree, as in the Provider and the console', () => {
+  // The Provider's `mismatched` seed (test_graph_format_confirm_neo4j.py): FULI's name in the column, a person's in the profile.
+  const mismatched = { project_id: conversationId('9'), name: '会话项目 / Conversation project', profile: { name: 'Synthetic own words' } };
+  assert.equal(isTemporaryProject(mismatched), false);
+  assert.equal(projectDisplayName(mismatched, 'en-US'), 'Synthetic own words');
 });
 
 test('an unnamed temporary project is named by its number, in the person\'s language, with no date', () => {

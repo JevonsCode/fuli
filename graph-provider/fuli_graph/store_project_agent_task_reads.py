@@ -180,7 +180,10 @@ class StoreProjectAgentTaskReads:
         WITH task, participant_rows, collect(DISTINCT event) AS event_rows
         OPTIONAL MATCH (task)-[:ROUTED_BY]->
                        (decision:FuliProjectAgentRoutingDecision)
-        RETURN task, participant_rows, event_rows, decision
+        RETURN task, participant_rows, event_rows, decision,
+               head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliSpace)-[:CONTAINS_PROJECT]->
+                    (scope_project:FuliPersonalProject {{project_id: task.personal_project_id}})
+                    | scope_project.scope_type]) AS project_scope_type
         '''
 
     @classmethod
@@ -238,6 +241,13 @@ class StoreProjectAgentTaskReads:
             return None
         return current_blocker('blocked', cls._events_from_row(row), raw.get('result_summary'), raw)
 
+    @staticmethod
+    def _scope_type(row, raw):
+        """The project's scope_type as it is now, which the task copied when it
+        was created: graph/23 marks a conversation project temporary after its
+        tasks were created, and its tasks read as temporary from then on."""
+        return (row.get('project_scope_type') if hasattr(row, 'get') else None) or raw.get('scope_type')
+
     def _task_from_row(self, row):
         raw = dict(row['task'])
         decision_raw = dict(row['decision']) if row.get('decision') else {}
@@ -269,7 +279,7 @@ class StoreProjectAgentTaskReads:
             'task_id': raw['task_id'],
             'personal_space_id': raw['personal_space_id'],
             'personal_project_id': raw['personal_project_id'],
-            'project_scope': dict(TEMPORARY_SCOPE) if raw.get('scope_type') == 'temporary' else None,
+            'project_scope': dict(TEMPORARY_SCOPE) if self._scope_type(row, raw) == 'temporary' else None,
             'title': raw['title'],
             'objective': raw['objective'],
             'work_kind': raw['work_kind'],
