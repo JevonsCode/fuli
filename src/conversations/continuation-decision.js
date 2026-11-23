@@ -124,15 +124,17 @@ function shortSession(sessionId) {
 
 // How much of the earlier conversation a resume actually delivered, counted
 // from what the recovery window holds — never an estimate (rec#147: a chat of
-// 3000 messages must not look the same as one of five). `folded_events` is the
-// Provider's own compaction boundary: every event up to it went into the
-// digest, which keeps the raw and can still be paged with read_agent_conversation.
-// Counts only: each surface words them in its own language.
+// 3000 messages must not look the same as one of five). The two positions
+// are the Provider's own event numbers, not counts: deleting or withdrawing
+// an event leaves its number unused, so `last_sequence` can exceed the events
+// that remain. `folded_through` is the compaction boundary: every event up to
+// it went into the digest, which keeps the raw for read_agent_conversation.
+// Counts and positions only: each surface words them in its own language.
 export function carriedContext(recovery, { compacted = false, foldedThrough = null, revision = null } = {}) {
   const folded = Number.isSafeInteger(foldedThrough) && foldedThrough > 0 ? foldedThrough : null;
   const some = compacted || Boolean(folded);
-  const base = { folded: some ? 'some' : 'none', ...(folded ? { folded_events: folded } : {}),
-    ...(Number.isSafeInteger(revision) && revision > 0 ? { conversation_events: revision } : {}) };
+  const base = { folded: some ? 'some' : 'none', ...(folded ? { folded_through: folded } : {}),
+    ...(Number.isSafeInteger(revision) && revision > 0 ? { last_sequence: revision } : {}) };
   if (!recovery) return { summary: false, recent_messages: 0, ...base };
   const omitted = Number.isSafeInteger(recovery.messages_omitted) ? recovery.messages_omitted : 0;
   return { summary: Boolean(recovery.latest_checkpoint),

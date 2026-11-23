@@ -166,8 +166,8 @@ test('the lead marker appears only with a continuation', () => {
 test('what a resume carried is counted, not estimated, and worded by each surface', () => {
   assert.deepEqual(carriedContext({ latest_checkpoint: { summary: 'x' }, messages: [{ sequence: 1 }, { sequence: 2 }],
     messages_omitted: 4, truncated: true }, { compacted: true, foldedThrough: 3184, revision: 3200 }),
-  { summary: true, recent_messages: 2, already_in_this_session: 4, folded: 'some', folded_events: 3184,
-    conversation_events: 3200, window_truncated: true });
+  { summary: true, recent_messages: 2, already_in_this_session: 4, folded: 'some', folded_through: 3184,
+    last_sequence: 3200, window_truncated: true });
   assert.deepEqual(carriedContext(null), { summary: false, recent_messages: 0, folded: 'none' });
 });
 
@@ -291,8 +291,8 @@ test('resume: names where the resumed conversation was worked on and counts what
     sourceApplication: 'claude_code', conversationId: 'conv-earlier' });
   assert.equal(resumed.continuation.evidence, 'stated_by_user');
   assert.equal(resumed.continuation.from.client_label, 'Codex');
-  assert.deepEqual(resumed.carried, { summary: true, recent_messages: 1, folded: 'some', folded_events: 3184,
-    conversation_events: 3200 });
+  assert.deepEqual(resumed.carried, { summary: true, recent_messages: 1, folded: 'some', folded_through: 3184,
+    last_sequence: 3200 });
 });
 
 test('a checkpoint answer names the continuation rules by version instead of carrying them in full twice', async () => {

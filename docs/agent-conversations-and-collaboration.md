@@ -84,7 +84,8 @@ Cursor、OpenCode、DeepSeek Harness、Claude 桌面端的 FULI 钩子不读模�
 2. 在目标客户端新开会话，把回执里 `continuation.prompt` 作为第一条消息发出去
    （个人页也能直接复制）；它带着 FLA、项目和来源会话 ID。
 3. `resume_agent_conversation` 恢复该会话，返回的 `carried` 写明这次到底带过来了多少：
-   有没有工作小结、最近几条原文、更早的多少条已折叠（`folded_events`）、整段对话共多少条（`conversation_events`）。
+   有没有工作小结、最近几条原文、更早的折叠到第几号（`folded_through`）、最后一条是第几号（`last_sequence`）。
+   后两个是事件序号不是条数：删除或撤回过的事件留空号，所以序号可能比实际条数大。
    细节用 `read_agent_conversation` 分页补读。
 
 这条做法写在入口规则的 `continuation_guidance` 一节里，按版本引用下发给所有客户端，
