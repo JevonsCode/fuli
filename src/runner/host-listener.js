@@ -23,19 +23,22 @@ const KEEP_ALIVE_TIMEOUT_MS = 30_000;
 // its event stream). A connection that does not finish its TLS handshake in
 // HANDSHAKE_TIMEOUT_MS is closed.
 const MAX_CONNECTIONS = 256;
-// Any device on the network can finish a TLS handshake here: the certificate
-// it presents is the route's to judge, not the socket's. So a source that has
-// not shown a paired runner's certificate gets a share of its own, and one
-// device cannot hold every connection and keep the paired runners out. It is
-// far more than pairing or a runner's own processes need from one address.
+// Any device on the network can open connections here, finished handshake or
+// not: the certificate is the route's to judge. So every connection counts
+// against its source address's share until it has shown a paired runner's
+// certificate, and one device cannot hold every connection and keep the paired
+// runners out. It is far more than pairing, or a runner's handshakes in
+// flight, need from one address.
 const MAX_UNPAIRED_PER_SOURCE = 24;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const MAX_HEADERS_COUNT = 50;
 
 // isPairedDevice(fingerprint): whether that certificate is a runner this host
 // knows. A connection is counted against its source's share until it shows one.
+// limits: the two counts above, smaller in a test.
 export async function startRunnerListener({ identity, addresses, port, route, sourceAllowed = isGuestSourceAddress,
-  isPairedDevice = () => false, createServer = createHttpsServer }) {
+  isPairedDevice = () => false, createServer = createHttpsServer,
+  limits = { total: MAX_CONNECTIONS, unpairedPerSource: MAX_UNPAIRED_PER_SOURCE } }) {
   const tls = { ...identity.tlsOptions, requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3',
     handshakeTimeout: HANDSHAKE_TIMEOUT_MS };
   const handler = (request, response) => {
@@ -63,7 +66,7 @@ export async function startRunnerListener({ identity, addresses, port, route, so
     }
   }
 
-  const connections = openConnections({ isPairedDevice });
+  const connections = openConnections({ isPairedDevice, limits });
   const listeners = createAddressListeners({ port, createServer: () => runnerServer(createServer, tls, handler, connections) });
   await listeners.rebind(addresses);
   return {
@@ -86,34 +89,46 @@ function peerFingerprint(socket) {
   return Buffer.isBuffer(raw) && raw.length ? sha256Bytes(raw) : null;
 }
 
-// What the servers of every address hold together: the total over all of them,
-// and each source address's share of the connections held by a device that has
-// not shown a paired runner's certificate. A paired runner's connection is
-// never held to that share, however many its MCP processes open.
-function openConnections({ isPairedDevice }) {
+// What the servers of every address hold together: the total over all of
+// them, and each source address's share of the connections not yet shown to be
+// a paired runner's. Both are counted as the TCP connection arrives, before
+// TLS, so a device that never finishes its handshake (each may hang
+// HANDSHAKE_TIMEOUT_MS, then open again) is held to the share like any other.
+// Once the handshake shows a paired runner's certificate, that connection
+// gives its source's share back, so a runner's MCP processes are never held
+// to it. The TCP and TLS sockets are different objects of one connection; its
+// remote address and port name it in both.
+function openConnections({ isPairedDevice, limits }) {
   let open = 0;
   const unpaired = new Map();
+  const refunds = new Map();
+  const connectionOf = (socket) => `${plainAddress(socket.remoteAddress)}|${socket.remotePort}`;
   return {
-    // Every connection, of every address, counts toward the total.
     admit(socket) {
-      if (open >= MAX_CONNECTIONS) return false;
-      open += 1;
-      socket.once('close', () => { open -= 1; });
-      return true;
-    },
-    // Once the handshake finished and the certificate is known.
-    admitSecure(socket) {
-      if (isPairedDevice(peerFingerprint(socket))) return true;
       const source = plainAddress(socket.remoteAddress);
-      const held = unpaired.get(source) ?? 0;
-      if (held >= MAX_UNPAIRED_PER_SOURCE) return false;
-      unpaired.set(source, held + 1);
-      socket.once('close', () => {
-        const left = (unpaired.get(source) ?? 1) - 1;
+      if (open >= limits.total || (unpaired.get(source) ?? 0) >= limits.unpairedPerSource) return false;
+      open += 1;
+      unpaired.set(source, (unpaired.get(source) ?? 0) + 1);
+      const key = connectionOf(socket);
+      let held = true;
+      const refund = () => {
+        if (!held) return;
+        held = false;
+        refunds.delete(key);
+        const left = unpaired.get(source) - 1;
         if (left > 0) unpaired.set(source, left);
         else unpaired.delete(source);
+      };
+      refunds.set(key, refund);
+      socket.once('close', () => {
+        open -= 1;
+        refund();
       });
       return true;
+    },
+    // The handshake finished: a paired runner's connection gives its source's share back.
+    settled(socket) {
+      if (isPairedDevice(peerFingerprint(socket))) refunds.get(connectionOf(socket))?.();
     }
   };
 }
@@ -125,7 +140,7 @@ function runnerServer(createServer, tls, handler, connections) {
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.maxHeadersCount = MAX_HEADERS_COUNT;
   server.on('connection', (socket) => { if (!connections.admit(socket)) socket.destroy(); });
-  server.on('secureConnection', (socket) => { if (!connections.admitSecure(socket)) socket.destroy(); });
+  server.on('secureConnection', (socket) => connections.settled(socket));
   server.on('error', () => {});
   server.on('tlsClientError', () => {});
   return server;

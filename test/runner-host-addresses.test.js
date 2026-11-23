@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { connect as connectTcp } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
+import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -125,9 +127,6 @@ test('only checked addresses are written, whichever way they are learned', async
   assert.deepEqual(store.host().addresses, ['192.168.1.187']);
 });
 
-// The listener's connection limits (docs/runner.md, "Finding the host again"):
-// the total is over every address it binds, and one address's share of the
-// connections a device that is not a paired runner may hold.
 test('finding the host already asks it how things stand, so nothing asks a second time', async (t) => {
   const { store, runner, hellos } = await pairedHost(t, { knownAddresses: ['127.0.0.1'] });
   const connection = createHostConnection({ store, identity: runner, lookUp: async () => [], bindAddresses: () => [] });
@@ -142,29 +141,80 @@ test('finding the host already asks it how things stand, so nothing asks a secon
   assert.equal(hellos.count, found + 1);
 });
 
-test('an unknown device on the network cannot hold every connection, while a paired runner is not held to that share', async (t) => {
-  const [host, stranger, known] = await Promise.all([createDeviceCertificate(), createDeviceCertificate(),
-    createDeviceCertificate()].map(async (made) => deviceIdentity(await made)));
-  const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0,
-    sourceAllowed: () => true, isPairedDevice: (fingerprint) => fingerprint === known.fingerprint,
+// The listener's connection limits (docs/runner.md, "Finding the host again"):
+// the total is over every address it binds, and one address's share of the
+// connections a device that is not a paired runner may hold.
+
+// A listener on addresses that answers every request, with the limits given,
+// and what each test opens: tls(identity) holds a TLS connection and tcp() a
+// bare one that never starts a handshake; each resolves true while it is held.
+async function limitedListener(t, { limits, addresses = ['127.0.0.1'], paired }) {
+  const host = deviceIdentity(await createDeviceCertificate());
+  const listener = await startRunnerListener({ identity: host, addresses, port: 0, limits,
+    sourceAllowed: () => true, isPairedDevice: (fingerprint) => fingerprint === paired?.fingerprint,
     route: (_request, response) => { response.writeHead(204).end(); return true; } });
   const open = [];
   t.after(async () => {
     for (const socket of open) socket.destroy();
     await listener.close();
   });
-
-  // A connection held open, as a client's MCP process holds one: resolves true while it lives.
-  const hold = (identity) => new Promise((resolve) => {
-    const socket = tlsConnect({ host: '127.0.0.1', port: listener.port, ...identity.tlsOptions,
-      rejectUnauthorized: false }, () => setTimeout(() => resolve(!socket.destroyed), 50));
+  const settle = (socket, resolve) => {
     open.push(socket);
     socket.on('error', () => resolve(false));
     socket.on('close', () => resolve(false));
-  });
+  };
+  return {
+    listener,
+    open,
+    tls: (identity, address = '127.0.0.1') => new Promise((resolve) => {
+      const socket = tlsConnect({ host: address, port: listener.port, ...identity.tlsOptions, rejectUnauthorized: false },
+        () => setTimeout(() => resolve(!socket.destroyed), 50));
+      settle(socket, resolve);
+    }),
+    tcp: () => new Promise((resolve) => {
+      const socket = connectTcp(listener.port, '127.0.0.1', () => setTimeout(() => resolve(!socket.destroyed), 100));
+      settle(socket, resolve);
+    })
+  };
+}
 
-  // Far past one address's share of the connections an unknown device may hold.
-  const held = await Promise.all(Array.from({ length: 40 }, () => hold(stranger)));
-  assert.ok(held.filter(Boolean).length < 40, 'a device that shows no paired certificate is held to a share of this address');
-  assert.equal(await hold(known), true, 'a paired runner still gets through');
+test('an unknown device holds exactly its share of one address\'s connections, handshake finished or not', async (t) => {
+  const stranger = deviceIdentity(await createDeviceCertificate());
+  const finished = await limitedListener(t, {});
+  const held = await Promise.all(Array.from({ length: 40 }, () => finished.tls(stranger)));
+  assert.equal(held.filter(Boolean).length, 24, 'the share is 24');
+
+  // Bare connections that never start a handshake are held to it the same way.
+  const bare = await limitedListener(t, {});
+  const waiting = await Promise.all(Array.from({ length: 40 }, () => bare.tcp()));
+  assert.equal(waiting.filter(Boolean).length, 24, 'a device cannot hold slots by never finishing its handshake');
+});
+
+test('a connection gives its share back when it closes, and a paired runner\'s as soon as it shows its certificate', async (t) => {
+  const [stranger, runner] = await Promise.all([createDeviceCertificate(), createDeviceCertificate()]
+    .map(async (made) => deviceIdentity(await made)));
+  const limited = await limitedListener(t, { limits: { total: 100, unpairedPerSource: 3 }, paired: runner });
+  assert.deepEqual(await Promise.all([1, 2, 3].map(() => limited.tls(stranger))), [true, true, true]);
+  assert.equal(await limited.tls(stranger), false, 'the share is full');
+  limited.open[0].destroy();
+  await delay(100);
+  assert.equal(await limited.tls(stranger), true, 'a closed connection gave its slot back');
+
+  // A runner's MCP processes open many, one after another: none is held to its address's share.
+  const second = await limitedListener(t, { limits: { total: 100, unpairedPerSource: 3 }, paired: runner });
+  const runners = [];
+  for (let index = 0; index < 10; index += 1) runners.push(await second.tls(runner));
+  assert.ok(runners.every(Boolean), 'a paired runner is not held to the share');
+});
+
+test('the total counts the connections of every address together', async (t) => {
+  const runner = deviceIdentity(await createDeviceCertificate());
+  const limited = await limitedListener(t, { limits: { total: 4, unpairedPerSource: 100 }, paired: runner,
+    addresses: ['127.0.0.1', '::1'] });
+  if (!limited.listener.addresses.includes('::1')) return t.skip('no IPv6 loopback to bind here');
+  const held = [await limited.tls(runner), await limited.tls(runner), await limited.tls(runner, '::1'),
+    await limited.tls(runner, '::1')];
+  assert.deepEqual(held, [true, true, true, true]);
+  assert.equal(await limited.tls(runner, '::1'), false, 'two addresses share one total');
+  assert.equal(await limited.tls(runner), false);
 });
