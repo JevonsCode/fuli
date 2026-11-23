@@ -11,7 +11,10 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
+import { diskFree, diskSize } from '../native-runtime/recovered-dir.js';
+import { byteSize } from '../text/byte-size.js';
 import { GRAPH_STATE } from './graph-import-states.js';
+import { graphImportCommand, unfinishedImportWayBack } from './unfinished-import.js';
 import { sha256File } from '../security/digest.js';
 
 const BACKUP_FORMAT = 'fuli-neo4j-backup';
@@ -78,7 +81,8 @@ export async function importGraphData({
   targetMode,
   rollbackDir,
   adapter,
-  now = () => new Date()
+  now = () => new Date(),
+  freeSpace = diskFree
 }) {
   const source = requiredPath(inputDir, 'Backup input directory');
   const rollbackBase = requiredPath(rollbackDir, 'Rollback directory');
@@ -94,6 +98,15 @@ export async function importGraphData({
       'The target runtime is not configured for every graph instance in this backup.'
     );
   }
+  // An earlier import into this runtime that never finished (a runtime with no
+  // lifecycle lock keeps its marker, unfinished-import.js). A graph it may have
+  // left half written is not copied (there is nothing whole to keep), so this
+  // import must write it, or it stays half written: one this backup lacks
+  // stops the import before anything changes.
+  const earlier = typeof adapter.unfinishedImport === 'function' ? await adapter.unfinishedImport() : null;
+  const halfWritten = new Set((earlier?.partial ?? []).filter(id => !Array.isArray(adapter.instances) || adapter.instances.includes(id)));
+  const lacking = [...halfWritten].filter(id => !manifest.instances.some(entry => entry.id === id));
+  if (lacking.length) throw leftHalfWritten(lacking, earlier, targetMode);
 
   const rollbackRoot = join(
     rollbackBase,
@@ -104,14 +117,18 @@ export async function importGraphData({
   const rollbackEntries = [];
   let rollbackReady = false;
   // The one lease this import holds from before it writes its first graph
-  // until every graph is whole again (adapter.holdImport; a runtime without
-  // one locks nothing). It is kept when that never happens, so nothing starts
-  // on a half-written graph: a recovery takes over from what its lock records.
+  // until every graph is whole again (adapter.holdImport: the lifecycle lock
+  // on macOS native, a marker elsewhere; a runtime without one guards
+  // nothing). It is kept when that never happens, so nothing starts on a
+  // half-written graph: a recovery takes over from what its lock records, or
+  // the marker's error says how to import the copy back.
   let lease = null;
   let kept = false;
+  let failure = null;
   try {
     lifecycle = await adapter.stop();
     for (const entry of manifest.instances) {
+      if (halfWritten.has(entry.id)) continue;
       if (typeof adapter.hasData === 'function' && !await adapter.hasData(entry.id)) continue;
       const path = join(rollbackRoot, `${entry.id}.dump`);
       await adapter.dump(entry.id, path);
@@ -150,7 +167,7 @@ export async function importGraphData({
     // nothing more is written, and the lock stays.
     const graphStates = Object.fromEntries(manifest.instances.map(({ id }) => [id, GRAPH_STATE.untouched]));
     lease = typeof adapter.holdImport === 'function'
-      ? await adapter.holdImport({ restorePoint, graphStates: { ...graphStates } })
+      ? await adapter.holdImport({ restorePoint, graphStates: { ...graphStates }, inputDir: source })
       : UNLOCKED;
     let unrecorded = null;
     const mark = async (changes) => {
@@ -161,8 +178,12 @@ export async function importGraphData({
     };
     try {
       for (const entry of manifest.instances) {
-        await mark({ [entry.id]: GRAPH_STATE.writing });
-        await adapter.load(entry.id, join(source, entry.file));
+        // A graph counts as being written from when the database is: an
+        // adapter that says when (announcesWrites) records it right before
+        // neo4j-admin writes, after the dump is staged; any other, before the load.
+        const writing = () => mark({ [entry.id]: GRAPH_STATE.writing });
+        if (adapter.announcesWrites !== true) await writing();
+        await adapter.load(entry.id, join(source, entry.file), ...(adapter.announcesWrites === true ? [{ beforeWrite: writing }] : []));
         await mark({ [entry.id]: GRAPH_STATE.imported });
       }
       if (typeof adapter.reconcile === 'function') {
@@ -173,12 +194,19 @@ export async function importGraphData({
           lifecycle
         });
       }
+      // Every graph holds its new data and the identity is reconciled: a
+      // recovery of an import killed from here on only checks the start and
+      // releases the lock (load-recovery.js), and never takes it back. Not
+      // recorded (a full disk), such a recovery restores the copy instead,
+      // which loses nothing: the import's input is still there.
+      await lease.record({ completed: true }).catch(() => {});
     } catch (error) {
       // Every graph this import wrote goes back: from the copy when it had
       // data before, or emptied again when it had none (adapter.setAside).
       // Graphs it never wrote stay as they are.
       let rollbackError = null;
       let restoreError = null;
+      let setAsideError = null;
       if (!unrecorded) {
         try {
           const touched = Object.keys(graphStates).filter(id => graphStates[id] !== GRAPH_STATE.untouched);
@@ -186,6 +214,11 @@ export async function importGraphData({
           if (failed.length) await mark(Object.fromEntries(failed.map(id => [id, GRAPH_STATE.importFailed])));
           for (const id of touched) {
             const copy = rollbackEntries.find(entry => entry.id === id);
+            // Half written by the earlier import already: no copy holds it, and it was not empty before.
+            if (!copy && halfWritten.has(id)) {
+              rollbackError ??= new Error(`the ${id} graph was already half written by an earlier unfinished import, so no copy of it was taken`);
+              continue;
+            }
             if (!copy && typeof adapter.setAside !== 'function') {
               rollbackError ??= new Error(`The ${id} graph was empty before the import and this runtime cannot empty it again.`);
               continue;
@@ -197,6 +230,7 @@ export async function importGraphData({
             } catch (caught) {
               rollbackError ??= caught;
               if (copy) restoreError ??= caught;
+              else setAsideError ??= { graph: id, detail: String(caught?.message ?? caught) };
               await mark({ [id]: GRAPH_STATE.restoreFailed });
               continue;
             }
@@ -212,8 +246,13 @@ export async function importGraphData({
       if (!unrecorded && !rollbackError) throw rolledBack(error);
       kept = true;
       if (!unrecorded && restoreError) await lease.restoreFailed?.(rollbackRoot, restoreError).catch(() => {});
-      throw incompleteImport(error, unrecorded ?? rollbackError, {
-        unrecorded: Boolean(unrecorded), locked: lease.locked, copy: rollbackReady ? rollbackRoot : null });
+      // Why an emptied graph could not be emptied again, for the recovery's words.
+      if (!unrecorded && setAsideError) await lease.record({ setAsideFailed: setAsideError }).catch(() => {});
+      const cause = unrecorded ?? rollbackError;
+      const full = [unrecorded, error, cause].some(noSpace)
+        ? await spaceNeeded(rollbackReady ? rollbackRoot : null, rollbackBase, freeSpace) : null;
+      throw incompleteImport(error, cause, {
+        unrecorded: Boolean(unrecorded), locked: lease.locked, marked: lease.marked === true, copy: rollbackReady ? rollbackRoot : null, inputDir: source, targetMode, full });
     }
     return {
       status: 'imported',
@@ -223,21 +262,38 @@ export async function importGraphData({
       rollbackDir: rollbackReady ? rollbackRoot : null
     };
   } catch (error) {
+    failure = error;
     if (!rollbackReady) await rm(rollbackRoot, { recursive: true, force: true });
     throw error;
   } finally {
-    // Only with every graph whole: the lease goes, and what ran before starts again.
+    // Only with every graph whole: the lease goes, and what ran before starts
+    // again. A lease that cannot be let go does not hide why the import failed.
     if (!kept) {
-      await lease?.release();
+      try { await lease?.release(); }
+      catch (releaseError) {
+        if (!failure) throw releaseError;
+        throw new AggregateError([failure, releaseError], `${failure.message} The import's lease could not be released either: ${releaseError.message}`, { cause: failure });
+      }
       if (lifecycle?.resume === true) await adapter.start(lifecycle);
     }
   }
 }
 
-// A runtime whose imports hold no lock (containers, and native outside macOS).
+// A runtime whose imports guard nothing (an adapter without holdImport).
 const UNLOCKED = Object.freeze({ locked: false, record: async () => {}, release: async () => {} });
 
 const RECOVER = 'fuli graph runtime recover';
+
+const noSpace = error => error?.code === 'ENOSPC' || /\bENOSPC\b|no space left/i.test(String(error?.message ?? ''));
+
+// How much room a recovery needs on a full disk: bringing the copy back
+// stages each dump and writes the database from it, at least twice the copy
+// (load-recovery.js restoreFailure); the lock's own record needs a little.
+async function spaceNeeded(copy, near, freeSpace) {
+  let free = null;
+  try { free = await freeSpace(near); } catch { /* unknown */ }
+  return { copyBytes: copy ? diskSize(copy) : null, freeBytes: free };
+}
 
 // An import that failed and whose rollback brought every graph back.
 function rolledBack(error) {
@@ -249,24 +305,60 @@ function rolledBack(error) {
 // An import that failed and left a graph that may be half written: its
 // rollback did not finish ([cause]), or a graph's state could not be recorded
 // in the lock ([unrecorded]), so nothing more was written. With the lock kept
-// ([locked]), starts are refused until a recovery brings the graphs back.
-function incompleteImport(error, cause, { unrecorded, locked, copy }) {
+// ([locked]), starts are refused until a recovery brings the graphs back;
+// without one, a marker refuses them until the copy is imported back. On a
+// full disk ([full]) the way on starts with making room: a recovery writes too.
+function incompleteImport(error, cause, { unrecorded, locked, marked, copy, inputDir, targetMode, full }) {
   const detail = error?.message ?? String(error);
   const why = cause === error ? '' : cause?.message ?? String(cause);
+  const [where, whereEn] = locked ? ['记进数据库维护锁', ' in the maintenance lock'] : ['记下来', ''];
   const [stopped, stoppedEn] = unrecorded
-    ? [`没能把各图谱的进度记进数据库维护锁${why ? `（${why}）` : ''}，所以没有接着写，也没有退回`,
-      `the progress of each graph could not be recorded in the maintenance lock${why ? ` (${why})` : ''}, so nothing more was written or rolled back`]
+    ? [`没能把各图谱的进度${where}${why ? `（${why}）` : ''}，所以没有接着写，也没有退回`,
+      `the progress of each graph could not be recorded${whereEn}${why ? ` (${why})` : ''}, so nothing more was written or rolled back`]
     : [`自动退回没有做完（${why}）`, `its automatic rollback did not finish (${why})`];
+  const [room, roomEn] = full ? roomWords(full) : ['', ''];
+  const command = copy ? graphImportCommand(copy, targetMode) : null;
   const [hold, holdEn] = locked
-    ? [`维护锁留着，FULI 不会在写了一半的图谱上启动。运行 ${RECOVER}：它先说明怎样把图谱恢复到导入前，确认后再做。`,
-      `The maintenance lock is kept, so FULI does not start on a half-written graph. Run \`${RECOVER}\`: it says how it brings the graphs back to before the import, and does it once you confirm.`]
-    : ['图服务没有重新启动；把图谱导回之前不要启动 FULI。', 'The graph services were not started again; do not start FULI before the graph is brought back.'];
+    ? [`维护锁留着，FULI 不会在写了一半的图谱上启动。${room}运行 ${RECOVER}：它先说明怎样把图谱恢复到导入前，确认后再做。`,
+      `The maintenance lock is kept, so FULI does not start on a half-written graph. ${roomEn}Run \`${RECOVER}\`: it says how it brings the graphs back to before the import, and does it once you confirm.`]
+    : marked
+      ? [`FULI 记下了这次导入没有完成，在把图谱导回之前不会启动。${room}`,
+        `FULI recorded that this import did not finish and does not start before the graph is brought back. ${roomEn}`]
+      : [`图服务没有重新启动；把图谱导回之前不要启动 FULI。${room}`, `The graph services were not started again; do not start FULI before the graph is brought back. ${roomEn}`];
+  // Without a lock and without a copy (every graph was empty before), only a whole import makes the graph whole.
+  const again = !locked && !copy && inputDir ? graphImportCommand(inputDir, targetMode) : null;
   const [back, backEn] = copy
-    ? [`导入前的副本在 ${copy}，也可以用 fuli graph import --input "${copy}" --yes 导回。`,
-      ` The graph from before the import is kept at ${copy}; it can also be brought back with: fuli graph import --input "${copy}" --yes`]
-    : ['', ''];
+    ? [`导入前的副本在 ${copy}，${locked ? '也可以' : ''}用 ${command} 导回。`,
+      ` The graph from before the import is kept at ${copy}; ${locked ? 'it can also be brought back' : 'bring it back'} with: ${command}`]
+    : again
+      ? [`导入前图谱是空的，没有副本；重新运行这次导入让它完整：${again}。`, ` The graph was empty before the import, so there is no copy; run the import again to make it whole: ${again}`]
+      : ['', ''];
   return Object.assign(new AggregateError([error, cause], `导入没有成功：${detail}；${stopped}。${hold}${back}`
     + ` / Graph import failed: ${detail}; ${stoppedEn}. ${holdEn}${backEn}`), { code: 'graph_import_incomplete', lockKept: locked });
+}
+
+// "先腾出磁盘空间：…" for a full disk, with the copy's size and the space free now.
+function roomWords({ copyBytes, freeBytes }) {
+  const free = freeBytes === null ? ['', ''] : [`现在剩 ${byteSize(freeBytes)}`, `${byteSize(freeBytes)} is free now`];
+  if (copyBytes === null) {
+    return [`磁盘满了：先腾出一些磁盘空间${free[0] ? `（${free[0]}）` : ''}，再做下一步。`,
+      `The disk is full: first free some disk space${free[1] ? ` (${free[1]})` : ''}, then take the next step. `];
+  }
+  return [`磁盘满了：先腾出磁盘空间，至少要有导入前副本大小的两倍（副本 ${byteSize(copyBytes)}，至少要 ${byteSize(2 * copyBytes)}${free[0] ? `，${free[0]}` : ''}），再做下一步。`,
+    `The disk is full: first free disk space, at least twice the size of the copy from before the import (the copy is ${byteSize(copyBytes)}, so at least ${byteSize(2 * copyBytes)}${free[1] ? `; ${free[1]}` : ''}), then take the next step. `];
+}
+
+// An import refused because an earlier unfinished one may have left [lacking]
+// half written and this backup does not hold it, with the way back.
+function leftHalfWritten(lacking, earlier, mode) {
+  const back = unfinishedImportWayBack(earlier);
+  const command = back ? graphImportCommand(back.path, mode) : null;
+  const [way, wayEn] = command
+    ? [`先用 ${command} 让图谱完整。`, ` Make the graph whole first with: ${command}`]
+    : ['', ''];
+  return Object.assign(new Error(`没有导入：上次没有完成的导入可能把图谱 ${lacking.join('、')} 只写入了一半，这份备份里没有它，导入后它还是残缺的；什么都没有改动。${way}`
+    + ` / Not imported: an earlier unfinished import may have left the ${lacking.join(' and ')} graph half written, and this backup does not hold it, so it would stay half written; nothing was changed.${wayEn}`),
+  { code: 'graph_import_unfinished' });
 }
 
 export async function readGraphBackupManifest(inputDir) {

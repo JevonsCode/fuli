@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
-import { mkdir, rename } from 'node:fs/promises';
+import { mkdir, rename, statfs } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 // native-runtime/recovered/: what a recovery sets aside instead of deleting it
@@ -37,6 +37,12 @@ export function recoveryRecordPath(root, stamp) {
 }
 
 // Bytes under [path] (a file or a directory), without following links; 0 when it is gone.
+// Bytes free on the disk that holds [path].
+export async function diskFree(path) {
+  const { bavail, bsize } = await statfs(path);
+  return bavail * bsize;
+}
+
 export function diskSize(path) {
   let stat;
   try { stat = lstatSync(path); } catch { return 0; }

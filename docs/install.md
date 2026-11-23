@@ -309,7 +309,18 @@ every dump's SHA-256 before stopping the target. It preserves the old target und
 inside the data directory and rolls back immediately if loading fails. On macOS native, the whole
 import and its rollback hold the database maintenance lock; when the rollback cannot bring every graph
 back, the lock stays and nothing starts on a half-written graph: run `fuli graph runtime recover` (or
-「恢复并启动」 in the desktop window). Let active Agent graph writes finish before either operation.
+「恢复并启动」 in the desktop window). Container mode, and native mode on Windows, have no such lock:
+there the import keeps a marker in the data directory (`graph-import-unfinished-<mode>.json`) from
+before it writes its first graph until every graph is whole again. An import that was killed, or whose
+rollback did not finish, leaves it, and every start in that mode (`fuli start`, setup, the tray's own
+start) is refused with the way back: `fuli graph import --input <the copy> --target-mode <mode> --yes`
+with the copy's path filled in (or the same import again when no copy holds a graph that was empty
+before). The import itself is never held back by the marker, and a successful one clears it. When the
+disk is full, the error says to free space first: at least twice the size of the copy from before the
+import, with the copy's size and the space free now. If `graph migrate` fails while its import keeps the
+native lock (macOS), it still switches back to the unchanged container graph, which can be used as
+usual; run `fuli graph runtime recover` before moving again (it takes the native graph back to before
+the move). Let active Agent graph writes finish before either operation.
 
 After loading, Fuli uses the target installation's bootstrap token to rotate local Provider access
 credentials and atomically updates the runtime configuration; plaintext access tokens are never added

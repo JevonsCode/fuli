@@ -6,6 +6,8 @@ import test from 'node:test';
 
 import { exportGraphData, importGraphData } from '../src/backup/graph-backup.js';
 import { createGraphBackupAdapter } from '../src/backup/runtime-adapters.js';
+import { migrateContainerGraphToNative } from '../src/backup/runtime-migration.js';
+import { formatRecoveryPlan } from '../src/cli/recovery-plan-text.js';
 import { readLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
 import { applyNativeRecovery, planNativeRecovery } from '../src/native-runtime/neo4j-recovery.js';
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
@@ -26,7 +28,7 @@ const recoveryDeps = { identity: gone, listProcesses: async () => [], stopServic
 const never = () => new Promise(() => {});
 
 // A native runtime whose graphs hold [before] (null: empty), and a bundle of new data for both.
-function scene(t, { before = { personal: 'old:personal', workspace: 'old:workspace' }, admin = async () => {}, record = async () => {}, killAt = () => false } = {}) {
+function scene(t, { before = { personal: 'old:personal', workspace: 'old:workspace' }, admin = async () => {}, record = async () => {}, killAt = () => false, setAside } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'fuli-import-lock-'));
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const paths = resolveSetupPaths({ dataDir, packageRoot: '/package' });
@@ -67,7 +69,8 @@ function scene(t, { before = { personal: 'old:personal', workspace: 'old:workspa
       stop: async () => ({ ...await real.stop(), resume: true }),
       start: async () => { events.push(`start (lock ${existsSync(join(paths.nativeRuntimeDir, LOCK)) ? 'held' : 'gone'})`); },
       // Reconciling starts the graph services; nothing here starts a real one.
-      reconcile: async () => { events.push('reconcile'); },
+      reconcile: async () => { await checkpoint('reconcile'); },
+      ...(setAside ? { setAside: async (id) => { await setAside(id); return real.setAside(id); } } : {}),
       holdImport: async (details) => {
         const lease = await real.holdImport(details);
         await checkpoint('held');
@@ -89,7 +92,7 @@ function scene(t, { before = { personal: 'old:personal', workspace: 'old:workspa
     return importGraphData({ inputDir, targetMode: 'native', rollbackDir: paths.graphBackupDir, adapter: await adapter() });
   }
   const holds = id => existsSync(storeFile(id)) ? readFileSync(storeFile(id), 'utf8') : null;
-  return { paths, events, kill, runImport, holds, root: paths.nativeRuntimeDir };
+  return { paths, events, kill, runImport, holds, services, adapter, bundle, root: paths.nativeRuntimeDir, bundleDir: join(dataDir, 'bundle') };
 }
 
 const lockOf = s => readLock(s.root)?.holder ?? null;
@@ -105,7 +108,8 @@ async function killedAt(t, point, options = {}) {
   const holder = lockOf(s);
   assert.ok(holder, `the lock is on disk after a kill at ${point}`);
   assert.equal(holder.operation, 'load');
-  await assert.rejects(createNativeGraphServices({ paths: s.paths, platform: 'darwin', env: {} }).start(), /in progress/, 'a start is held back');
+  // The same fakes as the import: a start that got past the lock would fail on them, never reach a real Neo4j.
+  await assert.rejects(s.services({ paths: s.paths }).start(), /in progress/, 'a start is held back');
   const recovery = await plan(s);
   rmSync(copyOf(s), { recursive: true });
   const abandon = await plan(s, { abandonImport: true });
@@ -206,4 +210,94 @@ test('a successful import releases its one lock before the services start again'
   assert.equal(result.status, 'imported');
   assert.deepEqual([s.holds('personal'), s.holds('workspace')], ['new:personal', 'new:workspace']);
   assert.deepEqual([s.events.filter(event => event === 'held').length, s.events.at(-1)], [1, 'start (lock gone)']);
+});
+
+test('an import killed after every graph is written: while reconciling, a recovery takes it back; once it recorded that it finished, a recovery only checks the start', async (t) => {
+  const reconciling = await killedAt(t, 'reconcile');
+  assert.deepEqual(reconciling.holder.graphStates, { personal: 'imported', workspace: 'imported' });
+  assert.equal(reconciling.holder.completed, undefined);
+  assert.deepEqual([reconciling.recovery.kind, reconciling.recovery.steps.map(step => step.do)], ['restore_load', ['restore', 'mark-restored', 'check-start', 'release-lock']]);
+  const finished = await killedAt(t, recordedAfter({ completed: true }));
+  assert.equal(finished.holder.completed, true);
+  assert.deepEqual([finished.s.holds('personal'), finished.s.holds('workspace')], ['new:personal', 'new:workspace']);
+  assert.deepEqual([finished.recovery.kind, finished.recovery.steps.map(step => step.do)], ['finish_load', ['check-start', 'release-lock']]);
+  assert.equal(finished.recovery.steps[0].afterImport, true, 'the lock goes even if that start fails: the graph is whole');
+  assert.equal(finished.abandon.reason, 'no_import', 'nothing to abandon');
+  assert.match(formatRecoveryPlan(finished.recovery), /做完一次已经成功的导入.+不撤回这次导入/s);
+  // The start it refuses knows it too (startup-failure.js words it).
+  await assert.rejects(finished.s.services({ paths: finished.s.paths }).start(), error => error.startupFailure?.completed === true);
+  await applyNativeRecovery({ paths: finished.s.paths, digest: finished.recovery.digest, dependencies: recoveryDeps });
+  assert.deepEqual([finished.s.holds('personal'), finished.s.holds('workspace'), existsSync(join(finished.s.root, LOCK))], ['new:personal', 'new:workspace', false]);
+});
+
+test('a graph is recorded as being written only once its dump is staged, right before neo4j-admin writes', async (t) => {
+  const s = scene(t, { killAt: name => name === states('writing', 'untouched') });
+  s.runImport().catch(() => {});
+  await s.kill;
+  const staged = readdirSync(s.bundleDir).filter(name => name.startsWith('.fuli-neo4j-'));
+  assert.equal(staged.length, 1);
+  assert.equal(readFileSync(join(s.bundleDir, staged[0], 'neo4j.dump'), 'utf8'), 'new:personal');
+  assert.equal(s.events.some(event => event.startsWith('load ')), false, 'neo4j-admin has not begun');
+});
+
+test('a graph empty before the import that cannot be emptied again keeps the lock and records why for the recovery', async (t) => {
+  const s = scene(t, { before: { personal: 'old:personal', workspace: null },
+    admin: async (id, body) => { if (id === 'workspace' && body.startsWith('new:')) throw new Error('neo4j-admin failed'); },
+    setAside: async () => { throw new Error('EBUSY: resource busy or locked'); } });
+  await assert.rejects(s.runImport(), (error) => {
+    assert.equal(error.code, 'graph_import_incomplete');
+    assert.match(error.message, /自动退回没有做完（EBUSY/);
+    return true;
+  });
+  assert.deepEqual(lockOf(s).setAsideFailed, { graph: 'workspace', detail: 'EBUSY: resource busy or locked' });
+  const recovery = await plan(s);
+  assert.deepEqual(recovery.setAsideFailed, lockOf(s).setAsideFailed);
+  assert.match(formatRecoveryPlan(recovery), /导入自己退回时没能把 workspace（导入前是空的）挪开：EBUSY: resource busy or locked。这次会再挪一遍。/);
+});
+
+test('releasing the lease after a failed import does not hide why the import failed', async (t) => {
+  const s = scene(t, { admin: async (id, body) => { if (id === 'workspace' && body.startsWith('new:')) throw new Error('neo4j-admin failed'); } });
+  const adapter = await s.adapter();
+  const lease = adapter.holdImport;
+  adapter.holdImport = async details => ({ ...await lease(details), release: async () => { throw new Error('the lock could not be removed'); } });
+  await assert.rejects(importGraphData({ inputDir: await s.bundle(), targetMode: 'native', rollbackDir: s.paths.graphBackupDir, adapter }), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.message, /每个图谱都已退回导入前的数据.+could not be released either: the lock could not be removed/s);
+    return true;
+  });
+});
+
+test('graph migrate whose import keeps the native lock switches back to the unchanged container graph, leaves the lock, and says to recover before moving again', async (t) => {
+  // The native graph is empty before the move; recording the second graph's state fails (a full disk).
+  const s = scene(t, { before: {}, record: async (patch) => { if (patch.graphStates?.workspace === 'writing') throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }); } });
+  const container = { personal: 'container:personal', workspace: 'container:workspace' };
+  let mode = 'container';
+  const steps = [];
+  const written = [];
+  const containerAdapter = { instances: ['personal', 'workspace'], census: async () => ({ labels: {}, relationships: {} }) };
+  await assert.rejects(migrateContainerGraphToNative({ backupRoot: s.paths.graphBackupDir, now: () => new Date('2026-11-24T00:00:00Z'), ports: {
+    runtimeMode: () => mode,
+    checkNative: async () => {},
+    consoleRunning: async () => false,
+    // As `fuli stop` does it: a native runtime of its own, without the import's token, stops under the lifecycle lock.
+    stopRuntime: async () => { steps.push('stop'); await s.services({ paths: s.paths }).stopDatabases(); },
+    startRuntime: async () => { steps.push('start'); },
+    createAdapter: async (kind) => kind === 'container' ? containerAdapter : s.adapter(),
+    exportGraph: async () => {},
+    importGraph: async () => { steps.push('import'); return importGraphData({ inputDir: await s.bundle(), targetMode: 'native', rollbackDir: s.paths.graphBackupDir, adapter: await s.adapter() }); },
+    setupRuntime: async (next) => { steps.push(`setup ${next}`); mode = next; },
+    write: line => written.push(line)
+  } }), (error) => {
+    assert.match(error.message, /已回到容器图谱，可以正常使用，容器里的数据没有变；导出在 .+原生运行时留着一把维护锁：再次迁移之前，先运行 fuli graph runtime recover，它会把原生图谱退回到这次迁移之前（之前是空的就清空），容器数据不受影响。/s);
+    assert.match(error.message, /Fuli is back on the container graph and can be used as usual; the container data did not change/);
+    assert.match(error.message, /磁盘满了：先腾出一些磁盘空间/, 'a full disk is said first');
+    return true;
+  });
+  assert.deepEqual(steps, ['setup native', 'import', 'setup container'], 'the native runtime is not stopped under the lock it holds');
+  assert.equal(mode, 'container');
+  assert.deepEqual(container, { personal: 'container:personal', workspace: 'container:workspace' }, 'the container data is not touched');
+  assert.equal(lockOf(s).operation, 'load', 'the native lock stays for a recovery');
+  // That recovery empties the native graph again: it was empty before the move.
+  const recovery = await plan(s);
+  assert.deepEqual([recovery.kind, recovery.restorePoint, recovery.emptied], ['restore_load', null, ['personal', 'workspace']]);
 });

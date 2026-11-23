@@ -72,6 +72,8 @@ const KIND = {
   finish_uninstall: ['完成一次没做完的数据库卸载：剩下的数据库程序移到 recovered 文件夹，知识数据不动。', 'Finish a database uninstall that did not finish: the remaining database programs move to the recovered folder; knowledge data is not touched.'],
   clear_interrupted: ['清理一次中途停下的数据库操作：它停在改动数据之前，把装了一半的东西放到一边。', 'Clear up a database operation that stopped part way, before it changed any data: set aside what it half installed.'],
   release_dump: ['解除一次中途停下的导出留下的锁：导出只读数据库。', 'Release the lock an interrupted dump left: a dump only reads the database.'],
+  finish_load: ['做完一次已经成功的导入：每个图谱都已完整写入新数据、图谱身份也核对过了，只是在解除锁之前停了。不撤回这次导入，只做一次启动检查再解除锁。',
+    'Finish an import that succeeded: every graph holds all of its new data and the graph identity was reconciled; it stopped just before releasing its lock. The import is not taken back: only a start check, then the lock is released.'],
   finish_recovery: ['做完一次中途停下的恢复：它的步骤都做完了，只剩解除它加的锁。', 'Finish a recovery that stopped part way: its steps are done, only the lock it took is left.'],
   restore_load: ['把一次中途停下的导入撤回到导入前：导入可能只写了一半。这次想导入的内容不会保留，之后需要重新导入。',
     'Take an interrupted import back to before it: it may be half written. What it was importing is not kept; import it again afterwards.'],
@@ -86,8 +88,8 @@ function stepWords(step, plan) {
   const [version, versionEn] = plan.fromLabel ? (step.revert ? [from, fromEn] : [to, toEn]) : [step.version, step.version];
   switch (step.do) {
     case 'stop-services': return ['停止 FULI 记录的图数据库和 Provider 进程', 'Stop the graph database and Provider processes FULI recorded'];
-    case 'check-start': return [`用 Neo4j${version ? ` ${version}` : ''} 启动一次，确认它能应答，再停下${step.revert ? `（不行就写回 ${to} 的描述文件）` : ''}${step.afterRestore ? '（图已经导回，起不来也照样解除锁，并写明起不来的原因）' : ''}`,
-      `Start Neo4j${version ? ` ${versionEn}` : ''} once, check it answers, and stop it${step.revert ? ` (if it does not, ${toEn}'s descriptor is written back)` : ''}${step.afterRestore ? ' (the graph is already back, so the lock is released even if it does not start, and why is said)' : ''}`];
+    case 'check-start': return [`用 Neo4j${version ? ` ${version}` : ''} 启动一次，确认它能应答，再停下${step.revert ? `（不行就写回 ${to} 的描述文件）` : ''}${step.afterRestore ? '（图已经导回，起不来也照样解除锁，并写明起不来的原因）' : ''}${step.afterImport ? '（图谱已经是完整的新数据，起不来也照样解除锁，并写明起不来的原因）' : ''}`,
+      `Start Neo4j${version ? ` ${versionEn}` : ''} once, check it answers, and stop it${step.revert ? ` (if it does not, ${toEn}'s descriptor is written back)` : ''}${step.afterRestore ? ' (the graph is already back, so the lock is released even if it does not start, and why is said)' : ''}${step.afterImport ? ' (every graph already holds the new data, so the lock is released even if it does not start, and why is said)' : ''}`];
     case 'mark-restored': return ['在锁里记下「已导回」：之后重跑不会再导一遍', 'Record in the lock that the graph is back, so running again does not import it again'];
     case 'mark-backing-out': return [`在切换记录里记下「正在取消${verb}」`, `Record in the switch journal that the ${verbEn} is being cancelled`];
     case 'mark-abandoning': return ['在锁里记下每个图谱怎么处理：中途停下再运行，会照同样的判断做完', 'Record in the lock what happens to each graph, so a run that stops part way finishes it the same way'];
@@ -170,6 +172,10 @@ function facts(plan) {
     }
     if (plan.emptied?.length) {
       lines.push(`${plan.emptied.join('、')} 在导入前是空的，恢复后也是空的。 / ${plan.emptied.join(', ')} ${plan.emptied.length === 1 ? 'was' : 'were'} empty before the import and will be empty again.`);
+    }
+    if (plan.setAsideFailed) {
+      const { graph, detail } = plan.setAsideFailed;
+      lines.push(`导入自己退回时没能把 ${graph}（导入前是空的）挪开：${detail}。这次会再挪一遍。 / The import's own rollback could not move ${graph} (empty before the import) aside: ${detail}. This run moves it again.`);
     }
     if (plan.restoreFailed) {
       const [why, whyEn] = restoreFailureWords(plan.restoreFailed);

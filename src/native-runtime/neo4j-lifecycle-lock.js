@@ -205,7 +205,9 @@ export async function releaseAbandonedNeo4jLifecycleLock(root, identity = IDENTI
 export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
   const lock = readLock(root);
   const facts = { since: lock?.since.toISOString() ?? null, operation: lock?.holder?.operation ?? null,
-    pid: lock?.holder?.pid ?? null, lockPath: lockPath(root) };
+    pid: lock?.holder?.pid ?? null, lockPath: lockPath(root),
+    // An import that finished and stopped only before releasing its lock (graph-backup.js).
+    ...(lock?.holder?.completed === true ? { completed: true } : {}) };
   if (existsSync(journalPath(root))) {
     // Which switch it was and how far it got (neo4j-lifecycle.js writes it before
     // changing anything): 'switching' an update or rollback, 'removing-assets' an uninstall.

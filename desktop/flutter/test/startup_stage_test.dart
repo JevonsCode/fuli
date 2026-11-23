@@ -124,6 +124,32 @@ void main() {
     expect(zh.releasableLock(const StartupFailure('native_recovery_needed', {'holder': 'unknown'})), isFalse);
   });
 
+  test('an unfinished import on a runtime without a lock names the copy by its folder, and the import in Terminal is the way back', () {
+    const facts = {'mode': 'native', 'since': '2026-11-22T17:24:35.000Z', 'graphs': ['workspace'], 'way': 'copy', 'copyName': 'before-import-1'};
+    final copy = zh.startFailedBecause(const StartupFailure('graph_import_unfinished', facts))!;
+    expect(copy, startsWith('没有启动：上次向原生模式的图谱导入数据（'));
+    expect(copy, contains('没有完成，工作区图谱可能只写入了一半。'));
+    expect(copy, contains('导入前的副本在 FULI 数据文件夹的 backups/graph/before-import-1。在终端运行 fuli graph import --input <FULI 数据文件夹>/backups/graph/before-import-1 --target-mode native --yes 把它导回，然后再点「启动 FULI」。'));
+    expect(en.startFailedBecause(const StartupFailure('graph_import_unfinished', facts)), contains('may be only half written. The copy from before the import'));
+    final input = zh.startFailedBecause(const StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': [], 'way': 'input'}))!;
+    expect(input, contains('容器模式的图谱导入数据，新数据已经写完，但没有做完收尾'));
+    expect(input, contains('在终端重新运行那次导入'));
+    expect(zh.startFailedBecause(const StartupFailure('graph_import_unfinished', {'mode': 'native', 'graphs': ['personal', 'workspace']})),
+        contains('backups/graph 里导入前留下的副本（before-import-…）导回'));
+    // An import that finished and stopped only before releasing its lock: whole, and nothing is taken back.
+    final finished = zh.startFailedBecause(const StartupFailure('native_lifecycle_lock', {'holder': 'gone', 'operation': 'load', 'completed': true, 'since': '2026-11-22T17:24:35.000Z'}))!;
+    expect(finished, contains('已经写完了新数据，但在解除维护锁之前停了。图谱是完整的。'));
+    expect(finished, isNot(contains('只写入了一半')));
+  });
+
+  test('a finished import, and a graph its rollback could not empty, read as what they are', () {
+    final finish = zh.recoveryPlanWords(const RecoveryPlan('finish_load', [{'do': 'check-start', 'version': '5.26.28', 'afterImport': true}, {'do': 'release-lock'}], 'd', {}));
+    expect(finish.first, startsWith('这次导入其实已经成功'));
+    expect(finish[1], contains('图谱已经是完整的新数据，起不来也照样解除锁'));
+    final load = zh.recoveryPlanWords(const RecoveryPlan('restore_load', [], 'd', {'setAsideFailed': {'graph': 'workspace', 'detail': 'EBUSY'}})).join('\n');
+    expect(load, contains('导入自己退回时没能把工作区图谱（导入前是空的）挪开：EBUSY。这次会再挪一遍。'));
+  });
+
   test('the port holder is named with how long it has run', () {
     expect(zh.startFailedBecause(const StartupFailure('port_taken', {'port': 7687, 'pid': 4321, 'command': 'java', 'runningSeconds': 28800})),
         startsWith('没有启动：端口 7687 被另一个程序占着（进程 4321 · java，已运行 8 小时）'));
@@ -176,7 +202,7 @@ void main() {
 
   test('a recovery plan and every reason it will not run are said in one language, with a next step', () {
     for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'continue_back_out', 'finish_uninstall', 'clear_interrupted', 'release_dump',
-      'restore_load', 'finish_recovery', 'abandon_load']) {
+      'restore_load', 'finish_load', 'finish_recovery', 'abandon_load']) {
       final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1', 'bytes': 3 * 1024 * 1024}, {'do': 'release-lock'}], 'd', const {}));
       expect(words.first, isNot(kind), reason: kind);
       expect(words.join(), isNot(contains(' / ')), reason: kind);

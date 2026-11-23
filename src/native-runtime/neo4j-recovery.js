@@ -5,14 +5,14 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { diskFree, planLoad, restoreFailure } from './load-recovery.js';
+import { planLoad, restoreFailure } from './load-recovery.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import {
   acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, ownIdentity, readLock, runningGraphServices, runtimeInUse, takeOver
 } from './neo4j-lifecycle-lock.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
 import {
-  expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp, setAsideInto
+  diskFree, expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp, setAsideInto
 } from './recovered-dir.js';
 import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } from './recovery-plan.js';
 
@@ -432,7 +432,8 @@ async function runStep(step, context) {
         // After a restore the graph is back to before the import, and the lock
         // protects nothing: the lock goes, and why Neo4j did not start is in
         // the result for the ordinary failed start that follows.
-        if (step.afterRestore) { context.startFailure = startFailureOf(error, paths); return; }
+        // So too after an import that finished: every graph holds its new data.
+        if (step.afterRestore || step.afterImport) { context.startFailure = startFailureOf(error, paths); return; }
         // Never a descriptor whose programs are gone.
         if (step.revert && existsSync(step.revert.neo4jHome)) writeManifest(context, step.revert);
         throw stepFailed('start_failed', `Neo4j ${step.version} did not start and answer its health check.`, error, { startFailure: startFailureOf(error, paths) });

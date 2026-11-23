@@ -9,6 +9,7 @@ import {
   importGraphData,
   readGraphBackupManifest
 } from '../src/backup/graph-backup.js';
+import { graphImportCommand } from '../src/backup/unfinished-import.js';
 
 test('graph export creates one checksummed portable bundle for either runtime mode', async () => {
   const root = await mkdtemp(join(tmpdir(), 'fuli-graph-export-'));
@@ -98,7 +99,8 @@ async function importScene(prefix, { instances = ['personal', 'workspace'], fail
     ...(setAside ? { async setAside(instance) { events.push(`set aside ${instance}`); await setAside(instance); } } : {}),
     async start() { events.push('start'); }
   };
-  return { root, adapter, events, run: () => importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter }) };
+  return { root, adapter, events, run: () => importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter,
+    freeSpace: async () => 3 * 1024 ** 2 }) };
 }
 
 const states = events => events.filter(event => event.record?.graphStates).map(event => event.record.graphStates);
@@ -157,7 +159,7 @@ test('an import whose automatic rollback did not finish, on a runtime without a 
   await assert.rejects(scene.run(), (error) => {
     const copy = /kept at (\S+);/.exec(error.message)?.[1];
     assert.match(copy ?? '', /[\\/]rollback[\\/]before-import-/);
-    assert.ok(error.message.includes(`fuli graph import --input "${copy}" --yes`));
+    assert.ok(error.message.includes(graphImportCommand(copy, 'native')));
     assert.match(error.message, /图服务没有重新启动.+The graph services were not started again/s);
     assert.doesNotMatch(error.message, /runtime recover/);
     return true;
@@ -187,6 +189,9 @@ test('a state that cannot be recorded in the lock stops the import there: nothin
   await assert.rejects(scene.run(), (error) => {
     assert.equal(error.code, 'graph_import_incomplete');
     assert.match(error.message, /没能把各图谱的进度记进数据库维护锁，所以没有接着写，也没有退回.+could not be recorded in the maintenance lock, so nothing more was written or rolled back/s);
+    // A recovery writes too, and bringing the copy back takes twice its size: room comes first.
+    assert.match(error.message, /维护锁留着，FULI 不会在写了一半的图谱上启动。磁盘满了：先腾出磁盘空间，至少要有导入前副本大小的两倍（副本 [\d.]+ KB，至少要 [\d.]+ KB，现在剩 3\.0 MB），再做下一步。运行 fuli graph runtime recover/);
+    assert.match(error.message, /The disk is full: first free disk space, at least twice the size of the copy from before the import \(the copy is [\d.]+ KB, so at least [\d.]+ KB; 3\.0 MB is free now\), then take the next step\. Run `fuli graph runtime recover`/);
     return true;
   });
   assert.deepEqual(scene.events.filter(event => typeof event === 'string'), ['load new:personal'], 'workspace was never written, and nothing rolled back unrecorded');

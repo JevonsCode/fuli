@@ -12,6 +12,7 @@ import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import { ensureContainerRuntime } from '../setup/container-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { CENSUS_QUERIES, censusFromRows, parsePlainCensusRows } from './graph-census.js';
+import { markUnfinishedImport, readUnfinishedImport } from './unfinished-import.js';
 import {
   graphBackupSelection,
   reconcileImportedGraphIdentity
@@ -80,9 +81,13 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     });
   }
 
-  async function load(instance, source) {
+  // [beforeWrite] runs once the dump is staged, right before neo4j-admin
+  // starts writing the database (graph-backup.js records the graph as being
+  // written there).
+  async function load(instance, source, { beforeWrite } = {}) {
     await withStagingDirectory(source, async (stage) => {
       await copyFile(source, join(stage, 'neo4j.dump'));
+      await beforeWrite?.();
       await services.loadDatabase(instance, stage);
     });
   }
@@ -91,8 +96,10 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
   // rollback run under it, and its lock records [details] for a recovery
   // (neo4j-recovery.js). A rollback that could not bring the copy [from] back
   // records why, as a recovery's own failed restore does (restoreFailed).
-  async function holdImport(details) {
+  // Outside macOS there is no lock: a marker stands for it (unfinished-import.js).
+  async function holdImport({ inputDir, ...details }) {
     const lease = await services.hold('load', details);
+    if (!lease.locked) return markUnfinishedImport(paths, 'native', { ...details, inputDir });
     return { ...lease, restoreFailed: async (from, error) => lease.record({ restoreFailed: await restoreFailure(paths, from, error) }) };
   }
 
@@ -137,7 +144,9 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     start,
     dump,
     load,
+    announcesWrites: true,
     holdImport,
+    unfinishedImport: () => readUnfinishedImport(paths, 'native'),
     setAside,
     hasData,
     census,
@@ -187,9 +196,10 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
     });
   }
 
-  async function load(instance, source) {
+  async function load(instance, source, { beforeWrite } = {}) {
     await withBackupHelper(instance, async (helper) => {
       await docker(['cp', source, `${helper}:/backup/neo4j.dump`]);
+      await beforeWrite?.();
       await docker([
         'exec', helper,
         'neo4j-admin', 'database', 'load', 'neo4j',
@@ -278,6 +288,10 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
     start,
     dump,
     load,
+    announcesWrites: true,
+    // Containers have no lifecycle lock: a marker keeps a start off a graph an import may have left half written.
+    holdImport: details => markUnfinishedImport(paths, 'container', details),
+    unfinishedImport: () => readUnfinishedImport(paths, 'container'),
     hasData,
     census,
     selection: () => graphBackupSelection(paths),
