@@ -10,6 +10,7 @@ import { handleAgentGrowthRequest } from './agent-growth-api-router.js';
 import { handleTaskVerificationRequest } from './task-verification-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleReplyEchoRequest } from './reply-echo-api-router.js';
+import { handleWhoAmIRequest } from './whoami-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleAdvancedAreasRequest, handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
@@ -36,6 +37,7 @@ export async function handleGraphApiRequest({
   if (await handleAgentGrowthRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleTaskVerificationRequest({ request, response, url, app })) return true;
   if (await handleReplyEchoRequest({ request, response, url, app, ownerReads })) return true;
+  if (await handleWhoAmIRequest({ request, response, url, app })) return true;
   if (await handleKnowledgeItemRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
@@ -459,6 +461,16 @@ export async function handleGraphApiRequest({
       agentId: url.searchParams.get('agentId'),
       fromDate: url.searchParams.get('fromDate'),
       toDate: url.searchParams.get('toDate')
+    }));
+    return true;
+  }
+  // Where one FLA worked, for the console widget that shows it (rec#147). Read
+  // only: it counts conversation session records and opens nothing.
+  if (url.pathname === '/api/project-agent-work-locations' && request.method === 'GET') {
+    sendJson(response, 200, await app.viewAgentWorkLocations({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: url.searchParams.get('agentId')
     }));
     return true;
   }

@@ -142,6 +142,7 @@ CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟�
 | `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
 | `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
 | `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
+| `fuli whoami [--project ID_OR_FOLDER] [--json] [--data-dir DIR]` | 只读：`--project` 填项目 ID 或目录。这个目录属于哪个空间、哪个项目，项目负责人是哪位 FLA，以及这台电脑是主机还是从机；不返回任何密钥或地址。从机上由主机作答，主机不在时显示它上次的答复并标明时间（见 [docs/runner.md](runner.md)） |
 | `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
 | `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
 | `fuli graph migrate --to native [--yes]` | 把容器图谱迁移到原生模式；节点和关系数量完全一致才算成功 |

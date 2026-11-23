@@ -6,6 +6,10 @@ knowledge, preferences, FLAs and memory stay in **one** FULI, on the host
 computer. Every runner thinks with its own clients; only what it reads and writes
 of FULI goes to the host.
 
+Where this is going: every FULI is a host and follows another one only where it says so, so a
+computer can own some of the person's FULI and follow another for the rest.
+`docs/runner-roles-design.md` is that design and which step is done.
+
 ```
 runner (B)                                              host (A)
 Codex / Cursor / other MCP clients                      FULI console
@@ -66,12 +70,32 @@ host lists the runner until the person revokes it there.
 
 ## The console on a runner
 
-A runner has no FULI of its own, but it has a console entry: `fuli start` (and FULI.app's start)
-runs `fuli runner console`, which listens on this computer's loopback at its usual console port
-(2727 unless Settings say otherwise) and shows the host's console. Each request goes over the paired
-mutual-TLS channel to `/runner/1/console/…` on the host, which forwards it to its own console on
-loopback (`src/runner/console-relay.js`), so pages, API calls and live event streams behave as on
-the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) open on the runner too.
+A runner has no knowledge of its own yet, but it has a console of its own: `fuli start` (and
+FULI.app's start) runs `fuli runner console`, which listens on this computer's loopback at its usual
+console port (2727 unless Settings say otherwise).
+
+**This computer's own page is `/local`.** It opens whether or not the host answers, and says who
+this computer follows, whether that computer answers now, when it was last reached, which capability
+runs here and which on the host (and what each one does while the host is away), and every record
+still waiting to be delivered — one by one, with what it is, when it was made, where it stands and
+why — with 「现在重试」 beside them. It also says plainly that this beta syncs only on a network
+both computers are on.
+
+**A state band sits on top of every page.** One line: who this computer follows, online or not, when
+it last reached it (the last time the host answered anything), how many records wait, and where this page's data came from. Where it came from is
+not guessed: every answer this entry serves carries `x-fuli-source` (`local`, `host` or
+`unavailable`), and the band (`src/runner/follower-band.js`) reads that header off the page's own
+requests. `fuli status` and `fuli runner status` print the same facts from the same answer
+(`src/runner/follower-status.js`), so the three never disagree about whether the host is reachable.
+
+**The host's pages come over the paired channel.** Each request goes over the paired mutual-TLS
+channel to `/runner/1/console/…` on the host, which forwards it to its own console on loopback
+(`src/runner/console-relay.js`), so pages, API calls and live event streams behave as on the host,
+and the receipt links the host gives (`http://127.0.0.1:2727/…`) open on the runner too.
+`/remote/<host>/…` names the host a page belongs to: the name is the host's own (a slug of it) or the
+start of the fingerprint the pairing pinned, and any other name reaches nothing (404 `unknown_host`).
+An HTML page asked for under that prefix is answered with the host's own path on this origin, because
+the host's console is one page application that reads its own absolute paths.
 
 - The entry answers only on loopback under its own name (no DNS rebinding) and refuses any other
   site's `Origin` before the channel; the host then gives the runner's own page the console's
@@ -80,14 +104,27 @@ the host, and the receipt links the host gives (`http://127.0.0.1:2727/…`) ope
   host console. The runner can still read the public version at `/api/system/version`.
 - 客户端接入 (`/api/system/client-connection…`) answers on the runner itself: it lists, connects,
   restarts and adds this computer's clients, with the same entries `fuli runner join` writes.
-  Nothing of it reaches the host. The host's relay refuses those writes, and opening a session
+  Nothing of it reaches the host. Because it is the runner's own page, it says so at the top: this
+  computer is a runner, its host's name, that a runner's hooks load nothing so every client here
+  depends on the model entering the task through FULI's MCP server, and, when the two differ, which
+  computer runs the older FULI. The host's relay refuses those writes, and opening a session
   (`/api/session-launch`), with 403 `host_computer_only`, so a runner never changes the host
   computer's clients.
-- While the host is away the entry shows a page saying so, with what waits in the outbox; API
-  calls answer 503 `host_unreachable`. A revoked runner's entry reaches nothing.
+- While the host is away, a page says so — naming the host's page that cannot be shown — and shows
+  this computer's own console below it; API calls answer 503 `host_unreachable`. A revoked runner's
+  entry reaches nothing.
+- 「现在重试」 (`POST /__fuli-follower/sync`) delivers the outbox now. It is taken only from this
+  computer's own page (its own `Origin`); a program on this computer has `fuli runner sync`.
 - `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
   runner sets up its clients only. A runner never gets a graph runtime by accident.
+- **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
+  (`src/runner/runner-mode.js`). A paired computer that a start or `fuli setup` later wrote a
+  runtime file for used to stop counting as a runner, and its clients then silently used an empty
+  local FULI (docs/runner-roles-design.md §1.1). `fuli runner leave` is the one way to end a
+  pairing; when a client's process still holds the store open (Windows), `leave` leaves
+  `runner/left` beside it so the computer is no longer a follower. `fuli runner join` still refuses
+  a data directory that holds a FULI of its own.
 - The host's and the runner's console ports should match for receipt links to open as they are.
 
 ## What a runner's call may do on the host
@@ -203,7 +240,8 @@ and tells the client to list again once the host's differs.
 
 ## Two computers on different networks
 
-There is no relay: the runner reaches the host directly or not at all. Two
+There is no relay, by decision (Jevons, 2026-11-23): the runner reaches the host directly or not
+at all, and none is planned. Two
 computers that are not on the same network (home and the office) need a VPN or
 mesh tool that puts them on one network — Tailscale, WireGuard, a company VPN
 that lets its clients reach each other. Then:
@@ -219,8 +257,8 @@ that lets its clients reach each other. Then:
    ```
 
    It is kept from then on, tried first, and the outbox is delivered at once.
-   (There is no button for this: the console has no runner page, and the
-   runner's console is the host's.)
+   The same is a button on the runner's own console page (`/local`): while the
+   host does not answer it offers 「添加主机地址」, one button and one field.
 4. `fuli runner status` on the runner says whether the host answers and from
    which address.
 
@@ -228,6 +266,52 @@ An invitation can already carry such an address, so a runner that joins while
 both are on the VPN needs none of this. A company network that isolates its
 clients from each other blocks both computers equally: use a cable, another
 shared network, or a mesh tool that does not rely on the local network.
+
+## FULI versions on the two computers
+
+A runner and its host each have their own FULI, and nothing keeps them on the same version: a runner
+left in an office stays on the version it joined with (rec#144). The host's version comes with the
+hello the runner already exchanges with it, so `fuli status` and `fuli runner status` on a runner,
+and the runner's 客户端接入 page, say which copy is older. The runner's side is what its open client
+sessions run (their MCP servers keep the version they started with until restarted), or the
+installed copy when none is open; the same release spelled differently (`v0.29.0`, build metadata)
+is not a difference. It is only said: a call both versions understand goes through as before, and
+nothing here refuses anything. When the runner is older the page offers 「让 AI 来做：更新这台电脑的
+FULI」 (the console's one AI entry), which hands an AI client on this computer a prompt naming the
+host's exact version — `npm install --global fuli-context@<host version>`, `fuli restart`, which
+sessions to reopen, then `fuli runner status` — never "or newer", which would put the runner ahead
+and turn the notice around. When the host is older the page says to update from the host's
+console, because a runner's page cannot run the host's update (the relay refuses it). The
+host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
+runner's side only.
+
+## Who owns this project (`fuli whoami`)
+
+An outside process on a runner — a background worker that has to sign its results with the right
+FLA, say — has no `graph-runtime.json` to read, and before this had to be told the space by hand
+(rec#145). `fuli whoami` answers it, read only:
+
+```bash
+fuli whoami                      # the folder this runs in
+fuli whoami --project <id|folder>
+fuli whoami --json
+```
+
+It gives the personal space (ID and name), the project (ID and name) the folder resolves to, the
+FLA leading that project (ID, its own name and its role), and whether this computer is the host or
+a runner. It returns no token, no certificate and no address, enters no task and writes nothing to
+knowledge. `--json` always has the same fields, `null` where there is nothing: `space`, `project`,
+`lead`, `projectResolution`, `basis`, `computer.role`, `computer.hostReachable` (`null` on the
+host), `offline` and `answeredAt`. A script should read `offline` (or the exit code): `0` answered
+now, `3` the host's earlier answer, `2` no answer at all.
+
+On a runner it goes through the console entry above, which relays it to the host console
+(`POST /api/whoami`), and sends the folder's facts with it so the host resolves the folder by
+exactly the rules in "Projects" below. While the host is away the host's last answer for that
+folder is shown instead, marked `offline` with the time the host gave it; that answer is kept in
+`whoami-last-answer.json` in the runner's data directory, holds only what the answer already shows,
+and is one of the things `fuli runner leave` deletes. With no earlier answer for that folder it says
+so and exits 2 rather than guess.
 
 ## Projects
 
@@ -250,9 +334,15 @@ answers cached by earlier versions and keeps ordinary read-only answers.
 | --- | --- |
 | Task entry (`begin_task_context`, `get_collaboration_preferences`) | The preferences the host last gave for that folder, marked offline, with a runner task token; nothing of the earlier task (its receipt, checkpoint duty or recall) |
 | `checkpoint_task_knowledge` | Queued in the outbox (`queued_offline`); the answer says so and never claims it was saved |
+| `resume_agent_conversation` | The recovery context the host last gave for that conversation, marked offline with when it was read, and the work logs of the checkpoints still waiting here (`undelivered_work`), saying how much was carried over. With neither, it says so and makes nothing up |
 | `assess_agent_action`, `report_routing_outcome` on a runner whose Tonborg chooses executors | Answered on the runner, online or not (see "Executor judgment on a runner") |
 | Other read-only tools | The last answer to the same call, marked offline, when there is one |
 | Anything else | `host_unreachable`, saying the host must be reachable for it |
+
+Every task entry on a runner carries `runner`, online as well as offline: online it names the host
+that answered, offline it says the host is away, that FULI is still working from what is kept here,
+and that nothing needs to be moved or set up again. A client's AI once read an offline entry as
+"this computer has no FULI, the host must be migrated" and told the person so (rec#144).
 
 A call that carries a runner task token while the host answers again goes to
 the host: a checkpoint is queued behind what waits and delivered at once; the
@@ -321,7 +411,16 @@ data directory, and the key:
 
   An enabled role needs a `budget` (its fields may be empty). A runner refuses a Tonborg role that also lists `knowledge_review` or
   `task_acceptance` (`runner_routing_config_invalid`), and no other role is
-  ever called on a runner. `egress` is not read: setting this model up on the
+  ever called on a runner; the answer names the operations it does not take.
+  A file this computer cannot read — broken JSON, a field of the wrong shape —
+  answers `runner_routing_config_invalid` too, saying nothing was judged here
+  and nothing was sent: a configuration of the person's that FULI cannot read
+  is not quietly handed back to the host, which would look as if the runner
+  were judging while it was not. What hands the judgment back is
+  `model-backends.json` alone: fix it, or delete it (or its `roles.tonborg`)
+  and the host judges again. A broken `runner/executors.json` is fixed in
+  place; deleting it does not hand anything back, it only leaves no executor
+  here, so Tonborg answers `ask_user`. `egress` is not read: setting this model up on the
   runner is the person's approval to send it what a judgment needs (below).
   `fuli models set-key <secretRef> --endpoint URL` saves the key on the runner,
   for that endpoint only; `fuli models check tonborg` tries the connection.
@@ -358,15 +457,68 @@ reported for them. That is all its model receives; a task token never leaves the
 runner. Tonborg's memory, the Agent's executor policies and allowed clients,
 routing rules and earlier conversations live on the host and are not read here.
 
+The preferences go as the host's own judgment sends them
+(`src/judgment/preference-receipt.js`): each rule's key, scope, short text,
+authority and where an inherited one comes from, never its reasoning or
+attributes. They come from the task entry this computer kept for the
+project. A real project's entry is often over the host's 32 KB delivery limit,
+and the host then delivers it blocked (`preference_delivery.status: "blocked"`,
+`preferences_complete: false`) with part of the rules or none; the runner
+then reads the rest right away with the host's own reader
+(`read_task_preferences`, page by page in one revision, joined as the host
+joins them), in the same session that entered the task, as the reader
+requires, and keeps the whole set for that entry; a judgment uses only the
+read made for the project's latest entry, never an older entry's or another
+Agent's. A revision that changes between pages starts the read over, once, and
+a read that fails is written to the runner's diagnostics (`fuli diagnostics`,
+operation `runner.preferences_read`). A judgment asked while its project's
+read is still running waits for it at most 30 seconds, then stops and says the
+read was still running; another project's judgment does not wait for it. The model port takes at
+most 20,000 characters per part, and 70 rules of 200 characters already need
+more than one, so every rule and conflict goes, in the host's order, across as
+many parts as it takes, at most four: `preferences`, then `preferences_2` and
+on, each saying it continues `preferences`, and the model is told that the
+later parts' rules and conflicts apply as if listed in the first. As on the
+host, Tonborg does not recommend when a rule may be missing: it answers
+`ask_user` without calling the model when no task of the project was entered
+on this computer while the host answered (evidence
+`preference_delivery:unavailable`), when the kept entry was not delivered whole
+and its rest could not be read, when the host's own read for it was cut, or
+when four parts cannot hold every rule or a single rule is longer than a part
+(`preference_delivery:partial`, naming that rule). Each says what the person
+can do; removing `roles.tonborg` from `model-backends.json` on the runner
+always has the host judge instead. Earlier decisions are only feedback,
+so they are sent newest first as many as fit, and the rest counted
+(`feedbackNotSent`). A request still too large to
+send (an `executors.json` at its limits, say) is refused on the runner before
+any model is called: `judgment_failed` with category `request_rejected` and
+`rejected` naming the part, nothing spent.
+
 **What it answers.** The same checks as on the host
 (`src/judgment/routing.js`): the choice must be an executor and model it was
 offered, and with no executor passing preflight the answer is `ask_user` with
-no model call. A record answers with `decidedOn: "runner"`, the `selection`
+no model call. No conversation of the host's is read here, so the model is
+shown an empty list of them and `reuse_conversation` is never an answer it can
+give. The tool is listed on a runner with what it does here, not with the
+host's description. A record answers with `decidedOn: "runner"`, the `selection`
 (executor, model, client), `leftOut`, the model's receipt, and the same
-`requestId` gives the same decision again. A model that does not answer, a
-refusal or an exhausted budget fails the judgment (`judgment_failed` with the
-failure and receipt); nothing falls back to the host or a session. It is a
+`requestId` gives the same decision again (two MCP processes answering one
+`requestId` at the same moment keep the decision saved first; the one that
+lost answers with it and says what its own model answer cost, unused, as
+`unusedModelReceipt`). A model that
+does not answer, a refusal, an exhausted budget or a choice that was not
+offered fails the judgment (`judgment_failed` with the failure, and the
+model's receipt whenever the model was called, so the caller sees that its
+budget was spent); nothing falls back to the host or a session. It is a
 recommendation: the caller starts the executor and records what really ran.
+
+This computer must still be paired. Before it is, every call here answers
+`runner_not_paired`, and after the host revokes it `runner_revoked`, including
+`assess_agent_action` and `report_routing_outcome`: no model is called, nothing
+is queued, and a store `fuli runner leave` deleted is not made again. The
+pairing is checked again once the model has answered, so a leave or revoke
+that lands meanwhile keeps nothing either; that answer carries
+`unusedModelReceipt`.
 
 **How a choice turned out.** When the chosen executor finished, the caller
 reports it once with `report_routing_outcome` (`decisionId`, `vote` up or down,
@@ -375,22 +527,48 @@ up; through `fuli_call` it is reached the same way. A second report of the same
 decision answers `already_reported`. The next judgment on the runner reads it.
 
 **To the host.** Each decision and each outcome is an outbox entry (kept in
-`runner/routing.sqlite` too, 30 days, deleted by `fuli runner leave`), delivered
-oldest first like a checkpoint and applied once per entry id. The host keeps the
+`runner/routing.sqlite` too, until `fuli runner leave`), delivered
+oldest first like a checkpoint and applied once per entry id. The host checks
+the project as it does for a judgment of its own: a decision naming a project
+this FULI does not have, or an archived one, is refused for good
+(`project_not_found`) and stays listed as refused on the runner, where
+`fuli runner status` shows the reason. The host keeps the
 decision among Tonborg's routing records (`decidedOn: "runner"`, with the
-runner's name and fingerprint), so the person sees it in Tonborg's workbench, and
+runner's name and fingerprint), so Tonborg's workbench says which computer
+judged it (an Agent's view carries `decidedOn` and the runner's name; the
+fingerprint stays out, and a record with no `decidedOn` was judged on the
+host), and
 the outcome as that record's feedback marked `reportedBy: "runner:<fingerprint>"`,
-never as the person's vote. Tonborg's later judgments on the host read it with
-its other feedback. Bole's score card counts FLA task outcomes the graph
-records, which these are not.
+never as the person's vote. Once the person has voted on a record, a runner's
+report is kept in its feedback history but does not take their vote's place:
+Tonborg's later judgments on the host read the person's. Bole's score card
+counts FLA task outcomes the graph records, which these are not.
 
 ## What a runner keeps
 
 The host's last answers to read-only calls, shown marked offline while the
-host is away and deleted after 30 days; the task tokens it gave out offline
-(30 days); checkpoints and executor decisions waiting for the host, deleted once
-delivered (one the host refused for good stays listed for 30 days); and, when
-its Tonborg chooses executors, its decisions and their outcomes (30 days).
+host is away; the task tokens it gave out offline; checkpoints and executor
+decisions waiting for the host, deleted once delivered (one the host refused
+for good stays listed); and, when its Tonborg chooses executors, its decisions
+and their outcomes. Beside them, the host's last `fuli whoami` answer per folder
+asked about (`whoami-last-answer.json`, at most 20 folders): space, project and
+lead FLA names and IDs, nothing else. It goes at `fuli runner leave` and when this computer joins a
+host, and while the host has revoked this computer `fuli whoami` shows none of it.
+
+**Nothing here is deleted because it is old** (rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」).
+An answer is replaced when the host answers that call again; everything kept goes when the host
+revokes this computer, when it joins another host, or at `fuli runner leave`. A follower that was
+away from its host for a season still has the preferences it last read, and a checkpoint the host
+refused stays listed until the person has dealt with it.
+
+The cache has a size instead of an age: at most 5000 answers or 64 MB. Past either, the answers
+used longest ago go first; an answer used lately stays however old it is. `/local` and
+`fuli runner status` say how much is kept against those bounds.
+
+A task token given out while the host is away lasts 30 days. It is not cached content: it names a
+task in progress that the host never saw, and a task not continued for a month is not one anyone
+continues, so a checkpoint under it would be replayed into a task context long gone. A checkpoint
+queued under such a token keeps its folder in the outbox and is delivered as before.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops
@@ -404,16 +582,24 @@ checkpoints again and delivers them; joining another host deletes them, and
 answers at the host's address with another certificate: if the host was
 reinstalled, join again.
 
-`fuli runner leave` deletes it all; with checkpoints still waiting or refused
+`fuli runner leave` deletes it all, the decisions made here included; with
+checkpoints still waiting or refused
 it says how many and needs `--force`, and so does a `join` to another host,
 which would drop them (checked before the invitation is used). The clients' MCP entries stay (they then
 answer that this computer is not paired); `fuli uninstall` removes them.
+On Windows a client's FULI process that still has `runner/runner.sqlite` or
+`runner/routing.sqlite` open keeps that file from being deleted: `leave`
+empties it instead and says, file by file, what it could not delete, rather
+than saying all was deleted.
+`model-backends.json` and `runner/executors.json` are the person's own files,
+so `leave` keeps them as they are and says so; they do nothing until this
+computer joins a host again.
 
 ## Data format
 
 A runner whose Tonborg chooses executors adds `runner/routing.sqlite`
-(`runner-routing`, version 1): its decisions and their reported outcomes. An
-older FULI does not open it. Its outbox entries use the tools
+(`runner-routing`, version 1): its decisions and their reported outcomes, which
+no longer expire. An older FULI does not open it. Its outbox entries use the tools
 `runner_routing_decision` and `runner_routing_outcome`, which only a host of
 this version takes; an older host refuses them (`entry_invalid`) and they stay
 listed as refused.
@@ -425,8 +611,10 @@ backup: `runner-host` 1 → 2 adds `runners.device_name`, 2 → 3 makes the
 `replays` table again with its key per runner and the pending state (a
 `replace-table` step: beta.1's replay records are not kept, as only an entry
 still waiting on a runner is delivered again under its id); `runner` 1 → 2
-adds `host.revoked_at`. Runners, pairings, invitations, answers and the outbox
-are kept. Every host's roundtable
+adds `host.revoked_at`, 2 → 3 adds `host.last_seen_at` (when the host last
+answered anything this computer asked, shown as 「上次连上」) and 3 → 4 adds
+`answers.used_at` (when a kept answer was last used, so the cache lets go of the
+answers used longest ago). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or

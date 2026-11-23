@@ -14,7 +14,7 @@ export function createChatWake({ store, scope, messageAgent, waitUntilIdle, tran
       const unread = remote ? await remoteSnapshot(chatId, address, controller.signal) : chatSnapshot(store, chatId, address);
       if (!unread) return;
       let reply;
-      try { reply = await messageAgent({ ...context, to: remote ? address : address.slice(6), chatWakeChatId: chatId,
+      try { reply = await messageAgent({ ...context, to: remote ? address : address.slice(6), chatWakeChatId: chatId, chatWakeThrough: unread.nextAfter,
         ...(remote ? { chatWake: unread } : {}), signal: controller.signal,
         body: chatWakePrompt(unread) }); }
       catch (error) { if (remote && error.code === 'chat_wake_stale') continue; throw error; }

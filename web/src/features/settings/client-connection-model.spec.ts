@@ -12,7 +12,7 @@ describe('client connection summary', () => {
       customClients: [{ id: 'acme', label: 'Acme', detected: false, status: 'not_detected', mcpPaths: [], removable: true },
         { id: 'team', label: 'Team', detected: true, status: 'connected', mcpPaths: [], removable: false }] }
     expect(shownClients(observation).map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini'])
-    expect(connectionSummary(observation)).toEqual({ connected: 2, total: 5 })
+    expect(connectionSummary(observation)).toEqual({ connected: 2, total: 5, notInstalled: 1 })
     // A client described by hand is a tile whatever its status, and FULI writes it before its file exists.
     const tiles = clientTiles(observation)
     expect(tiles.map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini', 'acme', 'team'])
@@ -22,7 +22,7 @@ describe('client connection summary', () => {
   })
 
   it('is empty before the first answer', () => {
-    expect(connectionSummary(null)).toEqual({ connected: 0, total: 0 })
+    expect(connectionSummary(null)).toEqual({ connected: 0, total: 0, notInstalled: 0 })
   })
 })
 

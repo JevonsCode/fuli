@@ -43,17 +43,25 @@ test('the Stop hook closes with what the turn showed as pending experiences, and
   const sent = [];
   const check = { decision: 'block', reason: 'x', task_context_token: 't', entry_via: 'hook' };
   const source = { sourceApplication: 'claude_code', sourceSessionId: 's' };
-  const experiences = [{ task: 'Run `npm run fixtures` before `npm test`', solution: 'x', searchKeys: ['npm test'] }];
-  assert.deepEqual(await stopHookOutcome(check, async (name, input) => { sent.push(input); }, source, { findings: () => experiences }), {});
+  // The same turn the first test reads: it both finds a prerequisite and names
+  // what it did, so the close carries the experience and a title.
+  const records = [
+    ...run('cat package.json', '{}'),
+    ...run('npm test', ENOENT, true),
+    ...run('npm run fixtures && npm test 2>&1 | tail -20', 'wrote spec/fixtures/messages.json\n# pass 9')
+  ];
+  const experiences = turnFindings(records);
+  assert.equal(experiences.length, 2);
+  assert.deepEqual(await stopHookOutcome(check, async (name, input) => { sent.push(input); }, source, { turn: () => records }), {});
   assert.equal(sent[0].disposition, 'capture_candidates');
   assert.deepEqual(sent[0].experiences, experiences);
   assert.equal(sent[0].reason, AUTO_KEEP_REASON);
   sent.length = 0;
   await stopHookOutcome(check, async (name, input) => { sent.push(input); if (input.experiences) throw new Error('refused'); },
-    source, { findings: () => experiences });
+    source, { turn: () => records });
   assert.deepEqual(sent.map(input => input.disposition), ['capture_candidates', 'retain_nothing']);
   sent.length = 0;
-  await stopHookOutcome(check, async (name, input) => { sent.push(input); }, source, { findings: () => { throw new Error('unreadable'); } });
+  await stopHookOutcome(check, async (name, input) => { sent.push(input); }, source, { turn: () => { throw new Error('unreadable'); } });
   assert.deepEqual(sent.map(input => input.disposition), ['retain_nothing']);
 });
 
