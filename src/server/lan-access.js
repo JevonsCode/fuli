@@ -36,6 +36,16 @@ export function isGuestSourceAddress(source, arrivedOn) {
   return isCarrierGradeNat(plain(source)) && isCarrierGradeNat(plain(arrivedOn));
 }
 
+// An address a runner may be told its host is at (docs/runner.md): a private
+// LAN address, or one in the carrier-grade NAT range that a VPN or mesh tool
+// hands out and that the host serves on its VPN adapters
+// (discoverGuestAddresses). The pinned certificate decides whether the host
+// really is there; this only keeps a runner's requests off the public internet.
+export function isReachableHostAddress(address) {
+  const plain = typeof address === 'string' ? address.replace(/^::ffff:/i, '') : '';
+  return isPrivateLanIpv4(plain) || isCarrierGradeNat(plain);
+}
+
 function isCarrierGradeNat(address) {
   if (!isIPv4(address)) return false;
   const [first, second] = address.split('.').map(Number);

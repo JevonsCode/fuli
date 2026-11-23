@@ -4,8 +4,8 @@ import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
 import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from './preference-snapshot.js';
 import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
-import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL,
-  OMITTED_UNREADABLE_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
+import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_INDEX_LABEL,
+  OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
 import { skeletonFrameLabel } from './entry-skeleton.js';
 
@@ -81,11 +81,12 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
     label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedNote: taskReceiptInstruction(value) });
-  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
+  const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
+  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength, { projectPath: input.cwd ?? null }) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,
-    taskPrompt: typeof input.prompt === 'string' ? input.prompt : null, label: frameLabel }, format, fit)
+    taskPrompt, label: frameLabel }, format, fit)
     : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
 }
@@ -95,6 +96,7 @@ function omittedLabel(label, boundedLabel, projected) {
   if (!omitted && !conflicts) return label;
   if (!(omitted ?? conflicts).read) return `${boundedLabel} ${OMITTED_UNREADABLE_LABEL}`;
   return [boundedLabel, ...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
+    ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
     ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])].join(' ');
 }
 

@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
-import { isGuestSourceAddress } from '../server/lan-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 
 // A runner's way to its host (docs/runner.md). Every request is TLS 1.3 to
@@ -18,18 +18,25 @@ import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 // PROBE_MS and mDNS stops at the first announcement. fetch() is what the MCP
 // client and the outbox use. close() ends every connection and any probe still
 // running, and nothing is opened after it.
-// Each address is also tried bound to each physical adapter's own address: a
-// VPN that claims the host's subnet (an office network where the two computers
-// sit in different subnets) sends the default route into its tunnel, while
-// the Wi-Fi or cable adapter reaches the host directly. The route that answers
-// is the one every later request takes. The host's hello names its addresses
-// now, kept for the next network change.
+// Each address is also tried bound to each physical adapter's own address.
+// On macOS that changes the way out, as scoped routing lets the source
+// address pick the adapter: a VPN that claims the host's subnet sends the
+// default route into its tunnel while the Wi-Fi or cable adapter reaches the
+// host directly. On Linux the destination chooses the route, so these extra
+// probes usually only cost a socket. Windows is not tried behind such a VPN
+// (its strong host model may behave as macOS does). Where it does not help,
+// the way through is an address reachable over the VPN itself (`fuli runner
+// add-address`). The route that answers is the one every later request takes.
+// The host's hello names its addresses now, kept for the next network change.
 // The pinned host answering that it does not know this runner (revoked, or
 // never paired there) ends the pairing here (runner-store.js revoked): nothing
 // is looked for, shown from cache or sent again until the runner joins again.
 const PROBE_MS = 2500;
 const LOOK_MS = 3000;
 const REQUEST_MS = 15_000;
+// How long a status question waits for hello on a kept connection.
+const HELLO_MS = 5000;
+const SEEN_EVERY_MS = 30_000;
 // The host's answer to a runner it does not know (host-routes.js).
 const NOT_PAIRED = 'runner_unknown';
 
@@ -89,14 +96,19 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // via: the local address to connect from (an adapter's own), or null for the default route.
   async function probe(host, address, tls, signal, via = null) {
     const agent = new Agent({ ...tls, keepAlive: true, maxSockets: 16, ...(via ? { localAddress: via } : {}) });
-    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: pinnedFetch(agent), agent, announced: [] };
+    const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: seenFetch(pinnedFetch(agent)),
+      agent, announced: [], greeting: null };
     try {
       const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal });
       const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
       if (body?.error === NOT_PAIRED) store.revoked();
       if (answer.status !== 200) throw new Error(`hello ${answer.status}`);
-      // Only private addresses, as the ones mDNS finds: no request goes anywhere else.
-      candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter((known) => isGuestSourceAddress(known));
+      // Only addresses a host serves (private, or the VPN range it binds on a
+      // VPN adapter), as the ones mDNS finds: no request goes anywhere else.
+      candidate.announced = (Array.isArray(body?.addresses) ? body.addresses : []).filter(isReachableHostAddress);
+      // What this hello said, for a caller that wants it (the sessions this
+      // runner holds): the search already asked, so nothing asks again.
+      candidate.greeting = body ?? null;
       return candidate;
     } catch (error) {
       agent.destroy();
@@ -145,17 +157,43 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   }
 
   // The host's hello answer now (its name, version and the MCP sessions this
-  // runner holds there), or null when it does not answer.
+  // runner holds there), or null when it does not answer. A search that just
+  // found the host already asked, so that answer is given once instead of
+  // asking again; a later call asks, since the counts move. A kept connection
+  // proves nothing about now: a host that stopped answering on it is dropped
+  // here, so the next question looks for the host again instead of saying it
+  // is there (review of #1069).
   async function hello() {
     const connection = await connect();
     if (!connection) return null;
+    if (connection.greeting) {
+      const greeting = connection.greeting;
+      connection.greeting = null;
+      return greeting;
+    }
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
-        { signal: AbortSignal.any([AbortSignal.timeout(REQUEST_MS), closing.signal]) });
-      return answer.status === 200 ? await answer.json() : null;
-    } catch {
-      return null;
-    }
+        { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]) });
+      if (answer.status === 200) return await answer.json();
+      await answer.body?.cancel();
+    } catch { /* not answering: dropped below */ }
+    if (current === connection) drop();
+    return null;
+  }
+
+  // Every request the pinned host answered, whatever it answered, is a moment
+  // this computer reached it: what the console and `fuli status` show as
+  // 「上次连上」. Written at most once per SEEN_EVERY_MS.
+  let seenAt = 0;
+  function seenFetch(fetchImpl) {
+    return async (input, init) => {
+      const answer = await fetchImpl(input, init);
+      if (Date.now() - seenAt > SEEN_EVERY_MS) {
+        seenAt = Date.now();
+        try { store.hostSeen(); } catch { /* a store closed at shutdown */ }
+      }
+      return answer;
+    };
   }
 
   function close() {
@@ -204,11 +242,11 @@ async function lookUpHost(fingerprint, { waitMs = LOOK_MS,
   let discovery = null;
   try {
     discovery = createDiscovery({ serviceType: RUNNER_SERVICE_TYPE, adapters: () => discoveryAdapters(networkInterfaces) });
-    // Only an address the host's listener can serve (a private one): a pinned
-    // certificate is checked there anyway, but no request goes anywhere else.
+    // Only an address the host's listener can serve: a pinned certificate is
+    // checked there anyway, but no request goes anywhere else.
     discovery.browse({ onUp: (service) => {
       if (service.txt?.fp !== fingerprint) return;
-      for (const address of service.addresses ?? []) if (isGuestSourceAddress(address)) found.add(address);
+      for (const address of service.addresses ?? []) if (isReachableHostAddress(address)) found.add(address);
       if (found.size) heard.abort();
     }, onDown: () => {} });
     await delay(waitMs, null, { signal: heard.signal }).catch(() => {});

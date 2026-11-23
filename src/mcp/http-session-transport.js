@@ -14,9 +14,11 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 // listener (src/guest-access) share it.
 const MAX_REQUEST_BYTES = 1024 * 1024;
 
-// maxSessionsPerOwner keeps one owner from taking every session (default: no own cap).
+// maxSessionsPerOwner keeps one owner from taking every session (default: no
+// own cap). limitReason({ owned, open, max }) says why a session was refused,
+// which the caller may need to tell the owner's own sessions from the rest.
 export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerOwner = maxSessions, sessionIdleTtlMs,
-  sessionSweepIntervalMs, now }) {
+  sessionSweepIntervalMs, now, limitReason = () => `${label} session limit reached` }) {
   const sessions = new Map();
   const pendingSessions = new Set();
   let closeStarted = false;
@@ -84,8 +86,9 @@ export function createHttpSessionTransport({ label, maxSessions, maxSessionsPerO
       if (!entry && !sessionId && isInitializeRequest(body)) {
         evictIdleSessions(sessions, now() - sessionIdleTtlMs);
         const owned = [...sessions.values(), ...pendingSessions].filter((open) => open.owner === owner).length;
-        if (sessions.size + pendingSessions.size >= maxSessions || owned >= maxSessionsPerOwner) {
-          sendJsonRpcError(response, 503, -32000, `${label} session limit reached`);
+        const open = sessions.size + pendingSessions.size;
+        if (open >= maxSessions || owned >= maxSessionsPerOwner) {
+          sendJsonRpcError(response, 503, -32000, limitReason({ owned, open, max: maxSessions }));
           return;
         }
         entry = createSession({ owner, mcp: createMcp(), sessions, pendingSessions, isClosing, now });
