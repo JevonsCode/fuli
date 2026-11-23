@@ -12,7 +12,6 @@ The plan reads the space once: names first, and only when some are shared the
 work of those Agents, each figure summed in one query rather than per Agent.
 """
 import json
-from datetime import datetime
 
 from fastapi import HTTPException
 from neo4j.exceptions import ConstraintError
@@ -22,7 +21,7 @@ from .project_agent_models import NameFixApply, NameFixPlan, ProjectAgentNameCha
 from .project_agent_name_fixes import NameHolder, called_by, name_fix_plan, shared_names
 from .project_agent_name_history import name_history
 from .project_agent_names import is_generated_nickname, profile_shown_name
-from .provider_values import native_datetime, now_utc
+from .provider_values import now_utc, stored_epoch
 from .store_project_agent_naming import lost_name_race
 from .store_project_agent_rename import renamed_row, write_agent_names
 from .temporary_project_scope import is_temporary_project, project_reference
@@ -165,8 +164,8 @@ class StoreProjectAgentNameFixes:
                     is_temporary_project(item['project_id'], item['scope_type'], item['name'])
                     for item in projects),
                 work=int((work.get(agent_id) or {}).get('tasks') or 0) + int(turned.get('turns') or 0),
-                recent=max(_epoch(turned.get('last_turn')), _epoch(record['updated_at'])),
-                created=_epoch(record['created_at']),
+                recent=max(stored_epoch(turned.get('last_turn')), stored_epoch(record['updated_at'])),
+                created=stored_epoch(record['created_at']),
                 projects=tuple(sorted(project_reference(item['project_id'], item['name'] or '')
                                       for item in projects)),
                 names=called_by(agent_id, shown)))
@@ -177,13 +176,3 @@ def _changed(why: str) -> HTTPException:
     return HTTPException(409, {'code': 'agent_name_fixes_changed',
                                'message': f'agent_name_fixes_changed: {why}; read the list again'})
 
-
-def _epoch(value) -> float:
-    """Seconds of a stored time (a graph datetime, or text an early FULI wrote); 0 when unknown."""
-    value = native_datetime(value)
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
-        except ValueError:
-            return 0.0
-    return value.timestamp() if isinstance(value, datetime) else 0.0

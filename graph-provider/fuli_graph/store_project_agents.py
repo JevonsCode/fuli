@@ -21,7 +21,7 @@ from .project_agent_models import (
     ProjectAgentRecord,
     ProjectAgentUpsert,
 )
-from .provider_values import native_datetime, now_utc, stable_uuid
+from .provider_values import native_datetime, now_utc, stable_uuid, stored_epoch
 from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
 from .store_transactions import query_store_transaction
@@ -1248,5 +1248,5 @@ def _recent_task_title(current: list[dict], worked: list[dict]) -> str | None:
     it beside a name several FLAs share (task-entry-named-fla.js)."""
     titled = [item for item in current if item.get('title')] or sorted(
         (item for item in worked if item.get('title') and item.get('updated_at')),
-        key=lambda item: native_datetime(item['updated_at']).timestamp(), reverse=True)
+        key=lambda item: stored_epoch(item['updated_at']), reverse=True)
     return titled[0]['title'] if titled else None
