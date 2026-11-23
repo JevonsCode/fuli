@@ -15,7 +15,7 @@ import {
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions, parseSemanticVersion } from '../semantic-version.js';
 import { checkLocalConsoleHealth } from './console-health.js';
-import { isProcessAlive, stopProcess, waitForExit } from './processes.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from './processes.js';
 import { CONSOLE_STOP_LIMITS, consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from './unresponsive-console.js';
 import {
   acquireConsoleStartLock,
@@ -35,7 +35,9 @@ const STOP_IDENTITY_TIMEOUT_MS = 10_000;
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
   // One start at a time per data directory: a later one finds FULI running.
-  const release = deps.lockStart(dataDirOf(input.paths));
+  // Waiting for another start is a phase of its own (startup-stage.js).
+  const release = deps.lockStart(dataDirOf(input.paths),
+    () => input.onStage?.('start_wait', { maxSeconds: CONSOLE_START_WAIT_MS / 1000 }));
   try {
     return await startUnlocked(input, deps);
   } finally {
@@ -78,7 +80,8 @@ async function startUnlocked(input, deps) {
     noStart: false,
     allowProviderDowngrade: input.allowProviderDowngrade === true,
     env: input.env,
-    onProgress: input.onProgress
+    onProgress: input.onProgress,
+    onStage: input.onStage
   });
 
   if (input.open === true) await deps.openExternal(runtime.url);
@@ -206,8 +209,20 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
       enabled: adaptiveSettings.enabled,
       stage: adaptiveSettings.enabled ? adaptiveState?.stage ?? 'unknown' : 'always-on'
     },
+    ...autostartGaveUp(deps, dataDirOf(input.paths), consoleReady),
     version: installedVersionStatus(latest)
   };
+}
+
+// Client sessions start a console that went away, but stop after 3 starts in
+// 10 minutes did not keep it up (console-autostart.js). That is said where the
+// stopped FULI is shown, so a person knows it will not come back by itself.
+function autostartGaveUp(deps, dataDir, consoleReady) {
+  if (consoleReady || !dataDir) return {};
+  let record;
+  try { record = deps.readAutostart(dataDir); } catch { return {}; }
+  if (record?.stoppedAt || record?.held?.reason !== 'gave_up') return {};
+  return { autostart: { gaveUp: true, at: record.held.at, starts: record.starts?.length ?? 0 } };
 }
 
 // The installed version beside the newest one the running console last heard
@@ -300,7 +315,8 @@ function lifecycleDependencies(overrides) {
       ? readAdaptiveRuntimeSettings(path)
       : { enabled: false },
     readAdaptiveState: (path) => path ? readAdaptiveRuntimeState(path) : null,
-    isProcessAlive,
+    // The recorded console is FULI's own process (processes.js).
+    isProcessAlive: isOwnProcessRunning,
     stopProcess,
     waitForExit,
     consoleProcessOwned,
@@ -324,9 +340,12 @@ function dataDirOf(paths) {
   return typeof paths?.graphRuntimeStatePath === 'string' ? dirname(paths.graphRuntimeStatePath) : null;
 }
 
-function lockConsoleStart(dataDir) {
+function lockConsoleStart(dataDir, onWait = () => {}) {
   if (!dataDir || !existsSync(dataDir)) return () => {};
   try {
+    try { return acquireConsoleStartLock(dataDir); }
+    catch (error) { if (error?.code !== 'file_lock_busy') throw error; }
+    onWait();
     return acquireConsoleStartLock(dataDir, { waitMs: CONSOLE_START_WAIT_MS });
   } catch (error) {
     if (error?.code !== 'file_lock_busy') throw error;

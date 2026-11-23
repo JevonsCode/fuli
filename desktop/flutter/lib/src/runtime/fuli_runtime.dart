@@ -4,10 +4,40 @@
 
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
+/// Told which step of a start is running now, as the start reports it
+/// (src/local-runtime/startup-stage.js), and the longest it will wait when that
+/// step's wait has a fixed limit. The ids are that module's.
+typedef StageListener = void Function(String stage, int? maxSeconds);
+
+/// Why a start did not finish, as the start reported it
+/// (src/local-runtime/startup-failure.js): its code and the facts behind it.
+/// The client words what happened and offers its own next step.
+class StartupFailure {
+  const StartupFailure(this.code, this.facts);
+
+  final String code;
+  final Map<String, Object?> facts;
+
+  String? text(String key) => facts[key] is String ? facts[key] as String : null;
+  int? number(String key) => facts[key] is int ? facts[key] as int : null;
+}
+
 class RuntimeReport {
-  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false});
+  const RuntimeReport(this.state,
+      {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
+      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept});
 
   final RuntimeState state;
+  /// The step that did not finish, when a failed start named one.
+  final String? stage;
+  /// What a failed start ran into, when it was one the start can name.
+  final StartupFailure? failure;
+  /// When client sessions stopped starting FULI by themselves, after repeated
+  /// starts did not keep it running; null while they still would.
+  final String? autostartGaveUpAt;
+  /// Why a confirmed 「解除这把锁并启动」 kept the lock, when it did
+  /// (src/native-runtime/neo4j-lifecycle-lock.js): its reason and facts.
+  final StartupFailure? lockKept;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -30,13 +60,23 @@ abstract interface class FuliRuntime {
   /// The console port from the data directory's runtime settings (default 2727).
   Future<int> consolePort();
 
+  /// The folder that holds the start's logs, for 「查看启动日志」.
+  Future<String> logDirectory();
+
   Future<RuntimeReport> status();
-  Future<RuntimeReport> start();
+
+  /// [onStage] is called with each step of the start as it begins, so the
+  /// window says what FULI is doing instead of only that it is starting.
+  Future<RuntimeReport> start({StageListener? onStage});
   Future<RuntimeReport> stop();
 
   /// Whether [changePort] exists here (the Windows tray controller's `change-port`).
   bool get canChangePort;
 
   /// Moves the console to a free port Windows does not reserve and restarts FULI.
-  Future<RuntimeReport> changePort();
+  Future<RuntimeReport> changePort({StageListener? onStage});
+
+  /// Releases a database maintenance lock no start takes over by itself, after
+  /// FULI's own checks, then starts FULI. The person confirmed it first.
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage});
 }

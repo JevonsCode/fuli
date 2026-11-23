@@ -17,6 +17,8 @@ import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
+import { startupStageWriter, withoutStageMarkers } from '../local-runtime/startup-stage.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
 export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
@@ -39,8 +41,12 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     lan: runtimeSettings.lanAccess,
     runtimeSettings,
     paths,
-    env,
-    onProgress: write
+    // The services a start leaves running do not keep a client's ask for step lines.
+    env: withoutStageMarkers(env),
+    onProgress: write,
+    // What the start is doing now, so a terminal is not left turning in
+    // silence through the provider and console waits (startup-stage.js).
+    onStage: startupStageWriter(write, env)
   };
   // A runner has no graph runtime; its commands manage its console entry (docs/runner.md).
   if (paths.dataDir && (dependencies.isRunner ?? isRunnerDataDirectory)(paths.dataDir)) {
@@ -61,7 +67,12 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     ? checkAgentSetup(dependencies.detectAgents
       ?? (() => detectAgents(agentKitPorts(paths, { env }).clientInstaller)))
     : null;
-  const result = await handlers[command](input, dependencies.lifecycleDependencies);
+  // A start that fails for a reason a person can act on says what happened and
+  // the next step (startup-failure.js); a desktop client also gets it as a line.
+  const result = ['start', 'restart'].includes(command)
+    ? await reportingStartupFailure(() => handlers[command](input, dependencies.lifecycleDependencies),
+      { logPath: paths.logPath ?? null })
+    : await handlers[command](input, dependencies.lifecycleDependencies);
   const agentSetupCheck = agentSetup ? await agentSetup : null;
   const outputResult = agentSetupCheck
     ? { ...result, agentSetupCheck }
@@ -205,6 +216,10 @@ function formatStatus(result, copy) {
     };
     lines.push(`Adaptive memory: ${stages[result.adaptiveRuntime.stage] ??
       result.adaptiveRuntime.stage}`);
+  }
+  if (result.autostart?.gaveUp) {
+    lines.push(`Automatic restart: stopped since ${result.autostart.at}, after ${result.autostart.starts} automatic starts did not keep FULI running; `
+      + 'it waits for fuli start. / 自动重启：已停止，自动启动多次仍没有保持运行，等你运行 fuli start。');
   }
   if (result.version) lines.push(versionLine(result.version, result.console.status === 'ready'));
   return lines.join('\n');

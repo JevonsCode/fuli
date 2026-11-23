@@ -4,6 +4,7 @@ import {
   stopLocalRuntime
 } from '../local-runtime/lifecycle.js';
 import { readRuntimeSettings, runtimeSettingsWithOverrides } from '../system/runtime-settings.js';
+import { startupStageWriter } from '../local-runtime/startup-stage.js';
 
 /**
  * Console state, stop and start for one data directory, for commands that
@@ -14,7 +15,8 @@ export function localRuntimeControl(paths, env, write) {
   const input = () => {
     const runtimeSettings = runtimeSettingsWithOverrides(readRuntimeSettings(paths.runtimeSettingsPath), {});
     return { paths, env, runtimeSettings, port: runtimeSettings.ports.console,
-      lan: runtimeSettings.lanAccess, onProgress: write };
+      lan: runtimeSettings.lanAccess, onProgress: write,
+      onStage: startupStageWriter(write, env) };
   };
   return {
     async consoleRunning() {

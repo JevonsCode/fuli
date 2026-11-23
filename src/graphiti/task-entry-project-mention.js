@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { projectDisplayName } from './project-display-name.js';
+import { isTemporaryProject, projectDisplayName } from './project-display-name.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 
 const NEW_PROJECT = /^\s*(?:新项目|new project)\s*[:：]\s*([^\n\r,，。]{1,80})/i;
@@ -106,11 +106,11 @@ async function createNamedProject(application, spaceId, all, name, brief, writer
   throw Object.assign(new Error('No free project ID for this name'), { status: 409 });
 }
 
-// Legacy per-session fallbacks, task-scoped and archived projects are not
-// projects a person names now; they stay out of name matching.
+// Temporary projects (legacy per-session fallbacks included) and archived ones
+// are not projects a person names now; they stay out of name matching. A
+// readable ID such as 'conversation-notes' is a project a person named.
 function nameable(project) {
-  return project?.scope_type !== 'temporary' && project?.profile?.lifecycle !== 'archived'
-    && !String(project?.project_id ?? '').startsWith('conversation-');
+  return !isTemporaryProject(project) && project?.profile?.lifecycle !== 'archived';
 }
 
 function names(project) {
