@@ -31,14 +31,16 @@ function useClientConnectionStatus() {
   const watching = () => active && !unmounted && document.visibilityState === 'visible'
   // One request at a time; a response older than the shown one, or requested
   // before the view hid or a write began, never replaces it.
-  async function check() {
+  // afterProbe: the server answers once the clients it is still looking for are found or not,
+  // so a client found that way shows at once rather than on the next round.
+  async function check({ afterProbe = false } = {}) {
     if (checking.value || writePending.value || !watching()) return
     clearTimeout(timer)
     checking.value = true
     const requested = generation
     let fresh = false
     try {
-      const next = await getJson<ConnectionStatus>('/api/system/client-connection/status')
+      const next = await getJson<ConnectionStatus>(`/api/system/client-connection/status${afterProbe ? '?afterProbe=1' : ''}`)
       fresh = requested === generation
       if (fresh && (!observation.value || next.observedAt >= observation.value.observedAt)) observation.value = next
       if (fresh) checkError.value = false
@@ -47,8 +49,10 @@ function useClientConnectionStatus() {
       if (fresh) checkError.value = true
     } finally {
       checking.value = false
-      // A dropped response is replaced at once if the view is watched again.
-      if (fresh) schedule()
+      // A dropped response is replaced at once if the view is watched again; a client still
+      // being looked for is read again as soon as the search ends.
+      if (fresh && observation.value?.probing && !afterProbe) void check({ afterProbe: true })
+      else if (fresh) schedule()
       else void check()
     }
   }
@@ -90,7 +94,7 @@ function useClientConnectionStatus() {
     document.removeEventListener('visibilitychange', returned)
     window.removeEventListener('focus', returned)
   })
-  return { observation, checking, checkError, connectingAll, busy, check, writing }
+  return { observation, checking, checkError, connectingAll, busy, check: () => check(), writing }
 }
 
 export type ClientConnectionStatusState = ReturnType<typeof useClientConnectionStatus>

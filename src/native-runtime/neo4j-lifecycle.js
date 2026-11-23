@@ -8,7 +8,8 @@ import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from '../storage/json-file.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
-import { assertManagedNeo4jHome, neo4jAssetFingerprint, acquireNeo4jLifecycleLock, assetContainer, managedNeo4jContainers } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, neo4jAssetFingerprint, assetContainer, managedNeo4jContainers } from './neo4j-asset-state.js';
+import { acquireNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree } from './macos-ports.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
@@ -39,7 +40,8 @@ export async function planNativeNeo4j({ paths, action }) {
 
 export async function manageNativeNeo4j({ paths, action, env = process.env }, dependencies = {}) {
   if ((dependencies.platform ?? process.platform) !== 'darwin') throw new Error('This native Neo4j lifecycle command currently requires macOS.');
-  const lock = await acquireNeo4jLifecycleLock(paths.nativeRuntimeDir);
+  // Named, so a later start never takes over a lock an interrupted asset operation left.
+  const lock = await acquireNeo4jLifecycleLock(paths.nativeRuntimeDir, { operation: action });
   const journal = join(paths.nativeRuntimeDir, 'neo4j-transaction.json');
   const operationEnv = { ...env, FULI_NATIVE_ASSET_OPERATION: lock.token };
   const runtime = dependencies.runtime ?? localRuntimeControl(paths, operationEnv, () => {});

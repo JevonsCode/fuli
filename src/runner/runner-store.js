@@ -2,27 +2,42 @@ import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { DIAGNOSTIC_EVENTS_TOOL } from '../diagnostics/agent-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { REPLAY_WAIT_MS } from './protocol.js';
 
 // A runner's own record (docs/runner.md): the host it paired with, the last
 // answer it read for each read-only call (shown, marked offline, while the host
-// is away, for at most ANSWER_KEEP_MS), the task tokens it gave out while
-// offline, and its outbox: checkpoints made while the host was away, or whose
-// online delivery has no known outcome, replayed oldest first, each applied
-// once; a delivered one is deleted, a refused one after 30 days. Nothing here
-// is the person's knowledge of record; the host holds that. A host that says
-// this runner is revoked or unknown ends what was read from it and holds the
-// waiting checkpoints refused; a pairing with another host, and `fuli runner
-// leave`, end everything kept for the old pairing.
+// is away), the task tokens it gave out while offline, and its outbox:
+// checkpoints made while the host was away, or whose online delivery has no
+// known outcome, replayed oldest first, each applied once; a delivered one is
+// deleted. Nothing here is the person's knowledge of record; the host holds
+// that. A host that says this runner is revoked or unknown ends what was read
+// from it and holds the waiting checkpoints refused; a pairing with another
+// host, and `fuli runner leave`, end everything kept for the old pairing.
+//
+// Nothing here expires with time. What was read stays until the host answers
+// that call again (which replaces it), until the host revokes this computer
+// (which deletes it at once), or until `fuli runner leave`. A follower that
+// was away from its host for a season still has the preferences it last read,
+// and a checkpoint the host refused stays listed until the person has seen it.
 // How many of the host's addresses a runner keeps: enough for every network it is used on.
 const KNOWN_ADDRESSES = 16;
 
 export const RUNNER_FILE = 'runner/runner.sqlite';
 // An outbox entry a process claimed is its own for this long: past its wait for the host.
 const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
-// Answers and offline task tokens older than this are deleted, and so are refused outbox entries.
-const ANSWER_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
-const FAILED_KEEP_MS = ANSWER_KEEP_MS;
+// The cache of answers has a size, not an age (rec#144: nothing is deleted
+// because it is old). Past either bound, the answers used longest ago go first;
+// whatever was used lately stays however old it is.
+export const ANSWERS_KEPT = 5000;
+export const ANSWER_BYTES_KEPT = 64 * 1024 * 1024;
+// An offline task token is not cached content: it names a task in progress that
+// the host never saw. A task not continued for this long is not one anyone
+// continues, and a checkpoint under its token would be replayed into a task
+// context long gone, so the token stops being one. A checkpoint queued under it
+// keeps its folder in the outbox and is delivered as before.
+export const OFFLINE_TOKEN_DAYS = 30;
+const OFFLINE_TOKEN_MS = OFFLINE_TOKEN_DAYS * 24 * 60 * 60 * 1000;
 // Why a checkpoint waits refused: the host did not know this runner (revoked).
 const REVOKED = 'runner_revoked';
 
@@ -46,6 +61,14 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/2-host-revoked', to: 2, kind: 'add-columns', table: 'host',
     summary: 'when the host answered that it does not know this runner (revoked), so nothing kept is shown again',
     columns: { revoked_at: 'TEXT' }
+  }, {
+    id: 'runner/3-host-last-seen', to: 3, kind: 'add-columns', table: 'host',
+    summary: 'when this computer last reached its host, so the console and `fuli status` can say when it last reached it',
+    columns: { last_seen_at: 'TEXT' }
+  }, {
+    id: 'runner/4-answer-used', to: 4, kind: 'add-columns', table: 'answers',
+    summary: 'when each kept answer was last used, so the cache keeps what is used and lets go of what is not',
+    columns: { used_at: 'TEXT' }
   }]
 });
 
@@ -82,7 +105,7 @@ export class RunnerStore {
     const row = this.db.prepare('SELECT * FROM host WHERE id = 1').get();
     return row ? { name: row.name, fingerprint: row.fingerprint, certPem: row.cert_pem, port: row.port,
       addresses: JSON.parse(row.addresses), lastAddress: row.last_address, pairedAt: row.paired_at,
-      revokedAt: row.revoked_at } : null;
+      revokedAt: row.revoked_at, lastSeenAt: row.last_seen_at ?? null } : null;
   }
 
   // A pairing. Joining the same host again queues again the checkpoints its
@@ -123,7 +146,6 @@ export class RunnerStore {
       this.#forget();
       this.db.prepare(`UPDATE outbox SET state = 'failed', last_error = ?, settled_at = ?, claimed_until = NULL
         WHERE state = 'queued'`).run(REVOKED, at);
-      this.#pruneRefused();
     });
   }
 
@@ -137,68 +159,116 @@ export class RunnerStore {
     });
   }
 
-  // The address the host last answered on, first in line next time.
+  // The address the host last answered on, first in line next time, and when it
+  // answered: what the console and `fuli status` show as the last sync.
   hostAnsweredAt(address) {
     const host = this.host();
     if (!host) return;
     const addresses = [address, ...host.addresses.filter((known) => known !== address)].slice(0, KNOWN_ADDRESSES);
-    this.db.prepare('UPDATE host SET last_address = ?, addresses = ? WHERE id = 1').run(address, JSON.stringify(addresses));
+    this.db.prepare('UPDATE host SET last_address = ?, addresses = ?, last_seen_at = ? WHERE id = 1')
+      .run(address, JSON.stringify(addresses), this.#nowIso());
   }
 
-  // Addresses the host says it has, or the person names (`fuli runner add-address`):
-  // kept after the ones known already, so each network the two computers meet on
-  // is remembered (home, office) and tried next time without being told again.
-  // first: put them ahead of the others, for an address the person just named.
-  learnHostAddresses(addresses, { first = false } = {}) {
+  // The host answered a request: when this computer last reached it.
+  hostSeen() {
+    if (this.#missing()) return;
+    this.db.prepare('UPDATE host SET last_seen_at = ? WHERE id = 1').run(this.#nowIso());
+  }
+
+  // Addresses the host says it has, or the person names (`fuli runner
+  // add-address`), so each network the two computers meet on (home, office, a
+  // VPN) is tried next time without being told again. The newest come first
+  // and the list makes room by dropping the one learned longest ago, instead
+  // of staying full for ever once a host has moved networks KNOWN_ADDRESSES
+  // times. The address that last answered is kept apart (last_address) and
+  // tried whatever this list holds. Only an address a runner may reach a host
+  // at is written, whichever way it was learned.
+  learnHostAddresses(addresses) {
     const host = this.host();
     if (!host) return;
-    const fresh = addresses.filter((address) => typeof address === 'string' && address && !host.addresses.includes(address));
-    const merged = first ? [...new Set([...addresses, ...host.addresses])] : [...host.addresses, ...fresh];
-    this.db.prepare('UPDATE host SET addresses = ? WHERE id = 1').run(JSON.stringify(merged.slice(0, KNOWN_ADDRESSES)));
+    const learned = addresses.filter((address) => isReachableHostAddress(address));
+    if (!learned.length) return;
+    const merged = [...new Set([...learned, ...host.addresses])].slice(0, KNOWN_ADDRESSES);
+    this.db.prepare('UPDATE host SET addresses = ? WHERE id = 1').run(JSON.stringify(merged));
   }
 
   rememberAnswer(key, tool, body) {
     if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
     immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
-        .run(key, tool, this.#nowIso(), JSON.stringify(body));
-      this.db.prepare('DELETE FROM answers WHERE at <= ?').run(this.#keptSince());
+      const at = this.#nowIso();
+      this.db.prepare(`INSERT INTO answers(key, tool, at, body, used_at) VALUES(?, ?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body, used_at = excluded.used_at`)
+        .run(key, tool, at, JSON.stringify(body), at);
+      this.#keepAnswersWithinBounds();
     });
+  }
+
+  // Least recently used first, until both bounds hold again.
+  #keepAnswersWithinBounds() {
+    const { count, bytes } = this.db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(body)), 0) AS bytes FROM answers').get();
+    if (count <= ANSWERS_KEPT && bytes <= ANSWER_BYTES_KEPT) return;
+    let over = { count: count - ANSWERS_KEPT, bytes: bytes - ANSWER_BYTES_KEPT };
+    const remove = this.db.prepare('DELETE FROM answers WHERE key = ?');
+    for (const row of this.db.prepare(`SELECT key, LENGTH(body) AS size FROM answers
+      ORDER BY COALESCE(used_at, at) ASC`).iterate()) {
+      if (over.count <= 0 && over.bytes <= 0) break;
+      remove.run(row.key);
+      over = { count: over.count - 1, bytes: over.bytes - row.size };
+    }
   }
 
   // { at, body } of the last answer to this call, or null.
   answer(key) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND at > ? AND tool <> ?')
-      .get(key, this.#keptSince(), DIAGNOSTIC_EVENTS_TOOL);
-    return row ? { at: row.at, body: JSON.parse(row.body) } : null;
+    const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND tool <> ?')
+      .get(key, DIAGNOSTIC_EVENTS_TOOL);
+    if (!row) return null;
+    this.db.prepare('UPDATE answers SET used_at = ? WHERE key = ?').run(this.#nowIso(), key);
+    return { at: row.at, body: JSON.parse(row.body) };
   }
 
-  // Every kept task entry, newest first, as { at, body }: what the host last gave for each folder.
+  // What the cache holds now against its bounds, for the console and `fuli runner status`.
+  answerUsage() {
+    if (this.#missing()) return { count: 0, bytes: 0, maxCount: ANSWERS_KEPT, maxBytes: ANSWER_BYTES_KEPT };
+    const { count, bytes } = this.db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(body)), 0) AS bytes FROM answers').get();
+    return { count, bytes, maxCount: ANSWERS_KEPT, maxBytes: ANSWER_BYTES_KEPT };
+  }
+
+  // Every kept task entry, newest first, as { key, at, body }: what the host last gave for each folder.
   taskEntries() {
     if (this.#missing()) return [];
-    return this.db.prepare(`SELECT at, body FROM answers WHERE key LIKE 'entry:%' AND at > ? ORDER BY at DESC`)
-      .all(this.#keptSince()).map((row) => ({ at: row.at, body: JSON.parse(row.body) }));
+    return this.db.prepare(`SELECT key, at, body FROM answers WHERE key LIKE 'entry:%' ORDER BY at DESC`)
+      .all().map((row) => ({ key: row.key, at: row.at, body: JSON.parse(row.body) }));
+  }
+
+  // When the host last answered anything this computer kept, or null.
+  answeredAt() {
+    if (this.#missing()) return null;
+    return this.db.prepare('SELECT MAX(at) AS at FROM answers').get()?.at ?? null;
   }
 
   beginOfflineTask({ token, projectPath, sourceApplication }) {
     immediateTransaction(this.db, () => {
       this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
         VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
-      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#keptSince());
+      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#tokensSince());
     });
   }
 
+  // A token this computer gave out offline within OFFLINE_TOKEN_DAYS, or null.
   offlineTask(token) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ?').get(token);
+    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ? AND started_at > ?').get(token, this.#tokensSince());
     return row ? { token: row.token, projectPath: row.project_path, sourceApplication: row.source_application,
       startedAt: row.started_at } : null;
   }
 
   // offlineProjectPath: the folder of the task an offline token entered; the host enters it again at replay.
   enqueue({ id, tool, input, sourceApplication, sessionId = null, offlineProjectPath = null }) {
+    // The store is gone (`fuli runner leave`) while a process still served this
+    // computer: queueing would make the file again, holding an entry no host
+    // will ever take. Every caller checks the pairing first, so this is a race.
+    if (this.#missing()) throw new Error('This computer is no longer paired with a FULI host; nothing was queued');
     this.db.prepare(`INSERT INTO outbox(id, tool, input, source_application, session_id, offline_project_path,
       queued_at, state) VALUES(?, ?, ?, ?, ?, ?, ?, 'queued')`).run(id, tool, JSON.stringify(input), sourceApplication,
       sessionId, offlineProjectPath, this.#nowIso());
@@ -224,24 +294,11 @@ export class RunnerStore {
     this.db.prepare('DELETE FROM outbox WHERE id = ?').run(id);
   }
 
-  // A host that refused the entry for good: it stays listed with the reason for FAILED_KEEP_MS.
+  // A host that refused the entry for good: it stays listed with the reason
+  // until the pairing ends or a join to the same host queues it again.
   failed(id, reason) {
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`UPDATE outbox SET state = 'failed', claimed_until = NULL, settled_at = ?, last_error = ?
-        WHERE id = ?`).run(this.#nowIso(), reason, id);
-      this.#pruneRefused();
-    });
-  }
-
-  // Deletes refused entries past FAILED_KEEP_MS; the runner's MCP process calls it at start too.
-  pruneRefused() {
-    if (this.#missing()) return;
-    this.#pruneRefused();
-  }
-
-  #pruneRefused() {
-    this.db.prepare(`DELETE FROM outbox WHERE state <> 'queued' AND settled_at <= ?`)
-      .run(new Date(this.now() - FAILED_KEEP_MS).toISOString());
+    this.db.prepare(`UPDATE outbox SET state = 'failed', claimed_until = NULL, settled_at = ?, last_error = ?
+      WHERE id = ?`).run(this.#nowIso(), reason, id);
   }
 
   // Where one entry stands: 'queued', 'failed', or null once delivered (or never queued here).
@@ -255,14 +312,35 @@ export class RunnerStore {
     this.db.prepare('UPDATE outbox SET claimed_until = NULL, last_error = ? WHERE id = ?').run(reason, id);
   }
 
+  // The newest checkpoints still waiting for the host: the work done on this
+  // computer that the host has not seen, which an offline resume carries over
+  // (offline-calls.js).
+  queuedCheckpoints(limit = 3) {
+    if (this.#missing()) return [];
+    return this.db.prepare(`SELECT id, input, queued_at, offline_project_path FROM outbox WHERE state = 'queued'
+      AND tool = 'checkpoint_task_knowledge' ORDER BY seq DESC LIMIT ?`).all(limit)
+      .map((row) => ({ id: row.id, queuedAt: row.queued_at, input: JSON.parse(row.input),
+        offlineProjectPath: row.offline_project_path ?? null }));
+  }
+
   outbox() {
-    if (this.#missing()) return { queued: 0, failedCount: 0, failed: [] };
+    if (this.#missing()) return { queued: 0, failedCount: 0, failed: [], entries: [] };
     const queued = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'queued'").get().count;
     const failedCount = this.db.prepare("SELECT COUNT(*) AS count FROM outbox WHERE state = 'failed'").get().count;
     const failed = this.db.prepare(`SELECT id, tool, queued_at, last_error FROM outbox WHERE state = 'failed'
       ORDER BY seq DESC LIMIT 20`).all().map((row) => ({ id: row.id, tool: row.tool, queuedAt: row.queued_at,
       reason: row.last_error }));
-    return { queued, failedCount, failed };
+    return { queued, failedCount, failed, entries: this.entries() };
+  }
+
+  // Everything still waiting or refused, oldest first: what the console lists
+  // one by one (what it is, when it was made, where it stands, why).
+  entries(limit = 200) {
+    if (this.#missing()) return [];
+    return this.db.prepare(`SELECT id, tool, state, queued_at, attempts, last_error, settled_at FROM outbox
+      WHERE state <> 'delivered' ORDER BY seq LIMIT ?`).all(limit).map((row) => ({ id: row.id, tool: row.tool,
+      state: row.state, queuedAt: row.queued_at, attempts: row.attempts, settledAt: row.settled_at ?? null,
+      reason: row.last_error ?? null }));
   }
 
   // What was read from the host: its answers and the offline task tokens.
@@ -270,8 +348,8 @@ export class RunnerStore {
     for (const table of ['answers', 'offline_tasks']) this.db.prepare(`DELETE FROM ${table}`).run();
   }
 
-  #keptSince() {
-    return new Date(this.now() - ANSWER_KEEP_MS).toISOString();
+  #tokensSince() {
+    return new Date(this.now() - OFFLINE_TOKEN_MS).toISOString();
   }
 
   #nowIso() {

@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
-const PROVIDER_READY_TIMEOUT_MS = 120_000;
+// How long a start waits for one Provider; a start reports its wait from it (startup-stage.js).
+export const PROVIDER_READY_TIMEOUT_MS = 120_000;
 const PROVIDER_READY_INTERVAL_MS = 1000;
 const PROVIDER_HEALTH_TIMEOUT_MS = 2500;
 const MANAGED_PROVIDER_PORT = '8788';
@@ -50,7 +51,8 @@ export async function waitForProviderHealth(url, {
       return false; // The Provider is still starting.
     }
   }, { timeoutMs, intervalMs: PROVIDER_READY_INTERVAL_MS, probeTimeoutMs: PROVIDER_HEALTH_TIMEOUT_MS, wait, now });
-  if (outcome !== 'ready') throw new Error(failureMessage);
+  // A code the start's failure report knows (startup-failure.js).
+  if (outcome !== 'ready') throw Object.assign(new Error(failureMessage), { code: 'provider_not_ready' });
 }
 
 // A workspace whose Provider is the locally managed development instance.

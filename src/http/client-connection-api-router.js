@@ -34,9 +34,32 @@ export async function handleClientConnectionRequest({ request, response, url, sy
     return true;
   }
 
+  // A client's first-run step (Cursor: enabling FULI's own MCP entry in one folder) runs a
+  // program of that client on this computer: only the person here starts it.
+  if (url.pathname === '/api/system/client-connection/first-run' && request.method === 'POST') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'This step is only available on this computer' });
+      return true;
+    }
+    sendJson(response, 200, await system.runClientFirstRun(await readJson(request)));
+    return true;
+  }
+
+  // Shows a client's unreadable configuration file in the file manager, on this computer only.
+  if (url.pathname === '/api/system/client-connection/reveal' && request.method === 'POST') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'This step is only available on this computer' });
+      return true;
+    }
+    sendJson(response, 200, await system.revealClientFile(await readJson(request)));
+    return true;
+  }
+
   if (url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, await system.clientConnectionStatus());
+    sendJson(response, 200, await system.clientConnectionStatus({ afterProbe: url.searchParams.get('afterProbe') === '1' }));
     return true;
   }
 

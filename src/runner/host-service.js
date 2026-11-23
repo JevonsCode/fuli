@@ -87,7 +87,10 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         consoleOrigin, runtimeConfigPath: join(dataDir, 'graph-runtime.json'), onPaired: () => void settle(), now,
         hostAddresses: () => serving?.listener.addresses ?? [] });
       try {
-        serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle }) };
+        serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle,
+          // A paired runner's connections are never held to one address's share
+          // of the connections unknown devices on the network may hold.
+          isPairedDevice: (fingerprint) => Boolean(fingerprint) && store.isPaired(fingerprint) }) };
       } catch (error) {
         await routes.close();
         refused(error);

@@ -5,7 +5,7 @@ import { completePreferenceToolResult } from '../mcp/tool-result.js';
 import { blockedPreferenceRecovery, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../mcp/preference-delivery.js';
 
 const COLLECTIONS = ['effective_preferences', 'active_conflicts', 'deferred_conflicts'];
-const REPEATED = new Set(['taskContextToken', 'task_context_token', 'checkpoint_required', 'agent_receipt',
+const REPEATED = new Set(['taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'agent_receipt',
   'context', 'project_scope', 'worker_run', 'same_task_recovery_available', 'truncated']);
 const CURSOR_BYTES = 32;
 const CURSOR_PLACEHOLDER = 'x'.repeat(43); // base64url encoding of 32 bytes

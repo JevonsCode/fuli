@@ -8,6 +8,7 @@ import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
 import 'package:fuli_desktop/src/ui/brand.dart';
 import 'package:fuli_desktop/src/ui/fuli_mark.dart';
+import 'package:fuli_desktop/src/ui/growth_loading.dart';
 import 'package:fuli_desktop/src/ui/loading_mark.dart';
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
 import 'package:fuli_desktop/src/ui/waiting_screen.dart';
@@ -69,7 +70,9 @@ void main() {
 
     await tester.tap(find.text('启动 FULI'));
     await tester.pump();
-    expect(find.text('正在启动 FULI…'), findsOneWidget);
+    // The step the start itself reported, not the generic sentence.
+    expect(find.text('正在启动图数据库…'), findsOneWidget);
+    expect(find.text('正在启动 FULI…'), findsNothing);
     expect(find.byType(FuliLoadingMark), findsOneWidget);
     // The stopped page is gone, and the top line's mark stays where it was.
     expect(find.text('FULI 没有运行'), findsNothing);
@@ -113,13 +116,60 @@ void main() {
 
     await tester.tap(find.text('启动 FULI'));
     await tester.pump();
-    expect(find.text('正在启动 FULI…'), findsOneWidget);
+    expect(find.text('正在启动图数据库…'), findsOneWidget);
 
     await settleStart(tester, controller);
     await tester.pump();
     expect(find.byType(WaitingScreen), findsNothing);
     expect(find.text('FULI 正常工作'), findsOneWidget);
     expect(find.text('停止 FULI'), findsOneWidget);
+  });
+
+  testWidgets('a step that takes long says how long it has waited and what it waits on, under the label',
+      (tester) async {
+    await tester.pumpWidget(FuliBrandScope(
+      brand: testBrand,
+      child: MaterialApp(
+        home: WaitingScreen(
+            label: zh.startupStage('provider_wait')!,
+            detail: zh.startupStageSlow(const Duration(seconds: 95), 240),
+            spokenDetail: zh.startupStageLimit(240)),
+      ),
+    ));
+    expect(find.text('正在等 Provider 就绪…'), findsOneWidget);
+    expect(find.text('已经等了 1 分 35 秒。最多等 4 分钟。'), findsOneWidget);
+    // One live status: the step and its limit. The waited time, which changes
+    // every few seconds, is shown but not announced again and again.
+    final status = tester.getSemantics(find.byType(GrowthLoading));
+    expect(status.label, contains('正在等 Provider 就绪…'));
+    expect(status.label, contains('最多等 4 分钟。'));
+    expect(status.label, isNot(contains('已经等了')));
+  });
+
+  testWidgets('a slow step offers 查看启动日志 under its line, and nothing to cancel', (tester) async {
+    var opened = 0;
+    await tester.pumpWidget(FuliBrandScope(
+      brand: testBrand,
+      child: MaterialApp(
+        home: WaitingScreen(
+            label: zh.startupStage('provider_wait')!,
+            detail: zh.startupStageSlow(const Duration(seconds: 40), 240),
+            actionLabel: zh.viewStartupLog,
+            onAction: () => opened++),
+      ),
+    ));
+    await tester.tap(find.text('查看启动日志'));
+    expect(opened, 1);
+    expect(find.textContaining('取消'), findsNothing);
+  });
+
+  testWidgets('without a slow step the waiting screen keeps its single line', (tester) async {
+    await tester.pumpWidget(FuliBrandScope(
+      brand: testBrand,
+      child: const MaterialApp(home: WaitingScreen(label: '正在启动图数据库…')),
+    ));
+    expect(find.text('正在启动图数据库…'), findsOneWidget);
+    expect(find.byType(Text), findsOneWidget);
   });
 
   testWidgets('under reduced motion the waiting screen stands still', (tester) async {
