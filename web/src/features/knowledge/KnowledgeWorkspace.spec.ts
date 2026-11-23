@@ -182,7 +182,8 @@ describe('KnowledgeWorkspace', () => {
     const requests = getJson.mock.calls.length
     await wrapper.get('[role="switch"]').trigger('click')
     expect(names()).toHaveLength(3)
-    expect(choices()).toEqual([null, 'formal', 'temporary', fallback])
+    // Temporary projects fold under 临时项目, most recent first and then by ID (neither has a date here).
+    expect(choices()).toEqual([null, 'formal', fallback, 'temporary'])
     expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
     await wrapper.get('[role="switch"]').trigger('click')
     expect(names()).toHaveLength(1)

@@ -14,6 +14,7 @@ from .auth import (
 from .client_version_note import install_client_version_note
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
+from .temporary_project_sources import TemporaryProjectSource, temporary_project_sources
 from .publication_submission_models import PublicationSubmissionDecision
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
@@ -313,6 +314,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
     ) -> list[PersonalProjectRecord]:
         return await store.list_personal_projects(actor, personal_space_id)
+
+    # Before /v1/personal-projects/{project_id}, which would take this path as an ID.
+    @application.get('/v1/personal-projects/temporary-sources', response_model=list[TemporaryProjectSource])
+    async def list_temporary_project_sources(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ) -> list[TemporaryProjectSource]:
+        return await temporary_project_sources(store, actor, personal_space_id)
 
     @application.get(
         '/v1/personal-projects/{project_id}',

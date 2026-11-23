@@ -11,6 +11,7 @@ const send = message => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0',
 createInterface({ input: process.stdin }).on('line', line => {
   const message = JSON.parse(line);
   if (!('id' in message)) return;
+  if (version === '1.0.0' && message.method === 'tools/call' && message.params?.name === 'exit-before-reply') process.exit(4);
   if (message.method === 'initialize') {
     send({ id: message.id, result: { capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'fake', version } } });
   } else if (message.method === 'slow') {

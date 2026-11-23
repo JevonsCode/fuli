@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { isControlledError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { shareableText } from '../text/shareable-text.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
@@ -22,6 +23,9 @@ const LEVEL_OF_OUTCOME = Object.freeze({ failed: 'error', refused: 'warning' });
 
 const SAFE_CODE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const EVENT_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const EVENT_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/;
+export const publicVersion = value => typeof value === 'string' && /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:-(?:dev|alpha|beta|rc)\.\d{1,5})?$/.test(value) ? value : 'unknown';
 const OPERATION_BYTES = 120;
 const REASON_BYTES = 240;
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -79,23 +83,33 @@ function safeText(value, limit = REASON_BYTES) {
 
 // One event as it is stored. component, outcome and operation are required;
 // a field that is not safe as given is left out rather than stored.
-export function diagnosticEvent({ component, operation, outcome, code = null, reason = null, durationMs = null,
-  correlationId = null }, { now = new Date() } = {}) {
+export function diagnosticEvent(fields, { now = new Date() } = {}) {
+  return { v: DIAGNOSTIC_EVENT_VERSION, id: randomUUID(), at: zonedTime(now), version: FULI_VERSION, ...eventFields(fields) };
+}
+
+// Older files are local input too. Keep their original identity for paging,
+// and project their fields through the same rules as a newly recorded event.
+export function storedDiagnosticEvent(event) {
+  if (event?.v !== DIAGNOSTIC_EVENT_VERSION || typeof event.id !== 'string' || !EVENT_ID.test(event.id)
+    || typeof event.at !== 'string' || !EVENT_TIME.test(event.at) || !Number.isFinite(Date.parse(event.at))) return null;
+  return { v: DIAGNOSTIC_EVENT_VERSION, id: event.id, at: event.at, version: publicVersion(event.version), ...eventFields(event) };
+}
+
+function eventFields({ component, operation, outcome, code = null, reason = null, durationMs = null, httpStatus = null,
+  correlationId = null }) {
   if (!DIAGNOSTIC_COMPONENTS.includes(component)) throw new TypeError('Unknown diagnostic component');
   if (!Object.hasOwn(LEVEL_OF_OUTCOME, outcome)) throw new TypeError('Unknown diagnostic outcome');
   return {
-    v: DIAGNOSTIC_EVENT_VERSION,
-    id: randomUUID(),
-    at: zonedTime(now),
     component,
-    version: FULI_VERSION,
     operation: safeText(operation, OPERATION_BYTES),
     outcome,
     level: LEVEL_OF_OUTCOME[outcome],
-    code: typeof code === 'string' && SAFE_CODE.test(code) ? code : null,
+    code: typeof code === 'string' && SAFE_CODE.test(code) && !detectSensitiveContent(code).restricted ? code : null,
     reason: reason === null ? null : safeText(reason),
+    ...(Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599 ? { httpStatus } : {}),
     ...(Number.isSafeInteger(durationMs) && durationMs >= 0 && durationMs <= MAX_DURATION_MS ? { durationMs } : {}),
-    ...(typeof correlationId === 'string' && SAFE_ID.test(correlationId) ? { correlationId } : {})
+    ...(typeof correlationId === 'string' && SAFE_ID.test(correlationId) &&
+      (EVENT_ID.test(correlationId) || safeText(correlationId) === correlationId) ? { correlationId } : {})
   };
 }
 

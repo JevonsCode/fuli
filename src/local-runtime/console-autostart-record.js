@@ -67,26 +67,35 @@ export function recordPersonStart(dataDir) {
   updateConsoleAutostart(dataDir, current => sameAs(current, EMPTY) ? undefined : { ...EMPTY });
 }
 
+// Why FULI is not started automatically, as a state: 'stopped' (the person
+// stopped it), 'gave_up' (3 automatic starts in 10 minutes did not keep it
+// running) or 'data_format' (an update waits for the person's confirmation).
+// null when nothing is recorded, the record is unreadable, or this FULI does
+// not read it: then nothing is known, and no state may be assumed.
+export function consoleAutostartHold(dataDir) {
+  let record;
+  try { record = readConsoleAutostart(dataDir); } catch { return null; }
+  if (record.unreadable) return null;
+  if (record.stoppedAt) return 'stopped';
+  if (record.held?.reason === 'gave_up') return 'gave_up';
+  if (record.held?.reason === 'data_format') return 'data_format';
+  return null;
+}
+
+const HOLD_NOTICES = Object.freeze({
+  stopped: 'FULI was stopped on purpose, so it is not started automatically; it runs again when the person starts it. '
+    + '/ FULI 是被手动停止的，不会自动启动；用户再次启动后恢复。',
+  gave_up: 'FULI stopped starting itself after 3 automatic starts in 10 minutes did not keep it running. '
+    + 'Tell the person once to start FULI from the FULI app or with `fuli start`. '
+    + '/ FULI 10 分钟内自动启动 3 次仍未保持运行，已停止自动启动。请告诉用户一次：从 FULI 应用或 `fuli start` 启动。',
+  data_format: 'FULI is not started automatically while a data format update waits for the person. '
+    + 'Tell the person once to start FULI and confirm it in the console under Settings, Data format. '
+    + '/ 数据格式更新在等用户确认，FULI 不会自动启动。请告诉用户一次：启动 FULI，在控制台「设置 › 数据格式」确认。'
+});
+
 // One sentence for the task entry's "FULI unavailable" text, or ''.
 export function consoleAutostartNotice(dataDir) {
-  let record;
-  try { record = readConsoleAutostart(dataDir); } catch { return ''; }
-  if (record.unreadable) return '';
-  if (record.stoppedAt) {
-    return 'FULI was stopped on purpose, so it is not started automatically; it runs again when the person starts it. '
-      + '/ FULI 是被手动停止的，不会自动启动；用户再次启动后恢复。';
-  }
-  if (record.held?.reason === 'gave_up') {
-    return 'FULI stopped starting itself after 3 automatic starts in 10 minutes did not keep it running. '
-      + 'Tell the person once to start FULI from the FULI app or with `fuli start`. '
-      + '/ FULI 10 分钟内自动启动 3 次仍未保持运行，已停止自动启动。请告诉用户一次：从 FULI 应用或 `fuli start` 启动。';
-  }
-  if (record.held?.reason === 'data_format') {
-    return 'FULI is not started automatically while a data format update waits for the person. '
-      + 'Tell the person once to start FULI and confirm it in the console under Settings, Data format. '
-      + '/ 数据格式更新在等用户确认，FULI 不会自动启动。请告诉用户一次：启动 FULI，在控制台「设置 › 数据格式」确认。';
-  }
-  return '';
+  return HOLD_NOTICES[consoleAutostartHold(dataDir)] ?? '';
 }
 
 function normalize(record) {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { postJson, putJson } from '@/api/client'
@@ -47,11 +49,7 @@ const busy = ref(false)
 const error = ref('')
 
 const editing = computed(() => Boolean(props.agent))
-const projectOptions = computed(() => props.projects.map((project) => ({
-  value: project.project_id,
-  label: project.profile.name,
-  meta: project.project_id,
-})))
+const projectOptions = computed(() => projectScopeOptions(props.projects, project => ({ meta: project.project_id })))
 // Only Bole's dismissal, with a reason, archives an Agent; an archived one is shown, not offered.
 const statusOptions = computed(() => [
   ...(['active', 'inactive'] as const).map((value) => ({ value, label: t(`projectAgents.status.${value}`) })),
@@ -222,7 +220,7 @@ function isValidOccupationEmoji(value: string) {
     :title="editing ? t('projectAgents.dialog.editTitle') : t('projectAgents.dialog.createTitle')"
     @close="emit('close')" @submit="save">
     <div class="project-agent-fields">
-      <OptionCombobox v-model="projectId" field control-id="project-agent-project" :options="projectOptions" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="editing || busy" />
+      <OptionCombobox v-model="projectId" field control-id="project-agent-project" :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('projectAgents.fields.project')" :placeholder="t('projectAgents.dialog.projectPlaceholder')" :disabled="editing || busy" />
       <OptionSelect v-model="status" field name="project-agent-status" :label="t('projectAgents.fields.status')" :options="statusOptions" :disabled="busy" />
       <OptionSelect v-model="agentType" field name="project-agent-type" :label="t('projectAgents.fields.agentType')" :options="agentTypeOptions" :disabled="busy" />
       <label class="ui-field">{{ t('projectAgents.fields.agentId') }}

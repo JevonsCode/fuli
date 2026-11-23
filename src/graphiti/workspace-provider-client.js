@@ -3,7 +3,7 @@ import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 
 import {
   GraphitiProviderClient,
-  ProviderRequestError
+  ProviderRequestError, trackProviderRequest
 } from './provider-client.js';
 import { canonicalProviderUrl } from './runtime-config.js';
 
@@ -18,7 +18,8 @@ const WORKSPACE_CAPABILITIES = Object.freeze({ query: true });
 
 export function createWorkspaceProvider(workspace, {
   fetchImpl = globalThis.fetch,
-  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  diagnosticEvents = null
 } = {}) {
   const providerUrl = canonicalProviderUrl(workspace.providerUrl);
   const protocol = workspace.protocol ?? GRAPHITI_PROTOCOL;
@@ -28,13 +29,13 @@ export function createWorkspaceProvider(workspace, {
       baseUrl: providerUrl,
       accessToken: workspace.accessToken,
       fetchImpl,
-      requestTimeoutMs
+      requestTimeoutMs, diagnosticEvents
     })
     : new GraphitiProviderClient({
       baseUrl: providerUrl,
       accessToken: workspace.accessToken,
       fetchImpl,
-      requestTimeoutMs
+      requestTimeoutMs, diagnosticEvents
     });
   return {
     ...workspace,
@@ -58,12 +59,14 @@ export function configuredWorkspace(workspaces, providerUrl) {
 export class FuliWorkspaceProviderClient {
   #accessToken;
   #fetch;
+  #diagnosticEvents;
 
   constructor({
     baseUrl,
     accessToken,
     fetchImpl = globalThis.fetch,
-    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    diagnosticEvents = null
   }) {
     if (!baseUrl) throw new TypeError('Fuli Workspace provider baseUrl is required');
     if (!accessToken) throw new TypeError('Fuli Workspace provider accessToken is required');
@@ -75,6 +78,7 @@ export class FuliWorkspaceProviderClient {
     this.baseUrl = canonicalProviderUrl(baseUrl);
     this.#accessToken = accessToken;
     this.#fetch = fetchImpl;
+    this.#diagnosticEvents = diagnosticEvents;
     this.requestTimeoutMs = requestTimeoutMs;
   }
 
@@ -175,7 +179,11 @@ export class FuliWorkspaceProviderClient {
     };
   }
 
-  async #request(path, { method = 'GET', body, authenticated = true } = {}) {
+  #request(path, options = {}) {
+    return trackProviderRequest(this.#diagnosticEvents, path, options, () => this.#send(path, options));
+  }
+
+  async #send(path, { method = 'GET', body, authenticated = true }) {
     const url = new URL(path, `${this.baseUrl}/`);
     if (url.origin !== this.baseUrl || !url.pathname.startsWith('/')) {
       throw new TypeError('Fuli Workspace request escaped the configured provider origin');

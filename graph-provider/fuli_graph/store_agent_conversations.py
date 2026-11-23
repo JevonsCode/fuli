@@ -7,8 +7,8 @@ from datetime import timedelta
 from fastapi import HTTPException
 from .agent_conversation_models import ConversationPolicy, ConversationWrite
 from .conversation_context import (
-    COMPACTION_KIND, DIGEST_VERSION, add_delivery_proofs, add_task_result, fold_messages, message_bytes, note_compaction,
-    pack_context, refold_digest,
+    AUTOMATIC_CLOSE_SUMMARIES, COMPACTION_KIND, DIGEST_VERSION, add_delivery_proofs, add_task_result, bounded_text,
+    fold_messages, latest_progress, message_bytes, note_compaction, pack_context, refold_digest,
 )
 from .project_agent_access import authorize_project_agent
 from .conversation_scope import conversation_binding_id, conversation_scope_id, started_conversation_id
@@ -30,6 +30,34 @@ SESSIONS_ELSEWHERE = 3
 ELSEWHERE_WINDOW = timedelta(hours=6)
 
 
+# A progress view's summaries (Jefa's list_project_conversations).
+PROGRESS_SUMMARY_BYTES = 400
+# Other receipts of the same second a progress view names by event ID.
+SAME_SECOND_RECEIPTS = 3
+
+
+def _bounded_progress(result):
+    """A task result for a progress view: when, status, a bounded summary and,
+    when the write recorded it, the client, native session and checkpoint event."""
+    if not result:
+        return None
+    return {'at': result.get('at'), 'status': result.get('status'),
+            'summary': bounded_text(str(result.get('summary') or ''), PROGRESS_SUMMARY_BYTES)[0],
+            'source': result.get('source')}
+
+
+def _summary_source(record):
+    """The recorded source of the task result the summary is, or None (unknown)."""
+    try:
+        tasks = json.loads(record.get('digest') or '{}').get('tasks') or []
+    except ValueError:
+        return None
+    latest = tasks[-1] if tasks else None
+    if not latest or latest.get('summary') != record.get('summary'):
+        return None
+    return latest.get('source')
+
+
 def _iso(value):
     return value.iso_format() if hasattr(value, 'iso_format') else (value.isoformat() if value else None)
 
@@ -41,6 +69,17 @@ def encode_event(event):
 
 def decode_event(row):
     return {**json.loads(gzip.decompress(base64.b64decode(row['payload']))), 'sequence': row['sequence']}
+
+
+def checkpoint_source(checkpoints, request):
+    """The one checkpoint event of this write whose text is the task result, or
+    None when there is none or more than one: a source is never guessed."""
+    matching = [(sequence, event_id) for sequence, event_id, content in checkpoints if content == request.summary]
+    if len(matching) != 1:
+        return None
+    sequence, event_id = matching[0]
+    return {'sequence': sequence, 'event_id': event_id, 'client': request.source_application,
+            'session_id': request.session_id}
 
 
 class StoreAgentConversations:
@@ -87,12 +126,18 @@ class StoreAgentConversations:
         if request.mode == 'session':
             return await self._session_binding(scope, request)
         if request.mode == 'list':
-            return {'conversations': await self._latest_conversations(
-                scope, policy, request.limit, topic_key(request.topic) if request.topic else None)}
+            position = (request.after_activity, request.after_id) if request.after_activity else None
+            rows = await self._latest_conversations(
+                scope, policy, request.limit, topic_key(request.topic) if request.topic else None, after=position)
+            if request.with_progress and rows:
+                rows = await self._with_progress(request.personal_space_id, request.personal_project_id, scope, rows)
+            return {'conversations': rows}
         record = await self._scoped_conversation(scope, request.conversation_id)
         if request.mode == 'context':
             return await self._recovery_context(record, policy, request, after=request.after)
         view = self._conversation_view(record, policy)
+        if request.event_id is not None:
+            return {**view, **await self._source_event(record, request.after + 1, request.event_id)}
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
@@ -153,7 +198,7 @@ class StoreAgentConversations:
             id=conversation_binding_id(scope, request.source_application, request.session_id or ''))
         return dict(rows[0]) if rows else {'conversation_id': None, 'cursor': 0, 'initialized': False}
 
-    async def _latest_conversations(self, scope, policy, limit, topic=None, *, sessions=True):
+    async def _latest_conversations(self, scope, policy, limit, topic=None, *, sessions=True, after=None):
         # Jefa's triage label travels with each conversation so a list can
         # show what is still unclaimed without a second read per row. topic
         # (a topic_key): only that topic's conversations still open, so the
@@ -164,14 +209,92 @@ class StoreAgentConversations:
             'OPTIONAL MATCH (t:FuliConversationTriage {id: c.id}) '
             'WITH c, t WHERE $topic IS NULL '
             "OR (t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL) "
+            # after: (last_activity, id) of the previous page's last row, a keyset position.
+            'WITH c, t WHERE $after_activity IS NULL OR c.last_activity < $after_activity '
+            'OR (c.last_activity = $after_activity AND c.id > $after_id) '
             'RETURN c, t ORDER BY c.last_activity DESC, c.id LIMIT $limit',
-            scope=scope, limit=limit, topic=topic)
+            scope=scope, limit=limit, topic=topic,
+            after_activity=after[0] if after else None, after_id=after[1] if after else None)
         # A list names where each conversation was written from; a new session's
         # pointer (begin_conversation) carries only the latest conversation's title.
         found = await self._conversation_sessions([r['c']['id'] for r in rows]) if sessions else {}
         return [{**self._conversation_view(dict(r['c']), policy),
             **({'sessions': found.get(r['c']['id'], [])} if sessions else {}),
             'triage': StoreConversationTriage._triage_view(dict(r.get('t'))) if r.get('t') else None} for r in rows]
+
+    async def _with_progress(self, space_id, project_id, scope, rows):
+        """Each listed conversation's evidence of progress, for a progress view.
+
+        `progress`: the latest task result a checkpoint reported that is not an
+        automatic close, kept with its own time and source however much activity
+        follows. `task_activity`: the latest task-activity receipt linked to the
+        conversation for certain: its client and native session ID equal a
+        session of this conversation, that session worked on no other
+        conversation of any Agent in this project, the receipt came at or after
+        the session joined, and the reporting FLA belongs to the project (an
+        active assignment) or to the task (a participant). The reporter may be
+        another FLA than the one holding the conversation. A receipt without a
+        native session, from another project or client, or from a session that
+        worked on several conversations here names no conversation for certain
+        and is left out."""
+        ids = [row['id'] for row in rows]
+        digests, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {scope: $scope}) WHERE c.id IN $ids RETURN c.id AS id, c.digest AS digest',
+            scope=scope, ids=ids)
+        progress = {}
+        for row in digests:
+            try:
+                progress[row['id']] = latest_progress(json.loads(row['digest'] or '{}'))
+            except ValueError:
+                progress[row['id']] = None
+        activity = await self._linked_task_activity(space_id, project_id, scope, ids) if project_id is not None else {}
+        return [{**row, 'progress': _bounded_progress(progress.get(row['id'])),
+                 'task_activity': activity.get(row['id'])} for row in rows]
+
+    async def _linked_task_activity(self, space_id, project_id, scope, ids):
+        members, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(:FuliPersonalProject {project_id: $project})'
+            '-[:HAS_PROJECT_AGENT_ASSIGNMENT]->(assignment:FuliProjectAgentAssignment)-[:ASSIGNED_AGENT]->(agent) '
+            "RETURN agent.agent_id AS agent_id, max(CASE WHEN assignment.status = 'active' THEN 1 ELSE 0 END) = 1 AS active",
+            space=space_id, project=project_id)
+        # Every journal of this project, of any Agent ever assigned to it: a native
+        # session bound to a conversation in any of them makes a second candidate.
+        scopes = sorted({conversation_scope_id(space_id, project_id, row['agent_id']) for row in members})
+        if scope not in scopes:
+            # This journal is not one derived from the project's assignments here, so
+            # the uniqueness check would not see every candidate: link nothing.
+            return {}
+        found, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (s:FuliConversationSession) WHERE s.conversation_id IN $ids AND s.scope IN $scopes '
+            'AND COUNT { MATCH (o:FuliConversationSession) WHERE o.scope IN $scopes '
+            'AND o.source_application = s.source_application AND o.session_id = s.session_id } = 1 '
+            'MATCH (task:FuliProjectAgentTask {personal_space_id: $space, personal_project_id: $project})'
+            '-[:HAS_TASK_EVENT]->(event:FuliProjectAgentTaskEvent {source_session_id: s.session_id}) '
+            'WHERE event.source_application = s.source_application AND event.agent_id IS NOT NULL '
+            'AND (event.agent_id IN $active OR EXISTS { MATCH (task)-[:HAS_PARTICIPANT]->(reporter:FuliProjectAgent) '
+            'WHERE reporter.agent_id = event.agent_id }) '
+            "AND event.actor_kind <> 'system' AND trim(coalesce(event.summary, '')) <> '' "
+            'AND NOT trim(event.summary) IN $automatic '
+            'AND datetime(toString(event.created_at)) >= datetime(s.first_seen) '
+            'WITH s, task, event ORDER BY datetime(toString(event.created_at)) DESC, event.event_id DESC '
+            'WITH s.conversation_id AS conversation_id, collect({at: toString(event.created_at), '
+            "second: toString(datetime.truncate('second', datetime(toString(event.created_at)))), "
+            'status: event.status, summary: event.summary, task_id: task.task_id, event_id: event.event_id, '
+            'agent_id: event.agent_id, client: s.source_application, session_id: s.session_id})[..$keep] AS latest '
+            'RETURN conversation_id, latest',
+            ids=ids, scopes=scopes, space=space_id, project=project_id,
+            active=sorted(row['agent_id'] for row in members if row['active']),
+            automatic=sorted(AUTOMATIC_CLOSE_SUMMARIES), keep=SAME_SECOND_RECEIPTS + 1)
+        result = {}
+        for row in found:
+            # Newest first by time, then event ID: receipts of the same second keep one fixed order.
+            latest, *rest = [dict(item) for item in row['latest']]
+            same_second = [item['event_id'] for item in rest if item['second'] == latest['second']]
+            result[row['conversation_id']] = {**_bounded_progress(latest), 'source': {
+                'client': latest['client'], 'session_id': latest['session_id'], 'task_id': latest['task_id'],
+                'event_id': latest['event_id'], 'agent_id': latest['agent_id']},
+                **({'same_second_event_ids': same_second} if same_second else {})}
+        return result
 
     async def _scoped_conversation(self, scope, conversation_id):
         rows, _, _ = await self.runtime.driver.execute_query(
@@ -210,7 +333,7 @@ class StoreAgentConversations:
         digest = json.loads(record['digest'])
         through = record.get('compacted_through') or 0
         if digest.get('version') == DIGEST_VERSION or not through:
-            return digest
+            return await self._with_task_sources(record['id'], digest)
         events, _, _ = await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
             'WHERE e.sequence > $after AND e.sequence <= $revision '
@@ -221,7 +344,33 @@ class StoreAgentConversations:
         await self.runtime.driver.execute_query(
             'MATCH (c:FuliConversation {id: $id}) WHERE c.digest = $old SET c.digest = $digest',
             id=record['id'], old=record['digest'], digest=json.dumps(rebuilt, ensure_ascii=False))
-        return rebuilt
+        return await self._with_task_sources(record['id'], rebuilt)
+
+    async def _source_event(self, record, sequence, event_id):
+        """Exactly the event at this sequence when it is the one with this event_id
+        (a digest task's source checkpoint), with the client and native session that
+        wrote it; otherwise unavailable, never the event that now comes next."""
+        rows, _, _ = await self.runtime.driver.execute_query(
+            'MATCH (c:FuliConversation {id: $id})-[:HAS_EVENT]->(e:FuliConversationEvent) '
+            'WHERE e.sequence = $sequence AND e.sequence <= $revision '
+            'RETURN e.payload AS payload, e.sequence AS sequence, '
+            'e.source_application AS source_application, e.session_id AS session_id',
+            id=record['id'], sequence=sequence, revision=record['revision'])
+        event = {**decode_event(rows[0]), 'client': rows[0].get('source_application'),
+                 'session_id': rows[0].get('session_id')} if rows else None
+        if not event or event.get('event_id') != event_id:
+            return {'events': [], 'source_check': 'unavailable', 'next_cursor': sequence - 1, 'has_more': False}
+        return {'events': [event], 'source_check': 'verified', 'next_cursor': sequence, 'has_more': False}
+
+    async def _with_task_sources(self, conversation_id, digest):
+        """Each task result with the checkpoint event its write recorded. A result
+        written before results kept their source has none recorded and reads
+        as unknown (None): its time and words do not prove which write it was,
+        so it is never linked by them, the text or the latest client."""
+        tasks = digest.get('tasks') or []
+        if all('source' in task for task in tasks):
+            return digest
+        return {**digest, 'tasks': [task if 'source' in task else {**task, 'source': None} for task in tasks]}
 
     async def _context_events(self, record, after):
         """Read a fixed revision backwards; folding never deletes raw recovery.
@@ -267,6 +416,8 @@ class StoreAgentConversations:
             # Which client and native session wrote the opening words the title holds.
             'title_source': ({'client': record.get('title_source_application'), 'session_id': record.get('title_session_id')}
                              if record.get('title_session_id') else None),
+            # The checkpoint event the summary came from, when the write recorded it.
+            'summary_source': _summary_source(record),
             'policy': policy.model_dump(), 'raw_retained': True}
 
     async def _compact_conversation(self, conversation_id, policy):
@@ -345,6 +496,8 @@ class StoreAgentConversations:
                 source=request.source_application, session=request.session_id)
             await store._note_session(scope, conversation_id, request, now)
             new_summary = False
+            # The checkpoint events this write created, for the task result's source.
+            checkpoints = []
             compaction = None
             unfolded = 0
             for event in request.events:
@@ -369,6 +522,8 @@ class StoreAgentConversations:
                     task=request.task_context_token, session=request.session_id, created_at=created_at)
                 if event.kind == COMPACTION_KIND:
                     compaction = (created[0]['sequence'], len(event.content.encode()))
+                if event.kind == 'checkpoint':
+                    checkpoints.append((created[0]['sequence'], event.event_id, event.content))
             if unfolded:
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) '
@@ -385,7 +540,8 @@ class StoreAgentConversations:
                 rows, _, _ = await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) RETURN c.digest AS digest', id=conversation_id)
                 digest = json.loads(rows[0]['digest']) if rows[0]['digest'] else {}
-                digest = add_task_result(digest, now, request.status or 'reported', request.summary)
+                digest = add_task_result(digest, now, request.status or 'reported', request.summary,
+                                         checkpoint_source(checkpoints, request))
                 await store.runtime.driver.execute_query(
                     'MATCH (c:FuliConversation {id: $id}) SET c.summary=$summary, c.status=$status, c.digest=$digest',
                     id=conversation_id, summary=request.summary, status=request.status or 'reported',

@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from './settings.js';
+import { runtimeUnavailableError, unreachableReason } from './runtime-unavailable.js';
 
 export function createRuntimeLeaseClient({
   runtimeConfigPath,
@@ -49,14 +50,22 @@ export function createRuntimeLeaseClient({
     const settings = readSettings(paths.adaptiveRuntimeSettingsPath);
     if (!settings.enabled) return disabledLease();
 
-    const consoleUrl = runtimeConsoleUrl(readJson(paths.graphRuntimeStatePath, null));
-    const lease = await requestJson(`${consoleUrl}/api/system/runtime/leases`, {
-      method: 'POST',
-      body: input,
-      timeoutMs: 180_000,
-      fetchImpl,
-      signal
-    });
+    const dataDir = dirname(runtimeConfigPath);
+    const consoleUrl = runtimeConsoleUrl(readJson(paths.graphRuntimeStatePath, null), dataDir);
+    let lease;
+    try {
+      lease = await requestJson(`${consoleUrl}/api/system/runtime/leases`, {
+        method: 'POST',
+        body: input,
+        timeoutMs: 180_000,
+        fetchImpl,
+        signal
+      });
+    } catch (error) {
+      // A console that cannot be reached is said as such (rec#39); anything else keeps its own path.
+      const reason = unreachableReason(error, { callerAborted: Boolean(signal?.aborted) });
+      throw reason ? runtimeUnavailableError(reason, { dataDir }) : error;
+    }
     const handle = publicLease(lease);
     if (!handle.enabled) {
       const explicitlyDisabled = lease?.enabled === false && lease.leaseId === null;
@@ -328,10 +337,8 @@ function publicLease(value, fallback = null) {
   return handle;
 }
 
-function runtimeConsoleUrl(state) {
-  if (!state || typeof state.url !== 'string') {
-    throw new Error('Adaptive memory needs the Fuli management UI; run `fuli start` first');
-  }
+function runtimeConsoleUrl(state, dataDir) {
+  if (!state || typeof state.url !== 'string') throw runtimeUnavailableError('not_started', { dataDir });
   let url;
   try {
     url = new URL(state.url);

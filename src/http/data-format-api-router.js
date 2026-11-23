@@ -37,7 +37,7 @@ export async function handleDataFormatApiRequest({ request, response, url, migra
     return true;
   }
   if (RESTORE_READS.has(url.pathname) && request.method === 'GET') {
-    if (refuseRemoteDecision(request, response, 'A whole-store restore is prepared only on this computer')) return true;
+    if (refuseRemoteDecision(request, response, 'A whole-store restore is prepared only on this computer', { directHost: true })) return true;
     sendJson(response, 200, restoreRead(migrations.restore, url));
     return true;
   }
@@ -47,7 +47,7 @@ export async function handleDataFormatApiRequest({ request, response, url, migra
       { error: action || RESTORE_READS.has(url.pathname) ? 'Method not allowed' : 'Not found' });
     return true;
   }
-  if (refuseRemoteDecision(request, response, 'Data format migrations are confirmed only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'Data format migrations are confirmed only on this computer', { directHost: true })) return true;
   const parsed = BODIES[action].safeParse(await readJson(request));
   if (!parsed.success) throw new TypeError('Invalid data format request');
   sendJson(response, 200, await ACTION_HANDLERS[action](migrations, parsed.data));

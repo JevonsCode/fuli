@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { DELEGATION_HEADER, DELEGATION_OPERATION_HEADER, decodeDelegation } from '../agent-delegation/delegation-header.js';
 import { mapHttpError } from './error-mapping.js';
-import { isLoopbackAddress } from './request-policy.js';
+import { refuseRemoteDecision } from './request-policy.js';
 import { sendJson } from './response.js';
 
 // A console request an FLA makes for the person (run_delegated_action, rec#11
@@ -28,10 +28,7 @@ export async function handleDelegatedRequest({ request, response, delegation, ag
   let call;
   let entry;
   try {
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Delegated changes are made only on this computer', code: 'local_user_only' });
-      return true;
-    }
+    if (refuseRemoteDecision(request, response, 'Delegated changes are made only on this computer', { directHost: true })) return true;
     if (!delegation) {
       sendJson(response, 503, { error: 'AI permissions need a local FULI installation', code: 'delegation_unavailable' });
       return true;

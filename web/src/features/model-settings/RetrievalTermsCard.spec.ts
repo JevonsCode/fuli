@@ -5,6 +5,7 @@ const api = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
 import { setLocale } from '@/i18n'
+import { openCombobox, toggleOption } from '@/test-support/option-pickers'
 import type { PersonalProject } from '@/types'
 import RetrievalTermsCard from './RetrievalTermsCard.vue'
 
@@ -29,7 +30,8 @@ const card = (wrapper: ReturnType<typeof mount>) => wrapper.get('[data-retrieval
 describe('RetrievalTermsCard', () => {
   it('says in one line what the project lacks, for free, and offers the 20-item self-test first', async () => {
     const wrapper = await mountCard({})
-    expect(wrapper.get('[data-terms-summary]').text()).toBe('Synthetic · 100 条还没有检索词，粗估补完约 9000 tokens。')
+    // The line says what comes next and what the self-test does.
+    expect(wrapper.get('[data-terms-summary]').text()).toBe('Synthetic · 100 条还没有检索词，粗估补完约 9000 tokens。先试 20 条，量一量补了能多搜到几条。')
     expect(card(wrapper).findAll('footer button').map(button => button.text())).toEqual(['查看详情', '先试 20 条'])
     expect(wrapper.get('[data-terms-test]').attributes('disabled')).toBeUndefined()
     // The card holds no project picker and no result: they are in the details.
@@ -54,6 +56,120 @@ describe('RetrievalTermsCard', () => {
     expect(api.postJson).toHaveBeenCalledWith('/api/retrieval-terms/fill', { personalProjectId: 'synthetic-project' }, expect.anything())
     await dialog.get('[data-terms-decline]').trigger('click')
     expect(dialog.find('[data-terms-trial]').exists()).toBe(false)
+  })
+
+  it('after a self-test the card says what it measured and its action fills the rest', async () => {
+    const wrapper = await mountCard({ trial: tested })
+    expect(wrapper.get('[data-terms-summary]').text()).toBe('Synthetic · 试了 20 条：换个问法能找到 8 → 17 条，建议补。')
+    expect(card(wrapper).findAll('footer button').map(button => button.text())).toEqual(['查看详情', '补剩下 100 条'])
+    api.postJson.mockResolvedValue({ status: 'running', written: 0, tokens: 0 })
+    await wrapper.get('[data-terms-fill]').trigger('click')
+    await flushPromises()
+    expect(api.postJson).toHaveBeenCalledWith('/api/retrieval-terms/fill', { personalProjectId: 'synthetic-project' }, expect.anything())
+  })
+
+  it('the details show each step with what the server answered: the count, the measure, and the fill written of total', async () => {
+    const wrapper = await mountCard({ trial: tested, run: { status: 'running', written: 32, tokens: 3500 } })
+    await wrapper.get('[data-terms-details]').trigger('click')
+    const dialog = wrapper.get('[data-terms-dialog]')
+    expect(dialog.findAll('[data-use-step]').map(step => [step.attributes('data-use-step'), step.attributes('data-state')]))
+      .toEqual([['count', 'done'], ['trial', 'done'], ['fill', 'active']])
+    expect(dialog.get('[data-use-step="trial"] [data-use-step-detail]').text()).toBe('试了 20 条：换个问法能找到 8 → 17 条，建议补。')
+    const bar = dialog.get('[data-use-step="fill"] [data-use-step-progress]')
+    expect([bar.attributes('aria-valuenow'), bar.attributes('aria-valuemax')]).toEqual(['32', '132'])
+    expect(dialog.get('[data-use-step="fill"] [data-use-step-detail]').text()).toBe('正在补：32/132 条，已用 3500 tokens')
+  })
+
+  it('a self-test the model did not answer says why on the card, keeps the details closed and offers 重试', async () => {
+    const wrapper = await mountCard({})
+    api.postJson.mockResolvedValue({ status: 'model_failed', reason: 'auth_failed' })
+    await wrapper.get('[data-terms-test]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-terms-trial-failed] [data-model-failure-text]').text()).toBe('自测没做完：密钥不对')
+    expect(wrapper.find('[data-terms-dialog]').exists()).toBe(false)
+    expect(wrapper.get('[data-terms-test]').text()).toBe('重试')
+    await wrapper.get('[data-terms-details]').trigger('click')
+    const trial = wrapper.get('[data-terms-dialog] [data-use-step="trial"]')
+    expect(trial.attributes('data-state')).toBe('failed')
+    expect(trial.get('[data-use-step-detail]').attributes('role')).toBe('alert')
+  })
+
+  it('switching A → B, answers that arrive late for A never show on B: its state, steps, name and self-test', async () => {
+    setLocale('zh-CN')
+    const two = [...projects, { project_id: 'synthetic-b', scope_type: 'project', profile: { name: 'Synthetic B' } }] as unknown as PersonalProject[]
+    // Every read and the self-test wait until the test answers them, in the order it chooses.
+    const reads: { project: string; answer: (value: unknown) => void }[] = []
+    api.getJson.mockImplementation((url: string) => new Promise((resolve) => {
+      reads.push({ project: new URLSearchParams(url.split('?')[1]).get('projectId') ?? '', answer: resolve })
+    }))
+    let answerTrial: (value: unknown) => void = () => {}
+    api.postJson.mockImplementation(() => new Promise((resolve) => { answerTrial = resolve }))
+    const wrapper = mount(RetrievalTermsCard, { props: { projects: two, model: 'synthetic-chat', status: 'enabled' as const }, attachTo: document.body })
+    mounted.push(wrapper)
+    await flushPromises()
+    reads[0]!.answer(answer({}))
+    await flushPromises()
+
+    // A's self-test is under way when the person opens the details and picks B, back to A, then B again.
+    await wrapper.get('[data-terms-details]').trigger('click')
+    const dialog = wrapper.get('[data-terms-dialog]')
+    await dialog.get('[data-terms-test]').trigger('click')
+    for (const name of ['Synthetic B', 'Synthetic', 'Synthetic B']) {
+      await openCombobox(dialog)
+      await toggleOption(dialog, name)
+    }
+    expect(reads.map(read => read.project)).toEqual(['synthetic-project', 'synthetic-b', 'synthetic-project', 'synthetic-b'])
+    // While B is read, nothing of A stays: no counts, no running self-test.
+    expect(dialog.findAll('[data-use-step]').map(step => step.attributes('data-state'))).toEqual(['idle', 'idle', 'idle'])
+
+    // B's latest read answers first; then A's slow read, B's first read and A's failed self-test arrive.
+    reads[3]!.answer({ readiness: 'project_not_approved', stats: null, trial: null, run: null, busy: null })
+    await flushPromises()
+    reads[2]!.answer(answer({ trial: tested }))
+    reads[1]!.answer(answer({ run: { status: 'running', written: 5, tokens: 100 } }))
+    answerTrial({ status: 'model_failed', reason: 'auth_failed' })
+    await flushPromises()
+
+    expect(dialog.get('[data-terms-project] input').element).toHaveProperty('value', 'Synthetic B')
+    expect(dialog.get('[data-terms-note]').text()).toBe('这个项目还没授权，内容不会发给 Astro 的模型。')
+    expect(dialog.findAll('[data-use-step]').map(step => step.attributes('data-state'))).toEqual(['idle', 'idle', 'idle'])
+    expect(dialog.find('[data-terms-trial]').exists()).toBe(false)
+    expect(wrapper.find('[data-terms-trial-failed]').exists()).toBe(false)
+    expect(dialog.findAll('footer button').map(button => button.text())).toEqual(['去授权'])
+    // No read of A was started for the self-test's answer after B was chosen.
+    expect(reads).toHaveLength(4)
+  })
+
+  it('a project not approved still explains the three steps in its details, all still to come', async () => {
+    const wrapper = await mountCard({ readiness: 'project_not_approved', stats: null })
+    await wrapper.get('[data-terms-details]').trigger('click')
+    const dialog = wrapper.get('[data-terms-dialog]')
+    expect(dialog.findAll('[data-use-step]').map(step => [step.attributes('data-use-step'), step.attributes('data-state')]))
+      .toEqual([['count', 'idle'], ['trial', 'idle'], ['fill', 'idle']])
+    expect(dialog.get('[data-use-step="trial"]').text()).toContain('补词前后各搜一次')
+    expect(dialog.find('[data-use-step-progress]').exists()).toBe(false)
+  })
+
+  it('a project not approved with its knowledge counted shows the real count', async () => {
+    const wrapper = await mountCard({ readiness: 'project_not_approved' })
+    await wrapper.get('[data-terms-details]').trigger('click')
+    const count = wrapper.get('[data-terms-dialog] [data-use-step="count"]')
+    expect(count.attributes('data-state')).toBe('done')
+    expect(count.get('[data-use-step-detail]').text()).toBe('100 条还没有检索词，粗估补完约 9000 tokens。')
+  })
+
+  it('a project not approved has 去授权, and reads again when Astro settings close', async () => {
+    const wrapper = await mountCard({ readiness: 'project_not_approved', stats: null })
+    expect(wrapper.get('[data-terms-note]').text()).toBe('这个项目还没授权，内容不会发给 Astro 的模型。')
+    expect(card(wrapper).findAll('footer button').map(button => button.text())).toEqual(['查看详情', '去授权'])
+    await wrapper.get('[data-terms-authorize]').trigger('click')
+    expect(wrapper.emitted('authorize')).toHaveLength(1)
+    api.getJson.mockResolvedValue(answer({}))
+    await wrapper.setProps({ settingsOpen: true })
+    await wrapper.setProps({ settingsOpen: false })
+    await flushPromises()
+    expect(wrapper.get('[data-terms-summary]').text()).toContain('100 条还没有检索词')
+    expect(wrapper.get('[data-terms-test]').attributes('disabled')).toBeUndefined()
   })
 
   it('shows a running fill with a stop button and points to the switch when it is off', async () => {

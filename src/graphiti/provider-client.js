@@ -1,6 +1,7 @@
 import { ApplicationError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { recordProviderFailure } from '../diagnostics/provider-operation.js';
 import { graphReadPath, preferenceConflictsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
@@ -34,6 +35,7 @@ export class ProviderRequestError extends ApplicationError {
 
 export class GraphitiProviderClient {
   #refreshAccessToken;
+  #diagnosticEvents;
 
   constructor({
     baseUrl,
@@ -41,7 +43,8 @@ export class GraphitiProviderClient {
     workflowObservationToken = null,
     fetchImpl = globalThis.fetch,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
-    refreshAccessToken = null
+    refreshAccessToken = null,
+    diagnosticEvents = null
   }) {
     if (!baseUrl) throw new TypeError('Graphiti provider baseUrl is required');
     if (refreshAccessToken !== null && typeof refreshAccessToken !== 'function') {
@@ -70,6 +73,7 @@ export class GraphitiProviderClient {
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
     this.#refreshAccessToken = refreshAccessToken;
+    this.#diagnosticEvents = diagnosticEvents;
   }
 
   agentVerification(operation, input) {
@@ -154,6 +158,11 @@ export class GraphitiProviderClient {
   listPersonalProjects(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return sharedProjectList(this, personalSpaceId, () => this.#request(`/v1/personal-projects?${query}`));
+  }
+  // Which recorded host session made each session temporary project (read on demand).
+  listTemporaryProjectSources(personalSpaceId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/personal-projects/temporary-sources?${query}`);
   }
   getPersonalProject(personalSpaceId, projectId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -893,7 +902,11 @@ export class GraphitiProviderClient {
   // example after a graph import or a runtime mode switch. A rejected token is
   // replaced once by the current one and the request repeated; the Provider
   // did not act on the rejected request. An unchanged token is not retried.
-  async #request(path, options = {}) {
+  #request(path, options = {}) {
+    return trackProviderRequest(this.#diagnosticEvents, path, options, () => this.#sendWithTokenRefresh(path, options));
+  }
+
+  async #sendWithTokenRefresh(path, options) {
     const used = this.accessToken;
     try {
       return await this.#send(path, options);
@@ -983,6 +996,19 @@ export class GraphitiProviderClient {
       throw invalidResponse('Graphiti provider did not return a task event stream.');
     }
     return stream ? response : payload;
+  }
+}
+
+// Both database protocols record the final transport outcome. Successful token
+// recovery and caller cancellation keep their original behavior and leave no event.
+export async function trackProviderRequest(log, path, { method = 'GET' }, send) {
+  if (!log) return send();
+  const started = Date.now();
+  try {
+    return await send();
+  } catch (error) {
+    if (error instanceof ProviderRequestError) recordProviderFailure(log, method, path, error, started);
+    throw error;
   }
 }
 

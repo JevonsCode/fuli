@@ -104,9 +104,12 @@ async function load() {
   }
 }
 
-function edit(role: ModelRoleId) {
+// The part of the settings form to open at; a use's 去授权 asks for its projects (rec issue 143).
+const editingFocus = ref<'projects' | null>(null)
+function edit(role: ModelRoleId, focus: 'projects' | null = null) {
   stale.value = false
   closeDetails()
+  editingFocus.value = focus
   editing.value = role
 }
 
@@ -211,8 +214,12 @@ onBeforeUnmount(() => {
               @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" @builtin="builtinOpen = true" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
               @edit="edit('assistant')" @details="details = 'assistant'" @checked="load()" />
-            <AdvancedOnly area="tidy"><DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" /></AdvancedOnly>
-            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
+            <AdvancedOnly area="tidy">
+              <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" :settings-open="editing === 'assistant'"
+                @edit="edit('assistant')" @authorize="edit('assistant', 'projects')" @checked="load()" />
+            </AdvancedOnly>
+            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" :settings-open="editing === 'assistant'"
+              @edit="edit('assistant')" @authorize="edit('assistant', 'projects')" @checked="load()" />
             <ModelRoleCard v-for="role in (['jefa', 'tonborg', 'bole'] as const)" :key="role" :view="view(role)" :locked="locked"
               :editing="editing === role" @edit="edit(role)" @details="details = role" @checked="load()" />
           </div>
@@ -227,8 +234,8 @@ onBeforeUnmount(() => {
           @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />
         <BuiltinEmbeddingDialog :open="builtinOpen" @close="builtinOpen = false" @changed="settingsChanged()"
           @own="builtinOpen = false; edit(SEMANTIC_ROLE)" />
-        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
-          @close="editing = null" @saved="saved" @conflict="conflict" />
+        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects" :projects-loaded="Boolean(store.state)"
+          :focus="editingFocus" @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>
     </div>
     <PageOutline :content="pageRoot" />

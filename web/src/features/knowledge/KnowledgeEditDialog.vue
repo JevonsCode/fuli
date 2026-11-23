@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
@@ -72,14 +74,7 @@ const form = reactive({
 const relationship = computed(() => props.item?.itemKind === 'relationship')
 const invalid = computed(() => Boolean(props.item?.invalidAt))
 const profilePreference = computed(() => Boolean(props.item?.raw.profile_aspect))
-const projectOptions = computed(() =>
-  props.projects.map((project) => ({
-    value: project.project_id,
-    label: project.profile.name,
-    meta: `#${compactIdentity(project.project_id, 26)}`,
-    search: identitySearchText(project.project_id),
-  })),
-)
+const projectOptions = computed(() => projectScopeOptions(props.projects, project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) })))
 const quadrantOptions = computed(() =>
   ['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown']
     .map((value) => ({
@@ -470,7 +465,7 @@ function fail(message: string) {
             <fieldset v-if="!profilePreference" class="knowledge-editor-section">
               <legend>{{ t('knowledge.dialogs.edit.crossProjectInheritance') }}</legend>
               <OptionSelect v-model="form.inheritanceMode" field :options="inheritanceModeOptions" :label="t('knowledge.dialogs.edit.inheritanceScope')" />
-              <OptionCombobox v-if="form.inheritanceMode === 'selected_projects'" v-model="inheritanceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.inheritedProjects')" />
+              <OptionCombobox v-if="form.inheritanceMode === 'selected_projects'" v-model="inheritanceProjectId" field :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('knowledge.dialogs.edit.inheritedProjects')" />
               <p class="ui-meta">{{ t('knowledge.dialogs.edit.inheritanceBoundary') }}</p>
             </fieldset>
             <fieldset class="knowledge-editor-section">
@@ -500,7 +495,7 @@ function fail(message: string) {
         <p class="ui-meta">{{ t('knowledge.dialogs.edit.ownershipCopy') }}</p>
         <form class="knowledge-editor-form" @submit.prevent="saveAssignment">
           <fieldset class="knowledge-editor-group" :disabled="busy || locked">
-            <OptionCombobox v-model="targetProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.targetProject')" required />
+            <OptionCombobox v-model="targetProjectId" field :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('knowledge.dialogs.edit.targetProject')" required />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="assignmentReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
               <Button type="submit" :disabled="projects.length === 0" :loading="pendingAction === 'ownership'" :loading-label="t('knowledge.dialogs.edit.changingOwnership')">{{ t('knowledge.dialogs.edit.adjustOwnership') }}</Button>
@@ -515,7 +510,7 @@ function fail(message: string) {
         <form class="knowledge-editor-form" @submit.prevent="savePreferenceScope">
           <fieldset class="knowledge-editor-group" :disabled="busy || locked">
             <OptionSelect v-model="preferenceScope" field :options="preferenceScopeOptions" :label="t('knowledge.dialogs.edit.effectiveScope')" />
-            <OptionCombobox v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :label="t('knowledge.dialogs.edit.personalProject')" />
+            <OptionCombobox v-if="preferenceScope === 'project'" v-model="preferenceProjectId" field :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('knowledge.dialogs.edit.personalProject')" />
             <label class="ui-field">{{ t('knowledge.dialogs.edit.assignmentReason') }}<textarea v-model="preferenceReason" maxlength="2000" rows="3" required /></label>
             <div class="knowledge-editor-actions">
               <Button type="submit" :loading="pendingAction === 'scope'" :loading-label="t('knowledge.dialogs.edit.savingScope')">{{ t('knowledge.dialogs.edit.saveScope') }}</Button>

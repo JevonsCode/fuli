@@ -275,3 +275,21 @@ test('a list asks for one topic only when a topic is named, so a conversation ab
   assert.deepEqual([tool.inputSchema.properties.topic.type, tool.inputSchema.properties.topic.maxLength], ['string', 80]);
   assert.equal(tool.inputSchema.required.includes('topic'), false);
 });
+test('read_agent_conversation takes no mode and passes a source eventId on to the exact read', async () => {
+  const calls = [];
+  const app = { config: { personal: { spaceId: 'personal' } },
+    personal: { conversation: async (operation, input) => { calls.push({ operation, input }); return { events: [], source_check: 'unavailable' }; } } };
+  const result = await queryConversations(app, { personalProjectId: 'sample', agentId: 'engineer', mode: 'events',
+    conversationId: 'conversation-one', after: 11, limit: 1, eventId: 'fuli-task-synthetic:summary' });
+  assert.equal(result.source_check, 'unavailable');
+  assert.deepEqual([calls[0].input.mode, calls[0].input.after, calls[0].input.limit, calls[0].input.event_id],
+    ['events', 11, 1, 'fuli-task-synthetic:summary']);
+  const read = AGENT_CONVERSATION_DEFINITIONS.find(tool => tool.name === 'read_agent_conversation');
+  assert.equal(read.inputSchema.properties.mode, undefined, 'the MCP tool has no mode');
+  assert.equal(read.inputSchema.properties.eventId.type, 'string');
+  const { dispatchGraphTool } = await import('../src/agent-tools/graph-handlers.js');
+  let forwarded;
+  await dispatchGraphTool({ queryAgentConversations: async input => { forwarded = input; return {}; } }, 'read_agent_conversation',
+    { conversationId: 'c', after: 2, limit: 1, eventId: 'e' });
+  assert.deepEqual([forwarded.mode, forwarded.eventId], ['events', 'e'], 'the MCP read is always events');
+});

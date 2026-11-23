@@ -1,4 +1,4 @@
-import { isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
+import { isForwardedConsoleRequest, isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -135,6 +135,10 @@ export async function handleApiRequest({
   if (system && await handleClientConnectionRequest({ request, response, url, system })) return true;
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'PUT') {
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { error: 'Manage host settings in the local host console', code: 'local_user_only' });
+      return true;
+    }
     const result = await system.updateSettings(await readJson(request));
     if (result.apply?.status === 'applying') {
       // Flush the acknowledgement before the detached worker stops this server.
@@ -183,6 +187,10 @@ export async function handleApiRequest({
   // the start, which only a request from this computer may make.
   if (system?.startUpdate && url.pathname === '/api/system/update') {
     response.setHeader('Cache-Control', 'no-store');
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { error: 'FULI is updated only on this computer', code: 'local_user_only' });
+      return true;
+    }
     if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
     else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
     else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
@@ -210,7 +218,8 @@ export async function handleApiRequest({
   if (await handleEmbeddingModelsRequest({ request, response, url, embeddingModels: app.embeddingModels ?? null })) return true;
   if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
-  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
+  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents,
+    readIssueReport: system?.issueReport })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 

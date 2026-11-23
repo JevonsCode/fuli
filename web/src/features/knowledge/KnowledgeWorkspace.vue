@@ -59,6 +59,8 @@ import {
   knowledgeItemKey,
 } from './model'
 import { useSpaceChoices } from './space-choices'
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import {
    discoverPersonalProjectResults,
   type KnowledgeSearchResult,
@@ -1034,6 +1036,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
       <OptionCombobox
         :model-value="selectedChoiceKey"
         :options="spaceSelectOptions"
+        :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()"
         :label="t('knowledge.workspace.workspace.view.graphSpace')"
         control-id="graph-space"
         @update:model-value="changeSpace"

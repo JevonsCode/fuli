@@ -115,6 +115,37 @@ test('the PowerShell installer provisions a SHA-256-verified standalone Node.js 
     });
     assert.equal(candidate.status, 0, candidate.stderr || candidate.stdout);
     assert.equal(readFileSync(logPath, 'utf8').trim().split(/\r?\n/)[0], 'npm install --global fuli-context@0.20.0-rc.5');
+
+    // 4. A PSModulePath inherited from pwsh 7 (11-19, runner image windows-2025-vs2026
+    // 20261116.315.1, PowerShell 7.6.10): Windows PowerShell 5.1 loaded pwsh's newer Archive
+    // module, whose Expand-Archive calls the .NET Core-only three-argument ExtractToDirectory
+    // overload, and stopped with "argument count: 3". The installer uses its own edition's
+    // module: a decoy that makes the same call, and pwsh's real one where pwsh is installed.
+    const decoy = join(scratch, 'decoy-modules', 'Microsoft.PowerShell.Archive');
+    mkdirSync(decoy, { recursive: true });
+    writeFileSync(join(decoy, 'Microsoft.PowerShell.Archive.psm1'), [
+      'function Expand-Archive { param([string]$LiteralPath, [string]$DestinationPath, [switch]$Force)',
+      '  Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem',
+      '  $zip = [System.IO.Compression.ZipFile]::OpenRead($LiteralPath)',
+      '  try { [System.IO.Compression.ZipFileExtensions]::ExtractToDirectory($zip, $DestinationPath, [bool]$Force) } finally { $zip.Dispose() } }',
+    ].join('\r\n'));
+    writeFileSync(join(decoy, 'Microsoft.PowerShell.Archive.psd1'), "@{ RootModule='Microsoft.PowerShell.Archive.psm1'; ModuleVersion='99.0';"
+      + " GUID='eb74e8da-9ae2-482a-a648-e96550fb8733'; FunctionsToExport=@('Expand-Archive') }");
+    const pwshModules = spawnSync('pwsh', ['-NoProfile', '-Command',
+      '(Get-Module -ListAvailable Microsoft.PowerShell.Archive | Sort-Object Version -Descending | Select-Object -First 1).ModuleBase'],
+    { encoding: 'utf8', windowsHide: true }).stdout?.trim();
+    const foreign = [join(scratch, 'decoy-modules'), ...(pwshModules ? [join(pwshModules, '..')] : [])];
+    for (const [index, modules] of foreign.entries()) {
+      rmSync(logPath, { force: true });
+      const inherited = spawnSync(psExe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '--yes'], {
+        encoding: 'utf8', windowsHide: true,
+        env: { ...process.env, PSModulePath: `${modules};${process.env.PSModulePath ?? ''}`, FULI_USE_STANDALONE_NODE: '1',
+          FULI_RUNTIME_HOME: join(scratch, `foreign-runtime-${index}`), FULI_NODE_ARCHIVE_PATH: archivePath, FULI_NODE_SHA256: sha256 }
+      });
+      assert.equal(inherited.status, 0, `${modules}: ${inherited.stderr || inherited.stdout}`);
+      assert.ok(readFileSync(join(scratch, `foreign-runtime-${index}`, distName, 'fuli.cmd'), 'utf8').includes('fuli %*'), modules);
+      assert.equal(readFileSync(logPath, 'utf8').trim().split(/\r?\n/).at(-1), 'fuli setup --yes', modules);
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

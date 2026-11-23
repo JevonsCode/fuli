@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { apiErrorReason } from '@/api/client'
+import { ApiError, apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -67,7 +67,8 @@ async function start(stopProcesses: string[] = []) {
   try {
     started = await startConsoleUpdate(stopProcesses)
   } catch (cause) {
-    error.value = t('console.update.notStarted')
+    error.value = cause instanceof ApiError && cause.status === 403
+      ? t('console.update.hostOnly') : t('console.update.notStarted')
     details.value = apiErrorReason(cause)
     busy(false)
     return

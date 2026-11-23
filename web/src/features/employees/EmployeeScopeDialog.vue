@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { personalProjectsPath } from '@/router/paths'
-import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import type { PersonalProject } from '@/types'
 import {
   employeeName, employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
@@ -46,8 +47,13 @@ const catalogTemplates = ref<EmployeeTemplate[]>([])
 const catalogError = ref('')
 const selected = computed(() => catalogTemplates.value.find((entry) => entry.id === props.templateId))
 const title = computed(() => t('employees.manageProjectsTitle', { name: selected.value?.name ?? '' }))
-const projectOptions = computed(() => pickerOrder(props.projects.filter((project) => project.profile.lifecycle !== 'archived'))
-  .map((project) => ({ id: project.project_id, name: projectDisplayName(project) })))
+const offeredProjects = computed(() => props.projects.filter((project) => project.profile.lifecycle !== 'archived'))
+const projectOptions = computed(() => offeredProjects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
+// Named projects as before (an ID beside a name two share); temporary ones fold under one row.
+const projectChoices = computed(() => {
+  const ids = new Map(projectSelectOptions(projectOptions.value).map(option => [option.value, option.meta]))
+  return projectScopeOptions(offeredProjects.value, project => (ids.get(project.project_id) ? { meta: ids.get(project.project_id) } : {}))
+})
 const supportsPolicy = computed(() => selected.value?.management !== undefined)
 const selectionIds = computed({
   get: () => scopeMode.value === 'all'
@@ -196,7 +202,7 @@ function scopeKeydown(event: KeyboardEvent) {
         </div>
         <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: employeeName(selected) }) : t('employees.scope.selectedHint') }}</p>
       </div>
-      <OptionListbox v-model="selectionIds" :options="projectSelectOptions(projectOptions)" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
+      <OptionListbox v-model="selectionIds" :options="projectChoices" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
       <p v-if="scopeMode === 'all' && excludedIds.length" class="ui-meta">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>
       <p v-if="!projectOptions.length" class="ui-meta">{{ t('employees.noProjects') }} <RouterLink :to="personalProjectsPath(personalSpaceId, 'directory')" @click="close">{{ t('employees.createProject') }}</RouterLink></p>
       <p v-if="removals.length && !success" class="ui-meta">{{ t('employees.scopeRemoved', { count: removals.length }) }}</p>

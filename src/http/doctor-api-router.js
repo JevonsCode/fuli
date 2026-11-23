@@ -26,7 +26,7 @@ export async function handleDoctorApiRequest({ request, response, url, system })
     return true;
   }
   if (request.method === 'POST') {
-    if (refuseRemoteDecision(request, response, 'FULI is repaired only on this computer')) return true;
+    if (refuseRemoteDecision(request, response, 'FULI is repaired only on this computer', { directHost: true })) return true;
     const body = await readJson(request);
     assertJsonObject(body, 'Doctor action');
     if (Object.keys(body).length) throw new InvalidInputError('This action takes no options; send {}.');
