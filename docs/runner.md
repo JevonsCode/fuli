@@ -50,9 +50,9 @@ is the person's own decision on the host (`local_user_only`).
 The host lists a runner under the name the person typed at `invite` (`--name`),
 with the name the joining computer gives itself beside it (`join --name`, else
 its computer name). Each pairing is also a notice in the console's
-「最近你可能需要知道的事」, naming both and the command that revokes it
-(`fuli runner revoke <fingerprint>`, as the console has no runner page), so a
-pairing the person did not make shows; a used invitation's error on the runner
+「最近你可能需要知道的事」, naming both, with 「撤销」 on the notice itself
+(`DELETE /api/runners/<fingerprint>` after one confirming click), so a pairing
+the person did not make shows and ends in one place; a used invitation's error on the runner
 points at `fuli runner list` and `fuli runner revoke`.
 
 `join` then sets up the runner's clients exactly as `fuli setup` does (MCP entry,
