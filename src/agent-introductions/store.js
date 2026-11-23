@@ -27,7 +27,10 @@ export class AgentIntroductionStore {
     this.path = path;
   }
 
+  // Closing is final: an entry still running after its hook's deadline closed
+  // the application must not reopen the file and hold it past the hook.
   get db() {
+    if (this.closed) throw new Error('Agent introductions are closed');
     this.database ??= openFormattedDatabase(this.path, AGENT_INTRODUCTIONS_FORMAT);
     return this.database;
   }
@@ -69,6 +72,7 @@ export class AgentIntroductionStore {
   }
 
   close() {
+    this.closed = true;
     this.database?.close();
     this.database = null;
   }
