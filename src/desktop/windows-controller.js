@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
-import { runTrayAction } from './desktop-controller.js';
+import { runTrayAction, stageReporter } from './desktop-controller.js';
 import { readWindowsInstallation, WindowsInstallationSupersededError } from './windows-installation-context.js';
 import { removeRetiredLaunchers } from './windows-node-launcher.js';
 
@@ -89,7 +89,7 @@ if (isMainModule(import.meta.url)) {
     const result = process.argv[2] === 'context'
       ? { ok: true, dataDir: context.dataDir, logDir: context.logDir,
         nativeLogDir: context.nativeLogDir, instanceKey: context.instanceKey }
-      : await runTrayAction(process.argv[2], context);
+      : await runTrayAction(process.argv[2], context, { onStage: stageReporter(process.env) });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

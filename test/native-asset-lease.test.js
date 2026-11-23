@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { acquireNeo4jLifecycleLock, withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
+import { withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
+import { acquireNeo4jLifecycleLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
 test('service start and ordinary work cannot pass an active lifecycle lease', async t => {
   const root = await mkdtemp(join(tmpdir(), 'fuli-asset-lease-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -24,10 +25,11 @@ test('service start and ordinary work cannot pass an active lifecycle lease', as
 test('a recovery journal created while acquiring the lease blocks the critical section', async t => {
   const fs = await import('node:fs/promises'); const { syncBuiltinESMExports } = await import('node:module');
   const root = await mkdtemp(join(tmpdir(), 'fuli-lease-journal-race-')); t.after(() => rm(root, { recursive: true, force: true }));
-  const paths = { nativeRuntimeDir: root }, mkdir = fs.default.mkdir;
-  t.mock.method(fs.default, 'mkdir', async (...args) => {
-    const result = await mkdir(...args);
-    if (args[0] === join(root, '.neo4j-lifecycle.lock')) await fs.writeFile(join(root, 'neo4j-transaction.json'), '{}');
+  // The lock appears by a rename of its prepared directory (neo4j-lifecycle-lock.js).
+  const paths = { nativeRuntimeDir: root }, rename = fs.default.rename;
+  t.mock.method(fs.default, 'rename', async (...args) => {
+    const result = await rename(...args);
+    if (args[1] === join(root, '.neo4j-lifecycle.lock')) await fs.writeFile(join(root, 'neo4j-transaction.json'), '{}');
     return result;
   });
   syncBuiltinESMExports();
