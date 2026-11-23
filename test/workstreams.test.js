@@ -111,7 +111,11 @@ function fixture({ seed = [], members = MEMBERS, path = '/synthetic/campaigns', 
     listProjectAgentTasks: async () => []
   });
   app.searchKnowledge = async () => ({ facts: [], entities: [] });
-  app.standingAssignments = createStandingAssignments();
+  // Lines seeded in one millisecond are listed in ID order: IDs in seed order
+  // keep every store's order the same, as random IDs would not.
+  let seeded = 0;
+  app.standingAssignments = createStandingAssignments({
+    newId: () => `standing-synthetic-${String(++seeded).padStart(3, '0')}` });
   for (const line of seed) {
     app.standingAssignments.register({ personalSpaceId: SPACE, projectId: line.projectId ?? PROJECT,
       leadAgentId: line.owner, terms: line.terms, responsibility: line.name, source: line.source ?? 'host' });
