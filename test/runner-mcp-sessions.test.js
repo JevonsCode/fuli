@@ -37,17 +37,32 @@ test('starting and stopping many MCP processes of a runner leaves no session beh
   }
 });
 
-test('a runner may hold more sessions than one runner once could, up to the host\'s total', async (t) => {
-  const pair = await pairedRunner(t);
+test('a runner may hold more sessions than one runner once could, up to its share, and the host\'s total stays for all', async (t) => {
+  const pair = await pairedRunner(t, { runners: 2 });
   const open = [];
-  for (let index = 0; index < 20; index += 1) {
-    const runner = await pair.serve();
-    await runner.client.listTools();
+  const serve = async (on) => {
+    const runner = await pair.serve({ on });
     open.push(runner);
-  }
-  assert.deepEqual(await pair.sessions(), { owned: 20, open: 20, max: 64 });
+    return runner;
+  };
+  const refusal = async (runner) => JSON.parse((await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { taskPrompt: 'one more' } })).content[0].text);
+
+  // One computer: far past the 16 one runner was once held to, up to its share of 48.
+  for (let index = 0; index < 48; index += 1) await (await serve(0)).client.listTools();
+  assert.deepEqual(await pair.sessions(0), { owned: 48, open: 48, max: 64 });
+  const past = await refusal(await serve(0));
+  assert.equal(past.code, 'host_refused');
+  assert.match(past.message, /this computer holds 48 of the host's 64 sessions, its share/);
+
+  // Another computer still gets the rest, up to the host's total of 64.
+  for (let index = 0; index < 16; index += 1) await (await serve(1)).client.listTools();
+  assert.deepEqual(await pair.sessions(1), { owned: 16, open: 64, max: 64 });
+  const full = await refusal(await serve(1));
+  assert.match(full.message, /64 of the host's 64 sessions are open, 16 of them this computer's/);
+
   for (const runner of open) await runner.stop();
-  assert.equal((await pair.sessions()).owned, 0);
+  assert.equal((await pair.sessions(0)).open, 0);
 });
 
 test('a session the host refuses is said with its reason, not answered as if the host were away', async (t) => {
@@ -190,7 +205,9 @@ async function pairedRunner(t, { maxMcpSessions, maxMcpSessionsPerRunner, runner
       });
       return server;
     } });
+  // As the host does (host-service.js): a paired runner's connections are not held to an unknown device's share.
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
+    isPairedDevice: (fingerprint) => store.isPaired(fingerprint),
     route: (request, response, context) => {
       // One listener per keep-alive socket, not one per request on it.
       if (!sockets.has(request.socket)) {

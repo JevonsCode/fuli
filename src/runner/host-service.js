@@ -90,8 +90,7 @@ export function createRunnerHost({ app, dataDir, withLease = (_owner, operation)
         serving = { routes, listener: await startListener({ identity, addresses, port, route: routes.handle,
           // A paired runner's connections are never held to one address's share
           // of the connections unknown devices on the network may hold.
-          isPairedDevice: (fingerprint) => Boolean(fingerprint)
-            && store.runners().some((runner) => runner.fingerprint === fingerprint && !runner.revokedAt) }) };
+          isPairedDevice: (fingerprint) => Boolean(fingerprint) && store.isPaired(fingerprint) }) };
       } catch (error) {
         await routes.close();
         refused(error);

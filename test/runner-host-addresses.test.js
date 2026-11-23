@@ -87,8 +87,12 @@ test('a host reached over a VPN is learned from its hello and can be named by ha
   const lines = [];
   await runRunnerCommand(['add-address', '100.84.12.10', '--data-dir', dir], { env: {}, write: (line) => lines.push(line) });
   const reopened = new RunnerStore(path.join(dir, RUNNER_FILE));
-  t.after(() => reopened.close());
-  assert.equal(reopened.host().addresses[0], '100.84.12.10');
+  // Closed before the folder is deleted: Windows refuses to delete a SQLite file still open.
+  try {
+    assert.equal(reopened.host().addresses[0], '100.84.12.10');
+  } finally {
+    reopened.close();
+  }
 });
 
 test('the address list makes room for a new one instead of staying full for ever', async (t) => {
@@ -108,8 +112,11 @@ test('an address is read by its own position, not by the first place that value 
   await runRunnerCommand(['add-address', '--data-dir', dir, '10.20.2.17', '--data-dir', dir],
     { env: {}, write: () => {} });
   const reopened = new RunnerStore(path.join(dir, RUNNER_FILE));
-  t.after(() => reopened.close());
-  assert.equal(reopened.host().addresses[0], '10.20.2.17');
+  try {
+    assert.equal(reopened.host().addresses[0], '10.20.2.17');
+  } finally {
+    reopened.close();
+  }
 });
 
 test('only checked addresses are written, whichever way they are learned', async (t) => {
