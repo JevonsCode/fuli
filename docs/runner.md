@@ -442,7 +442,9 @@ data directory, and the key:
   `opencode`, …, `other`); `command`, when given, is the command that starts
   it. Each judgment runs a local preflight first: an executor takes part only
   while its command (or the one FULI starts that client with) is found on this
-  computer and it has every capability the task requires. The host's executor
+  computer and it has every capability the task requires. A required capability
+  that no executor declared here lists is refused at once as `invalid_input`,
+  with the names there are, and nothing is judged. The host's executor
   directory is not read: its executors are another computer's.
 
 Without `model-backends.json` naming such a role, `assess_agent_action` goes to

@@ -92,7 +92,9 @@ test('task and assignment locks intersect and the task model strategy constrains
   app.getProjectAgent = async () => ({ profile: { allowedClients: ['codex'], executorPolicy: { mode: 'flexible' } },
     assignments: [{ personalProjectId: 'p', status: 'active', executorPolicyOverride: { mode: 'locked', lockedExecutorIds: ['space', 'other'] } }] });
   app.viewProjectAgentTask = async () => ({ personalProjectId: 'p', executorPolicy: { mode: 'locked', lockedExecutorIds: ['space'] },
-    effectiveModelStrategy: { mode: 'deep', reasoningEffort: 'high', capabilityHints: ['reasoning'] }, requiredCapabilities: ['verification'] });
+    effectiveModelStrategy: { mode: 'deep', reasoningEffort: 'high', capabilityHints: ['reasoning'] },
+    // What the task's Agent must know does not limit executors; its executor hints do.
+    requiredCapabilities: ['synthetic agent skill'], executorCapabilityHints: ['verification'] });
   assert.equal((await service.assess({ ...routingInput, taskId: 'task' })).selection.executorId, 'space');
   const data = JSON.parse(prompt().split('\nDATA:\n')[1]);
   assert.deepEqual(data.eligible.map(e => e.executorId), ['space']);
@@ -222,11 +224,13 @@ test('an unknown request field is named only as unknown field; its caller-chosen
 
 test('with no executor to choose, the escalation names the check that left none instead of a bare failure', async t => {
   const capable = { ...availableExecutor('space'), capabilities: ['read', 'code_review'] };
-  const missing = routingFixture(t, { executors: [capable] });
-  const unmatched = await missing.service.assess({ ...routingInput, requestId: 'caps', requiredCapabilities: ['code-edit', 'read'] });
+  // A name some executor lists, but none that is ready now, is a real requirement: the person hears which.
+  const busy = { ...availableExecutor('busy'), capabilities: ['deploy'], healthStatus: 'unhealthy' };
+  const missing = routingFixture(t, { executors: [capable, busy] });
+  const unmatched = await missing.service.assess({ ...routingInput, requestId: 'caps', requiredCapabilities: ['Deploy', 'read'] });
   assert.equal(unmatched.disposition, 'ask_user');
   assert.equal(unmatched.outcome, 'escalate');
-  assert.match(unmatched.summary, /required capability \(code-edit, read\)/);
+  assert.match(unmatched.summary, /required capability \(deploy, read\)/);
   assert.deepEqual(unmatched.evidence, ['Offered: read, code_review']);
   assert.equal(missing.prompt(), undefined, 'no model is asked to choose from nothing');
 
@@ -242,4 +246,19 @@ test('with no executor to choose, the escalation names the check that left none 
   const rule = await ruled.service.assess({ ...routingInput, requestId: 'rule' });
   assert.match(rule.summary, /routing rule for this work allows no ready executor/);
   assert.deepEqual(rule.evidence, ['Allowed: elsewhere', 'Ready: space']);
+});
+
+test('a required capability no registered executor lists is the caller\'s mistake: refused at once with the names there are, and nothing recorded', async t => {
+  const executors = [{ ...availableExecutor('space'), capabilities: ['read', 'Code_Review'] }, { ...availableExecutor('off'), capabilities: ['gpu'], permissionStatus: 'revoked' }];
+  const { service, prompt } = routingFixture(t, { executors });
+  await assert.rejects(service.assess({ ...routingInput, requestId: 'free-text', requiredCapabilities: ['read', 'edit the card template'] }), error => {
+    assert.equal(error.code, 'invalid_input');
+    assert.equal(error.message, 'requiredCapabilities[1]: no registered executor lists this capability. Pass only names from this list, or none: code_review, gpu, read');
+    assert.equal(error.message.includes('edit the card'), false, 'the message never repeats the value');
+    return true;
+  });
+  assert.equal(prompt(), undefined);
+  assert.deepEqual((await service.records({ personalSpaceId: 's', personalProjectId: 'p' })).records, [], 'nothing waits for the person');
+  const fixed = await service.assess({ ...routingInput, requestId: 'fixed', requiredCapabilities: ['CODE_REVIEW'] });
+  assert.equal(fixed.selection.executorId, 'space', 'names match ignoring case, as before');
 });

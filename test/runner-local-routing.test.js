@@ -754,3 +754,14 @@ async function fakeModel(reply = null) {
   return { requests, origin: `http://127.0.0.1:${server.address().port}`,
     close: () => new Promise((resolve) => server.close(resolve)) };
 }
+
+test('a required capability no executor here lists is refused at once with the names there are; the model is not asked', async (t) => {
+  const runner = await routingRunner(t);
+  const refused = await runner.client.callTool({ name: 'assess_agent_action',
+    arguments: { ...ASK, requestId: 'job-free-text', requiredCapabilities: ['coding', 'change the card'] } });
+  const { code, message } = JSON.parse(refused.content[0].text);
+  assert.equal(code, 'invalid_input');
+  assert.equal(message, 'requiredCapabilities[1]: no registered executor lists this capability. Pass only names from this list, or none: coding');
+  assert.equal(runner.model.requests.length, 0);
+  assert.equal(runner.served.store.outbox().queued, 0, 'nothing is queued for the host');
+});

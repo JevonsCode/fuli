@@ -8,6 +8,7 @@ import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } fr
 import { coversClient } from '../agents/source-applications.js';
 import { recentClientModelUsage } from '../statement/compounding-statement.js';
 import { InvalidInputError } from '../app/application-error.js';
+import { checkCapabilityNames } from './executor-capabilities.js';
 
 const inputSchema = z.object({ personalSpaceId: z.string().min(1).max(256), personalProjectId: z.string().min(1).max(256),
   requestId: z.string().min(1).max(256), objective: z.string().min(1).max(8000),
@@ -74,7 +75,7 @@ function eligibleExecutors(executors, { locks, allowed, required, strategy, allo
       ? { summary: 'The locked executor policy or the routing rule for this work allows no ready executor.',
         evidence: [`Allowed: ${listed([...(allowed ?? []), ...locks.flat()])}`, `Ready: ${listed(ready.map(e => e.executorId))}`] }
       : !capable.length
-        ? { summary: `No ready executor offers every required capability (${listed(required)}). Pass only capability names an executor lists, or none.`,
+        ? { summary: `No ready executor offers every required capability (${listed(required)}).`,
           evidence: [`Offered: ${listed(permitted.flatMap(e => e.capabilities ?? []))}`] }
         : { summary: 'No ready executor has an available model this Agent may use under its model strategy.',
           evidence: [`Strategy: ${strategy.mode}${strategy.reasoningEffort ? `, effort ${strategy.reasoningEffort}` : ''}${strategy.capabilityHints?.length ? `, hints ${listed(strategy.capabilityHints)}` : ''}`,
@@ -104,6 +105,8 @@ export async function assessRouting({ app, decide, context, service, input: raw 
       app.listExecutors({ personalSpaceId: input.personalSpaceId }),
       app.listExecutorRoutingRules({ personalSpaceId: input.personalSpaceId, status: 'active' })
     ]);
+    // A capability no executor lists is the caller's mistake: refused before anything is recorded.
+    checkCapabilityNames(input.requiredCapabilities, executors, 'requiredCapabilities');
     stage = 'task';
     const task = input.taskId ? await app.viewProjectAgentTask({ personalSpaceId: input.personalSpaceId,
       personalProjectId: input.personalProjectId, taskId: input.taskId, includeEvents: false }) : null;
@@ -112,7 +115,9 @@ export async function assessRouting({ app, decide, context, service, input: raw 
     const policies = [agent.profile.executorPolicy, assignment?.executorPolicyOverride, task?.executorPolicy];
     const locks = policies.filter(p => p?.mode === 'locked').map(p => p.lockedExecutorIds ?? []);
     const strategy = task?.effectiveModelStrategy ?? assignment?.modelStrategyOverride ?? agent.profile.defaultModelStrategy ?? { mode: 'adaptive' };
-    const required = [...new Set([...input.requiredCapabilities, ...(task?.requiredCapabilities ?? [])].map(value => value.toLowerCase()))];
+    // A task's requiredCapabilities are what its Agent must know (Provider staffing); what its
+    // executor must offer are its executorCapabilityHints, as the Provider's executor routing reads them.
+    const required = [...new Set([...input.requiredCapabilities, ...(task?.executorCapabilityHints ?? [])].map(value => value.toLowerCase()))];
     const rank = { task: 4, project: 3, space: 2, global: 1 };
     const applicable = rules.filter(r => r.status === 'active' && (!r.workKind || r.workKind === input.workKind)
       && (!r.personalSpaceId || r.personalSpaceId === input.personalSpaceId)
@@ -162,6 +167,7 @@ export async function assessRouting({ app, decide, context, service, input: raw 
     store.writeSetting(input.personalSpaceId, key, record.id, 0);
     return record;
   } catch (error) {
+    if (error instanceof InvalidInputError) throw error;
     return store.record(input.personalSpaceId, { personalProjectId: input.personalProjectId, kind: 'routing', target: input.action,
       summary: 'Tonborg could not complete this executor judgment.', evidence: [], outcome: 'failed',
       policy, error: error.code ?? 'judgment_failed', failure: judgmentFailure(error, stage), guidance: FAILED_JUDGMENT_GUIDANCE,
