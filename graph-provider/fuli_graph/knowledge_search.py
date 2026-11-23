@@ -1100,15 +1100,13 @@ def _edge_matches(query: str, edges, names: dict[str, str], edge_terms: dict) ->
     orders, it does not exclude: a match on common words alone is what a
     question asked in other words than the answer's still has, so it stays a
     match as it was before the weighing, below every distinctive one."""
-    def scored(term_weights):
-        return [(_edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid), term_weights),
-                 edge) for position, edge in enumerate(edges)]
+    def relevance(position, edge, term_weights):
+        return _edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid), term_weights)
 
     term_weights = _term_weights(query, [_edge_record(edge, names, edge_terms.get(edge.uuid)) for edge in edges])
-    weighed = scored(term_weights)
-    if not term_weights:
-        return weighed
-    return [(score or plain * COMMON_TERMS_SHARE, edge) for (score, edge), (plain, _) in zip(weighed, scored(None))]
+    return [((relevance(position, edge, term_weights)
+              or (relevance(position, edge, None) * COMMON_TERMS_SHARE if term_weights else 0.0)), edge)
+            for position, edge in enumerate(edges)]
 
 
 # 的 and 之 between two Chinese characters only link them: 控制台的端口 is the
