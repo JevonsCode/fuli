@@ -9,11 +9,13 @@ import test from 'node:test';
 import { recallTaskKnowledge } from '../src/graphiti/task-knowledge-recall.js';
 
 const PROJECT = 'synthetic-project';
-// Every query finds the same items, as a broad lexical or canned query would:
-// what reaches the entry is then decided by the relevance rule alone.
-function application(entities) {
+// A canned category query ("认证 登录 … runbook") finds `byCategory`, as a
+// broad query of that kind does; a query of the task's own words finds
+// `byOwnWords`. What reaches the entry is then decided by the relevance rule.
+const CANNED = /runbook|workflow|convention|requirement|deployment|project checks/u;
+function application(byCategory, byOwnWords = []) {
   return { config: { personal: { spaceId: 'synthetic-space' } }, consoleUrl: 'http://192.0.2.10:2727',
-    async searchKnowledge() { return { facts: [], entities }; } };
+    async searchKnowledge({ query }) { return { facts: [], entities: CANNED.test(query) ? byCategory : byOwnWords }; } };
 }
 const confirmed = (id, name, summary, extra = {}) => ({ id, space_id: 'synthetic-space', scope: 'personal', name,
   type: 'Runbook', summary, key: id, defined_project_id: PROJECT, scope_distance: 0, confirmation_status: 'confirmed',
@@ -24,12 +26,12 @@ const RELEASE_NOTES = confirmed('synthetic-release-notes', '稳定版发布说�
 const CONNECTOR = confirmed('synthetic-connector-runbook', 'Synthetic Connector 提交 Runbook',
   'Use the connected GitHub Connector and never ask for local Git identity.');
 const RETRY = confirmed('synthetic-retry', '合成短信渠道的重试策略', '短信渠道最多重试 3 次，间隔 200 和 400 毫秒。');
-const recall = (prompt, entities) => recallTaskKnowledge(application(entities), { personalProjectId: PROJECT }, prompt);
+const recall = (prompt, byCategory, byOwnWords) => recallTaskKnowledge(application(byCategory, byOwnWords), { personalProjectId: PROJECT }, prompt);
 
-test('an unrelated confirmed item of the same project is a searched miss, with no 知识增强 marker', async () => {
+test('an unrelated confirmed item a category query found is a searched miss, with no 知识增强 marker', async () => {
   for (const [prompt, item] of [
-    ['把代码摸底的结果整理一下交回主会话，列出需要改的模块。', DUBBING],
-    ['修复权限边界：访客不能读别的项目的知识。', RELEASE_NOTES],
+    ['先看看之前的约定，把代码摸底的结果整理一下交回主会话。', DUBBING],
+    ['按我们的规范修复权限边界：访客不能读别的项目的知识。', RELEASE_NOTES],
     ['检查一下登录态是否过期，看看认证流程。', CONNECTOR]
   ]) {
     const result = await recall(prompt, [item]);
@@ -46,8 +48,8 @@ test('an unrelated confirmed item of the same project is a searched miss, with n
 });
 
 test('a related item still comes through, by the task\'s own words or by the category they triggered', async () => {
-  // Shares words with the task.
-  const retry = await recall('短信渠道也按重试策略来，补上测试。', [DUBBING, RETRY]);
+  // Found by a category query and shares words with the task.
+  const retry = await recall('按我们的约定，短信渠道也按重试策略来。', [DUBBING, RETRY]);
   assert.deepEqual(retry.entities.map(item => item.key), ['synthetic-retry']);
   assert.match(retry.sourceMarker.leadMarkdown, /知识增强/);
   // Shares no word, but is what the release category looks for.
@@ -57,8 +59,17 @@ test('a related item still comes through, by the task\'s own words or by the cat
 
 test('a meaning match the Provider stood behind is kept without a shared word', async () => {
   const meant = { ...DUBBING, matched_by: 'semantic' };
-  const result = await recall('把代码摸底的结果整理一下交回主会话，列出需要改的模块。', [meant]);
+  const result = await recall('先看看之前的约定，把代码摸底的结果整理一下交回主会话。', [meant]);
   assert.deepEqual(result.entities.map(item => item.key), ['synthetic-dubbing']);
+});
+
+// Denoising must not cost recall: what a search by the task's own words found
+// is not second-guessed, a cross-language hit included ("设置页面" / "settings page").
+test('an item the task\'s own words found is kept, even in another language', async () => {
+  const settings = confirmed('synthetic-settings', 'Settings page build', 'The settings page ships via the web build.');
+  const result = await recall('按之前定好的规范修复设置页面的按钮', [], [settings]);
+  assert.deepEqual(result.entities.map(item => item.key), ['synthetic-settings']);
+  assert.match(result.sourceMarker.leadMarkdown, /知识增强/);
 });
 
 test('a generic word every category query carries does not make an item relevant', async () => {

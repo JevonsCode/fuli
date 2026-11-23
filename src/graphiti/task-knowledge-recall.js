@@ -271,13 +271,16 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   // A personal preference reaches a task only through its scoped
   // effective_preferences, never as recalled knowledge (rec#15 D-27.7).
   const results = settlements
-    .filter(({ status }) => status === 'fulfilled')
-    .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
+    .map((settlement, index) => ({ settlement, category: isCategoryQuery(plan.queries[index]) }))
+    .filter(({ settlement }) => settlement.status === 'fulfilled')
+    .map(({ settlement: { value }, category }) => ({ category,
+      facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(ownText).slice(0, 8192));
   const taskTerms = new Set([...contentTerms(ownText), ...categoryTerms(plan.trigger_categories)]);
-  const factCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ facts = [] }) => facts), focusTerms, taskTerms));
-  const entityCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ entities = [] }) => entities), focusTerms, taskTerms));
+  const candidates = kind => recallCandidates(results, kind, focusTerms, taskTerms);
+  const factCandidates = confirmedFirst(candidates('facts'));
+  const entityCandidates = confirmedFirst(candidates('entities'));
   // rec#63: how often Agents used each candidate once shown reorders, within
   // the same place, by a bounded factor on the score; it never drops one.
   const prior = usagePriorLookup(application.recallImpressions, {
@@ -679,25 +682,48 @@ function confirmedByPeople(items) {
   return items.length > 0 && items.every((item) => item.confirmation_status === 'confirmed');
 }
 
-// What a confirmed recalled item has to have to reach the entry whole, with
-// the 「知识增强」 marker (rec#111): something in common with what the task
-// says — a name or identifier it names, a word or pair of Chinese characters
-// of its own text or of the category its words triggered — or a meaning match
-// the Provider's own statistics stood behind (matched_by semantic / both).
-// Being this project's item used to be enough on its own, and for a Chinese
-// prompt without names or identifiers nothing was filtered at all, so a canned
-// category query brought its project's items into tasks that never mentioned
-// them: a dubbing note for a code survey, release notes for a permissions fix,
-// a connector runbook for a receipt. Such a task now has a searched miss.
-// Pending items keep the rule they had: this project's are read on, and those
-// whose head does not match go to the title-only index without a marker
-// (relevantPending, rec#88). A task with no words to compare keeps what was
-// found: FULI does not withhold on a guess.
-function filterRecallCandidates(items, focusTerms, taskTerms = new Set()) {
+// What a recalled item has to have to reach the entry (rec#111). An item a
+// search by the task's own words found keeps the rule it always had: this
+// project's items are read on, and the rest only where the task names them.
+// An item that only a canned category query found ("认证 登录 … runbook") is
+// where the noise came from — a dubbing note for a code survey, release notes
+// for a permissions fix, a connector runbook for a receipt, each shown with
+// 「知识增强」 — so if it is confirmed (shown whole with that marker) it also
+// has to share something with the task: a name or identifier it names, a
+// word or pair of Chinese characters of its own text or of the category its
+// words triggered, or a meaning match the Provider's statistics stood behind.
+// Hits of the task's own words, a cross-language one included, are never
+// second-guessed here: denoising must not cost recall. A task with no
+// comparable words keeps what was found.
+function recallCandidates(results, kind, focusTerms, taskTerms) {
+  const ownIds = new Set(results.filter(result => !result.category)
+    .flatMap(result => result[kind] ?? []).map(item => item?.id).filter(Boolean));
+  const own = results.filter(result => !result.category).flatMap(result => result[kind] ?? []);
+  const fromCategory = results.filter(result => result.category).flatMap(result => result[kind] ?? [])
+    .filter(item => !ownIds.has(item?.id));
+  return [...filterRecallCandidates(own, focusTerms),
+    ...filterRecallCandidates(fromCategory, focusTerms).filter(item => categoryItemRelevant(item, focusTerms, taskTerms))];
+}
+
+function filterRecallCandidates(items, focusTerms) {
   const focusTokens = recallFocusTokens(focusTerms);
-  if (!focusTokens.length && !taskTerms.size) return items;
-  return items.filter((item) => matchedByMeaning(item) || recallItemMatchesFocus(item, focusTokens)
-    || (isConfirmed(item) ? sharesTaskTerms(item, taskTerms) : Boolean(item?.defined_project_id)));
+  if (!focusTokens.length) return items;
+  return items.filter((item) =>
+    Boolean(item?.defined_project_id) || recallItemMatchesFocus(item, focusTokens));
+}
+
+function categoryItemRelevant(item, focusTerms, taskTerms) {
+  if (!isConfirmed(item) || matchedByMeaning(item)) return true;
+  const focusTokens = recallFocusTokens(focusTerms);
+  if (!focusTokens.length && !taskTerms.size) return true;
+  return recallItemMatchesFocus(item, focusTokens) || sharesTaskTerms(item, taskTerms);
+}
+
+// A plan query built from a category's canned words (planTaskKnowledgeRecall),
+// as opposed to one of the task's own clauses.
+function isCategoryQuery(query) {
+  return typeof query === 'string'
+    && RECALL_INTENTS.some(intent => intent.queries.some(canned => query === canned || query.endsWith(` ${canned}`)));
 }
 
 const matchedByMeaning = item => item?.matched_by === 'semantic' || item?.matched_by === 'both';
