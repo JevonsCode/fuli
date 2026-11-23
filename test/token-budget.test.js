@@ -369,19 +369,20 @@ const BASELINE = Object.freeze({
   // rec#137: the frame names every omitted preference (keys alone at this size) in place of
   // the body it would otherwise not fit, and a delta whose index is the one its base showed
   // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
-  // Design T3: the preferences of an entry that does not fit whole take half the inline limit
-  // first, so the set no longer moves with the recall or a guidance sentence and the next prompt
-  // stays a delta. At about 430 chars each the share holds the 5 hard rules, one more and the
-  // keys of the rest: 8,693 -> 6,299 and 1,403 -> 1,402 chars.
-  claudeBoundedEntryChars: 6299,
-  claudeBoundedNextTurnChars: 1402,
+  // Design T3: the preferences of an entry that does not fit whole are given at least half the
+  // inline limit (a floor, not a cap); the room the recall and the conversation leave goes to more
+  // of them, and a later frame keeps the set its base listed. This entry has no recall, so it lists
+  // what it did before T3 (10 of 60 in full, the keys of the rest): 8,693 and 1,403 chars as on main.
+  claudeBoundedEntryChars: 8693,
+  claudeBoundedNextTurnChars: 1403,
   // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
   // five background-task notifications (two queued), and a prompt with another recall that asks
   // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
-  // prompt a whole frame again (30,374 chars in all); each notification is now one 173-char line
-  // and the second prompt an empty delta: 11,595 chars.
-  claudeHostEventSessionChars: 11595,
-  claudeHostEventLineChars: 173,
+  // prompt a whole frame again (30,374 chars in all); each notification is now one 171-char line
+  // that also says no entry call is needed, and the second prompt an empty delta. The first prompt
+  // lists 16 bodies beside its recall (11 while the share was a cap): 13,085 chars.
+  claudeHostEventSessionChars: 13085,
+  claudeHostEventLineChars: 171,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that

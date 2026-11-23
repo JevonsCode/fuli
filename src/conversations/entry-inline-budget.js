@@ -1,4 +1,4 @@
-import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
+import { copyPreferenceScope, entryWorkKind, preferenceUnitId } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
@@ -48,21 +48,28 @@ export function fitUncached(fit, value, render) {
 // get (a delta where one applies), and `complete(candidate)`, its complete
 // frame. The answer is always one `deliver` made.
 //
-// An entry that fits is unchanged. Otherwise, in this order:
+// An entry that fits is unchanged (unless `held` keeps a preference out, see
+// 2). Otherwise, in this order:
 // 1. the automatic recall becomes a pointer to its search, then the recent
 //    conversation drops its oldest messages, as the Provider's own window does;
 //    where that is not enough, the preferences lose their IDs first and step
 //    1 is tried again;
 // 2. then preferences go, lowest ranked first, except hard rules
-//    (preferenceAlwaysInline). The rest rank by stated scope, kind and task
-//    scene: an item whose prose-stated scope the session's project does not
-//    meet last, then a boundary a scene switch never revokes first, then an
-//    item whose own scene key names the task's work kind, then human-confirmed
-//    before agent-confirmed, then the Provider's order. The set is the largest
-//    ranked prefix whose complete frame fits with the leanest context of step
-//    1, so the same preferences select the same set on the next turn, and a
-//    delta follows. What is left out is named in preferences_omitted.index
-//    where that fits, never at the cost of a hard rule's body;
+//    (preferenceAlwaysInline), which are always listed. The rest rank by
+//    stated scope, kind and task scene: an item whose prose-stated scope the
+//    session's project does not meet last, then a boundary a scene switch
+//    never revokes first, then an item whose own scene key names the task's
+//    work kind, then human-confirmed before agent-confirmed, then the
+//    Provider's order. The preferences always get at least half the limit
+//    (PREFERENCE_SHARE, a floor and never a cap): the recall and the
+//    conversation give way to that floor first, and the room they leave goes
+//    to more preferences (sharedFit). The generation's first frame chooses the
+//    set; each later frame (`held`, the set its base frame listed) keeps it
+//    while it fits beside the leanest context of step 1, so the recall and
+//    the conversation give way to it, and only a changed, removed or new
+//    preference changes it. What is left out is named in
+//    preferences_omitted.index where that fits, never at the cost of a hard
+//    rule's body;
 // 3. where even the hard rules do not fit beside the rest, the entry's details
 //    give way to them, one at a time, each to a count or preview with its
 //    reader (D-72, detailLevels): the working-memory previews (global layer
@@ -86,13 +93,16 @@ export function fitUncached(fit, value, render) {
 // project ID and name is what a preference's prose-stated scope is read
 // against (preference-index.js, rec#111).
 export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
-  return (whole, { deliver, complete }) => {
+  return (whole, { deliver, complete, held = null }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
     // but delivers nothing: it does not fit. Size only grows with the entry,
     // so both conditions stay monotonic for the search below. Any other
     // blocked reason is kept as it is.
     const fits = attempt => !blockedByDeliveryBudget(attempt.result.structuredContent) && length(attempt.result) <= limit;
-    for (const level of contextLevels(whole)) {
+    // A session whose base frame left out a preference it still has keeps it
+    // out, even where this turn's shorter recall would fit it whole.
+    const settled = held && heldLeavesOut(whole.effective_preferences, held);
+    for (const level of settled ? [] : contextLevels(whole)) {
       const attempt = deliver(level);
       if (fits(attempt)) return attempt;
     }
@@ -100,7 +110,7 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     // one by its preference_key.
     const value = withoutPreferenceIds(whole);
     const levels = contextLevels(value);
-    for (const level of levels) {
+    for (const level of settled ? [] : levels) {
       const attempt = deliver(level);
       if (fits(attempt)) return attempt;
     }
@@ -109,15 +119,13 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
-    // The preferences take their share first, and only the recall and the
-    // conversation give way to it; the details give way to hard rules only.
-    // Whether the share applies is decided on the complete frame, as the
-    // search below decides, so a later turn's smaller delta picks the same set.
-    const shared = withinPreferenceShare(value, kept, ranked, limit);
-    const sharedAttempt = shared && fits(complete(shared(leanest)))
-      && bestLevel(levels, levels.length, [], leanest, candidate => deliver(shared(candidate)), fits);
-    if (sharedAttempt) return sharedAttempt;
     const fitsAt = (level, selected, index) => fits(complete(withPreferences(level, selected, preferences.length, index)));
+    // Step 1 and 2 above: the preferences' floor, the recall and the
+    // conversation, then more preferences while they fit (held keeps the set).
+    const shared = sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt,
+      frameAt: frame => bestLevel(levels, levels.length, [], leanest, candidate => deliver(frame(candidate)), fits),
+      delivers: frame => fits(deliver(frame)) });
+    if (shared) return shared;
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
     // themselves at the leanest level. The index is never part of this: a hard
@@ -212,25 +220,25 @@ function bestLevel(richer, contextCount, steps, leanest, frameAt, fits) {
 }
 
 // The share of a host's inline limit the preferences of an entry that does
-// not fit whole take first (design T3), measured as the JSON of what they
-// deliver: the listed bodies and the omission with its index. The recall and
-// the conversation use the rest and give way first. When the
-// preferences only took the room the rest left, a longer recall or one more
-// guidance sentence listed fewer of them; a frame whose set shrank is resent
-// in full (preference-snapshot.js), so most of a session's prompts were whole
-// frames. Half the limit holds what real bounded entries listed (70
-// preferences of about 130 characters: hard rules, five to eight bodies and a
-// line for each of the rest) beside an entry's own fields (about 3.5k
-// characters, token-budget.test.js noMatchEntryChars).
+// not fit whole are always given (design T3), measured as the JSON of what
+// they deliver: the listed bodies and the omission with its index. It is a
+// floor, not a cap: the recall and the conversation give way down to it, and
+// whatever room they leave goes to more preferences. A preference named only
+// by its key in the index cannot be judged to apply, so a body the limit can
+// hold is never left out to keep room empty. Half the limit holds what real
+// bounded entries listed (70 preferences of about 130 characters: hard rules,
+// five to eight bodies and a line for each of the rest) beside an entry's own
+// fields (about 3.5k characters, token-budget.test.js noMatchEntryChars).
 const PREFERENCE_SHARE = 0.5;
 
-// The entry's preferences bounded to their share: every hard rule, the
-// largest ranked prefix and the richest index that fit in it, chosen the way
-// the search below chooses (the best-ranked few before the index, the index
-// before any more of them). Null where they all fit, which the entry's own
-// levels already tried, or where the hard rules and an index of the rest
-// exceed it: the search then bounds them beside the rest.
-function withinPreferenceShare(value, kept, ranked, limit) {
+// The preferences' floor: every hard rule, the largest ranked prefix and the
+// richest index that fit in their share, chosen the way the search below
+// chooses (the best-ranked few before the index, the index before any more of
+// them), as { count, indexed }. It depends on the preferences alone, so every
+// turn with the same set has the same floor. Null where the hard rules and an
+// index of the rest exceed the share: the search then bounds them beside the
+// rest.
+function preferenceFloor(value, kept, ranked, limit) {
   const total = value.effective_preferences?.length ?? 0;
   const share = Math.floor(limit * PREFERENCE_SHARE);
   const selection = count => new Set([...kept, ...ranked.slice(0, count)]);
@@ -239,14 +247,68 @@ function withinPreferenceShare(value, kept, ranked, limit) {
   const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail))
     || indexDetail(detail => fitsShare(0, detail));
   if (!indexed) return null;
-  let low = 0;
-  let high = ranked.length;
+  return { count: largestCount(0, ranked.length, count => fitsShare(count, indexed)), indexed };
+}
+
+// The largest count in [low, high] that `accepts`, given that `low` does.
+function largestCount(low, high, accepts) {
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (fitsShare(middle, indexed)) low = middle;
+    if (accepts(middle)) low = middle;
     else high = middle - 1;
   }
-  return low === ranked.length ? null : candidate => withPreferences(candidate, selection(low), total, indexed);
+  return low;
+}
+
+// The entry bounded around the preferences' floor, or null where the floor
+// does not fit beside the leanest context (the search then decides).
+// - The session's first frame of a generation (no `held`): the recall and the
+//   conversation take the richest level that fits beside the floor, and the
+//   ranked preferences after it are added while the complete frame still fits
+//   there.
+// - A later frame (`held`, the set its base frame listed): the same set again,
+//   with any preference the base never named added and any it no longer has
+//   dropped, as long as the frame this turn actually delivers fits. That is
+//   most often a delta, which does not repeat a body the model already holds,
+//   so a longer recall, a conversation or one more guidance sentence never
+//   moves the set and the next frame stays a delta. Only where it does not fit
+//   (a body grew, or the frame must be complete) are the lowest-ranked left
+//   out until the complete frame fits beside the leanest context (hard rules
+//   never: they are always listed); that frame is resent whole
+//   (preference-snapshot.js: a bounded frame never names a removal, since what
+//   it leaves out is still in force).
+function sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt, frameAt, delivers }) {
+  const floor = preferenceFloor(value, kept, ranked, limit);
+  if (!floor) return null;
+  const order = held ? ranked.filter((index, rank) => rank < floor.count || heldOrNew(preferences[index], held)) : ranked;
+  const selection = count => new Set([...kept, ...order.slice(0, count)]);
+  const level = held ? leanest : levels.find(candidate => fitsAt(candidate, selection(floor.count), floor.indexed));
+  if (!level || !fitsAt(level, selection(floor.count), floor.indexed)) return null;
+  // As in the floor, the best-ranked few come first (rec#111), then a line
+  // for each left-out item before more bodies (rec#137): the lines are what
+  // tell the model which ones to read.
+  const reserved = Math.max(floor.count, Math.min(RESERVED_RANKED, order.length));
+  const indexed = floor.indexed === 'keys' && fitsAt(level, selection(reserved), 'full') ? 'full' : floor.indexed;
+  const listing = (selected, index) => candidate => selected.size === preferences.length ? candidate
+    : withPreferences(candidate, selected, preferences.length, index);
+  if (held) {
+    const all = selection(order.length);
+    const index = [indexed, 'keys'].find(detail => delivers(listing(all, detail)(leanest)));
+    if (index) return frameAt(listing(all, index));
+  }
+  const count = largestCount(floor.count, order.length, middle => fitsAt(level, selection(middle), indexed));
+  return frameAt(listing(selection(count), indexed));
+}
+
+// Whether the base frame listed this preference, or never named it at all (a
+// new one, or one whose scope changed): not one the base left in its index.
+function heldOrNew(item, held) {
+  return held.listed.has(preferenceUnitId(item)) || !held.indexed?.has(item.preference_key);
+}
+
+// Whether the base frame left out a preference this entry still has.
+function heldLeavesOut(preferences, held) {
+  return Array.isArray(preferences) && preferences.some(item => !preferenceAlwaysInline(item) && !heldOrNew(item, held));
 }
 
 // The richest index tier the caller accepts, or false when none is taken.

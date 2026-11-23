@@ -7,7 +7,8 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
-  frameOmittedIndex, framePreferenceSnapshot, pendingScene, preferenceSnapshot, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
+  frameOmittedIndex, framePreferenceSnapshot, heldPreferences, pendingScene, preferenceSnapshot, projectPreferenceDelta,
+  shownRevision } from './preference-snapshot.js';
 import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
@@ -138,7 +139,11 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // sizes the bytes it would really send.
           const complete = candidate => ({ candidate, result: output(projectSkeleton(completePreferenceFrame(candidate, shown),
             skeleton && { bases: [] }, origin.label)) });
-          const chosen = fit(value, { deliver: project, complete });
+          // The set the base frame listed, which a bounded entry keeps while it
+          // fits (entry-inline-budget.js, design T3): only the generation's
+          // first frame chooses one, so each later frame can be a delta.
+          const held = baseline && !origin.forceFull ? heldPreferences(baseline) : null;
+          const chosen = fit(value, { deliver: project, complete, held });
           const { recent } = chosen;
           const projected = recent.value;
           // The set this frame delivers: a bounded frame's own subset, never

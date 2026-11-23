@@ -94,12 +94,18 @@ test('a coding task\'s knowledge index is reduced to a pointer before any prefer
   assert.equal(frame.task_knowledge_recall.read.tool, 'search_current_project_knowledge');
   assert.equal(JSON.stringify(frame).includes('SYNTHETIC indexed rule'), false);
 
-  // With many preferences the bounded selection is the same with or without an index.
+  // With many preferences they keep their floor, half the limit (design T3):
+  // the index is kept beside it, and only bodies past the floor give way to it.
   const many = syntheticPreferences(60);
   const withIndex = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION, recall: syntheticIndexRecall(5) })));
   const without = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION })));
-  assert.deepEqual(keys(withIndex.effective_preferences), keys(without.effective_preferences));
-  assert.equal(withIndex.task_knowledge_recall.knowledge_index, undefined);
+  assert.equal(withIndex.task_knowledge_recall.knowledge_index.items.length, 5);
+  const hard = many.filter(item => kind(item.instruction) === 'HARD').map(item => item.preference_key);
+  assert.deepEqual(hard.filter(key => !keys(withIndex.effective_preferences).includes(key)), []);
+  assert.ok(withIndex.effective_preferences.length > hard.length, 'more than the hard rules are listed in full');
+  assert.deepEqual(keys(withIndex.effective_preferences).filter(key => !keys(without.effective_preferences).includes(key)), [],
+    'the index costs only bodies past the floor');
+  assert.ok(withIndex.effective_preferences.length < without.effective_preferences.length);
 });
 
 // rec#75: a delivered preference names its item for revise_personal_knowledge;
@@ -175,16 +181,75 @@ test('a bounded frame never names a removal of a preference that is still in for
   claudeEntrySession(async session => {
     const items = syntheticPreferences(30);
     const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
-    // Three new hard rules take the room of ranked ones the first frame sent.
+    // One listed preference is deleted, so this frame is complete, and three
+    // new hard rules take the room of ranked ones the first frame sent.
+    const [deleted] = keys(first.frame.effective_preferences).filter(key => !key.endsWith('12') && !key.endsWith('24'));
     const hard = [1, 2, 3].map(index => syntheticPreference(`new-hard-${index}`,
-      `SYNTHETIC_HARD_NEW_${index}: ${'Never push a shared branch without review. '.repeat(10)}`, { constraint: 'hard' }, 'judgment_preference'));
-    const second = await session.turn(syntheticLargeEntry({ items: [...items, ...hard], sessionId: session.sessionId, token: 'task-2' }));
-    const demoted = keys(first.frame.effective_preferences).filter(key => !keys(second.frame.effective_preferences).includes(key));
+      `SYNTHETIC_HARD_NEW_${index}: ${'Never push a shared branch without review. '.repeat(20)}`, { constraint: 'hard' }, 'judgment_preference'));
+    const rest = items.filter(item => item.preference_key !== deleted);
+    const second = await session.turn(syntheticLargeEntry({ items: [...rest, ...hard], sessionId: session.sessionId, token: 'task-2' }));
+    const demoted = keys(first.frame.effective_preferences)
+      .filter(key => key !== deleted && !keys(second.frame.effective_preferences).includes(key));
     assert.ok(demoted.length > 0);
     assert.equal(second.frame.preference_delivery, undefined, 'a complete frame, not a delta that removes them');
     assert.deepEqual(keys(hard).filter(key => !keys(second.frame.effective_preferences).includes(key)), []);
-    assert.equal(second.frame.preferences_omitted.count, 33 - second.frame.effective_preferences.length);
+    assert.equal(second.frame.preferences_omitted.count, 32 - second.frame.effective_preferences.length);
     assert.notEqual(second.frame.revision, first.frame.revision);
+  }));
+
+// Design T3: a later frame keeps the set its base listed while the frame it
+// delivers fits, so new hard rules arrive as a delta and push nothing out.
+test('new preferences are added to the held set as a delta, never by leaving a held one out', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(30);
+    const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
+    const hard = [1, 2, 3].map(index => syntheticPreference(`new-hard-${index}`,
+      `SYNTHETIC_HARD_NEW_${index}: ${'Never push a shared branch without review. '.repeat(10)}`, { constraint: 'hard' }, 'judgment_preference'));
+    const second = await session.turn(syntheticLargeEntry({ items: [...items, ...hard], sessionId: session.sessionId, token: 'task-2' }));
+    assert.ok(second.text.length <= INLINE_CHARS);
+    assert.equal(second.frame.preference_delivery.status, 'delta');
+    assert.deepEqual(keys(second.frame.preference_updates).sort(), keys(hard).sort());
+    assert.deepEqual(second.frame.preference_delivery.removed, []);
+    assert.equal(second.frame.preference_delivery.unchanged, first.frame.effective_preferences.length);
+  }));
+
+// Design T3: the generation's first frame chooses the set; a later one keeps
+// it while it fits, so a longer or shorter recall never moves it.
+test('a later frame keeps the set its base listed whatever the recall, so it stays a delta', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+      ...(recall ? { recall: syntheticRecall(recall, { length: 300 }), conversation: syntheticRecovery(4, { length: 300 }) } : {}) });
+    // The first frame fills the limit; later ones add a recall and a conversation.
+    const first = await session.turn(entry('task-1', 0));
+    const listed = first.frame.effective_preferences.length;
+    assert.ok(listed > 5, 'more than the hard rules are listed in full');
+    // A longer recall does not push one out, nor does no recall at all add one.
+    for (const [token, recall] of [['task-2', 6], ['task-3', 0]]) {
+      const { text, frame } = await session.turn(entry(token, recall));
+      assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
+      assert.equal(frame.preference_delivery.status, 'delta', token);
+      assert.deepEqual([frame.preference_updates, frame.preference_delivery.removed], [[], []], token);
+      assert.equal(frame.preference_delivery.unchanged, listed, `${token}: the same set`);
+      assert.equal(frame.preferences_omitted.count, 60 - listed);
+    }
+  }));
+
+test('a preference added or changed since the base frame is delivered as a delta where it fits', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, list) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token,
+      recall: syntheticRecall(6, { length: 300 }) });
+    const first = await session.turn(entry('task-1', items));
+    const [changedKey] = keys(first.frame.effective_preferences).slice(-1);
+    const added = syntheticPreference('synthetic-added', 'SYNTHETIC added: keep commit subjects short.', {}, 'personality');
+    const next = [...items.map(item => item.preference_key === changedKey
+      ? { ...item, instruction: `${item.instruction} (changed)` } : item), added];
+    const { frame } = await session.turn(entry('task-2', next));
+    assert.equal(frame.preference_delivery.status, 'delta');
+    assert.deepEqual(keys(frame.preference_updates).sort(), [changedKey, 'synthetic-added'].sort());
+    assert.deepEqual(frame.preference_delivery.removed, []);
+    assert.equal(frame.preference_delivery.unchanged, first.frame.effective_preferences.length - 1);
   }));
 
 // D-69 (revises D-54): past Claude Code's preview a hard rule is not seen

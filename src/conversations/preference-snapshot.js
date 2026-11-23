@@ -4,6 +4,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { TASK_SCENE_VERSION } from '../graphiti/task-scene.js';
 import { preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
+import { preferenceIndexKey } from './preference-index.js';
 
 const SCOPE = Symbol('fuli.authoritativePreferenceScope');
 const IDENTITY = ['preference_key', 'preference_scope', 'preference_project_id',
@@ -232,6 +233,18 @@ function identity(item) {
 }
 
 function unitId(item) { return canonicalJson(identity(item)); }
+
+// A preference's identity as a frame's set names it: its key, layer and owner.
+export const preferenceUnitId = unitId;
+
+// What a session's base frame (preference-session.js) left the model holding,
+// for an inline budget to keep (entry-inline-budget.js): `listed`, the
+// identities it spelled out, and `indexed`, the keys its omission index named,
+// or null where it named none.
+export function heldPreferences(baseline) {
+  return { listed: new Set(Object.keys(baseline.units)),
+    indexed: Array.isArray(baseline.omittedIndex) ? new Set(baseline.omittedIndex.map(preferenceIndexKey)) : null };
+}
 
 // The omission index a recorded frame left the model holding: the one it
 // carries, or, for a delta that said index_unchanged, the one its base held.

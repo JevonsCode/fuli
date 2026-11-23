@@ -77,6 +77,12 @@ export function preferenceIndexLine(item) {
     + (scope ? `${SCOPE_MARK}${scope}` : '');
 }
 
+// The key an index entry names: a keys-tier entry is the key itself, a line
+// starts with it, then its layer where that is not global.
+export function preferenceIndexKey(entry) {
+  return String(entry).split(SEPARATOR)[0].replace(/ \((?:agent|project)\)$/, '');
+}
+
 // The index of the items an entry does not list, in the order they were
 // resolved, so two turns with the same set produce the same index. `detail`
 // is 'full' (a line each) or 'keys' (the keys alone), the cheaper tier for an

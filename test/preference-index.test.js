@@ -3,7 +3,7 @@
 // to in prose carries that scope in its line. Synthetic preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { preferenceIndex, preferenceIndexLine, statedPreferenceScope, statedScopeMeetsProject }
+import { preferenceIndex, preferenceIndexKey, preferenceIndexLine, statedPreferenceScope, statedScopeMeetsProject }
   from '../src/conversations/preference-index.js';
 
 const item = (key, instruction, scope = 'global') => ({ preference_key: key, preference_scope: scope, instruction });
@@ -93,4 +93,13 @@ test('nothing FULI cannot place is pushed out on a guess', () => {
   assert.equal(statedScopeMeetsProject(item('plain', 'Keep it short.'), ['anything']), true);
   assert.equal(statedScopeMeetsProject(scoped, []), true);
   assert.equal(statedScopeMeetsProject(scoped, [null, undefined, '  ']), true);
+});
+
+// Design T3: a later frame tells a preference its base named in the index from
+// a new one by the key each index entry starts with.
+test('each index entry, a line or a key alone, names its key back', () => {
+  const items = [item('synthetic-a', '仅适用于合成结算需求：地区只按 locale 判断。', 'project'), item('synthetic-b', 'Keep it short.')];
+  for (const detail of ['full', 'keys']) {
+    assert.deepEqual(preferenceIndex(items, new Set(), detail).map(preferenceIndexKey), ['synthetic-a', 'synthetic-b'], detail);
+  }
 });
