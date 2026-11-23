@@ -23,6 +23,7 @@ import { runRoutesCommand } from './cli/routes-command.js';
 import { runRunnerCommand } from './cli/runner-command.js';
 import { startupFailureLine } from './local-runtime/startup-failure-line.js';
 import { runMcpCommand, startupMessage } from './cli/mcp-command.js';
+import { runWhoAmICommand } from './cli/whoami-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
 import { runUpdateCommand } from './cli/update-command.js';
 import { runWorkspaceConnectionCommand } from './cli/workspace-connection-command.js';
@@ -104,6 +105,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'remote-mcp') {
     assertSupportedNodeVersion();
     return runRemoteMcpCommand(commandArgs, { env });
+  }
+  if (command === 'whoami') {
+    assertSupportedNodeVersion();
+    return runWhoAmICommand(commandArgs, { env });
   }
   if (command === 'uninstall') {
     await runUninstallCommand(commandArgs, { env });

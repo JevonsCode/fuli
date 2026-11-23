@@ -16,7 +16,7 @@ from .project_agent_access import authorize_project_agent
 from .preference_conflicts import read_active_preference_conflicts
 from .provider_values import json_object, native_datetime as _native_datetime, preference_key, preference_qualifiers
 from .preference_task_scope import (
-    APPLIES, SCOPE_UNKNOWN, item_qualifiers, preference_task_applicability,
+    APPLIES, EXCLUDED, SCOPE_UNKNOWN, item_qualifiers, preference_task_applicability,
 )
 from .knowledge_weight import knowledge_weight
 from .negative_feedback_block import agent_authority_suspension
@@ -127,7 +127,11 @@ async def read_collaboration_context(
         item.preference_key for item in items if applicability[item.id] == SCOPE_UNKNOWN
     })
     scoped_items = [item for item in items if applicability[item.id] == APPLIES]
+    # Excluded = the items whose scope this task definitely does not meet
+    # (mismatch) + the items whose scope it does not state (scope_unknown,
+    # which lists their distinct keys, so several items can share one).
     task_scope_excluded_count = len(items) - len(scoped_items)
+    task_scope_mismatch_count = sum(1 for item in items if applicability[item.id] == EXCLUDED)
     items = scoped_items
     items.sort(key=_sort_key)
     if not complete and len(items) > limit:
@@ -207,6 +211,7 @@ async def read_collaboration_context(
         agent_preferences=agent_preferences,
         effective_preferences=effective_preferences,
         task_scope_excluded_count=task_scope_excluded_count,
+        task_scope_mismatch_count=task_scope_mismatch_count,
         task_scope_filtered=True,
         scope_unknown=scope_unknown,
         conflicts=conflicts,

@@ -151,7 +151,10 @@ the host's console is one page application that reads its own absolute paths.
   host console. The runner can still read the public version at `/api/system/version`.
 - 客户端接入 (`/api/system/client-connection…`) answers on the runner itself: it lists, connects,
   restarts and adds this computer's clients, with the same entries `fuli runner join` writes.
-  Nothing of it reaches the host. The host's relay refuses those writes, and opening a session
+  Nothing of it reaches the host. Because it is the runner's own page, it says so at the top: this
+  computer is a runner, its host's name, that a runner's hooks load nothing so every client here
+  depends on the model entering the task through FULI's MCP server, and, when the two differ, which
+  computer runs the older FULI. The host's relay refuses those writes, and opening a session
   (`/api/session-launch`), with 403 `host_computer_only`, so a runner never changes the host
   computer's clients.
 - While the host is away, a page says so — naming the host's page that cannot be shown — and shows
@@ -310,6 +313,52 @@ An invitation can already carry such an address, so a runner that joins while
 both are on the VPN needs none of this. A company network that isolates its
 clients from each other blocks both computers equally: use a cable, another
 shared network, or a mesh tool that does not rely on the local network.
+
+## FULI versions on the two computers
+
+A runner and its host each have their own FULI, and nothing keeps them on the same version: a runner
+left in an office stays on the version it joined with (rec#144). The host's version comes with the
+hello the runner already exchanges with it, so `fuli status` and `fuli runner status` on a runner,
+and the runner's 客户端接入 page, say which copy is older. The runner's side is what its open client
+sessions run (their MCP servers keep the version they started with until restarted), or the
+installed copy when none is open; the same release spelled differently (`v0.29.0`, build metadata)
+is not a difference. It is only said: a call both versions understand goes through as before, and
+nothing here refuses anything. When the runner is older the page offers 「让 AI 来做：更新这台电脑的
+FULI」 (the console's one AI entry), which hands an AI client on this computer a prompt naming the
+host's exact version — `npm install --global fuli-context@<host version>`, `fuli restart`, which
+sessions to reopen, then `fuli runner status` — never "or newer", which would put the runner ahead
+and turn the notice around. When the host is older the page says to update from the host's
+console, because a runner's page cannot run the host's update (the relay refuses it). The
+host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
+runner's side only.
+
+## Who owns this project (`fuli whoami`)
+
+An outside process on a runner — a background worker that has to sign its results with the right
+FLA, say — has no `graph-runtime.json` to read, and before this had to be told the space by hand
+(rec#145). `fuli whoami` answers it, read only:
+
+```bash
+fuli whoami                      # the folder this runs in
+fuli whoami --project <id|folder>
+fuli whoami --json
+```
+
+It gives the personal space (ID and name), the project (ID and name) the folder resolves to, the
+FLA leading that project (ID, its own name and its role), and whether this computer is the host or
+a runner. It returns no token, no certificate and no address, enters no task and writes nothing to
+knowledge. `--json` always has the same fields, `null` where there is nothing: `space`, `project`,
+`lead`, `projectResolution`, `basis`, `computer.role`, `computer.hostReachable` (`null` on the
+host), `offline` and `answeredAt`. A script should read `offline` (or the exit code): `0` answered
+now, `3` the host's earlier answer, `2` no answer at all.
+
+On a runner it goes through the console entry above, which relays it to the host console
+(`POST /api/whoami`), and sends the folder's facts with it so the host resolves the folder by
+exactly the rules in "Projects" below. While the host is away the host's last answer for that
+folder is shown instead, marked `offline` with the time the host gave it; that answer is kept in
+`whoami-last-answer.json` in the runner's data directory, holds only what the answer already shows,
+and is one of the things `fuli runner leave` deletes. With no earlier answer for that folder it says
+so and exits 2 rather than guess.
 
 ## Projects
 
@@ -548,7 +597,10 @@ The host's last answers to read-only calls, shown marked offline while the
 host is away; the task tokens it gave out offline; checkpoints and executor
 decisions waiting for the host, deleted once delivered (one the host refused
 for good stays listed); and, when its Tonborg chooses executors, its decisions
-and their outcomes.
+and their outcomes. Beside them, the host's last `fuli whoami` answer per folder
+asked about (`whoami-last-answer.json`, at most 20 folders): space, project and
+lead FLA names and IDs, nothing else. It goes at `fuli runner leave` and when this computer joins a
+host, and while the host has revoked this computer `fuli whoami` shows none of it.
 
 **Nothing here is deleted because it is old** (rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」).
 An answer is replaced when the host answers that call again; everything kept goes when the host

@@ -100,6 +100,9 @@ test('checkpoint sends explicit usage in both atomic requests and replays the Pr
   assert.equal(replay.replayed, true);
   assert.deepEqual(replay.knowledge_usage, receipt);
   assert.equal(writes.length, 2);
-  await assert.rejects(callAgentTool(app, 'checkpoint_task_knowledge', { ...input,
-    knowledgeUsage: [{ ...input.knowledgeUsage[0], useKind: 'cited' }] }), /different input/);
+  // Changed usage on the closed task saves nothing and says so (task_closed).
+  const refused = await callAgentTool(app, 'checkpoint_task_knowledge', { ...input,
+    knowledgeUsage: [{ ...input.knowledgeUsage[0], useKind: 'cited' }] });
+  assert.deepEqual([refused.status, refused.reason], ['checkpoint_not_saved', 'task_closed']);
+  assert.equal(writes.length, 2, 'nothing more was written');
 });

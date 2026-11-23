@@ -1,4 +1,7 @@
+import { join } from 'node:path';
+
 import { routingRoleState } from './routing-setup.js';
+import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 
 // The one description of where a follower stands (docs/runner-roles-design.md
@@ -56,6 +59,11 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
   // Looking for the host may have learned that this computer was revoked; read the row again.
   const after = store.host() ?? host;
   const sessions = answered?.mcpSessions ?? null;
+  // The two FULI versions, and which side is older (version-skew.js, rec#144): the host's comes
+  // with its hello; this computer's is what its open sessions run, else the installed copy.
+  const runnerVersions = runningRunnerVersions(dataDir ? join(dataDir, 'graph-runtime.json') : null,
+    dataDir ? {} : { live: () => [] });
+  const hostVersion = answered?.version ?? null;
   return {
     paired: true,
     host: { name: after.name, pairedAt: after.pairedAt, revokedAt: after.revokedAt ?? null,
@@ -65,6 +73,7 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
       pinFailed: reach ? Boolean(!reached && connection.pinFailed) : false,
       ...(sessions ? { mcpSessions: sessions } : {}) },
     outbox: store.outbox(),
+    versions: { host: hostVersion, runner: runnerVersions, skew: runnerVersionSkew({ hostVersion, runnerVersions }) },
     cache: keptHere(store),
     capabilities: capabilities(dataDir)
   };

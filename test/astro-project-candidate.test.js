@@ -161,6 +161,8 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
   app.roleSuggestions = new RoleSuggestionLog();
+  // These tests are about the hint itself, so the entry waits for it (task-entry-preferences.js afterGrace).
+  app.entryHintGraceMs ??= Infinity;
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total, caller_deadline AS callerDeadline FROM model_attempts ORDER BY attempt_number')
@@ -191,7 +193,7 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
   const baseline = await today.entry();
   const plain = JSON.stringify(baseline);
   // Snapshot of today's top-level answer for an unclaimed conversation.
-  assert.deepEqual(Object.keys(baseline), ['conversation', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'resumed_checkpoint',
+  assert.deepEqual(Object.keys(baseline), ['conversation', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'resumed_checkpoint',
     'previous_checkpoint_missing', 'effective_preferences', 'deferred_conflicts', 'active_conflicts', 'application_guidance',
     'task_knowledge_recall', 'context', 'project_agent_context', 'triage_candidates', 'agent_receipt', 'task_guidance']);
   assert.deepEqual(baseline.triage_candidates, { projects: ['Garden Planner', 'Alpha Ledger', 'Hidden Orchard'], topics: [],
