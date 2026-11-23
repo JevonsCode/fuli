@@ -157,19 +157,28 @@ The host listens on its private LAN addresses and follows them as they change
 (checked every minute), and advertises `fuli-runner` over mDNS with its
 fingerprint while a runner is paired. The runner tries every address it knows at
 once (2.5 seconds in all), then looks the fingerprint up over mDNS (up to 3
-seconds, done at the first answer), taking only private addresses from it. Any
+seconds, done at the first answer), taking only addresses a host serves from it:
+private ones, and the 100.64.0.0/10 range a VPN or mesh tool hands out. Any
 address is accepted only when it answers with the pinned certificate.
 
 Each address is tried both by the default route and from each physical
-adapter's own address (Wi-Fi, cable). **This helps on macOS only.** There,
-scoped routing makes the source address pick the adapter, so when a VPN claims
-the host's subnet and the default route disappears into its tunnel, the request
-bound to the Wi-Fi address still reaches the host directly. On Linux and
-Windows the route is chosen by the destination, so binding a source address
-does not change which adapter the request leaves by: there, a VPN that swallows
-the host's subnet needs `fuli runner add-address` with an address that is
-reachable through the VPN itself (see "Two computers on different networks").
-The route that answers is the one every later request takes.
+adapter's own address (Wi-Fi, cable). Whether that gets past a VPN depends on
+the system:
+
+- **macOS:** it helps. Scoped routing makes the source address pick the
+  adapter, so when a VPN claims the host's subnet and the default route
+  disappears into its tunnel, the request bound to the Wi-Fi address still
+  reaches the host directly.
+- **Linux:** usually not. The route is chosen by the destination, so binding
+  a source address does not change which adapter the request leaves by.
+- **Windows:** not tried. Windows has used the strong host model since Vista,
+  under which binding the source address may well pick the adapter as on
+  macOS, but no runner has been tried there behind such a VPN.
+
+Where it does not help, a VPN that swallows the host's subnet needs
+`fuli runner add-address` with an address reachable through the VPN itself
+(see "Two computers on different networks"). The route that answers is the
+one every later request takes.
 
 The host's `hello` names its current addresses and the runner keeps up to 16,
 newest first, dropping the one learned longest ago, so each network the two
