@@ -101,6 +101,32 @@ export function roundtableThreadUrl(application, threadId) {
 // itself (task-entry-introduction.js), already Markdown-escaped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
+// How long the receipt line is, decided by FULI from what the conversation and
+// the turn actually hold — never by the model judging how short its own reply
+// is (rec#146 item 3: 「短回复每条都附，噪音偏大」).
+//
+// The whole line, console link included, is for a receipt that carries
+// something the person has not been given in this conversation yet: the first
+// receipt of a conversation, the first after work was continued here, anything
+// retained this turn, a notice, a collaborator or roundtable thread, an
+// introduction. A later turn that saved nothing and changed nothing signs with
+// the FLA's name alone.
+//
+// taskAgentReceipt cannot know the conversation part when it is built (an
+// entry builds its receipt before the conversation begins), so a receipt whose
+// line is nothing but the identity keeps its short form beside it, under a
+// symbol no JSON answer serializes. signedReceipt picks it once the caller
+// knows; anything appended to the line afterwards keeps it whole.
+const SHORT_FORM = Symbol('short_receipt_form');
+
+export function signedReceipt(receipt, { firstInConversation = true } = {}) {
+  const alternative = receipt?.[SHORT_FORM];
+  if (!alternative) return receipt;
+  const { [SHORT_FORM]: _alternative, ...plain } = receipt;
+  if (firstInConversation || plain.markdown !== alternative.full) return plain;
+  return { ...plain, form: 'short', markdown: alternative.short };
+}
+
 export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null,
@@ -114,7 +140,7 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     && !helpers.some(item => item.agentId === peer.agentId)) : [];
   const threads = (roundtable?.threads ?? []).map((threadId, index) =>
     markdownLink(index ? `圆桌对话详情 ${index + 1}` : '圆桌对话详情', roundtableThreadUrl(application, threadId)));
-  const build = () => ({ required: true, markdown: [owner
+  const build = () => ({ required: true, form: 'full', markdown: [owner
     ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[agentLink(application, agentId, name, role),
       ...helpers.map(item => collaboratorLink(application, item)),
       ...peers.map(peer => agentLink(application, peer.agentId, peer.name))].join(' & ')}`
@@ -141,6 +167,15 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
       detail.responsibility = null;
     }
     receipt = build();
+  }
+  // Only the identity on the line: it may be signed with the name alone.
+  const identityOnly = owner && !helpers.length && !peers.length && !threads.length && !notices.length
+    && !introduction && !turnReceipt?.lines?.length;
+  if (identityOnly) {
+    // Not enumerable: never serialized or compared, and a copy made by spreading
+    // the receipt (to append a line) drops it, which keeps that line whole.
+    Object.defineProperty(receipt, SHORT_FORM, { value: { full: receipt.markdown,
+      short: `FULI Agent：${receiptText(agentLabel(name, role) || agentId)}` } });
   }
   return withTurnReceipt(receipt, turnReceipt);
 }

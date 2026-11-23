@@ -1,3 +1,4 @@
+import { consoleWorkLocations, LIST_LIMIT, listedWorkLocations } from './agent-work-locations.js';
 import { listAgentWorkbenches, listTeamWorkbenches } from './project-agent-task-sheets.js';
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
@@ -106,9 +107,16 @@ export class ProjectAgentControlPlaneApplication {
   async organizeProject(input) {
     return organizeProject(this, input);
   }
+  // workLocations counts where this FLA worked from the very page the list
+  // reads, so an Agent's count has exactly this tool's scope and checks
+  // (rec#147 review): its client, the FLA's allowed clients, a worker's own
+  // layer, and the one scope it asked for.
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);
-    return queryConversations(this, input);
+    if (!input.workLocations || input.mode !== 'list') return queryConversations(this, input);
+    const limit = Math.min(input.limit ?? LIST_LIMIT, LIST_LIMIT);
+    const answer = await queryConversations(this, { ...input, limit });
+    return { ...answer, work_locations: listedWorkLocations(answer, { personalProjectId: input.personalProjectId ?? null, limit }) };
   }
   async resumeAgentConversation(input) { return resumeConversation(this, input); }
   async updateAgentConversationPolicy(input) {
@@ -323,6 +331,12 @@ export class ProjectAgentControlPlaneApplication {
   async viewProjectAgentActivity(input) {
     this.#assertSpace(input.personalSpaceId);
     return viewProjectAgentActivityWorkflow(this, input);
+  }
+
+  // The person's own console view across the FLA's active projects.
+  async viewAgentWorkLocations(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return consoleWorkLocations(this, input);
   }
 
   async getProjectAgentCoordinationPolicy(input) {
