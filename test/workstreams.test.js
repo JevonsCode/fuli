@@ -227,7 +227,7 @@ test('a branch term names its line; a shared branch never does', async t => {
     leadAgentId: 'fla-ember', terms: ['branch:main'], responsibility: 'x', source: 'host' }),
   { code: 'standing_assignment_term_too_broad' });
   assert.throws(() => createStandingAssignments().register({ personalSpaceId: SPACE, projectId: PROJECT,
-    leadAgentId: 'fla-ember', terms: ['branch:release/1.2'], responsibility: 'x', source: 'host' }),
+    leadAgentId: 'fla-ember', terms: ['branch:develop'], responsibility: 'x', source: 'host' }),
   { code: 'standing_assignment_term_too_broad' });
 });
 

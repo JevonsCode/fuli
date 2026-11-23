@@ -18,7 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
-import { workingBranchMarkers } from './task-entry-workstream.js';
+import { WORKING_REPOSITORY, workingBranchMarkers } from './task-entry-workstream.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { introductionEntry } from './task-entry-introduction.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
@@ -243,6 +243,9 @@ async function entryPreferences(application, projectResolution, {
     ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ?? joinedRounds ? { flg: group?.view ?? joinedRounds } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),
     ...(routeMarkers.length ? { [FLA_ROUTE]: routeMarkers } : {}),
+    // The repository the routing read, so the task's beginning does not read it again.
+    ...(Object.hasOwn(projectResolution, 'workingRepository')
+      ? { [WORKING_REPOSITORY]: projectResolution.workingRepository } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),

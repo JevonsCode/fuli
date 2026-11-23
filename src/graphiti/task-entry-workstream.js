@@ -1,10 +1,9 @@
 import path from 'node:path';
 
 import { receiptText } from '../agents/identity-receipt.js';
-import { workingBranch } from '../conversations/working-branch.js';
+import { workingRepository } from '../conversations/working-branch.js';
 import { branchTerm } from '../standing-assignments/term-rules.js';
 import { addressedAgentId } from './fla-mention.js';
-import { findRepositoryRoot } from './project-path-context.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 
 // Which line of work of its own project a task belongs to (docs/workstreams.md).
@@ -19,6 +18,13 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 // "workstream:<assignmentId> <notice>", read back by prefix and ID alone. The
 // branch a session is on rides along as "working_branch:<name>" when it is a
 // line's own kind of branch, so opening a line can record it.
+//
+// The repository ({ branch, root }) is read once, here, and handed to the
+// task's beginning (WORKING_REPOSITORY), which reads it for the conversation's
+// place and its continuation line (task-context-entry.js); nothing reads it twice.
+
+// The working repository this entry read, carried to the task's beginning without reaching any client.
+export const WORKING_REPOSITORY = Symbol('working_repository');
 
 const WORKSTREAM = /^workstream:(\S+) (.+)$/su;
 const WORKING_BRANCH = /^working_branch:(.+)$/su;
@@ -29,8 +35,9 @@ export async function withWorkstream(application, resolution, input, sessionTask
   const projectId = resolution.status === 'matched' ? resolution.personalProjectId : null;
   if (!projectId || !application.standingAssignments || resolution.standingOwner || resolution.standingCandidates
     || resolution.fla || resolution.group) return resolution;
-  const branch = await workingBranch(input.projectPath);
-  const carried = branchTerm(branch) ? { workingBranch: branch } : {};
+  const repository = await workingRepository(input.projectPath);
+  const branch = repository?.branch ?? null;
+  const carried = { workingRepository: repository, ...(branchTerm(branch) ? { workingBranch: branch } : {}) };
   if (input.projectAgentId || addressedAgentId(input.taskPrompt) !== null || EXPLICIT_AGENT_BASES.has(resolution.basis)
     || hostInternalActivity(application, input)) return { ...resolution, ...carried };
   const space = application.config.personal.spaceId;
@@ -41,7 +48,7 @@ export async function withWorkstream(application, resolution, input, sessionTask
     return { ...resolution, ...carried };
   }
   if (!lines.length) return { ...resolution, ...carried };
-  const matches = lineMatches(application, space, projectId, input, branch);
+  const matches = lineMatches(application, space, projectId, input, repository);
   if (matches.length > 1) return { ...resolution, ...carried, standingCandidates: matches.map(ownerOf) };
   if (matches.length === 1) return { ...resolution, ...carried, standingWorkstream: ownerOf(matches[0]) };
   const continued = sessionTask?.personalProjectId === projectId
@@ -51,10 +58,11 @@ export async function withWorkstream(application, resolution, input, sessionTask
     : { ...resolution, ...carried };
 }
 
-function lineMatches(application, space, projectId, input, branch) {
+function lineMatches(application, space, projectId, input, repository) {
   const prompt = typeof input.taskPrompt === 'string' && input.taskPrompt.trim() ? input.taskPrompt : ' ';
   try {
-    return application.standingAssignments.match(space, prompt, { folders: foldersBelowRoot(input.projectPath), branch })
+    return application.standingAssignments.match(space, prompt, {
+      folders: foldersBelowRoot(input.projectPath, repository?.root), branch: repository?.branch ?? null })
       .filter(({ assignment }) => assignment.projectId === projectId);
   } catch {
     return [];
@@ -63,18 +71,11 @@ function lineMatches(application, space, projectId, input, branch) {
 
 // The folders of the working directory below its repository root, nearest
 // last: never the user's home, the repository's own name or anything above.
-// Outside a repository no folder counts.
-// A path this host cannot read as absolute (another system's) has no folders here.
-function foldersBelowRoot(projectPath) {
-  if (typeof projectPath !== 'string' || !path.isAbsolute(projectPath)) return [];
-  let repository;
-  try {
-    repository = findRepositoryRoot(projectPath);
-  } catch {
-    return [];
-  }
-  if (!repository) return [];
-  const below = path.relative(repository, path.resolve(projectPath));
+// Outside a repository, or for a path this host cannot read as absolute
+// (another system's), no folder counts.
+function foldersBelowRoot(projectPath, root) {
+  if (typeof projectPath !== 'string' || !path.isAbsolute(projectPath) || !root) return [];
+  const below = path.relative(root, path.resolve(projectPath));
   if (!below || below.startsWith('..') || path.isAbsolute(below)) return [];
   return below.split(/[\\/]+/u).filter(Boolean);
 }

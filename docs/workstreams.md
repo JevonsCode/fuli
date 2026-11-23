@@ -71,7 +71,8 @@ Decided at task entry, deterministically, with no model:
    - **Its branch**: a term `branch:<name>` matches the current Git branch
      exactly, and `branch:<prefix>/` matches every branch under that prefix.
      The branch is read from the repository's files within 250 ms
-     (`src/conversations/working-branch.js`); a slow drive leaves it unknown.
+     (`workingRepository`, `src/conversations/working-branch.js`); a slow drive
+     leaves it unknown.
    A request that names this project, or an explicit project id, keeps its
    lines: naming the project says where, not who.
 3. **More than one line matches** → the task stays with the lead, and the
@@ -141,8 +142,10 @@ one, that branch is recorded as a term too.
   Handing a line back to the lead is ending it.
 - **Terms that would match everywhere are refused**: a term of one Han, kana
   or Hangul character, or under three characters otherwise, and common words
-  such as 页面, 修改, bug, page, web, admin, src. A shared branch (`main`,
-  `master`, `develop`, `release/…`, …) is never a branch term.
+  such as 页面, 修改, bug, page, web, admin, src. A branch everyone shares
+  (`main`, `master`, `develop`, `release`, …) is never a branch term: the same
+  list that keeps such a branch from proving two sessions continue one piece of
+  work (`sharedBranch`, `src/conversations/continuation-decision.js`).
 
 The lead corrects its own lines the same way, in one call, and they stay the
 lead's. A line the person opened or confirmed is the person's: the lead
@@ -203,9 +206,10 @@ boundary: work before it was not under any workstream.
 
 - No model call, ever.
 - A task in a project without lines costs nothing new.
-- A task in a project with lines reads the branch from disk (at most 250 ms)
-  and, when a line matches, makes one more Provider request to select its
-  owner.
+- A task in a project with lines reads the repository and branch from disk
+  (at most 250 ms) — the same read the task's beginning uses for its
+  conversation and continuation line, so it is read once — and, when a line
+  matches, makes one more Provider request to select its owner.
 - The entry carries the lines' names and owners and a rules reference only
   when the project has lines; that is counted in the token budget.
 

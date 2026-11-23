@@ -3,6 +3,7 @@ import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
 import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
+import { WORKING_REPOSITORY } from './task-entry-workstream.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
@@ -131,7 +132,9 @@ export async function beginTaskFromPreferences(application, preferences, {
     }
   }
   // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
-  const repository = task.projectAgentId ? await workingRepository(projectPath) : null;
+  // Read once per entry: the routing may already have read it (task-entry-workstream.js).
+  const repository = !task.projectAgentId ? null : Object.hasOwn(preferences, WORKING_REPOSITORY)
+    ? preferences[WORKING_REPOSITORY] : await workingRepository(projectPath);
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
     branch: repository?.branch ?? null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // Whether this turn picks up work from another session or client, and so
