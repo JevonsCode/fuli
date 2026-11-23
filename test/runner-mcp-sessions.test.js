@@ -16,6 +16,7 @@ import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
 import { joinHost } from '../src/runner/join.js';
+import { hostRefusedAnswer } from '../src/runner/offline-calls.js';
 import { encodeInvitation, newInvitationCode } from '../src/runner/protocol.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -168,6 +169,18 @@ test('one runner cannot take every session, and the refusal says whose they are'
   await another.stop();
   await other.stop();
   for (const runner of greedy) await runner.stop();
+});
+
+test('a refusal that does not say what to do still gets a next step on the runner', () => {
+  // An older host says only that the limit was reached, and a failure on the host's side says nothing of it.
+  for (const [status, reason] of [[503, 'Runner MCP session limit reached'], [500, 'Internal error']]) {
+    const { message } = JSON.parse(hostRefusedAnswer(status, reason).content[0].text);
+    assert.match(message, new RegExp(`HTTP ${status}: ${reason}`));
+    assert.match(message, /close FULI clients and MCP processes you no longer use, here or on the host's other runners/);
+  }
+  // A host of this version already said whose sessions they are: nothing is added to it.
+  const told = 'Runner MCP session limit: this computer holds 48 of the host\'s 64 sessions, its share. Close them here.';
+  assert.doesNotMatch(JSON.parse(hostRefusedAnswer(503, told).content[0].text).message, /here or on the host's other runners/);
 });
 
 test('FULI tells a client\'s AI to close connections it no longer uses', () => {

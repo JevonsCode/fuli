@@ -6,6 +6,7 @@ import test from 'node:test';
 import { measure } from '../acceptance/context-delivery-replay/run.js';
 import { markdownTable } from '../acceptance/context-delivery-replay/report.js';
 import { FIXTURES } from '../acceptance/context-delivery-replay/fixtures.js';
+import { BOUNDED_VARIANTS } from '../acceptance/context-delivery-replay/scenarios.js';
 import { PROVIDER_RECOVERY_WINDOW, syntheticJournal } from '../test-support/synthetic-context-session.js';
 
 // The exact encoding a complete frame with preferences adds (D-29.10): its
@@ -19,7 +20,12 @@ const WITHDRAWN_ALLOWANCE_BYTES = 128;
 // D-29.5 (and the unchanged-preferences scenario): strictly below the uncached baseline with the scaled fixture.
 const STRICTLY_SMALLER = ['acceptance', 'edit_withdraw', 'scene_switch', 'compact_resume', 'delivery_failure', 'unchanged'];
 
-const result = measure();
+// The strict gates below hold on the fixtures whose whole set fits: `many` has
+// more preferences than a host's inline limit can hold, so its entries leave
+// some out on purpose and the oracle that asks the model to hold every one of
+// them cannot hold there. It has its own gate at the end of this file.
+const result = measure({ variants: ['tiny', 'scaled'] });
+const bounded = measure({ variants: BOUNDED_VARIANTS });
 const variants = async () => (await result).variants;
 const describe = (variant, scenario, turn, index) => `${variant} ${scenario} turn ${index + 1} (${turn.session} ${turn.note}): `
   + `${turn.preference_delivery}, ${turn.preferences_sent} preferences, ${turn.messages_sent} messages, `
@@ -35,6 +41,7 @@ test('the replay measures both fixtures in bytes with fixed synthetic sizes', as
   const measured = await result;
   assert.match(measured.unit, /UTF-8 bytes.*No token estimates/);
   assert.deepEqual(measured.variants.map(item => item.variant), ['tiny', 'scaled']);
+  assert.deepEqual(BOUNDED_VARIANTS, ['many']);
   const scaled = FIXTURES.scaled;
   const preferences = [...scaled.boundary, ...scaled.general, ...scaled.spacing, ...scaled.palette, ...scaled.radius,
     ...scaled.editedSpacing.slice(0, 1)];
@@ -198,4 +205,29 @@ test('repeated notifications and prompts name the skeleton they already showed',
       }
     }
   }
+});
+
+// rec#111, rec#137: the large-set fixture. A bounded entry cannot carry every
+// preference, so what it must still do is name them, stay locatable, and cost
+// less than the same entries without a cache.
+test('the large-set fixture names every preference it leaves out and stays locatable', async () => {
+  const [many] = (await bounded).variants;
+  assert.equal(many.variant, 'many');
+  const failures = [];
+  for (const scenario of many.scenarios) {
+    if (scenario.rereads_required > 0) failures.push(`${scenario.scenario}: ${scenario.rereads_required} rereads`);
+    if (scenario.correctness.withdrawn_present.length) failures.push(`${scenario.scenario}: withdrawn present`);
+    if (scenario.produced_bytes > scenario.no_cache_bytes) {
+      failures.push(`${scenario.scenario}: produced ${scenario.produced_bytes} B, no cache ${scenario.no_cache_bytes} B`);
+    }
+    // No entry is blocked, and nothing it leaves out is a bare count while the
+    // index still fits: every omitted item is either indexed or counted.
+    if (scenario.inline.blocked_turns > 0) failures.push(`${scenario.scenario}: ${scenario.inline.blocked_turns} blocked`);
+    if (scenario.inline.indexed_items > scenario.inline.omitted_items) {
+      failures.push(`${scenario.scenario}: indexed ${scenario.inline.indexed_items} of ${scenario.inline.omitted_items} omitted`);
+    }
+  }
+  assert.deepEqual(failures, []);
+  const indexed = many.scenarios.reduce((total, scenario) => total + scenario.inline.indexed_items, 0);
+  assert.ok(indexed > 0, 'the fixture is large enough to exercise the index');
 });

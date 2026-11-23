@@ -2,6 +2,7 @@ import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 import { REMOTE_CONFLICT } from '../graphiti/agent-project-resolution.js';
 import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
+import { addressedAgentId } from '../graphiti/fla-mention.js';
 import { markdownLink } from '../text/markdown-link.js';
 
 // The console origin every receipt link opens: always http. Chat clients such as
@@ -32,7 +33,32 @@ export function sessionRecordsUrl(application, { sourceApplication = null, sessi
     + `item=${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(itemKey)}`;
 }
 
-export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
+// How FULI splits a session or moves work to another client (rec#147, Jevons
+// 2026-11-22: 「我们有 FULI 干嘛要这种接手文档」). The standing method, not a
+// per-turn instruction: this text is delivered by version reference, so saying
+// it here costs a task entry nothing.
+export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration. '
+  + 'To split a session, or move this work to another client or computer: call checkpoint_task_knowledge for the decisions so far, then open the target client and send `prompt` as its first message. '
+  + 'Never write a hand-off document, summary file or transfer note for this: FULI carries the context, and resume_agent_conversation reports in `carried` exactly how much of it came across. '
+  + 'A `continuation` (conversation.continuation on entry, or on resume) with show true names the earlier work this turn picks up: say it in one line at the start of the reply from its fields only, never inferring a model, time or amount. Without one, say nothing about continuing. context not_loaded: nothing of that conversation is loaded until resume_agent_conversation.';
+
+// The method itself stays in CONTINUATION_GUIDANCE above, which every entry
+// sends as a version reference rather than text: spelling the steps out in each
+// receipt would cost every turn tokens for something that changes once a year.
+// The FLA and conversation a FULI continuation prompt (agentContinuation)
+// names, read back from the person's message; null for any other text. Only a
+// prompt that names both continues earlier work: `#FLA {agentId}` alone just
+// says who works on this task.
+export function continuationTarget(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const agentId = addressedAgentId(prompt);
+  const quoted = /conversationId=("(?:[^"\\]|\\.)*")/.exec(prompt)?.[1];
+  if (!agentId || !quoted) return null;
+  try {
+    const conversationId = JSON.parse(quoted);
+    return typeof conversationId === 'string' && conversationId ? { agentId, conversationId } : null;
+  } catch { return null; }
+}
 
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
