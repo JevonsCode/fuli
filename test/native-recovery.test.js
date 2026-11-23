@@ -333,6 +333,31 @@ test('an uninstall journal naming programs outside the runtime, missing what it 
   assert.ok(existsSync(reinstalled.home));
 });
 
+test('the programs in use stay when the descriptor spells their directory another way', async (t) => {
+  const { paths, root } = runtime(t);
+  const home = asset(root, '3333', '5.26.0');
+  // Not normalised everywhere; on Windows also in another letter case and with forward slashes, as another --data-dir may have written it.
+  const spelled = process.platform === 'win32'
+    ? home.toUpperCase().replaceAll('\\', '/')
+    : `${join(root, 'neo4j-assets', 'elsewhere')}/../jvs-a-3333/neo4j-community-5.26.0`;
+  writeFileSync(paths.nativeRuntimeManifestPath, JSON.stringify({ status: 'ready', neo4jHome: spelled, neo4jAssetFingerprint: 'fp' }));
+  await acquireNeo4jLifecycleLock(root, { operation: 'update', identify: holderIdentity });
+  const plan = await planNativeRecovery({ paths, dependencies: deps().dependencies });
+  assert.equal(plan.kind, 'clear_interrupted');
+  assert.deepEqual(plan.steps.filter(step => step.do === 'move-aside'), [], 'nothing in use moves aside');
+});
+
+test('the commands a person types by hand work in PowerShell on Windows', async () => {
+  const { killCommand, moveIntoCommand } = await import('../src/cli/recovery-plan-text.js');
+  assert.equal(moveIntoCommand('/x/recovered/by-hand', '/x/.neo4j-lifecycle.lock', 'darwin'),
+    'mkdir -p "/x/recovered/by-hand" && mv "/x/.neo4j-lifecycle.lock" "/x/recovered/by-hand/"');
+  const windows = moveIntoCommand('C:\\x\\recovered\\by-hand', 'C:\\x\\.neo4j-lifecycle.lock', 'win32');
+  assert.equal(windows, 'New-Item -ItemType Directory -Force -Path "C:\\x\\recovered\\by-hand" | Out-Null; Move-Item -LiteralPath "C:\\x\\.neo4j-lifecycle.lock" -Destination "C:\\x\\recovered\\by-hand"');
+  assert.doesNotMatch(windows, /&&|mkdir -p/, 'Windows PowerShell 5.1 has neither');
+  assert.equal(killCommand([66, 67], 'linux'), 'kill 66 67');
+  assert.equal(killCommand([66, 67], 'win32'), 'Stop-Process -Id 66,67');
+});
+
 test('an update killed before its journal sets aside its half-installed programs and unfinished backup, and releases the lock', async (t) => {
   const { paths, root } = runtime(t);
   const home = asset(root, '3333', '5.26.0');
@@ -604,14 +629,18 @@ test('old recovery folders are cleared only past the clean-up rule, and only aft
   mkdirSync(join(root, 'recovered', graphs[1], 'workspace', 'transactions', 'neo4j'), { recursive: true });
   await acquireNeo4jLifecycleLock(root, { operation: 'dump', identify: holderIdentity });
   // The oldest cannot be deleted: the recovery still counts, and says what stayed.
-  chmodSync(join(root, 'recovered', stamps[0]), 0o500);
+  // Windows ignores a directory's read-only bit when deleting it, so there the
+  // oldest goes like the other (what stays is reported the same way on every platform).
+  const undeletable = process.platform !== 'win32';
+  if (undeletable) chmodSync(join(root, 'recovered', stamps[0]), 0o500);
   const { plan, result } = await recover(paths, deps());
-  chmodSync(join(root, 'recovered', stamps[0]), 0o700);
+  if (undeletable) chmodSync(join(root, 'recovered', stamps[0]), 0o700);
   assert.deepEqual(plan.steps.map(step => step.do), ['release-lock', 'prune', 'prune'], 'deleted only once the lock is released');
   assert.deepEqual(plan.steps.filter(step => step.do === 'prune').map(step => [step.path, step.keepRuns, step.keepDays]),
     [[join(root, 'recovered', stamps[0]), 3, 30], [join(root, 'recovered', stamps[1]), 3, 30]], 'beyond the 3 newest and over 30 days old');
   assert.equal(result.status, 'recovered');
-  assert.deepEqual(result.notDeleted.map(({ path }) => path), [join(root, 'recovered', stamps[0])]);
+  assert.deepEqual((result.notDeleted ?? []).map(({ path }) => path), undeletable ? [join(root, 'recovered', stamps[0])] : []);
+  assert.equal(readdirSync(join(root, 'recovered')).includes(stamps[0]), undeletable);
   assert.equal(existsSync(join(root, LOCK)), false, 'a folder that stays never keeps the lock');
   const left = readdirSync(join(root, 'recovered'));
   for (const stamp of stamps.slice(2)) assert.ok(left.includes(stamp));
@@ -781,7 +810,8 @@ test('a switch whose newer version does not start and cannot be backed out offer
   const words = formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, planKind: stopped.planKind, ...stopped.facts });
   assert.doesNotMatch(words, /--back-out|另一种做法|other choice/, 'going back is not there, so it is not offered');
   assert.match(words, /--keep-newer/);
-  assert.match(words, new RegExp(`fuli graph import --input "${stuck.next.previousNeo4jAsset.graphBackup}" --yes`), 'the backup and the command that imports it');
+  // A plain substring: a Windows path's backslashes would be escapes in a pattern.
+  assert.ok(words.includes(`fuli graph import --input "${stuck.next.previousNeo4jAsset.graphBackup}" --yes`), 'the backup and the command that imports it');
   // With going back possible, both are named.
   const both = await newerInPlace(t);
   const other = await stoppedAt(recover(both.paths, failing));

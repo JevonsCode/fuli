@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
@@ -251,7 +251,7 @@ async function candidateOf(paths, journal) {
   try { await assertManagedNeo4jHome(paths, journal.next.neo4jHome, journal.next.neo4jVersion); } catch { return null; }
   const container = dirname(journal.next.neo4jHome);
   const used = [journal.previous.neo4jHome, journal.previous.previousNeo4jAsset?.home].filter(home => typeof home === 'string');
-  if (basename(dirname(container)) !== 'neo4j-assets' || used.some(home => home === container || home.startsWith(`${container}${sep}`))) return [];
+  if (basename(dirname(container)) !== 'neo4j-assets' || used.some(home => holds(container, home))) return [];
   return existsSync(container) ? [moveAside(container)] : [];
 }
 
@@ -290,7 +290,7 @@ async function planInterruptedAssets({ paths, deps, lock, stop, end }) {
   const used = [manifest?.neo4jHome, manifest?.previousNeo4jAsset?.home].filter(home => typeof home === 'string');
   for (const name of listNames(assets).filter(name => name.startsWith('jvs-a-'))) {
     const container = join(assets, name);
-    if (used.some(home => home === container || home.startsWith(`${container}${sep}`))) continue;
+    if (used.some(home => holds(container, home))) continue;
     // Only FULI's own asset directories are set aside; anything else is the person's.
     const receipt = readJsonOrNull(join(container, 'fuli-asset-owner.json'));
     const own = receipt?.kind === 'fuli-neo4j-assets' && receipt.id === name;
@@ -316,6 +316,11 @@ function interruptedCandidate(container, name, lock) {
   return made >= lockStartedAt(lock) - 1000
     && listNames(container).every(entry => /^neo4j-community-[0-9.]+$/.test(entry) || /^\.fuli-asset-owner\.json\..+\.tmp$/.test(entry));
 }
+
+// Whether the programs at [home] are [container] or inside it. relative()
+// compares as the platform does, so on Windows a descriptor recorded with
+// another letter case or with forward slashes still counts as in use.
+const holds = (container, home) => !relative(container, home) || inside(container, home);
 
 const isDescriptor = value => typeof value?.neo4jHome === 'string' && typeof value.neo4jVersion === 'string';
 
