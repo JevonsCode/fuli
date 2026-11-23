@@ -719,7 +719,7 @@ async def test_after_an_undo_of_graph_23_a_graph_22_fuli_reads_every_project(gra
     every project. The undo says how many it named."""
     from pydantic import Field
     from fuli_graph.models import ProjectProfile
-    from fuli_graph.temporary_project_scope import _SESSION_PROFILE
+    from fuli_graph.temporary_project_scope import _SESSION_PROFILE, _TASK_PROFILE
 
     class Graph22Profile(ProjectProfile):
         name: str = Field(min_length=1, max_length=160)
@@ -733,17 +733,22 @@ async def test_after_an_undo_of_graph_23_a_graph_22_fuli_reads_every_project(gra
         applied = await client.post('/v1/data-format/apply', headers=REVIEW,
                                     json={'digest': plan['digest'], 'entrypoint': 'cli'})
         assert applied.status_code == 200, applied.text
-        # What graph/23 writes for a session scope opened after the step.
-        await driver.execute_query(
-            "MATCH (space:FuliSpace {id: 'legacy-space'})"
-            "CREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {id: 'new-session', "
-            "project_id: 'temporary-' + $digest, name: '', scope_type: 'temporary', profile_json: $profile, "
-            "publication_key: 'synthetic-publication-new-session', created_at: datetime(), updated_at: datetime()})",
-            digest='1' * 64, profile=_SESSION_PROFILE.model_dump_json())
+        # What graph/23 writes for a session scope, a task scope and a
+        # conversation-ID project opened after the step: no name.
+        for node_id, project_id, profile in (
+                ('new-session', 'temporary-' + '1' * 64, _SESSION_PROFILE),
+                ('new-task', 'temporary-' + '2' * 64, _TASK_PROFILE),
+                ('new-conversation', 'conversation-' + '3' * 64, _TASK_PROFILE)):
+            await driver.execute_query(
+                "MATCH (space:FuliSpace {id: 'legacy-space'})"
+                "CREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {id: $node_id, "
+                "project_id: $project_id, name: '', scope_type: 'temporary', profile_json: $profile, "
+                "publication_key: 'synthetic-publication-' + $node_id, created_at: datetime(), updated_at: datetime()})",
+                node_id=node_id, project_id=project_id, profile=profile.model_dump_json())
         undone = await client.post('/v1/data-format/rollback', headers=REVIEW,
                                    json={'migration_id': 'graph/23-temporary-project-names', 'entrypoint': 'cli'})
         assert undone.status_code == 200, undone.text
-        assert undone.json()['adapted'] == 1, undone.json()
+        assert undone.json()['adapted'] == 3, undone.json()
 
     rows = {row['id']: row for row in await _rows(driver, TEMPORARY_NAME_READ)}
     for row in rows.values():
@@ -751,6 +756,10 @@ async def test_after_an_undo_of_graph_23_a_graph_22_fuli_reads_every_project(gra
         assert row['name'].strip(), row
     assert rows['new-session']['name'] == '临时会话 / Temporary session'
     assert json.loads(rows['new-session']['profile_json'])['name'] == '临时会话 / Temporary session'
+    for node_id, name in (('new-task', '临时任务 / Temporary task'),
+                          ('new-conversation', '会话项目 / Conversation project')):
+        assert rows[node_id]['name'] == name
+        assert json.loads(rows[node_id]['profile_json'])['name'] == name
     assert rows['fallback']['name'] == '会话项目 / Conversation project'
     assert await _version(driver) == 22
 

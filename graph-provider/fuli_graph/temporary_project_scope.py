@@ -15,6 +15,20 @@ from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
 TEMPORARY_SCOPE = {'type': 'temporary', 'lifetime': 'task', 'persisted': True}
+# The scope_type a task's project holds now, as a Cypher expression over a bound
+# `task` (tasks copied it when created; graph/23 marks their project temporary
+# later). A task hangs off its own project (store_project_agent_tasks.py MERGE
+# (project)-[:HAS_PROJECT_AGENT_TASK]->(task)): one hop. A task written without
+# that edge falls back to the space's project of the same ID. CASE evaluates
+# only the branch it takes, so a task with the edge never fans out over the
+# space's projects. Only a real Neo4j runs this (CI provider-neo4j).
+TASK_PROJECT_SCOPE_TYPE = """CASE
+  WHEN EXISTS { MATCH (task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliPersonalProject {project_id: task.personal_project_id}) }
+  THEN head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(direct:FuliPersonalProject {project_id: task.personal_project_id})
+             | direct.scope_type])
+  ELSE head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliSpace)-[:CONTAINS_PROJECT]->
+             (scope_project:FuliPersonalProject {project_id: task.personal_project_id}) | scope_project.scope_type])
+END"""
 # No name: nobody named these, so there is nothing to store. Every reader shows
 # a temporary project in the person's own language, told apart by its short
 # number, its date and whatever title someone later gave it. Before graph/23 the
