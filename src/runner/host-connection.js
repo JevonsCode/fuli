@@ -162,9 +162,9 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // asking again; a later call asks, since the counts move. A kept connection
   // proves nothing about now (review of #1069), but a hello that went unanswered
   // on it does not prove the host is gone either: the connection also carries
-  // the host's pages and live event streams. So the host is looked for again
-  // on a fresh connection first, while the old one keeps what is in flight on
-  // it; only when that fresh search finds nothing is the old one ended.
+  // the host's pages and live event streams. So the host is looked for again,
+  // the whole way, on a fresh connection, while the old one keeps what is in
+  // flight on it and is ended only once it carries nothing.
   async function hello() {
     const connection = await connect();
     if (!connection) return null;
@@ -180,13 +180,13 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       await answer.body?.cancel();
     } catch { /* not answering on this connection: looked for again below */ }
     if (current !== connection) return null;
+    // New requests stop taking the old connection; what is in flight on it finishes there (a host that
+    // is gone ends it itself), and the old connection is ended once it carries nothing.
     current = null;
-    const fresh = await connect({ knownOnly: true });
-    if (!fresh) {
-      connection.agent.destroy();
-      return null;
-    }
     retireWhenIdle(connection.agent);
+    // The whole search, known addresses and mDNS, as any other look for the host.
+    const fresh = await connect();
+    if (!fresh) return null;
     const greeting = fresh.greeting;
     fresh.greeting = null;
     return greeting;

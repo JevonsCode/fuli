@@ -85,7 +85,9 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
-  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner, lookUp: async () => [] });
+  const looked = { mdns: 0 };
+  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner,
+    lookUp: async () => { looked.mdns += 1; return []; } });
   const delivered = [];
   const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients,
     deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
@@ -98,7 +100,7 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
     hostStore.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint, flaky,
+  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint, flaky, looked,
     // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
     // kept a dead connection).
     setAway: (value) => { away = value; } };
@@ -299,6 +301,31 @@ test('this computer\'s own page is drawn at once while the host is away, and loo
   assert.equal(page.status, 200);
   assert.match(page.text, /正在找主机…/);
   assert.match(page.text, /void look\(\)/, 'and the page asks right away');
+});
+
+// Review of #1075: when looking again also failed, the old connection was ended at once, cutting what it
+// still carried, and the look skipped mDNS.
+test('when the host cannot be found again, what the old connection carries still finishes, after a full search', async (t) => {
+  const { entry, flaky, looked } = await pairedRunner(t);
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, true);
+  let closed = false;
+  const opened = await new Promise((resolve, reject) => {
+    const request = httpRequest(`${entry.url}/api/stream`, (response) => {
+      response.once('data', () => resolve(request));
+      response.on('close', () => { closed = true; });
+    });
+    request.on('error', (error) => (error.code === 'ECONNRESET' ? null : reject(error)));
+    request.end();
+  });
+  t.after(() => opened.destroy());
+  const searchesBefore = looked.mdns;
+  // Every hello goes unanswered (the search tries each address from each adapter) while the stream is served.
+  flaky.helloUnanswered = 1000;
+  const status = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(status.host.reachable, false, 'not found again: said as it is');
+  assert.equal(looked.mdns, searchesBefore + 1, 'the search looked over mDNS too');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, false, 'the stream on the old connection was not cut');
 });
 
 test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
