@@ -287,7 +287,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       return failure('invalid_input', error.message);
     }
     const decision = ledger.get(report.decisionId);
-    if (!decision) return failure('not_found', 'No executor decision with this decisionId was made on this runner in the last 30 days.');
+    if (!decision) return failure('not_found', 'No executor decision with this decisionId was made on this runner.');
     if (!ledger.reportOutcome(report.decisionId, report)) {
       return failure('already_reported', 'How this choice did was reported already; that report stands.');
     }

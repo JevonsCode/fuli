@@ -10,9 +10,17 @@ const MAX_LEVELS = 12;
 // A slow or offline drive never holds up a task entry: past this the branch is unknown.
 const TIME_LIMIT_MS = 250;
 
-export function workingBranch(folder, { timeLimitMs = TIME_LIMIT_MS } = {}) {
+export async function workingBranch(folder, options = {}) {
+  return (await workingRepository(folder, options))?.branch ?? null;
+}
+
+// The branch and the repository folder it belongs to ({ branch, root }), so two
+// repositories of one project on a same-named branch are told apart (rec issue
+// 147). null when the folder is outside Git, unreadable or too slow; a detached
+// HEAD keeps its root with branch null.
+export function workingRepository(folder, { timeLimitMs = TIME_LIMIT_MS } = {}) {
   if (typeof folder !== 'string' || !folder.trim()) return Promise.resolve(null);
-  return withinTimeLimit(readBranch(folder), timeLimitMs);
+  return withinTimeLimit(readRepository(folder), timeLimitMs);
 }
 
 // The answer, or null once the time limit passes first.
@@ -22,13 +30,13 @@ export function withinTimeLimit(answer, timeLimitMs) {
   return Promise.race([answer, late]).finally(() => clearTimeout(timer));
 }
 
-async function readBranch(folder) {
+async function readRepository(folder) {
   try {
     let current = resolve(folder);
     for (let level = 0; level < MAX_LEVELS; level += 1) {
       const gitDir = await gitDirectory(join(current, '.git'));
       if (gitDir === BROKEN) return null;
-      if (gitDir) return branchOf(await readFile(join(gitDir, 'HEAD'), 'utf8'));
+      if (gitDir) return { branch: branchOf(await readFile(join(gitDir, 'HEAD'), 'utf8')), root: current };
       const parent = dirname(current);
       if (parent === current) return null;
       current = parent;

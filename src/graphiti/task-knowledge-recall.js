@@ -462,13 +462,29 @@ function indexTitle(title) {
   return utf8Preview(singleLine(title), INDEX_TITLE_BYTES, text => Buffer.byteLength(JSON.stringify(text)));
 }
 
-// An answer can rest on the recovered conversation instead of searched knowledge.
-// Without its own marker such a reply could only cite "searched, no match".
-export function withRecoveredSource(recall, conversation, { consoleUrl, spaceId, agentId }) {
-  if (!recall || recall.status === 'matched' || !conversation?.recovery?.latest_checkpoint || !spaceId || !agentId) return recall;
+// An answer can rest on recovered work instead of searched knowledge, and says
+// so in its lead. It says so only when work actually moved here: a session
+// that keeps working shows no continuation marker, however much it recovered
+// (rec#147, Jevons 2026-11-23). `continuation` is continuationDecision's answer.
+export function withRecoveredSource(recall, continuation, { consoleUrl, spaceId, agentId }) {
+  if (!recall || recall.status === 'matched' || !continuation?.show || !spaceId || !agentId) return recall;
   const url = `${consoleUrl ?? sourceConsoleUrl()}/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`;
   return { ...recall, sourceMarker: { required: true, label: 'FULI 来源', status: 'recovered', count: 1,
-    leadMarkdown: `**[◇ FULI · 接续上次进度](${url})**`, markdown: '' } };
+    leadMarkdown: `**[◇ FULI · ${continuationLead(continuation.from)}](${url})**`, markdown: '' } };
+}
+
+// Which earlier work this reply picks up, short enough for a lead: the client
+// it ran in and the day it last ran, on this computer's calendar (a UTC date
+// would put an evening's work in Shanghai on the day before). Both come from
+// the record; neither is guessed, and a missing one simply drops out. The
+// lead is Chinese like every other FULI source marker beside it.
+export function continuationLead({ client_label: label = null, when = null } = {}) {
+  const time = when ? new Date(when) : null;
+  const day = time && !Number.isNaN(time.getTime())
+    ? `${String(time.getMonth() + 1).padStart(2, '0')}-${String(time.getDate()).padStart(2, '0')}` : null;
+  if (label && day) return `续接 ${label} 里 ${day} 的工作`;
+  if (label) return `续接 ${label} 里的工作`;
+  return day ? `续接 ${day} 的工作` : '续接之前的工作';
 }
 
 function recallWithoutSearch(status, plan) {

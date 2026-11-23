@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
@@ -10,12 +10,14 @@ import { ROUTING_LEDGER_FILE, RoutingLedger } from '../runner/routing-ledger.js'
 import { MODEL_BACKENDS_FILE } from '../runner/routing-setup.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
+import { LEFT_MARKER } from '../runner/runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
-import { serveFollowerConsole } from '../runner/follower-runtime.js';
+import { capabilityLines, serveFollowerConsole } from '../runner/follower-runtime.js';
+import { followerStatus, keptLine } from '../runner/follower-status.js';
 import { writeLine } from './terminal-io.js';
 
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
@@ -38,17 +40,19 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   then the outbox is delivered as with sync
     leave [--force]               end the pairing here and delete what is kept here
                                   (--force: also when checkpoints never reached the host)
-    console [--port PORT]         serve the host's console on this computer (fuli start runs it)
+    console [--port PORT]         serve this computer's console: its own state, and the host's
+                                  pages over the pairing (fuli start runs it)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
 const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
-  + 'deleted after 30 days) and checkpoints waiting for the host (deleted once delivered; refused ones after 30 days). '
-  + 'If the host revokes this computer, the answers go at once and the checkpoints wait, refused, until it joins the same '
-  + 'host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
+  + 'nothing is deleted because it is old: past 5000 answers or 64 MB the ones used longest ago go) and checkpoints '
+  + 'waiting for the host (deleted once delivered; a refused one stays listed). A task token given out while the host is '
+  + 'away lasts 30 days. If the host revokes this computer, the answers go at once and the checkpoints wait, refused, '
+  + 'until it joins the same host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
-  join: joinRunner = joinHost, setupClients = setUpRunnerClients } = {}) {
+  join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
@@ -84,7 +88,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     write(`Runner console: ${served.url}`);
     return new Promise(() => {});
   }
-  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
+  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove });
   if (action === 'status' || action === 'sync' || action === 'add-address') {
     const named = action === 'add-address' ? positional(rest) : null;
     // An address a host serves: the paired certificate is checked there anyway, but nothing is sent anywhere else.
@@ -106,29 +110,33 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
       const identity = await loadDeviceIdentity(join(paths().dataDir, 'peer'));
       const connection = createHostConnection({ store, identity });
       try {
-        const reached = await connection.connect();
-        if (store.host()?.revokedAt) {
+        // The same description the console entry and `fuli status` show (follower-status.js).
+        const state = await followerStatus({ store, connection, dataDir: paths().dataDir });
+        if (state.host.revokedAt) {
           write(`${host.name} answered that it does not know this computer (revoked, or it lost its records); `
-            + `its answers kept here are deleted and ${store.outbox().failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
+            + `its answers kept here are deleted and ${state.outbox.failedCount} checkpoint(s) wait refused. ${JOIN_AGAIN}`);
           return { exitCode: 1 };
         }
-        write(`Host: ${host.name} — ${reached ? `answering at ${reached.address}:${host.port}${reached.via ? ` (from ${reached.via})` : ''}`
-          : 'not reachable now'}`);
+        const reached = state.host.reachable;
+        write(`Host: ${host.name} — ${reached ? `answering at ${state.host.address}:${host.port}`
+          + `${state.host.via ? ` (from ${state.host.via})` : ''}` : 'not reachable now'}`);
+        write(`Last reached: ${state.host.lastSeenAt ?? 'never'}.`);
         if (!reached && !named) {
           write('In another subnet (an office network, say) this computer cannot find the host by itself: '
             + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');
         }
-        const sessions = reached ? (await connection.hello())?.mcpSessions : null;
-        if (sessions) write(mcpSessionsLine(sessions));
-        if (!reached && connection.pinFailed) {
+        if (state.host.mcpSessions) write(mcpSessionsLine(state.host.mcpSessions));
+        if (state.host.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
         }
         const delivering = action !== 'status' && reached;
-        const outbox = delivering ? await deliverOutbox({ store, connection }) : store.outbox();
+        const outbox = delivering ? await deliverOutbox({ store, connection }) : state.outbox;
         if (delivering) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
+        for (const line of capabilityLines(state.capabilities)) write(line);
+        write(keptLine(state.cache).en);
         return { exitCode: reached ? 0 : 1 };
       } finally {
         connection.close();
@@ -145,7 +153,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
 // decisions made here, so the MCP entry no longer serves as a runner. Checkpoints that never reached the host are knowledge the person
 // would lose: with any left it only says how many, unless --force. The host
 // lists the runner until the person revokes it there.
-async function leaveHost(dataDir, write, { force = false } = {}) {
+async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}) {
   const file = join(dataDir, RUNNER_FILE);
   const store = new RunnerStore(file);
   let host;
@@ -167,10 +175,14 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
   }
   // Each file on its own: on Windows one a client's FULI MCP process still has
   // open cannot be deleted, and that must not stop the other or be said as done.
-  // The store was emptied above, so what is left of it holds nothing.
+  // The store was emptied above, so what is left of it holds nothing; while it
+  // stays, the marker says the pairing ended, so this computer is not taken for
+  // a follower. A ledger that stays needs none: the store decides that.
+  const storeGone = removed(file, remove);
+  if (!storeGone) writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
   const stayed = [
-    removed(file) ? null : `${RUNNER_FILE}: emptied, so it holds nothing of the pairing any more`,
-    removed(join(dataDir, ROUTING_LEDGER_FILE)) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE))
+    storeGone ? null : `${RUNNER_FILE}: emptied, so it holds nothing of the pairing any more`,
+    removed(join(dataDir, ROUTING_LEDGER_FILE), remove) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE))
   ].filter(Boolean);
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(stayed.length
@@ -190,10 +202,10 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
   return { exitCode: 0 };
 }
 
-// Whether the file is gone now (or never was).
-function removed(path) {
+// Whether the file is gone now (or never was). remove: rmSync, or a test's stand-in.
+function removed(path, remove) {
   try {
-    rmSync(path, { force: true });
+    remove(path, { force: true });
     return true;
   } catch {
     return false;
