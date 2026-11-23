@@ -10,10 +10,18 @@ showed Chinese.
 Temporary projects now store no name at all (temporary_project_scope.py) and
 every reader shows them in the person's own language, told apart by their
 short number, their date and whatever title someone later gave them. This step
-clears the three names FULI generated, and only those: a temporary project a
-person renamed keeps the name they gave it, and nothing else on any record
-changes. Both places the name lives are cleared, the `name` column and the
-`name` inside `profile_json`, so no reader can fall back to the other.
+clears the three names FULI generated, and only those: a project a person
+renamed keeps the name they gave it. Both places the name lives are cleared,
+the `name` column and the `name` inside `profile_json`, so no reader can fall
+back to the other.
+
+A project is recognised by its generated name alone, never by how it was
+stored: the conversation fallback created its projects through the ordinary
+project upsert, so they were saved as `registered`. A project holding one of
+these names was opened by FULI and never named by anyone, so this step also
+marks it `temporary`: it is then grouped, offered and protected as one (no
+knowledge is moved into it, it adds nothing to project relations). Nothing
+else on any record changes.
 """
 
 import json
@@ -37,13 +45,11 @@ def _literal(text: str) -> str:
     return f"'{text}'"
 
 
-# A temporary project by where it came from, never by its name: the scope_type
-# the provider sets, or the conversation fallback's generated ID. The name test
-# then decides whether FULI wrote that name or a person did.
+# Every project still holding a name FULI generated, whatever its scope_type:
+# exactly these names, so a name a person typed is never matched by shape.
 _GENERATED_TEMPORARY_NAME = (
     'MATCH (item:FuliPersonalProject) '
-    "WHERE (item.scope_type = 'temporary' OR item.project_id STARTS WITH 'conversation-') "
-    'AND item.name IN [' + ', '.join(_literal(name) for name in GENERATED_NAMES) + '] '
+    'WHERE item.name IN [' + ', '.join(_literal(name) for name in GENERATED_NAMES) + '] '
 )
 
 
@@ -65,7 +71,7 @@ async def apply_temporary_names(driver, _settings, *, apply_id=None) -> None:
         '''
         UNWIND $rows AS row
         MATCH (item:FuliPersonalProject {id: row.id})
-        SET item.name = '', item.profile_json = row.profile_json
+        SET item.name = '', item.profile_json = row.profile_json, item.scope_type = 'temporary'
         ''', rows=rows)
 
 
@@ -78,5 +84,5 @@ def _without_name(profile_json) -> str:
 
 
 TEMPORARY_NAME_JOURNAL = RecordJournal(touches=(
-    RecordTouch('node', _GENERATED_TEMPORARY_NAME, ('name', 'profile_json')),
+    RecordTouch('node', _GENERATED_TEMPORARY_NAME, ('name', 'profile_json', 'scope_type')),
 ))

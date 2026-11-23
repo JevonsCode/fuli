@@ -199,7 +199,8 @@ GRAPH_MIGRATIONS = (
     _records(
         'graph/23-temporary-project-names', 23, 'rewrite',
         'a temporary project stores no name, so every console shows it in its own language; '
-        'the three names FULI generated are cleared and a name a person gave stays',
+        'a project still holding one of the three names FULI generated loses that name and is '
+        'marked temporary, and a name a person gave stays',
         temporary_names.pending_temporary_names, temporary_names.apply_temporary_names,
         temporary_names.TEMPORARY_NAME_JOURNAL,
     ),

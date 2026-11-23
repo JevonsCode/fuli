@@ -6,6 +6,7 @@ with FULI_TEST_NEO4J_RESETTABLE=1.
 """
 
 import asyncio
+import json
 from dataclasses import replace
 
 import pytest
@@ -463,7 +464,38 @@ ROLE_OCCUPATION_SEED = (
 )
 
 
-# graph/4–7, 12 and 16 once each: a synthetic graph an earlier FULI left one step short,
+def _project(node_id, project_id, name, *, scope_type=None, purpose='Synthetic purpose.'):
+    """One personal project as an earlier FULI stored it: the name in its own
+    column and inside profile_json."""
+    profile = json.dumps({'name': name, 'purpose': purpose, 'lifecycle': 'active',
+                          'boundaries': ['Synthetic boundary.']}, ensure_ascii=False)
+    scope = f", scope_type: '{scope_type}'" if scope_type else ''
+    return (f"\nCREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {{id: '{node_id}', "
+            f"project_id: '{project_id}', name: '{name}', profile_json: '{profile}'{scope}, "
+            "publication_key: 'synthetic-publication-" + node_id + "', "
+            "created_at: datetime('2026-10-12T00:00:00Z'), updated_at: datetime('2026-10-13T00:00:00Z')})")
+
+
+_DIGEST = 'a' * 64
+# Every kind a graph/23 graph holds: the three generated names (the conversation
+# fallback's saved as registered, as the real ones were), a temporary project a
+# person renamed, a conversation project a person named, and a formal project.
+TEMPORARY_NAME_SEED = (
+    "MATCH (space:FuliSpace {id: 'legacy-space'})"
+    + _project('fallback', 'conversation-' + _DIGEST, '会话项目 / Conversation project')
+    + _project('task-scope', 'temporary-' + 'b' * 64, '临时任务 / Temporary task', scope_type='temporary')
+    + _project('session-scope', 'temporary-' + 'c' * 64, '临时会话 / Temporary session', scope_type='temporary')
+    + _project('renamed-scope', 'temporary-' + 'd' * 64, 'Synthetic renamed scope', scope_type='temporary')
+    + _project('claimed', 'conversation-' + 'e' * 64, 'Synthetic garden notes')
+    + _project('formal', 'synthetic-formal', 'Synthetic formal project')
+)
+TEMPORARY_NAME_READ = """
+    MATCH (p:FuliPersonalProject) RETURN p.id AS id, p.name AS name, p.scope_type AS scope_type,
+           p.profile_json AS profile_json, toString(p.updated_at) AS updated_at ORDER BY id
+"""
+
+
+# graph/4–7, 12, 16 and 23 once each: a synthetic graph an earlier FULI left one step short,
 # apply it through the review channel, then undo it. Each case: the version
 # before the step, what to seed, and a read that differs after the step.
 RECORD_STEPS = {
@@ -508,6 +540,7 @@ RECORD_STEPS = {
         RETURN jefa.occupation_role AS jefa, jefa.occupation_updated_at AS jefa_since,
                tonborg.occupation_role AS tonborg, tonborg.occupation_updated_at AS tonborg_since
     """),
+    'graph/23-temporary-project-names': (22, TEMPORARY_NAME_SEED, TEMPORARY_NAME_READ),
     'graph/7-space-visibility-owners': (6, """
         MATCH (p:FuliPrincipal {id: 'legacy-principal'})
         CREATE (p)-[:MEMBER_OF {role: 'maintainer', created_at: datetime('2026-01-04T00:00:00Z')}]->
@@ -635,6 +668,42 @@ async def test_role_occupations_change_only_the_shipped_jefa_and_tonborg(graph):
     assert agents['legacy-tonborg']['since'] != '2026-10-01T00:00:00Z'
     assert agents['own-manager'] == {'id': 'own-manager', 'role': 'management', 'since': '2026-10-01T00:00:00Z'}
     assert agents['edited-tonborg'] == {'id': 'edited-tonborg', 'role': 'research', 'since': '2026-10-02T00:00:00Z'}
+    assert await _version(driver) == GRAPH_FORMAT_VERSION
+
+
+@pytest.mark.asyncio
+async def test_temporary_names_clear_only_what_fuli_generated(graph):
+    """The three generated names go, whatever the project was saved as, and those
+    projects become temporary; a name a person gave and every other field stay."""
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(TEMPORARY_NAME_SEED)
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 22")
+    before = {row['id']: row for row in await _rows(driver, TEMPORARY_NAME_READ)}
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == 'graph/23-temporary-project-names'
+        assert plan['step']['count'] == 3, plan
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        listed = (await client.get('/v1/personal-projects', params={'personal_space_id': 'legacy-space'})).json()
+
+    after = {row['id']: row for row in await _rows(driver, TEMPORARY_NAME_READ)}
+    for generated in ('fallback', 'task-scope', 'session-scope'):
+        row, old = after[generated], before[generated]
+        assert row['name'] == '' and row['scope_type'] == 'temporary'
+        profile, old_profile = json.loads(row['profile_json']), json.loads(old['profile_json'])
+        assert profile == {**old_profile, 'name': ''}, 'only the name changes inside the profile'
+        assert row['updated_at'] == old['updated_at'], 'last use stays, so the order does not change'
+    for kept in ('renamed-scope', 'claimed', 'formal'):
+        assert after[kept] == before[kept]
+    # Every record reads back: an empty name is a valid stored profile.
+    projects = {item['project_id']: item for item in listed}
+    assert projects['conversation-' + _DIGEST]['scope_type'] == 'temporary'
+    assert projects['conversation-' + _DIGEST]['profile']['name'] == ''
+    assert projects['conversation-' + 'e' * 64]['profile']['name'] == 'Synthetic garden notes'
     assert await _version(driver) == GRAPH_FORMAT_VERSION
 
 
