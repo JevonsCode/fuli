@@ -219,3 +219,27 @@ test('an unknown request field is named only as unknown field; its caller-chosen
   assert.match(structuredContent.error.message, /request: unknown field/);
   assert.equal(JSON.stringify({ structuredContent, content }).includes('sk-synthetic'), false);
 });
+
+test('with no executor to choose, the escalation names the check that left none instead of a bare failure', async t => {
+  const capable = { ...availableExecutor('space'), capabilities: ['read', 'code_review'] };
+  const missing = routingFixture(t, { executors: [capable] });
+  const unmatched = await missing.service.assess({ ...routingInput, requestId: 'caps', requiredCapabilities: ['code-edit', 'read'] });
+  assert.equal(unmatched.disposition, 'ask_user');
+  assert.equal(unmatched.outcome, 'escalate');
+  assert.match(unmatched.summary, /required capability \(code-edit, read\)/);
+  assert.deepEqual(unmatched.evidence, ['Offered: read, code_review']);
+  assert.equal(missing.prompt(), undefined, 'no model is asked to choose from nothing');
+
+  const offline = routingFixture(t, { executors: [{ ...capable, permissionStatus: 'revoked' }] });
+  assert.match((await offline.service.assess({ ...routingInput, requestId: 'offline' })).summary, /^No executor is registered, authorized/);
+
+  const hinted = routingFixture(t, { executors: [capable], strategy: { mode: 'adaptive', capabilityHints: ['architecture'] } });
+  const strategy = await hinted.service.assess({ ...routingInput, requestId: 'hints' });
+  assert.match(strategy.summary, /model this Agent may use under its model strategy/);
+  assert.match(strategy.evidence[0], /hints architecture/);
+
+  const ruled = routingFixture(t, { executors: [capable], rules: [{ status: 'active', scope: 'project', personalProjectId: 'p', executorIds: ['elsewhere'] }] });
+  const rule = await ruled.service.assess({ ...routingInput, requestId: 'rule' });
+  assert.match(rule.summary, /routing rule for this work allows no ready executor/);
+  assert.deepEqual(rule.evidence, ['Allowed: elsewhere', 'Ready: space']);
+});

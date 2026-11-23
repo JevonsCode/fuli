@@ -46,6 +46,42 @@ export function verifiedSelection(selected, eligible, conversations) {
     client: executor.models.find(m => m.model === selected.model)?.sourceApplication ?? executor.client } : null };
 }
 
+// The executors and models this judgment may choose from, checked in the
+// order a person fixes them: ready (registered, authorized, preflighted,
+// healthy), allowed by a lock or routing rule, offering every required
+// capability, then with a model this Agent may use under its strategy. With
+// none left, none says at which check the last one dropped out, so 「没有可用
+// 的执行者」 names what to change instead of reading like a failure.
+const NAMES_SHOWN = 24;
+const listed = values => [...new Set(values)].slice(0, NAMES_SHOWN).join(', ') || 'none';
+function eligibleExecutors(executors, { locks, allowed, required, strategy, allowedClients }) {
+  const ready = executors.filter(e => e.registrationStatus === 'registered' && e.permissionStatus === 'authorized'
+    && e.preflightStatus === 'passed' && e.workspacePermission && e.healthStatus !== 'unhealthy'
+    && (!e.healthRequired || e.healthStatus === 'healthy'));
+  const permitted = ready.filter(e => locks.every(locked => locked.includes(e.executorId)) && (!allowed || allowed.includes(e.executorId)));
+  const capable = permitted.filter(e => required.every(value => (e.capabilities ?? []).some(capability => capability.toLowerCase() === value)));
+  const eligible = capable.map(e => ({ executorId: e.executorId, name: e.displayName,
+    client: e.executorKind, models: (e.availableModels ?? []).map(m => ({ ...m, sourceApplication: m.sourceApplication ?? e.executorKind }))
+      .filter(m => m.available && m.sourceApplication && coversClient(allowedClients, m.sourceApplication)
+        && (!m.strategyModes?.length || strategy.mode === 'adaptive' || m.strategyModes.includes(strategy.mode))
+        && (strategy.reasoningEffort !== 'max' || (Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.includes('max')))
+        && (!m.reasoningEfforts?.length || !strategy.reasoningEffort || strategy.reasoningEffort === 'default' || m.reasoningEfforts.includes(strategy.reasoningEffort))
+        && (strategy.capabilityHints ?? []).every(hint => m.capabilities?.some(value => value.toLowerCase() === hint.toLowerCase()))) })).filter(e => e.models.length);
+  if (eligible.length) return { eligible, none: null };
+  const none = !ready.length
+    ? { summary: 'No executor is registered, authorized, preflighted and healthy.', evidence: [`Executors listed: ${executors.length}`] }
+    : !permitted.length
+      ? { summary: 'The locked executor policy or the routing rule for this work allows no ready executor.',
+        evidence: [`Allowed: ${listed([...(allowed ?? []), ...locks.flat()])}`, `Ready: ${listed(ready.map(e => e.executorId))}`] }
+      : !capable.length
+        ? { summary: `No ready executor offers every required capability (${listed(required)}). Pass only capability names an executor lists, or none.`,
+          evidence: [`Offered: ${listed(permitted.flatMap(e => e.capabilities ?? []))}`] }
+        : { summary: 'No ready executor has an available model this Agent may use under its model strategy.',
+          evidence: [`Strategy: ${strategy.mode}${strategy.reasoningEffort ? `, effort ${strategy.reasoningEffort}` : ''}${strategy.capabilityHints?.length ? `, hints ${listed(strategy.capabilityHints)}` : ''}`,
+            `Allowed clients: ${listed(allowedClients ?? [])}`] };
+  return { eligible, none };
+}
+
 export async function assessRouting({ app, decide, context, service, input: raw }) {
   const input = parseRoutingRequest(raw); await service.scope(input);
   const policy = await service.policy({ personalSpaceId: input.personalSpaceId, personalProjectId: input.personalProjectId });
@@ -86,17 +122,7 @@ export async function assessRouting({ app, decide, context, service, input: raw 
       .sort((a, b) => (rank[b.scope] ?? 0) - (rank[a.scope] ?? 0) || (a.priority ?? 100) - (b.priority ?? 100)
         || (a.ruleId ?? '').localeCompare(b.ruleId ?? ''));
     const allowed = applicable[0]?.executorIds?.length ? applicable[0].executorIds : null;
-    const eligible = executors.filter(e => e.registrationStatus === 'registered' && e.permissionStatus === 'authorized'
-      && e.preflightStatus === 'passed' && e.workspacePermission && e.healthStatus !== 'unhealthy'
-      && (!e.healthRequired || e.healthStatus === 'healthy') && locks.every(locked => locked.includes(e.executorId))
-      && required.every(value => (e.capabilities ?? []).some(capability => capability.toLowerCase() === value))
-      && (!allowed || allowed.includes(e.executorId))).map(e => ({ executorId: e.executorId, name: e.displayName,
-        client: e.executorKind, models: (e.availableModels ?? []).map(m => ({ ...m, sourceApplication: m.sourceApplication ?? e.executorKind }))
-          .filter(m => m.available && m.sourceApplication && coversClient(agent.profile.allowedClients, m.sourceApplication)
-            && (!m.strategyModes?.length || strategy.mode === 'adaptive' || m.strategyModes.includes(strategy.mode))
-            && (strategy.reasoningEffort !== 'max' || (Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.includes('max')))
-            && (!m.reasoningEfforts?.length || !strategy.reasoningEffort || strategy.reasoningEffort === 'default' || m.reasoningEfforts.includes(strategy.reasoningEffort))
-            && (strategy.capabilityHints ?? []).every(hint => m.capabilities?.some(value => value.toLowerCase() === hint.toLowerCase()))) })).filter(e => e.models.length);
+    const { eligible, none } = eligibleExecutors(executors, { locks, allowed, required, strategy, allowedClients: agent.profile.allowedClients });
     let conversations = [];
     stage = 'conversations';
     if (app.queryAgentConversations && eligible.length && !hold && coversClient(agent.profile.allowedClients, policy.client)) {
@@ -122,7 +148,7 @@ export async function assessRouting({ app, decide, context, service, input: raw 
     stage = 'answer';
     const selected = answer ? parseAnswer(jsonSchemaToZod(ROUTING_SELECTION_SCHEMA), answer.value)
       : hold ? { executorId: null, model: null, disposition: 'ask_user', conversationId: null, summary: hold.summary, evidence: hold.evidence }
-        : { executorId: null, model: null, disposition: 'ask_user', conversationId: null, summary: 'No authorized, available executor matches this task.', evidence: ['Executor preflight and permission checks'] };
+        : { executorId: null, model: null, disposition: 'ask_user', conversationId: null, ...none };
     const { selection, needsRuntime } = verifiedSelection(selected, eligible, conversations);
     const record = store.record(input.personalSpaceId, { personalProjectId: input.personalProjectId, kind: 'routing', target: input.action,
       summary: selected.summary, evidence: selected.evidence, outcome: selected.disposition === 'ask_user' ? 'escalate' : 'recommend',
