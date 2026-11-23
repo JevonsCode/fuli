@@ -310,7 +310,8 @@ test('a checkpoint answer names the continuation rules by version instead of car
     sourceApplication: 'claude_code', disposition: 'retain_nothing', reason: 'Synthetic work done', collaborators: [] });
   assert.deepEqual(result.agent_receipt.continuation.guidance,
     { rules: 'fuli://rules/task-entry/continuation_guidance', version: entryRules().version });
-  assert.deepEqual(result.conversation.receipt.continuation.guidance, result.agent_receipt.continuation.guidance);
+  // The conversation's copy is the same receipt.
+  assert.deepEqual(result.conversation.receipt, result.agent_receipt);
   assert.equal(JSON.stringify(result).includes(CONTINUATION_GUIDANCE), false);
   // The prompt itself, which the person copies, is still whole.
   assert.match(result.agent_receipt.continuation.prompt, /conversationId="conv-checkpoint"/);

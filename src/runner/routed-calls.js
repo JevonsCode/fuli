@@ -1,5 +1,5 @@
 import { knownProjects, routeOfCall } from './call-routes.js';
-import { failure, TASK_ENTRY_TOOLS, taskTokenOf } from './offline-calls.js';
+import { entryToken, failure, isTaskEntry, resultValue } from './offline-calls.js';
 import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 
 // What the follower's MCP server (runner-mcp.js) asks the routes for each call
@@ -42,8 +42,8 @@ const ENTERED_ELSEWHERE = 'This task was entered on a computer this one is no lo
 // A task entry the host answered: its token is that host's, so whatever the
 // routes become, the calls and the checkpoint of that task go back there.
 export function rememberTaskOwner({ routes, store, tool, answer }) {
-  if (!TASK_ENTRY_TOOLS.has(tool) || answer?.isError) return;
-  const token = taskTokenOf(answer);
+  if (!isTaskEntry(tool) || answer?.isError) return;
+  const token = entryToken(resultValue(answer));
   const fingerprint = store.host()?.fingerprint;
   if (token && fingerprint) routes.rememberTaskOwner(token, hostOwner(fingerprint));
 }

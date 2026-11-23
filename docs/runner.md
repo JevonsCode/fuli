@@ -401,7 +401,16 @@ data directory, and the key:
 
   An enabled role needs a `budget` (its fields may be empty). A runner refuses a Tonborg role that also lists `knowledge_review` or
   `task_acceptance` (`runner_routing_config_invalid`), and no other role is
-  ever called on a runner. `egress` is not read: setting this model up on the
+  ever called on a runner; the answer names the operations it does not take.
+  A file this computer cannot read — broken JSON, a field of the wrong shape —
+  answers `runner_routing_config_invalid` too, saying nothing was judged here
+  and nothing was sent: a configuration of the person's that FULI cannot read
+  is not quietly handed back to the host, which would look as if the runner
+  were judging while it was not. What hands the judgment back is
+  `model-backends.json` alone: fix it, or delete it (or its `roles.tonborg`)
+  and the host judges again. A broken `runner/executors.json` is fixed in
+  place; deleting it does not hand anything back, it only leaves no executor
+  here, so Tonborg answers `ask_user`. `egress` is not read: setting this model up on the
   runner is the person's approval to send it what a judgment needs (below).
   `fuli models set-key <secretRef> --endpoint URL` saves the key on the runner,
   for that endpoint only; `fuli models check tonborg` tries the connection.
@@ -438,15 +447,68 @@ reported for them. That is all its model receives; a task token never leaves the
 runner. Tonborg's memory, the Agent's executor policies and allowed clients,
 routing rules and earlier conversations live on the host and are not read here.
 
+The preferences go as the host's own judgment sends them
+(`src/judgment/preference-receipt.js`): each rule's key, scope, short text,
+authority and where an inherited one comes from, never its reasoning or
+attributes. They come from the task entry this computer kept for the
+project. A real project's entry is often over the host's 32 KB delivery limit,
+and the host then delivers it blocked (`preference_delivery.status: "blocked"`,
+`preferences_complete: false`) with part of the rules or none; the runner
+then reads the rest right away with the host's own reader
+(`read_task_preferences`, page by page in one revision, joined as the host
+joins them), in the same session that entered the task, as the reader
+requires, and keeps the whole set for that entry; a judgment uses only the
+read made for the project's latest entry, never an older entry's or another
+Agent's. A revision that changes between pages starts the read over, once, and
+a read that fails is written to the runner's diagnostics (`fuli diagnostics`,
+operation `runner.preferences_read`). A judgment asked while its project's
+read is still running waits for it at most 30 seconds, then stops and says the
+read was still running; another project's judgment does not wait for it. The model port takes at
+most 20,000 characters per part, and 70 rules of 200 characters already need
+more than one, so every rule and conflict goes, in the host's order, across as
+many parts as it takes, at most four: `preferences`, then `preferences_2` and
+on, each saying it continues `preferences`, and the model is told that the
+later parts' rules and conflicts apply as if listed in the first. As on the
+host, Tonborg does not recommend when a rule may be missing: it answers
+`ask_user` without calling the model when no task of the project was entered
+on this computer while the host answered (evidence
+`preference_delivery:unavailable`), when the kept entry was not delivered whole
+and its rest could not be read, when the host's own read for it was cut, or
+when four parts cannot hold every rule or a single rule is longer than a part
+(`preference_delivery:partial`, naming that rule). Each says what the person
+can do; removing `roles.tonborg` from `model-backends.json` on the runner
+always has the host judge instead. Earlier decisions are only feedback,
+so they are sent newest first as many as fit, and the rest counted
+(`feedbackNotSent`). A request still too large to
+send (an `executors.json` at its limits, say) is refused on the runner before
+any model is called: `judgment_failed` with category `request_rejected` and
+`rejected` naming the part, nothing spent.
+
 **What it answers.** The same checks as on the host
 (`src/judgment/routing.js`): the choice must be an executor and model it was
 offered, and with no executor passing preflight the answer is `ask_user` with
-no model call. A record answers with `decidedOn: "runner"`, the `selection`
+no model call. No conversation of the host's is read here, so the model is
+shown an empty list of them and `reuse_conversation` is never an answer it can
+give. The tool is listed on a runner with what it does here, not with the
+host's description. A record answers with `decidedOn: "runner"`, the `selection`
 (executor, model, client), `leftOut`, the model's receipt, and the same
-`requestId` gives the same decision again. A model that does not answer, a
-refusal or an exhausted budget fails the judgment (`judgment_failed` with the
-failure and receipt); nothing falls back to the host or a session. It is a
+`requestId` gives the same decision again (two MCP processes answering one
+`requestId` at the same moment keep the decision saved first; the one that
+lost answers with it and says what its own model answer cost, unused, as
+`unusedModelReceipt`). A model that
+does not answer, a refusal, an exhausted budget or a choice that was not
+offered fails the judgment (`judgment_failed` with the failure, and the
+model's receipt whenever the model was called, so the caller sees that its
+budget was spent); nothing falls back to the host or a session. It is a
 recommendation: the caller starts the executor and records what really ran.
+
+This computer must still be paired. Before it is, every call here answers
+`runner_not_paired`, and after the host revokes it `runner_revoked`, including
+`assess_agent_action` and `report_routing_outcome`: no model is called, nothing
+is queued, and a store `fuli runner leave` deleted is not made again. The
+pairing is checked again once the model has answered, so a leave or revoke
+that lands meanwhile keeps nothing either; that answer carries
+`unusedModelReceipt`.
 
 **How a choice turned out.** When the chosen executor finished, the caller
 reports it once with `report_routing_outcome` (`decisionId`, `vote` up or down,
@@ -456,13 +518,21 @@ decision answers `already_reported`. The next judgment on the runner reads it.
 
 **To the host.** Each decision and each outcome is an outbox entry (kept in
 `runner/routing.sqlite` too, until `fuli runner leave`), delivered
-oldest first like a checkpoint and applied once per entry id. The host keeps the
+oldest first like a checkpoint and applied once per entry id. The host checks
+the project as it does for a judgment of its own: a decision naming a project
+this FULI does not have, or an archived one, is refused for good
+(`project_not_found`) and stays listed as refused on the runner, where
+`fuli runner status` shows the reason. The host keeps the
 decision among Tonborg's routing records (`decidedOn: "runner"`, with the
-runner's name and fingerprint), so the person sees it in Tonborg's workbench, and
+runner's name and fingerprint), so Tonborg's workbench says which computer
+judged it (an Agent's view carries `decidedOn` and the runner's name; the
+fingerprint stays out, and a record with no `decidedOn` was judged on the
+host), and
 the outcome as that record's feedback marked `reportedBy: "runner:<fingerprint>"`,
-never as the person's vote. Tonborg's later judgments on the host read it with
-its other feedback. Bole's score card counts FLA task outcomes the graph
-records, which these are not.
+never as the person's vote. Once the person has voted on a record, a runner's
+report is kept in its feedback history but does not take their vote's place:
+Tonborg's later judgments on the host read the person's. Bole's score card
+counts FLA task outcomes the graph records, which these are not.
 
 ## What a runner keeps
 
@@ -501,10 +571,18 @@ checkpoints again and delivers them; joining another host deletes them, and
 answers at the host's address with another certificate: if the host was
 reinstalled, join again.
 
-`fuli runner leave` deletes it all; with checkpoints still waiting or refused
+`fuli runner leave` deletes it all, the decisions made here included; with
+checkpoints still waiting or refused
 it says how many and needs `--force`, and so does a `join` to another host,
 which would drop them (checked before the invitation is used). The clients' MCP entries stay (they then
 answer that this computer is not paired); `fuli uninstall` removes them.
+On Windows a client's FULI process that still has `runner/runner.sqlite` or
+`runner/routing.sqlite` open keeps that file from being deleted: `leave`
+empties it instead and says, file by file, what it could not delete, rather
+than saying all was deleted.
+`model-backends.json` and `runner/executors.json` are the person's own files,
+so `leave` keeps them as they are and says so; they do nothing until this
+computer joins a host again.
 
 ## Data format
 

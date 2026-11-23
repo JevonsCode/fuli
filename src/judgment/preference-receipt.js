@@ -14,7 +14,11 @@ const SOURCE_WINDOWS = { candidates_truncated: 'candidates', project_ancestors_t
 // applicable, global before project and Agent) and the ancestor window (64
 // projects). The conflict queue only annotates conflicts that are already
 // delivered with every alternative, so its overflow is reported, not held.
-const RULE_WINDOWS = new Set(['candidates', 'project_ancestors', 'source']);
+// size_limit: a runner could not give its own model the rules whole;
+// delivery_budget: the task entry a runner kept was not delivered whole and
+// it holds no whole read of the rest (src/runner/local-routing.js). The host
+// sets neither in a judgment receipt.
+const RULE_WINDOWS = new Set(['candidates', 'project_ancestors', 'source', 'size_limit', 'delivery_budget']);
 
 export async function readJudgmentPreferences(app, { personalProjectId, projectAgentId = null, taskScope = {} }) {
   const scope = { work_kind: taskScope.workKind ?? 'unknown', workflow: taskScope.workflow ?? 'unknown',
@@ -30,19 +34,35 @@ export async function readJudgmentPreferences(app, { personalProjectId, projectA
   // An answer without its preference list is a failed read, never "no preferences".
   if (!Array.isArray(raw?.effective_preferences)) return { status: 'unavailable', scope, reason: 'preference_receipt_invalid' };
   const receipt = projectAgentCollaborationPreferences(raw, { personalProjectId }, { projectAgentId, taskScope });
-  const truncated = Object.entries(receipt.context.source_windows).filter(([, value]) => value !== false)
+  const truncated = truncatedWindows(receipt.context);
+  return { status: truncated.length ? 'partial' : 'complete', scope, ...compactPreferences(receipt),
+    omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
+}
+
+// The source windows a preference read did not read in full, from its context
+// (source_windows, source_truncated), on the host and on a runner, which reads
+// them from the task entry it kept. An unknown window (null) counts as cut.
+export function truncatedWindows(context) {
+  const truncated = Object.entries(context?.source_windows ?? {}).filter(([, value]) => value !== false)
     .map(([window]) => SOURCE_WINDOWS[window]);
-  if (receipt.context.source_truncated && !truncated.length) truncated.push('source');
-  // IDs, short rule text and flags only; bodies, reasoning and evidence stay in FULI.
+  if (context?.source_truncated && !truncated.length) truncated.push('source');
+  return truncated;
+}
+
+// What Tonborg's model reads of a task entry's preferences, on the host and on
+// a runner (src/runner/local-routing.js): IDs, short rule text and flags only;
+// bodies, reasoning and evidence stay in FULI.
+// entry: { effective_preferences, active_conflicts, scope_unknown } as a task entry answers them.
+export function compactPreferences(entry) {
   const rule = item => ({ rule: item.instruction, authority: item.confirmation_status,
     ...(item.inherited_from_project_id ? { from: item.inherited_from_project_id } : {}) });
-  return { status: truncated.length ? 'partial' : 'complete', scope,
-    selected: receipt.effective_preferences.map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) })),
+  return {
+    selected: (entry.effective_preferences ?? []).map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) })),
     // Keys only: a rule that does not apply here sends no body (rec#15 D-27.2).
-    scope_unknown: receipt.scope_unknown ?? [],
-    conflicts: receipt.active_conflicts.map(conflict => ({ key: conflict.preference_key, scope: conflict.preference_scope,
-      alternatives: conflict.alternatives.map(rule) })),
-    omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
+    scope_unknown: entry.scope_unknown ?? [],
+    conflicts: (entry.active_conflicts ?? []).map(conflict => ({ key: conflict.preference_key, scope: conflict.preference_scope,
+      alternatives: (conflict.alternatives ?? []).map(rule) }))
+  };
 }
 
 // Like a blocked task entry, a receipt that may be missing a rule pauses the

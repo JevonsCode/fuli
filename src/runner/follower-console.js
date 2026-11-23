@@ -145,7 +145,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     }
     const host = store.host();
     // Revoked is said as revoked, never as the host being away (review of #1069).
-    const refusal = unpairedAnswer(host);
+    const refusal = pairingRefusal(host);
     if (refusal) {
       local(response, refusal.status, refusal.body);
       return;
@@ -250,7 +250,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   async function away(request, response, host, path) {
     if (!wantsHtml(request)) {
       response.setHeader(SOURCE_HEADER, 'unavailable');
-      const refusal = unpairedAnswer(host);
+      const refusal = pairingRefusal(host);
       sendJson(response, refusal?.status ?? 503, { ...(refusal?.body ?? { error: 'host_unreachable' }),
         outbox: store.outbox().queued });
       return;
@@ -276,7 +276,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
 const JOIN_AGAIN = { command: 'fuli runner invite',
   zh: '在主机上运行这条命令生成新邀请，再在这台电脑上运行它打印的 fuli runner join …。',
   en: 'Run this on the host for a new invitation, then run the `fuli runner join …` it prints on this computer.' };
-function unpairedAnswer(host) {
+function pairingRefusal(host) {
   if (!host) {
     return { status: 409, body: { error: 'not_paired', message: '这台电脑还没有跟随任何主机。 / This computer follows no host.',
       action: JOIN_AGAIN } };

@@ -462,6 +462,16 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  // Where one FLA worked, for the console widget that shows it (rec#147). Read
+  // only: it counts conversation session records and opens nothing.
+  if (url.pathname === '/api/project-agent-work-locations' && request.method === 'GET') {
+    sendJson(response, 200, await app.viewAgentWorkLocations({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: url.searchParams.get('agentId')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-activity' && request.method === 'POST') {
     sendJson(response, 200, await app.recordProjectAgentTaskActivity(await readJson(request)));
     return true;

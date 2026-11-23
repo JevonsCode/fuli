@@ -2,6 +2,7 @@ import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 
 import { findRepositoryRoot, resolvePersonalProjectPath } from '../graphiti/project-path-context.js';
+import { resultValue } from './offline-calls.js';
 import { DEFAULT_SCOPE, GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore } from './routes-store.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
@@ -73,10 +74,6 @@ function realFolder(path) {
   }
 }
 
-function resultValue(result) {
-  if (result?.structuredContent !== undefined) return result.structuredContent;
-  try { return JSON.parse(result?.content?.find((item) => item.type === 'text')?.text ?? 'null'); } catch { return null; }
-}
 
 // A data directory's routes, created from an earlier version's pairing when it
 // has none (docs/runner-roles-design.md §10): a computer that was a runner

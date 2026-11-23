@@ -39,7 +39,7 @@ const KNOWN_REASONS = new Set(['provider_unavailable', 'provider_timeout', 'prov
   'provider_invalid_response', 'request_cancelled', 'transcript_capture_timeout', 'capture_changed',
   'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND']);
 
-function errorReason(error) {
+export function errorReason(error) {
   if (KNOWN_REASONS.has(error?.code)) return error.code;
   if (Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599) return `status_${error.status}`;
   return 'other';
