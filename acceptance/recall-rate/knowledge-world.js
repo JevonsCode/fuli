@@ -130,6 +130,20 @@ export const ITEMS = [
   entity({ id: 'st-copy-tone', project: SITE, name: '灯笼鱼官网的文案语气',
     summary: '官网文案用生活里的词，不用行业黑话，一句话讲清一件事。', terms: ['copy', '文案', 'tone'] }),
 
+  // --- written without retrieval terms -----------------------------------
+  // What an Agent records in passing often carries none, so these are found
+  // by their own words or not at all. Three share a name with a ledger item.
+  fact({ id: 'st-release-runbook', project: SITE, relationship: 'RELEASE_RUNBOOK', source: '灯笼鱼官网',
+    target: '发布流程', text: '发布灯笼鱼官网：合并到 main 后自动部署，不打 tag，部署完更新站点公告。' }),
+  fact({ id: 'st-oncall-channel', project: SITE, relationship: 'ONCALL_CHANNEL', source: '灯笼鱼官网',
+    target: '值班频道', text: '灯笼鱼官网的值班频道是 #lanternfish-oncall，页面打不开先在那里喊人。' }),
+  fact({ id: 'st-error-codes', project: SITE, relationship: 'ERROR_CODE_CONVENTION', source: '灯笼鱼官网',
+    target: '错误码', text: '官网前端的错误码用 LFS-### 三位数字，只出现在浏览器控制台里。' }),
+  fact({ id: 'lg-backup', relationship: 'BACKUP_SCHEDULE', source: '潮池账本', target: '备份',
+    text: '潮池账本每天 04:00 全量备份一次，备份保留 30 天。' }),
+  entity({ id: 'lg-feature-flag', name: '潮池账本的灰度开关',
+    summary: '新功能先在灰度开关后面开给 5% 的租户，观察一周再全量。' }),
+
   // --- near misses: plausible, share words, wrong answer -----------------
   entity({ id: 'nm-ledger-palette', name: '潮池账本的报表配色',
     summary: '报表配色用低饱和的蓝绿，不要用红色表示负数。', terms: ['配色', 'palette'] }),
@@ -178,3 +192,7 @@ export const ITEMS = [
 export const KNOWLEDGE_ITEMS = ITEMS.filter(item => !item.profile_aspect);
 export const PREFERENCE_ITEMS = ITEMS.filter(item => item.profile_aspect);
 export const ITEMS_BY_ID = new Map(ITEMS.map(item => [item.id, item]));
+
+// The same world with every hand-written retrieval term removed: how much of
+// a result the terms carry, rather than the item's own words.
+export const withoutRetrievalTerms = items => items.map(item => ({ ...item, retrieval_terms: [] }));

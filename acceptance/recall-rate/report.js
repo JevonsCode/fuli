@@ -8,6 +8,7 @@ export function formatReport({ preferences, entry, search, environment }) {
   out.push('FULI recall-rate benchmark');
   out.push(`  fixture world: ${environment.items} items, ${environment.projects} projects, one personal space`);
   out.push(`  ranked by:     ${environment.interpreter}`);
+  if (!environment.retrieval_terms) out.push('  retrieval terms: all removed (--without-retrieval-terms)');
   out.push('');
 
   const a = preferences.totals;
@@ -49,6 +50,8 @@ export function formatReport({ preferences, entry, search, environment }) {
   out.push(line('gold lost to the page budget', c.lost_to_budget));
   out.push(line('calls truncated by the budget', `${c.truncated_calls} / ${c.calls}`));
   out.push(line('mean delivered / ranked items', `${c.mean_delivered_items} / ${c.mean_total_items}`));
+  out.push(line('precision of delivered items', c.precision ?? '-'));
+  out.push(line('per query: candidates / ranked', `${c.mean_candidates_per_query} / ${c.mean_ranked_per_query}`));
   out.push(line('mean bytes / approx tokens', `${c.mean_bytes} B / ~${c.mean_approx_tokens} tok`));
   out.push(line('mean rank / page time', `${c.mean_rank_ms} ms / ${c.mean_page_ms} ms`));
   out.push('  by query language:');
@@ -62,6 +65,15 @@ export function formatReport({ preferences, entry, search, environment }) {
     out.push(`    ${item.id.padEnd(22)} rank=${item.best_rank ?? '-'} delivered=${item.delivered_items}/${item.total_items}`
       + ` ${item.bytes}B${item.forbidden_in_top_k.length ? ` NOISE@5 [${item.forbidden_in_top_k.join(' ')}]` : ''}`
       + `${item.lost_to_budget.length ? ` LOST [${item.lost_to_budget.join(' ')}]` : ''}`);
+  }
+  out.push('');
+  out.push('Hard cases by category (B: recalled, delivered, precision; C: gold delivered, top 5, delivered, precision)');
+  for (const [category, totals] of Object.entries(search.by_category)) {
+    const bTotals = entry.by_category[category];
+    const bPart = bTotals ? `B ${bTotals.recalled}/${bTotals.should_recall} ${bTotals.delivered_items} ${bTotals.precision ?? '-'}` : 'B -';
+    const cPart = totals ? `C ${totals.delivered_gold}/${totals.should_find} top5 ${totals.in_top_k}/${totals.calls}`
+      + ` ${totals.delivered_items_total} ${totals.precision ?? '-'}` : 'C -';
+    out.push(`    ${category.padEnd(20)} ${bPart.padEnd(18)} ${cPart}`);
   }
   return out.join('\n');
 }

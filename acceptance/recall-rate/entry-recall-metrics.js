@@ -8,8 +8,7 @@
 
 import { recallTaskKnowledge } from '../../src/graphiti/task-knowledge-recall.js';
 import { approxTokens } from '../../src/text/token-estimate.js';
-import { ITEMS } from './knowledge-world.js';
-import { ENTRY_CASES, SEARCH_SCOPE } from './recall-cases.js';
+import { CATEGORIES, ENTRY_CASES, SEARCH_SCOPE } from './recall-cases.js';
 import { rankSearches } from './provider-ranking.js';
 
 const SPACE = 'fixture-personal-space';
@@ -43,7 +42,7 @@ function listedIds(recall) {
     .map(item => (Array.isArray(item) ? item[0] : item?.id)).filter(Boolean);
 }
 
-export async function measureEntryRecall() {
+export async function measureEntryRecall(items) {
   const ranked = new Map();
   let recalls = new Map();
   for (let round = 0; round < REPLAY_ROUNDS; round++) {
@@ -57,7 +56,7 @@ export async function measureEntryRecall() {
     const fresh = [...asked.keys()].filter(key => !ranked.has(key));
     if (!fresh.length) break;
     const searches = fresh.map(searchFor);
-    const { results } = await rankSearches(ITEMS, searches);
+    const { results } = await rankSearches(items, searches);
     fresh.forEach((key, index) => ranked.set(key, results[searches[index].id]));
   }
 
@@ -69,6 +68,9 @@ export async function measureEntryRecall() {
     const bytes = Buffer.byteLength(JSON.stringify(recall));
     return {
       id: entry.id,
+      category: entry.category ?? null,
+      expect: entry.expect,
+      forbid: entry.forbid,
       status: recall.status,
       prompt: entry.prompt,
       queries: recall.query_count ?? 0,
@@ -84,24 +86,30 @@ export async function measureEntryRecall() {
     };
   });
 
-  const sum = (read) => cases.reduce((total, entry) => total + read(entry), 0);
-  const expected = ENTRY_CASES.reduce((total, entry) => total + entry.expect.length, 0);
-  const forbidden = ENTRY_CASES.reduce((total, entry) => total + entry.forbid.length, 0);
-  const deliveredTotal = sum(entry => entry.delivered.length);
   return {
     cases,
-    totals: {
-      cases: cases.length,
-      should_recall: expected,
-      recalled: expected - sum(entry => entry.missing.length),
-      must_not_recall: forbidden,
-      wrongly_recalled: sum(entry => entry.wrong.length),
-      delivered_items: deliveredTotal,
-      off_target_items: sum(entry => entry.off_target.length),
-      precision: deliveredTotal ? Number(((deliveredTotal - sum(entry => entry.off_target.length)) / deliveredTotal).toFixed(3)) : null,
-      mean_bytes: Math.round(sum(entry => entry.bytes) / cases.length),
-      mean_approx_tokens: Math.round(sum(entry => entry.approx_tokens) / cases.length),
-      mean_ms: Number((sum(entry => entry.ms) / cases.length).toFixed(2))
-    }
+    totals: summarize(cases),
+    by_category: Object.fromEntries([['regular', null], ...CATEGORIES.map(category => [category, category])]
+      .map(([name, category]) => [name, summarize(cases.filter(entry => entry.category === category))]))
+  };
+}
+
+function summarize(cases) {
+  if (!cases.length) return null;
+  const sum = read => cases.reduce((total, entry) => total + read(entry), 0);
+  const expected = sum(entry => entry.expect.length);
+  const deliveredTotal = sum(entry => entry.delivered.length);
+  return {
+    cases: cases.length,
+    should_recall: expected,
+    recalled: expected - sum(entry => entry.missing.length),
+    must_not_recall: sum(entry => entry.forbid.length),
+    wrongly_recalled: sum(entry => entry.wrong.length),
+    delivered_items: deliveredTotal,
+    off_target_items: sum(entry => entry.off_target.length),
+    precision: deliveredTotal ? Number(((deliveredTotal - sum(entry => entry.off_target.length)) / deliveredTotal).toFixed(3)) : null,
+    mean_bytes: Math.round(sum(entry => entry.bytes) / cases.length),
+    mean_approx_tokens: Math.round(sum(entry => entry.approx_tokens) / cases.length),
+    mean_ms: Number((sum(entry => entry.ms) / cases.length).toFixed(2))
   };
 }

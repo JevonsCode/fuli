@@ -8,6 +8,7 @@
 import { PROJECTS } from './knowledge-world.js';
 
 const LEDGER = PROJECTS.ledger;
+const SITE = PROJECTS.site;
 
 // --- A. preferences the entry delivers on its own -----------------------
 // Each task states the scope FULI resolves for it. A preference with no
@@ -70,7 +71,15 @@ export const ENTRY_CASES = [
   { id: 'eb-nothing-stored', prompt: '把这个数组按数字从小到大排序。',
     expect: [], forbid: ['pref-bilingual-ui', 'nm-ledger-palette', 'lg-release-runbook'] },
   { id: 'eb-unrelated-receipt', prompt: '收到，另一个会话说他那边跑完了。',
-    expect: [], forbid: ['lg-release-runbook', 'pref-bilingual-ui'] }
+    expect: [], forbid: ['lg-release-runbook', 'pref-bilingual-ui'] },
+  // Hard cases (`category`, reported apart): asked in other words than the
+  // answer was written in, or about an item written without retrieval terms.
+  { id: 'eb-golive', category: 'project_name_only', prompt: '潮池账本今天上线，按老规矩走一遍。',
+    expect: ['lg-release-runbook'], forbid: ['st-release-runbook'] },
+  { id: 'eb-standby', category: 'synonym', prompt: '线上出问题了，值守的人在哪个群？',
+    expect: ['lg-oncall-channel'], forbid: ['st-oncall-channel'] },
+  { id: 'eb-backup', category: 'no_retrieval_terms', prompt: '潮池账本的备份留多久？',
+    expect: ['lg-backup'], forbid: [] }
 ];
 
 // --- C. focused searches an Agent makes on its own ----------------------
@@ -155,8 +164,58 @@ export const SEARCH_CALLS = [
   { id: 'sc-broad-first-zh', language: 'zh',
     about: '前几个查询都带项目名，答案在最后一个查询里',
     queries: ['潮池账本 约定', '潮池账本 接口', '潮池账本 说明', '对账接口 失败 退避 重试'],
-    expect: ['lg-retry-policy'], forbid: [] }
+    expect: ['lg-retry-policy'], forbid: [] },
+
+  // --- hard cases, reported per `category` as well as in the totals -----
+  // Other words than the answer's. Without vectors nothing but a retrieval
+  // term can bridge them, and none of these answers has one that does.
+  { id: 'sc-syn-golive', language: 'zh', category: 'synonym', queries: ['上线 步骤'],
+    expect: ['lg-release-runbook'], forbid: [] },
+  { id: 'sc-syn-standby', language: 'zh', category: 'synonym', queries: ['值守 群'],
+    expect: ['lg-oncall-channel'], forbid: [] },
+  { id: 'sc-syn-clearing', language: 'zh', category: 'synonym', queries: ['清算 哪天'],
+    expect: ['lg-settlement-day'], forbid: [] },
+  { id: 'sc-syn-en', language: 'en', category: 'synonym', queries: ['go live steps'],
+    expect: ['lg-release-runbook'], forbid: [] },
+  // The same, with the project's name: now the answer shares a word with the
+  // query, but so does every other item in the project.
+  { id: 'sc-name-golive', language: 'zh', category: 'project_name_only', queries: ['潮池账本 上线 步骤'],
+    expect: ['lg-release-runbook'], forbid: [] },
+  { id: 'sc-name-standby', language: 'zh', category: 'project_name_only', queries: ['潮池账本 值守 群'],
+    expect: ['lg-oncall-channel'], forbid: [] },
+  { id: 'sc-name-clearing', language: 'zh', category: 'project_name_only', queries: ['潮池账本 清算 哪天'],
+    expect: ['lg-settlement-day'], forbid: [] },
+  { id: 'sc-name-test', language: 'zh', category: 'project_name_only', queries: ['潮池账本 测试 怎么跑'],
+    expect: ['lg-verify-command'], forbid: [] },
+  // ...and one where another item carries a word of the query that tells it
+  // apart (线上, in the oncall fact), so the answer is not the only match.
+  { id: 'sc-name-online', language: 'zh', category: 'project_name_only', queries: ['潮池账本 线上 步骤'],
+    expect: ['lg-release-runbook'], forbid: [] },
+  // Two projects in scope, each with an item of the same name; the active
+  // project's is the answer unless the query names the other one.
+  { id: 'sc-same-release', language: 'zh', category: 'same_name', queries: ['发布流程'],
+    scope: { project_ids: [LEDGER, SITE] },
+    expect: ['lg-release-runbook'], forbid: ['st-release-runbook'] },
+  { id: 'sc-same-error', language: 'zh', category: 'same_name', queries: ['错误码 约定'],
+    scope: { project_ids: [LEDGER, SITE] },
+    expect: ['lg-error-codes'], forbid: ['st-error-codes'] },
+  { id: 'sc-same-oncall-site', language: 'zh', category: 'same_name', queries: ['值班频道'],
+    scope: { project_ids: [LEDGER, SITE], active_project_id: SITE },
+    expect: ['st-oncall-channel'], forbid: ['lg-oncall-channel'] },
+  { id: 'sc-same-named-other', language: 'zh', category: 'same_name', queries: ['灯笼鱼官网 发布流程'],
+    scope: { project_ids: [LEDGER, SITE] },
+    expect: ['st-release-runbook'], forbid: ['lg-release-runbook'] },
+  // Written without retrieval terms: found by the item's own words.
+  { id: 'sc-noterms-backup', language: 'zh', category: 'no_retrieval_terms', queries: ['备份 保留 多久'],
+    expect: ['lg-backup'], forbid: [] },
+  { id: 'sc-noterms-flag', language: 'zh', category: 'no_retrieval_terms', queries: ['灰度 开关 比例'],
+    expect: ['lg-feature-flag'], forbid: [] },
+  { id: 'sc-noterms-site', language: 'en', category: 'no_retrieval_terms', queries: ['lanternfish oncall'],
+    scope: { project_ids: [SITE], active_project_id: SITE },
+    expect: ['st-oncall-channel'], forbid: [] }
 ];
+
+export const CATEGORIES = ['synonym', 'project_name_only', 'same_name', 'no_retrieval_terms'];
 
 export const SEARCH_SCOPE = {
   project_ids: [LEDGER],

@@ -7,8 +7,7 @@
 
 import { searchCurrentProjectKnowledge } from '../../src/graphiti/current-project-knowledge-search.js';
 import { approxTokens } from '../../src/text/token-estimate.js';
-import { ITEMS } from './knowledge-world.js';
-import { SEARCH_CALLS, SEARCH_SCOPE } from './recall-cases.js';
+import { CATEGORIES, SEARCH_CALLS, SEARCH_SCOPE } from './recall-cases.js';
 import { rankSearches } from './provider-ranking.js';
 
 const SPACE = 'fixture-personal-space';
@@ -33,15 +32,16 @@ function application(ranked) {
   };
 }
 
-export async function measureOnDemandSearch() {
+export async function measureOnDemandSearch(items) {
   const searches = SEARCH_CALLS.flatMap(call => call.queries.map((query, index) => ({
-    ...SEARCH_SCOPE, id: `${call.id}#${index}`, query, limit: LIMIT_PER_QUERY
+    ...SEARCH_SCOPE, ...call.scope, id: `${call.id}#${index}`, query, limit: LIMIT_PER_QUERY
   })));
-  const { results, timings_ms } = await rankSearches(ITEMS, searches);
-  const ranked = new Map(searches.map(search => [search.query, results[search.id]]));
+  const { results, timings_ms, candidates } = await rankSearches(items, searches);
 
   const cases = [];
   for (const call of SEARCH_CALLS) {
+    // Per call: the same query text may run under another scope elsewhere.
+    const ranked = new Map(call.queries.map((query, index) => [query, results[`${call.id}#${index}`]]));
     // One Agent reading one call: every query's results, best rank first.
     const order = call.queries
       .flatMap(query => idsOf(ranked.get(query)).map((id, index) => ({ id, index })))
@@ -59,9 +59,11 @@ export async function measureOnDemandSearch() {
     const rankedGold = call.expect.filter(id => order.includes(id));
     const serialized = JSON.stringify(page);
 
+    const deliveredGold = call.expect.filter(id => pageIds.has(id));
     cases.push({
       id: call.id,
       language: call.language,
+      category: call.category ?? null,
       queries: call.queries.length,
       ranked_total: order.length,
       found_in_ranking: rankedGold.length,
@@ -72,6 +74,12 @@ export async function measureOnDemandSearch() {
       forbidden_in_top_k: call.forbid.filter(id => topK.includes(id)),
       // Gold the Provider ranked but the page budget did not hand over.
       lost_to_budget: rankedGold.filter(id => !pageIds.has(id)),
+      delivered_gold: deliveredGold.length,
+      delivered_ids: [...pageIds],
+      // What one query had to choose from (in scope, before the score cut),
+      // and what it ranked: how much competition a right answer met.
+      candidates_per_query: call.queries.map((_, index) => candidates?.[`${call.id}#${index}`] ?? null),
+      ranked_per_query: call.queries.map(query => idsOf(ranked.get(query)).length),
       delivered_items: page.retrieval_budget?.returned_items ?? pageIds.size,
       total_items: page.retrieval_budget?.total_items ?? order.length,
       complete: page.retrieval_budget?.complete ?? true,
@@ -83,6 +91,7 @@ export async function measureOnDemandSearch() {
   }
 
   const sum = (list, read) => list.reduce((total, entry) => total + read(entry), 0);
+  const mean = values => (values.length ? Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)) : null);
   const summarize = list => (list.length ? {
     calls: list.length,
     should_find: sum(list, entry => entry.should_find),
@@ -91,6 +100,14 @@ export async function measureOnDemandSearch() {
     mrr: Number((sum(list, entry => entry.reciprocal_rank) / list.length).toFixed(3)),
     forbidden_in_top_k: sum(list, entry => entry.forbidden_in_top_k.length),
     lost_to_budget: sum(list, entry => entry.lost_to_budget.length),
+    delivered_gold: sum(list, entry => entry.delivered_gold),
+    delivered_items_total: sum(list, entry => entry.delivered_items),
+    // Of what reached the Agent, the share it asked for. As strict as B's:
+    // anything not named gold counts against it.
+    precision: sum(list, entry => entry.delivered_items)
+      ? Number((sum(list, entry => entry.delivered_gold) / sum(list, entry => entry.delivered_items)).toFixed(3)) : null,
+    mean_candidates_per_query: mean(list.flatMap(entry => entry.candidates_per_query)),
+    mean_ranked_per_query: mean(list.flatMap(entry => entry.ranked_per_query)),
     truncated_calls: list.filter(entry => !entry.complete).length,
     mean_delivered_items: Number((sum(list, entry => entry.delivered_items) / list.length).toFixed(2)),
     mean_total_items: Number((sum(list, entry => entry.total_items) / list.length).toFixed(2)),
@@ -104,6 +121,8 @@ export async function measureOnDemandSearch() {
     cases,
     totals: summarize(cases),
     by_language: Object.fromEntries(['zh', 'en', 'mixed']
-      .map(language => [language, summarize(cases.filter(entry => entry.language === language))]))
+      .map(language => [language, summarize(cases.filter(entry => entry.language === language))])),
+    by_category: Object.fromEntries([['regular', null], ...CATEGORIES.map(category => [category, category])]
+      .map(([name, category]) => [name, summarize(cases.filter(entry => entry.category === category))]))
   };
 }

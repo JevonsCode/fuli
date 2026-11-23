@@ -4,9 +4,11 @@
 // How often the right project knowledge and the right preferences reach the
 // Agent, over a fictional world with a stated right answer for every task.
 // Writes the numbers to stdout, and the whole record to --json <path>.
+// --without-retrieval-terms ranks the same world with every hand-written
+// retrieval term removed.
 
 import { writeFileSync } from 'node:fs';
-import { ITEMS, PROJECTS } from './knowledge-world.js';
+import { ITEMS, PROJECTS, withoutRetrievalTerms } from './knowledge-world.js';
 import { measurePreferenceDelivery } from './preference-delivery-metrics.js';
 import { measureEntryRecall } from './entry-recall-metrics.js';
 import { measureOnDemandSearch } from './on-demand-search-metrics.js';
@@ -20,13 +22,16 @@ function option(name) {
 
 async function main() {
   const started = Date.now();
+  const retrievalTerms = !process.argv.includes('--without-retrieval-terms');
+  const items = retrievalTerms ? ITEMS : withoutRetrievalTerms(ITEMS);
   const preferences = measurePreferenceDelivery();
-  const entry = await measureEntryRecall();
-  const search = await measureOnDemandSearch();
+  const entry = await measureEntryRecall(items);
+  const search = await measureOnDemandSearch(items);
   const result = {
     measured_at: new Date().toISOString(),
     elapsed_ms: Date.now() - started,
-    environment: { items: ITEMS.length, projects: Object.keys(PROJECTS).length, interpreter: rankingInterpreter() },
+    environment: { items: ITEMS.length, projects: Object.keys(PROJECTS).length, retrieval_terms: retrievalTerms,
+      interpreter: rankingInterpreter() },
     preferences, entry, search
   };
   process.stdout.write(`${formatReport(result)}\n`);
