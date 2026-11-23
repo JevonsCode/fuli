@@ -45,6 +45,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        # The tests that run the real agent-installer and session launcher fail, not skip, without them.
+        env:
+          FULI_REQUIRE_AGENT_KITS: '1'
       # Only an advisory in what ships to users blocks a pull request: the
       # production install and the packages built into the console bundle,
       # which npm test recorded when it built the console (pretest). An
@@ -243,6 +246,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        # The tests that run the real agent-installer and session launcher fail, not skip, without them.
+        env:
+          FULI_REQUIRE_AGENT_KITS: '1'
       - run: npm run test:package
 
   # Installer, update, rollback and ACP code paths only run on Windows.
@@ -256,3 +262,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        # The tests that run the real agent-installer and session launcher fail, not skip, without them.
+        env:
+          FULI_REQUIRE_AGENT_KITS: '1'

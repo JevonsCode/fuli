@@ -972,6 +972,9 @@ class CollaborationContextResult(StrictModel):
     agent_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     effective_preferences: list[CollaborationPreferenceItem] = Field(default_factory=list)
     task_scope_excluded_count: int = Field(default=0, ge=0)
+    # How many of those this task definitely does not meet; the rest are the
+    # scope_unknown items (whose distinct keys scope_unknown lists).
+    task_scope_mismatch_count: int = Field(default=0, ge=0)
     task_scope_filtered: bool = False
     # Keys of preferences limited to a task dimension the request did not state.
     scope_unknown: list[str] = Field(default_factory=list)
