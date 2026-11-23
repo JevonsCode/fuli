@@ -89,7 +89,7 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
     hostStore.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { entry, consoleSide, hostStore, runner, store, delivered,
+  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint,
     // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
     // kept a dead connection).
     setAway: (value) => { away = value; } };
@@ -314,12 +314,16 @@ test('where data comes from has three answers: the host, this computer, and a re
 });
 
 test('`/remote/<host>/` reaches only the paired host, and lands on its own path', async (t) => {
-  const { entry, consoleSide } = await pairedRunner(t);
+  const { entry, consoleSide, hostFingerprint } = await pairedRunner(t);
   const named = await get(`${entry.url}/remote/host-a/projects/synthetic`, { headers: { accept: 'text/html' } });
   assert.equal(named.status, 302);
   assert.equal(named.headers.location, '/projects/synthetic');
   const api = await get(`${entry.url}/remote/host-a/api/tasks`);
   assert.equal(JSON.parse(api.text).url, '/api/tasks');
+  // A receipt names the computer whose console its links open as `issued_by.fingerprint`: the first
+  // 16 hex characters of the identity the pairing pinned. That name reaches the same host.
+  const byFingerprint = await get(`${entry.url}/remote/${hostFingerprint.slice(0, 16)}/api/tasks`);
+  assert.equal(JSON.parse(byFingerprint.text).url, '/api/tasks');
   const seen = consoleSide.seen.length;
 
   for (const route of ['/remote/attacker.example/api/tasks', '/remote/127.0.0.1:9/api/tasks',

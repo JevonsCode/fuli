@@ -68,6 +68,31 @@ the hook tells the model to enter the task through FULI's MCP tools instead.
 store (the host, the cached answers, offline task tokens and the outbox). The
 host lists the runner until the person revokes it there.
 
+## Routes: what this computer follows
+
+Which parts of the person's FULI this computer reads and writes on another one is a short table,
+`runner/routes.sqlite` (docs/runner-roles-design.md §3). A scope is `global` (habits, profile, the
+FLA roster, Jefa), `default` (whatever has no route of its own) or `project:<id>`, and each has
+one owner: this computer or the paired host. A computer with no routes owns everything it has.
+
+- `fuli runner join` is 「follow everything」 on the joined host: `global` and `default` go there,
+  and so does any scope that followed another host. A runner paired by an earlier version gets
+  `global → host` and `default → host` on its first start and behaves exactly as before, outbox
+  included. `fuli runner leave` deletes the routes.
+- `fuli routes list` shows them; `fuli routes follow SCOPE HOST` points one scope at the paired
+  host (its name, or 8 or more characters of its fingerprint); `fuli routes scope-of PATH` prints
+  the scope of a folder. A project's id is read from the folder on this computer: its repository's
+  origin key, which the owner matches a folder on, or the repository's own path when it has none.
+- `fuli routes local SCOPE` is refused (`no_local_fuli`) while this computer has no FULI of its
+  own to answer that scope from. Owning a project on a follower is the next step.
+- Each call is routed before anything is sent: by the scope of the folder it names (`global`
+  without one), or by the computer that entered the task its token names, so a checkpoint goes
+  back to the computer that entered the task whatever the routes became. A call whose owner this
+  computer cannot reach is refused with the command that fixes it, never sent to another computer:
+  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope marked as this
+  computer's while it has no FULI of its own).
+- A computer that follows nothing loads none of the router's modules.
+
 ## The console on a runner
 
 A runner has no knowledge of its own yet, but it has a console of its own: `fuli start` (and
