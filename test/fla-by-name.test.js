@@ -397,15 +397,38 @@ test('a shared name continues the one FLA of this folder\'s project, or the one 
   assert.match(again.fla.notice, /；同名还有一位在 Gamma，这次用的是本会话正在继续的这位$/);
 });
 
-test('an FLA renamed because another had its name says its 原名, and the old name says where it went', async () => {
+test('for 30 days an FLA answers to its 原名 by the shared-name rules: the folder\'s project decides, else the person', async () => {
+  // jamie-c was called Jamie Ash until the person settled that name for jamie (Beta).
   const renamed = { ...fla('jamie-c', 'Lyra Lane', '测试', 'project-c'), former_name: 'Jamie Ash' };
-  const { run } = fixture({ roster: [ADA, JAMIE, renamed, JADE] });
-  const kept = await run('#FLA Jamie Ash 继续');
+  const roster = [ADA, JAMIE, renamed, JADE];
+  const inProject = project => { const context = fixture({ roster });
+    context.app.projectPathResolver = () => ({ ...FOLDER, personalProjectId: project }); return context; };
+  // In the renamed FLA's own project its old name reaches it, not the one that kept the name.
+  const there = await inProject('project-c').run('#FLA Jamie Ash 继续刚刚问题');
+  assert.deepEqual(owner(there), ['project-c', 'jamie-c']);
+  assert.equal(there.fla.notice,
+    '本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作；同名还有一位在 Beta，这次用的是当前项目的这位');
+  // In the keeper's project the name is the keeper's, and the entry says where the other went.
+  const kept = await inProject('project-b').run('#FLA Jamie Ash 继续');
   assert.deepEqual(owner(kept), ['project-b', 'jamie']);
   assert.equal(kept.fla.notice, '本会话由 Jamie Ash 继续项目 Beta 的工作；原名 Jamie Ash 的另一位现在叫 Lyra Lane（Gamma）');
-  const moved = await fixture({ roster: [ADA, JAMIE, renamed, JADE] }).run('#FLA Lyra Lane 继续');
-  assert.deepEqual(owner(moved), ['project-c', 'jamie-c']);
-  assert.equal(moved.fla.notice, '本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作');
+  // Anywhere else nothing decides: the person picks.
+  const elsewhere = await fixture({ roster }).run('#FLA Jamie Ash 继续');
+  assert.equal(elsewhere.fla.reason, 'same_name');
+  assert.deepEqual(elsewhere.human_interaction.options.map(option => option.replace(/ · 最近：.*/u, '')),
+    ['1. Jamie Ash — Beta — 开发', '2. Lyra Lane — Gamma — 测试']);
+});
+
+test('原名 is said on the turn that names the FLA, not on every later receipt of the binding', async () => {
+  const renamed = { ...fla('jamie-c', 'Lyra Lane', '测试', 'project-c'), former_name: 'Jamie Ash' };
+  const { hook } = fixture({ roster: [ADA, JAMIE, renamed, JADE] });
+  const named = await hook('#FLA Lyra Lane 继续');
+  assert.deepEqual(owner(named), ['project-c', 'jamie-c']);
+  assert.match(named.agent_receipt.markdown, /· 本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作$/u);
+  const next = await hook('再跑一遍');
+  assert.deepEqual(owner(next), ['project-c', 'jamie-c']);
+  assert.match(next.agent_receipt.markdown, /· 本会话由 Lyra Lane 继续项目 Gamma 的工作$/u);
+  assert.doesNotMatch(next.agent_receipt.markdown, /原名/u);
 });
 
 test('a shared name is still asked when the folder cannot tell, each option with its project and recent task', async () => {

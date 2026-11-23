@@ -179,8 +179,11 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (agent?.agentId === target.agentId) {
     const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
-    // A full-width bracket needs no space after it.
-    const called = agent.formerName ? `${current.name}（原名 ${agent.formerName}）` : `${current.name} `;
+    // 原名 only on the turn that names the FLA; later turns of the binding say
+    // the plain sentence, so their receipts stay short. A full-width bracket
+    // needs no space after it.
+    const called = agent.formerName && request.origin !== 'session'
+      ? `${current.name}（原名 ${agent.formerName}）` : `${current.name} `;
     const continuing = current.projectId ? `本会话由 ${called}继续项目 ${current.project} 的工作`
       : `本会话由 ${called}继续其全局工作`;
     const notice = [continuing, request.sameName && sameNameNotice(request.sameName),
@@ -218,10 +221,15 @@ function unavailable(target, reason, markers) {
 // `#FLA …`: an exact name of an FLA or of one of FULI's roles (rec#58), or
 // a client menu's name for one (fla-menu.js), else the picker over FLAs,
 // narrowed by a partial name; a single close fit continues directly,
-// letters in order only narrow (D-68).
+// letters in order only narrow (D-68). For 30 days after a rename an FLA
+// still answers to its 原名 (formerName), through the same rules as a name
+// several FLAs share: an FLA renamed in this folder's project is the one its
+// old name continues there.
 function explicitRequest({ query }, ranked, roles, here, input) {
-  const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), here, input) : null;
-  if (exact) return withRenamed(exact, ranked);
+  const named = withMenuNames([...ranked, ...roles]).map(item => item.formerName
+    ? { ...item, aliases: [...item.aliases, item.formerName] } : item);
+  const exact = query ? exactRequest(namedAtOpening(query, named), query, here, input) : null;
+  if (exact) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
   const { close, items } = narrowedByPartial(query, available);
@@ -229,17 +237,31 @@ function explicitRequest({ query }, ranked, roles, here, input) {
   return items.length ? choose(items, 'partial') : choose(available, 'no_match');
 }
 
-function exactRequest(exact, here, input) {
+function exactRequest(exact, query, here, input) {
   if (!exact.length) return null;
   const named = open(exact, input);
   if (!named.length) {
     return { state: 'unavailable', target: target(exact[0]), reason: unavailableReason(exact[0], source(input)) };
   }
+  const said = calledAs(named[0], query);
   const only = single(named, here);
-  if (!only) return choose(named, 'same_name', `有多位「${named[0].name}」，要继续哪一位？`);
+  if (!only) return choose(named, 'same_name', `有多位「${said}」，要继续哪一位？`);
   const others = named.filter(item => item.agentId !== only.pick.agentId);
+  // Another FLA reached only by its 原名 is said as where that name went.
+  const formerly = item => identityKey(calledAs(item, query)) !== identityKey(item.name);
+  const renamed = calledAs(only.pick, query) === only.pick.name ? others.filter(formerly) : [];
+  const same = others.filter(item => !renamed.includes(item));
   return { state: 'continue', target: target(only.pick), origin: 'named',
-    ...(others.length ? { sameName: { basis: only.basis, projects: [...new Set(others.map(item => item.project))] } } : {}) };
+    ...(same.length ? { sameName: { basis: only.basis, projects: [...new Set(same.map(item => item.project))] } } : {}),
+    ...(renamed.length ? { renamed: [...new Map(renamed.map(item => [item.agentId,
+      { name: item.name, project: item.project }])).values()] } : {}) };
+}
+
+// The name of a candidate the query used: its own, else its 原名.
+function calledAs(item, query) {
+  const text = identityKey(query);
+  return [item.name, ...(item.aliases ?? [])].filter(Boolean)
+    .find(name => text.startsWith(identityKey(name))) ?? item.name;
 }
 
 // Which of the FLAs (and placements) a name reaches continues without asking:
@@ -264,20 +286,8 @@ function single(named, { currentProjectId, sessionAgentId }) {
   return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
 }
 
-// An FLA FULI renamed because another had its name (graph/23) is still
-// known by the old one for a while: naming the FLA that kept it says where
-// the renamed one went, so nobody continues the wrong one unnoticed.
-function withRenamed(request, ranked) {
-  if (request.state !== 'continue') return request;
-  const key = identityKey(request.target.name);
-  const renamed = [...new Map(ranked.filter(item => item.agentId !== request.target.agentId && item.formerName
-    && identityKey(item.formerName) === key).map(item => [item.agentId, item])).values()];
-  return renamed.length ? { ...request, renamed: renamed.map(item => ({ name: item.name, project: item.project })) }
-    : request;
-}
-
 // One sentence on the others a shared name also reaches, so the person sees
-// who was not used (FLA names are unique from graph/23; a role may share one).
+// who was not used.
 function sameNameNotice({ basis, projects }) {
   const who = basis === 'session' ? '本会话正在继续的这位' : '当前项目的这位';
   const where = projects.join('、');
