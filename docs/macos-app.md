@@ -76,6 +76,12 @@ The client finds the bundled FULI next to its executable
 `runtime/node/bin/node src/desktop/macos-controller.js status|start|stop`,
 which share their logic with the Windows tray (`src/desktop/desktop-controller.js`).
 A client built without the bundle keeps using the `fuli` CLI from the login shell.
+When the client asks for it (`FULI_STAGE_MARKERS=1`), a start's controller
+prints one `{"stage": "…"}` line per step it enters
+(`src/local-runtime/startup-stage.js`) ahead of the result line; the window
+shows that step under its loading mark, so a start that takes minutes says which
+part of it is still working. Without the ask the controller prints only its one
+result line, which the updaters, acceptance runs and smoke scripts read whole.
 
 With the window quit, open Agent sessions keep FULI running: their FULI MCP process
 starts the app's own FULI (`Resources/fuli/src/cli.js start --automatic`) when it
