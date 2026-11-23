@@ -116,7 +116,11 @@ test('once the host answers, the runner\'s decision and its outcome reach Tonbor
 test('a runner model allowed more than executor routing is refused here; without one the host judges as before', async (t) => {
   const runner = await routingRunner(t, { operations: ['executor_routing', 'knowledge_review'] });
   const refused = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
-  assert.equal(JSON.parse(refused.content[0].text).code, 'runner_routing_config_invalid');
+  const said = JSON.parse(refused.content[0].text);
+  assert.equal(said.code, 'runner_routing_config_invalid');
+  // The file was read: it says which operation is not taken, not that it could not be read.
+  assert.match(said.message, /knowledge_review/);
+  assert.doesNotMatch(said.message, /could not be read/);
   assert.equal(runner.model.requests.length, 0);
   assert.equal(runner.calls.length, 0);
 
@@ -189,6 +193,7 @@ test('a model-backends.json that cannot be read says so, and names the file and 
   assert.equal(code, 'runner_routing_config_invalid');
   assert.match(message, /model-backends\.json/);
   assert.match(message, /nothing was judged/i);
+  assert.match(message, /delete it to have the host judge this again/, 'deleting this file is what hands it back');
   assert.equal(runner.calls.length, 0, 'a broken file here is not quietly sent to the host');
 });
 
@@ -204,6 +209,9 @@ test('runner/executors.json missing or unreadable is told apart, and neither cal
   const { code, message } = JSON.parse(refused.content[0].text);
   assert.equal(code, 'runner_routing_config_invalid');
   assert.match(message, /executors\.json/);
+  // Deleting it leaves no executor here (the ask_user above), so that is not offered as the way back.
+  assert.match(message, /Deleting it does not hand this back to the host/);
+  assert.match(message, /model-backends\.json/, 'it names the file that does');
   assert.equal(broken.model.requests.length, 0);
 });
 

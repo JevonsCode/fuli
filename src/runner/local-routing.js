@@ -39,11 +39,18 @@ const FEEDBACK_LIMIT = 30;
 const REQUEST_ID_MAX = 256;
 const OUTCOME_GUIDANCE = 'A recommendation is not execution: start the chosen executor yourself and record what really ran. '
   + 'When it finished, report how the choice did with report_routing_outcome (decisionId, vote up or down, reason from the real run).';
-// A file of the person's own that this computer cannot read: nothing is judged
-// here and nothing is sent, rather than a judgment made on half a configuration
-// or one quietly handed back to the host as if nothing were set up here.
-const CONFIG_UNREADABLE = 'Tonborg\'s own configuration on this computer could not be read, so nothing was judged here '
-  + 'and nothing was sent to the host. Fix the file, or delete it to have the host judge this again.';
+// A file of the person's own that this computer cannot use: nothing is judged
+// here and nothing is sent, rather than a judgment made on half a
+// configuration or one quietly handed back to the host as if nothing were set
+// up here. Each file's own message says what to do with it (routing-setup.js
+// for model-backends.json; EXECUTORS_FIX for runner/executors.json).
+const NOT_JUDGED = 'Nothing was judged here and nothing was sent to the host.';
+// Deleting executors.json does not hand the judgment back: with no executor
+// declared, Tonborg here answers ask_user. Only the role in model-backends.json
+// decides whether this computer judges at all.
+const EXECUTORS_FIX = 'Fix runner/executors.json. Deleting it does not hand this back to the host: with no executor '
+  + 'declared here, Tonborg answers ask_user. To have the host judge again, remove roles.tonborg from model-backends.json '
+  + 'or delete that file.';
 const outcomeSchema = z.object({ decisionId: z.string().min(1).max(256), vote: z.enum(['up', 'down']),
   reason: z.string().trim().min(1).max(1000) }).strict();
 
@@ -73,7 +80,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
 
   async function assess(input, { sourceApplication, sessionId }) {
     const role = routingRoleState(dataDir);
-    if (role.state === 'invalid') return failure('runner_routing_config_invalid', `${CONFIG_UNREADABLE} ${role.error}`);
+    if (role.state === 'invalid') return failure('runner_routing_config_invalid', `${NOT_JUDGED} ${role.error}`);
     let request;
     try {
       request = parseRoutingRequest(input);
@@ -84,7 +91,9 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     const earlier = kept(ledger.byRequest(request), requestFingerprint);
     if (earlier) return earlier;
     const declared = readRunnerExecutors(dataDir);
-    if (declared.state === 'invalid') return failure('runner_routing_config_invalid', `${CONFIG_UNREADABLE} ${declared.error}`);
+    if (declared.state === 'invalid') {
+      return failure('runner_routing_config_invalid', `${NOT_JUDGED} ${declared.error}. ${EXECUTORS_FIX}`);
+    }
     const required = [...new Set(request.requiredCapabilities.map((value) => value.toLowerCase()))];
     const { eligible, leftOut } = preflightExecutors(declared.state === 'ok' ? declared.executors : [], required);
     let judged;

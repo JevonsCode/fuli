@@ -22,12 +22,21 @@ export const MODEL_BACKENDS_FILE = 'model-backends.json';
 export function routingRoleState(dataDir, { read = readModelBackendConfig } = {}) {
   const loaded = read(join(dataDir, MODEL_BACKENDS_FILE));
   if (loaded.state === 'absent') return { state: 'off' };
-  if (loaded.state === 'invalid') return { state: 'invalid', error: loaded.error };
+  // Each error says what to do: deleting this file is what hands the judgment back to the host.
+  if (loaded.state === 'invalid') {
+    const said = String(loaded.error).replace(/\.$/, '');
+    const named = said.startsWith(MODEL_BACKENDS_FILE) ? said : `${MODEL_BACKENDS_FILE}: ${said}`;
+    return { state: 'invalid', error: `${named}. Fix it, or delete it to have the host judge this again.` };
+  }
   const role = loaded.config.roles.tonborg;
   if (!role?.enabled || !role.allowedOperations.includes(ROUTING_OPERATION)) return { state: 'off' };
-  if (role.allowedOperations.some((operation) => operation !== ROUTING_OPERATION)) {
-    return { state: 'invalid', error: `On a runner, roles.tonborg.allowedOperations may name only ${ROUTING_OPERATION}: `
-      + 'knowledge review and task acceptance belong to the host' };
+  const others = role.allowedOperations.filter((operation) => operation !== ROUTING_OPERATION);
+  if (others.length) {
+    // The file was read: what it asks for is what a runner does not do.
+    return { state: 'invalid', error: `model-backends.json was read, but roles.tonborg.allowedOperations names `
+      + `${others.join(', ')}, which a runner does not run: on a runner it may name only ${ROUTING_OPERATION}, since `
+      + 'knowledge review and task acceptance belong to the host. Remove those, or remove roles.tonborg to have the host '
+      + 'judge this again.' };
   }
   return { state: 'on' };
 }

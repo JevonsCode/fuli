@@ -312,13 +312,16 @@ data directory, and the key:
 
   An enabled role needs a `budget` (its fields may be empty). A runner refuses a Tonborg role that also lists `knowledge_review` or
   `task_acceptance` (`runner_routing_config_invalid`), and no other role is
-  ever called on a runner. A file this computer cannot read — broken JSON, a
-  field of the wrong shape, the same in `runner/executors.json` — answers
-  `runner_routing_config_invalid` too, saying nothing was judged here and
-  nothing was sent: a configuration of the person's that FULI cannot read is
-  not quietly handed back to the host, which would look as if the runner were
-  judging while it was not. Fix the file, or delete it to have the host judge
-  again. `egress` is not read: setting this model up on the
+  ever called on a runner; the answer names the operations it does not take.
+  A file this computer cannot read — broken JSON, a field of the wrong shape —
+  answers `runner_routing_config_invalid` too, saying nothing was judged here
+  and nothing was sent: a configuration of the person's that FULI cannot read
+  is not quietly handed back to the host, which would look as if the runner
+  were judging while it was not. What hands the judgment back is
+  `model-backends.json` alone: fix it, or delete it (or its `roles.tonborg`)
+  and the host judges again. A broken `runner/executors.json` is fixed in
+  place; deleting it does not hand anything back, it only leaves no executor
+  here, so Tonborg answers `ask_user`. `egress` is not read: setting this model up on the
   runner is the person's approval to send it what a judgment needs (below).
   `fuli models set-key <secretRef> --endpoint URL` saves the key on the runner,
   for that endpoint only; `fuli models check tonborg` tries the connection.
