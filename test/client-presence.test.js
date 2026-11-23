@@ -24,8 +24,13 @@ const NEW_COMPUTER = [
     componentStates: [state('mcp', 'missing')] }
 ];
 // The commands installed on this imaginary computer, and where: 'native' here, 'wsl' only inside WSL.
-const cliPresence = (installed, where = 'native') =>
-  createClientPresence({ presence: { find: async (command) => (installed.includes(command) ? where : null) } });
+// Each program here is a real executable file that answers with its client's own mark.
+const MARKS = { claude: '2.1.280 (Claude Code)', codex: 'codex-cli 0.166.0', 'cursor-agent': 'Usage: agent\n\nStart the Cursor Agent',
+  cursor: '3.30.14\n5f54c8173e5552412beb40702adac16275677fa0\narm64\n', opencode: 'Commands:\n  opencode mcp   manage MCP servers' };
+const answering = async (path) => MARKS[path.split('/').at(-1)] ?? null;
+const cliPresence = (installed, where = 'native') => createClientPresence({ answer: answering,
+  presence: { find: async (command) => (installed.includes(command) ? where : null),
+    locate: async (command) => (installed.includes(command) ? `/opt/bin/${command}` : null) } });
 // Every file a test writes goes into its own temporary folder, never a shared or real one.
 const scratch = (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-client-presence-'));
@@ -94,7 +99,8 @@ test('setup connects a client whose CLI is here, and names the ones that are not
 test('the console never waits for a shell, never calls a client still being looked for missing, and reads again when it is found', async (t) => {
   let release;
   const shell = new Promise((resolve) => { release = resolve; });
-  const presence = createClientPresence({ presence: { find: async (command) => { await shell; return command === 'cursor-agent' ? 'native' : null; } } });
+  const presence = createClientPresence({ answer: answering, presence: { find: async (command) => { await shell; return command === 'cursor-agent' ? 'native' : null; },
+    locate: async (command) => `/opt/bin/${command}` } });
   const observer = observerOf(t, presence);
   // The first read answers at once: Cursor is still being looked for, not "not installed".
   const first = await observer.observe();
@@ -137,9 +143,26 @@ test('a client only inside WSL is not on this Windows computer for FULI: never w
   assert.deepEqual([tile.status, tile.inWsl], ['not_detected', true]);
 });
 
+test('a name is not proof: an alias, a leftover shim or another product of that name is not the client', async () => {
+  const says = (outputs) => createClientPresence({
+    presence: { find: async (command) => (command in outputs ? 'native' : null),
+      // An alias or a shell function has no file: `command -v` names no absolute path for it.
+      locate: async (command) => (outputs[command] === 'alias' ? null : `/opt/bin/${command}`) },
+    answer: async (path) => { const said = outputs[path.split('/').at(-1)]; return said === 'gone' ? null : said; } });
+  // `opencode` as a shell alias for something else.
+  assert.deepEqual([...(await says({ opencode: 'alias' }).find(['opencode'])).installed], []);
+  // A shim an uninstall left: it no longer answers.
+  assert.deepEqual([...(await says({ 'cursor-agent': 'gone', cursor: 'gone' }).find(['cursor'])).installed], []);
+  // The archived Go opencode: same name, another product, another configuration.
+  assert.deepEqual([...(await says({ opencode: 'OpenCode is a terminal-based AI assistant\nUsage: opencode [flags]' }).find(['opencode'])).installed], []);
+  // The real ones are.
+  assert.deepEqual([...(await says({ opencode: MARKS.opencode, codex: MARKS.codex }).find(['opencode', 'codex'])).installed].sort(), ['codex', 'opencode']);
+});
+
 test('DeepSeek Harness is never taken for installed from a command named dsh alone', async () => {
   const asked = [];
-  const presence = createClientPresence({ presence: { find: async (command) => { asked.push(command); return 'native'; } } });
+  const presence = createClientPresence({ answer: answering, presence: { find: async (command) => { asked.push(command); return 'native'; },
+    locate: async (command) => `/opt/bin/${command}` } });
   const found = await presence.find(['dsh', 'cursor']);
   assert.deepEqual([...found.installed], ['cursor']);
   assert.equal(asked.includes('dsh'), false);

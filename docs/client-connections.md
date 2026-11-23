@@ -51,7 +51,7 @@ misses a client that has never written its configuration, which on a new compute
 in rec#145 a new Mac had Cursor and OpenCode installed with no `~/.cursor/mcp.json` and no `mcp`
 section in `opencode.json`, so `fuli setup`, `fuli runner join` and 「一键接入」 skipped both and
 only Codex was connected. The commands asked for are each client's own documented one —
-`cursor-agent` and `cursor`, `claude`, `codex`, `opencode`, `agy` — and they are asked of the
+`cursor-agent` and `cursor`, `claude`, `codex`, `opencode` — and they are asked of the
 person's login shell (`src/agent-kits/cli-presence.js`), because FULI may run with a shorter `PATH`
 than their terminal. Answers are kept for a few minutes, and only clients agent-installer did not
 find are asked about. A status page never waits for that shell: it shows what the last probe found
@@ -63,7 +63,13 @@ command Windows itself runs counts: a client found only inside WSL reads its con
 the Linux home, so it is never written under `%USERPROFILE%`. Its tile says 「在 WSL 里」 and that FULI
 on this Windows cannot reach it, and `fuli setup` names it to be set up inside WSL. DeepSeek
 Harness is not looked for by command — Linux has an unrelated `dsh` (distributed shell) — and is
-left to agent-installer, which finds it by its own folder.
+left to agent-installer, which finds it by its own folder; so is Antigravity, for which FULI has no
+verified mark. A name alone is not proof: the command must be an executable file (not an alias or
+shell function) that answers with its client's own mark — `claude --version` names Claude Code,
+`codex --version` starts `codex-cli`, `cursor-agent --help` names the Cursor Agent, `cursor --version`
+prints a version, a commit and an architecture, `opencode --help` lists `opencode mcp` (the archived Go
+`opencode` has no such command and reads another configuration). A leftover shim that no longer
+answers, or another product of the same name, is not counted.
 
 This is FULI's only detection of its own, and it decides nothing else: everything read or written
 in a client still goes through agent-installer. Checked with the real agent-installer 0.5.1 in a
