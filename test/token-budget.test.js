@@ -295,7 +295,8 @@ const BASELINE = Object.freeze({
   // rec#88: the label says each thing once (closing step, receipt, rules on demand): 1,673 -> 1,578.
   // ...and the same cuts in the project entry: 1,578 -> 1,451.
   // rec#137: checkpoint_required says why in one sentence (checkpoint_reason), because it flipped
-  // between turns with nothing to explain it: 1,451 -> 1,521 chars, measured.
+  // between turns with nothing to explain it: measured 1,449 -> 1,521 chars (+72; the baseline was
+  // 1,451). It is a skeleton part, so a later turn of the session that repeats it names it instead.
   projectEntryChars: 1521,
   // rec#46: an ordinary small coding task of a working lead (team, Jefa's empty board, Tonborg,
   // both memory layers never written, the directory snapshot current) when nothing in the store

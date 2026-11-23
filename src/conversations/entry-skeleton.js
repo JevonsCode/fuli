@@ -5,11 +5,13 @@ import { canonicalJson, contentHash } from '../../packages/roundtable/src/canoni
 // context generation showed exactly so, and names that frame by its
 // skeleton_revision, so the model never has to guess which earlier frame is
 // meant. The token, checkpoint requirement, preferences, conflicts and the
-// recovered messages are never part of it: they have their own deltas.
+// recovered messages are never part of it: they have their own deltas. The
+// reason beside the checkpoint requirement is (rec#137): it repeats while the
+// requirement does, and costs about seventy characters every turn otherwise.
 // A dotted part is a path inside the frame: the conversation's rule reference
 // and the latest saved result of its conversation, which repeats while no task
 // records a new one (rec#15).
-const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
+const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance', 'checkpoint_reason',
   'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall',
   'conversation.guidance', 'conversation.recovery.latest_checkpoint']);
 // Parts compared field by field (rec#88): a new prompt changes a few of their
