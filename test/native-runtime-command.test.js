@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseNativeRuntimeOptions, runNativeRuntimeCommand } from '../src/cli/native-runtime-command.js';
 test('CLI validates actions and requires explicit values without duplicate flags', () => {
-  assert.deepEqual(parseNativeRuntimeOptions(['update', '--preview', '--data-dir', '/synthetic']), { action: 'update', preview: true, yes: false, dataDir: '/synthetic' });
-  for (const args of [['unknown'], ['update', '--data-dir'], ['update', '--yes', '--yes']]) assert.throws(() => parseNativeRuntimeOptions(args));
+  assert.deepEqual(parseNativeRuntimeOptions(['update', '--preview', '--data-dir', '/synthetic']),
+    { action: 'update', preview: true, yes: false, dataDir: '/synthetic', expect: null, backOut: false, abandonImport: false, keepNewer: false, json: false });
+  assert.deepEqual(parseNativeRuntimeOptions(['recover', '--yes', '--expect', '0123456789abcdef', '--back-out']),
+    { action: 'recover', preview: false, yes: true, dataDir: null, expect: '0123456789abcdef', backOut: true, abandonImport: false, keepNewer: false, json: false });
+  for (const args of [['unknown'], ['update', '--data-dir'], ['update', '--yes', '--yes'], ['update', '--back-out'],
+    ['recover', '--expect', 'not-a-digest']]) assert.throws(() => parseNativeRuntimeOptions(args));
 });
 test('CLI preview and cancelled confirmation never mutate assets', async () => {
   let mutations = 0;

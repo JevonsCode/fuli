@@ -62,22 +62,34 @@ class WindowsTrayRuntime implements FuliRuntime {
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
   @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
+
+  // The controller recovers in its own process, after the confirmation here.
+  @override
+  bool get recoversInTerminal => false;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
+
+  @override
   Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
 
-  Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
+  Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    return parseControllerReply(await _run(_root!, action, onStage));
+    return parseControllerReply(await _run(_root!, action, onStage, extra));
   }
 
   // detachedWithStdio keeps Windows from opening a console window for
   // node.exe under this GUI process; its exit code is not available, so the
   // controller's JSON `ok` field carries the outcome. Its lines are read as
   // they arrive: the steps it reports while it works, then the result.
-  Future<String> _run(String root, String action, [StageListener? onStage]) async {
+  Future<String> _run(String root, String action, [StageListener? onStage, List<String> extra = const []]) async {
     try {
       final process = await Process.start(
         nodePathOf(root),
-        [controllerPathOf(root), action],
+        [controllerPathOf(root), action, ...extra],
         workingDirectory: root,
         environment: onStage == null ? null : stageMarkersEnvironment,
         mode: ProcessStartMode.detachedWithStdio,

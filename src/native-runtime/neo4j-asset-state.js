@@ -49,7 +49,11 @@ function overlaps(a, b) {
 }
 
 // versions: the Neo4j versions this runtime may hold (the current one and a retained older patch).
-export async function managedNeo4jContainers(paths, versions) {
+// [leftovers]: for finishing an uninstall that was killed while it removed
+// these directories: a jvs-a-* whose receipt is already gone counts when all
+// that is left in it is one of these versions' programs, and anything else is
+// left where it is instead of refusing.
+export async function managedNeo4jContainers(paths, versions, { leftovers = false } = {}) {
   const root = join(paths.nativeRuntimeDir, 'neo4j-assets');
   let entries;
   try { entries = await readdir(root, { withFileTypes: true }); }
@@ -57,21 +61,58 @@ export async function managedNeo4jContainers(paths, versions) {
   if (!(await lstat(root)).isDirectory()) throw new Error('Neo4j asset root must not be a symbolic link.');
   const containers = [];
   for (const entry of entries) {
-    if (!entry.isDirectory() || !/^jvs-a-[a-f0-9-]+$/.test(entry.name)) throw new Error('Unknown Neo4j asset entry was preserved.');
+    if (!entry.isDirectory() || !/^jvs-a-[a-f0-9-]+$/.test(entry.name)) {
+      if (leftovers) continue;
+      throw new Error('Unknown Neo4j asset entry was preserved.');
+    }
     const container = join(root, entry.name);
-    const receipt = JSON.parse(await readFile(join(container, 'fuli-asset-owner.json'), 'utf8'));
-    if (receipt.kind !== 'fuli-neo4j-assets' || receipt.id !== entry.name || !versions.includes(receipt.version)) throw new Error('Unowned Neo4j asset directory was preserved.');
+    let receipt = null;
+    try { receipt = JSON.parse(await readFile(join(container, 'fuli-asset-owner.json'), 'utf8')); }
+    catch (error) { if (!leftovers) throw error; }
+    if (!receipt && leftovers) {
+      const left = await readdir(container);
+      const version = left.length === 1 ? versions.find(candidate => left[0] === `neo4j-community-${candidate}`) : undefined;
+      if (left.length === 0 || version) {
+        if (version) await assertManagedNeo4jHome(paths, join(container, left[0]), version);
+        containers.push(container);
+      }
+      continue;
+    }
+    if (receipt.kind !== 'fuli-neo4j-assets' || receipt.id !== entry.name || !versions.includes(receipt.version)) {
+      if (leftovers) continue;
+      throw new Error('Unowned Neo4j asset directory was preserved.');
+    }
     await assertManagedNeo4jHome(paths, join(container, `neo4j-community-${receipt.version}`), receipt.version);
     containers.push(container);
   }
   return containers;
 }
 
+// The program directories an uninstall of [current] removes: each version's
+// default home, the FULI asset directories holding one of those versions, and
+// the directories of the homes the descriptor names — every home checked to be
+// one FULI manages first. A recovery finishing a killed uninstall asks with
+// [leftovers] (managedNeo4jContainers); directories already gone are answered too.
+export async function uninstallContainers(paths, current, { leftovers = false } = {}) {
+  // After a patch upgrade the retained assets are of the older patch.
+  const assets = [{ home: current.neo4jHome, version: current.neo4jVersion }, current.previousNeo4jAsset].filter(Boolean);
+  for (const { home, version } of assets) {
+    if (typeof home !== 'string' || typeof version !== 'string') throw new Error('Neo4j asset home or version is missing.');
+    await assertManagedNeo4jHome(paths, home, version);
+  }
+  const versions = [...new Set(assets.map(({ version }) => version))];
+  const defaultHomes = await Promise.all(versions.map(version =>
+    assertManagedNeo4jHome(paths, join(paths.nativeRuntimeDir, `neo4j-community-${version}`), version)));
+  return [...new Set([...defaultHomes, ...await managedNeo4jContainers(paths, versions, { leftovers }),
+    ...assets.map(({ home }) => assetContainer(paths, resolve(home)))])];
+}
+
 // Normal setup/start/stop/admin work shares the exclusive lifecycle lease. Only
 // the operation that already owns the lease may reenter while switching assets.
 // [operation] names what takes it (start, stop), so a later start knows what an
-// interrupted holder left behind (neo4j-lifecycle-lock.js).
-export async function withNativeAssetOperation(paths, env, action, { operation = 'start', identity } = {}) {
+// interrupted holder left behind (neo4j-lifecycle-lock.js); [holder] is what
+// else the lock records for a recovery.
+export async function withNativeAssetOperation(paths, env, action, { operation = 'start', identity, holder } = {}) {
   const root = paths.nativeRuntimeDir;
   await releaseAbandonedNeo4jLifecycleLock(root, identity);
   try {
@@ -80,7 +121,7 @@ export async function withNativeAssetOperation(paths, env, action, { operation =
     throw await neo4jLifecycleLockError(root, identity);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
-  const lock = await acquireNeo4jLifecycleLock(root, { operation });
+  const lock = await acquireNeo4jLifecycleLock(root, { operation, details: holder });
   try {
     if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
     return await action({ ...env, FULI_NATIVE_ASSET_OPERATION: lock.token });
