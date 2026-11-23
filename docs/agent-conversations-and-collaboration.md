@@ -43,6 +43,8 @@
 | 人说了要接哪一段 | `stated_by_user` | 第一条消息是 FULI 的接续指令，点名这位 FLA **和**它的某个对话（`#FLA {agentId}` 加 `conversationId`），或显式调用 `resume_agent_conversation`。按那个对话 ID 找来源，不看时间窗口。只点名 FLA、交一件新任务，是指定谁来做，**不算续接** |
 | FULI 认出是同一件事 | `same_branch` | 这位 FLA 最近 7 天还有别的会话，和本会话在同一个仓库目录、同一条 Git 分支上，且这条分支不是 `main`、`master`、`develop`、`release`、`staging`、`test`、`prod`、`production`、`gh-pages` 这类多人共用的长期分支 |
 
+接续指令里的 `#FLA {agentId}` 在新会话里不会换人：这一轮由谁负责仍按工作目录定。所以接续指令点名的必须正好是这个目录的负责人，才显示续接；成员 FLA 写的接续指令拿到别处用时，这一轮仍照常干活，只是开头不写续接。
+
 不显示的情况一律不解释：同一条分支上有不止一段工作（分不清接哪段）、读不到分支（不在 Git 里、detached HEAD、读取超时）、
 读不到点名的那个对话、新会话做另一件事、这位 FLA 没有更早的工作。
 
