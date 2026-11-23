@@ -19,14 +19,15 @@ import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 // client and the outbox use. close() ends every connection and any probe still
 // running, and nothing is opened after it.
 // Each address is also tried bound to each physical adapter's own address.
-// This changes the way out on macOS only, where scoped routing lets the source
+// On macOS that changes the way out, as scoped routing lets the source
 // address pick the adapter: a VPN that claims the host's subnet sends the
 // default route into its tunnel while the Wi-Fi or cable adapter reaches the
-// host directly. On Linux and Windows the destination chooses the route, so
-// these extra probes only cost a socket; there the way through such a VPN is
-// an address reachable over the VPN itself (`fuli runner add-address`). The
-// route that answers is the one every later request takes. The host's hello
-// names its addresses now, kept for the next network change.
+// host directly. On Linux the destination chooses the route, so these extra
+// probes usually only cost a socket. Windows is not tried behind such a VPN
+// (its strong host model may behave as macOS does). Where it does not help,
+// the way through is an address reachable over the VPN itself (`fuli runner
+// add-address`). The route that answers is the one every later request takes.
+// The host's hello names its addresses now, kept for the next network change.
 // The pinned host answering that it does not know this runner (revoked, or
 // never paired there) ends the pairing here (runner-store.js revoked): nothing
 // is looked for, shown from cache or sent again until the runner joins again.
