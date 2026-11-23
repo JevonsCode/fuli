@@ -101,8 +101,10 @@ const agentWorkstreamsShape = shapeFor<AgentWorkstreamLedger>(z.object({
     workstreams: z.array(workstreamLine) })),
 }))
 
-// The pieces of one project page read the team at the same moment; they share
-// that one request instead of sending one each. A later read asks again.
+// The pieces of one project page mount together and read the team in the same
+// tick; they share that one request instead of sending one each. Any later
+// read, a refresh included, asks again, so a slow or lost answer never stands
+// in for a fresh one.
 const teamReads = new Map<string, Promise<ProjectTeam>>()
 
 export function readProjectTeam(personalSpaceId: string, personalProjectId: string) {
@@ -111,8 +113,8 @@ export function readProjectTeam(personalSpaceId: string, personalProjectId: stri
   if (pending) return pending
   const query = new URLSearchParams({ personalSpaceId, personalProjectId })
   const read = getJson(`/api/project-team?${query}`, projectTeamShape)
-    .finally(() => teamReads.delete(key))
   teamReads.set(key, read)
+  queueMicrotask(() => teamReads.delete(key))
   return read
 }
 

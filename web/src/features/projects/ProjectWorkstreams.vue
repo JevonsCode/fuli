@@ -49,7 +49,7 @@ let sequence = 0
 const candidates = computed(() => {
   const value = team.value
   if (!value) return []
-  return [...value.members, ...value.collaborators]
+  return [...(value.members ?? []), ...(value.collaborators ?? [])]
     .filter(person => person.agentId !== value.lead?.agentId && !person.peerRole)
     .map(person => ({ value: person.agentId, label: person.name }))
 })
@@ -80,7 +80,8 @@ async function load() {
       readProjectWorkstreams(props.projectId)])
     if (current !== sequence) return
     team.value = people
-    lines.value = ledger.workstreams
+    // An answer without lines (an older server) shows none rather than failing the page.
+    lines.value = Array.isArray(ledger?.workstreams) ? ledger.workstreams : []
   } catch (error) {
     if (current === sequence) failed.value = codeOf(error) === 'local_user_only' ? 'local_only' : 'failed'
   } finally {

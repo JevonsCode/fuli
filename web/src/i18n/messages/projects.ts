@@ -283,7 +283,7 @@ export const projectMessages = {
       cancel: '取消',
       addToLine: '把这些词加到「{line}」',
       pickAnother: '换一位成员',
-      recruit: '让 Bole 招一位',
+      recruit: "让 @:{'roleNames.bole'} 招一位",
       problems: {
         workstream_owner_has_line: '这位 FLA 已经在做「{line}」，一位 FLA 在一个项目里只做一条线。',
         standing_assignment_term_taken: '有个词已经属于另一条线，换一个，或先把那条线里的词拆出来。',
@@ -623,7 +623,7 @@ export const projectMessages = {
       cancel: 'Cancel',
       addToLine: 'Add these words to “{line}”',
       pickAnother: 'Pick another member',
-      recruit: 'Have Bole recruit one',
+      recruit: "Have @:{'roleNames.bole'} recruit one",
       problems: {
         workstream_owner_has_line: 'This FLA already does “{line}”; one FLA does one line per project.',
         standing_assignment_term_taken: 'A word already belongs to another line. Use another, or split it out of that line first.',
