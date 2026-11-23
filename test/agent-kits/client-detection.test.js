@@ -239,3 +239,60 @@ test('over the person\'s own configuration, FULI connects, reads as current, and
     else assert.equal(now.trimEnd(), text.trimEnd(), relative);
   }
 });
+
+// rec#145: a client installed on a computer where it has never written its
+// configuration. agent-installer does not find it (no file, and its command is
+// not on FULI's PATH: Cursor's CLI is `cursor-agent`, which it does not look
+// for), FULI finds it by its command (client-presence.js) and asks for it, and
+// the real agent-installer then creates each file where that client reads it.
+test('a client agent-installer did not find is still written in full when FULI asks for it, and reads back connected', async (t) => {
+  const executable = await realAgentKitExecutable('agent-installer');
+  if (!executable) { t.skip('no agent-installer executable here (set AGENT_INSTALLER_BIN to opt in)'); return; }
+  const { home } = isolateHomeEnvironment(t);
+  // Neither client's command is on this PATH, so only its files could show it.
+  const savedPath = process.env.PATH;
+  process.env.PATH = mkdtempSync(join(tmpdir(), 'fuli-empty-path-'));
+  t.after(() => { rmSync(process.env.PATH, { recursive: true, force: true }); process.env.PATH = savedPath; });
+  const installer = realPort(t, executable, { home });
+  const before = Object.fromEntries((await detectClients(installer)).clients.map((client) => [client.id, client]));
+  assert.deepEqual([before.cursor.detected, before.opencode.detected], [false, false]);
+
+  for (const agent of [{ id: 'cursor', label: 'Cursor' }, { id: 'opencode', label: 'OpenCode' }]) {
+    const result = await installAgent(installer, agent);
+    assert.deepEqual([result.status, result.selfCheck?.status], ['connected', 'passed'], `${agent.id}: ${result.message}`);
+  }
+  // Where each client reads it, in its own format; nothing existed, so nothing was backed up.
+  const cursor = JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8'));
+  assert.ok(cursor.mcpServers.fuli.args.includes('cursor'), 'Cursor: mcpServers.fuli, command + args');
+  const openCode = parseJsonc(readFileSync(join(home, '.config', 'opencode', 'opencode.jsonc'), 'utf8'));
+  assert.deepEqual([openCode.mcp.fuli.type, openCode.mcp.fuli.command.includes('opencode')], ['local', true],
+    'OpenCode: mcp.fuli, type local + command array');
+  const backedUp = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true }).filter((name) => /\.bak$/.test(name)) : []);
+  assert.deepEqual(backedUp(installer.backupsDir), []);
+  const after = Object.fromEntries((await detectClients(installer)).clients.map((client) => [client.id, client]));
+  assert.deepEqual([after.cursor.connected, after.opencode.connected], [true, true]);
+  // agent-installer would create a client's folder for anyone who asks, so only FULI's
+  // check that the client is here keeps it from writing one that is not: Kiro was not asked for.
+  assert.equal(existsSync(join(home, '.kiro')), false);
+});
+
+test('an existing client file is backed up before FULI goes in, and one it cannot read is left exactly as it was', async (t) => {
+  const executable = await realAgentKitExecutable('agent-installer');
+  if (!executable) { t.skip('no agent-installer executable here (set AGENT_INSTALLER_BIN to opt in)'); return; }
+  const { home } = isolateHomeEnvironment(t);
+  mkdirSync(join(home, '.cursor'), { recursive: true });
+  writeFileSync(join(home, '.cursor', 'mcp.json'), '{ "mcpServers": { "mine": { "command": "mine" } } }\n');
+  const broken = '{ "theme": "dark", \n';
+  mkdirSync(join(home, '.config', 'opencode'), { recursive: true });
+  writeFileSync(join(home, '.config', 'opencode', 'opencode.json'), broken);
+  const installer = realPort(t, executable, { home });
+  const cursor = await installAgent(installer, { id: 'cursor', label: 'Cursor' });
+  assert.equal(cursor.status, 'connected', cursor.message);
+  assert.match(readdirSync(join(installer.backupsDir, 'cursor')).join(' '), /^mcp\.json\..+\.bak$/);
+  assert.ok(JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8')).mcpServers.mine, 'the person\'s server stays');
+  // The unreadable file is reported and untouched, never half rewritten; the connection says partial.
+  const openCode = await installAgent(installer, { id: 'opencode', label: 'OpenCode' });
+  assert.equal(openCode.status, 'partial');
+  assert.match(openCode.message, /opencode\.json: Invalid JSON/);
+  assert.equal(readFileSync(join(home, '.config', 'opencode', 'opencode.json'), 'utf8'), broken);
+});

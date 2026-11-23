@@ -57,9 +57,16 @@ than their terminal. Answers are kept for a few minutes, and only clients agent-
 find are asked about, so a status read starts at most one shell per missing client.
 
 This is FULI's only detection of its own, and it decides nothing else: everything read or written
-in a client still goes through agent-installer, which creates a missing configuration file by that
-client's own rules and backs up one that exists. It should move upstream once agent-installer can
-find a client by its command name.
+in a client still goes through agent-installer. Checked with the real agent-installer 0.5.1 in a
+temporary home (`test/agent-kits/client-detection.test.js`): asked for a client it did not find, it
+writes it in full anyway — `~/.cursor/mcp.json`, `hooks.json` and the Skills; `opencode.jsonc`, the
+Skills and the plugin under `~/.config/opencode/` — and then reads it back as connected; a file that
+was already there is copied to `backups/agents/<client>/` first and the person's own entries stay;
+a file it cannot parse is reported (the connection says partial) and left byte for byte as it was,
+though the client's other parts are still written. Because it writes for any client it is asked
+for, FULI's check that the client is really here is what keeps it from creating a folder for a
+client that is not installed. agent-installer does not look for `cursor-agent`, only `cursor`; this
+should move upstream once it can find a client by its CLI name.
 
 ### Client status in Settings
 
@@ -470,6 +477,6 @@ DeepSeek Harness（DSH，`@deepseek-ai/dsh` 0.2.x 预览版）在找到 `dsh` �
 
 从 DSH 的插件列表安装的人用 `packages/dsh-connector`（包名 `fuli-dsh-connector`，需要 FULI 0.27.0 及以上，`dsh plugin --profile <名字> add "github:JevonsCode/fuli#path:/packages/dsh-connector"`）：它不带 FULI 的代码，在 FULI 的数据目录（`FULI_DATA_DIR`，否则 FULI 的默认位置）找到上面那个 bundle，加载它的生命周期插件，并按 bundle 里 `fuli-mcp` 那一行通过 DSH 自带的 `@deepseek-ai/dsh-mcp-client` 启动 FULI MCP（等第一次工具列表返回再继续，所以第一轮就有 `mcp__fuli__*`）。如果当前 profile 启动时已经加载了 FULI 控制台接入的 `fuli-dsh`（按 DSH 的 `profileContext.startedBundles` 判断，而不是看共享文件），连接器什么都不做，避免重复；别的 profile 接入了、或 `<DSH 主目录>/plugins/fuli` 里有共享副本，都不影响当前 profile 里的连接器；找不到 FULI 时只记一行日志。Windows 安装时选了别的数据目录、又没设 `FULI_DATA_DIR` 的，请从 FULI 控制台接入。
 
-OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；设置了配置覆盖环境变量（`OPENCODE_CONFIG`、`OPENCODE_CONFIG_CONTENT`、`OPENCODE_CONFIG_DIR`）时，agent-installer 把它标为手动接入，界面提供官方手动接入指引，不自动写入。全局 `opencode.jsonc` 存在时写入它，否则写 `opencode.json`。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
+OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；设置了配置覆盖环境变量（`OPENCODE_CONFIG`、`OPENCODE_CONFIG_CONTENT`、`OPENCODE_CONFIG_DIR`）时，agent-installer 把它标为手动接入，界面提供官方手动接入指引，不自动写入。已有的 `opencode.json` 或 `opencode.jsonc` 就写进那一份；两份都没有时新建 `opencode.jsonc`（OpenCode 两种都读）。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
 
 配置目录遵循客户端官方覆盖变量（由 agent-installer 读取）：Gemini 的 `GEMINI_CLI_HOME` 替代主目录后追加 `.gemini/settings.json`，Codex 的 `CODEX_HOME` 替代 `.codex`，Qwen 的 `QWEN_HOME` 替代 `.qwen`，Kiro 的 `KIRO_HOME` 替代 `.kiro`。后两者分别追加 `settings.json` 和 `settings/mcp.json`。
