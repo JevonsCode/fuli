@@ -50,7 +50,8 @@ export async function waitForProviderHealth(url, {
       return false; // The Provider is still starting.
     }
   }, { timeoutMs, intervalMs: PROVIDER_READY_INTERVAL_MS, probeTimeoutMs: PROVIDER_HEALTH_TIMEOUT_MS, wait, now });
-  if (outcome !== 'ready') throw new Error(failureMessage);
+  // A code the start's failure report knows (startup-failure.js).
+  if (outcome !== 'ready') throw Object.assign(new Error(failureMessage), { code: 'provider_not_ready' });
 }
 
 // A workspace whose Provider is the locally managed development instance.

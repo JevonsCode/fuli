@@ -283,12 +283,12 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     // so when it could not be confirmed gone.
     const ended = !Number.isInteger(child.pid) || !deps.isProcessAlive(child.pid) || await terminateConsole(child.pid,
       { signal: deps.stopProcess, isAlive: deps.isProcessAlive, wait: deps.wait, now: deps.now });
-    throw new Error(consoleStartFailure(consoleStart, {
+    throw consoleStartFailure(consoleStart, {
       url, pid: child.pid, ended,
       providerUrls: input.personalOnly ? [urls.personal] : [urls.personal, urls.workspace],
       logPath: input.paths.logPath,
       portProblem: await deps.consolePortProblem(runtimeSettings.ports.console, lan ? '0.0.0.0' : '127.0.0.1')
-    }));
+    });
   }
   const state = {
     version: 4,
@@ -558,14 +558,22 @@ function waitForWeb(url, pid, deps) {
 
 // By now Neo4j and the Provider run and the graph is set up; only the console
 // failed. Say so, so a person neither assumes nothing started nor loses track of it.
-// A port Windows reserves is named first: retrying on the same port cannot help.
+// A port Windows reserves is named first: retrying on the same port cannot help,
+// and the tray offers its port change for it instead of a retry. The message
+// says what happened; the next step is each surface's own (startup-failure.js).
 function consoleStartFailure(outcome, { url, pid, ended, providerUrls, logPath, portProblem }) {
+  const seconds = CONSOLE_READY_TIMEOUT_MS / 1000;
   const problem = outcome !== 'timed_out' ? 'The Fuli console exited while starting.'
-    : ended ? `The Fuli console did not answer at ${url} within ${CONSOLE_READY_TIMEOUT_MS / 1000} s, so it was stopped.`
-    : `The Fuli console did not answer at ${url} within ${CONSOLE_READY_TIMEOUT_MS / 1000} s and did not end when stopped; its process ${pid} may still be running.`;
-  return `${portProblem ? `${portProblem} ` : ''}${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
-    `and your data is kept. The console's output is in ${logPath}. ` +
-    'Run the same command again to retry, or run `fuli stop` to stop the graph services.';
+    : ended ? `The Fuli console did not answer at ${url} within ${seconds} s, so it was stopped.`
+    : `The Fuli console did not answer at ${url} within ${seconds} s and did not end when stopped; its process ${pid} may still be running.`;
+  const message = `${portProblem ? `${portProblem} ` : ''}${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
+    `and your data is kept. The console's output is in ${logPath}.`;
+  // A reserved port and a console that would not end keep their own wording, retry advice included.
+  if (portProblem || (outcome === 'timed_out' && !ended)) {
+    return new Error(`${message} Run the same command again to retry, or run \`fuli stop\` to stop the graph services.`);
+  }
+  const code = outcome === 'timed_out' ? 'console_not_answering' : 'console_exited';
+  return Object.assign(new Error(message), { code, startupFailure: { code, seconds, logPath } });
 }
 
 function startGraphProviders(paths, envPath, options = {}) {

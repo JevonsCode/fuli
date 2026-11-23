@@ -18,7 +18,7 @@ import {
 import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
-import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock, withNativeAssetOperation } from './neo4j-asset-state.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
@@ -447,10 +447,14 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   }
   const assetLock = join(input.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
   const recovery = join(input.paths.nativeRuntimeDir, 'neo4j-transaction.json');
+  releaseAbandonedNeo4jLifecycleLock(input.paths.nativeRuntimeDir, { isAlive: deps.isProcessAlive });
   if (existsSync(assetLock) || existsSync(recovery)) {
     let owner = null;
     try { owner = readFileSync(join(assetLock, 'owner'), 'utf8'); } catch { /* Incomplete ownership is blocked. */ }
-    if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
+    if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) {
+      if (existsSync(recovery)) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
+      throw neo4jLifecycleLockError(input.paths.nativeRuntimeDir, { isAlive: deps.isProcessAlive });
+    }
   }
   const env = input.env ?? process.env;
   const packageRoot = dirname(input.paths.graphComposePath);
@@ -599,6 +603,7 @@ function nativeDependencies(overrides) {
     installNeo4j: installNativeNeo4j,
     installProvider,
     providerSourceFingerprint,
+    isProcessAlive,
     onProgress: (input, message) => input.onProgress?.(message),
     ...overrides
   };

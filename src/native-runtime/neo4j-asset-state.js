@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+
+import { isProcessAlive } from '../local-runtime/processes.js';
 
 export async function assertManagedNeo4jHome(paths, home, version) {
   if (!isAbsolute(home ?? '')) throw new Error('Neo4j asset home must be absolute.');
@@ -46,6 +48,10 @@ export async function acquireNeo4jLifecycleLock(root) {
   catch (error) { if (error.code === 'EEXIST') throw new Error('A Neo4j lifecycle lock exists. Inspect an interrupted operation before retrying.'); throw error; }
   const owner = join(path, 'owner');
   await writeFile(owner, token, { flag: 'wx', mode: 0o600 });
+  // Which process took it, so a lock its holder never released (a start that
+  // was killed) is recognised as abandoned and taken over (neo4j-lifecycle-lock).
+  await writeFile(join(path, 'holder.json'), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }),
+    { flag: 'wx', mode: 0o600 });
   async function assertHeld() { if (await readFile(owner, 'utf8') !== token) throw new Error('Neo4j lifecycle lock ownership changed.'); }
   return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
 }
@@ -79,12 +85,13 @@ export async function managedNeo4jContainers(paths, versions) {
 
 // Normal setup/start/stop/admin work shares the exclusive lifecycle lease. Only
 // the operation that already owns the lease may reenter while switching assets.
-export async function withNativeAssetOperation(paths, env, action) {
+export async function withNativeAssetOperation(paths, env, action, { isAlive = isProcessAlive } = {}) {
   const lockPath = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  releaseAbandonedNeo4jLifecycleLock(paths.nativeRuntimeDir, { isAlive });
   try {
     const owner = await readFile(join(lockPath, 'owner'), 'utf8');
     if (owner && env.FULI_NATIVE_ASSET_OPERATION === owner) return action(env);
-    throw new Error('A native Neo4j lifecycle operation is in progress.');
+    throw neo4jLifecycleLockError(paths.nativeRuntimeDir, { isAlive });
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   try {
     await lstat(join(paths.nativeRuntimeDir, 'neo4j-transaction.json'));
@@ -99,4 +106,40 @@ export async function withNativeAssetOperation(paths, env, action) {
     return await action({ ...env, FULI_NATIVE_ASSET_OPERATION: lock.token });
   }
   finally { await lock.release(); }
+}
+
+// The lifecycle lock as it stands: where it is, since when, and the process
+// that took it — null for a lock from before FULI recorded its holder. Null
+// when there is no lock.
+export function readNeo4jLifecycleLock(root) {
+  const path = join(root, '.neo4j-lifecycle.lock');
+  let since;
+  try { since = statSync(path).mtime.toISOString(); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  let pid = null;
+  try { pid = JSON.parse(readFileSync(join(path, 'holder.json'), 'utf8'))?.pid ?? null; } catch { /* an older lock names no holder */ }
+  return { path, since, pid: Number.isInteger(pid) && pid > 0 ? pid : null };
+}
+
+// A lock whose recorded holder has ended is released, so the start that comes
+// after a killed one does not wait for ever. Never one that names no holder,
+// one whose holder still runs, or one with a transaction waiting for recovery:
+// those stay for a person. Answers whether it released one.
+export function releaseAbandonedNeo4jLifecycleLock(root, { isAlive = isProcessAlive } = {}) {
+  const lock = readNeo4jLifecycleLock(root);
+  if (!lock || lock.pid === null || isAlive(lock.pid)) return false;
+  if (existsSync(join(root, 'neo4j-transaction.json'))) return false;
+  rmSync(lock.path, { recursive: true, force: true });
+  return true;
+}
+
+// Why a start stopped at the lock, with the facts a person needs (startup-failure.js).
+export function neo4jLifecycleLockError(root, { isAlive = isProcessAlive } = {}) {
+  const lock = readNeo4jLifecycleLock(root);
+  const holderRunning = lock?.pid !== null && lock?.pid !== undefined && isAlive(lock.pid);
+  return Object.assign(new Error(`A native Neo4j lifecycle operation is in progress: its lock has been held since ${lock?.since ?? 'an unknown time'}`
+    + (holderRunning ? ` by process ${lock.pid}, which is still running.` : ', with no record of a running holder.')), {
+    code: 'native_lifecycle_lock',
+    startupFailure: { code: 'native_lifecycle_lock', since: lock?.since ?? null, pid: lock?.pid ?? null,
+      holderRunning, lockPath: lock?.path ?? join(root, '.neo4j-lifecycle.lock') }
+  });
 }

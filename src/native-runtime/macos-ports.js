@@ -14,8 +14,33 @@ async function listenerPids(port) {
   return [...new Set(text.split('\n').filter(line => /^p\d+$/.test(line)).map(line => Number(line.slice(1))))];
 }
 
-export async function assertMacNativePortFree(port) {
-  if ((await listenerPids(port)).length) throw new Error(`Native service port ${port} is already in use; its owner was left untouched.`);
+export async function assertMacNativePortFree(port, { listeners = listenerPids, describe = describeProcess } = {}) {
+  const [pid] = await listeners(port);
+  if (pid === undefined) return;
+  // Who holds it and for how long, so a person can tell a FULI graph service
+  // left behind by an earlier start from some other program (startup-failure.js).
+  const holder = await describe(pid).catch(() => ({}));
+  throw Object.assign(new Error(`Native service port ${port} is already in use; its owner was left untouched.`), {
+    code: 'port_taken',
+    startupFailure: { code: 'port_taken', port, pid, command: holder.command ?? null, runningSeconds: holder.runningSeconds ?? null }
+  });
+}
+
+// The command name of a process and how long it has run, from ps; read only.
+async function describeProcess(pid) {
+  const text = await new Promise((resolve, reject) => execFile('/bin/ps', ['-p', String(pid), '-o', 'etime=,comm='], {
+    encoding: 'utf8', timeout: 10_000
+  }, (error, stdout) => error ? reject(error) : resolve(stdout)));
+  const [elapsed, ...command] = text.trim().split(/\s+/);
+  return { runningSeconds: elapsedSeconds(elapsed), command: command.join(' ').split('/').pop() || null };
+}
+
+// ps elapsed time, [[dd-]hh:]mm:ss, in seconds; null when it is not one.
+export function elapsedSeconds(value) {
+  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(String(value ?? ''));
+  if (!match) return null;
+  const [, days = 0, hours = 0, minutes, seconds] = match.map(part => part === undefined ? undefined : Number(part));
+  return ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
 }
 
 export async function assertMacNativePortOwner(entry, port) {

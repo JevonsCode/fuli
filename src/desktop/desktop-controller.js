@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readStartupFailureMarker } from '../local-runtime/startup-failure.js';
 import { readStartupStageMarker, STAGE_MARKER_ENV, startupStageMarker } from '../local-runtime/startup-stage.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -65,9 +66,10 @@ export async function runTrayAction(action, context, {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
   // client says which step did not finish instead of only that a start failed.
-  let stage = null;
+  let stage = null, failure = null;
   const atStage = (next) => { stage = next; onStage(next); };
-  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir], atStage);
+  // What a failed start said it ran into (startup-failure.js), for the client to word its own next step.
+  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir], atStage, (reported) => { failure = reported; });
   const inspect = async () => {
     atStage('checking');
     const result = await invoke(['status', '--json']);
@@ -158,7 +160,7 @@ export async function runTrayAction(action, context, {
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
-      ...(failedAt ? { stage: failedAt } : {}),
+      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}),
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }
@@ -182,14 +184,14 @@ function cliError(result) {
 // The CLI writes its startup phase as a marker line (startup-stage.js) because
 // this client renders the phase itself; the lines are read as they arrive so
 // the window says what the start is doing while it is still doing it.
-function executeCli(context, args, onStage = () => {}) {
+function executeCli(context, args, onStage = () => {}, onFailure = () => {}) {
   return new Promise((resolveRun) => {
     const child = execFile(context.nodePath, [context.cliPath, ...args], {
       cwd: context.packageRoot, env: { ...process.env, [STAGE_MARKER_ENV]: '1' }, windowsHide: true,
       encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024
     }, (error, stdout, stderr) => resolveRun({ code: error ? error.code ?? 1 : 0, stdout,
       stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '') }));
-    followStageMarkers(child.stdout, onStage);
+    followStageMarkers(child.stdout, onStage, onFailure);
   });
 }
 
@@ -204,8 +206,9 @@ export function stageReporter(env = process.env, write = (line) => process.stdou
   return (stage) => write(startupStageMarker(stage) + '\n');
 }
 
-// Calls back with each startup phase the stream reports, line by line.
-export function followStageMarkers(stream, onStage) {
+// Calls back with each startup phase the stream reports, line by line, and
+// with the failure a start reports before it exits.
+export function followStageMarkers(stream, onStage, onFailure = () => {}) {
   if (!stream) return;
   let rest = '';
   stream.setEncoding?.('utf8');
@@ -215,6 +218,8 @@ export function followStageMarkers(stream, onStage) {
     for (const line of lines) {
       const stage = readStartupStageMarker(line);
       if (stage) onStage(stage);
+      const failure = readStartupFailureMarker(line);
+      if (failure) onFailure(failure);
     }
   });
 }

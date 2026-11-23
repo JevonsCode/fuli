@@ -17,6 +17,7 @@ import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
 import { startupStageWriter } from '../local-runtime/startup-stage.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
@@ -65,7 +66,12 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     ? checkAgentSetup(dependencies.detectAgents
       ?? (() => detectAgents(agentKitPorts(paths, { env }).clientInstaller)))
     : null;
-  const result = await handlers[command](input, dependencies.lifecycleDependencies);
+  // A start that fails for a reason a person can act on says what happened and
+  // the next step (startup-failure.js); a desktop client also gets it as a line.
+  const result = ['start', 'restart'].includes(command)
+    ? await reportingStartupFailure(() => handlers[command](input, dependencies.lifecycleDependencies),
+      { write, env, logPath: paths.logPath ?? null })
+    : await handlers[command](input, dependencies.lifecycleDependencies);
   const agentSetupCheck = agentSetup ? await agentSetup : null;
   const outputResult = agentSetupCheck
     ? { ...result, agentSetupCheck }
