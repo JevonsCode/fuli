@@ -14,6 +14,7 @@ import { withStandingRoute } from './task-entry-standing-owner.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from './task-knowledge-guidance.js';
 import { checkpointReason } from './checkpoint-reason.js';
+import { taskGuidanceFor, taskSize } from './task-size.js';
 
 export async function beginTaskContext(application, {
   sessionId,
@@ -156,7 +157,10 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, conversation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance()
+    // A task of two commands is not told how to divide work between Agents
+    // (rec#146 item 2); the rules keep that text and the entry names it as not
+    // applying here (task-context-view.js).
+    task_guidance: taskGuidanceFor(taskKnowledgeGuidance(), taskSize(taskPrompt))
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
 }
 
