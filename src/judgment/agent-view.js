@@ -16,7 +16,10 @@ import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 
 // Receipt reasons are the host's own fixed sentences or error codes, never a model's words.
 const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision', 'decisionId', 'recovered'];
-const FEEDBACK = ['revision', 'vote', 'createdAt'];
+// Who gave it, as fixed values: decidedBy 'person' for a vote an FLA relayed,
+// reportedBy 'runner' for a runner's report of its own choice (its fingerprint
+// stays out, withFeedbackSource), neither for a vote cast in the console.
+const FEEDBACK = ['revision', 'vote', 'createdAt', 'decidedBy', 'reportedBy'];
 const EXECUTION = { status: true, createdAt: true, receipt: RECEIPT };
 // What the host did with a review verdict (engine.js reviewDisposition): the
 // model's schema-checked outcome, the host's fixed interception and gate
@@ -78,7 +81,7 @@ function decidedElsewhere(record, states) {
 
 function agentRecord(record, targets) {
   const withheld = new Set();
-  const { target, title, ...rest } = record;
+  const { target, title, ...rest } = withFeedbackSource(record);
   const shown = project(rest, KEPT, '', withheld);
   const knowledge = record.kind === 'review' && KNOWLEDGE_KEY.test(target ?? '');
   const plain = Object.hasOwn(PLAIN_TARGETS, record.kind) && PLAIN_TARGETS[record.kind](target);
@@ -93,6 +96,16 @@ function agentRecord(record, targets) {
     shown.target_withheld = targets.unavailable && knowledge ? 'visibility_unavailable' : 'not_visible';
   }
   return withheld.size ? { ...shown, content_withheld: [...withheld].sort() } : shown;
+}
+
+// A feedback's reportedBy names the machine that reported it and its key
+// ('runner:<fingerprint>'): an Agent reads only the kind, so it can tell a
+// runner's report from the person's vote without learning the device.
+function withFeedbackSource(record) {
+  const source = entry => (typeof entry?.reportedBy === 'string'
+    ? { ...entry, reportedBy: entry.reportedBy.split(':')[0] } : entry);
+  return { ...record, ...(record.feedback ? { feedback: source(record.feedback) } : {}),
+    ...(Array.isArray(record.feedbackHistory) ? { feedbackHistory: record.feedbackHistory.map(source) } : {}) };
 }
 
 // rule: true keeps a value as it is; a list keeps those keys of an object; a

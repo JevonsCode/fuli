@@ -15,7 +15,7 @@ import { createModelSecretStore } from '../model-backends/secret-store.js';
 import { ModelUsageLedger } from '../model-backends/usage-ledger.js';
 import { sha256Bytes } from '../security/digest.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { envelope, failure, projectPreferences } from './offline-calls.js';
+import { envelope, failure, projectPreferences, unpairedAnswer } from './offline-calls.js';
 import { preflightExecutors, readRunnerExecutors } from './routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from './routing-ledger.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OPERATION, ROUTING_OUTCOME_ENTRY, routingRoleState } from './routing-setup.js';
@@ -114,10 +114,18 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       return failure('judgment_failed', FAILED_JUDGMENT_GUIDANCE, { failure: judgmentFailure(error, 'answer'),
         ...(judged.modelReceipt ? { modelReceipt: compactReceipt(judged.modelReceipt) } : {}) });
     }
+    // What this call's model answer cost, for an answer that does not use it.
+    const spent = judged.modelReceipt ? { unusedModelReceipt: compactReceipt(judged.modelReceipt) } : {};
+    // The pairing again, now that the model answered: `fuli runner leave` or a
+    // revoke may have come meanwhile, and nothing is kept or queued for a host
+    // this computer no longer has (nor a deleted ledger made again).
+    const unpaired = unpairedAnswer(store, spent);
+    if (unpaired) return unpaired;
     // Another MCP process on this computer may have answered the same requestId
-    // meanwhile: the decision saved first is the one kept, answered and sent.
+    // meanwhile: the decision saved first is the one kept, answered and sent,
+    // and this call says its own model answer was not used.
     if (!ledger.save(record, requestFingerprint)) {
-      const saved = kept(ledger.byRequest(request), requestFingerprint);
+      const saved = kept(ledger.byRequest(request), requestFingerprint, spent);
       if (saved) return saved;
     }
     store.enqueue({ id: record.id, tool: ROUTING_DECISION_ENTRY, input: record, sourceApplication, sessionId });
@@ -125,11 +133,13 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
   }
 
   // The decision already made for this request, or the refusal when the same
-  // requestId was used for another one; null when there is none.
-  function kept(earlier, requestFingerprint) {
+  // requestId was used for another one; null when there is none. spent: what
+  // this call paid for a model answer it does not use (unusedModelReceipt).
+  function kept(earlier, requestFingerprint, spent = {}) {
     if (!earlier) return null;
-    return earlier.requestFingerprint === requestFingerprint ? answer(earlier.record)
-      : failure('invalid_input', 'requestId already belongs to a different assess_agent_action request: pass a new requestId');
+    return earlier.requestFingerprint === requestFingerprint ? answer(earlier.record, spent)
+      : failure('invalid_input', 'requestId already belongs to a different assess_agent_action request: pass a new requestId',
+        spent);
   }
 
   // The model's choice among the executors that passed preflight. Throws with
@@ -191,8 +201,8 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       message: 'Kept on this runner as feedback for the next choice, and queued for the host\'s Tonborg ledger.' } });
   }
 
-  function answer(record) {
-    return envelope({ ...record, guidance: OUTCOME_GUIDANCE, runner: { decidedOn: 'runner', delivery: 'outbox',
+  function answer(record, spent = {}) {
+    return envelope({ ...record, ...spent, guidance: OUTCOME_GUIDANCE, runner: { decidedOn: 'runner', delivery: 'outbox',
       message: 'Tonborg chose on this runner with its own model, among this computer\'s executors. '
         + 'The decision is queued for the host\'s Tonborg ledger and delivered when the host answers.' } });
   }

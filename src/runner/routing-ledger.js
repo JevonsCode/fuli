@@ -77,6 +77,13 @@ export class RoutingLedger {
       .all(personalSpaceId, personalProjectId, limit).map(decision);
   }
 
+  // Every decision gone, for `fuli runner leave` when the file itself cannot be
+  // deleted (on Windows, while a client's FULI process still has it open).
+  clear() {
+    if (this.#missing()) return;
+    this.db.prepare('DELETE FROM decisions').run();
+  }
+
   #missing() {
     return !this.database && this.path !== ':memory:' && !existsSync(this.path);
   }

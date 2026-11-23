@@ -367,7 +367,9 @@ give. The tool is listed on a runner with what it does here, not with the
 host's description. A record answers with `decidedOn: "runner"`, the `selection`
 (executor, model, client), `leftOut`, the model's receipt, and the same
 `requestId` gives the same decision again (two MCP processes answering one
-`requestId` at the same moment keep the decision saved first). A model that
+`requestId` at the same moment keep the decision saved first; the one that
+lost answers with it and says what its own model answer cost, unused, as
+`unusedModelReceipt`). A model that
 does not answer, a refusal, an exhausted budget or a choice that was not
 offered fails the judgment (`judgment_failed` with the failure, and the
 model's receipt whenever the model was called, so the caller sees that its
@@ -377,7 +379,10 @@ recommendation: the caller starts the executor and records what really ran.
 This computer must still be paired. Before it is, every call here answers
 `runner_not_paired`, and after the host revokes it `runner_revoked`, including
 `assess_agent_action` and `report_routing_outcome`: no model is called, nothing
-is queued, and a store `fuli runner leave` deleted is not made again.
+is queued, and a store `fuli runner leave` deleted is not made again. The
+pairing is checked again once the model has answered, so a leave or revoke
+that lands meanwhile keeps nothing either; that answer carries
+`unusedModelReceipt`.
 
 **How a choice turned out.** When the chosen executor finished, the caller
 reports it once with `report_routing_outcome` (`decisionId`, `vote` up or down,
@@ -428,6 +433,10 @@ checkpoints still waiting or refused
 it says how many and needs `--force`, and so does a `join` to another host,
 which would drop them (checked before the invitation is used). The clients' MCP entries stay (they then
 answer that this computer is not paired); `fuli uninstall` removes them.
+On Windows a client's FULI process that still has `runner/runner.sqlite` or
+`runner/routing.sqlite` open keeps that file from being deleted: `leave`
+empties it instead and says, file by file, what it could not delete, rather
+than saying all was deleted.
 `model-backends.json` and `runner/executors.json` are the person's own files,
 so `leave` keeps them as they are and says so; they do nothing until this
 computer joins a host again.

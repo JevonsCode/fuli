@@ -87,18 +87,20 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
 // The pairing every call needs: null while this computer is paired, else the
 // refusal. A judgment made here needs it too (local-routing.js): its decision
 // is the host's to keep, and nothing of this runner's own survives a revoke.
-export function unpairedAnswer(store) {
+// details: what else the refusal carries (a model answer this computer paid for and does not use).
+export function unpairedAnswer(store, details = {}) {
   const host = store.host();
-  return !host || host.revokedAt ? notPaired(host) : null;
+  return !host || host.revokedAt ? notPaired(host, details) : null;
 }
 
 // No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.
-function notPaired(host) {
+function notPaired(host, details = {}) {
   return host?.revokedAt
     ? failure('runner_revoked', 'This computer\'s pairing was revoked on its FULI host or is not known there. '
-      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.')
+      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.',
+      details)
     : failure('runner_not_paired', 'This computer is not paired with a FULI host. '
-      + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
+      + 'Run `fuli runner invite` on the host and `fuli runner join` here.', details);
 }
 
 // details: what else the caller needs to act on the failure, beside code and message.

@@ -12,8 +12,10 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { canonicalJson } from '../packages/roundtable/src/canonical-json.js';
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
+import { parseRoutingRequest } from '../src/judgment/routing.js';
 import { createJudgmentService } from '../src/judgment/service.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -25,6 +27,7 @@ import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner
 import { ROUTING_LEDGER_FILE, RoutingLedger } from '../src/runner/routing-ledger.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
+import { sha256Bytes } from '../src/security/digest.js';
 
 // Tonborg's executor judgment on a runner (docs/runner.md, "Executor judgment
 // on a runner"): its own model, over its own executors, with or without the
@@ -145,6 +148,9 @@ test('once the pairing is gone or revoked, nothing is judged here and no model i
   assert.equal(JSON.parse(refused.content[0].text).code, 'runner_revoked');
   assert.equal(revoked.model.requests.length, 0, 'no model budget was spent');
   assert.equal(revoked.served.store.outbox().queued, 0, 'nothing was queued for a host that will not take it');
+  const report = { decisionId: 'any-decision', vote: 'up', reason: 'It ran.' };
+  const noReport = await revoked.client.callTool({ name: 'report_routing_outcome', arguments: report });
+  assert.equal(JSON.parse(noReport.content[0].text).code, 'runner_revoked', 'no outcome is reported for a host that revoked it');
 
   // `fuli runner leave` while a client's MCP process still runs: the pairing is gone, but on
   // Windows the open store cannot be deleted, so it stays, emptied (runner-command.js leaveHost).
@@ -154,6 +160,19 @@ test('once the pairing is gone or revoked, nothing is judged here and no model i
   assert.equal(JSON.parse(unpaired.content[0].text).code, 'runner_not_paired');
   assert.equal(left.model.requests.length, 0);
   assert.equal(existsSync(path.join(left.dataDir, ROUTING_LEDGER_FILE)), false, 'no decision ledger was made');
+  const notReported = await left.client.callTool({ name: 'report_routing_outcome', arguments: report });
+  assert.equal(JSON.parse(notReported.content[0].text).code, 'runner_not_paired');
+});
+
+test('a leave or revoke that comes while the model answers keeps nothing, and says what the model cost', async (t) => {
+  let runner;
+  // The pairing ends between the check before the model and its answer.
+  runner = await routingRunner(t, { reply: () => { runner.served.store.leave(); return null; } });
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const body = JSON.parse(answer.content[0].text);
+  assert.equal(body.code, 'runner_not_paired');
+  assert.equal(body.unusedModelReceipt.status, 'completed', 'the model was paid for and its answer not used');
+  assert.equal(existsSync(path.join(runner.dataDir, ROUTING_LEDGER_FILE)), false, 'no decision was kept');
 });
 
 test('a runner store `fuli runner leave` deleted is not made again by queueing into it', (t) => {
@@ -184,6 +203,23 @@ test('`fuli runner leave` deletes the decisions made here and says what the pers
   const said = lines.join('\n');
   assert.match(said, /model-backends\.json/);
   assert.match(said, /executors\.json/);
+});
+
+test('`fuli runner leave` says which file it could not delete instead of saying all is deleted', async (t) => {
+  const runner = await routingRunner(t);
+  await runner.served.close();
+  // A path that cannot be deleted or opened as a ledger, as an open file on Windows cannot be deleted.
+  const ledgerFile = path.join(runner.dataDir, ROUTING_LEDGER_FILE);
+  mkdirSync(ledgerFile, { recursive: true });
+  writeFileSync(path.join(ledgerFile, 'held'), '');
+
+  const lines = [];
+  await runRunnerCommand(['leave', '--force', '--data-dir', runner.dataDir], { write: (line) => lines.push(line) });
+  const said = lines.join('\n');
+  assert.doesNotMatch(said, /are deleted\./, 'it does not say everything was deleted');
+  assert.match(said, /could not be deleted/);
+  assert.match(said, /runner\/routing\.sqlite: still holds the executor decisions made here/);
+  assert.equal(existsSync(path.join(runner.dataDir, RUNNER_FILE)), false, 'the other file was still deleted');
 });
 
 test('a model-backends.json that cannot be read says so, and names the file and the way back', async (t) => {
@@ -252,6 +288,28 @@ test('two processes answering one requestId at once keep one decision instead of
   }
 });
 
+test('a process that loses the requestId race answers with the decision kept first, and says its model answer was not used', async (t) => {
+  let runner;
+  const winner = { id: 'decision-of-another-process', kind: 'routing', decidedOn: 'runner', createdAt: new Date().toISOString(),
+    personalSpaceId: SPACE, personalProjectId: PROJECT, requestId: ASK.requestId, disposition: 'ask_user', selection: null };
+  // While this process's model answers, another process of this computer saves its decision for the same request.
+  runner = await routingRunner(t, { reply: () => {
+    const other = new RoutingLedger(path.join(runner.dataDir, ROUTING_LEDGER_FILE));
+    try {
+      other.save(winner, sha256Bytes(Buffer.from(canonicalJson(parseRoutingRequest(ASK)))));
+    } finally {
+      other.close();
+    }
+    return null;
+  } });
+
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.isError, undefined, answer.content[0].text);
+  assert.equal(answer.structuredContent.id, winner.id, 'the decision saved first is the answer');
+  assert.equal(answer.structuredContent.unusedModelReceipt.status, 'completed', 'this call\'s own model cost is said');
+  assert.equal(runner.served.store.outbox().queued, 0, 'the other process queues its decision; this one queues nothing');
+});
+
 test('a decision naming a project the host does not have is refused there, with the reason on the runner', async (t) => {
   const runner = await routingRunner(t, { projects: [] });
   await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
@@ -294,6 +352,17 @@ test('a runner\'s reported outcome is kept, but the person\'s own vote stays thi
   assert.equal(record.feedback.vote, 'down', 'the person\'s vote still stands');
   assert.equal(record.feedback.reason, 'It picked the wrong one.');
   assert.equal(record.feedback.revision, 2, 'the next vote still writes on top of the whole history');
+
+  // Searching finds the record by the person's words, not by the report that did not replace them.
+  const search = (text) => runner.judgment.records({ personalSpaceId: SPACE, personalProjectId: PROJECT, search: text });
+  assert.equal((await search('wrong one')).records.length, 1);
+  assert.equal((await search('first run')).records.length, 0);
+
+  // An Agent sees which feedback is a runner's report, without the runner's key.
+  const [shown] = (await runner.judgment.agent.records({ personalSpaceId: SPACE, personalProjectId: PROJECT })).records;
+  assert.equal(shown.feedbackHistory.at(-1).reportedBy, 'runner');
+  assert.equal(shown.feedbackHistory[0].reportedBy, undefined, 'the person\'s vote is not marked as a report');
+  assert.doesNotMatch(JSON.stringify(shown.feedbackHistory), /runner:/);
 });
 
 test('the runner lists assess_agent_action as it behaves here, beside its outcome tool', async (t) => {
