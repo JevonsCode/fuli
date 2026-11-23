@@ -33,16 +33,24 @@ export async function readJudgmentPreferences(app, { personalProjectId, projectA
   const truncated = Object.entries(receipt.context.source_windows).filter(([, value]) => value !== false)
     .map(([window]) => SOURCE_WINDOWS[window]);
   if (receipt.context.source_truncated && !truncated.length) truncated.push('source');
-  // IDs, short rule text and flags only; bodies, reasoning and evidence stay in FULI.
+  return { status: truncated.length ? 'partial' : 'complete', scope, ...compactPreferences(receipt),
+    omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
+}
+
+// What Tonborg's model reads of a task entry's preferences, on the host and on
+// a runner (src/runner/local-routing.js): IDs, short rule text and flags only;
+// bodies, reasoning and evidence stay in FULI.
+// entry: { effective_preferences, active_conflicts, scope_unknown } as a task entry answers them.
+export function compactPreferences(entry) {
   const rule = item => ({ rule: item.instruction, authority: item.confirmation_status,
     ...(item.inherited_from_project_id ? { from: item.inherited_from_project_id } : {}) });
-  return { status: truncated.length ? 'partial' : 'complete', scope,
-    selected: receipt.effective_preferences.map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) })),
+  return {
+    selected: (entry.effective_preferences ?? []).map(item => ({ key: item.preference_key, scope: item.preference_scope, ...rule(item) })),
     // Keys only: a rule that does not apply here sends no body (rec#15 D-27.2).
-    scope_unknown: receipt.scope_unknown ?? [],
-    conflicts: receipt.active_conflicts.map(conflict => ({ key: conflict.preference_key, scope: conflict.preference_scope,
-      alternatives: conflict.alternatives.map(rule) })),
-    omitted: { out_of_task_scope: receipt.context.task_scope_excluded_count, truncated } };
+    scope_unknown: entry.scope_unknown ?? [],
+    conflicts: (entry.active_conflicts ?? []).map(conflict => ({ key: conflict.preference_key, scope: conflict.preference_scope,
+      alternatives: (conflict.alternatives ?? []).map(rule) }))
+  };
 }
 
 // Like a blocked task entry, a receipt that may be missing a rule pauses the

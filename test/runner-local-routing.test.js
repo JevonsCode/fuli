@@ -378,8 +378,72 @@ test('the runner lists assess_agent_action as it behaves here, beside its outcom
 // (operations) and whose executors.json declares one executor it can start and one it cannot.
 // backends/executors: what those two files hold instead; reply: the model's answer.
 // projects: the projects the host knows, for the scope check a decision passes there.
+// A project's preferences as a busy one has them: many rules, each with the
+// reasoning and attributes a task entry carries beside its short instruction.
+function manyPreferences(count, { instructionChars = 60, project = 0 } = {}) {
+  return Array.from({ length: count }, (_, index) => ({
+    preference_key: `habit-${index}`, preference_scope: index < project ? 'project' : 'global',
+    instruction: `Rule ${index}: ${'keep the change small and say what was checked. '.repeat(4)}`.slice(0, instructionChars),
+    title: `Habit ${index}`, confirmation_status: 'confirmed', weight: 0.8,
+    reason: `Why habit ${index} holds: ${'the person asked for it after a long review. '.repeat(4)}`,
+    reasoning_summary: `Habit ${index} came from ${'several sessions where it mattered to the result. '.repeat(4)}`,
+    attributes: { source: 'example', note: 'x'.repeat(40) } }));
+}
+
+test('a big project\'s preferences go as the host sends them, compact, and the model is called', async (t) => {
+  const preferences = manyPreferences(80);
+  assert.ok(JSON.stringify(preferences).length > 30_000, 'the cache is as big as a real one');
+  const runner = await routingRunner(t, { preferences });
+  await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } });
+
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.isError, undefined, answer.content[0].text);
+  assert.deepEqual(answer.structuredContent.selection, { executorId: 'runner-node', model: 'flash-small', client: 'other' });
+  assert.equal(runner.model.requests.length, 1, 'the request went out and the model answered');
+  const sent = runner.model.requests[0].messages.at(-1).content;
+  assert.match(sent, /Rule 79:/, 'every rule fits once it is compact');
+  assert.doesNotMatch(sent, /several sessions where it mattered/, 'reasoning stays in FULI, as on the host');
+  assert.doesNotMatch(sent, /size_limit/);
+});
+
+test('rules that do not fit even compact are counted, and the project\'s own go first', async (t) => {
+  // 400 long rules, the last 20 the project's own: far past one evidence item.
+  const preferences = manyPreferences(400, { instructionChars: 190 }).map((rule, index) =>
+    (index >= 380 ? { ...rule, preference_scope: 'project' } : rule));
+  const runner = await routingRunner(t, { preferences });
+  await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } });
+
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.isError, undefined, answer.content[0].text);
+  const sent = runner.model.requests[0].messages.at(-1).content;
+  const evidence = JSON.parse(sent.slice(sent.indexOf('DATA: ') + 6)).evidence.find((item) => item.id === 'preferences');
+  const delivered = JSON.parse(evidence.text);
+  assert.ok(evidence.text.length <= 20_000);
+  assert.equal(delivered.status, 'partial');
+  assert.deepEqual(delivered.omitted.truncated, ['size_limit']);
+  assert.equal(delivered.omitted.not_sent, 400 - delivered.selected.length, 'how many did not go is said');
+  assert.ok(delivered.selected.slice(0, 20).every((rule) => rule.scope === 'project'), 'the project\'s own rules go first');
+});
+
+test('a request too large to send is refused here as what it is, and no model is called', async (t) => {
+  // Two executors at their declared limits: more than one evidence item holds.
+  const models = Array.from({ length: 32 }, (_, index) => ({ model: `model-${index}`, note: 'n'.repeat(500) }));
+  const executors = JSON.stringify({ version: 1, executors: ['first', 'second'].map((name) => ({
+    executorId: `runner-${name}`, displayName: name, client: 'other', command: 'node', capabilities: ['coding'], models })) });
+  const runner = await routingRunner(t, { executors });
+
+  const failed = JSON.parse((await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).content[0].text);
+  assert.equal(failed.code, 'judgment_failed');
+  assert.equal(failed.failure.category, 'request_rejected', 'not taken for a model answer that did not fit');
+  assert.deepEqual(failed.rejected, ['eligible']);
+  assert.equal(failed.modelReceipt, undefined);
+  assert.equal(runner.model.requests.length, 0, 'no model was called, so nothing was spent');
+});
+
+// preferences: what the host's task entry gives the project, as a task entry answers them.
 async function routingRunner(t, { operations = ['executor_routing'], backends, executors, reply,
-  projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }] } = {}) {
+  projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }], preferences = [{ preference_key: 'answer-length',
+    preference_scope: 'global', instruction: 'short answers', confirmation_status: 'confirmed' }] } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-routing-')));
   const model = await fakeModel(reply);
   const host = deviceIdentity(await createDeviceCertificate());
@@ -396,7 +460,7 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
       server.setRequestHandler(CallToolRequestSchema, (request) => {
         calls.push({ name: request.params.name, input: request.params.arguments });
         const value = request.params.name === 'get_collaboration_preferences'
-          ? { effective_preferences: ['short answers'], taskContextToken: 'host-token-1',
+          ? { effective_preferences: preferences, taskContextToken: 'host-token-1',
             context: { personal_space_id: SPACE, personal_project_id: PROJECT } }
           : { outcome: 'recommend', decidedOn: 'host' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };

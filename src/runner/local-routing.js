@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { FAILED_JUDGMENT_GUIDANCE, judgmentFailure, judgmentRequest } from '../judgment/backend.js';
+import { compactPreferences } from '../judgment/preference-receipt.js';
 import { parseRoutingRequest, ROUTING_SELECTION_SCHEMA, routingInstructions, verifiedSelection } from '../judgment/routing.js';
 import { parse, parseAnswer } from '../judgment/service.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
@@ -51,6 +52,57 @@ const NOT_JUDGED = 'Nothing was judged here and nothing was sent to the host.';
 const EXECUTORS_FIX = 'Fix runner/executors.json. Deleting it does not hand this back to the host: with no executor '
   + 'declared here, Tonborg answers ask_user. To have the host judge again, remove roles.tonborg from model-backends.json '
   + 'or delete that file.';
+// What one evidence item may hold: the model port refuses an item past
+// MAX_EVIDENCE_CHARS (model-backends/request.js) before any model is called.
+// The budget leaves room for the item's own fields (answeredAt, omitted).
+const MAX_EVIDENCE_CHARS = 20_000;
+const EVIDENCE_BUDGET_CHARS = 16_000;
+
+// The items of list, in its order, whose JSON fits within maxChars together;
+// one too big to fit is skipped, so it does not keep the smaller ones after it out.
+function fitting(list, maxChars) {
+  const kept = [];
+  let size = 2;
+  for (const item of list) {
+    const next = size + JSON.stringify(item).length + 1;
+    if (next > maxChars) continue;
+    kept.push(item);
+    size = next;
+  }
+  return kept;
+}
+
+// The preferences the host last gave this project, in the host's own compact
+// receipt (judgment/preference-receipt.js), within one evidence item. A big
+// project's cache does not fit whole even so: conflicts go first (no side of
+// one may be applied), then the project's and Agent's own rules, then
+// confirmed ones, in the order the host gave them. What does not fit is
+// counted in omitted (truncated 'size_limit', not_sent), which the shared
+// instructions tell the model to weigh, never left out silently.
+function boundedPreferences({ answeredAt, entry }) {
+  const { selected, scope_unknown: scopeUnknown, conflicts } = compactPreferences(entry);
+  const rank = (rule) => (rule.scope === 'global' ? 2 : 0) + (rule.authority === 'confirmed' ? 0 : 1);
+  const ordered = selected.map((rule, index) => ({ rule, index }))
+    .sort((a, b) => rank(a.rule) - rank(b.rule) || a.index - b.index).map(({ rule }) => rule);
+  const keptConflicts = fitting(conflicts, EVIDENCE_BUDGET_CHARS);
+  const room = EVIDENCE_BUDGET_CHARS - JSON.stringify({ conflicts: keptConflicts, scope_unknown: scopeUnknown }).length;
+  const keptRules = fitting(ordered, room);
+  const notSent = selected.length - keptRules.length + conflicts.length - keptConflicts.length;
+  return { answeredAt, status: notSent ? 'partial' : 'complete', selected: keptRules, scope_unknown: scopeUnknown,
+    conflicts: keptConflicts, omitted: { truncated: notSent ? ['size_limit'] : [], ...(notSent ? { not_sent: notSent } : {}) } };
+}
+
+// The model port refuses a request whose evidence it cannot take, before any
+// model is called; said here as what it is (the request, which part, nothing
+// spent), never as a model answer that did not fit.
+function refuseOversized(call) {
+  const tooLarge = call.evidence.filter((item) => item.text.length > MAX_EVIDENCE_CHARS).map((item) => item.id);
+  if (tooLarge.length) {
+    throw Object.assign(new Error('The judgment request is too large for the model port'),
+      { code: 'request_rejected', rejected: tooLarge });
+  }
+}
+
 const outcomeSchema = z.object({ decisionId: z.string().min(1).max(256), vote: z.enum(['up', 'down']),
   reason: z.string().trim().min(1).max(1000) }).strict();
 
@@ -104,6 +156,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
           evidence: ['runner/executors.json and its local preflight'] }, modelReceipt: null };
     } catch (error) {
       return failure('judgment_failed', FAILED_JUDGMENT_GUIDANCE, { failure: judgmentFailure(error, 'decision'),
+        ...(error.rejected ? { rejected: error.rejected } : {}),
         ...(error.modelReceipt ? { modelReceipt: compactReceipt(error.modelReceipt) } : {}) });
     }
     let record;
@@ -146,19 +199,26 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
   // its receipt when the model did not answer (a stop is never retried here).
   async function judge(request, eligible, leftOut) {
     const scope = { personalSpaceId: request.personalSpaceId, personalProjectId: request.personalProjectId };
-    const preferences = projectPreferences(store, scope);
-    const feedback = ledger.recent({ ...scope, limit: FEEDBACK_LIMIT }).filter((item) => item.outcome)
+    const cached = projectPreferences(store, scope);
+    const preferences = cached ? boundedPreferences(cached) : null;
+    const recent = ledger.recent({ ...scope, limit: FEEDBACK_LIMIT }).filter((item) => item.outcome)
       .map(({ record, outcome }) => ({ id: record.id, workKind: record.workKind, objective: record.objective,
         disposition: record.disposition, selection: record.selection, summary: record.summary, outcome }));
+    // Newest first, as many as fit one evidence item; the rest are counted, not dropped silently.
+    const feedback = fitting(recent, EVIDENCE_BUDGET_CHARS);
+    const feedbackNotSent = recent.length - feedback.length;
     // conversations: a runner reads none of the host's, so the model is shown
     // an empty list, as the host's judgment shows one when it found none.
     const data = { task: request, eligible, conversations: [], ...(leftOut.length ? { leftOut } : {}),
-      ...(preferences ? { preferences } : {}), ...(feedback.length ? { feedback } : {}) };
+      ...(preferences ? { preferences } : {}), ...(feedback.length ? { feedback } : {}),
+      ...(feedbackNotSent ? { feedbackNotSent } : {}) };
     const key = `runner-routing:${request.personalProjectId}:${request.requestId}`;
-    const result = await decide(judgmentRequest({ operation: ROUTING_OPERATION, scope,
+    const call = judgmentRequest({ operation: ROUTING_OPERATION, scope,
       requestId: key.length <= REQUEST_ID_MAX ? key : sha256Bytes(Buffer.from(key)),
       evidenceVersion: sha256Bytes(Buffer.from(canonicalJson(data))), policyVersion: 'runner',
-      instructions: routingInstructions(null), schema: ROUTING_SELECTION_SCHEMA, data }));
+      instructions: routingInstructions(null), schema: ROUTING_SELECTION_SCHEMA, data });
+    refuseOversized(call);
+    const result = await decide(call);
     if (!result.envelope) {
       throw Object.assign(new Error(`Tonborg's model on this runner did not answer (${result.modelReceipt.reason})`),
         { code: result.modelReceipt.reason, modelReceipt: result.modelReceipt });
