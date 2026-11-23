@@ -64,6 +64,12 @@ export function createClientPresence({ presence = createCliPresence(), commands 
         .map(([id]) => id));
       return { installed, inWsl, pending };
     },
+    // One command as the last probe found it ('native' | 'wsl' | null), probing it
+    // again meanwhile; null too while it has never been answered.
+    async command(command) {
+      void probe(command);
+      return known.get(command) ?? null;
+    },
     // Resolves once the probes running now have answered (each is bounded by cli-presence's timeouts).
     settled: () => Promise.all([...running.values()]).then(() => undefined)
   };

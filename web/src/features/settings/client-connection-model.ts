@@ -12,10 +12,10 @@ export type FuliInstall = { path: string, version: string | null }
 // What an outdated entry runs, against the console's own installation.
 export type ConfiguredInstall = FuliInstall & { exists: boolean, sameAsConsole: boolean }
 // firstRun: this client still asks the person something itself the first time
-// FULI is used in it; the id names which sentence to show.
+// FULI is used in it, and that is still ahead; `command` is the step FULI can run for one folder.
 // inWsl: installed only inside WSL on this Windows computer, where FULI cannot write it.
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
-  firstRun?: string, inWsl?: boolean,
+  firstRun?: { id: string, command: string }, inWsl?: boolean,
   restartSessions?: number,
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
   overwritten?: boolean, configuredInstall?: ConfiguredInstall,

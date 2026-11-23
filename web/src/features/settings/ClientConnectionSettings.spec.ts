@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: string, inWsl?: boolean, components?: Record<string, string> }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: { id: string, command: string }, inWsl?: boolean, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
@@ -85,7 +85,8 @@ it('can retry a failed configuration request', async () => {
 it('on a runner says its hooks do nothing and which computer runs the older FULI (rec issues 144, 145)', async () => {
   const runner = { version: '0.28.1', hostName: 'Workshop Mac', hostReachable: true, hostVersion: '0.29.0',
     skew: { older: 'runner' as const } }
-  routed(() => Response.json({ ...statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected', firstRun: 'cursor' }]), runner }))
+  routed(() => Response.json({ ...statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected',
+    firstRun: { id: 'cursor', command: 'cursor-agent mcp enable fuli' } }]), runner }))
   const wrapper = mount(ClientCards)
   await flushPromises()
   const notice = wrapper.get('[data-runner-clients]').text()
@@ -97,10 +98,33 @@ it('on a runner says its hooks do nothing and which computer runs the older FULI
   const entry = wrapper.get('[data-runner-update]')
   expect(entry.attributes('data-ai-entry')).toBe('')
   expect(entry.attributes('aria-label')).toBe('让 AI 来做：更新这台电脑的 FULI')
-  // Cursor's own first question is said on its tile, with the command that answers it ahead of time.
+  // Cursor's own first question is said on its tile, in words for the person only.
   const first = wrapper.get('[data-client-first-run="cursor"]').text()
   expect(first).toContain('信任这个文件夹')
-  expect(first).toContain('cursor-agent mcp enable fuli')
+  expect(first).not.toContain('--trust')
+  wrapper.unmount()
+})
+
+it('runs Cursor\'s first-run step for one folder after showing the command, and says how it went', async () => {
+  const posted: unknown[] = []
+  routed(() => Response.json(statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected',
+    firstRun: { id: 'cursor', command: 'cursor-agent mcp enable fuli' } }])), (url, options) => {
+    if (url.endsWith('/first-run')) {
+      posted.push(JSON.parse(String(options?.body)))
+      return Response.json({ id: 'cursor', status: 'no_answer', command: 'cursor-agent mcp enable fuli', folder: '/work/blue-kettle', waitedMs: 20000 })
+    }
+    return Response.json(configuration)
+  })
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  await wrapper.get('[data-first-run-start]').trigger('click')
+  await wrapper.get('[data-first-run-folder]').setValue('/work/blue-kettle')
+  // What will run, and where, before it runs.
+  expect(wrapper.get('[data-first-run-command]').text()).toBe('将在 /work/blue-kettle 里运行：cursor-agent mcp enable fuli')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(posted).toEqual([{ clientId: 'cursor', folder: '/work/blue-kettle' }])
+  expect(wrapper.get('[data-first-run-outcome="no_answer"]').text()).toContain('20 秒内没有回应')
   wrapper.unmount()
 })
 

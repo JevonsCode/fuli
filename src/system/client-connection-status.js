@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { sep } from 'node:path';
 
 import { clientSourceApplication, detectClients, entryState } from '../agent-kits/client-detection.js';
-import { hasClientFirstRun } from '../agents/client-first-run.js';
+import { clientFirstRun } from '../agents/client-first-run.js';
 import { configuredInstall, installOf } from './configured-install.js';
 import { observeMcpDiagnostics } from '../diagnostics/mcp-configuration.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
@@ -67,12 +67,17 @@ export function createClientConnectionObserver({ installer, customClients, histo
     const waiting = new Map(awaitingRestart().map(entry => [entry.sourceApplication, entry.count]));
     const history = sanitizeHistory(retained ?? readHistory(historyPath), builtin.map(({ id }) => id));
     let dirty = retained !== null;
+    // Asked before the views are built: whether a client's own first-run question is still ahead.
+    const firstRuns = new Map(await Promise.all(builtin.filter((client) => client.connected && clientFirstRun(client.id))
+      .map(async (client) => [client.id, await clientFirstRun(client.id).pending({
+        commandFound: (command) => (presence?.command ? presence.command(command) : null), homeDir }).catch(() => false)])));
     const clients = builtin.map((client) => {
       // sourceApplication: the client as FULI's other records name it (client links, capture), so a reader needs no mapping of its own.
       const sourceApplication = clientSourceApplication(client.id);
       const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
-        // The client still asks the person something itself the first time FULI is used in it (client-first-run.js).
-        ...(hasClientFirstRun(client.id) ? { firstRun: client.id } : {}),
+        // A connected client that still asks the person something itself the first time FULI is
+        // used in it, while that is still ahead of them (client-first-run.js).
+        ...(firstRuns.get(client.id) ? { firstRun: { id: client.id, command: clientFirstRun(client.id).command } } : {}),
         // Installed only inside WSL: FULI on this Windows cannot connect it (client-presence.js).
         ...(client.inWsl ? { inWsl: true } : {}),
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };

@@ -12,6 +12,7 @@ import { formatDateTime } from '@/lib/date-time'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
+import ClientFirstRun from './ClientFirstRun.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import CustomClientDialog from './CustomClientDialog.vue'
 import RunnerUpdateAi from './RunnerUpdateAi.vue'
@@ -226,7 +227,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
                 </li>
               </ul>
               <p v-if="withoutLifecycle(client)" class="client-row__meta client-row__note" data-client-no-lifecycle>{{ t('settings.connection.parts.noLifecycle') }}</p>
-              <p v-if="client.firstRun" class="client-row__meta client-row__note" :data-client-first-run="client.firstRun">{{ t(`settings.connection.clients.firstRun.${client.firstRun}`) }}</p>
+              <ClientFirstRun v-if="client.firstRun" :client-id="client.firstRun.id" :command="client.firstRun.command" />
               <p v-for="path in client.custom?.mcpPaths" :key="path" class="client-row__meta" :title="path">{{ t('settings.connection.custom.where', { path }) }}</p>
               <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">

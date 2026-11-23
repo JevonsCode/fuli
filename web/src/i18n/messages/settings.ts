@@ -21,7 +21,20 @@ export const settingsMessages = {
       clients: {
         title: '本机客户端',
         firstRun: {
-          cursor: '第一次在一个项目目录里启动 cursor-agent，它会先问「信任这个文件夹」和「批准 MCP」，没人回答就一直没有输出。在那个目录里回答一次，或先在那里运行 cursor-agent mcp enable fuli 预先批准 FULI。Cursor 的 --trust 只写给无界面运行，本机装的这版也不认它，所以 FULI 不会带这个参数。',
+          cursor: {
+            note: 'Cursor 命令行第一次在一个项目目录里启动时，会先问「信任这个文件夹」和「批准 MCP」，没人回答就一直没有输出。',
+            action: '替我在一个目录里批准 FULI',
+          },
+          folder: '项目目录',
+          willRun: '将在 {folder} 里运行：{command}',
+          run: '运行',
+          outcome: {
+            approved: '已在这个目录里批准 FULI。',
+            not_installed: '这台电脑上找不到 Cursor 命令行，什么也没做。',
+            no_answer: 'Cursor 命令行 {seconds} 秒内没有回应，多半在等「信任这个文件夹」。在这个目录里打开一次 Cursor 命令行回答它，再点运行。',
+            failed: '没有批准成功。',
+          },
+          said: 'Cursor 说：{output}',
         },
         runner: {
           note: '这台电脑是从机，FULI 在主机「{host}」上。从机上的钩子不起作用，下面这些客户端要靠模型自己调 FULI 进任务，可能漏。',
@@ -543,7 +556,20 @@ export const settingsMessages = {
 
         title: 'Clients on this computer',
         firstRun: {
-          cursor: 'The first cursor-agent run in a project folder asks 「trust this folder」 and 「approve MCP」 first, and produces no output until someone answers. Answer them once in that folder, or run cursor-agent mcp enable fuli there to approve FULI ahead of time. Cursor documents --trust for headless runs only and the installed CLI does not accept it, so FULI never passes it.',
+          cursor: {
+            note: 'The first time Cursor\'s CLI starts in a project folder it asks 「trust this folder」 and 「approve MCP」, and shows nothing until someone answers.',
+            action: 'Approve FULI in a folder for me',
+          },
+          folder: 'Project folder',
+          willRun: 'Runs in {folder}: {command}',
+          run: 'Run',
+          outcome: {
+            approved: 'FULI is approved in this folder.',
+            not_installed: 'Cursor\'s CLI was not found on this computer; nothing was done.',
+            no_answer: 'Cursor\'s CLI did not answer within {seconds} seconds, most likely waiting on 「trust this folder」. Open Cursor\'s CLI once in this folder to answer it, then run again.',
+            failed: 'FULI was not approved.',
+          },
+          said: 'Cursor said: {output}',
         },
         runner: {
           note: 'This computer is a runner; FULI runs on the host 「{host}」. Hooks do nothing on a runner, so the clients below rely on the model calling FULI itself to start a task, and it can be missed.',

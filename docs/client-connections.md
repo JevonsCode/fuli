@@ -118,10 +118,16 @@ FULI never passes it. `--approve-mcps` is accepted, and that build's help says i
 --print/headless mode", which the interactive run FULI opens is not. `cursor-agent mcp enable fuli`,
 documented as "Add an MCP server to the local approved list", run inside the folder wrote
 `~/.cursor/projects/<folder>/mcp-approvals.json` — per folder, not per computer (the documentation
-does not say which). No flag therefore answers the folder question for an interactive run: FULI
-approves nothing on the person's behalf and passes no flag this CLI would refuse. Cursor's tile and
-its `fuli setup` result name the two questions and that command
-(`src/agents/cursor/first-run.js`, reached through `src/agents/client-first-run.js`).
+does not say which). No flag therefore answers the folder question for an interactive run, and FULI
+passes no flag this CLI would refuse. While Cursor is connected, its CLI is on this computer and no
+folder has FULI approved yet, Cursor's tile says what the CLI will ask and offers 「替我在一个目录里批准
+FULI」: the person names a project folder, the tile shows `cursor-agent mcp enable fuli` and that
+folder, and on 运行 FULI runs exactly that there (it enables FULI's own entry and nothing else;
+`POST /api/system/client-connection/first-run`, this computer only). It waits at most 20 seconds and
+says how it went: approved, Cursor's CLI not found, failed with the CLI's own last line, or no answer
+— most likely the 「trust this folder」 question, which only Cursor's CLI itself can answer. Once FULI
+is approved in any folder the tile stops repeating it. The words are only in the console's messages;
+the command comes from `src/agents/cursor/first-run.js` through `src/agents/client-first-run.js`.
 
 **Clients that enter a task by themselves.** A client with neither lifecycle hooks nor a plugin
 says so on its tile: the model has to enter the task by following FULI's MCP instructions and can
