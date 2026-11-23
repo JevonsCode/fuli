@@ -437,9 +437,10 @@ class PersonalProjectUpsert(StrictModel):
 
     @model_validator(mode='after')
     def require_project_brief(self):
-        # Only FULI's own temporary scopes go without a name, and they are not
-        # created here; a person or an Agent always says what the project is.
-        if not self.profile.name.strip():
+        # A project a person or an Agent creates always says what it is. Only
+        # FULI's own temporary scopes go without a name, and an edit of one may
+        # keep it that way (the store checks which project an edit is for).
+        if self.create_only and not self.profile.name.strip():
             raise ValueError('A project a person or an Agent creates needs a name')
         if self.create_only and not self.profile.has_brief:
             raise ValueError('Project brief requires non-empty purpose, scope, or boundaries')

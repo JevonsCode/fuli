@@ -46,7 +46,7 @@ from .knowledge_visibility import (
 )
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
-from .temporary_project_scope import is_temporary_project_id
+from .temporary_project_scope import GENERATED_NAMES, is_temporary_project
 
 EVIDENCE_LIMIT = 10
 REVISION_LIMIT = 20
@@ -274,9 +274,10 @@ async def scope_projects(store, space, project_ids) -> list[KnowledgeScopeProjec
 def _scope_project(project_id, record) -> KnowledgeScopeProject:
     """A name only where somebody gave one: a temporary project carries its
     `temporary` marker instead, and each console names it in its own language."""
-    temporary = record['scope_type'] == 'temporary' or is_temporary_project_id(project_id)
     name = record['name'] or json_object(record['profile_json']).get('name')
-    return KnowledgeScopeProject(id=project_id, name=name or None, temporary=temporary)
+    temporary = is_temporary_project(project_id, record['scope_type'], name)
+    return KnowledgeScopeProject(id=project_id, name=None if temporary and name in GENERATED_NAMES else name or None,
+                                 temporary=temporary)
 
 
 async def _agent_name(store, space, agent_id) -> str | None:

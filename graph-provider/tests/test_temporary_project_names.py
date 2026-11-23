@@ -20,7 +20,7 @@ from fuli_graph.graph_format_temporary_names import (
     pending_temporary_names,
 )
 from fuli_graph.models import PersonalProjectUpsert, ProjectProfile
-from fuli_graph.temporary_project_scope import _SESSION_PROFILE, _TASK_PROFILE, project_reference
+from fuli_graph.temporary_project_scope import _SESSION_PROFILE, _TASK_PROFILE, is_temporary_project, project_reference
 
 STEP = 'graph/23-temporary-project-names'
 
@@ -52,9 +52,18 @@ def test_every_generated_name_ever_shipped_is_matched_and_nothing_by_how_it_was_
     assert 'scope_type' not in touch.match and 'STARTS WITH' not in touch.match
 
 
+def profile(name):
+    return json.dumps({'name': name, 'purpose': 'Synthetic purpose.'}, ensure_ascii=False)
+
+
 @pytest.mark.asyncio
-async def test_pending_lists_the_projects_still_holding_a_generated_name():
-    driver = RecordingDriver([{'key': 'node-b'}, {'key': 'node-a'}])
+async def test_pending_lists_the_projects_still_holding_a_generated_name_in_both_places():
+    driver = RecordingDriver([
+        {'id': 'node-b', 'profile_json': profile('会话项目 / Conversation project')},
+        {'id': 'node-a', 'profile_json': profile('')},
+        # The column says FULI's name, the profile a person's: theirs stays.
+        {'id': 'node-c', 'profile_json': profile('Synthetic own words')},
+    ])
     assert await pending_temporary_names(driver, None) == ['node-a', 'node-b']
     (query, parameters), = driver.calls
     assert query.startswith(TEMPORARY_NAME_JOURNAL.touches[0].match) and parameters == {'routing_': 'r'}
@@ -62,15 +71,16 @@ async def test_pending_lists_the_projects_still_holding_a_generated_name():
 
 @pytest.mark.asyncio
 async def test_apply_clears_both_names_and_marks_the_project_temporary():
-    profile = json.dumps({'name': '会话项目 / Conversation project', 'purpose': 'Synthetic purpose.',
-                          'boundaries': ['Synthetic boundary.'], 'lifecycle': 'active'}, ensure_ascii=False)
-    driver = RecordingDriver([{'id': 'node-a', 'profile_json': profile}])
+    stored = json.dumps({'name': '会话项目 / Conversation project', 'purpose': 'Synthetic purpose.',
+                         'boundaries': ['Synthetic boundary.'], 'lifecycle': 'active'}, ensure_ascii=False)
+    driver = RecordingDriver([{'id': 'node-a', 'profile_json': stored},
+                              {'id': 'node-c', 'profile_json': json.dumps({'name': 'Synthetic own words'})}])
     await apply_temporary_names(driver, None)
     (_, _), (write, parameters) = driver.calls
     assert "item.name = ''" in write and "item.scope_type = 'temporary'" in write
     (row,) = parameters['rows']
     assert row['id'] == 'node-a'
-    assert json.loads(row['profile_json']) == {**json.loads(profile), 'name': ''}
+    assert json.loads(row['profile_json']) == {**json.loads(stored), 'name': ''}
 
 
 @pytest.mark.asyncio
@@ -101,12 +111,44 @@ def test_temporary_scopes_are_created_without_a_name():
 def test_a_project_a_person_or_an_agent_creates_still_needs_a_name():
     profile = {'purpose': 'Synthetic purpose.'}
     with pytest.raises(ValidationError, match='needs a name'):
-        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile=profile)
+        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile=profile, create_only=True)
     with pytest.raises(ValidationError, match='needs a name'):
-        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile={**profile, 'name': '  '})
+        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile={**profile, 'name': '  '},
+                              create_only=True)
     created = PersonalProjectUpsert(personal_space_id='space', project_id='synthetic',
-                                    profile={**profile, 'name': 'Synthetic project'})
+                                    profile={**profile, 'name': 'Synthetic project'}, create_only=True)
     assert created.profile.name == 'Synthetic project'
+    # An edit may go without a name: the store allows it only for a temporary project.
+    edit = PersonalProjectUpsert(personal_space_id='space', project_id='temporary-' + 'ab' * 32,
+                                 profile={**profile, 'lifecycle': 'archived'})
+    assert edit.profile.name == ''
+
+
+class ProjectsDriver(RecordingDriver):
+    def __init__(self, scope_type, name):
+        super().__init__([{'scope_type': scope_type, 'name': name}])
+
+
+@pytest.mark.asyncio
+async def test_the_store_lets_only_a_temporary_project_go_on_without_a_name():
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from fuli_graph.store_projects import StoreProjects
+
+    def store(scope_type, name):
+        value = StoreProjects()
+        value.runtime = SimpleNamespace(driver=ProjectsDriver(scope_type, name))
+        return value
+    assert await store('temporary', '')._temporary_project('space', 'temporary-' + 'ab' * 32) is True
+    assert await store('registered', 'Synthetic own')._temporary_project('space', 'synthetic') is False
+    named = store('registered', 'Synthetic own')
+    named._require_personal = lambda: None
+    async def authorize(*_args):
+        return {}
+    named.authorize = authorize
+    with pytest.raises(HTTPException, match='needs a name'):
+        await named.upsert_personal_project({}, PersonalProjectUpsert(
+            personal_space_id='space', project_id='synthetic', profile={'purpose': 'Synthetic purpose.'}))
 
 
 def test_an_unnamed_project_is_referred_to_by_the_number_the_console_shows():
@@ -120,3 +162,17 @@ def test_the_lead_of_an_unnamed_project_is_never_named_after_an_empty_name():
     lead = default_lead_profile(project_reference('temporary-' + 'ef56' * 16, ''))
     assert lead.name == '#ef56ef56 负责人'
     assert not lead.name.startswith(' ')
+
+
+def test_a_project_is_temporary_by_its_scope_type_or_an_unnamed_generated_id_never_by_a_readable_id():
+    digest = 'ab12' * 16
+    assert is_temporary_project('temporary-' + digest, 'temporary', '') is True
+    assert is_temporary_project('synthetic-any', 'temporary', 'Anything') is True
+    # A conversation fallback a graph waiting for graph/23 has not marked yet.
+    assert is_temporary_project('conversation-' + digest, None, '会话项目 / Conversation project') is True
+    assert is_temporary_project('conversation-' + digest, 'registered', '') is True
+    # A person named it: it is theirs.
+    assert is_temporary_project('conversation-' + digest, 'registered', 'Synthetic garden notes') is False
+    # Readable IDs a person's project name makes ('Temporary fix', 'Conversation notes').
+    assert is_temporary_project('temporary-fix', 'registered', 'Temporary fix') is False
+    assert is_temporary_project('conversation-notes', None, 'Conversation notes') is False
