@@ -49,6 +49,14 @@ watch(() => open.value && shownTemporary.value.length > 0, (shown) => {
 const nothingShown = computed(() => !shownFormal.value.length && !shownTemporary.value.length)
 
 const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.key}`
+
+// Hundreds of temporary projects open a page at a time, newest first; a search
+// starts again from its first page, so the match a person typed for is in view.
+const TEMPORARY_PAGE = 50
+const temporaryLimit = ref(TEMPORARY_PAGE)
+watch(query, () => { temporaryLimit.value = TEMPORARY_PAGE })
+const pagedTemporary = computed(() => shownTemporary.value.slice(0, temporaryLimit.value))
+const hiddenTemporary = computed(() => shownTemporary.value.length - pagedTemporary.value.length)
 </script>
 
 <template>
@@ -80,7 +88,7 @@ const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.ke
           </Button>
         </div>
         <div v-if="open" class="project-scope-children" data-project-scope-temporary-list>
-          <div v-for="choice in shownTemporary" :key="choice.key" class="project-scope-row" data-project-scope-temporary-item>
+          <div v-for="choice in pagedTemporary" :key="choice.key" class="project-scope-row" data-project-scope-temporary-item>
             <Checkbox :id="elementId(choice)" :model-value="chosen.has(choice.key)" :disabled="disabled"
               @update:model-value="value => emit('toggle', [choice.key], value === true)" />
             <Label :for="elementId(choice)" :title="choice.project.project_id">
@@ -88,6 +96,10 @@ const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.ke
               <span v-if="choice.detail" class="project-scope-detail">{{ choice.detail }}</span>
             </Label>
           </div>
+          <Button v-if="hiddenTemporary" variant="ghost" size="xs" class="project-scope-more" data-project-scope-more
+            @click="temporaryLimit += TEMPORARY_PAGE">
+            {{ t('projects.scopePicker.showMore', { count: Math.min(hiddenTemporary, TEMPORARY_PAGE), rest: hiddenTemporary }) }}
+          </Button>
         </div>
       </template>
     </div>
@@ -106,5 +118,6 @@ const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.ke
 .project-scope-children { display: grid; gap: 8px; padding-left: 26px; }
 .project-scope-number { font-variant-numeric: tabular-nums; }
 .project-scope-detail { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; }
+.project-scope-more { justify-self: start; padding-inline: 4px; color: var(--color-muted); }
 .project-scope-muted { margin: 0; color: var(--color-muted); font-size: 13px; }
 </style>

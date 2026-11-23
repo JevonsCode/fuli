@@ -534,3 +534,25 @@ it('says a save reached this computer only, and shows what is saved now', async 
   expect(calls('GET /api/peer')).toHaveLength(2)
   wrapper.unmount()
 })
+
+it('takes every project that has a lead with 全选 and lets every one go with 清空; nothing is ticked by itself', async () => {
+  const leadless = { projectId: 'leadless-project', projectName: 'Leadless project', lead: null, clients: ['codex'] }
+  const status = { ...paired, shareable: [...paired.shareable, leadless] }
+  const { calls } = server({ 'GET /api/peer': [status], 'PUT /api/peer/shares': [{ ...status, shares: [sharedSample] }] })
+  const wrapper = mount(PeerSettings, { attachTo: document.body })
+  await flushPromises()
+  const ticked = () => wrapper.findAll('[data-share-row] .peer-share-title input')
+    .map(input => (input.element as HTMLInputElement).checked)
+  expect(ticked()).toEqual([false, false])
+  expect(wrapper.get('[data-share-clear]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-share-all]').trigger('click')
+  expect(ticked()).toEqual([true, false])
+  expect(wrapper.get('[data-share-all]').attributes('disabled')).toBeDefined()
+  await wrapper.get('[data-share-clear]').trigger('click')
+  expect(ticked()).toEqual([false, false])
+  await wrapper.get('[data-share-all]').trigger('click')
+  await wrapper.get('[data-save-shares]').trigger('click')
+  await flushPromises()
+  expect(body(calls('PUT /api/peer/shares')[0])).toEqual({ shares: [{ projectId: 'sample-project', clients: ['codex'] }] })
+  wrapper.unmount()
+})

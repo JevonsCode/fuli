@@ -91,11 +91,14 @@ const pageError = computed(() => !store.state && store.runtimeStatus === 'error'
 const visibleError = computed(() => isJefa.value ? (projectFilter.invalidScope.value ? t('employees.invalidScope') : '') : pageError.value || employeeCatalogError.value || error.value)
 const ALL_PROJECTS = 'all'
 const managedProjectOptions = computed(() => isJefa.value ? jefaRead.projects.map(p => ({ value: p.id, label: p.name })) : template.value?.managedProjects !== undefined
-  ? template.value.managedProjects.map(project => ({ value: project.id, label: project.name }))
+  ? template.value.managedProjects.map(project => ({ value: project.id, label: project.name, temporary: project.temporary === true }))
   : (template.value?.assignments ?? []).filter(assignment => assignment.status === 'active').map((assignment) => ({
   value: assignment.personalProjectId,
   label: assignmentProjectName(assignment.personalProjectId),
 })))
+// The same projects for a picker that folds temporary ones (employees/project-options.ts).
+const managedProjectChoices = computed(() => managedProjectOptions.value.map(project => ({
+  id: project.value, name: project.label, ...('temporary' in project && project.temporary ? { temporary: true } : {}) })))
 const managedProjectSignature = computed(() => JSON.stringify(
   [...new Set(managedProjectOptions.value.map(project => project.value))].sort(),
 ))
@@ -390,8 +393,8 @@ async function projectsSaved() {
       </div>
     </header>
     <EmployeeScopeDialog v-if="!isNativeWorkbench" :open="manageProjectsOpen" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" :template-id="templateId" @close="manageProjectsOpen = false" @saved="projectsSaved" />
-    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!(shownTaskRef ? jefaRead.taskReadOnly(shownTaskRef.projectId) : jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
-    <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectOptions.map(project => ({ id: project.value, name: project.label }))" @close="shareOpen = false" />
+    <EmployeeTaskDialog v-if="isJefa" :open="createTaskOpen || Boolean(shownTaskRef)" :item="shownTaskRef" :projects="managedProjectChoices" :default-project-id="visibleProjectIds.length === 1 ? visibleProjectIds[0] : undefined" :personal-space-id="personalSpaceId" :can-write="!(shownTaskRef ? jefaRead.taskReadOnly(shownTaskRef.projectId) : jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)" @close="closeTaskDialog" @saved="loadWorkspace" />
+    <EmployeeShareDialog v-if="isJefa" :open="shareOpen" :projects="managedProjectChoices" @close="shareOpen = false" />
     <JefaReadStatus v-if="isJefa && !projectFilter.invalidScope.value"
       :loading="jefaRead.loading" :long-wait="jefaRead.longWait" :stage="jefaRead.stage"
       :timed-out="jefaRead.timedOut" :failure="jefaRead.failure" :failures="jefaRead.failures"
@@ -411,7 +414,7 @@ async function projectsSaved() {
       v-else-if="projectId === ALL_PROJECTS && supportsAllProjects"
       v-model:visible-project-ids="visibleProjectIds"
       :boards="visibleProjectBoards"
-      :projects="managedProjectOptions.map((project) => ({ id: project.value, name: project.label }))"
+      :projects="managedProjectChoices"
       :failed-projects="isJefa ? 0 : visibleFailedProjects"
       :can-move-tasks="(!isJefa || !jefaRead.readOnly) && (template?.permissions.includes('board.write') ?? false)"
       :read-only="isJefa && jefaRead.readOnly"
