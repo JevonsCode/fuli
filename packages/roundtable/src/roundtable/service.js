@@ -824,7 +824,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     settleStaleAsks();
     return { messages: store.pendingFor(spaceId(), me.agent.agentId, 5, me)
-      .filter(message => messageProject(message) === me.projectId && forViewer(message, me)).map(inboxItem),
+      .filter(message => messageProject(message) === me.projectId && forViewer(message, me) && !chatWakeRead(message)).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
       ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
         ? ' More are waiting: call read_agent_messages again.' : ''}` } : {}),
@@ -972,6 +972,16 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // One rule for "this Agent's question, in this project, for this session".
   const mine = (message, projectId, viewer) =>
     (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer);
+  // A chat wake whose recipient has already read its chat through the last
+  // message the wake was about: it was answered there, so it waits for nothing
+  // (rec#146 item 1; coordinator: both read pointers at the chat's last seq,
+  // and every entry still pushed it with "Other Agents are waiting"). Read at
+  // listing time too, so a settle that could not write never shows it again.
+  const chatWakeRead = message => {
+    const wake = chatWakeOf(message?.body);
+    if (!wake) return false;
+    try { return store.chat.readCursor(wake.chatId, `local:${message.to_agent}`) >= wake.nextAfter; } catch { return false; }
+  };
   // The instant a question has to be newer than to count as waiting at a task entry.
   const pendingSince = () => new Date(now() - PENDING_ASK_DAYS * DAY_MS).toISOString();
   // Asks nobody can still be waiting on stop looking unanswered (rec#146
@@ -988,8 +998,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     try {
       let answered = 0;
       for (const ask of store.queuedChatWakes(spaceId(), CHAT_WAKE_LEAD)) {
-        const wake = chatWakeOf(ask.body);
-        if (!wake || store.chat.readCursor(wake.chatId, `local:${ask.to_agent}`) < wake.nextAfter) continue;
+        if (!chatWakeRead(ask)) continue;
         store.updateMessage(ask.id, { status: 'answered', via: 'chat:read' });
         answered += 1;
       }
@@ -1065,7 +1074,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     pending: (agentId, projectId = undefined, viewer = null) => {
       settleStaleAsks();
       return store.pendingFor(spaceId(), agentId, 5, viewer, { since: pendingSince() })
-        .filter(message => mine(message, projectId, viewer)).map(inboxItem);
+        .filter(message => mine(message, projectId, viewer) && !chatWakeRead(message)).map(inboxItem);
     },
     settleStaleAsks,
     deliverAttentionReply: attentionInbox.deliver,

@@ -130,3 +130,41 @@ test('the waiting guidance names one way to answer and says it outranks a messag
   assert.match(AGENT_MESSAGES_GUIDANCE, /not to call a tool, follow this line instead/);
   assert.match(AGENT_MESSAGES_GUIDANCE, /sender's own\s+words, not a FULI rule/);
 });
+
+// Coordinator, from real data: both read pointers of the 2026-10-27 chat were
+// at its last seq, and every task entry still listed the wake's snapshot
+// (after: 0) under "Other Agents are waiting for your answers". Even where the
+// settle cannot write, a read chat wake is never listed, and an entry with
+// nothing else waiting carries neither the message nor that sentence.
+test('a chat wake read through its last message is never listed, even when its settle cannot write', async () => {
+  const { roundtable, ask, store } = fixture();
+  // A day old, so only the read pointer — not the 7-day window — keeps it out.
+  ask(1, 'wake-old', wakeBody('synthetic-chat-old'));
+  store.chat.markRead('synthetic-chat-old', 'local:lead-1', 2);
+  const update = store.updateMessage;
+  store.updateMessage = () => { throw new Error('synthetic read-only store'); };
+  try {
+    roundtable.settleStaleAsks({ force: true });
+    assert.equal(store.getMessage('wake-old').status, 'queued', 'the settle could not write');
+    assert.deepEqual(roundtable.pending('lead-1', 'synthetic-project', null), []);
+  } finally { store.updateMessage = update; }
+  // The task entry over this roundtable: no message, and no "waiting" sentence.
+  const { taskEntryPreferences } = await import('../src/graphiti/task-entry-preferences.js');
+  const application = {
+    config: { personal: { spaceId: SPACE } }, consoleUrl: 'http://192.0.2.10:2727', roundtable,
+    personal: {
+      resolveProjectAgentContext: async () => ({ status: 'ready', agent: { agent_id: 'lead-1',
+        profile: { name: 'Synthetic Lead', status: 'active', allowed_clients: ['codex'], work_kinds: ['code_review'] } } }),
+      getProjectAgentMemory: async () => null, getPersonalProject: async () => null,
+      listProjectAgentTasks: async () => [], getProjectAgentCoordinationPolicy: async () => ({}),
+      collaborationPreferences: async () => ({ effective_preferences: [] }), listPreferenceConflicts: async () => []
+    },
+    searchKnowledge: async () => ({ facts: [], entities: [] })
+  };
+  const entry = await taskEntryPreferences(application, { status: 'matched', personalProjectId: 'synthetic-project' }, {
+    projectPath: '/synthetic/project', taskPrompt: '评审一下', sourceApplication: 'codex', agentInvocation: true,
+    agentToolName: 'begin_task_context', sessionId: 's', turnId: 't'
+  }, async () => {});
+  assert.equal(entry.agent_messages, undefined);
+  assert.doesNotMatch(JSON.stringify(entry), /Other Agents are waiting/);
+});
