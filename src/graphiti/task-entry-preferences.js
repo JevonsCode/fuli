@@ -88,10 +88,35 @@ async function clearReplyBlockers(application, input) {
     captureAllowed: capture?.allowed === true });
 }
 
+// How long a task entry waits for a built-in Agent's hint before going out
+// without it (rec#139). The hint is an optional suggestion and the entry is
+// the person's turn starting: it is not a thing to wait on a model for. The
+// call still runs to its own deadline under its hot-path budget (so a timeout
+// stays the caller's, not the role's) and still keeps its console note; it
+// just stops holding the turn. Before this, a board match that ran into its
+// 3 s limit — most of them on the reporting machine — made every task entry
+// pay those seconds for nothing.
+export const ENTRY_HINT_GRACE_MS = 400;
+
 // At most one built-in Agent model decision per entry (rec#10 D-26.2): Astro
 // while the task has no project, Jefa once the task has one.
 function withEntryHint(application, entry, input) {
-  return entry.context?.personal_project_id ? withBoardMatch(application, entry, input) : withProjectCandidate(application, entry, input);
+  const hinted = entry.context?.personal_project_id
+    ? withBoardMatch(application, entry, input) : withProjectCandidate(application, entry, input);
+  // A slow hint outlives this entry, so its own failure is never an
+  // unhandled rejection and never reaches the turn.
+  hinted.catch(() => {});
+  return Promise.race([hinted, afterGrace(entry, application.entryHintGraceMs ?? ENTRY_HINT_GRACE_MS)]);
+}
+
+// `graceMs` is the application's own setting only so a test of the hint
+// itself can wait for it; every runtime uses ENTRY_HINT_GRACE_MS.
+function afterGrace(entry, graceMs) {
+  if (!Number.isFinite(graceMs)) return new Promise(() => {});
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(entry), graceMs);
+    timer.unref?.();
+  });
 }
 
 export async function taskEntryPreferences(application, projectResolution, input, recordAgentViews) {
