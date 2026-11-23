@@ -24,11 +24,11 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
     const source = input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
     const { deposited = [], pendingVersion, ...result } = await workflows(app).propose(owner, { workflowId: input.workflowId,
       name: input.name, purpose: input.purpose, steps, source, workMap: input.workMap });
-    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps });
-    if (settled) return settled;
+    // A proposal the person's choice did not confirm still asks its workMap questions.
+    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) ?? result;
     const questions = input.workMap?.questions ?? [];
-    if (result.status !== 'proposed' || !questions.length || !owner.personalProjectId) return result;
-    return { ...result, questions: await askQuestions(app, owner, result.workflow, input.name, questions) };
+    if (settled.status !== 'proposed' || !questions.length || !owner.personalProjectId) return settled;
+    return { ...settled, questions: await askQuestions(app, owner, settled.workflow, input.name, questions) };
   },
   list_agent_workflows: async (app, input) => {
     const owner = await boundAgent(app, input);

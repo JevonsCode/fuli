@@ -220,6 +220,34 @@ test('「只记下这串步骤」 confirms only those steps one for one: two mor
   assert.equal(same.confirmedBy, 'person_choice');
 });
 
+test('「只记下这串步骤」 with other steps still asks the proposal\'s workMap questions', async (t) => {
+  const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+  await suggestRepeatedTools(application_);
+  inbox.answer([...inbox.requests.values()][0].requestId, '只记下这串步骤');
+  await suggestRepeatedTools(application_, { legacyCleared: true });
+  const workMap = { inputs: ['A synthetic tag'], outputs: ['A tray zip'], acceptance: ['The zip opens'],
+    questions: ['Which channel gets the synthetic release?'] };
+  const proposed = await propose(application_, { steps: [...STEPS, { title: 'Deploy to production' }], workMap });
+  assert.deepEqual([proposed.status, proposed.questions], ['proposed', 'asked']);
+  assert.match(proposed.note, /Not confirmed .*not exactly the ones they chose/);
+  assert.ok([...inbox.requests.values()].some(item => item.kind === 'question' && /Which channel/.test(item.detail)));
+});
+
+test('a repeat of more steps than a workflow holds is never handed over to copy: the person confirms it in the console', async (t) => {
+  const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const long = Array.from({ length: 21 }, (_, index) => `Synthetic step ${index + 1}`);
+  const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, long)));
+  await suggestRepeatedTools(application_);
+  inbox.answer([...inbox.requests.values()][0].requestId, '只记下这串步骤');
+  await suggestRepeatedTools(application_, { legacyCleared: true });
+  const { repeated } = flaGrowthEntry(app(workflows), task, opening);
+  assert.match(repeated, /more than 20: propose at most 20 .*waits for them to confirm in the console/);
+  assert.doesNotMatch(repeated, /Synthetic step 21|unchanged and in this order/);
+});
+
 test('「只记下这串步骤」 never replaces a confirmed workflow: the change waits for the person on its page', async (t) => {
   const { workflows } = workflowsAt(t);
   const inbox = attention();

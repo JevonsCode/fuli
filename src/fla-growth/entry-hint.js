@@ -1,3 +1,5 @@
+import { MAX_STEPS } from '../agent-workflows/port.js';
+
 // What an FLA's own task entry says about the work it keeps repeating
 // (Jevons 11-23: an FLA that keeps doing a kind of work writes it down as a
 // workflow; what it runs every time becomes a script). Only on the first turn
@@ -31,6 +33,11 @@ function repeatedLine(hint) {
   if (hint.answer === 'script') {
     return `The person chose a script for ${work}: submit it as an Agent app with submit_agent_app_version `
       + '(runtime.entry, not resident, no keys or tokens in its files); they confirm it in the terminal from Agents → Apps.';
+  }
+  // More steps than a workflow holds: a list to copy would be refused (MAX_STEPS), so nothing confirms by itself.
+  if (hint.answer === 'steps' && hint.steps.length > MAX_STEPS) {
+    return `The person chose to keep ${work} as steps, but it has more than ${MAX_STEPS}: propose at most ${MAX_STEPS} `
+      + 'with propose_agent_workflow {name, purpose, steps}; it waits for them to confirm in the console, tell them so.';
   }
   if (hint.answer === 'steps') {
     return `The person chose to keep ${work} as steps: propose these titles as its steps, unchanged and in this order, `

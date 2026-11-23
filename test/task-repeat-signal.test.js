@@ -35,7 +35,6 @@ const HITS = [
   '我前面已经说清楚了，你怎么还这样',
   '早就跟你讲过，别动 lockfile',
   '我都说了三遍了',
-  '咋又用 npm 了',
   '上次不是说好了',
   // Jevons's own words, both word orders (the second round)
   '我已经把端口改了，为什么你不用新端口',
@@ -106,7 +105,13 @@ const HITS = [
   'Stop using npm, I mentioned it already.',
   'We talked about this, use pnpm.',
   'Again, please use pnpm.',
-  'how many times have you been told'
+  'how many times have you been told',
+  // The fourth review's probe: 「我不是让你…吗」, and a plain 「我之前/前面/昨天…说过/交代/强调」
+  // with the other half only a 你 asked why or a 又 next to it
+  '我不是让你改完先跑 lint 吗',
+  '咋回事，又把 .env 提交上去了，之前强调过的',
+  '我前面明确说过只改 src 目录，你为啥去改 test',
+  '我昨天专门交代了 PR 描述要写中文，今天又是英文'
 ];
 
 // The third review's verb probe: whatever the skipped work is called.
@@ -198,7 +203,20 @@ const MISSES = [
   '我已经提醒过他了，他为什么还不改？',
   'Our PM said: I already told you, why don\'t you ship it?',
   '```\n我已经说过了，你为什么还用 npm\n```\n这段注释要删吗',
-  '> 我已经说过了，为什么你又改坏了\n上面是用户的投诉，帮我写个回复'
+  '> 我已经说过了，为什么你又改坏了\n上面是用户的投诉，帮我写个回复',
+  // A lone 又 is the Agent's only after 你 or as 又把/又给我: a fault report is not a candidate,
+  // and a bare 「咋又用 npm 了」 is not heard either (docs/fla-self-growth.md)
+  '怎么又没网了',
+  '咋又没网了',
+  '怎么又报错了？',
+  '怎么又多了一个 warning',
+  '怎么又要升级 xcode 了',
+  '怎么又卡住了，是不是死循环',
+  '这个 bug 为什么还没修好？测试又红了',
+  'it broke again after the merge',
+  '咋又用 npm 了',
+  // A plain 「我之前说过」 still needs the Agent asked why, not asked its view
+  '我之前说过要用 Redis，你怎么看？'
 ];
 
 // The same shape as a complaint, another meaning: these are candidates on
@@ -210,10 +228,7 @@ const CANDIDATES_THE_AGENT_IGNORES = [
   "I already pushed the branch, why don't you open the PR now?",
   '我已经装了 node，为什么还不能运行？',
   '我已经发了，你为什么没收到？',
-  '你怎么又不说话了，卡住了吗',
-  '怎么又没网了',
-  '咋又没网了',
-  '怎么又报错了？'
+  '你怎么又不说话了，卡住了吗'
 ];
 
 test('the person saying they already asked for it is a candidate, in Chinese and English', () => {

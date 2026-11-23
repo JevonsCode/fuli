@@ -19,7 +19,7 @@ import { plansAlike } from '../fla-growth/step-similarity.js';
 //   nothing is put into a context and nothing runs by itself. A run the Agent
 //   did is recorded against the active version.
 const LIMITS = Object.freeze({ id: 200, name: 80, purpose: 300, title: 120, detail: 600, note: 500 });
-const MAX_STEPS = 20;
+export const MAX_STEPS = 20;
 // A drafted Skill's work map (rec#78, 11-06 addition 5): what it needs and
 // gives, what it depends on, where it branches, how it is accepted, and at
 // most three questions for the person.

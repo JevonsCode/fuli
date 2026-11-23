@@ -46,8 +46,19 @@ const PRIOR = [
   new RegExp(`${CLAUSE}(?:(?:跟|和|给|让|叫)你|告诉你)[^，,。！？!?；;\\n]{0,16}?(?:过|了)`, 'u'),
   new RegExp(`${CLAUSE}(?:${BEFORE}\\s*)*不是(?:说|讲|让你|叫你|跟你|和你|告诉)`, 'u'),
   /\bI(?:'ve|'d| have| had)?\s+(?:already|told you|said|asked you|mentioned|explained)\b/iu,
-  // 又 is "again": 「咋又用 npm 了」 as much as "why are you using npm again?"
-  /又|\b(?:as|like) I (?:said|mentioned|told you)\b|\bdidn'?t I\b|\bagain\b/iu
+  // 又 is "again" only when it is the Agent's: 「你怎么又用 npm」「又把 .env 提交了」「又给我加了」,
+  // "you … again"; 「怎么又报错了」 reports a fault, and a bare 「咋又用 npm 了」 is not heard.
+  new RegExp(`你们?[^，,。！？!?；;\\n]{0,6}?又|又(?:把|给我)`, 'u'),
+  /\b(?:as|like) I (?:said|mentioned|told you)\b|\bdidn'?t I\b|\byou\b[^.!?\n]{0,40}\bagain\b/iu
+];
+// A plain 「我之前/前面/昨天…说过/交代/强调/约定/让你」 (or with no subject, 「之前强调过」): then the
+// other half needs no 不/没/还/又 question; a 你 asked why or a 又 next to it is enough
+// (「…，你为啥去改 test」「…，今天又是英文」「又把 .env 提交了，之前强调过的」).
+const SAID_BEFORE = new RegExp(`(?:${I}|${CLAUSE})(?:${BEFORE}|上周|前天)[^，,。！？!?；;\\n]{0,8}?`
+  + '(?:(?:说|讲)(?:过|了|好)|交代|交待|强调|约定|要求|提醒|告诉|(?:让|叫)你)', 'u');
+const PUT_TO_THE_AGENT = [
+  new RegExp(`(?<!${OTHERS})你们?[^，,。！？!?；;\\n]{0,4}?(?:为什么|为啥|为何|干嘛|干吗|怎么|咋)(?!看|想|样|办|说)`, 'u'),
+  new RegExp(`(?<!${OTHERS})又(?!不是|没错)`, 'u')
 ];
 const FAILED = [
   // 「为什么你不…」「你为什么还…」「为啥不…」「你咋还是不…」「怎么又…」, 你 or not
@@ -71,9 +82,9 @@ const BOTH_AT_ONCE = [
   // 「我跟你说过…」「早就跟你讲过」, not 「上次跟你说过的那个方案」
   new RegExp(`(?:${I}|${CLAUSE})${BEFORE}*(?:跟|和)你(?:说|讲|提)(?:过|了)(?!的)`, 'u'),
   new RegExp(`${I}${BEFORE}+(?:让|叫|要)你(?:别|不要|不许)`, 'u'),
-  // 「之前不是让你用 pnpm 吗」「不是跟你说过了」
-  new RegExp(`${CLAUSE}${BEFORE}*不是(?:让你|叫你|跟你说|跟你讲|和你说|说过|讲过|说了|讲了)[^。！？!?\\n]{0,30}吗`, 'u'),
-  new RegExp(`${CLAUSE}${BEFORE}*不是(?:跟你|和你)(?:说|讲)(?:过|了)`, 'u'),
+  // 「之前不是让你用 pnpm 吗」「我不是让你先跑 lint 吗」「不是跟你说过了」
+  new RegExp(`(?:${CLAUSE}|${I})${BEFORE}*不是(?:让你|叫你|跟你说|跟你讲|和你说|说过|讲过|说了|讲了)[^。！？!?\\n]{0,30}吗`, 'u'),
+  new RegExp(`(?:${CLAUSE}|${I})${BEFORE}*不是(?:跟你|和你)(?:说|讲)(?:过|了)`, 'u'),
   // 「都说了别用 any」「说好的不要加注释呢」「上次不是说好了」「上次就说过」
   new RegExp(`(?:${CLAUSE}|${I})都说了[，,]?\\s*(?:别|不要|不许|不准|让你|多少)`, 'u'),
   /说好的[^。！？!?\n]{1,30}呢/u,
@@ -126,6 +137,8 @@ export function repeatComplaint(prompt) {
   return sentences.some((sentence, at) => {
     if (ASKING_THEMSELVES.test(sentence) && !TO_THE_AGENT.test(sentence) && !failed[at + 1]) return false;
     if (BOTH_AT_ONCE.some(pattern => pattern.test(sentence))) return true;
+    const near = [sentences[at - 1], sentence, sentences[at + 1]].filter(Boolean);
+    if (SAID_BEFORE.test(sentence) && near.some(text => PUT_TO_THE_AGENT.some(pattern => pattern.test(text)))) return true;
     return PRIOR.some(pattern => pattern.test(sentence)) && (failed[at - 1] || failed[at] || failed[at + 1]);
   });
 }
