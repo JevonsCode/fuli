@@ -24,6 +24,9 @@
 - **全文在 `task_guidance.human_facing_output`**，随 `task_guidance` 那一个指针下发，普通入口
   每轮 0 字节，只有 `rules_version` 变。协作 worker 读不了资源、入口里是全文，但它只向
   负责人汇报，三条新规则都不发给它（`task-context-view.js`），所以 worker 的入口也不变长。
+  同一任务的恢复读取（`read_task_preferences`）也不带这三条全文：它把整份结果（两个通道）
+  放进 32 KiB，偏好和规矩共用这个预算，三条全文约 2.9 KB，会把本来一页装得下的偏好挤到
+  第二页（`withoutLeadOnlyRules`，`task-knowledge-guidance.js`）。全文仍在规则资源里。
 
 ### 规矩说什么
 

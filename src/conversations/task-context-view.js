@@ -4,13 +4,13 @@ import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-wo
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
+import { withoutLeadOnlyRules } from '../graphiti/task-knowledge-guidance.js';
 
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
 const NOTE_PREVIEW = 160;
 const ROSTER_PREVIEW = 4;
 const DRAFT_LABEL_BUDGET = 32;
-const LEAD_ONLY_RULES = new Set(['human_facing_output', 'repeat_signal', 'self_deposit']);
 
 // Preserve every effective instruction and Provider-budgeted conversation raw
 // window. Other evidence envelopes remain available through explicit read tools.
@@ -46,7 +46,7 @@ export function compactTaskContext(value) {
   // rule text because it cannot read the resource: the rules about talking to
   // the person and depositing the FLA's own work are not its to follow.
   if (!share && value.task_guidance && typeof value.task_guidance === 'object') {
-    result.task_guidance = Object.fromEntries(Object.entries(value.task_guidance).filter(([key]) => !LEAD_ONLY_RULES.has(key)));
+    result.task_guidance = withoutLeadOnlyRules(value.task_guidance);
   }
   if (sharedApplication) {
     const shared = entryRules().sections.application_guidance;

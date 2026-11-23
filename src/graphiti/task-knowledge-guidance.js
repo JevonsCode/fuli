@@ -39,3 +39,15 @@ export function taskKnowledgeGuidance() {
       checkpoint: 'The owner checkpoints after integration when there are capture candidates, experiences, memory changes, explicit knowledge usage, collaborators or a meaningful workLog. For routine finishes follow checkpoint_guidance; checkpoint_required remains true when automatic closure is unavailable. Coordinated workers return evidence and must not begin or checkpoint an inherited parent context. Explicit checkpoints use capture_candidates or retain_nothing; assigned employees include a concise truthful workLog, even without knowledge capture. Memory changes include agentMemory with the loaded revision and bounded merged notes. Do not overwrite truncated context or store raw transcripts.'
     };
 }
+
+// Rules about talking to the person and depositing the FLA's own work, which
+// only a lead entry carries, through the task_guidance rules pointer and the
+// hints that fire when they apply (remember_guidance, fla_growth). A worker
+// reports to its lead, and the same-task reader recovers the standing rules,
+// so neither repeats their full text: the reader's whole result, both
+// channels, has a 32 KiB budget its preferences share (preference-delivery.js).
+const LEAD_ONLY_RULES = new Set(['human_facing_output', 'repeat_signal', 'self_deposit']);
+
+export function withoutLeadOnlyRules(guidance) {
+  return Object.fromEntries(Object.entries(guidance).filter(([key]) => !LEAD_ONLY_RULES.has(key)));
+}
