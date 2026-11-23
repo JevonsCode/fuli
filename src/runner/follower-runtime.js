@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
-import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
+import { isProcessAlive, stopProcess, waitForExit } from '../local-runtime/processes.js';
 import { startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
@@ -59,7 +59,7 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
   async function stop(input) {
     const state = await inspect(input);
     if (state.status !== 'running') return { status: 'stopped', role: 'runner', console: 'not_running' };
-    if (isProcessAlive(state.pid)) process.kill(state.pid, 'SIGTERM');
+    if (isProcessAlive(state.pid)) stopProcess(state.pid);
     if (!await waitForExit(state.pid, STOP_WITHIN_MS)) return { status: 'partial', role: 'runner', console: 'running' };
     return { status: 'stopped', role: 'runner', console: 'stopped' };
   }

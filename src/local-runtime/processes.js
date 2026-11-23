@@ -2,13 +2,21 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 // Liveness and stop signals for local processes Fuli started or adopted.
 
+// Whether a process with this PID exists. A process of another user (EPERM)
+// exists too: only ESRCH means it is gone, so a lock or record held by a
+// process started with sudo is never mistaken for an abandoned one.
 export function isProcessAlive(pid) {
-  if (!Number.isInteger(pid)) return false;
+  return processState(pid) !== 'gone';
+}
+
+// 'running' (this user's), 'other_user' (exists, not this user's to signal) or 'gone'.
+export function processState(pid, { signal = (target) => process.kill(target, 0) } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return 'gone';
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    signal(pid);
+    return 'running';
+  } catch (error) {
+    return error?.code === 'EPERM' ? 'other_user' : 'gone';
   }
 }
 
