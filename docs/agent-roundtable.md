@@ -193,7 +193,11 @@ pairing or 30 minutes (turning it on again while on keeps that end); if the mDNS
 cannot be opened it turns off with the reason and the console keeps running. While it is
 off, its routes answer like any unknown path. Afterwards a listener returns to the
 address the person chose, or narrows to the address its paired devices reached (kept
-across restarts). When that address is gone, nothing listens and the card says so;
+across restarts). Every listener move (widening for nearby pairing, returning, narrowing,
+「重新监听」) runs one at a time and the latest target asked for wins; a narrowing a
+publisher round or a device's first contact asks for never replaces a move the person asked
+for, and turning nearby pairing off while it is still opening returns the listener to the
+chosen address. When that address is gone, nothing listens and the card says so;
 turning the LAN roundtable off revokes every paired device even then. An address that is
 only away (a laptop on another network: `listenFailure.addressAway`) is looked for every
 30 seconds, and the listener starts by itself once that same address is on this computer
