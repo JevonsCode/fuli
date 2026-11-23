@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { FAILED_JUDGMENT_GUIDANCE, judgmentFailure, judgmentRequest } from '../judgment/backend.js';
 import { compactPreferences, preferenceHold, truncatedWindows } from '../judgment/preference-receipt.js';
+import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
 import { parseRoutingRequest, ROUTING_SELECTION_SCHEMA, routingInstructions, verifiedSelection } from '../judgment/routing.js';
 import { parse, parseAnswer } from '../judgment/service.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
@@ -16,7 +17,7 @@ import { createModelSecretStore } from '../model-backends/secret-store.js';
 import { ModelUsageLedger } from '../model-backends/usage-ledger.js';
 import { sha256Bytes } from '../security/digest.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { envelope, failure, projectPreferences, unpairedAnswer } from './offline-calls.js';
+import { envelope, failure, isWholeEntry, projectPreferences, resultValue, unpairedAnswer, wholePreferencesKey } from './offline-calls.js';
 import { preflightExecutors, readRunnerExecutors } from './routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from './routing-ledger.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OPERATION, ROUTING_OUTCOME_ENTRY, routingRoleState } from './routing-setup.js';
@@ -54,19 +55,27 @@ const EXECUTORS_FIX = 'Fix runner/executors.json. Deleting it does not hand this
   + 'or delete that file.';
 // The model port's limits (model-backends/request.js): at most
 // MAX_EVIDENCE_CHARS per evidence item, which it refuses before any model is
-// called, and 64 items. A judgment here uses at most seven items besides its
-// preferences, which may take MAX_PREFERENCE_PARTS (160,000 characters: far
-// past any project's rules).
+// called, and 64 items. The preferences take at most MAX_PREFERENCE_PARTS
+// items (80,000 characters, past any real project's compact rules), which
+// keeps a judgment's input bounded for the model's own context as well.
 const MAX_EVIDENCE_CHARS = 20_000;
-const MAX_PREFERENCE_PARTS = 8;
-// What the person can do when this computer cannot judge with every rule, by
-// why: no preferences of the host's kept here for this project, or more than
-// even MAX_PREFERENCE_PARTS hold.
+const MAX_PREFERENCE_PARTS = 4;
+// Said to the model when the preferences go in more than one item: the
+// shared instructions name preferences.selected alone, and a rule or conflict
+// (a prohibition among them) in a later part must not read as not applying.
+const PARTS_RULE = 'preferences_2, preferences_3 and so on continue preferences: their selected and conflicts are '
+  + 'part of preferences.selected and preferences.conflicts, and apply exactly as if they were listed there.';
+// What the person can do when this computer cannot judge with every rule, by why.
+const HOST_JUDGES = 'or have the host judge (remove roles.tonborg from model-backends.json on this computer).';
 const NO_ENTRY_NEXT_STEP = 'This computer keeps no preferences of the host\'s for this project: no task in it was '
-  + 'entered here while the host answered. Enter one (get_collaboration_preferences in a folder of the project) '
-  + 'while the host answers, or have the host judge (remove roles.tonborg from model-backends.json on this computer).';
-const TOO_MANY_NEXT_STEP = 'This project has more preferences than this computer\'s model can be given whole. '
-  + 'To have the host judge with all of them, remove roles.tonborg from model-backends.json on this computer.';
+  + `entered here while the host answered. Enter one (get_collaboration_preferences in a folder of the project) while the host answers, ${HOST_JUDGES}`;
+const NOT_WHOLE_NEXT_STEP = 'The host could not deliver this project\'s preferences whole in its task entry, and this '
+  + 'computer did not read the rest (the host was away or refused the read). Enter a task in the project again while '
+  + `the host answers, so the rest is read, ${HOST_JUDGES}`;
+const tooManyNextStep = (tooLarge) => (tooLarge
+  ? `Preference ${tooLarge} alone is longer than one part this computer's model is given (${MAX_EVIDENCE_CHARS} characters). `
+    + `Shorten it on the host, ${HOST_JUDGES}`
+  : `This project has more preferences than this computer's model can be given whole. To have the host judge with all of them, remove roles.tonborg from model-backends.json on this computer.`);
 
 // The items of list, in its order, whose JSON fits within maxChars together;
 // one too big to fit is skipped, so it does not keep the smaller ones after it out.
@@ -84,22 +93,25 @@ function fitting(list, maxChars) {
 
 // The preferences the host last gave this project, as the host's own compact
 // receipt (judgment/preference-receipt.js), with what the host's read said it
-// did not read in full (the kept entry's own flags). The host sends that
-// receipt as one evidence item; a project's rules can be more than one item
-// holds, so here every conflict and rule goes, in the host's order, across as
-// many items as it takes: `preferences`, then `preferences_2`… each saying it
-// continues `preferences`. When even MAX_PREFERENCE_PARTS cannot hold them,
-// or one alone is too big for an item, the receipt is partial (size_limit).
-// A partial receipt stops the judgment through the host's own preferenceHold,
-// before any model is called: Tonborg does not recommend without a rule that
-// could change the choice. { receipt, parts }: receipt for preferenceHold,
-// parts the evidence items by key.
-function deliveredPreferences({ answeredAt, context, entry }) {
+// did not read in full (the kept entry's own flags), and, when the host could
+// not deliver the entry whole and the rest was not read here, that it is not
+// whole (delivery_budget). The host sends that receipt as one evidence item; a
+// project's rules can be more than one item holds, so here every conflict and
+// rule goes, in the host's order, across as many items as it takes:
+// `preferences`, then `preferences_2`… each saying it continues `preferences`
+// (and PARTS_RULE tells the model so). When even MAX_PREFERENCE_PARTS cannot
+// hold them, or one alone is too big for an item (tooLarge: its key), the
+// receipt is partial (size_limit). A partial receipt stops the judgment
+// through the host's own preferenceHold, before any model is called: Tonborg
+// does not recommend without a rule that could change the choice.
+// { receipt, parts, tooLarge }: receipt for preferenceHold, parts the evidence items by key.
+export function deliveredPreferences({ answeredAt, context, whole = true, entry }) {
   const { selected, scope_unknown: scopeUnknown, conflicts } = compactPreferences(entry);
-  const truncated = truncatedWindows(context);
+  const truncated = [...truncatedWindows(context), ...(whole ? [] : ['delivery_budget'])];
   const receipt = { answeredAt, status: truncated.length ? 'partial' : 'complete', scope_unknown: scopeUnknown,
     omitted: { truncated } };
-  const tooMany = { receipt: { ...receipt, status: 'partial', omitted: { truncated: [...truncated, 'size_limit'] } }, parts: {} };
+  const tooMany = (tooLarge) => ({ receipt: { ...receipt, status: 'partial', omitted: { truncated: [...truncated, 'size_limit'] } },
+    parts: {}, tooLarge });
   const fits = (part) => JSON.stringify(part).length <= MAX_EVIDENCE_CHARS;
   const parts = [{ ...receipt, conflicts: [], selected: [] }];
   for (const [field, items] of [['conflicts', conflicts], ['selected', selected]]) {
@@ -109,7 +121,8 @@ function deliveredPreferences({ answeredAt, context, entry }) {
       parts.at(-1)[field].pop();
       const next = { continues: 'preferences', conflicts: [], selected: [] };
       next[field].push(item);
-      if (parts.length === MAX_PREFERENCE_PARTS || !fits(next)) return tooMany;
+      if (!fits(next)) return tooMany(item.key);
+      if (parts.length === MAX_PREFERENCE_PARTS) return tooMany(null);
       parts.push(next);
     }
   }
@@ -233,8 +246,9 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       : { receipt: { status: 'unavailable', reason: 'no_task_entry_kept' }, parts: {} };
     const hold = preferenceHold(preferences.receipt);
     if (hold) {
-      const nextStep = !cached ? NO_ENTRY_NEXT_STEP
-        : preferences.receipt.omitted.truncated.includes('size_limit') ? TOO_MANY_NEXT_STEP : '';
+      const cut = preferences.receipt.omitted?.truncated ?? [];
+      const nextStep = !cached ? NO_ENTRY_NEXT_STEP : cut.includes('size_limit') ? tooManyNextStep(preferences.tooLarge)
+        : cut.includes('delivery_budget') ? NOT_WHOLE_NEXT_STEP : '';
       return { selected: { executorId: null, model: null, disposition: 'ask_user', conversationId: null,
         summary: `${hold.summary} ${nextStep}`.trim(), evidence: hold.evidence }, modelReceipt: null };
     }
@@ -253,7 +267,8 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     const call = judgmentRequest({ operation: ROUTING_OPERATION, scope,
       requestId: key.length <= REQUEST_ID_MAX ? key : sha256Bytes(Buffer.from(key)),
       evidenceVersion: sha256Bytes(Buffer.from(canonicalJson(data))), policyVersion: 'runner',
-      instructions: routingInstructions(null), schema: ROUTING_SELECTION_SCHEMA, data });
+      instructions: `${routingInstructions(null)}${preferences.parts.preferences_2 ? ` ${PARTS_RULE}` : ''}`,
+      schema: ROUTING_SELECTION_SCHEMA, data });
     refuseOversized(call);
     const result = await decide(call);
     if (!result.envelope) {
@@ -304,5 +319,24 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
         + 'The decision is queued for the host\'s Tonborg ledger and delivered when the host answers.' } });
   }
 
-  return { assess, outcome, close: () => { ledger.close(); usage?.close(); } };
+  // A task entry the host could not deliver whole (isWholeEntry): the rest is
+  // read now with the host's own reader, in the session that entered the task
+  // (the reader binds it), its pages joined in one revision as the host joins
+  // them (joinTaskPreferencePages), and kept for the project
+  // (wholePreferencesKey), where projectPreferences finds it. Nothing is kept
+  // unless the read is whole. read(input): read_task_preferences' answer.
+  async function completeEntry(answer, read) {
+    const value = resultValue(answer);
+    const token = value?.taskContextToken ?? value?.task_context_token;
+    const scope = { personalSpaceId: value?.context?.personal_space_id, personalProjectId: value?.context?.personal_project_id };
+    if (isWholeEntry(value) || !token || !scope.personalSpaceId || !scope.personalProjectId) return false;
+    const rest = await joinTaskPreferencePages((cursor) => read({ taskContextToken: token, ...(cursor ? { cursor } : {}) }));
+    if (!isWholeEntry(rest) || !Array.isArray(rest?.effective_preferences)) return false;
+    store.rememberAnswer(wholePreferencesKey(scope), 'read_task_preferences', envelope({
+      effective_preferences: rest.effective_preferences, active_conflicts: rest.active_conflicts ?? [],
+      scope_unknown: rest.scope_unknown ?? [], context: rest.context ?? value.context }));
+    return true;
+  }
+
+  return { assess, outcome, completeEntry, close: () => { ledger.close(); usage?.close(); } };
 }

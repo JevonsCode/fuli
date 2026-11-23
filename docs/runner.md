@@ -411,19 +411,28 @@ routing rules and earlier conversations live on the host and are not read here.
 The preferences go as the host's own judgment sends them
 (`src/judgment/preference-receipt.js`): each rule's key, scope, short text,
 authority and where an inherited one comes from, never its reasoning or
-attributes. The model port takes at most 20,000 characters per part and 64
-parts. A project's rules can be more than one part holds (70 rules of 200
-characters each already are), so every rule and conflict goes, in the host's
-order, across as many parts as it takes: `preferences`, then `preferences_2`
-and on, each saying it continues `preferences`. As on the host, Tonborg does
-not recommend when a rule may be missing: it answers `ask_user` without
-calling the model when no task of the project was entered on this computer
-while the host answered (so it keeps none of the host's preferences for it;
-evidence `preference_delivery:unavailable`), when the host's own read for that
-task entry was cut (its flags are kept with it), or when even eight parts
-cannot hold every rule (`preference_delivery:partial`). Each says what the
-person can do; removing `roles.tonborg` from `model-backends.json` on the
-runner always has the host judge instead. Earlier decisions are only feedback,
+attributes. They come from the task entry this computer kept for the
+project. A real project's entry is often over the host's 32 KB delivery limit,
+and the host then delivers it blocked (`preference_delivery.status: "blocked"`,
+`preferences_complete: false`) with part of the rules or none; the runner
+then reads the rest right away with the host's own reader
+(`read_task_preferences`, page by page in one revision, joined as the host
+joins them), in the same session that entered the task, as the reader
+requires, and keeps the whole set for the project. The model port takes at
+most 20,000 characters per part, and 70 rules of 200 characters already need
+more than one, so every rule and conflict goes, in the host's order, across as
+many parts as it takes, at most four: `preferences`, then `preferences_2` and
+on, each saying it continues `preferences`, and the model is told that the
+later parts' rules and conflicts apply as if listed in the first. As on the
+host, Tonborg does not recommend when a rule may be missing: it answers
+`ask_user` without calling the model when no task of the project was entered
+on this computer while the host answered (evidence
+`preference_delivery:unavailable`), when the kept entry was not delivered whole
+and its rest could not be read, when the host's own read for it was cut, or
+when four parts cannot hold every rule or a single rule is longer than a part
+(`preference_delivery:partial`, naming that rule). Each says what the person
+can do; removing `roles.tonborg` from `model-backends.json` on the runner
+always has the host judge instead. Earlier decisions are only feedback,
 so they are sent newest first as many as fit, and the rest counted
 (`feedbackNotSent`). A request still too large to
 send (an `executors.json` at its limits, say) is refused on the runner before

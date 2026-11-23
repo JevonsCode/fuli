@@ -14,9 +14,11 @@ const SOURCE_WINDOWS = { candidates_truncated: 'candidates', project_ancestors_t
 // applicable, global before project and Agent) and the ancestor window (64
 // projects). The conflict queue only annotates conflicts that are already
 // delivered with every alternative, so its overflow is reported, not held.
-// size_limit: a runner could not give its own model the rules whole
-// (src/runner/local-routing.js); the host never sets it.
-const RULE_WINDOWS = new Set(['candidates', 'project_ancestors', 'source', 'size_limit']);
+// size_limit: a runner could not give its own model the rules whole;
+// delivery_budget: the task entry a runner kept was not delivered whole and
+// it holds no whole read of the rest (src/runner/local-routing.js). The host
+// sets neither in a judgment receipt.
+const RULE_WINDOWS = new Set(['candidates', 'project_ancestors', 'source', 'size_limit', 'delivery_budget']);
 
 export async function readJudgmentPreferences(app, { personalProjectId, projectAgentId = null, taskScope = {} }) {
   const scope = { work_kind: taskScope.workKind ?? 'unknown', workflow: taskScope.workflow ?? 'unknown',

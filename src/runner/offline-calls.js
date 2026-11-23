@@ -247,17 +247,49 @@ export function deliveredAnswer(outboxId) {
 
 // The preferences the host last gave a task entry in this project, from any
 // of its folders, for Tonborg's judgment on this runner (local-routing.js,
-// which makes them compact as the host does): { answeredAt, entry, context }
-// or null; context carries what the host's read said it did not read in full.
+// which makes them compact as the host does): { answeredAt, context, whole,
+// entry } or null. context carries what the host's read said it did not read
+// in full. An entry the host could not deliver whole (isWholeEntry) is made
+// whole by the rest this computer read after it with the host's reader
+// (local-routing.js completeEntry), when it did; else whole is false.
 export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
   for (const { at, body } of store.taskEntries()) {
     const value = resultValue(body);
     const context = value?.context;
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
-    return { answeredAt: at, context, entry: { effective_preferences: value.effective_preferences ?? [],
-      active_conflicts: value.active_conflicts ?? [], scope_unknown: value.scope_unknown ?? [] } };
+    if (isWholeEntry(value)) return { answeredAt: at, context, whole: true, entry: entryPreferences(value) };
+    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId }));
+    const rest = read && read.at >= at ? resultValue(read.body) : null;
+    return rest && isWholeEntry(rest)
+      ? { answeredAt: read.at, context: rest.context ?? context, whole: true, entry: entryPreferences(rest) }
+      : { answeredAt: at, context, whole: false, entry: entryPreferences(value) };
   }
   return null;
+}
+
+// Whether a task entry, or a read of its preferences, holds every rule and
+// conflict. The host sends one over its delivery limit, or held back as
+// unsafe, blocked: preference_delivery.status 'blocked', preferences_complete
+// false, with only part of the rules (possibly none) and the rest counted in
+// preferences_omitted / active_conflicts_omitted — while its context may still
+// say nothing was cut.
+export function isWholeEntry(value) {
+  return Boolean(value) && value.preference_delivery?.status !== 'blocked' && value.preferences_complete !== false
+    && value.preferences_omitted === undefined && value.active_conflicts_omitted === undefined;
+}
+
+// Where this computer keeps a whole read of a project's preferences (completeEntry).
+export function wholePreferencesKey({ personalSpaceId, personalProjectId }) {
+  return `preferences:${personalSpaceId}:${personalProjectId}`;
+}
+
+export function isTaskEntry(tool) {
+  return TASK_ENTRY_TOOLS.has(tool);
+}
+
+function entryPreferences(value) {
+  return { effective_preferences: value.effective_preferences ?? [], active_conflicts: value.active_conflicts ?? [],
+    scope_unknown: value.scope_unknown ?? [] };
 }
 
 function folderEntry(value) {
@@ -287,7 +319,7 @@ function readOnly(tool) {
   try { return annotationsFor(tool).readOnlyHint; } catch { return false; }
 }
 
-function resultValue(result) {
+export function resultValue(result) {
   if (result?.structuredContent !== undefined) return result.structuredContent;
   try { return JSON.parse(result?.content?.find((item) => item.type === 'text')?.text ?? 'null'); } catch { return null; }
 }

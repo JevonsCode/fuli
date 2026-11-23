@@ -27,6 +27,10 @@ import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner
 import { ROUTING_LEDGER_FILE, RoutingLedger } from '../src/runner/routing-ledger.js';
 import { runRunnerMcp } from '../src/runner/runner-mcp.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
+import { createTaskPreferencePager } from '../src/graphiti/task-preference-pages.js';
+import { TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../src/mcp/preference-delivery.js';
+import { completePreferenceToolResult, successToolResult } from '../src/mcp/tool-result.js';
+import { deliveredPreferences } from '../src/runner/local-routing.js';
 import { sha256Bytes } from '../src/security/digest.js';
 
 // Tonborg's executor judgment on a runner (docs/runner.md, "Executor judgment
@@ -382,8 +386,9 @@ test('the runner lists assess_agent_action as it behaves here, beside its outcom
 // from 80 to 450 characters (about 200 on average), each with the reasoning
 // and attributes a task entry carries beside it; every fifth is inherited from
 // a parent project. Made-up words throughout.
-function realisticPreferences(count, { longest = 450 } = {}) {
-  const words = 'keep the change small, say what was checked, and ask before anything leaves this computer. ';
+function realisticPreferences(count, { longest = 450, chinese = false } = {}) {
+  const words = chinese ? '改动要小，说清检查了什么，任何东西离开这台电脑之前先问一声。'
+    : 'keep the change small, say what was checked, and ask before anything leaves this computer. ';
   return Array.from({ length: count }, (_, index) => {
     const chars = 80 + Math.round(((index * 37) % 100) / 99 * (longest - 80));
     return { preference_key: `habit-${index}`, preference_scope: index % 3 ? 'global' : 'project',
@@ -433,8 +438,70 @@ test('a project with as many preferences as a real one is judged with every rule
   assert.doesNotMatch(text, /several sessions where it mattered/, 'reasoning stays in FULI, as on the host');
 });
 
+test('a task entry over the host\'s delivery limit is read whole with the host\'s reader, and judged with every rule', async (t) => {
+  // As a real project's are: the entry is over 32 KB, so the host delivers it blocked, with none of the rules.
+  const preferences = realisticPreferences(75, { chinese: true });
+  const runner = await routingRunner(t, { preferences, conflicts: CONFLICTS, delivery: 'real', entered: false });
+  const entry = (await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } })).structuredContent;
+  assert.equal(entry.preference_delivery.status, 'blocked', 'the host could not deliver it whole');
+  assert.equal(entry.preferences_complete, false);
+
+  const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.isError, undefined, answer.content[0].text);
+  assert.equal(answer.structuredContent.selection.executorId, 'runner-node');
+  const reads = runner.calls.filter(({ input }) => input?.toolName === 'read_task_preferences');
+  assert.ok(reads.length > 1, 'the rest was read page by page');
+  assert.ok(reads.every(({ input }) => input.input.taskContextToken === 'host-token-1'), 'with the entry\'s own token');
+  const sent = sentPreferenceKeys(runner.model.requests[0]);
+  assert.deepEqual(sent.rules, preferences.map((rule) => rule.preference_key), 'every rule, none missing');
+  assert.deepEqual(sent.conflicts, CONFLICTS.map((conflict) => conflict.preference_key));
+  assert.match(runner.model.requests[0].messages.at(-1).content, /preferences_2, preferences_3 and so on continue preferences/,
+    'the model is told the later parts apply as the first');
+});
+
+test('a task entry the host could not deliver whole, whose rest was not read, stops the judgment', async (t) => {
+  // The host delivers the entry blocked and does not serve its reader here.
+  const runner = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'blocked' });
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  assert.equal(decision.disposition, 'ask_user', 'not judged with part of the rules, or none');
+  assert.deepEqual(decision.evidence, ['preference_delivery:partial']);
+  assert.match(decision.summary, /could not deliver this project's preferences whole/);
+  assert.equal(runner.model.requests.length, 0);
+});
+
+test('one rule longer than a part is named, and a part of exactly the limit still goes', () => {
+  const rule = (instruction) => ({ preference_key: 'habit-long', preference_scope: 'global', instruction, confirmation_status: 'confirmed' });
+  const deliver = (instruction) => deliveredPreferences({ answeredAt: '2026-01-01T00:00:00.000Z', context: {},
+    entry: { effective_preferences: [rule(instruction)] } });
+  const base = JSON.stringify(deliver('').parts.preferences).length;
+  const exact = deliver('x'.repeat(20_000 - base));
+  assert.equal(JSON.stringify(exact.parts.preferences).length, 20_000, 'a part of exactly 20,000 characters');
+  assert.equal(exact.receipt.status, 'complete');
+  // One more character and the first part is over: the rule goes on in a part of its own, still whole.
+  const next = deliver('x'.repeat(20_001 - base));
+  assert.equal(next.receipt.status, 'complete');
+  assert.equal(next.parts.preferences_2.selected[0].key, 'habit-long');
+  assert.ok(JSON.stringify(next.parts.preferences_2).length <= 20_000);
+  // A rule no part can hold is named.
+  const over = deliver('x'.repeat(20_000));
+  assert.deepEqual(over.parts, {});
+  assert.equal(over.tooLarge, 'habit-long', 'the rule that does not fit is named');
+  assert.deepEqual(over.receipt.omitted.truncated, ['size_limit']);
+});
+
+test('the rule too long for any part is named in what the person reads', async (t) => {
+  const preferences = [{ preference_key: 'habit-very-long', preference_scope: 'project', confirmation_status: 'confirmed',
+    instruction: 'a'.repeat(21_000) }];
+  const runner = await routingRunner(t, { preferences });
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  assert.equal(decision.disposition, 'ask_user');
+  assert.match(decision.summary, /Preference habit-very-long alone is longer than one part/);
+  assert.equal(runner.model.requests.length, 0);
+});
+
 test('rules too many even in parts stop the judgment here, as on the host, with no model call', async (t) => {
-  // Far past what eight evidence items hold even compact.
+  // Far past what four evidence items hold even compact.
   const runner = await routingRunner(t, { preferences: realisticPreferences(800, { longest: 450 }) });
   const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
   assert.equal(answer.isError, undefined, answer.content[0].text);
@@ -489,12 +556,13 @@ test('a request too large to send is refused here as what it is, and no model is
 async function routingRunner(t, { operations = ['executor_routing'], backends, executors, reply,
   projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }], preferences = [{ preference_key: 'answer-length',
     preference_scope: 'global', instruction: 'short answers', confirmation_status: 'confirmed' }], conflicts = [],
-  hostContext = {}, entered = true } = {}) {
+  hostContext = {}, entered = true, delivery = 'raw' } = {}) {
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-routing-')));
   const model = await fakeModel(reply);
   const host = deviceIdentity(await createDeviceCertificate());
   const store = new RunnerHostStore(':memory:');
   const calls = [];
+  const pager = createTaskPreferencePager();
   const judgment = createJudgmentService({ app: { config: { personal: { spaceId: SPACE } },
     listPersonalProjects: async () => projects }, openStore: () => new JudgmentStore() });
   const routes = createRunnerRoutes({ app: { judgment }, store, hostName: 'Host A', hostFingerprint: host.fingerprint,
@@ -505,10 +573,22 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
         .map((name) => ({ name, inputSchema: { type: 'object' } })) }));
       server.setRequestHandler(CallToolRequestSchema, (request) => {
         calls.push({ name: request.params.name, input: request.params.arguments });
-        const value = request.params.name === 'get_collaboration_preferences'
-          ? { effective_preferences: preferences, taskContextToken: 'host-token-1',
-            active_conflicts: conflicts, context: { personal_space_id: SPACE, personal_project_id: PROJECT, ...hostContext } }
-          : { outcome: 'recommend', decidedOn: 'host' };
+        const entry = { effective_preferences: preferences, taskContextToken: 'host-token-1', task_context_token: 'host-token-1',
+          checkpoint_required: true, agent_receipt: { markdown: 'receipt' }, active_conflicts: conflicts,
+          context: { personal_space_id: SPACE, personal_project_id: PROJECT, ...hostContext } };
+        const named = request.params.name === 'fuli_call' ? request.params.arguments?.toolName : request.params.name;
+        if (named === 'get_collaboration_preferences') {
+          // As the host delivers a task entry (create-mcp-server.js): through its 32 KB limit, when delivery is real.
+          return delivery === 'raw' ? { content: [{ type: 'text', text: JSON.stringify(entry) }], structuredContent: entry }
+            : successToolResult(entry, { limitBytes: TASK_PREFERENCE_RESULT_LIMIT_BYTES, itemLimit: 1000, preferenceContext: true });
+        }
+        if (named === 'read_task_preferences') {
+          if (delivery !== 'real') return { isError: true, content: [{ type: 'text', text: '{"code":"preferences_blocked"}' }] };
+          // The host's own pager over the whole set, page by page as read_task_preferences serves it.
+          return completePreferenceToolResult(pager.read({ ...entry, deferred_conflicts: [], preferences_complete: true,
+            preference_delivery: { status: 'complete' } }, { cursor: request.params.arguments?.input?.cursor }));
+        }
+        const value = { outcome: 'recommend', decidedOn: 'host' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
       return server;

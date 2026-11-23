@@ -24,7 +24,7 @@ import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer,
   offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
-  rememberAnswer, repeatable, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
+  isTaskEntry, rememberAnswer, repeatable, resultValue, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { ASSESS_ON_RUNNER, ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
@@ -382,11 +382,26 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     if (answer instanceof HostRefusal) return hostRefusedAnswer(answer.status, answer.reason);
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
+    routing.completeEntry(call.tool, answer, readHostPreferences);
     if (store.outbox().queued) void deliverSoon();
     // Task entry says where it was answered, so the client's AI never takes a
     // follower for a computer without a FULI (rec#144).
     return hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
   });
+
+  // read_task_preferences on the host, in this process's session (its reader
+  // binds the session that entered the task): by name where this profile lists
+  // it, else through fuli_call as the chat profile has it. Its answer's value;
+  // an absent or refusing host, or an error answer, throws.
+  async function readHostPreferences(input) {
+    const answer = await withHost((host) => host.callTool(toolProfile === 'chat'
+      ? { name: 'fuli_call', arguments: { toolName: 'read_task_preferences', input } }
+      : { name: 'read_task_preferences', arguments: input }, undefined, { timeout: CALL_TIMEOUT_MS }));
+    if (!answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN || answer.isError) {
+      throw new Error('The host did not give this task\'s preferences');
+    }
+    return resultValue(answer);
+  }
 
   // A listing or read the host answered; a refused session lists nothing, and a read says why.
   const listed = async (work) => {
@@ -432,6 +447,7 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
 // is gone. The judgment's modules load on the first call that needs them.
 function runnerRouting({ dataDir, store, fetchImpl }) {
   let local = null;
+  let completing = Promise.resolve();
   const loaded = () => local ??= import('./local-routing.js')
     .then(({ createLocalRouting }) => createLocalRouting({ dataDir, store, ...(fetchImpl ? { fetchImpl } : {}) }));
   return {
@@ -443,9 +459,20 @@ function runnerRouting({ dataDir, store, fetchImpl }) {
       : { tools: [], descriptions: {} }),
     async call(tool, input, context) {
       const routing = await loaded();
+      // A whole read of the preferences still under way waits first: it is what this judgment needs.
+      if (tool === ASSESS_TOOL) await completing;
       return tool === OUTCOME_TOOL ? routing.outcome(input, context) : routing.assess(input, context);
     },
+    // A task entry answered online that the host could not deliver whole: while
+    // this runner judges executors itself, the rest is read now, in this same
+    // session (local-routing.js completeEntry). The answer is not held for it.
+    completeEntry(tool, answer, read) {
+      if (!isTaskEntry(tool) || routingRoleState(dataDir).state !== 'on') return;
+      completing = Promise.all([completing, loaded().then((routing) => routing.completeEntry(answer, read))])
+        .catch(() => {});
+    },
     async close() {
+      await completing;
       if (local) (await local).close();
     }
   };
