@@ -352,8 +352,9 @@ export function createNativeGraphServices({
     return spec;
   }
 
-  // A dump or load works on a database's files: an interrupted one is never taken over (neo4j-lifecycle-lock.js).
-  async function adminDatabase(spec, args) { return operation('admin', () => adminDatabaseUnlocked(spec, args)); }
+  // A dump reads a database's files and a load overwrites them: the lock names
+  // which (args[1]), and an interrupted one is never taken over (neo4j-lifecycle-lock.js).
+  async function adminDatabase(spec, args) { return operation(args[1], () => adminDatabaseUnlocked(spec, args)); }
 
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);

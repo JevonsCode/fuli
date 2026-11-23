@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -120,20 +120,44 @@ test('a start after a killed one takes over the abandoned lock and runs', async 
 test('a holder gone with a switch journal waiting: recovery, never a reason to remove the lock', async (t) => {
   const root = runtimeDir(t);
   await acquireNeo4jLifecycleLock(root, { operation: 'update', identify: holderIdentity });
-  writeFileSync(join(root, 'neo4j-transaction.json'), JSON.stringify({ action: 'update', phase: 'switching' }));
+  writeFileSync(join(root, 'neo4j-transaction.json'), JSON.stringify({ action: 'update', phase: 'switching',
+    previous: { neo4jVersion: '5.26.0' },
+    next: { neo4jVersion: '5.26.28', previousNeo4jAsset: { graphBackup: '/fuli-data/backups/graph/before-neo4j-5.26.28-2026-11-22T17-00-00-000Z' } } }));
   assert.equal(await releaseAbandonedNeo4jLifecycleLock(root, holderGone), false);
   await assert.rejects(withNativeAssetOperation({ nativeRuntimeDir: root }, {}, async () => 'started', { identity: holderGone }),
     (error) => {
       assert.equal(error.code, 'native_recovery_needed');
-      assert.deepEqual([error.startupFailure.operation, error.startupFailure.phase], ['update', 'switching']);
+      assert.deepEqual([error.startupFailure.operation, error.startupFailure.phase, error.startupFailure.upgrade], ['update', 'switching', true]);
       return true;
     });
   const text = await formatStartupFailure((await neo4jLifecycleLockError(root, holderGone)).startupFailure);
-  assert.match(text, /有一次数据库更新没做完/);
-  assert.match(text, /知识数据还在原来的位置/);
+  assert.match(text, /有一次数据库更新（5\.26\.0 → 5\.26\.28）没做完/);
+  // What the code can show: nothing copied or replaced; the newer database may have opened it.
+  assert.match(text, /FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们/);
+  assert.match(text, /升级前的图备份在 \/fuli-data\/backups\/graph\/before-neo4j-5\.26\.28-/);
   assert.match(text, /不要删除数据库维护锁或 neo4j-transaction\.json/);
-  assert.doesNotMatch(text, /unlock|删掉|没有记录是谁加的/);
+  assert.doesNotMatch(text, /unlock|删掉|没有记录是谁加的|graph-backups|没有被覆盖/);
   assert.equal((await releaseStaleNeo4jLifecycleLock({ paths: { nativeRuntimeDir: root }, identity: holderGone })).reason, 'recovery_needed');
+  // An uninstall's journal: only programs were being removed.
+  writeFileSync(join(root, 'neo4j-transaction.json'), JSON.stringify({ action: 'uninstall', phase: 'removing-assets', previous: {} }));
+  assert.match(await formatStartupFailure((await neo4jLifecycleLockError(root, holderGone)).startupFailure),
+    /卸载只删数据库程序文件，知识数据文件没有被改动/);
+});
+
+test('an interrupted dump, load or update says what it can have changed, and the exact manual steps', async () => {
+  const base = { code: 'native_lifecycle_lock', holder: 'gone', since: '2026-11-22T17:24:35.000Z', pid: 9, lockPath: '/x/native-runtime/.neo4j-lifecycle.lock' };
+  const load = await formatStartupFailure({ ...base, operation: 'load' });
+  assert.match(load, /数据库可能只写入了一半/);
+  assert.match(load, /FULI 目前没有命令能解除这把锁/);
+  assert.match(load, /fuli graph import --input/);
+  assert.doesNotMatch(load, /没有被改动/);
+  const dump = await formatStartupFailure({ ...base, operation: 'dump' });
+  assert.match(dump, /导出只读数据库，知识数据没有被改动/);
+  assert.match(dump, /删掉 \/x\/native-runtime\/\.neo4j-lifecycle\.lock 这个文件夹/);
+  const update = await formatStartupFailure({ ...base, operation: 'update' });
+  assert.match(update, /停在改动知识数据之前/);
+  assert.match(update, /\/x\/native-runtime\/neo4j-assets 里没有被 \/x\/native-runtime\/manifest\.json 引用的 jvs-a-\*/);
+  for (const text of [load, dump, update]) assert.doesNotMatch(text, /fuli graph runtime unlock/, 'unlock refuses these locks');
 });
 
 test('the three holders of a lock read differently, each with its own next step', async () => {
@@ -268,7 +292,65 @@ test('fuli graph runtime unlock runs the same checks and says why it kept the lo
   const deps = (result) => ({ platform: 'darwin', write: line => written.push(line),
     resolvePaths: () => ({ dataDir: '/x/fuli-data', nativeRuntimeDir: '/x/fuli-data/native-runtime' }), releaseLock: async () => result });
   assert.deepEqual(await runNativeRuntimeCommand(['unlock', '--yes'], deps({ released: true })), { status: 'released', exitCode: 0 });
-  const kept = await runNativeRuntimeCommand(['unlock', '--yes'], deps({ released: false, reason: 'holder_running', pid: 9 }));
-  assert.deepEqual(kept, { status: 'kept', reason: 'holder_running', exitCode: 1 });
-  assert.match(written.at(-1), /进程 9 还在用这把锁，锁没有动/);
+  // A kept lock fails the command, with its reason on the line a desktop client reads.
+  await assert.rejects(runNativeRuntimeCommand(['unlock', '--yes'], deps({ released: false, reason: 'holder_running', pid: 9 })), (error) => {
+    assert.match(error.message, /进程 9 还在用这把锁，锁没有动/);
+    assert.deepEqual(readStartupFailure(startupFailureLine(error)).failure, { code: 'lock_kept', released: false, reason: 'holder_running', pid: 9 });
+    return true;
+  });
+});
+
+test('a take-over that judged an old lock leaves a new lock where it is; the path is never empty', async (t) => {
+  const root = runtimeDir(t);
+  await acquireNeo4jLifecycleLock(root, { operation: 'start', identify: holderIdentity });
+  // While this take-over judges the old holder gone, the old lock goes and a new one, another holder's, takes its place.
+  const swapping = { ...holderGone, state: () => {
+    rmSync(join(root, LOCK), { recursive: true, force: true });
+    mkdirSync(join(root, LOCK));
+    writeFileSync(join(root, LOCK, 'owner'), 'token-new');
+    return 'gone';
+  } };
+  assert.equal(await releaseAbandonedNeo4jLifecycleLock(root, swapping), false);
+  assert.equal(readFileSync(join(root, LOCK, 'owner'), 'utf8'), 'token-new');
+  assert.deepEqual(readdirSync(root).filter(name => name.startsWith('.neo4j-lifecycle')), [LOCK], 'nothing moved aside, no take-over left');
+});
+
+test('only one take-over runs at a time; one a killed taker left is cleared', async (t) => {
+  const root = runtimeDir(t);
+  await acquireNeo4jLifecycleLock(root, { operation: 'start', identify: holderIdentity });
+  mkdirSync(join(root, '.neo4j-lifecycle.takeover'));
+  writeFileSync(join(root, '.neo4j-lifecycle.takeover', 'pid'), '4242');
+  const busy = { ...holderGone, state: pid => pid === 4242 ? 'running' : 'gone' };
+  assert.equal(await releaseAbandonedNeo4jLifecycleLock(root, busy), false, 'another take-over runs');
+  assert.ok(existsSync(join(root, LOCK)));
+  assert.equal(await releaseAbandonedNeo4jLifecycleLock(root, holderGone), true, 'its taker has ended');
+  assert.equal(existsSync(join(root, '.neo4j-lifecycle.takeover')), false);
+});
+
+test('a new lock clears what a killed process left while preparing or moving one', async (t) => {
+  const root = runtimeDir(t);
+  for (const name of [`${LOCK}.new-old`, `${LOCK}.stale-old`, `${LOCK}.new-recent`]) mkdirSync(join(root, name));
+  const long = new Date(Date.now() - 20 * 60_000);
+  utimesSync(join(root, `${LOCK}.new-old`), long, long);
+  utimesSync(join(root, `${LOCK}.stale-old`), long, long);
+  const lock = await acquireNeo4jLifecycleLock(root, { operation: 'start', identify: holderIdentity });
+  assert.deepEqual(readdirSync(root).filter(name => name.startsWith(LOCK)).sort(), [LOCK, `${LOCK}.new-recent`]);
+  await lock.release();
+});
+
+test('an old lock is not released while neo4j-assets holds a directory the manifest does not use', async (t) => {
+  const kept = releaseCase(t);
+  mkdirSync(join(kept.root, 'neo4j-assets', 'jvs-a-1111', 'neo4j-community-5.26.28'), { recursive: true });
+  mkdirSync(join(kept.root, 'neo4j-assets', 'jvs-a-2222', 'neo4j-community-5.26.0'), { recursive: true });
+  writeFileSync(join(kept.root, 'manifest.json'), JSON.stringify({
+    neo4jHome: join(kept.root, 'neo4j-assets', 'jvs-a-2222', 'neo4j-community-5.26.0') }));
+  assert.deepEqual(await kept.run(), { released: false, reason: 'unfinished_assets', directory: join('neo4j-assets', 'jvs-a-1111') });
+  assert.match(lockReleaseRefusal({ reason: 'unfinished_assets', directory: 'neo4j-assets/jvs-a-1111' }), /没装完的数据库程序/);
+  assert.match(lockReleaseRefusal({ reason: 'asset_operation', operation: 'load' }), /一次数据库导入留下的，这个命令不解除它/);
+});
+
+test('FULI\'s own processes count as running only as this user\'s', async () => {
+  const { isOwnProcessRunning } = await import('../src/local-runtime/processes.js');
+  assert.equal(isOwnProcessRunning(process.pid), true);
+  assert.equal(isOwnProcessRunning(-1), false);
 });

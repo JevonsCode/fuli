@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
-import { join } from 'node:path';
+import { basename, join, sep } from 'node:path';
 
 import { processState } from '../local-runtime/processes.js';
 import { readJsonFile } from '../storage/json-file.js';
@@ -19,6 +19,7 @@ import { NATIVE_DOWNLOAD_TIMEOUT_MS } from './resumable-download.js';
 // else stays for a person, and the error says which case it is.
 
 const LOCK = '.neo4j-lifecycle.lock';
+const TAKEOVER = '.neo4j-lifecycle.takeover';
 const JOURNAL = 'neo4j-transaction.json';
 // Operations that change no Neo4j assets: an interrupted one leaves nothing half done.
 const SERVICE_OPERATIONS = new Set(['start', 'stop']);
@@ -52,6 +53,7 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = ow
   } finally {
     await rm(prepared, { recursive: true, force: true });
   }
+  await removeLeftovers(root);
   const owner = join(path, 'owner');
   async function assertHeld() { if (await readFile(owner, 'utf8') !== token) throw new Error('Neo4j lifecycle lock ownership changed.'); }
   return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
@@ -89,10 +91,62 @@ async function holderState(holder, identity) {
 
 const IDENTITY = { state: processState, startTime: processStartTime, matches: processMatchesCommand };
 
+// A process killed while preparing a lock or taking one over leaves its
+// directory behind (`.new-*`, `.stale-*`); a later lock clears those old
+// enough that no live process can still be using them.
+const LEFTOVER_AGE_MS = 10 * 60_000;
+
+async function removeLeftovers(root, now = Date.now()) {
+  let names;
+  try { names = await readdir(root); } catch { return; }
+  for (const name of names.filter(name => name.startsWith(`${LOCK}.new-`) || name.startsWith(`${LOCK}.stale-`))) {
+    try {
+      if (now - (await lstat(join(root, name))).mtimeMs >= LEFTOVER_AGE_MS) await rm(join(root, name), { recursive: true, force: true });
+    } catch { /* gone already, or kept for the next lock */ }
+  }
+}
+
+// One taker at a time: a directory of its own, made before the lock is judged
+// again and moved, so a lock replaced since it was judged is never moved aside.
+// One a killed taker left is cleared when its process has ended. Answers false
+// while another take-over runs.
+async function withTakeover(root, identity, action) {
+  const path = join(root, TAKEOVER);
+  for (let attempt = 0; ; attempt += 1) {
+    try { await mkdir(path, { mode: 0o700 }); break; }
+    catch (error) {
+      if (error.code !== 'EEXIST' || attempt > 0) {
+        if (error.code === 'EEXIST') return false;
+        throw error;
+      }
+      let pid = null, age = 0;
+      try { pid = Number(readFileSync(join(path, 'pid'), 'utf8')); age = Date.now() - statSync(path).mtimeMs; } catch { /* just made */ }
+      const ended = Number.isInteger(pid) && pid > 0 ? identity.state(pid) === 'gone' : age >= LEFTOVER_AGE_MS;
+      if (!ended) return false;
+      await rm(path, { recursive: true, force: true });
+    }
+  }
+  try {
+    await writeFile(join(path, 'pid'), String(process.pid), { mode: 0o600 });
+    return await action();
+  } finally {
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
 // Moves the lock aside under a unique name, checks it is the one judged, then
-// removes it; a lock replaced in between is put back. Answers whether it was removed.
-async function takeOver(root, owner) {
+// removes it. Under the take-over directory the lock is read once more right
+// before it is moved: one replaced since it was judged is left where it is.
+// Answers whether it was removed.
+async function takeOver(root, owner, identity) {
+  return withTakeover(root, identity, () => moveAside(root, owner));
+}
+
+async function moveAside(root, owner) {
   const path = lockPath(root), aside = join(root, `${LOCK}.stale-${randomUUID()}`);
+  let current = null;
+  try { current = readFileSync(join(path, 'owner'), 'utf8'); } catch (error) { if (error.code === 'ENOENT' && !existsSync(path)) return false; }
+  if (current !== owner) return false;
   try { await rename(path, aside); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
   let moved = null;
   try { moved = await readFile(join(aside, 'owner'), 'utf8'); } catch { /* an older lock without an owner file */ }
@@ -111,7 +165,7 @@ export async function releaseAbandonedNeo4jLifecycleLock(root, identity = IDENTI
   const lock = readLock(root);
   if (!lock?.holder || existsSync(journalPath(root)) || !SERVICE_OPERATIONS.has(lock.holder.operation)) return false;
   if (await holderState(lock.holder, identity) !== 'gone') return false;
-  return takeOver(root, lock.owner);
+  return takeOver(root, lock.owner, identity);
 }
 
 // Why the lock, or a switch journal, keeps a start from running: the facts a
@@ -124,10 +178,14 @@ export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
     // Which switch it was and how far it got (neo4j-lifecycle.js writes it before
     // changing anything): 'switching' an update or rollback, 'removing-assets' an uninstall.
     const journal = readJsonFile(journalPath(root), null) ?? {};
+    const fromVersion = text(journal.previous?.neo4jVersion), toVersion = text(journal.next?.neo4jVersion);
+    // The backup an upgrade takes before it writes the journal (neo4j-lifecycle.js).
+    const backupPath = text(journal.next?.previousNeo4jAsset?.graphBackup);
     return Object.assign(new Error('A native Neo4j switch did not finish and needs recovery before services start.'), {
       code: 'native_recovery_needed', startupFailure: { code: 'native_recovery_needed', ...facts,
-        operation: typeof journal.action === 'string' ? journal.action : facts.operation,
-        phase: typeof journal.phase === 'string' ? journal.phase : null, journalPath: journalPath(root) }
+        operation: text(journal.action) ?? facts.operation, phase: text(journal.phase),
+        fromVersion, toVersion, upgrade: Boolean(fromVersion && toVersion && fromVersion !== toVersion),
+        backupName: backupPath ? basename(backupPath) : null, backupPath, journalPath: journalPath(root) }
     });
   }
   const holder = await holderState(lock?.holder ?? null, identity);
@@ -138,6 +196,8 @@ export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
     code: 'native_lifecycle_lock', startupFailure: { code: 'native_lifecycle_lock', holder, ...facts, command }
   });
 }
+
+const text = value => typeof value === 'string' && value ? value : null;
 
 // The program's own name from a command line ("java", "node").
 function commandName(command) {
@@ -166,6 +226,11 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
       return { released: false, reason: 'services_running', pid: entry.pid };
     }
   }
+  // An old-format lock may be an interrupted update's: its half-installed
+  // candidate sits in neo4j-assets, named by neither the manifest's Neo4j nor
+  // the one it keeps for a rollback.
+  const unfinished = unreferencedAssets(paths);
+  if (unfinished) return { released: false, reason: 'unfinished_assets', directory: unfinished };
   // Another FULI command for this data: its CLI or a desktop controller. The
   // console server, MCP processes and hooks name the data too but take no lock.
   const processes = await listProcesses();
@@ -177,7 +242,18 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
   if (ageMs < RELEASE_AFTER_MS) {
     return { released: false, reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
   }
-  return await takeOver(root, lock.owner) ? { released: true } : { released: false, reason: 'changed' };
+  return await takeOver(root, lock.owner, identity) ? { released: true } : { released: false, reason: 'changed' };
+}
+
+// The first neo4j-assets/jvs-a-* directory the manifest does not use, or null.
+function unreferencedAssets(paths) {
+  const root = join(paths.nativeRuntimeDir, 'neo4j-assets');
+  let names;
+  try { names = readdirSync(root).filter(name => name.startsWith('jvs-a-')); } catch { return null; }
+  const manifest = readJsonFile(paths.nativeRuntimeManifestPath ?? join(paths.nativeRuntimeDir, 'manifest.json'), null) ?? {};
+  const used = [manifest.neo4jHome, manifest.previousNeo4jAsset?.home].filter(home => typeof home === 'string');
+  const unused = names.find(name => !used.some(home => home === join(root, name) || home.startsWith(`${join(root, name)}${sep}`)));
+  return unused ? join('neo4j-assets', unused) : null;
 }
 
 function processList() {
