@@ -278,3 +278,27 @@ test('a task keeps what the person asked of it at entry, and an older record say
   assert.equal(Object.hasOwn(sent[1], 'checkpoint_request'), false);
   assert.equal(taskRecord(providerRecord()).checkpointRequest, undefined);
 });
+
+// An older Provider still running after an upgrade refuses the field it does
+// not know (extra='forbid'); the entry begins without it, so the task reads
+// as one kept before it and needs the checkpoint. Any other refusal stands.
+test('a Provider that predates checkpoint_request begins the task without it', async () => {
+  const sent = [];
+  const refusal = field => new ProviderRequestError('Extra inputs are not permitted', { status: 422,
+    validationErrors: [{ field, message: 'Extra inputs are not permitted' }] });
+  const provider = { beginTaskContext: async request => {
+    sent.push(request);
+    if (Object.hasOwn(request, 'checkpoint_request')) throw refusal('checkpoint_request');
+    return providerRecord({ token: request.token });
+  } };
+  const registry = new ProviderTaskContextRegistry(provider, 'space-1');
+  const task = await registry.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', entryVia: 'hook',
+    checkpointRequest: 'remember' });
+  assert.equal(sent.length, 2);
+  assert.equal(Object.hasOwn(sent[1], 'checkpoint_request'), false);
+  assert.equal(sent[1].token, sent[0].token);
+  assert.equal(task.checkpointRequest, undefined);
+  const other = new ProviderTaskContextRegistry({ beginTaskContext: async () => { throw refusal('entry_via'); } }, 'space-1');
+  await assert.rejects(other.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', checkpointRequest: 'remember' }),
+    error => error.status === 422);
+});

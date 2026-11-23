@@ -13,7 +13,7 @@ export class ProviderTaskContextRegistry {
 
   async begin(input) {
     const scope = taskPreferenceScope(input.preferenceScope);
-    const task = taskRecord(await this.provider.beginTaskContext({
+    const task = taskRecord(await beginWithOlderProvider(this.provider, {
       personal_space_id: this.personalSpaceId,
       personal_project_id: input.personalProjectId ?? null,
       project_agent_id: input.projectAgentId ?? null,
@@ -165,6 +165,25 @@ export class ProviderTaskContextRegistry {
       })) } : {}),
       ...(agentMemory ? { agent_memory: agentMemory } : {})
     }));
+  }
+}
+
+// After an upgrade the hook runs the new code at once, while the Provider
+// that is already running is the older one until it restarts, and it refuses
+// a field it does not know (extra='forbid'). checkpoint_request only lets a
+// later read replay the entry's checkpoint decision: a task begun without it
+// reads as one kept before it, which needs the checkpoint (taskCheckpointReplay).
+// So an entry that asks to remember or update something is not refused for it;
+// it begins without the field. Any other refusal stands.
+async function beginWithOlderProvider(provider, request) {
+  try {
+    return await provider.beginTaskContext(request);
+  } catch (error) {
+    const unknown = error instanceof ProviderRequestError && error.status === 422 && error.validationErrors.length > 0
+      && error.validationErrors.every(({ field }) => field === 'checkpoint_request');
+    if (!unknown || request.checkpoint_request === undefined) throw error;
+    const { checkpoint_request: _request, ...older } = request;
+    return provider.beginTaskContext(older);
   }
 }
 
