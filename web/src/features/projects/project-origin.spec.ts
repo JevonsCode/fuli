@@ -50,6 +50,6 @@ describe('project origin', () => {
     const expected = [fallbackId('d'), fallbackId('c'), fallbackId('a'), fallbackId('b')]
     expect(pickerOrder(input).map(item => item.project_id)).toEqual(expected)
     expect(pickerOrder([...input].reverse()).map(item => item.project_id)).toEqual(expected)
-    expect(projectDisplayName(input[1]!)).toMatch(/^临时项目 #cccccccc · /)
+    expect(projectDisplayName({ ...input[1]!, profile: { name: '会话项目 / Conversation project' } })).toMatch(/^临时项目 #cccccccc · /)
   })
 })
