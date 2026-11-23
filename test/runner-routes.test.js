@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { runRoutesCommand } from '../src/cli/routes-command.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
-import { callScope, followsAnything, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
+import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
@@ -28,8 +28,8 @@ function dataDirectory(t, { paired = true } = {}) {
 
 test('a computer with no routes owns everything it has, and follows nothing', (t) => {
   const dataDir = dataDirectory(t, { paired: false });
-  assert.equal(followsAnything(dataDir), false);
-  const routes = new RoutesStore(path.join(dataDir, 'runner', 'routes.sqlite'));
+  const routes = openRoutes(dataDir);
+  assert.deepEqual(routes.all(), [], 'nothing is routed');
   assert.equal(routes.owner('global'), LOCAL_OWNER);
   assert.equal(routes.owner('project:example.test/team/widgets'), LOCAL_OWNER);
   routes.close();
@@ -43,7 +43,6 @@ test('a runner paired by an earlier version follows its host for everything, wit
     [['global', hostOwner(HOST.fingerprint)], ['default', hostOwner(HOST.fingerprint)]]);
   assert.equal(routes.owner('project:example.test/team/widgets'), hostOwner(HOST.fingerprint), 'default covers every project');
   routes.close();
-  assert.equal(followsAnything(dataDir), true);
   const runner = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   assert.equal(runner.outbox().queued, 1, 'nothing waiting is lost on the way');
   runner.close();
@@ -138,12 +137,12 @@ test('joining a host is 「follow everything」 there; a scope this computer own
 
 test('leaving the host deletes the routes to it, so this computer owns everything it has again', async (t) => {
   const dataDir = dataDirectory(t);
-  openRoutes(dataDir).close();
-  assert.equal(followsAnything(dataDir), true);
+  const before = openRoutes(dataDir);
+  assert.equal(before.all().length, 2);
+  before.close();
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   store.delivered('waiting-1');
   store.close();
   await runRunnerCommand(['leave', '--data-dir', dataDir], { write: () => {} });
   assert.equal(existsSync(path.join(dataDir, 'runner', 'routes.sqlite')), false);
-  assert.equal(followsAnything(dataDir), false);
 });

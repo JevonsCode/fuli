@@ -30,10 +30,6 @@ export function callScope(projectPath, { repositoryRoot = findRepositoryRoot, re
   return `project:${key || `${PATH_ID}${root}`}`;
 }
 
-// The computer that owns this call's scope: `local`, or `host:<fingerprint>`.
-export function callOwner(routes, projectPath, options) {
-  return routes.owner(callScope(projectPath, options));
-}
 
 // A data directory's routes, created from an earlier version's pairing when it
 // has none (docs/runner-roles-design.md §10): a computer that was a runner
@@ -55,18 +51,6 @@ export function openRoutes(dataDir) {
   }
 }
 
-// Whether this computer sends anything to another one. The MCP entry, the
-// lifecycle hooks and the desktop start ask it before loading anything of the
-// follower: a computer that follows nothing loads none of these modules and is
-// a plain FULI, exactly as before.
-export function followsAnything(dataDir) {
-  const routes = openRoutes(dataDir);
-  try {
-    return routes.followsAnything();
-  } finally {
-    routes.close();
-  }
-}
 
 // Where one call goes, decided before anything is sent. A task token names the
 // computer that entered that task, so its checkpoint goes back there whatever

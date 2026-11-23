@@ -86,13 +86,6 @@ export class RoutesStore {
     return row?.owner ?? LOCAL_OWNER;
   }
 
-  // Whether anything at all is routed to another computer: what decides
-  // whether this computer loads the follower's modules at all.
-  followsAnything() {
-    if (this.#missing()) return false;
-    return Boolean(this.db.prepare(`SELECT 1 FROM routes WHERE owner <> ? LIMIT 1`).get(LOCAL_OWNER));
-  }
-
   // Sets one scope's owner. `local` takes a scope back to this computer.
   set(scope, owner) {
     this.db.prepare(`INSERT INTO routes(scope, owner, updated_at) VALUES(?, ?, ?)
