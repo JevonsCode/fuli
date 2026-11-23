@@ -2,6 +2,7 @@ import hashlib
 import json
 
 from fastapi import HTTPException
+from neo4j.exceptions import ConstraintError
 
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
@@ -22,8 +23,9 @@ from .project_agent_models import (
 )
 from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
+from .project_agent_name_history import former_name, name_history
 from .store_transactions import query_store_transaction
-from .store_project_agent_naming import with_person_name, with_rename_suggestion
+from .store_project_agent_naming import lost_name_race, name_identity, with_person_name, with_rename_suggestion
 from .store_project_agent_occupation import occupation_from_agent_node
 from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
@@ -35,6 +37,11 @@ from .system_agents import (
     ensure_system_agents,
 )
 from .system_hr_identity import LEGACY_HR_AGENT_ID, merge_legacy_hr, resolve_hr_alias
+
+
+# How often an identity write is named again after losing its name to a
+# concurrent write (graph/24's uniqueness rule) before it gives up.
+NAME_RACE_ATTEMPTS = 3
 
 
 class StoreProjectAgents:
@@ -133,7 +140,50 @@ class StoreProjectAgents:
                 space,
                 request.personal_project_id,
             )
-        request = await with_person_name(self, request, recruitment_id=recruitment_id)
+        given = request
+        for attempt in range(NAME_RACE_ATTEMPTS):
+            request = await with_person_name(self, given, recruitment_id=recruitment_id)
+            try:
+                records, updated_at = await self._write_project_agent(request, recruitment_id)
+                break
+            except ConstraintError as error:
+                # Another write took this name between the check and the commit:
+                # name again from what is stored now (a given name is refused then).
+                if not lost_name_race(error):
+                    raise
+                if attempt == NAME_RACE_ATTEMPTS - 1:
+                    raise HTTPException(409, 'agent_name_taken: another Agent took this name at the same '
+                                             'time; try again') from None
+        if not records:
+            if request.occupation:
+                await require_active_occupations(self, request.personal_space_id,
+                    [request.occupation.role, *request.occupation.tags])
+            raise HTTPException(
+                status_code=409,
+                detail=await self._upsert_denial(request, stable_uuid(
+                    self.settings.provider_id, request.personal_space_id, 'project-agent', request.agent_id)),
+            )
+        if request.personal_project_id:
+            if not await self._upsert_legacy_assignment(request, updated_at):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        'archived Project Agents require a dedicated '
+                        'restore operation'
+                    ),
+                )
+        return await self.get_project_agent(
+            actor,
+            request.personal_space_id,
+            request.personal_project_id,
+            request.agent_id,
+            include_inactive_project_assignment=bool(
+                request.personal_project_id
+            ),
+        )
+
+    async def _write_project_agent(self, request: ProjectAgentUpsert, recruitment_id: str | None):
+        """The identity write itself, with its shown name's identity (graph/24)."""
         node_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -185,6 +235,8 @@ class StoreProjectAgents:
                 agent.cleanup_eligible = $cleanup_eligible,
                 agent.recruitment_id = coalesce(
                   agent.recruitment_id, $recruitment_id),
+                agent.display_name_space_id = $display_name_space_id,
+                agent.display_name_key = $display_name_key,
                 agent.updated_at = $updated_at
             FOREACH (_ IN CASE WHEN $occupation_role IS NOT NULL
                 AND ($occupation_explicit OR agent.occupation_role IS NULL) THEN [1] ELSE [] END |
@@ -218,33 +270,9 @@ class StoreProjectAgents:
             cleanup_eligible=request.profile.cleanup_eligible,
             recruitment_id=recruitment_id,
             updated_at=updated_at,
+            **name_identity(request.personal_space_id, request.agent_id, request.profile),
         )
-        if not records:
-            if request.occupation:
-                await require_active_occupations(self, request.personal_space_id,
-                    [request.occupation.role, *request.occupation.tags])
-            raise HTTPException(
-                status_code=409,
-                detail=await self._upsert_denial(request, node_id),
-            )
-        if request.personal_project_id:
-            if not await self._upsert_legacy_assignment(request, updated_at):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        'archived Project Agents require a dedicated '
-                        'restore operation'
-                    ),
-                )
-        return await self.get_project_agent(
-            actor,
-            request.personal_space_id,
-            request.personal_project_id,
-            request.agent_id,
-            include_inactive_project_assignment=bool(
-                request.personal_project_id
-            ),
-        )
+        return records, updated_at
 
     async def _upsert_denial(self, request: ProjectAgentUpsert, node_id: str) -> str:
         """The one rule that kept the profile upsert from writing this Agent."""
@@ -1096,6 +1124,7 @@ class StoreProjectAgents:
             if profile.status == 'archived'
             else (tasks[0]['status'] if tasks else 'idle')
         )
+        history = name_history(raw.get('name_history_json'))
         observed_client_rows = row.get('observed_client_rows')
         if projection_project_id is not None:
             observed_values = [
@@ -1153,6 +1182,8 @@ class StoreProjectAgents:
                 if raw.get('archived_at') else None
             ),
             archive_reason=raw.get('archive_reason'),
+            name_history=history,
+            former_name=former_name(history, now_utc()),
             created_at=native_datetime(raw['created_at']),
             updated_at=native_datetime(raw['updated_at']),
         )

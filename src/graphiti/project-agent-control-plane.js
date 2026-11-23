@@ -33,6 +33,7 @@ import {
   archiveTestProjectAgent as archiveTestProjectAgentWorkflow,
   updateProjectAgentOccupation as updateProjectAgentOccupationWorkflow,
   renameProjectAgent as renameProjectAgentWorkflow,
+  listAgentNameChanges as listAgentNameChangesWorkflow,
   endProjectAgentAssignment as endProjectAgentAssignmentWorkflow,
   getExecutor as getExecutorWorkflow,
   getExecutorRoutingRule as getExecutorRoutingRuleWorkflow,
@@ -232,6 +233,11 @@ export class ProjectAgentControlPlaneApplication {
   async renameProjectAgent(input) {
     this.#assertSpace(input.personalSpaceId);
     return renameProjectAgentWorkflow(this, input);
+  }
+
+  async listAgentNameChanges(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listAgentNameChangesWorkflow(this, input);
   }
 
   async updateProjectAgentOccupation(input) {

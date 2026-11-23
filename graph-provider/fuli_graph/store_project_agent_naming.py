@@ -7,10 +7,19 @@ so the caller can choose another (in the person's naming style, when set).
 A recruitment's proposed name is checked when it is proposed; one taken by
 the time the Agent is provisioned falls back to a generated name. The naming
 rules themselves live in project_agent_names.py.
+
+The check reads the space's names before the write; the graph holds the rule
+itself (graph/24): every Agent of the person stores the identity key of its
+shown name, unique per space (name_identity), so two writes racing for one
+name cannot both commit. FULI's own roles store none: their names, built-in
+ones included, are reserved by the check (renamed_profile).
+
+A refusal names who is called that and where they work, and offers free names.
 """
 import json
 
 from fastapi import HTTPException
+from neo4j.exceptions import ConstraintError
 
 from .name_identity import identity_key
 from .project_agent_names import (
@@ -42,18 +51,70 @@ async def space_agent_names(store, personal_space_id: str) -> dict[str, tuple[st
 
 
 def _taken(names, agent_id):
+    """Every name another Agent is called by: its shown name, and a built-in
+    role's own name, which it still answers to after a rename."""
     return {identity_key(agent_display_name(other, name, nickname))
-            for other, (name, nickname) in names.items() if other != agent_id}
+            for other, (name, nickname) in names.items() if other != agent_id} | {
+        identity_key(SYSTEM_PROFILES[other]().name) for other in SYSTEM_PROFILES if other != agent_id}
 
 
-def _name_taken(alternatives):
+def name_identity(personal_space_id: str, agent_id: str, profile) -> dict:
+    """The stored identity of the Agent's shown name, which graph/24 keeps
+    unique per space; none for FULI's own roles."""
+    if agent_id in SYSTEM_NAMED:
+        return {'display_name_space_id': None, 'display_name_key': None}
+    shown = agent_display_name(agent_id, profile.name, profile.display_name)
+    return {'display_name_space_id': personal_space_id, 'display_name_key': identity_key(shown)}
+
+
+def lost_name_race(error: Exception) -> bool:
+    """Whether a write failed because another Agent took the same name meanwhile."""
+    return isinstance(error, ConstraintError) and 'display_name_key' in str(error)
+
+
+async def name_taken(store, personal_space_id, names, agent_id, name, alternatives) -> HTTPException:
+    """The refusal of a name someone else is called by: who, the projects they
+    work in, and free names. The console reads both lists from this exact
+    wording (web agent-rename.ts)."""
+    key = identity_key(name)
+    holders = [other for other, (role, nickname) in names.items()
+               if other != agent_id and identity_key(agent_display_name(other, role, nickname)) == key]
+    holders += [other for other in SYSTEM_PROFILES if other != agent_id and other not in holders
+                and identity_key(SYSTEM_PROFILES[other]().name) == key]
+    projects = await _working_projects(store, personal_space_id, holders) if holders else {}
+    used_by = ' | '.join(
+        f'{_shown(names, other)} ({other})' + (f' in {", ".join(projects[other])}' if projects.get(other) else '')
+        for other in holders)
     return HTTPException(409, 'agent_name_taken: another Agent in this personal space already uses this name; '
-                              f'free names: {", ".join(alternatives)}. Choose one or propose another.')
+                              + (f'used by: {used_by}; ' if used_by else '')
+                              + f'free names: {", ".join(alternatives)}. Choose one or propose another.')
+
+
+def _shown(names, agent_id):
+    if agent_id in names:
+        return agent_display_name(agent_id, *names[agent_id])
+    return SYSTEM_PROFILES[agent_id]().name
+
+
+async def _working_projects(store, personal_space_id, agent_ids) -> dict[str, list[str]]:
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-[:CONTAINS_PROJECT]->
+              (project:FuliPersonalProject)-[:HAS_PROJECT_AGENT_ASSIGNMENT]->
+              (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(agent:FuliProjectAgent)
+        WHERE agent.agent_id IN $agent_ids
+        RETURN agent.agent_id AS agent_id,
+               collect(DISTINCT coalesce(project.name, project.project_id)) AS projects
+        ''',
+        personal_space_id=personal_space_id, agent_ids=agent_ids, routing_='r',
+    )
+    return {row['agent_id']: sorted(row['projects']) for row in records}
 
 
 async def with_person_name(store, request, *, recruitment_id=None):
-    """The upsert with the nickname it stores: generated or numbered for a new
-    Agent, kept when an update omits it, refused when it duplicates another's."""
+    """The upsert with the nickname it stores: generated for a new Agent (or
+    its role name when that reads as a person and is free), kept when an
+    update omits it, refused when it duplicates another's."""
     if request.agent_id in SYSTEM_NAMED:
         return request
     names = await space_agent_names(store, request.personal_space_id)
@@ -64,7 +125,8 @@ async def with_person_name(store, request, *, recruitment_id=None):
             nickname = new_agent_display_name(request.agent_id, profile.name, profile.display_name, taken)
         except NameTaken as error:
             if recruitment_id is None:
-                raise _name_taken(error.alternatives) from None
+                raise await name_taken(store, request.personal_space_id, names, request.agent_id,
+                                       profile.display_name, error.alternatives) from None
             nickname = unique_nickname(request.agent_id, taken)
     elif profile.display_name is None:
         nickname = names[request.agent_id][1]
@@ -72,7 +134,8 @@ async def with_person_name(store, request, *, recruitment_id=None):
         nickname = profile.display_name
         current = agent_display_name(request.agent_id, *names[request.agent_id])
         if identity_key(nickname) != identity_key(current) and identity_key(nickname) in taken:
-            raise _name_taken(free_nicknames(request.agent_id, taken))
+            raise await name_taken(store, request.personal_space_id, names, request.agent_id, nickname,
+                                   free_nicknames(request.agent_id, taken))
     return request.model_copy(update={'profile': profile.model_copy(update={'display_name': nickname})})
 
 
@@ -85,7 +148,8 @@ async def require_free_proposed_name(store, personal_space_id, agent_id, profile
     try:
         new_agent_display_name(agent_id, profile.name, profile.display_name, _taken(names, agent_id))
     except NameTaken as error:
-        raise _name_taken(error.alternatives) from None
+        raise await name_taken(store, personal_space_id, names, agent_id, profile.display_name,
+                               error.alternatives) from None
 
 
 async def with_rename_suggestion(store, record):
@@ -104,14 +168,14 @@ def renamed_profile(names, agent_id: str, profile: dict, display_name: str | Non
     Every Agent can be renamed, FULI's own roles included; identity stays the
     agent_id. A role keeps its built-in name as a second name people may still
     call it by, so no other Agent may take that name, and None gives the role
-    its built-in name back. Any other Agent always has a name of its own.
+    its built-in name back. Any other Agent always has a name of its own. A
+    name someone else is called by raises NameTaken with free alternatives.
     """
     if display_name is None:
         if agent_id not in SYSTEM_PROFILES:
             raise HTTPException(422, 'agent_name_required: only a built-in role can go back to its own name')
         return {key: value for key, value in profile.items() if key != 'display_name'}
-    taken = _taken(names, agent_id) | {identity_key(SYSTEM_PROFILES[other]().name)
-                                       for other in SYSTEM_PROFILES if other != agent_id}
+    taken = _taken(names, agent_id)
     if identity_key(display_name) in taken:
-        raise _name_taken(free_nicknames(agent_id, taken))
+        raise NameTaken(free_nicknames(agent_id, taken))
     return {**profile, 'display_name': display_name}

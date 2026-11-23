@@ -8,10 +8,12 @@ A new constraint, index or Fuli label is a new entry here with the next version.
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from . import graph_format_agent_names as agent_names
 from . import graph_format_backfills as backfills
 from . import graph_format_builtin_occupations as builtin_occupations
 from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
+    AGENT_NAME_RULES,
     BASELINE_LABELS,
     BASELINE_RULES,
     CONTROL_PLANE_RULES,
@@ -194,6 +196,18 @@ GRAPH_MIGRATIONS = (
         'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
         "and a new conversation's opening words as its title; earlier conversations name client and session from their journal",
         rules=CONVERSATION_SESSION_RULES, labels=CONVERSATION_SESSION_LABELS,
+    ),
+    _records(
+        'graph/23-unique-agent-names', 23, 'rewrite',
+        'Agents of one space that share a name: the one with the most work keeps it, the others get a '
+        'new name and keep the old one in their name history (原名)',
+        agent_names.pending_unique_agent_names, agent_names.apply_unique_agent_names,
+        agent_names.UNIQUE_AGENT_NAME_JOURNAL,
+    ),
+    GraphMigration(
+        'graph/24-agent-name-identity', 24, 'schema',
+        "each Agent's shown name is unique in its space: the graph refuses a second Agent with it",
+        rules=AGENT_NAME_RULES,
     ),
 )
 

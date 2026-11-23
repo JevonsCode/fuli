@@ -147,6 +147,9 @@ NODE_FIELDS = {
         'after_degree': 'integer?', 'after_hash': 'string?', 'apply_id': 'string',
         'b_agent_id': 'string?', 'b_agent_type': 'string?', 'b_aggregate_id': 'string?',
         'b_confirmation_authority': 'string?', 'b_decision_revision': 'integer?',
+        # graph/23-unique-agent-names
+        'b_display_name_key': 'string?', 'b_display_name_space_id': 'string?',
+        'b_name_history_json': 'string?', 'b_profile_json': 'string?',
         # graph/12-builtin-occupations
         'b_description_en': 'string?', 'b_description_zh': 'string?', 'b_name_en': 'string?',
         'b_name_zh': 'string?', 'b_occupation_role': 'string?', 'b_occupation_updated_at': 'datetime?',
@@ -308,9 +311,11 @@ NODE_FIELDS = {
         'agent_id': 'string?', 'agent_type': 'project_agent_type?', 'archive_reason': 'string?',
         'archived_at': 'datetime?', 'canonical_agent_id': 'string?', 'capabilities': 'string[]?',
         'cleanup_eligible': 'boolean?', 'created_at': 'datetime|string?',
+        'display_name_key': 'string?', 'display_name_space_id': 'string?',
         'employee_number': 'integer?', 'employee_number_space_id': 'string?', 'id': 'string?',
         'legacy_agent_ids': 'string[]?', 'memory_scope': 'memory_scope?', 'merged_at': 'datetime?',
-        'name': 'string?', 'occupation_emoji': 'string?', 'occupation_migration_id': 'string?',
+        'name': 'string?', 'name_history_json': 'string?', 'occupation_emoji': 'string?',
+        'occupation_migration_id': 'string?',
         'occupation_recruitment_id': 'string?', 'occupation_role': 'string?',
         'occupation_source': 'string?', 'occupation_tags': 'string[]?',
         'occupation_updated_at': 'datetime?', 'profile_json': 'string?',

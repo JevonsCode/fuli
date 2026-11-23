@@ -284,6 +284,28 @@ class ProjectAgentAssignmentReplaceResult(StrictModel):
     replacement: ProjectAgentAssignmentRecord
 
 
+class ProjectAgentNameChange(StrictModel):
+    """One name an Agent was called until ``until`` (project_agent_name_history.py)."""
+    name: str = Field(min_length=1, max_length=160)
+    until: datetime
+    # A person renamed it, or FULI did because another Agent had the same name.
+    reason: Literal['renamed', 'duplicate_name']
+    # For duplicate_name: who kept the name, and why this Agent gave it up.
+    kept_by_agent_id: str | None = Field(default=None, max_length=128)
+    gave_way: Literal['built_in_role', 'dismissed', 'test', 'person_named', 'less_work', 'less_recent',
+                      'later'] | None = None
+
+
+class ProjectAgentRenamed(StrictModel):
+    """One Agent FULI renamed because another had its name, while that is recent:
+    what the console lists in one place after graph/23."""
+    agent_id: str
+    display_name: str
+    status: ProjectAgentStatus
+    change: ProjectAgentNameChange
+    kept_by_name: str | None = None
+
+
 class ProjectAgentRecord(StrictModel):
     agent_id: str
     employee_number: str | None = None
@@ -315,6 +337,10 @@ class ProjectAgentRecord(StrictModel):
     # A free person-like nickname, offered (never applied) when the shown name
     # reads as a job title; read-time only, not stored.
     name_suggestion: str | None = None
+    # The names it was called before, oldest first, and the latest one while
+    # the rename is recent (project_agent_name_history.py); read-time only.
+    name_history: list[ProjectAgentNameChange] = Field(default_factory=list)
+    former_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

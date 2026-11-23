@@ -248,6 +248,10 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/project-agent-name-changes' && request.method === 'GET') {
+    sendJson(response, 200, await app.listAgentNameChanges({ personalSpaceId: url.searchParams.get('personalSpaceId') }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-pages' && request.method === 'GET') {
     const limit = url.searchParams.get('limit');
     sendJson(response, 200, await app.listProjectAgentPage({

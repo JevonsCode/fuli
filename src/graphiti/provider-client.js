@@ -207,6 +207,9 @@ export class GraphitiProviderClient {
     }
     return this.#request(`/v1/project-agent-pages?${query}`);
   }
+  listAgentNameChanges(personalSpaceId) {
+    return this.#request(`/v1/project-agent-name-changes?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
+  }
   getProjectAgent(personalSpaceId, personalProjectId, agentId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);

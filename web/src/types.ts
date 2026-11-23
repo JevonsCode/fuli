@@ -574,6 +574,16 @@ export interface AgentOccupation {
   updatedAt: string
 }
 
+/** One name an Agent was called until `until`: renamed by the person, or by FULI because another Agent had it. */
+export interface AgentNameChange {
+  name: string
+  until: string
+  reason: 'renamed' | 'duplicate_name'
+  keptByAgentId: string | null
+  /** Why this Agent gave the name up (duplicate_name only). */
+  gaveWay: 'built_in_role' | 'dismissed' | 'test' | 'person_named' | 'less_work' | 'less_recent' | 'later' | null
+}
+
 export interface ProjectAgentRecord {
   agentId: string
   /** Fixed roles keep the occupation their manifest gives them. */
@@ -581,6 +591,10 @@ export interface ProjectAgentRecord {
   employeeNumber?: string | null
   /** A free person-like name the Provider offers when the shown name reads as a job title. */
   nameSuggestion?: string | null
+  /** The name it had until a recent rename (30 days), shown as 「原名」. */
+  formerName?: string | null
+  /** The names it was called before, oldest first. */
+  nameHistory?: AgentNameChange[]
   legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null

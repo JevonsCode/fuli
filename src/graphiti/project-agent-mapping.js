@@ -75,6 +75,10 @@ export function projectAgentRecord(value) {
     Object.hasOwn(profile, 'display_name'));
   copyOptional(result, 'nameSuggestion', value.name_suggestion,
     Object.hasOwn(value, 'name_suggestion'));
+  // The names it was called before (graph/23, renames) and the latest one while recent.
+  copyOptional(result, 'formerName', value.former_name, Object.hasOwn(value, 'former_name'));
+  copyOptional(result, 'nameHistory', (value.name_history ?? []).map(projectAgentNameChange),
+    Object.hasOwn(value, 'name_history'));
   copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
     Object.hasOwn(value, 'legacy_agent_ids'));
   copyOptional(result, 'employeeNumber', value.employee_number,
@@ -1256,4 +1260,15 @@ function withoutUndefined(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined)
   );
+}
+
+// One Agent FULI renamed because another had its name (GET /v1/project-agent-name-changes).
+export function agentRenamed(value) {
+  return { agentId: value.agent_id, displayName: value.display_name, status: value.status,
+    change: projectAgentNameChange(value.change), keptByName: value.kept_by_name ?? null };
+}
+
+function projectAgentNameChange(change) {
+  return { name: change.name, until: change.until, reason: change.reason,
+    keptByAgentId: change.kept_by_agent_id ?? null, gaveWay: change.gave_way ?? null };
 }
