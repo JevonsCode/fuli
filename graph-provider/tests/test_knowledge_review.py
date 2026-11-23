@@ -849,3 +849,16 @@ class StoreStub:
             'kind': 'personal',
             'group_id': 'personal-group',
         }
+
+
+def test_a_relationship_is_reviewed_by_its_fact_never_by_its_type():
+    from fuli_graph.knowledge_review import _review_title
+    relation = {'item_id': 'edge-1', 'item_kind': 'relationship', 'title': 'RESOLVED_BY',
+                'content': 'The synthetic outage   was resolved by a restart.'}
+    assert _review_title(relation) == 'The synthetic outage was resolved by a restart.'
+    long = {**relation, 'content': 'x' * 300}
+    assert len(_review_title(long)) == 120 and _review_title(long).endswith('…')
+    assert _review_title({**relation, 'content': ''}) == 'RESOLVED_BY', 'no fact: keep what there is'
+    entity = {'item_id': 'entity-1', 'item_kind': 'entity', 'title': 'FULI', 'content': 'A synthetic entity.'}
+    assert _review_title(entity) == 'FULI'
+    assert _review_title({'item_id': 'entity-2', 'item_kind': 'entity', 'title': None}) == 'entity-2'

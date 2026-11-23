@@ -2,6 +2,7 @@ import { ApiError } from '@/api/client'
 import { t } from '@/i18n'
 import { knowledgePath } from '@/router/paths'
 import type { KnowledgeVersionStatus } from '@/types'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // rec#20: one knowledge item exactly as the Provider read it back, opened from
 // a turn receipt's link. Payload types and the labels and requests built from
@@ -199,7 +200,10 @@ export function versionFromPeekId(value: string): Pick<ItemVersion, 'item_kind' 
   return (kind === 'entity' || kind === 'relationship') && id ? { item_kind: kind, item_id: id } : null
 }
 
-const projectName = (project: ScopeProject) => project.name || project.id
+// A temporary project comes with no name (graph/23): it is named by its number, in the console's words.
+const projectName = (project: ScopeProject) => projectDisplayName({
+  project_id: project.id, scope_type: project.temporary ? 'temporary' : undefined, profile: { name: project.name ?? '' },
+}) || project.id
 
 // The scope it applies to now; undecided is a separate mark, never a content status.
 export function scopeLabel(scope: ItemScope) {
@@ -208,7 +212,7 @@ export function scopeLabel(scope: ItemScope) {
     case 'global': return t('knowledgeQuickEdit.scope.global')
     case 'projects': return t('knowledgeQuickEdit.scope.projects', { names })
     case 'agent': return t('knowledgeQuickEdit.scope.agent', { agent: scope.agent_name || scope.agent_id || '', project: names })
-    case 'temporary': return t('knowledgeQuickEdit.scope.temporary')
+    case 'temporary': return names || t('knowledgeQuickEdit.scope.temporary')
     default: return t('knowledgeQuickEdit.scope.unknown')
   }
 }

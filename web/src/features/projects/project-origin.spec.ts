@@ -20,11 +20,12 @@ describe('project origin', () => {
     expect(isFormalProject({ ...project('old', 'Old'), profile: { name: 'Old', lifecycle: 'archived' } })).toBe(false)
   })
 
-  it('names fallback projects by when they were last used so they can be told apart', () => {
+  it('names a temporary project in the console\'s words, by its number and last use, never by a generated name', () => {
     const name = projectDisplayName(project(fallbackId('b'), '会话项目 / Conversation project', '2026-10-17T07:20:00Z'))
-    expect(name).toMatch(/^会话项目 · /)
+    expect(name).toMatch(/^临时项目 #bbbbbbbb · /)
     expect(name).not.toContain('Conversation project')
-    expect(projectDisplayName(project(fallbackId('c'), '会话项目 / Conversation project'))).toBe('会话项目')
+    expect(projectDisplayName(project(fallbackId('c'), '会话项目 / Conversation project'))).toBe('临时项目 #cccccccc')
+    expect(projectDisplayName({ ...project('synthetic-scope', ''), scope_type: 'temporary' })).toMatch(/^临时项目 #/)
     expect(projectDisplayName(project('fuli', 'Fuli console'))).toBe('Fuli console')
   })
 
@@ -49,6 +50,6 @@ describe('project origin', () => {
     const expected = [fallbackId('d'), fallbackId('c'), fallbackId('a'), fallbackId('b')]
     expect(pickerOrder(input).map(item => item.project_id)).toEqual(expected)
     expect(pickerOrder([...input].reverse()).map(item => item.project_id)).toEqual(expected)
-    expect(projectDisplayName(input[1]!)).toMatch(/^会话项目 · /)
+    expect(projectDisplayName(input[1]!)).toMatch(/^临时项目 #cccccccc · /)
   })
 })

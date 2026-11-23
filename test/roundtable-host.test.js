@@ -17,6 +17,8 @@ test('FULI hosts Roundtable with its Provider records in the port shapes', async
   const calls = [];
   const app = {
     config: { personal: { spaceId: 'space-1' } },
+    // The person reads FULI in English: names FULI writes itself follow it.
+    flaMenuSettings: () => ({ enabled: true, language: 'en-US' }),
     listProjectAgents: async input => { calls.push(['agents', input]); return [{ agentId: 'lead', profile: { status: 'active' } }]; },
     taskContextRegistry: { context: async (token, client) => ({ token, client }) },
     projectPathResolver: path => path === '/work/app' ? { status: 'matched', personalProjectId: 'app' } : { status: 'unmatched' },
@@ -40,7 +42,7 @@ test('FULI hosts Roundtable with its Provider records in the port shapes', async
   assert.deepEqual(calls.at(-1), ['sessions', { personalSpaceId: 'space-1', agentId: 'lead', personalProjectId: 'app', limit: 5 }]);
   // Only the project's own repository identifies it to paired devices; a reference never does.
   assert.deepEqual(await host.listProjects(), [{ projectId: 'app', name: 'App', temporary: false, sessionOnly: false, archived: false,
-    repositories: ['example.test/team/app'] }, { projectId: 'tmp', name: null, temporary: true, sessionOnly: false, archived: true, repositories: [] }]);
+    repositories: ['example.test/team/app'] }, { projectId: 'tmp', name: 'Temporary project', temporary: true, sessionOnly: false, archived: true, repositories: [] }]);
   assert.equal(await host.projectLeadId('app'), 'lead');
   assert.equal(await host.projectForPath('/work/app'), 'app');
   assert.equal(await host.projectForPath('/elsewhere'), null);

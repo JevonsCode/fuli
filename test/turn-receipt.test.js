@@ -52,7 +52,9 @@ test('each entry is one line with its real content, scope, weight basis, tags, s
       weight: { percent: 100, basis: { confirmation_status: 'confirmed', confirmed_by_person: true,
         qualified_use_count: 4, distinct_task_count: 2, source_count: 2, negative_evidence_count: 0 } } }),
     entry({ item_id: 'item-5', category: 'fact', item_kind: 'relationship',
-      scope: { kind: 'temporary', projects: [{ id: 'temporary-x', name: '临时会话', temporary: true }], status: 'undetermined' } })
+      // A temporary project has no stored name (graph/23): the receipt names it by its number.
+      scope: { kind: 'temporary', projects: [{ id: `temporary-${'a'.repeat(64)}`, name: null, temporary: true }],
+        status: 'undetermined' } })
   ]);
   const receipt = await readTurnReceipt(app, saved());
   assert.deepEqual(reads, [{ personal_space_id: 'synthetic-space', episode_ids: ['episode-1'] }]);
@@ -66,9 +68,9 @@ test('each entry is one line with its real content, scope, weight basis, tags, s
   assert.match(lines[1], /^- 更新 经验「Retry the flaky import once」｜项目 Alpha、Beta｜.*｜#imports｜/);
   assert.match(lines[2], /判断.*｜FLA Nova（Alpha）｜.*｜你明确说的·待确认｜/);
   assert.match(lines[3], /规则类.*｜权重100%（你已确认）｜.*｜Agent推断·你已确认｜/);
-  assert.match(lines[4], /事实.*｜临时会话项目·范围待确定｜/);
+  assert.match(lines[4], /事实.*｜临时项目 #aaaaaaaa·范围待确定｜/);
   const fields = lines[4].split('｜');
-  assert.equal(fields[1], '临时会话项目·范围待确定', 'scope pending is a scope state');
+  assert.equal(fields[1], '临时项目 #aaaaaaaa·范围待确定', 'scope pending is a scope state');
   assert.equal(fields[4], 'Agent推断·待确认', 'content confirmation is a separate state');
   for (const line of lines) assert.match(line, ITEM_LINK, 'each link opens that item, not the knowledge home');
 });
@@ -179,7 +181,9 @@ function checkpointFixture({ captureEnabled = true, readable = true } = {}) {
           item_id: `id-${item.key}`, content: `stored: ${item.summary}`, category: item.aspect === 'taste' ? 'taste' : 'fact',
           content_source: item.source,
           scope: item.project ? { kind: item.project.startsWith('temporary-') ? 'temporary' : 'projects',
-            projects: [{ id: item.project, name: item.project }], status: item.scopeStatus ?? 'set' }
+            projects: [item.project.startsWith('temporary-')
+              ? { id: item.project, name: null, temporary: true } : { id: item.project, name: item.project }],
+            status: item.scopeStatus ?? 'set' }
             : { kind: 'global', projects: [], status: 'set' } }))), unchanged_count: 0 };
       } } };
   const begin = () => registry.begin({ sessionId: 'native-session', turnId: `turn-${registry.tokens.size}`,
@@ -211,7 +215,7 @@ test('a saved turn shows every item read back from the Provider after the identi
     'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
   assert.ok(lines.every(line => line.includes('你明确说的·待确认')), 'the user asked for these; still pending');
   assert.match(byContent['stored: Lead with the conclusion'], /｜个人全局｜/);
-  assert.match(byContent['stored: Prefer short status lines'], /｜临时会话项目·范围待确定｜/,
+  assert.match(byContent['stored: Prefer short status lines'], /｜临时项目 #[0-9a-f]{8}·范围待确定｜/,
     'an unsure scope waits undecided, never global');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'the reply carried it; the next entry has nothing to deliver');
   assert.equal([...registry.receipts.values()][0].state, 'delivered');

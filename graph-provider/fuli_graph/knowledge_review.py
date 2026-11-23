@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -692,6 +693,20 @@ def _scope_key(scope: str, personal_project_id: str | None) -> str:
     return f'{scope}:{personal_project_id}' if personal_project_id else scope
 
 
+# A relationship's stored name is its type (RESOLVED_BY, RELATES_TO): a code,
+# not something a person can judge. Its fact is the sentence they read.
+_RELATION_CODE = re.compile(r'^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$')
+_TITLE_LIMIT = 120
+
+
+def _review_title(row: dict[str, Any]) -> str:
+    title = row.get('title') or ''
+    if row.get('item_kind') == 'relationship' and _RELATION_CODE.match(title) and row.get('content'):
+        content = ' '.join(str(row['content']).split())
+        return content if len(content) <= _TITLE_LIMIT else content[:_TITLE_LIMIT - 1] + '…'
+    return title or row['item_id']
+
+
 def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
     project_ids = sorted({
         value
@@ -714,7 +729,7 @@ def _normalize_item_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         'item_id': row['item_id'],
         'item_kind': row['item_kind'],
-        'title': row.get('title') or row['item_id'],
+        'title': _review_title(row),
         'content': row.get('content') or '',
         'profile_aspect': row.get('profile_aspect'),
         'preference_scope': row.get('preference_scope'),
