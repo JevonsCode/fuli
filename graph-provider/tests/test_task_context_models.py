@@ -125,5 +125,11 @@ def test_task_context_begin_keeps_what_the_person_asked_of_the_task():
     assert TaskContextBegin.model_validate(payload).model_dump(mode='json')['checkpoint_request'] is None
     for request in ('remember', 'update'):
         assert TaskContextBegin.model_validate({**payload, 'checkpoint_request': request}).checkpoint_request == request
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as refused:
         TaskContextBegin.model_validate({**payload, 'checkpoint_request': 'keep'})
+    assert [error['type'] for error in refused.value.errors()] == ['literal_error']
+    # What the node side retries without the field: a refusal of a field the
+    # Provider does not know, which a refused value is not.
+    with pytest.raises(ValidationError) as unknown:
+        TaskContextBegin.model_validate({**payload, 'synthetic_unknown_field': 'x'})
+    assert [error['type'] for error in unknown.value.errors()] == ['extra_forbidden']

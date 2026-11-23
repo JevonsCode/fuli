@@ -170,17 +170,18 @@ export class ProviderTaskContextRegistry {
 
 // After an upgrade the hook runs the new code at once, while the Provider
 // that is already running is the older one until it restarts, and it refuses
-// a field it does not know (extra='forbid'). checkpoint_request only lets a
-// later read replay the entry's checkpoint decision: a task begun without it
-// reads as one kept before it, which needs the checkpoint (taskCheckpointReplay).
-// So an entry that asks to remember or update something is not refused for it;
-// it begins without the field. Any other refusal stands.
+// a field it does not know (extra='forbid': error type extra_forbidden).
+// checkpoint_request only lets a later read replay the entry's checkpoint
+// decision: a task begun without it reads as one kept before it, which needs
+// the checkpoint (taskCheckpointReplay). So an entry that asks to remember or
+// update something is not refused for it; it begins without the field. Any
+// other refusal stands, a refused value of the field included.
 async function beginWithOlderProvider(provider, request) {
   try {
     return await provider.beginTaskContext(request);
   } catch (error) {
     const unknown = error instanceof ProviderRequestError && error.status === 422 && error.validationErrors.length > 0
-      && error.validationErrors.every(({ field }) => field === 'checkpoint_request');
+      && error.validationErrors.every(({ field, type }) => field === 'checkpoint_request' && type === 'extra_forbidden');
     if (!unknown || request.checkpoint_request === undefined) throw error;
     const { checkpoint_request: _request, ...older } = request;
     return provider.beginTaskContext(older);

@@ -284,8 +284,8 @@ test('a task keeps what the person asked of it at entry, and an older record say
 // as one kept before it and needs the checkpoint. Any other refusal stands.
 test('a Provider that predates checkpoint_request begins the task without it', async () => {
   const sent = [];
-  const refusal = field => new ProviderRequestError('Extra inputs are not permitted', { status: 422,
-    validationErrors: [{ field, message: 'Extra inputs are not permitted' }] });
+  const refusal = (field, type = 'extra_forbidden') => new ProviderRequestError('Extra inputs are not permitted', { status: 422,
+    validationErrors: [{ field, message: 'Extra inputs are not permitted', type }] });
   const provider = { beginTaskContext: async request => {
     sent.push(request);
     if (Object.hasOwn(request, 'checkpoint_request')) throw refusal('checkpoint_request');
@@ -301,4 +301,14 @@ test('a Provider that predates checkpoint_request begins the task without it', a
   const other = new ProviderTaskContextRegistry({ beginTaskContext: async () => { throw refusal('entry_via'); } }, 'space-1');
   await assert.rejects(other.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', checkpointRequest: 'remember' }),
     error => error.status === 422);
+  // A Provider that knows the field but refuses its value is not silently
+  // answered without it.
+  let calls = 0;
+  const known = new ProviderTaskContextRegistry({ beginTaskContext: async () => {
+    calls++;
+    throw refusal('checkpoint_request', 'literal_error');
+  } }, 'space-1');
+  await assert.rejects(known.begin({ sessionId: 'logical-session', sourceApplication: 'claude_code', checkpointRequest: 'remember' }),
+    error => error.validationErrors[0].type === 'literal_error');
+  assert.equal(calls, 1);
 });
