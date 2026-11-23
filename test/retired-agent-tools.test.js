@@ -20,7 +20,8 @@ const RETIRED = new Map([
     'The space recruitment policy was removed; use get_project_agent_coordination_policy or update_project_agent_coordination_policy.']),
   ['record_workflow_transition_observation',
     'Workflow observations were removed; propose repeated steps with propose_agent_workflow.'],
-  ['recommend_next_workflow_steps', 'Workflow step recommendations were removed; use list_workflow_candidates.'],
+  ['recommend_next_workflow_steps', 'Workflow step recommendations were removed; propose repeated steps with propose_agent_workflow.'],
+  ['list_workflow_candidates', 'Learned workflow candidates were removed (nothing fed them); propose repeated steps with propose_agent_workflow.'],
   ...['publish_personal_project', 'list_project_releases', 'delete_public_project', 'subscribe_public_project',
     'unsubscribe_public_project', 'create_project_relation', 'list_project_relations', 'review_project_relation',
     'list_personal_review_queue', 'review_personal_draft', 'list_project_review_queue', 'review_project_proposal']
