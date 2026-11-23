@@ -422,11 +422,20 @@ decisions waiting for the host, deleted once delivered (one the host refused
 for good stays listed); and, when its Tonborg chooses executors, its decisions
 and their outcomes.
 
-**Nothing here expires with time** (rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」).
+**Nothing here is deleted because it is old** (rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」).
 An answer is replaced when the host answers that call again; everything kept goes when the host
 revokes this computer, when it joins another host, or at `fuli runner leave`. A follower that was
 away from its host for a season still has the preferences it last read, and a checkpoint the host
 refused stays listed until the person has dealt with it.
+
+The cache has a size instead of an age: at most 5000 answers or 64 MB. Past either, the answers
+used longest ago go first; an answer used lately stays however old it is. `/local` and
+`fuli runner status` say how much is kept against those bounds.
+
+A task token given out while the host is away lasts 30 days. It is not cached content: it names a
+task in progress that the host never saw, and a task not continued for a month is not one anyone
+continues, so a checkpoint under it would be replayed into a task context long gone. A checkpoint
+queued under such a token keeps its folder in the outbox and is delivered as before.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops
@@ -461,9 +470,10 @@ backup: `runner-host` 1 → 2 adds `runners.device_name`, 2 → 3 makes the
 `replays` table again with its key per runner and the pending state (a
 `replace-table` step: beta.1's replay records are not kept, as only an entry
 still waiting on a runner is delivered again under its id); `runner` 1 → 2
-adds `host.revoked_at` and 2 → 3 adds `host.last_seen_at`, when this computer
-last reached its host, which the console and `fuli status` show as the last
-sync. Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
+adds `host.revoked_at`, 2 → 3 adds `host.last_seen_at` (when the host last
+answered anything this computer asked, shown as 「上次连上」) and 3 → 4 adds
+`answers.used_at` (when a kept answer was last used, so the cache lets go of the
+answers used longest ago). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or

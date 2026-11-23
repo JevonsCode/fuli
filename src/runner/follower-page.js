@@ -1,5 +1,5 @@
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
-import { followerLine, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
 // `127.0.0.1:<console port>` opens on a computer that follows another one. It
@@ -55,6 +55,7 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
     <tbody>${status.capabilities.map(capabilityRow).join('')}</tbody>
   </table>
   <p class="note">${escape(SAME_NETWORK_LIMIT.zh)}<br><span class="en">${escape(SAME_NETWORK_LIMIT.en)}</span></p>
+  ${status.cache ? `<p class="note">${escape(keptLine(status.cache).zh)}<br><span class="en">${escape(keptLine(status.cache).en)}</span></p>` : ''}
   <h2>还没送到主机的记录 <span class="en">Waiting for the host</span>
     <button type="button" data-retry>现在重试 / Retry now</button></h2>
   <p data-outcome class="note" hidden></p>

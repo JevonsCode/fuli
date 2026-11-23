@@ -26,6 +26,18 @@ const KNOWN_ADDRESSES = 16;
 export const RUNNER_FILE = 'runner/runner.sqlite';
 // An outbox entry a process claimed is its own for this long: past its wait for the host.
 const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
+// The cache of answers has a size, not an age (rec#144: nothing is deleted
+// because it is old). Past either bound, the answers used longest ago go first;
+// whatever was used lately stays however old it is.
+export const ANSWERS_KEPT = 5000;
+export const ANSWER_BYTES_KEPT = 64 * 1024 * 1024;
+// An offline task token is not cached content: it names a task in progress that
+// the host never saw. A task not continued for this long is not one anyone
+// continues, and a checkpoint under its token would be replayed into a task
+// context long gone, so the token stops being one. A checkpoint queued under it
+// keeps its folder in the outbox and is delivered as before.
+export const OFFLINE_TOKEN_DAYS = 30;
+const OFFLINE_TOKEN_MS = OFFLINE_TOKEN_DAYS * 24 * 60 * 60 * 1000;
 // Why a checkpoint waits refused: the host did not know this runner (revoked).
 const REVOKED = 'runner_revoked';
 
@@ -53,6 +65,10 @@ export const RUNNER_FORMAT = sqliteFormat({
     id: 'runner/3-host-last-seen', to: 3, kind: 'add-columns', table: 'host',
     summary: 'when this computer last reached its host, so the console and `fuli status` can say when it last reached it',
     columns: { last_seen_at: 'TEXT' }
+  }, {
+    id: 'runner/4-answer-used', to: 4, kind: 'add-columns', table: 'answers',
+    summary: 'when each kept answer was last used, so the cache keeps what is used and lets go of what is not',
+    columns: { used_at: 'TEXT' }
   }]
 });
 
@@ -178,9 +194,27 @@ export class RunnerStore {
 
   rememberAnswer(key, tool, body) {
     if (tool === DIAGNOSTIC_EVENTS_TOOL) return;
-    this.db.prepare(`INSERT INTO answers(key, tool, at, body) VALUES(?, ?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body`)
-      .run(key, tool, this.#nowIso(), JSON.stringify(body));
+    immediateTransaction(this.db, () => {
+      const at = this.#nowIso();
+      this.db.prepare(`INSERT INTO answers(key, tool, at, body, used_at) VALUES(?, ?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET at = excluded.at, body = excluded.body, used_at = excluded.used_at`)
+        .run(key, tool, at, JSON.stringify(body), at);
+      this.#keepAnswersWithinBounds();
+    });
+  }
+
+  // Least recently used first, until both bounds hold again.
+  #keepAnswersWithinBounds() {
+    const { count, bytes } = this.db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(body)), 0) AS bytes FROM answers').get();
+    if (count <= ANSWERS_KEPT && bytes <= ANSWER_BYTES_KEPT) return;
+    let over = { count: count - ANSWERS_KEPT, bytes: bytes - ANSWER_BYTES_KEPT };
+    const remove = this.db.prepare('DELETE FROM answers WHERE key = ?');
+    for (const row of this.db.prepare(`SELECT key, LENGTH(body) AS size FROM answers
+      ORDER BY COALESCE(used_at, at) ASC`).iterate()) {
+      if (over.count <= 0 && over.bytes <= 0) break;
+      remove.run(row.key);
+      over = { count: over.count - 1, bytes: over.bytes - row.size };
+    }
   }
 
   // { at, body } of the last answer to this call, or null.
@@ -188,7 +222,16 @@ export class RunnerStore {
     if (this.#missing()) return null;
     const row = this.db.prepare('SELECT at, body FROM answers WHERE key = ? AND tool <> ?')
       .get(key, DIAGNOSTIC_EVENTS_TOOL);
-    return row ? { at: row.at, body: JSON.parse(row.body) } : null;
+    if (!row) return null;
+    this.db.prepare('UPDATE answers SET used_at = ? WHERE key = ?').run(this.#nowIso(), key);
+    return { at: row.at, body: JSON.parse(row.body) };
+  }
+
+  // What the cache holds now against its bounds, for the console and `fuli runner status`.
+  answerUsage() {
+    if (this.#missing()) return { count: 0, bytes: 0, maxCount: ANSWERS_KEPT, maxBytes: ANSWER_BYTES_KEPT };
+    const { count, bytes } = this.db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(body)), 0) AS bytes FROM answers').get();
+    return { count, bytes, maxCount: ANSWERS_KEPT, maxBytes: ANSWER_BYTES_KEPT };
   }
 
   // Every kept task entry, newest first, as { key, at, body }: what the host last gave for each folder.
@@ -205,13 +248,17 @@ export class RunnerStore {
   }
 
   beginOfflineTask({ token, projectPath, sourceApplication }) {
-    this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
-      VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
+    immediateTransaction(this.db, () => {
+      this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
+        VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
+      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#tokensSince());
+    });
   }
 
+  // A token this computer gave out offline within OFFLINE_TOKEN_DAYS, or null.
   offlineTask(token) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ?').get(token);
+    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ? AND started_at > ?').get(token, this.#tokensSince());
     return row ? { token: row.token, projectPath: row.project_path, sourceApplication: row.source_application,
       startedAt: row.started_at } : null;
   }
@@ -295,6 +342,10 @@ export class RunnerStore {
   // What was read from the host: its answers and the offline task tokens.
   #forget() {
     for (const table of ['answers', 'offline_tasks']) this.db.prepare(`DELETE FROM ${table}`).run();
+  }
+
+  #tokensSince() {
+    return new Date(this.now() - OFFLINE_TOKEN_MS).toISOString();
   }
 
   #nowIso() {

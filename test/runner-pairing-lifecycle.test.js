@@ -16,7 +16,7 @@ import { offlineAnswer } from '../src/runner/offline-calls.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
-import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
+import { ANSWERS_KEPT, OFFLINE_TOKEN_DAYS, RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 const HOST = { name: 'Host A', fingerprint: 'f'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] };
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -79,18 +79,47 @@ test('a host that revoked the runner ends what was read from it; waiting checkpo
 });
 
 // rec#144, Jevons: 「保留 30 天这个没必要，就放着就可以」.
-test('nothing a follower keeps expires with time; a later answer replaces the one it repeats', () => {
+test('no answer kept here is deleted because it is old; a later answer replaces the one it repeats', () => {
   let now = Date.parse('2026-11-01T00:00:00Z');
   const store = pairedRunner({ now: () => now });
   store.rememberAnswer('read:old', 'search_knowledge_graph', { content: [] });
-  store.beginOfflineTask({ token: 'runner-offline-synthetic', projectPath: '/synthetic', sourceApplication: 'codex' });
   now += 400 * DAY_MS;
   store.rememberAnswer('read:new', 'search_knowledge_graph', { content: [] });
   store.rememberAnswer('read:old', 'search_knowledge_graph', { content: [{ type: 'text', text: 'newer' }] });
   assert.deepEqual(store.db.prepare('SELECT key FROM answers ORDER BY key').all().map((row) => row.key),
     ['read:new', 'read:old']);
   assert.deepEqual(store.answer('read:old').body.content, [{ type: 'text', text: 'newer' }]);
+});
+
+// Review of #1069: no age limit, but a size; past it, what was used longest ago goes first.
+test('the cache keeps within its size by letting go of the answers used longest ago', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const store = pairedRunner({ now: () => now });
+  for (let index = 0; index < ANSWERS_KEPT; index += 1) {
+    store.db.prepare('INSERT INTO answers(key, tool, at, body, used_at) VALUES(?, ?, ?, ?, ?)')
+      .run(`read:${index}`, 'search_knowledge_graph', '2026-10-01T00:00:00.000Z', '{}', '2026-10-01T00:00:00.000Z');
+  }
+  now += DAY_MS;
+  assert.ok(store.answer('read:0'), 'read:0 is used, so it is the newest in use');
+  now += DAY_MS;
+  store.rememberAnswer('read:fresh', 'search_knowledge_graph', { content: [] });
+  assert.equal(store.answerUsage().count, ANSWERS_KEPT);
+  assert.ok(store.answer('read:0'), 'what was used lately stays, however old it is');
+  assert.equal(store.answer('read:1'), null, 'what was used longest ago went');
+  assert.ok(store.answer('read:fresh'));
+});
+
+test('an offline task token lasts 30 days; a checkpoint queued under it keeps its folder', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const store = pairedRunner({ now: () => now });
+  store.beginOfflineTask({ token: 'runner-offline-synthetic', projectPath: '/synthetic', sourceApplication: 'codex' });
+  store.enqueue({ id: 'queued-under-it', tool: 'checkpoint_task_knowledge', input: { taskContextToken: 'runner-offline-synthetic' },
+    sourceApplication: 'codex', offlineProjectPath: '/synthetic' });
+  now += (OFFLINE_TOKEN_DAYS - 1) * DAY_MS;
   assert.equal(store.offlineTask('runner-offline-synthetic')?.projectPath, '/synthetic');
+  now += 2 * DAY_MS;
+  assert.equal(store.offlineTask('runner-offline-synthetic'), null);
+  assert.equal(store.claimNext().offlineProjectPath, '/synthetic', 'the queued checkpoint is delivered as before');
 });
 
 test('joining the same host again queues its refused checkpoints again; joining another host drops them and says how many', () => {
@@ -169,7 +198,7 @@ test('joining says what the runner keeps, and that nothing of it expires', async
     setupClients: async () => [{ id: 'codex', status: 'connected' }] });
   const said = lines.join('\n');
   assert.doesNotMatch(said, /nothing of FULI's knowledge is kept here/);
-  assert.match(said, /Kept here: the host's last answers to read-only calls .* and checkpoints waiting for the host \(deleted once delivered; a refused one stays listed\)\. Nothing here expires with time\./);
+  assert.match(said, /Kept here: the host's last answers to read-only calls .*nothing is deleted because it is old.* A task token given out while the host is away lasts 30 days\./);
   assert.match(said, /checkpoints wait, refused, until it joins the same host again/);
 });
 

@@ -14,7 +14,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
 import { capabilityLines, serveFollowerConsole } from '../runner/follower-runtime.js';
-import { followerStatus } from '../runner/follower-status.js';
+import { followerStatus, keptLine } from '../runner/follower-status.js';
 import { writeLine } from './terminal-io.js';
 
 // `fuli runner` (docs/runner.md). On the host: invite, list, revoke, through
@@ -41,10 +41,11 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   pages over the pairing (fuli start runs it)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
-const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away) '
-  + 'and checkpoints waiting for the host (deleted once delivered; a refused one stays listed). Nothing here expires with '
-  + 'time. If the host revokes this computer, the answers go at once and the checkpoints wait, refused, until it joins the '
-  + 'same host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
+const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
+  + 'nothing is deleted because it is old: past 5000 answers or 64 MB the ones used longest ago go) and checkpoints '
+  + 'waiting for the host (deleted once delivered; a refused one stays listed). A task token given out while the host is '
+  + 'away lasts 30 days. If the host revokes this computer, the answers go at once and the checkpoints wait, refused, '
+  + 'until it joins the same host again. Nothing else of FULI\'s knowledge is stored here; `fuli runner leave` deletes it all.';
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
@@ -132,6 +133,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
         for (const line of capabilityLines(state.capabilities)) write(line);
+        write(keptLine(state.cache).en);
         return { exitCode: reached ? 0 : 1 };
       } finally {
         connection.close();

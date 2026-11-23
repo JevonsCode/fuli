@@ -1,4 +1,5 @@
 import { routingRoleState } from './routing-setup.js';
+import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 
 // The one description of where a follower stands (docs/runner-roles-design.md
 // §5): who it follows, whether that computer answers now, when it last did,
@@ -64,7 +65,27 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
       pinFailed: reach ? Boolean(!reached && connection.pinFailed) : false,
       ...(sessions ? { mcpSessions: sessions } : {}) },
     outbox: store.outbox(),
+    cache: keptHere(store),
     capabilities: capabilities(dataDir)
+  };
+}
+
+// What the cache holds against its bounds, and how long an offline task token
+// lasts: said where the state is shown, so a limit is never a surprise.
+function keptHere(store) {
+  return { ...store.answerUsage(), offlineTokenDays: OFFLINE_TOKEN_DAYS };
+}
+
+// One line about it, in both languages.
+export function keptLine(cache) {
+  if (!cache) return null;
+  const megabytes = (bytes) => `${Math.round(bytes / (1024 * 1024))} MB`;
+  return {
+    zh: `这里缓存了主机的 ${cache.count} 条答复（${megabytes(cache.bytes)}），最多 ${cache.maxCount} 条 / ${megabytes(cache.maxBytes)}，`
+      + `超出时先放掉最久没用到的，不按时间删；离线任务令牌 ${cache.offlineTokenDays} 天后失效。`,
+    en: `Kept here: ${cache.count} of the host's answers (${megabytes(cache.bytes)}) of at most ${cache.maxCount} / `
+      + `${megabytes(cache.maxBytes)}; past that the ones used longest ago go, never by age. An offline task token lasts `
+      + `${cache.offlineTokenDays} days.`
   };
 }
 
