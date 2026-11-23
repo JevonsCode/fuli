@@ -342,9 +342,14 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     // FULI is that FULI's task (task-issuer.js), never taken here.
     const issued = tokenIssuedHere(request.params.arguments ?? {}, taskIssuer);
     if (issued.elsewhere) {
-      return errorToolResult(new ApplicationError(ApplicationErrorCode.INVALID_INPUT, 'This task token was issued by '
-        + `another FULI (${issued.elsewhere}), not this one: continue the task on that computer, or enter it again here `
-        + 'with get_collaboration_preferences and use the token it gives.'));
+      return errorToolResult(new ApplicationError('task_issued_elsewhere', 'This task token was issued by another FULI '
+        + `(${issued.elsewhere}), not this one: continue the task on that computer, or enter it again here with `
+        + 'get_collaboration_preferences and use the token it gives.'));
+    }
+    if (issued.unknown) {
+      return errorToolResult(new ApplicationError('task_issuer_unknown', `This task token names the FULI ${issued.unknown}, `
+        + 'and this FULI cannot tell whether that is itself: it found no device identity of its own where it looked. '
+        + 'Enter the task again here with get_collaboration_preferences and use the token it gives.'));
     }
     const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, issued.args));
     if (!parsed.success) {

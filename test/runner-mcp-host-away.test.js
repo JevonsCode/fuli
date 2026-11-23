@@ -85,7 +85,8 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
           ? { effective_preferences: ['short answers'], taskContextToken: 'host-token-1', checkpoint_required: true,
             agent_receipt: { required: true, markdown: 'earlier task receipt' } }
           : name === 'resume_agent_conversation'
-            ? (resumeAnswer ?? { recovery_context: `what ${input.conversationId} last held` })
+            ? (resumeAnswer ?? { recovery_context: `what ${input.conversationId} last held`,
+              next_call: { tool: 'read_task_preferences', arguments: { taskContextToken: input.taskContextToken } } })
             : { status: 'recorded' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
@@ -280,6 +281,19 @@ test('routes this version cannot read leave the server up, and every call says w
   assert.equal(failure.code, 'routes_unavailable');
   assert.match(failure.message, /fuli update/);
   assert.equal(runner.calls.length, 0, 'nothing was sent anywhere');
+});
+
+// Review of #1075: an answer that repeats the token a call was made under shows it the way the client got it.
+test('an answer that repeats the call\'s task token shows it with the host\'s name, as the client was given it', async (t) => {
+  const runner = await pairedRunner(t);
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'routed' } });
+  const token = entry.structuredContent.taskContextToken;
+  const resumed = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: token, conversationId: 'conversation-1' } });
+  assert.equal(runner.calls.at(-1).input.taskContextToken, 'host-token-1', 'the host gets its own token');
+  assert.equal(resumed.structuredContent.next_call.arguments.taskContextToken, token);
+  assert.doesNotMatch(resumed.content[0].text.replaceAll(token, ''), /host-token-1/, 'never written the other way');
 });
 
 test('a scope routed to a computer this one is not paired with reaches nothing, and says where to fix it', async (t) => {

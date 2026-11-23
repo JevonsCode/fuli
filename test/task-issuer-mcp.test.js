@@ -30,6 +30,7 @@ test('this FULI takes back a token that names it, and refuses one that names ano
 
   const other = await resume(`fuli-from-${'cd'.repeat(8)}.fuli-task-synthetic`);
   assert.equal(other.isError, true);
+  assert.match(other.content[0].text, /task_issued_elsewhere/);
   assert.match(other.content[0].text, /issued by another FULI/);
   assert.deepEqual(seen, ['fuli-task-synthetic'], 'and nothing of another FULI\'s task runs here');
 
@@ -37,9 +38,13 @@ test('this FULI takes back a token that names it, and refuses one that names ano
   assert.deepEqual(seen, ['fuli-task-synthetic', 'fuli-task-plain'], 'a plain token is as before');
 });
 
-test('an installation that never paired has no name to match, and takes no prefixed token', async (t) => {
+// Review of #1075: a FULI that cannot tell its own name must not say its own token is another FULI's.
+test('a FULI that cannot tell its own name says so, never that the token is another FULI\'s', async (t) => {
   const { seen, resume } = await serve(t, null);
   const answer = await resume(`fuli-from-${'ab'.repeat(8)}.fuli-task-synthetic`);
   assert.equal(answer.isError, true);
+  assert.match(answer.content[0].text, /task_issuer_unknown/);
+  assert.match(answer.content[0].text, /cannot tell whether that is itself/);
+  assert.doesNotMatch(answer.content[0].text, /another FULI/);
   assert.deepEqual(seen, []);
 });

@@ -1284,3 +1284,21 @@ function jsonRequest(url, headers) {
   });
   return { request, response };
 }
+
+// Review of #1075: the remote server gives each session's MCP server this installation's name on its
+// task tokens (task-issuer.js), as the stdio server does.
+test('remote MCP gives each session\'s server this FULI\'s name on its task tokens', async (t) => {
+  const seen = [];
+  const remote = await startRemote({ taskIssuer: 'ab'.repeat(8), createMcp: (app, options) => {
+    seen.push(options.taskIssuer);
+    return createMcpServer(app, options);
+  } });
+  t.after(() => remote.close());
+  const transport = new StreamableHTTPClientTransport(new URL(`${remote.url}/mcp`), {
+    requestInit: { headers: { authorization: `Bearer ${TOKEN}` } }
+  });
+  const client = new Client({ name: 'fuli-task-issuer-test', version: '1.0.0' });
+  t.after(() => client.close());
+  await client.connect(transport);
+  assert.deepEqual(seen, ['ab'.repeat(8)]);
+});

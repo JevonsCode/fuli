@@ -258,8 +258,8 @@ test('the FULI that issued a token takes it back with its own name on it, and re
   assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${'cd'.repeat(8)}.fuli-task-synthetic` }, own),
     { elsewhere: 'cd'.repeat(8) });
   assert.deepEqual(tokenIssuedHere({ taskContextToken: 'fuli-task-synthetic' }, own), { args: { taskContextToken: 'fuli-task-synthetic' } });
-  assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${own}.x` }, null), { elsewhere: own },
-    'an installation without an identity issued no prefixed token');
+  assert.deepEqual(tokenIssuedHere({ taskContextToken: `fuli-from-${own}.x` }, null), { unknown: own },
+    'a FULI that cannot tell its own name does not call the token another FULI\'s');
 });
 
 test('an entry answer names its issuer wherever the token appears, recovery hints included', () => {
@@ -282,10 +282,15 @@ test('fuli routes scope-of takes a relative path from where it is run', async (t
   routes.set('project:notes', hostOwner(HOST.fingerprint));
   routes.close();
   const lines = [];
+  // Back to where it was before the test ends: the folder is deleted after it, and Windows refuses to
+  // delete the folder a process is in.
   const before = process.cwd();
   process.chdir(dataDir);
-  t.after(() => process.chdir(before));
-  await runRoutesCommand(['scope-of', 'notes', '--data-dir', dataDir], { write: (line) => lines.push(line) });
+  try {
+    await runRoutesCommand(['scope-of', 'notes', '--data-dir', dataDir], { write: (line) => lines.push(line) });
+  } finally {
+    process.chdir(before);
+  }
   await runRoutesCommand(['scope-of', folder, '--data-dir', dataDir], { write: (line) => lines.push(line) });
   assert.deepEqual(lines, ['project:notes', 'project:notes'], 'the same scope as its absolute path');
 });

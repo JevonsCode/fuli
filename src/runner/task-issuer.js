@@ -47,9 +47,10 @@ export function withIssuedToken(name, args) {
 // text and in the structured answer alike, so the model never sees the token
 // written two ways. Whatever form the host's answer takes (JSON, or JSON with
 // a line after it), nothing else of it changes.
-export function answerWithIssuer(result, hostFingerprint) {
+// raw: the host's token when the caller knows it (the token a call was made
+// under); else the one a task entry answered with.
+export function answerWithIssuer(result, hostFingerprint, raw = entryTokenIn(result)) {
   if (result?.isError || !hostFingerprint) return result;
-  const raw = entryTokenIn(result);
   if (!raw || readIssued(raw)) return result;
   const issued = issuedToken(hostFingerprint, raw);
   const swap = (text) => text.split(raw).join(issued);
@@ -76,13 +77,16 @@ function entryTokenIn(result) {
 // own name (a conversation begun on a computer that follows this one, and
 // continued here) is this FULI's own token; a token that names another FULI
 // is that FULI's, and never taken here. issuer: the start of this
-// installation's own fingerprint, or null where it has none. Answers
-// { args } or { elsewhere } (the issuer the token names).
+// installation's own fingerprint, or null where it cannot tell (no device
+// certificate where it looks). Answers { args }; { elsewhere } (the issuer the
+// token names, which is not this FULI); or { unknown } (the issuer the token
+// names, which this FULI cannot compare with its own).
 export function tokenIssuedHere(args, issuer) {
   const token = args?.taskContextToken;
   const read = readIssued(token);
   if (!read) return { args };
-  if (issuer && read.issuer === issuer.slice(0, ISSUER_LENGTH).toLowerCase()) {
+  if (!issuer) return { unknown: read.issuer };
+  if (read.issuer === issuer.slice(0, ISSUER_LENGTH).toLowerCase()) {
     return { args: { ...args, taskContextToken: read.token } };
   }
   return { elsewhere: read.issuer };

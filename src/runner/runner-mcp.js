@@ -411,7 +411,13 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
     // Task entry says where it was answered, so the client's AI never takes a
     // follower for a computer without a FULI (rec#144).
     const noted = hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
-    return isTaskEntry(call.tool) ? answerWithIssuer(noted, store.host()?.fingerprint) : noted;
+    // The client sees the host's token only with the host's name on it: in a task entry, and in any
+    // answer that repeats the token a call was made under (read_task_preferences, resume_agent_conversation).
+    const hostFingerprint = store.host()?.fingerprint;
+    if (isTaskEntry(call.tool)) return answerWithIssuer(noted, hostFingerprint);
+    const madeUnder = call.input?.taskContextToken;
+    return typeof madeUnder === 'string' && madeUnder && !isOfflineToken(madeUnder)
+      ? answerWithIssuer(noted, hostFingerprint, madeUnder) : noted;
   });
 
   // read_task_preferences on the host, in this process's session (its reader

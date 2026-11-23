@@ -108,11 +108,14 @@ one owner: this computer or the paired host. A computer with no routes owns ever
 - A task token says which FULI issued it (design §4.4): a token the host issues reaches the client
   as `fuli-from-<the host's fingerprint, 16 characters>.<the host's own token>`, and the host gets its
   own token back. A token passed as the host wrote it goes by the owner remembered for it here: only
-  its SHA-256, kept 30 days from its last use, never the token. Every mention of the token in an entry
-  answer has the prefix, the recovery calls it suggests (`read_task_preferences`) included, so a model
-  never sees it written two ways. The FULI that issued a token takes it back with its own name on it
-  (a conversation begun on a follower and continued on the host), and refuses one that names another
-  FULI.
+  its SHA-256, kept 30 days from its last use, never the token. Every mention of the token in a task
+  entry's answer has the prefix (the recovery calls it suggests, such as `read_task_preferences`,
+  included), and so does every mention of a call's own task token in the answer to that call (for
+  example `read_task_preferences` or `resume_agent_conversation`). An error answer is passed on as the
+  host wrote it. The FULI that issued a token takes it back with its own name on it (a conversation
+  begun on a follower and continued on the host), refuses one that names another FULI
+  (`task_issued_elsewhere`), and says so when it cannot tell its own name, having no device identity
+  where it looks (`task_issuer_unknown`), never that the token is another FULI's.
 - A computer that follows nothing loads none of the router's modules.
 
 ## The console on a runner
