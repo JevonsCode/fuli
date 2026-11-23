@@ -13,7 +13,7 @@ import { createClientFirstRunAction } from '../system/client-first-run-action.js
 import { createClientInstaller } from '../system/client-connection-install.js';
 import { createClientRestart } from '../system/client-restart.js';
 import { createCustomClients } from '../system/custom-client-connection.js';
-import { versionSkew } from './version-skew.js';
+import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 
 // The clients on a runner (docs/runner.md), for its console's 客户端接入:
 // detected, connected and added here, with the same entries `fuli runner join`
@@ -46,8 +46,8 @@ export function createRunnerClients({ paths, apps = clientApps(), host = null,
     ])),
     clientConnectionStatus: async (options) => {
       const [observation, paired] = await Promise.all([observer.observe(options), host ? host() : null]);
-      const skew = versionSkew({ hostVersion: paired?.version ?? null, runnerVersion: FULI_VERSION });
-      return { ...observation, runner: { version: FULI_VERSION,
+      const skew = runnerVersionSkew({ hostVersion: paired?.version ?? null, runnerVersions: runningRunnerVersions(runtimeConfigPath) });
+      return { ...observation, runner: { version: skew?.runnerVersion ?? runningRunnerVersions(runtimeConfigPath)[0],
         hostName: paired?.name ?? null, hostReachable: paired?.reachable === true, hostVersion: paired?.version ?? null,
         ...(skew ? { skew: { older: skew.older } } : {}) } };
     },

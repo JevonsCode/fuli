@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runningRunnerVersions, versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
+import { runnerVersionSkew, runningRunnerVersions, versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 
 test('a runner and its host on different FULI versions: which one is older', () => {
@@ -24,9 +24,20 @@ test('the runner\'s version is what its open sessions run, not only what is inst
   const at = '/runner-data/graph-runtime.json';
   // Two sessions still on the version they started with, one restarted onto the new one.
   const live = () => [{ version: '0.29.0-beta.9' }, { version: '0.29.0' }, { version: '0.29.0-beta.9' }];
-  assert.deepEqual(runningRunnerVersions(at, { live, installed: '0.29.0' }), ['0.29.0', '0.29.0-beta.9']);
+  // Oldest first by version, not by spelling: a prerelease before its release, 0.9 before 0.10.
+  assert.deepEqual(runningRunnerVersions(at, { live, installed: '0.29.0' }), ['0.29.0-beta.9', '0.29.0']);
+  assert.deepEqual(runningRunnerVersions(at, { live: () => [{ version: '0.10.0' }, { version: '0.9.0' }] }), ['0.9.0', '0.10.0']);
   // With no session open, the installed copy is what the next one runs.
   assert.deepEqual(runningRunnerVersions(at, { live: () => [], installed: '0.29.0' }), ['0.29.0']);
+});
+
+test('one rule for every place that says it: a copy here older than the host comes first', () => {
+  // A session still on the old copy, another restarted: this side has something to update or restart.
+  assert.deepEqual(runnerVersionSkew({ hostVersion: '0.29.0', runnerVersions: ['0.28.1', '0.29.0'] }),
+    { older: 'runner', hostVersion: '0.29.0', runnerVersion: '0.28.1' });
+  assert.deepEqual(runnerVersionSkew({ hostVersion: '0.28.0', runnerVersions: ['0.29.0'] })?.older, 'host');
+  assert.equal(runnerVersionSkew({ hostVersion: '0.29.0', runnerVersions: ['v0.29.0'] }), null);
+  assert.equal(runnerVersionSkew({ hostVersion: null, runnerVersions: ['0.29.0'] }), null);
 });
 
 test('the line says which copy is older and never claims a call is blocked', () => {
@@ -39,7 +50,7 @@ test('the line says which copy is older and never claims a call is blocked', () 
 });
 
 test('fuli status on a runner shows the host, the skew and the outbox, and nothing when the versions match', () => {
-  const running = { status: 'running', role: 'runner', url: 'http://127.0.0.1:2727', version: '0.28.1', outbox: 2,
+  const running = { status: 'running', role: 'runner', url: 'http://127.0.0.1:2727', runnerVersions: ['0.28.1'], outbox: 2,
     host: { name: 'Studio', reachable: true, version: '0.29.0' } };
   const shown = formatFollowerResult('status', running);
   assert.match(shown, /This computer is a runner/);
@@ -47,6 +58,8 @@ test('fuli status on a runner shows the host, the skew and the outbox, and nothi
   assert.match(shown, /FULI versions differ: this runner runs 0\.28\.1, Studio runs 0\.29\.0/);
   assert.match(shown, /Outbox: 2 waiting\./);
   const same = formatFollowerResult('status', { ...running, host: { ...running.host, version: '0.28.1' } });
+  // `fuli status` reads the same versions the entry process reports for the open sessions.
+  assert.match(formatFollowerResult('status', { ...running, runnerVersions: ['0.29.0', '0.28.1'] }), /this runner runs 0\.28\.1/);
   assert.doesNotMatch(same, /versions differ/);
   // A host that does not answer tells nothing about its version, so nothing is said.
   const away = formatFollowerResult('status', { ...running, host: { name: 'Studio', reachable: false } });

@@ -8,7 +8,7 @@ import { deliverOutbox } from '../runner/outbox-delivery.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
-import { runningRunnerVersions, versionSkew, versionSkewLine } from '../runner/version-skew.js';
+import { runnerVersionSkew, runningRunnerVersions, versionSkewLine } from '../runner/version-skew.js';
 import { PROJECT_IDENTITY_CACHE_FILE } from '../system/project-identity-cache.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
@@ -123,10 +123,9 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
         // Neither side is blocked; the person is only told which copy is older (rec#144). What
         // talks to the host is the FULI the open client sessions here run, which can be older than
         // the one just installed until they restart; with none open, the installed one.
-        for (const runnerVersion of runningRunnerVersions(paths().graphRuntimeConfigPath)) {
-          const skew = versionSkew({ hostVersion: hello?.version ?? null, runnerVersion });
-          if (skew) write(versionSkewLine(skew, host.name));
-        }
+        const skew = runnerVersionSkew({ hostVersion: hello?.version ?? null,
+          runnerVersions: runningRunnerVersions(paths().graphRuntimeConfigPath) });
+        if (skew) write(versionSkewLine(skew, host.name));
         if (!reached && connection.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);

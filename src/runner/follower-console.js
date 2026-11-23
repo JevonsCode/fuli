@@ -5,7 +5,9 @@ import { handleClientConnectionRequest } from '../http/client-connection-api-rou
 import { sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { listenServer } from '../server/listen.js';
+import { resolveSetupPaths } from '../setup/paths.js';
 import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
+import { runningRunnerVersions } from './version-skew.js';
 
 // A runner's console entry (docs/runner.md): on this computer's loopback, at
 // the port its own console would use, so FULI.app, `fuli open` and the
@@ -53,7 +55,9 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       const reached = host ? await connection.connect() : null;
       // The host's own FULI version comes with its hello: `fuli status` says when the two differ (rec#144).
       const hello = reached ? await connection.hello() : null;
+      // runnerVersions: what talks to the host from here (version-skew.js), the one source `fuli status` compares.
       sendJson(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
+        runnerVersions: runningRunnerVersions(resolveSetupPaths({ dataDir }).graphRuntimeConfigPath),
         host: host ? { name: host.name, reachable: Boolean(reached), address: reached?.address ?? null,
           ...(hello?.version ? { version: hello.version } : {}),
           ...(hello?.mcpSessions ? { mcpSessions: hello.mcpSessions } : {}) } : null,

@@ -13,7 +13,7 @@ import { createHostConnection } from './host-connection.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
-import { versionSkew, versionSkewLine } from './version-skew.js';
+import { runnerVersionSkew, versionSkewLine } from './version-skew.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // `fuli start | stop | restart | status | open` on a runner (docs/runner.md):
@@ -39,7 +39,8 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
     } catch { state = null; }
     const ours = state?.kind === 'fuli-runner-console' && state.dataDir === input.paths.dataDir;
     return ours
-      ? { status: 'running', role: 'runner', url, pid: state.pid, version: state.version ?? FULI_VERSION,
+      ? { status: 'running', role: 'runner', url, pid: state.pid,
+        runnerVersions: Array.isArray(state.runnerVersions) && state.runnerVersions.length ? state.runnerVersions : [state.version ?? FULI_VERSION],
         host: state.host, outbox: state.outbox }
       : { status: 'stopped', role: 'runner', url };
   }
@@ -100,7 +101,7 @@ export function formatFollowerResult(command, result) {
 
 // The host and this runner on different FULI versions (rec#144): said, never enforced.
 function skewLine(result) {
-  const skew = versionSkew({ hostVersion: result.host?.version ?? null, runnerVersion: result.version ?? FULI_VERSION });
+  const skew = runnerVersionSkew({ hostVersion: result.host?.version ?? null, runnerVersions: result.runnerVersions ?? [FULI_VERSION] });
   return skew ? versionSkewLine(skew, result.host?.name ?? null) : null;
 }
 

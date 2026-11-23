@@ -24,6 +24,16 @@ export function versionSkew({ hostVersion, runnerVersion }) {
   return { older: order < 0 ? 'host' : 'runner', hostVersion, runnerVersion };
 }
 
+// The one skew between the host and this runner, whatever runs here: the
+// runner is behind when any copy running here is older than the host (the
+// copy to update or restart), otherwise the host when it is older than them.
+// runnerVersions: runningRunnerVersions(). The one rule `fuli status`,
+// `fuli runner status` and the runner's 客户端接入 page all use.
+export function runnerVersionSkew({ hostVersion, runnerVersions }) {
+  const skews = runnerVersions.map((runnerVersion) => versionSkew({ hostVersion, runnerVersion })).filter(Boolean);
+  return skews.find(({ older }) => older === 'runner') ?? skews.find(({ older }) => older === 'host') ?? null;
+}
+
 // The one line `fuli status` and `fuli runner status` print for it.
 // hostName: what this runner calls its host.
 export function versionSkewLine(skew, hostName) {
@@ -41,5 +51,14 @@ export function versionSkewLine(skew, hostName) {
 // installed here. live: liveMcpProcesses, replaceable in tests.
 export function runningRunnerVersions(runtimeConfigPath, { live = liveMcpProcesses, installed = FULI_VERSION } = {}) {
   const versions = [...new Set(live(runtimeConfigPath).map(({ version }) => version).filter(Boolean))];
-  return versions.length ? versions.sort() : [installed];
+  return versions.length ? versions.sort(bySemanticVersion) : [installed];
+}
+
+// Oldest first by version precedence (0.9 before 0.10); a name that is not a version goes last.
+function bySemanticVersion(left, right) {
+  try {
+    return compareSemanticVersions(left.replace(/^v/, ''), right.replace(/^v/, ''));
+  } catch {
+    return String(left).localeCompare(String(right));
+  }
 }
