@@ -179,3 +179,18 @@ test('an unmatched folder says so rather than guessing a project, and a project 
   assert.equal(unknown.project, null);
   assert.equal(unknown.projectResolution, 'unmatched');
 });
+
+test('a temporary project, which stores no name, is named the way FULI names it everywhere, never blank', async () => {
+  const temporaryId = `temporary-${'c'.repeat(64)}`;
+  const app = {
+    config: { personal: { spaceId: 'space-7f3' } },
+    personal: {
+      listSpaces: async () => [{ id: 'space-7f3', name: 'Workshop' }],
+      listPersonalProjects: async () => [{ project_id: temporaryId, scope_type: 'temporary', name: '', profile: { name: '' } }],
+      getProjectAgentCoordinationPolicy: async () => ({}),
+      getProjectAgent: async () => null
+    }
+  };
+  const answer = await projectIdentity(app, { personalProjectId: temporaryId });
+  assert.deepEqual(answer.project, { id: temporaryId, name: '临时项目 #cccccccc' });
+});
