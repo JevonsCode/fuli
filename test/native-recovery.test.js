@@ -947,7 +947,8 @@ test('a copy that is good but will not go back says why, and abandoning the impo
   assert.equal(readLock(load.root).holder.restoreFailed.detail, 'No space left on device', 'the failure is recorded in the lock');
   assert.doesNotMatch(JSON.stringify(readLock(load.root).holder.restoreFailed), /neo4j\.conf|--secret/, 'no command line in the lock');
   const words = formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, ...stopped.facts });
-  assert.match(words, /磁盘剩余 1\.0 KB，导回至少需要 .+还有进程在用图谱的目录：66（java）.+kill 66/);
+  // The command that ends it is the platform's own: kill, or Stop-Process in PowerShell.
+  assert.match(words, /磁盘剩余 1\.0 KB，导回至少需要 .+还有进程在用图谱的目录：66（java）.+(?:kill|Stop-Process -Id) 66/);
   assert.match(words, /副本本身是好的.+--abandon-import/s);
   // The ordinary plan tries again and says abandoning is open; abandoning keeps that copy and says it is good.
   const again = await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies });
