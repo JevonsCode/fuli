@@ -9,6 +9,7 @@ import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { taskWorkKind } from './task-scene.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { agentDisplayName } from '../agents/agent-label.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -50,11 +51,12 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       contextRequest.delegation_token = delegation.token;
       contextRequest.delegation_session_id = delegation.sessionId;
     }
-    // A named FLA that owns a line of this project works as itself, exactly
-    // as when the line matched (docs/workstreams.md); this is also how a lead
-    // hands a task to a line's owner in one call (#FLA <owner>).
-    const namedLine = named && !delegation && ownsLine(application, resolution.personalProjectId, named);
+    // An FLA the person named that owns a line of this project works as
+    // itself, exactly as when the line matched, and the turn counts on its
+    // line in the ledger (docs/workstreams.md).
+    const namedLine = named && !delegation ? lineOf(application, resolution.personalProjectId, named) : null;
     let value = namedLine ? await ownerContext(application, contextRequest, named) : null;
+    const namedWorkstreamId = value?.reason === 'workstream_owner' && value.agent ? namedLine.assignmentId : null;
     if (!value?.agent) value = await application.personal.resolveProjectAgentContext(contextRequest);
     // Internal Agent activity restores only its granted role; it never hires a lead.
     if (value?.reason === 'project_lead_required' && !delegation) {
@@ -120,7 +122,8 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
     return { ...value, agent, worker_started: false,
       ...(standing.unreached ? { standingAgentUnreached: true, standingUnreachedReason: standing.reason } : {}),
       ...(standing.applied ? { standingAgentApplied: true } : {}),
-      ...(standing.ownerName ? { standingOwnerName: standing.ownerName } : {}) };
+      ...(standing.ownerName ? { standingOwnerName: standing.ownerName } : {}),
+      ...(namedWorkstreamId ? { namedWorkstreamId } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
     // never claim that a role or its private memory was successfully restored.
@@ -137,13 +140,15 @@ async function ownerContext(application, contextRequest, agentId) {
     workstream_owner: true }).catch(() => null);
 }
 
-// Whether this Agent owns an active line of this project in the local store.
-function ownsLine(application, projectId, agentId) {
+// The active assignment of this project this Agent holds in the local store,
+// or null. Whether it is a line, not the person's rule for the lead, the
+// Provider decides (workstream_owner refuses the lead).
+function lineOf(application, projectId, agentId) {
   try {
-    return Boolean(application.standingAssignments?.list(application.config.personal.spaceId)
-      .some(line => line.projectId === projectId && line.leadAgentId === agentId));
+    return application.standingAssignments?.list(application.config.personal.spaceId)
+      .find(line => line.projectId === projectId && line.leadAgentId === agentId) ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -153,10 +158,6 @@ async function ownerName(application, agentId) {
   const read = await application.personal.getProjectAgent(application.config.personal.spaceId, null, agentId)
     .catch(() => null);
   return read ? agentDisplayName(projectAgentRecord(read)) : null;
-}
-
-function agentDisplayName(agent) {
-  return agent?.profile?.displayName || agent?.profile?.name || null;
 }
 
 // Global selection uses only the space identity; no project lead, assignment or

@@ -29,6 +29,20 @@ export function projectWorkstreams(assignments, projectId, leadAgentId, people =
       || left.assignmentId.localeCompare(right.assignmentId));
 }
 
+// The project page lists no more ended lines than this, newest first.
+const CLOSED_LIMIT = 20;
+
+/**
+ * A project's ended lines, newest first, so the person sees what was merged
+ * or ended and when. Each kept every revision; none routes any more.
+ */
+export function closedWorkstreams(retired, leadAgentId, people = new Map()) {
+  return (Array.isArray(retired) ? retired : []).filter(item => item.leadAgentId !== leadAgentId)
+    .slice(0, CLOSED_LIMIT).map(item => ({ assignmentId: item.assignmentId, name: item.responsibility,
+      terms: [...item.terms], ownerAgentId: item.leadAgentId, ownerName: people.get(item.leadAgentId)?.name ?? null,
+      startedAt: item.createdAt, endedAt: item.retiredAt }));
+}
+
 /**
  * The same lines with how far each got: the latest task of the owner's work
  * log in this project that this line took (its workstream marker), not earlier

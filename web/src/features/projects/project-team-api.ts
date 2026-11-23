@@ -52,6 +52,17 @@ export interface ProjectWorkstream {
   progressUnreadable?: boolean
 }
 
+/** A line that was merged or ended: it routes nothing; its record and revisions stay. */
+export interface ClosedWorkstream {
+  assignmentId: string
+  name: string
+  terms: string[]
+  ownerAgentId: string
+  ownerName: string | null
+  startedAt: string
+  endedAt: string
+}
+
 export interface ProjectTeam {
   personalProjectId: string
   status: 'ready' | 'no_lead' | 'lead_unavailable'
@@ -80,8 +91,12 @@ const projectTeamShape = shapeFor<ProjectTeam>(z.object({
 
 const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
   ownerAgentId: z.string(), ownerOnProject: z.boolean(), revision: z.number() })
-const projectWorkstreamsShape = shapeFor<{ personalProjectId: string; workstreams: ProjectWorkstream[] }>(
-  z.object({ personalProjectId: z.string(), workstreams: z.array(workstreamLine) }))
+const closedLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
+  ownerAgentId: z.string(), endedAt: z.string() })
+const projectWorkstreamsShape = shapeFor<{ personalProjectId: string; workstreams: ProjectWorkstream[];
+  closed?: ClosedWorkstream[] }>(z.object({ personalProjectId: z.string(), workstreams: z.array(workstreamLine),
+  // Absent on servers before the ended lines were listed.
+  closed: z.array(closedLine).optional() }))
 
 /** One FLA's ledger: the lines of the projects it leads, and the lines it owns. */
 export interface AgentWorkstreamLedger {
@@ -118,7 +133,7 @@ export function readProjectTeam(personalSpaceId: string, personalProjectId: stri
   return read
 }
 
-/** A project's lines with how far each got. This computer only. */
+/** A project's lines with how far each got, and its ended ones. This computer only. */
 export function readProjectWorkstreams(personalProjectId: string) {
   return getJson(`/api/workstreams?${new URLSearchParams({ personalProjectId })}`, projectWorkstreamsShape)
 }

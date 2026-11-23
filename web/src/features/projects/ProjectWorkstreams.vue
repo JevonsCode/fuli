@@ -11,7 +11,7 @@ import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay
 import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { currentLocale, t } from '@/i18n'
 import { DATE_ONLY, formatDateTime } from '@/lib/date-time'
-import { UiChip, UiIconButton, UiNotice } from '@/ui'
+import { UiChip, UiDialog, UiIconButton, UiNotice } from '@/ui'
 import {
   editWorkstreamTerms,
   endWorkstream,
@@ -21,6 +21,7 @@ import {
   readProjectTeam,
   readProjectWorkstreams,
   splitWorkstream,
+  type ClosedWorkstream,
   type ProjectTeam,
   type ProjectWorkstream,
 } from './project-team-api'
@@ -28,15 +29,20 @@ import {
 // The lead's ledger on the project page (docs/workstreams.md): which lines of
 // work this project is divided into, who does each and how far it got, and
 // the person's changes to it, each one click and one change: the owner, a
-// merge, a split, an end. Nothing earlier is split retroactively.
+// word less, a merge, a split, an end. A merge or an end is asked once first,
+// saying what happens and how it is undone; ended lines stay listed, folded.
+// Nothing earlier is split retroactively.
 
 const props = defineProps<{ spaceId: string; projectId: string }>()
 
 type Problem = { code: string; line?: { assignmentId: string; name: string; revision: number }; terms?: string[] }
 type Draft = { from: ProjectWorkstream | null; name: string; picked: string[]; words: string; ownerAgentId: string }
+type Pending = { kind: 'merge'; line: ProjectWorkstream; into: ProjectWorkstream } | { kind: 'end'; line: ProjectWorkstream }
 
 const team = ref<ProjectTeam | null>(null)
 const lines = ref<ProjectWorkstream[]>([])
+const closed = ref<ClosedWorkstream[]>([])
+const pending = ref<Pending | null>(null)
 const loading = ref(false)
 const failed = ref<'local_only' | 'failed' | null>(null)
 const busy = ref('')
@@ -61,10 +67,16 @@ const mergeOptions = (line: ProjectWorkstream) => lines.value.filter(item => ite
 const words = (value: string) => [...new Set(value.split(/[,，;；\s]+/u).map(term => term.trim()).filter(Boolean))]
 const canSubmit = computed(() => Boolean(draft.value && draft.value.name.trim() && draft.value.ownerAgentId
   && (draft.value.picked.length || words(draft.value.words).length)))
+// Two Han, kana or Hangul characters (性能, 上线) also occur in requests about
+// other things. The person may still use them; the form says so once.
+const SHORT_UNSPACED = /^[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}]{2}$/u
+const shortWords = computed(() => draft.value ? words(draft.value.words).filter(term => SHORT_UNSPACED.test(term)) : [])
 
 watch(() => [props.spaceId, props.projectId], () => {
   team.value = null
   lines.value = []
+  closed.value = []
+  pending.value = null
   draft.value = null
   problem.value = null
   void load()
@@ -82,6 +94,7 @@ async function load() {
     team.value = people
     // An answer without lines (an older server) shows none rather than failing the page.
     lines.value = Array.isArray(ledger?.workstreams) ? ledger.workstreams : []
+    closed.value = Array.isArray(ledger?.closed) ? ledger.closed : []
   } catch (error) {
     if (current === sequence) failed.value = codeOf(error) === 'local_user_only' ? 'local_only' : 'failed'
   } finally {
@@ -120,15 +133,44 @@ function setOwner(line: ProjectWorkstream, leadAgentId: string) {
     { expectedRevision: line.revision, projectId: props.projectId, leadAgentId }))
 }
 
+// A merge or an end changes where later tasks go; it is asked once first.
 function mergeInto(line: ProjectWorkstream, targetId: string) {
-  const target = lines.value.find(item => item.assignmentId === targetId)
-  if (!target) return
-  void change(line.assignmentId, () => mergeWorkstream(line.assignmentId,
-    { into: target.assignmentId, expectedRevision: line.revision, targetRevision: target.revision }))
+  const into = lines.value.find(item => item.assignmentId === targetId)
+  if (into) pending.value = { kind: 'merge', line, into }
 }
 
 function end(line: ProjectWorkstream) {
-  void change(line.assignmentId, () => endWorkstream(line.assignmentId, line.revision))
+  pending.value = { kind: 'end', line }
+}
+
+function confirmPending() {
+  const value = pending.value
+  if (!value) return
+  pending.value = null
+  const { line } = value
+  void change(line.assignmentId, () => value.kind === 'merge'
+    ? mergeWorkstream(line.assignmentId, { into: value.into.assignmentId, expectedRevision: line.revision,
+      targetRevision: value.into.revision })
+    : endWorkstream(line.assignmentId, line.revision))
+}
+
+const pendingText = computed(() => {
+  const value = pending.value
+  if (!value) return { title: '', body: '', action: '' }
+  if (value.kind === 'end') {
+    return { title: t('projects.workstreams.endTitle', { name: value.line.name }),
+      body: t('projects.workstreams.endEffect'), action: t('projects.workstreams.endAction') }
+  }
+  const owner = value.into.ownerName ?? value.into.ownerAgentId
+  return { title: t('projects.workstreams.mergeTitle', { from: value.line.name, into: value.into.name }),
+    body: t('projects.workstreams.mergeEffect', { from: value.line.name, into: value.into.name, owner }),
+    action: t('projects.workstreams.mergeAction') }
+})
+
+// One word less: later tasks that say only it no longer come to this line.
+function removeTerm(line: ProjectWorkstream, term: string) {
+  void change(line.assignmentId, () => editWorkstreamTerms(line.assignmentId,
+    { expectedRevision: line.revision, removeTerms: [term] }))
 }
 
 function startDraft(from: ProjectWorkstream | null) {
@@ -229,7 +271,12 @@ const problemText = computed(() => {
               :label="t('projects.workstreams.owner', { name: line.name })"
               @update:model-value="setOwner(line, $event)" />
             <span class="project-workstreams-terms">
-              <UiChip v-for="term in line.terms" :key="term">{{ term }}</UiChip>
+              <span v-for="term in line.terms" :key="term" class="project-workstreams-term" :data-term="term">
+                <UiChip>{{ term }}</UiChip>
+                <UiIconButton v-if="line.terms.length > 1" icon="close" size="sm" :disabled="Boolean(busy)"
+                  :label="t('projects.workstreams.removeTerm', { term })" data-remove-term
+                  @click="removeTerm(line, term)" />
+              </span>
             </span>
           </div>
           <div class="project-workstreams-side">
@@ -250,6 +297,20 @@ const problemText = computed(() => {
         </li>
       </ul>
 
+      <details v-if="closed.length" class="project-workstreams-closed" data-workstreams-closed>
+        <summary class="ui-meta">{{ t('projects.workstreams.closed', { count: closed.length }) }}</summary>
+        <ul class="project-workstreams-list">
+          <li v-for="line in closed" :key="line.assignmentId" class="project-workstreams-item">
+            <span class="project-workstreams-main">
+              <span>{{ line.name }}</span>
+              <span class="ui-meta">{{ line.ownerName ?? line.ownerAgentId }} · {{ line.terms.join(' ') }}</span>
+            </span>
+            <span class="ui-meta">{{ t('projects.workstreams.endedOn', {
+              date: formatDateTime(line.endedAt, currentLocale(), DATE_ONLY, { missing: '' }) }) }}</span>
+          </li>
+        </ul>
+      </details>
+
       <Button v-if="!draft && candidates.length" size="sm" variant="ghost" data-open-workstream
         @click="startDraft(null)">{{ t('projects.workstreams.open') }}</Button>
       <form v-else-if="draft" class="project-workstreams-form" @submit.prevent="submit">
@@ -265,12 +326,23 @@ const problemText = computed(() => {
           :placeholder="t('projects.workstreams.nameLabel')" data-workstream-name />
         <Input v-model="draft.words" size="sm" :aria-label="t('projects.workstreams.termsLabel')"
           :placeholder="t('projects.workstreams.termsLabel')" data-workstream-words />
+        <p v-if="shortWords.length" class="ui-meta" data-short-terms>
+          {{ t('projects.workstreams.shortTerms', { terms: shortWords.join('、') }) }}
+        </p>
         <OptionSelect v-model="draft.ownerAgentId" size="sm" :options="candidates"
           :label="t('projects.workstreams.ownerLabel')" :placeholder="t('projects.workstreams.ownerLabel')" />
         <Button type="submit" size="sm" :disabled="!canSubmit || Boolean(busy)">{{ t('projects.workstreams.confirm') }}</Button>
         <Button type="button" size="sm" variant="ghost" @click="draft = null">{{ t('projects.workstreams.cancel') }}</Button>
       </form>
     </template>
+
+    <UiDialog :open="Boolean(pending)" size="sm" :title="pendingText.title" :description="pendingText.body"
+      data-workstream-confirm @close="pending = null">
+      <template #footer>
+        <Button size="sm" variant="ghost" @click="pending = null">{{ t('projects.workstreams.cancel') }}</Button>
+        <Button size="sm" data-confirm-change @click="confirmPending">{{ pendingText.action }}</Button>
+      </template>
+    </UiDialog>
   </section>
 </template>
 
@@ -313,6 +385,15 @@ const problemText = computed(() => {
 .project-workstreams-owner,
 .project-workstreams-merge {
   width: 12rem;
+}
+
+.project-workstreams-term {
+  align-items: center;
+  display: inline-flex;
+}
+
+.project-workstreams-closed summary {
+  cursor: pointer;
 }
 
 .project-workstreams-form > p {

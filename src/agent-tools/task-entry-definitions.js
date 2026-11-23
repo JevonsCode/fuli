@@ -20,7 +20,8 @@ export const TASK_ENTRY_DEFINITIONS = [
       projectAgentId: nullableStringSchema(),
       workKind: boundedString(128),
       requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
-      taskPrompt: boundedString(8192)
+      taskPrompt: boundedString(8192),
+      workstream: { ...boundedString(240), description: 'Lead only: a workstream name; its owner runs this task as itself.' }
     }, ['sessionId', 'projectPath'])
   },
   {

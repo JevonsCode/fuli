@@ -9,7 +9,7 @@ import ProjectWorkstreams from './ProjectWorkstreams.vue'
 import { ApiError } from '@/api/client'
 import { setLocale, t } from '@/i18n'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
-import type { ProjectTeam, ProjectTeamPerson, ProjectWorkstream } from './project-team-api'
+import type { ClosedWorkstream, ProjectTeam, ProjectTeamPerson, ProjectWorkstream } from './project-team-api'
 
 // docs/workstreams.md: the lead's ledger on the project page, and the
 // person's one-step changes to it. Fictional people only.
@@ -31,9 +31,9 @@ const team: ProjectTeam = {
   collaborators: [], peers: [], unavailableMemberIds: [],
 }
 
-function serve(lines: ProjectWorkstream[]) {
+function serve(lines: ProjectWorkstream[], closed: ClosedWorkstream[] = []) {
   getJson.mockImplementation(async (url: string) => url.startsWith('/api/workstreams')
-    ? { personalProjectId: 'project-a', workstreams: lines } : team)
+    ? { personalProjectId: 'project-a', workstreams: lines, closed } : team)
 }
 
 function mountPanel() {
@@ -83,15 +83,80 @@ describe('ProjectWorkstreams', () => {
     panel.unmount()
   })
 
-  it('merges in one change: one request names both lines at the revisions read', async () => {
+  it('merges in one change after one confirmation that says what happens and how it is undone', async () => {
     serve([line(), line({ assignmentId: 'line-coupon', name: 'Coupon centre', terms: ['coupon'],
       ownerAgentId: 'fla-orin', revision: 2 })])
     const panel = mountPanel()
     await flushPromises()
     await panel.findAll('[data-workstream]')[1].get('select.project-workstreams-merge').setValue('line-spring')
     await flushPromises()
+    // Nothing is sent before the person confirms.
+    expect(postJson).not.toHaveBeenCalled()
+    const dialog = panel.get('[data-workstream-confirm]')
+    expect(dialog.text()).toContain(t('projects.workstreams.mergeEffect',
+      { from: 'Coupon centre', into: 'Spring sale page', owner: 'Ember Vale' }))
+    await dialog.get('[data-confirm-change]').trigger('click')
+    await flushPromises()
     expect(postJson.mock.calls).toEqual([['/api/standing-assignments/line-coupon/merge',
       { into: 'line-spring', expectedRevision: 2, targetRevision: 1 }]])
+    panel.unmount()
+  })
+
+  it('ends a line only after a confirmation; cancelling sends nothing', async () => {
+    serve([line({ revision: 6 })])
+    const panel = mountPanel()
+    await flushPromises()
+    const endButton = () => panel.get(`[aria-label="${t('projects.workstreams.end', { name: 'Spring sale page' })}"]`)
+    await endButton().trigger('click')
+    expect(panel.get('[data-workstream-confirm]').text()).toContain(t('projects.workstreams.endEffect'))
+    await panel.get('[data-workstream-confirm]').findAll('button').find(button =>
+      button.text() === t('projects.workstreams.cancel'))!.trigger('click')
+    expect(panel.find('[data-workstream-confirm]').exists()).toBe(false)
+    expect(postJson).not.toHaveBeenCalled()
+    await endButton().trigger('click')
+    await panel.get('[data-confirm-change]').trigger('click')
+    await flushPromises()
+    expect(postJson.mock.calls).toEqual([['/api/standing-assignments/line-spring/retire', { expectedRevision: 6 }]])
+    panel.unmount()
+  })
+
+  it('removes one word by clicking it; a line\'s only word has no remove button', async () => {
+    serve([line({ terms: ['spring-sale', 'coupon'], revision: 7 }),
+      line({ assignmentId: 'line-solo', name: 'Solo', terms: ['solo-page'], ownerAgentId: 'fla-orin' })])
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-term="coupon"] [data-remove-term]').trigger('click')
+    await flushPromises()
+    expect(postJson.mock.calls).toEqual([['/api/standing-assignments/line-spring/terms',
+      { expectedRevision: 7, removeTerms: ['coupon'] }]])
+    expect(panel.find('[data-term="solo-page"] [data-remove-term]').exists()).toBe(false)
+    panel.unmount()
+  })
+
+  it('says once that a two-character word is short, and still lets the person use it', async () => {
+    serve([])
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-open-workstream]').trigger('click')
+    await panel.get('[data-workstream-words]').setValue('春促页 性能')
+    expect(panel.get('[data-short-terms]').text()).toBe(t('projects.workstreams.shortTerms', { terms: '性能' }))
+    await panel.get('[data-workstream-words]').setValue('春促页')
+    expect(panel.find('[data-short-terms]').exists()).toBe(false)
+    panel.unmount()
+  })
+
+  it('lists ended lines folded, newest first, without changing them', async () => {
+    serve([line()], [{ assignmentId: 'line-old', name: 'Coupon centre', terms: ['coupon'], ownerAgentId: 'fla-orin',
+      ownerName: 'Orin Pike', startedAt: '2026-11-01T00:00:00.000Z', endedAt: '2026-11-21T00:00:00.000Z' }])
+    const panel = mountPanel()
+    await flushPromises()
+    const closed = panel.get('[data-workstreams-closed]')
+    expect(closed.element.tagName).toBe('DETAILS')
+    expect((closed.element as HTMLDetailsElement).open).toBe(false)
+    expect(closed.get('summary').text()).toBe(t('projects.workstreams.closed', { count: 1 }))
+    expect(closed.text()).toContain('Coupon centre')
+    expect(closed.text()).toContain('Orin Pike')
+    expect(closed.find('button').exists()).toBe(false)
     panel.unmount()
   })
 

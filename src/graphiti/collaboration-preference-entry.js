@@ -33,7 +33,9 @@ async function collaborationPreferences(application, {
   // The session's current task when the caller already read it (task-context-entry.js).
   sessionTask,
   // The model a client's prompt hook reported (Codex), for a #FLG join (rec#129); hooks only.
-  clientModel = null
+  clientModel = null,
+  // The lead's hand-off to a line of this project, by name (begin_task_context; docs/workstreams.md).
+  workstream = null
 } = {}) {
   let projectResolution = await resolvePreferenceProject(application, { personalProjectId, projectPath });
   if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
@@ -47,7 +49,7 @@ async function collaborationPreferences(application, {
   projectResolution = await resolveTaskEntryProject(application, projectResolution, {
     sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt, sessionTask,
     // A workstream's term may be a folder of the working directory (docs/workstreams.md).
-    projectPath, clientModel, turnId
+    projectPath, clientModel, turnId, workstream
   });
   const preferences = await taskEntryPreferences(application, projectResolution, {
     personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,

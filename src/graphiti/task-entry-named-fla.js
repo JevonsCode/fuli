@@ -1,3 +1,4 @@
+import { agentDisplayName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
 import { flaCandidates, flaChoice, namedAtOpening, narrowedByPartial, rankCandidates, roleCandidates,
@@ -7,6 +8,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { projectHasLines } from './task-entry-workstream.js';
 import { TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
@@ -36,7 +38,7 @@ const MARKER_LIMIT = 2048;
 export const FLA_ROUTE = Symbol('fla_route');
 
 const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in this session; this outranks the '
-  + 'folder. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
+  + 'folder and the project\'s workstreams. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
   + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
   + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says #FLA 结束.';
 // What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
@@ -176,21 +178,30 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
   const { target } = request;
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (agent?.agentId === target.agentId) {
-    const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
-    const notice = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
-      : `本会话由 ${current.name} 继续其全局工作`;
+    const current = { ...target, name: agentDisplayName(agent) || target.name };
+    const notice = (current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
+      : `本会话由 ${current.name} 继续其全局工作`) + await linesClause(application, request, current.projectId);
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
     return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
   }
   if (agent && selection.requested_agent_id === target.agentId) {
-    const lead = agent.profile.displayName || agent.profile.name || agent.agentId;
-    const notice = `${target.name} 是项目 ${target.project} 的成员，本会话由负责人 ${lead} 持有并请 ${target.name} 处理`;
+    const lead = agentDisplayName(agent) || agent.agentId;
+    const notice = `${target.name} 是项目 ${target.project} 的成员，本会话由负责人 ${lead} 持有并请 ${target.name} 处理`
+      + await linesClause(application, request, target.projectId);
     return { view: { status: 'held_by_lead', notice }, notice, markers: [bindingMarker(target, notice)] };
   }
   const reason = await whyUnavailable(application, target, selection, sourceApplication);
   const result = unavailable(target, reason, []);
   return { ...result, markers: [bindingMarker(target, result.notice)] };
+}
+
+// Where lines of work divide the project (docs/workstreams.md), the turn an
+// FLA is named says once that the name outranks them, and how to give the
+// session back to them; its later bound turns do not repeat it.
+async function linesClause(application, request, projectId) {
+  if (request.origin === 'session' || !projectId || !await projectHasLines(application, projectId)) return '';
+  return '；之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复';
 }
 
 // The checkpoint receipt repeats the sentence the bound turn's entry showed.

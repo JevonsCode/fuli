@@ -1,13 +1,17 @@
 import { loadProjectTeam } from './project-team-view.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
-import { withWorkstreamProgress } from './workstream-ledger.js';
+import { closedWorkstreams, withWorkstreamProgress } from './workstream-ledger.js';
 
 // The console's ledger reads (docs/workstreams.md), on this computer only.
 
-/** One project's lines with how far each got, for its project page. */
+/** One project's lines with how far each got, and its ended ones, for its project page. */
 export async function projectWorkstreamLedger(application, personalSpaceId, projectId) {
   const team = await loadProjectTeam(application, personalSpaceId, projectId, { withProgress: true });
-  return { personalProjectId: projectId, workstreams: team.workstreams };
+  const people = new Map([team.lead, ...team.members, ...team.collaborators].filter(Boolean)
+    .map(person => [person.agentId, person]));
+  return { personalProjectId: projectId, workstreams: team.workstreams,
+    closed: closedWorkstreams(application.standingAssignments?.retired(personalSpaceId, projectId) ?? [],
+      team.lead?.agentId ?? team.unavailableLead?.agentId ?? null, people) };
 }
 
 /**

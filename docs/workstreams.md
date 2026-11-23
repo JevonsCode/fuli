@@ -46,11 +46,14 @@ ends with the task; a workstream lasts until it is ended.
 
 ```mermaid
 flowchart TD
-    T["一条任务进来\n请求文字 · 工作目录 · 当前分支 · 会话上一轮"] --> S{"人点名了 FLA / Agent？"}
-    S -- 是 --> P["按人说的走\n点名的若正是某条线的负责人，就由它作为本轮 FLA"]
-    S -- 否 --> W{"本项目哪条线命中？\n① 用词 ② 项目根以下的目录名 ③ 分支名"}
-    W -- "正好一条" --> O["这条线的负责人作为本轮 FLA\n用它自己的记忆，记录记在它名下\n入口写明：哪条线、哪位接着做"]
+    T["一条任务进来\n请求文字 · 工作目录 · 当前分支 · 会话上一轮"] --> S{"人点名了 FLA / Agent？\n（含本会话之前的 #FLA）"}
+    S -- 是 --> P["按人说的走，直到人点名别人或 #FLA 结束\n点名的若正是某条线的负责人，就由它作为本轮 FLA，任务记在这条线上"]
+    S -- 否 --> H{"组长把任务交给某条线？\n（begin_task_context workstream）"}
+    H -- 是 --> O
+    H -- 否 --> W{"本项目哪条线命中？\n用词优先，其次项目根以下的目录名、分支名\n指向组长的规则不算线"}
+    W -- "正好一条" --> O["这条线的负责人作为本轮 FLA\n用它自己的记忆，记录记在它名下\n换人或换线的那一轮写明：哪条线、谁接手、为什么"]
     W -- "好几条" --> A["留在组长手里，问一次属于哪条"]
+    W -- "命中指向组长的规则" --> L
     W -- "一条都没有" --> C{"本会话上一轮归了某条线？"}
     C -- 是 --> O
     C -- 否 --> L["留在组长手里\n组长按账本判断：属于某条线就交给它；\n是新的无关工作就开一条线；拿不准自己做"]
@@ -59,9 +62,17 @@ flowchart TD
 Decided at task entry, deterministically, with no model:
 
 1. **The person named someone.** A named FLA (`#FLA`) or an explicit Agent. A
-   workstream never overrides it. Naming the FLA that owns a line of this
-   project makes that FLA this turn's FLA, exactly as a matched line does.
-2. **A line of this task's project matches.** Only lines of the project the
+   workstream never overrides it. `#FLA` binds the session: its later turns
+   stay with that FLA, whatever line their words name, until the person names
+   another FLA or sends `#FLA 结束`, which gives the session back to the lines
+   (the turn that ends it, and the turns after, route as below; a named turn
+   never carries a line on). The turn the name takes effect says so once:
+   「…；之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复」. Naming the FLA
+   that owns a line of this project makes that FLA this turn's FLA, exactly as
+   a matched line does, and the task counts on its line in the ledger.
+2. **The lead handed it to a line** (`begin_task_context` `workstream`, see
+   below). That line's owner works this turn; nothing is bound.
+3. **A line of this task's project matches.** Only lines of the project the
    task is already in apply, by three signals:
    - **Its words** occur in the request, as a whole term
      (`src/standing-assignments/term-match.js`).
@@ -73,14 +84,21 @@ Decided at task entry, deterministically, with no model:
      The branch is read from the repository's files within 250 ms
      (`workingRepository`, `src/conversations/working-branch.js`); a slow drive
      leaves it unknown.
-   A request that names this project, or an explicit project id, keeps its
-   lines: naming the project says where, not who.
-3. **More than one line matches** → the task stays with the lead, and the
+   A line its words name outranks another line's folder or branch: saying
+   「优惠券」 inside the folder of another line goes to the 优惠券 line, with no
+   question. A request that names this project, or an explicit project id,
+   keeps its lines: naming the project says where, not who.
+   A standing assignment of this project that points at its lead is the
+   person's rule for the lead, not a line (the ledger leaves it out too): when
+   its words match, and no line's words do, the lead works this turn, and the
+   entry says the FLA changed if the session's last task was a line owner's.
+4. **More than one line matches** → the task stays with the lead, and the
    entry asks the person once which line it is.
-4. **None matches, but this session's last task belonged to a line** → the
-   session goes on with that line, until another line matches, the person names
-   someone, or the line ends.
-5. **Nothing matches** → the task stays with the lead.
+5. **None matches, but this session's last task belonged to a line** → the
+   session goes on with that line, until another line or the lead's rule
+   matches, the person names someone, or the line ends. A line merged into
+   another goes on as the line it went into.
+6. **Nothing matches** → the task stays with the lead.
 
 Only the person's own project-level standing assignments still move a task
 into another project, and only by their words. A line the lead opened, a
@@ -92,8 +110,17 @@ a path such as `C:\Users\admin\code\other` never matches a term `admin`.
 
 The line's owner is this turn's FLA (`selection_reason: workstream_owner`).
 It loads its own project memory; its session summary, work log, checkpoint
-and receipt are its own; nothing of this line reaches the lead's memory. The
-entry's one line says it: 「工作线「春促落地页」由 Ember Vale 接着做」.
+and receipt are its own; nothing of this line reaches the lead's memory.
+
+The entry says it only on the turn the FLA or the line changes, with why, and
+where the session's earlier work is when someone else did it:
+「工作线「春促落地页」由 Ember Vale 接手（因为提到「春促页」）」,
+「…接手（组长交给它）；本会话之前的进展在组长的记录里」,
+「…接手（延续本会话上一轮）；本会话之前的进展在 Fern Holt 的记录里」. The
+reason is a word, a folder (因为在目录 … 下), a branch (因为在分支 … 上), the
+lead's hand-off or the session's last turn; the field carries it in English
+too (`reason_text`). Later turns of the same line by the same owner say
+nothing more and only keep the line on the task.
 
 This relaxes, for one case only, the rule that the project lead owns every
 conversation of its project and that a named member is merely requested
@@ -123,17 +150,22 @@ that has lines:
 - it is a new piece of work unrelated to every line → open a line for it;
 - unsure → do it yourself.
 
-Handing over is one call: `begin_task_context` with `#FLA <owner> <request>`.
-The owner then works this turn as itself, as above, and later turns of the
-session stay with it.
+Handing over is one call: `begin_task_context` with `workstream: "<line name>"`
+and the request as `taskPrompt`. The owner then works this turn as itself, as
+above, and the session goes on with the line like any matched one: the
+person's next words still decide. The lead never uses `#FLA` for this: that is
+the person's own choice of FLA and binds the whole session. A name no line has
+leaves the task with the lead (`standing_owner.status: workstream_not_found`).
 
 ## Opening, correcting and ending one
 
 The project lead opens one with `register_standing_assignment`
 `change: "delegate"`: the terms, the line's name and the member that takes
 it. It is recorded as the lead's (`source: "host"`), in one call, without the
-person's confirmation. When the session is on a branch that is not a shared
-one, that branch is recorded as a term too.
+person's confirmation, and its result carries `tell_user`, the sentence the
+lead passes on: which line, to whom, which words and branches. Only the terms
+the lead names are recorded; a branch is a term only when the lead names it
+(`branch:<name>`), and the preview and the result list branches apart.
 
 - **One line per FLA per project.** Giving a second line to an FLA that
   already has one is refused, naming its line, with three next steps: add
@@ -142,7 +174,11 @@ one, that branch is recorded as a term too.
   Handing a line back to the lead is ending it.
 - **Terms that would match everywhere are refused**: a term of one Han, kana
   or Hangul character, or under three characters otherwise, and common words
-  such as 页面, 修改, bug, page, web, admin, src. A branch everyone shares
+  such as 页面, 修改, bug, page, web, admin, src. Han, kana and Hangul run
+  together with no word boundary, so a two-character term such as 性能 or 上线
+  occurs in requests about anything: a term the lead adds needs three. The
+  person may still use two on the project page, which says once that it is
+  short. A branch everyone shares
   (`main`, `master`, `develop`, `release`, …) is never a branch term: the same
   list that keeps such a branch from proving two sessions continue one piece of
   work (`sharedBranch`, `src/conversations/continuation-decision.js`).
@@ -193,7 +229,13 @@ owner change never rewrites it. A line with no such task says 还没有任务; a
 that could not be read says so, never 还没有任务.
 
 `get_project_team` returns the lines with that progress. The project page
-shows them and changes them by clicking: owner, merge, split, end. The
+shows them and changes them by clicking: owner, a word less (each word's
+remove button), merge, split, end. A merge or an end is asked once first,
+saying what happens and that it cannot be undone in one step (a merge is
+split again, an ended line opened again). Ended lines stay listed, folded,
+newest first. How often each word matched is not shown: an entry records
+which line took a task, not which word, and keeping that would be a new
+record. The
 ledger widget (`workstream-ledger`) shows one FLA's lines — every line of a
 project it leads and the line it owns — and links to the project page for
 changes. Both are on this computer only: over the LAN the team is shown
@@ -205,11 +247,15 @@ boundary: work before it was not under any workstream.
 ## Cost
 
 - No model call, ever.
-- A task in a project without lines costs nothing new.
+- A task in a project without lines costs nothing new: no read, no marker.
 - A task in a project with lines reads the repository and branch from disk
   (at most 250 ms) — the same read the task's beginning uses for its
-  conversation and continuation line, so it is read once — and, when a line
-  matches, makes one more Provider request to select its owner.
+  conversation and continuation line, so it is read once. When the request
+  matches an assignment of the project, or the lead hands a task over, it
+  reads the project's lead (to tell the person's rule for the lead from a
+  line); a session going on with its line does not. When a line takes the
+  turn, it makes one more Provider request to select its owner.
+- A line's notice is sent once, on the turn the FLA or line changes.
 - The entry carries the lines' names and owners and a rules reference only
   when the project has lines; that is counted in the token budget.
 
@@ -217,7 +263,8 @@ boundary: work before it was not under any workstream.
 
 - `register_standing_assignment` — `change: "delegate"` opens a line;
   `reassign`, `edit_terms`, `retire` correct or end one.
-- `begin_task_context` with `#FLA <owner>` — hands this turn to a line's owner.
+- `begin_task_context` with `workstream` — the lead hands this turn to a line's owner.
+- `#FLA <name>` / `#FLA 结束` — the person binds the session to one FLA, or gives it back to the lines.
 - `get_project_team` — `workstreams`, with `latestTask`.
 - Console, this computer only: `GET /api/project-team`,
   `GET /api/workstreams?agentId=|personalProjectId=`,

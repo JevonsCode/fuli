@@ -124,7 +124,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     const kept = current.terms.filter((term) => !removed.has(identityKey(term)));
     const keptKeys = new Set(kept.map(identityKey));
     const added = correction.addTerms.filter(({ key }) => !keptKeys.has(key));
-    for (const { term, key } of added) assertUsableTerm(term, key);
+    for (const { term, key } of added) assertUsableTerm(term, key, source);
     for (const { term, key } of added) {
       const owner = store.termOwner(current.personalSpaceId, key);
       if (owner?.assignmentId !== current.assignmentId) refuseTakenTerm(owner, term);
@@ -188,16 +188,17 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       const on = isBranchTerm(termKey) ? (branchMatches(termKey, branch) ? 'branch' : null)
         : termOccurs(prompt, termKey) ? 'words' : segments.has(termKey) ? 'folder' : null;
       if (!on) continue;
-      const found = matched.get(assignmentId) ?? { keys: [], on: new Set() };
-      found.keys.push(termKey);
-      found.on.add(on);
+      const found = matched.get(assignmentId) ?? new Map();
+      found.set(termKey, on);
       matched.set(assignmentId, found);
     }
     return store.listActive(space).filter(({ assignmentId }) => matched.has(assignmentId))
       .map((assignment) => {
         const found = matched.get(assignment.assignmentId);
-        return { assignment, matchedOn: [...found.on],
-          matchedTerms: assignment.terms.filter((term) => found.keys.includes(identityKey(term))) };
+        const terms = assignment.terms.filter((term) => found.has(identityKey(term)));
+        // termsOn: which terms matched how, so a caller can say why.
+        return { assignment, matchedOn: [...new Set(found.values())], matchedTerms: terms,
+          termsOn: Object.groupBy(terms, (term) => found.get(identityKey(term))) };
       });
   }
 
@@ -220,7 +221,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     const request = registration(input);
     refuseSecondLine(request);
     for (const { term, key } of request.terms) {
-      assertUsableTerm(term, key);
+      assertUsableTerm(term, key, request.source);
       refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
     }
     return { status: 'created', terms: request.terms.map(({ term }) => term), responsibility: request.responsibility };
@@ -310,7 +311,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
 
   function created(request, change) {
     for (const { term, key } of request.terms) {
-      assertUsableTerm(term, key);
+      assertUsableTerm(term, key, request.source);
       refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
     }
     const at = now().toISOString();
@@ -359,6 +360,9 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       return null;
     },
     list: (personalSpaceId) => store.listActive(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
+    // A project's ended assignments, most recently ended first; their history stays.
+    retired: (personalSpaceId, projectId) => store.listRetired(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT),
+      requiredBinding(projectId, 'projectId', ID_LIMIT)),
     // One assignment as it is now, retired or not, or null.
     get: (assignmentId) => store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
     // Each change in order, with the state it produced.

@@ -1,9 +1,10 @@
+import { agentDisplayName as agentName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects, projectDisplayName, promptNamesProject } from './task-entry-project-mention.js';
 import { withRouteMarkers } from './task-agent-assignment.js';
 import { addressedAgentId } from './fla-mention.js';
-import { workstreamEntry, workstreamMarker, workstreamNoticeOf } from './task-entry-workstream.js';
+import { workstreamEntry, workstreamNoticeOf } from './task-entry-workstream.js';
 
 // A standing assignment routes one task (rec#29 D-41 D3, option b): when the
 // task prompt carries a term the person confirmed for a project, this task is
@@ -41,6 +42,8 @@ const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which one this task belongs to, then begin the task again naming that project, or that FLA when the '
   + 'candidates are workstreams of one project.';
+const HANDOFF_MISSING_GUIDANCE = 'No active workstream of this project has this name or ID, so this task stayed with '
+  + 'you. Use a name from team.workstreams, or do the task yourself.';
 
 export async function withStandingOwner(application, resolution, input) {
   const matches = standingMatches(application, input.taskPrompt)
@@ -65,7 +68,13 @@ export async function withStandingOwner(application, resolution, input) {
 // What the entry says about a standing assignment: the routed owner with its
 // one sentence, or the candidates to ask about. The lead's name is the
 // selected Agent's when it is the lead; no Agent is read for it.
-export function standingOwnerEntry(resolution, selection) {
+// predecessorName: the name of the session's earlier owner a line's notice
+// names (task-entry-workstream.js), when it was read.
+export function standingOwnerEntry(resolution, selection, predecessorName = null) {
+  if (resolution.workstreamNotFound) {
+    return { field: { status: 'workstream_not_found', workstream: resolution.workstreamNotFound,
+      guidance: HANDOFF_MISSING_GUIDANCE } };
+  }
   if (resolution.standingCandidates) {
     return { field: { status: 'clarification_required',
       // Workstreams of one project share its name, so each candidate also
@@ -73,7 +82,7 @@ export function standingOwnerEntry(resolution, selection) {
       candidates: resolution.standingCandidates.map(owner => ({ ...ownerView(owner), workstream: owner.workstream })),
       guidance: CLARIFY_GUIDANCE } };
   }
-  if (resolution.standingWorkstream) return workstreamEntry(resolution.standingWorkstream, selection);
+  if (resolution.standingWorkstream) return workstreamEntry(resolution, selection, predecessorName);
   const owner = resolution.standingOwner;
   if (!owner) return null;
   const selected = selection?.agent ?? null;
@@ -97,10 +106,9 @@ export function standingOwnerEntry(resolution, selection) {
 
 // The Agent assignment a routed task stores: the selected Agent's, or one
 // without an Agent, with the route appended within the Provider's bound. A
-// task a workstream took keeps its line of work instead, without moving the
-// session, so the record still says which line it was after an owner change.
+// task a workstream took keeps its line through the entry's route markers
+// instead (workstreamEntry), without moving the session.
 export function withStandingRoute(assignment, standingOwner) {
-  if (standingOwner?.status === 'workstream') return withRouteMarkers(assignment, [workstreamMarker(standingOwner)]);
   if (standingOwner?.status !== 'routed') return assignment;
   return withRouteMarkers(assignment, [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
     ...sessionMarkers({ personalProjectId: standingOwner.session_project_id,
@@ -148,10 +156,6 @@ function routable(resolution, input) {
     || EXPLICIT_BASES.has(resolution.basis)) return false;
   if (resolution.status === 'matched' || resolution.status === 'global') return true;
   return resolution.status === 'ambiguous' && resolution.basis === 'host_session_assignment';
-}
-
-function agentName(agent) {
-  return agent?.profile?.displayName || agent?.profile?.name || null;
 }
 
 function ownerView(owner) {

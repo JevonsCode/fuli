@@ -314,11 +314,11 @@ test('in its own project an assignment changes the selection only when its Agent
   assert.equal(entry.project_agent_context.project_agent_id, 'helper-timesheet');
   assert.equal(entry.project_agent_context.requested_agent_id, undefined);
   assert.equal(entry.context.personal_project_id, 'timesheet');
-  const notice = '工作线「Fill the synthetic timesheet」由 helper-timesheet name 接着做';
+  const notice = '工作线「Fill the synthetic timesheet」由 helper-timesheet name 接手（因为提到「工时」）';
   assert.deepEqual(entry.standing_owner, { status: 'workstream',
     assignment_id: other.app.standingAssignments.list(SPACE)[0].assignmentId,
     workstream: 'Fill the synthetic timesheet', owner_agent_id: 'helper-timesheet', owner_name: 'helper-timesheet name',
-    matched_terms: ['工时'], matched_on: ['words'], notice });
+    matched_terms: ['工时'], matched_on: ['words'], reason_text: 'the request mentions "工时"', notice });
   assert.match(entry.agent_receipt.markdown, new RegExp(`· ${notice}$`));
 });
 

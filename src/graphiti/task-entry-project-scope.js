@@ -35,8 +35,10 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
   // The person's own rules may move the task to its project; a line of the
   // project it is then in may give it to that line's owner (docs/workstreams.md).
+  // A turn the person's own #FLA bound never carries a line on to the next.
   const routed = group?.holdsProject ? home
-    : await withWorkstream(application, await withStandingOwner(application, home, input), input, sessionTask);
+    : await withWorkstream(application, await withStandingOwner(application, home, input), input,
+      namedFlaTask(sessionTask) ? null : sessionTask);
   // Whose the session's last task was, so the entry can say when that changes (task-entry-owner-change.js).
   const sessionOwner = sessionOwnerOf(sessionTask);
   return fla || group || sessionOwner || turnIntroduction ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),

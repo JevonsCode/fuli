@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { agentDisplayName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { sessionTaskContext } from './task-entry-standing-owner.js';
 
@@ -46,13 +47,14 @@ export function sessionOwnerOf(task) {
 }
 
 // The earlier owner when this entry changes it, or null when the owner stays.
-// A named FLA, a group discussion or a standing assignment already says why
-// the owner is who it is, so it adds nothing then.
-export function changedOwner(resolution, selection) {
+// A named FLA, a group discussion or a standing assignment's notice
+// (standingNotice: the entry shows one) already says why the owner is who it
+// is, so it adds nothing then. A line that went quiet, or the person's rule
+// for the lead, says nothing of its own, so a change is still said.
+export function changedOwner(resolution, selection, standingNotice = false) {
   const from = resolution.sessionOwner;
   const to = selection?.agent?.agentId ?? null;
-  if (!from || !to || from.agentId === to || resolution.fla || resolution.group || resolution.standingOwner
-    || resolution.standingWorkstream) return null;
+  if (!from || !to || from.agentId === to || resolution.fla || resolution.group || standingNotice) return null;
   return from;
 }
 
@@ -61,7 +63,7 @@ export async function previousOwnerName(application, from) {
   if (!from) return null;
   const read = application.getProjectAgent({ personalSpaceId: application.config.personal.spaceId,
     personalProjectId: from.personalProjectId, agentId: from.agentId })
-    .then(agent => agent?.profile?.displayName || agent?.profile?.name || null, () => null);
+    .then(agentDisplayName, () => null);
   return Promise.race([read, delay(NAME_WAIT_MS, null, { ref: false })]);
 }
 

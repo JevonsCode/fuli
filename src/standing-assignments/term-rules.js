@@ -5,7 +5,11 @@ import { identityKey } from '../text/name-identity.js';
 // What a term may be (docs/workstreams.md). A term routes every later task
 // whose words, folder or branch name it, so one that occurs almost everywhere
 // would capture unrelated work: a single Han, kana or Hangul character, under
-// three characters otherwise, or a word every request uses. A branch term,
+// three characters otherwise, or a word every request uses. A term an Agent
+// adds to a line or its own assignment on its own (source host; a project's
+// lead opening a workstream) needs three Han, kana or Hangul characters:
+// two such as 性能 or 上线 occur in requests about anything, and no person
+// looked at it. The person may still use two; the console says it is short. A branch term,
 // `branch:<name>` or `branch:<prefix>/`, names a branch of one line of work;
 // a branch everyone shares names none — the same list that keeps a shared
 // branch from proving two sessions continue one piece of work
@@ -22,12 +26,6 @@ const COMMON = new Set([
 
 export const isBranchTerm = key => key.startsWith(BRANCH_PREFIX);
 
-/** The branch term for a branch, or null for a shared one. */
-export function branchTerm(name) {
-  if (typeof name !== 'string' || !name.trim() || sharedBranch(name)) return null;
-  return `${BRANCH_PREFIX}${name.trim()}`;
-}
-
 /** Whether a branch term's key names this branch: exactly, or every branch under `prefix/`. */
 export function branchMatches(termKey, branch) {
   if (!isBranchTerm(termKey) || typeof branch !== 'string' || !branch) return false;
@@ -37,15 +35,19 @@ export function branchMatches(termKey, branch) {
 }
 
 /** Refuses a term that would match nearly every task, saying why in a sentence the caller can show. */
-export function assertUsableTerm(term, key = identityKey(term)) {
+export function assertUsableTerm(term, key = identityKey(term), source = 'user') {
   if (isBranchTerm(key)) {
     const name = key.slice(BRANCH_PREFIX.length);
     if (!name || name === '/' || sharedBranch(name)) throw tooBroad(term, 'a branch everyone shares names no single line');
     return;
   }
   const characters = [...key.replace(/\s+/gu, '')];
-  const short = characters.some(char => UNSPACED.test(char)) ? characters.length < 2 : characters.length < 3;
-  if (short) throw tooBroad(term, 'it is too short and would match almost every request');
+  const unspaced = characters.some(char => UNSPACED.test(char));
+  if (characters.length < (unspaced && source !== 'host' ? 2 : 3)) {
+    throw tooBroad(term, unspaced && characters.length === 2
+      ? 'a term an Agent adds needs at least three characters, since two match requests about anything'
+      : 'it is too short and would match almost every request');
+  }
   if (COMMON.has(key)) throw tooBroad(term, 'almost every request uses this word');
 }
 

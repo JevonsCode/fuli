@@ -250,7 +250,10 @@ const BASELINE = Object.freeze({
   // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
   // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
   // for reading it travel in the answer's own guidance.
-  fullToolSchemaBytes: 192751,
+  // docs/workstreams.md: begin_task_context gains workstream, the lead's hand-off of a task to a line by
+  // name, so a lead no longer borrows the person's #FLA (which binds the session): 192,745 -> 192,888 B
+  // (+143 B), measured after merging main. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 192888,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // and refers to the dividing rule (two lines: +169 chars, measured); a
   // project without lines adds nothing.

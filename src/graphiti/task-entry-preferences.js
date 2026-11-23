@@ -18,7 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
-import { WORKING_REPOSITORY, workingBranchMarkers } from './task-entry-workstream.js';
+import { WORKING_REPOSITORY, namedWorkstreamMarkers, workstreamPredecessor } from './task-entry-workstream.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { introductionEntry } from './task-entry-introduction.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
@@ -177,10 +177,12 @@ async function entryPreferences(application, projectResolution, {
   const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
     fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
   const selection = group?.selection ?? fla?.selection ?? selected;
-  const ownerFrom = changedOwner(projectResolution, selection);
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
-  const standing = standingOwnerEntry(projectResolution, selection);
+  let standing = standingOwnerEntry(projectResolution, selection);
+  const ownerFrom = changedOwner(projectResolution, selection, Boolean(standing?.notice));
+  // A line's new owner names whose records hold the session's earlier work (task-entry-workstream.js).
+  const predecessor = workstreamPredecessor(projectResolution, selection);
   const team = reads.management.then(management => {
     // Sealed workers already carry a coordinator's reporting contract. Ordinary
     // entry advertises team/judgment only with an available authorized manager.
@@ -225,13 +227,16 @@ async function entryPreferences(application, projectResolution, {
     includeMessages && agentInvocation ? roundtableAskEntry(application, { taskPrompt, sessionId },
       { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null,
     // Display only: bounded, and its ID stands in (task-entry-owner-change.js).
-    previousOwnerName(application, ownerFrom),
+    previousOwnerName(application, ownerFrom ?? predecessor),
     // A round the host of a discussion this session joined by code addressed to it (rec#129).
     includeMessages && agentInvocation && !group?.view
       ? joinedRoundsEntry(application, { sourceApplication, sessionId: sessionId ?? sourceSessionId,
         agentId: selection?.agent?.agentId ?? null }) : null
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
+  if (predecessor && ownerFromName && predecessor.agentId !== projectResolution.standingWorkstream?.projectLeadId) {
+    standing = standingOwnerEntry(projectResolution, selection, ownerFromName);
+  }
   if (context) applyAgentAssignment(context, selection);
   const ownerChange = ownerFrom && ownerChangeEntry(ownerFrom, ownerFromName, projectResolution, selection.agent.agentId, context?.role?.name);
   // A worker run (includeMessages false) never introduces its Agent to the person.
@@ -239,8 +244,8 @@ async function entryPreferences(application, projectResolution, {
     context, input: { projectAgentId, sessionId, sourceSessionId, agentInvocation, agentToolName, taskPrompt },
     sessionOwnerFrom: ownerChange ? ownerFrom.agentId : null }) : null;
   const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection),
-    // The session's branch, when it can name a line, so opening one records it (docs/workstreams.md).
-    ...workingBranchMarkers(projectResolution),
+    // Which line this task belongs to (docs/workstreams.md): one a line took, or a named owner's.
+    ...(standing?.markers ?? []), ...namedWorkstreamMarkers(selection),
     ...(ownerChange ? [ownerChange.marker] : []), ...(introduction ? [introduction.marker] : [])];
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
@@ -263,7 +268,7 @@ async function entryPreferences(application, projectResolution, {
       { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
-    ...(standing ? { standing_owner: standing.field } : {}),
+    ...(standing?.field ? { standing_owner: standing.field } : {}),
     ...(ownerChange ? { owner_change: ownerChange.field } : {}),
     ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ?? joinedRounds ? { flg: group?.view ?? joinedRounds } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),

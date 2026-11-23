@@ -1,11 +1,10 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { ID_LIMIT, RESPONSIBILITY_LIMIT } from '../standing-assignments/limits.js';
-import { branchTerm } from '../standing-assignments/term-rules.js';
+import { isBranchTerm } from '../standing-assignments/term-rules.js';
 import { identityKey } from '../text/name-identity.js';
 import { requiredString } from '../validation/values.js';
 import { activeTeamAgent, loadProjectTeam } from './project-team-view.js';
 import { personsConversation, projectLead, quoted, standingAssignmentsOf } from './standing-assignment-confirmation.js';
-import { taskWorkingBranch } from './task-entry-workstream.js';
 
 // A project's lines of work (docs/workstreams.md): several small projects,
 // pages or campaigns share a repository, a release process and components
@@ -21,7 +20,8 @@ import { taskWorkingBranch } from './task-entry-workstream.js';
 // what an Agent decided: the store refuses an Agent's change to it.
 
 const NOT_EXECUTED = 'Recorded, NOT executed: no task was started or done. Later tasks of this project whose words, '
-  + 'folder or branch name these terms go to this FLA, which works them as itself.';
+  + 'folder or branch name these terms go to this FLA, which works them as itself. Tell the person tell_user once, '
+  + 'in their language: you opened this line on your own and they can change or end it on the project page.';
 
 // change delegate: the calling task's project lead opens a line in one call.
 export async function delegateWorkstream(application, input) {
@@ -29,16 +29,30 @@ export async function delegateWorkstream(application, input) {
   const task = await personsConversation(application, input);
   const { projectId } = await asLeadOf(application, task.personalProjectId, task.projectAgentId);
   const owner = await lineOwner(application, projectId, requiredString(input.leadAgentId, 'leadAgentId', ID_LIMIT));
-  const registration = lineRegistration(application, { projectId, owner, terms: withBranch(input.terms, task),
+  // Only the terms the lead named: the branch its session is on is a term
+  // only when it names one (branch:<name>), never added on its own.
+  const registration = lineRegistration(application, { projectId, owner, terms: input.terms,
     responsibility: input.responsibility, source: 'host', sourceConversationId: task.sessionId });
   if (input.action === 'preview') {
     const plan = port.previewOpen(registration);
+    const { words, branches } = byKind(plan.terms);
     return { status: 'preview', executed: false, workstream: view(plan.responsibility, plan.terms, owner),
-      restatement: `FULI will send later tasks of this project that name ${quoted(plan.terms)} to ${owner.name} `
-        + `as the workstream "${plan.responsibility}", who works them as itself; nothing is done now.` };
+      restatement: `FULI will send later tasks of this project ${words.length ? `that name ${quoted(words)} `
+        : ''}to ${owner.name} as the workstream "${plan.responsibility}", who works them as itself; nothing is done now.`
+        + (branches.length ? ` Every task on the branch ${quoted(branches)} goes there too, whatever it says.` : '') };
   }
   const { assignment } = port.open(registration);
-  return { status: 'created', executed: false, notice: NOT_EXECUTED, workstream: lineView(assignment, owner) };
+  const { words, branches } = byKind(assignment.terms);
+  return { status: 'created', executed: false, notice: NOT_EXECUTED, workstream: lineView(assignment, owner),
+    tell_user: `已开工作线「${assignment.responsibility}」交给 ${owner.name}`
+      + (words.length ? `，词：${words.join('、')}` : '') + (branches.length ? `；分支：${branches.join('、')}` : '') };
+}
+
+// A line's word terms and, apart, its branches (without the branch: prefix).
+function byKind(terms) {
+  const branches = terms.filter(term => isBranchTerm(identityKey(term)));
+  return { words: terms.filter(term => !branches.includes(term)),
+    branches: branches.map(term => term.slice(term.indexOf(':') + 1)) };
 }
 
 // Whether this is the lead's own change to a line it opened: it then applies
@@ -134,17 +148,10 @@ function lineRegistration(application, { projectId, owner, terms, responsibility
     sourceConversationId };
 }
 
-// The terms the lead named, and the branch its session is on when that branch
-// is one line's (task-entry-workstream.js), so the line is found on it later.
-function withBranch(terms, task) {
-  const term = branchTerm(taskWorkingBranch(task));
-  if (!term || !Array.isArray(terms)) return terms;
-  return terms.some(item => typeof item === 'string' && identityKey(item) === identityKey(term)) ? terms
-    : [...terms, term];
-}
-
 function view(workstream, terms, owner) {
-  return { workstream, terms, owner_agent_id: owner.agentId, owner_name: owner.name };
+  const { words, branches } = byKind(terms);
+  return { workstream, terms: words, ...(branches.length ? { branches } : {}), owner_agent_id: owner.agentId,
+    owner_name: owner.name };
 }
 
 function lineView(assignment, owner) {
