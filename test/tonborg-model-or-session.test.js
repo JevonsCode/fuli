@@ -774,3 +774,47 @@ test('D-58: Tonborg\'s own model still judges with its full context', async t =>
   const sent = JSON.stringify(h.calls[0]);
   for (const text of [SECRET.memory, SECRET.summary, SECRET.rule]) assert.ok(sent.includes(text), text);
 });
+
+// One more candidate beside the harness's own, as the Provider lists it.
+const extraCandidate = key => ({ candidate_key: key, title: `Synthetic ${key}`, content: 'synthetic note', confirmation_status: 'confirmed',
+  changed_at: '2026-01-01', reasons: [], project_ids: ['p'], ai_review_evidence_token: `token-${key}` });
+const evidenceOf = call => JSON.parse(call.messages.at(-1).content.split('\nDATA: ')[1]).evidence;
+
+test('a review keeps the verdicts that pass, asks again once for just the rest, and the usage says the first answer failed', async t => {
+  const h = harness(t, { roles: { tonborg: tonborg() }, replies: n => (n === 1
+    ? reply({ decisions: [
+      // A doubt left null and a doubt outside the list are FULI's to word: they never fail a verdict.
+      verdict({ doubt: null, question: null }),
+      verdict({ target: 'entity:two', evidence: [] }),
+      verdict({ target: 'entity:three', doubt: 'made_up_reason', extra: 'ignored' })] })
+    : reply({ decisions: [verdict({ target: 'entity:two' })] })) });
+  h.candidates.push(extraCandidate('entity:two'), extraCandidate('entity:three'));
+  const result = await h.app.judgment.review(reviewInput);
+  assert.equal(h.calls.length, 2);
+  const recheck = evidenceOf(h.calls[1]);
+  assert.deepEqual(JSON.parse(recheck.find(item => item.id === 'candidates').text).map(c => c.candidate_key), ['entity:two'],
+    'the second look carries only the candidate whose verdict failed');
+  assert.match(recheck.find(item => item.id === 'failedChecks').text, /entity:two.*evidence: Too small/);
+  assert.equal(h.calls[1].messages.length, 2, 'no earlier answer is echoed back');
+  assert.deepEqual(result.records.map(record => record.target).sort(), ['entity:one', 'entity:three', 'entity:two']);
+  assert.equal(result.records.find(record => record.target === 'entity:three').doubt, undefined, 'an odd doubt is dropped, not kept');
+  assert.equal(result.notReviewed, undefined);
+  const [group] = h.ledger.usage({ role: 'tonborg' });
+  assert.equal(group.requests, 2);
+  assert.equal(group.failedRequests, 1, 'the first answer did not pass whole, though two of its verdicts were used');
+  assert.deepEqual(group.failureReasons, [{ reason: 'invalid_items', requests: 1 }]);
+  assert.deepEqual(group.formatIssues, [{ issue: 'payload.decisions[].evidence:too_small', attempts: 1 }]);
+});
+
+test('a candidate whose verdict fails twice waits for the next review; the rest of the batch is kept and nothing reads as a failed review', async t => {
+  const broken = verdict({ target: 'entity:two', outcome: 'maybe' });
+  const h = harness(t, { roles: { tonborg: tonborg() }, replies: n => reply({ decisions: n === 1 ? [verdict(), broken] : [broken] }) });
+  h.candidates.push(extraCandidate('entity:two'));
+  const result = await h.app.judgment.review(reviewInput);
+  assert.equal(h.calls.length, 2, 'asked again once, not more');
+  assert.deepEqual(result.records.map(record => [record.target, record.outcome]), [['entity:one', 'approve']]);
+  assert.equal(result.notReviewed, 1);
+  const again = await h.app.judgment.review(reviewInput);
+  assert.equal(again.notReviewed, 1, 'a repeated request answers as it did');
+  assert.equal(h.calls.length, 2);
+});

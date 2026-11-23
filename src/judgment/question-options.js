@@ -1,4 +1,4 @@
-import { enumSchema, stringSchema } from '../agent-tools/schema.js';
+import { enumSchema } from '../agent-tools/schema.js';
 import { InvalidInputError } from '../app/application-error.js';
 import { singleLineExcerpt } from '../text/single-line.js';
 import { injectionSignals } from './review-injection-precheck.js';
@@ -20,12 +20,14 @@ export const GUESSES = Object.freeze(['keep', 'drop', 'edit']);
 // Why Tonborg is unsure, as the review criteria name it (review-prompt.js).
 export const DOUBTS = Object.freeze(['one_off', 'not_your_words', 'duplicate', 'conflict', 'unclear', 'agent_reply', 'scope', 'other']);
 export const QUESTION_MAX = 80;
-// The answer schema's fields: a review is asked for all three. An answer is
-// then checked with the guess as part of its verdict (a delegated review must
-// give it) and its doubt and question apart (softAsk), so a missing doubt or a
-// long or odd sentence is replaced instead of failing the verdict.
-export const guessProperty = Object.freeze({ guess: enumSchema(GUESSES) });
-export const askProperties = Object.freeze({ ...guessProperty, doubt: enumSchema(DOUBTS), question: stringSchema() });
+// The answer schema's fields: a review is asked for all three. The guess is
+// part of the verdict: a delegated review must give one of GUESSES, any other
+// may leave it null. Doubt and question are read apart (softAsk), so the
+// schema takes any text or null for them, and a doubt outside DOUBTS or a
+// long or odd sentence is replaced by FULI's own wording instead of failing
+// the verdict, at the model port as well as here.
+export const guessProperty = delegated => ({ guess: delegated ? enumSchema(GUESSES) : { type: ['string', 'null'], enum: [...GUESSES, null] } });
+export const askProperties = Object.freeze({ doubt: { type: ['string', 'null'] }, question: { type: ['string', 'null'] } });
 export const ASK_FIELDS = Object.freeze(Object.keys(askProperties));
 const SOFT_FIELDS = Object.freeze(['doubt', 'question']);
 // More than any question that keeps the shape; what is stored of one that does not.

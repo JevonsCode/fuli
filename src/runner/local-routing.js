@@ -18,6 +18,7 @@ import { ModelUsageLedger } from '../model-backends/usage-ledger.js';
 import { sha256Bytes } from '../security/digest.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { entryToken, envelope, failure, isWholeEntry, projectPreferences, resultValue, unpairedAnswer, wholePreferencesKey } from './offline-calls.js';
+import { checkCapabilityNames } from '../judgment/executor-capabilities.js';
 import { preflightExecutors, readRunnerExecutors } from './routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from './routing-ledger.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OPERATION, ROUTING_OUTCOME_ENTRY, routingRoleState } from './routing-setup.js';
@@ -191,6 +192,11 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     const declared = readRunnerExecutors(dataDir);
     if (declared.state === 'invalid') {
       return failure('runner_routing_config_invalid', `${NOT_JUDGED} ${declared.error}. ${EXECUTORS_FIX}`);
+    }
+    try {
+      checkCapabilityNames(request.requiredCapabilities, declared.state === 'ok' ? declared.executors : [], 'requiredCapabilities');
+    } catch (error) {
+      return failure('invalid_input', error.message);
     }
     const required = [...new Set(request.requiredCapabilities.map((value) => value.toLowerCase()))];
     const { eligible, leftOut } = preflightExecutors(declared.state === 'ok' ? declared.executors : [], required);
