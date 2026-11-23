@@ -52,7 +52,7 @@ import { usePageTitle } from "@/layouts/page-title";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 import { usePageRefresh } from "@/layouts/page-refresh";
-import { projectDisplayName } from '@/features/projects/project-origin'
+import { hasTemporaryOrigin, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 
 // The Workbench and the management sections load only when their tab opens (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
@@ -177,7 +177,8 @@ const currentProjects = computed(() =>
     : [],
 );
 const conversationProjectRecords = computed(() => projects.value.filter((item) => currentProjects.value.includes(item.project_id)));
-const conversationProjects = computed(() => conversationProjectRecords.value.map((item) => ({ id: item.project_id, name: projectDisplayName(item) })));
+const conversationProjects = computed(() => pickerOrder(conversationProjectRecords.value).map((item) => ({
+  id: item.project_id, name: projectDisplayName(item), temporary: hasTemporaryOrigin(item) })));
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
 const previousProjects = computed(() =>

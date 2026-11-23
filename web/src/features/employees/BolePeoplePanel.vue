@@ -28,7 +28,9 @@ import BolePerformanceSummary from './BolePerformanceSummary.vue'
 import { refreshEmployeeCatalog } from './catalog'
 import { useBoleScoreCards } from './useBoleScoreCards'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
-import { projectDisplayName } from '@/features/projects/project-origin'
+import { hasTemporaryOrigin, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { isGeneratedTemporaryId } from '@/features/projects/temporary-project-name'
 
 type UnknownRecord = Record<string, unknown>
 type AgentView = {
@@ -127,9 +129,18 @@ const viewReadFailed = computed(() => activeView.value === 'people' ? agentsRead
 const recruitmentRows = computed(() => [...recruitments.value].sort((left, right) => right.createdAt.localeCompare(left.createdAt)))
 const projectOptions = computed(() => {
   const ids = new Set([...props.projects.map((project) => project.project_id), ...agents.value.flatMap((agent) => agent.projectIds), ...tasks.value.map((task) => task.projectId), ...recruitments.value.map((item) => item.projectId)].filter(Boolean))
-  return [...ids].map((id) => ({ id, name: projectNames.value.get(id) ?? id }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .concat({ id: unassignedKey, name: t('employees.bole.noProject') })
+  const records = new Map(props.projects.map((project) => [project.project_id, project]))
+  // Named projects by name; temporary ones most recent first, as every picker lists them. An ID
+  // this space has no record of is temporary when FULI generated it ('temporary-<digest>').
+  const temporaryOf = (id: string) => { const record = records.get(id); return record ? hasTemporaryOrigin(record) : isGeneratedTemporaryId(id) }
+  const choices = [...ids].map((id) => ({ id, name: projectNames.value.get(id) ?? id, temporary: temporaryOf(id) }))
+  const recent = pickerOrder(props.projects).map((project) => project.project_id)
+  const rank = (id: string) => { const at = recent.indexOf(id); return at < 0 ? recent.length : at }
+  return [
+    ...choices.filter((choice) => !choice.temporary).sort((a, b) => a.name.localeCompare(b.name)),
+    ...choices.filter((choice) => choice.temporary).sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id)),
+    { id: unassignedKey, name: t('employees.bole.noProject'), temporary: false },
+  ]
 })
 const projectSelection = computed({
   get: () => selectedProjects.value ?? projectOptions.value.map((project) => project.id),
@@ -337,7 +348,7 @@ function formattedDate(value: string) {
       <div class="bole-controls">
         <div class="bole-filters">
           <Input v-model="search" type="search" class="bole-search" :aria-label="t('employees.bole.search')" :placeholder="t('employees.bole.search')" />
-          <OptionCombobox v-model="projectSelection" class="bole-project-filter" multiple :options="projectSelectOptions(projectOptions)" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :placeholder="t('employees.filterEmpty')" />
+          <OptionCombobox v-model="projectSelection" class="bole-project-filter" multiple :options="projectSelectOptions(projectOptions)" :fold-group="temporaryGroupLabel()" :label="t('employees.allProjects.projectFilter')" :all-label="t('employees.bole.allProjects')" :placeholder="t('employees.filterEmpty')" />
           <UiSegmented v-if="activeView === 'people'" v-model="workFilter" :label="t('employees.bole.workFilter')" :options="workFilterOptions" />
         </div>
         <div class="bole-role-filters">

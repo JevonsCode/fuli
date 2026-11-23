@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ProjectScopePicker from '@/features/projects/ProjectScopePicker.vue'
+import { MAX_BORROWED_PROJECTS, readEach, toggleBorrowed } from './borrowed-contexts'
 import { directorySectionFor, useProfileEditLink, type DirectorySection } from './directory-section'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -59,7 +61,7 @@ import {
   knowledgeItemKey,
 } from './model'
 import { useSpaceChoices } from './space-choices'
-import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { projectScopeKey, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import {
    discoverPersonalProjectResults,
@@ -143,7 +145,16 @@ const mode = computed<KnowledgeMode>(() => {
   if (route.params.mode === 'overview' && overviewAvailable.value) return 'overview'
   return 'directory'
 })
-const contextIds = computed(() => queryValues(route.query.context))
+// An address from before the limit may name more; only the first ones are
+// borrowed, and the page says so once for that address.
+const contextIds = computed(() => queryValues(route.query.context).slice(0, MAX_BORROWED_PROJECTS))
+let trimmedAddress = ''
+watch(() => queryValues(route.query.context), (named) => {
+  const address = named.join('\n')
+  if (named.length <= MAX_BORROWED_PROJECTS || address === trimmedAddress) return
+  trimmedAddress = address
+  store.notify(t('knowledge.workspace.workspace.view.borrowTrimmed', { count: named.length, max: MAX_BORROWED_PROJECTS }))
+}, { immediate: true })
 const graphContextKey = computed(() => JSON.stringify([
   props.personalProjectsOnly,
   scope.value,
@@ -490,9 +501,9 @@ async function loadGraph() {
 }
 
 async function loadPersonalProjectContext() {
-  const [active, ...contexts] = await Promise.all([
+  const [active, contexts] = await Promise.all([
     readGraph(projectId.value),
-    ...contextIds.value.map((id) => readGraph(id)),
+    readEach(contextIds.value, id => readGraph(id)),
   ])
   return mergeKnowledgeGraphs([active, ...contexts])
 }
@@ -827,12 +838,14 @@ function selectDeepLinkedItem() {
   }
 }
 
-function toggleContext(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
-  const selected = new Set(contextIds.value)
-  if (input.checked) selected.add(input.value)
-  else selected.delete(input.value)
-  void updateQuery('context', [...selected])
+// The picker speaks in space/project keys; the address keeps project IDs.
+const contextKeys = computed(() => availableContexts.value
+  .filter(project => contextIds.value.includes(project.project_id)).map(projectScopeKey))
+function toggleContexts(keys: string[], on: boolean) {
+  const ids = availableContexts.value.filter(project => keys.includes(projectScopeKey(project))).map(project => project.project_id)
+  const { ids: borrowed, refused } = toggleBorrowed(contextIds.value, ids, on)
+  if (refused) store.notify(t('knowledge.workspace.workspace.view.borrowLimitReached', { max: MAX_BORROWED_PROJECTS, count: refused }))
+  void updateQuery('context', borrowed)
 }
 
 async function openPersonalProject(nextProjectId: string) {
@@ -1065,18 +1078,12 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
         </summary>
         <div class="personal-context-panel">
           <strong>{{ t('knowledge.workspace.workspace.view.currentContext') }}</strong>
-          <p>{{ t('knowledge.workspace.workspace.view.contextCopy') }}</p>
-          <div class="personal-context-list">
-            <label v-for="project in availableContexts" :key="project.project_id" class="personal-context-option">
-              <input
-                type="checkbox"
-                :value="project.project_id"
-                :checked="contextIds.includes(project.project_id)"
-                @change="toggleContext"
-              />
-              <span><strong>{{ projectDisplayName(project) }}</strong><small>{{ t('knowledge.workspace.workspace.view.currentScopeOnly') }}</small></span>
-            </label>
-          </div>
+          <p>{{ t('knowledge.workspace.workspace.view.contextCopy') }} {{ t('knowledge.workspace.workspace.view.borrowLimit', { max: MAX_BORROWED_PROJECTS }) }}</p>
+          <!-- The shared picker: named projects first, temporary ones folded, 全选 / 清空, a page at a time. -->
+          <!-- A one-off view, not a setting: no note about projects made later. -->
+          <ProjectScopePicker :projects="availableContexts" :selected="contextKeys" id-prefix="borrow-context"
+            :later-projects-note="false" :max-selected="MAX_BORROWED_PROJECTS"
+            data-personal-context-picker @toggle="toggleContexts" />
         </div>
       </details>
 
