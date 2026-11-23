@@ -1,4 +1,7 @@
+import { z } from 'zod'
+
 import { getJson, postJson } from '@/api/client'
+import { shapeFor } from '@/api/response-shape'
 
 export interface ProjectTeamPerson {
   agentId: string
@@ -83,34 +86,42 @@ export interface AgentWorkstreamLedger {
   }[]
 }
 
+// The fields the ledger widget relies on: which project, which line, who.
+const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), ownerAgentId: z.string() })
+const agentWorkstreamsShape = shapeFor<AgentWorkstreamLedger>(z.object({
+  agentId: z.string(),
+  projects: z.array(z.object({ projectId: z.string(), projectName: z.string(), leads: z.boolean(),
+    workstreams: z.array(workstreamLine) })),
+}))
+
 export function readAgentWorkstreams(agentId: string) {
   const query = new URLSearchParams({ agentId })
-  return getJson<AgentWorkstreamLedger>(`/api/workstreams?${query}`)
+  return getJson(`/api/workstreams?${query}`, agentWorkstreamsShape)
 }
 
 /** Opens a line of work for one member of this project. Local console only. */
 export function openWorkstream(personalProjectId: string, body: {
   leadAgentId: string; terms: string[]; responsibility: string
 }) {
-  return postJson<unknown>('/api/standing-assignments', { personalProjectId, ...body })
+  return postJson('/api/standing-assignments', { personalProjectId, ...body })
 }
 
 /** Gives the line to another member of the same project, terms and all. */
 export function moveWorkstream(assignmentId: string, body: {
   expectedRevision: number; projectId: string; leadAgentId: string
 }) {
-  return postJson<unknown>(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/reassign`, body)
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/reassign`, body)
 }
 
 /** Adds or removes the words that name the line. */
 export function editWorkstreamTerms(assignmentId: string, body: {
   expectedRevision: number; addTerms?: string[]; removeTerms?: string[]
 }) {
-  return postJson<unknown>(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/terms`, body)
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/terms`, body)
 }
 
 /** Ends the line from now on. Its record and every revision stay. */
 export function endWorkstream(assignmentId: string, expectedRevision: number) {
-  return postJson<unknown>(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/retire`,
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/retire`,
     { expectedRevision })
 }

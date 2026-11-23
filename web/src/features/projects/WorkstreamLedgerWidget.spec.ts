@@ -46,7 +46,7 @@ describe('WorkstreamLedgerWidget', () => {
     getJson.mockResolvedValue(ledger)
     const widget = mountWidget()
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/workstreams?agentId=fla-mara')
+    expect(getJson).toHaveBeenCalledWith('/api/workstreams?agentId=fla-mara', expect.anything())
     expect(widget.get('[data-ledger-project="project-a"]').text()).toContain('Campaigns')
     widget.unmount()
   })

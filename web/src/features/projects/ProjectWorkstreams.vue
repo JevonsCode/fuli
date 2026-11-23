@@ -240,10 +240,10 @@ function open() {
           </select>
         </label>
         <div v-if="heldTerms.length" class="project-workstreams-chips">
-          <button v-for="term in heldTerms" :key="term" type="button" class="project-workstreams-chip"
-            :class="{ 'is-on': chosenTerms.includes(term.toLowerCase()) }"
+          <Button v-for="term in heldTerms" :key="term" type="button" size="xs"
+            :variant="chosenTerms.includes(term.toLowerCase()) ? 'secondary' : 'outline'"
             :aria-pressed="chosenTerms.includes(term.toLowerCase())" :data-term-chip="term"
-            @click="toggleTerm(term)">{{ term }}</button>
+            @click="toggleTerm(term)">{{ term }}</Button>
         </div>
         <Button type="submit" size="sm" :disabled="!canOpen || Boolean(busy)">
           {{ t('projects.workstreams.confirm') }}
@@ -314,19 +314,6 @@ function open() {
   gap: 0.25rem;
 }
 
-.project-workstreams-chip {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 0.8125rem;
-  padding: 0.125rem 0.5rem;
-}
-
-.project-workstreams-chip.is-on {
-  background: var(--accent);
-  border-color: var(--accent-foreground);
-}
 
 .project-workstreams-error {
   color: var(--destructive);
