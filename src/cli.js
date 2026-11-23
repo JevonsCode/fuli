@@ -19,6 +19,7 @@ import { runSetupCommand } from './cli/setup-command.js';
 import { runClientsCommand } from './cli/clients-command.js';
 import { runConnectCommand } from './cli/connect-command.js';
 import { runPeerCommand } from './cli/peer-command.js';
+import { runRoutesCommand } from './cli/routes-command.js';
 import { runRunnerCommand } from './cli/runner-command.js';
 import { runMcpCommand, startupMessage } from './cli/mcp-command.js';
 import { runUninstallCommand } from './cli/uninstall-command.js';
@@ -54,6 +55,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'runner') {
     assertSupportedNodeVersion();
     return runRunnerCommand(commandArgs, { env });
+  }
+  if (command === 'routes') {
+    assertSupportedNodeVersion();
+    return runRoutesCommand(commandArgs, { env });
   }
   if (command === 'mcp') {
     assertSupportedNodeVersion();
