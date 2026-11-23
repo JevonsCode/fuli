@@ -305,7 +305,8 @@ describe('ModelSettingsPage', () => {
     expect(dialog.find('[data-model-budget="maxOutputTokens"]').exists()).toBe(false)
     await dialog.get('[data-model-advanced] button').trigger('click')
     await flushPromises()
-    expect(dialog.text()).toContain('已接入：knowledge_review')
+    // Task types are ticked by name, never typed as codes.
+    expect(dialog.findAll('[data-model-operation]').map(row => row.text())).toContain('确认知识')
     await dialog.get('[data-model-name] input').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
     await dialog.get('form').trigger('submit')
