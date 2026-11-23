@@ -19,7 +19,8 @@ import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
+import { claudeEntrySession, claudeHostEventSession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences,
+  syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 
@@ -368,8 +369,19 @@ const BASELINE = Object.freeze({
   // rec#137: the frame names every omitted preference (keys alone at this size) in place of
   // the body it would otherwise not fit, and a delta whose index is the one its base showed
   // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
-  claudeBoundedEntryChars: 8693,
-  claudeBoundedNextTurnChars: 1403,
+  // Design T3: the preferences of an entry that does not fit whole take half the inline limit
+  // first, so the set no longer moves with the recall or a guidance sentence and the next prompt
+  // stays a delta. At about 430 chars each the share holds the 5 hard rules, one more and the
+  // keys of the rest: 8,693 -> 6,299 and 1,403 -> 1,402 chars.
+  claudeBoundedEntryChars: 6299,
+  claudeBoundedNextTurnChars: 1402,
+  // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
+  // five background-task notifications (two queued), and a prompt with another recall that asks
+  // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
+  // prompt a whole frame again (30,374 chars in all); each notification is now one 173-char line
+  // and the second prompt an empty delta: 11,595 chars.
+  claudeHostEventSessionChars: 11595,
+  claudeHostEventLineChars: 173,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that
@@ -493,6 +505,12 @@ function claudeBoundedEntryChars() {
   });
 }
 
+async function claudeHostEventChars() {
+  const frames = await claudeHostEventSession();
+  return { claudeHostEventSessionChars: frames.reduce((sum, frame) => sum + frame.text.length, 0),
+    claudeHostEventLineChars: Math.max(...frames.filter(frame => frame.origin === 'host_event').map(frame => frame.text.length)) };
+}
+
 // What a chat client actually receives from tools/list, dispatcher included.
 async function listedChatBytes() {
   const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
@@ -513,6 +531,7 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    ...await claudeHostEventChars(),
     tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
       await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,

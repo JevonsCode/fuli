@@ -8,7 +8,8 @@
 // frame an active task would receive at once. Every entry carries a synthetic
 // skeleton shaped like a real one (rec#76): receipt, rule references, the
 // project Agent, the managers and the judgment policy. A notification turn runs
-// the real in-place refresh with read_task_preferences.
+// the real host turn: one line once the session holds a frame (design T1), or
+// the in-place refresh with read_task_preferences when it holds none.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -239,6 +240,10 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       const text = (await HOOKS[client]('UserPromptSubmit', prompted, invoke, { delivery, currentTask }))
         .hookSpecificOutput.additionalContext;
       const retrieval = Object.fromEntries(READS.map(name => [name, provider.calls[name] - before[name]]));
+      // A host turn of a session that holds its context read nothing; its
+      // baseline is the refresh it would otherwise have been given.
+      const hostLine = context === undefined;
+      if (hostLine) context = readTask(session.token);
       // The same entry through the same hook with no session cache. It reuses
       // this turn's Provider snapshot: a fair serialization comparison, not an
       // independent second retrieval.
@@ -248,16 +253,18 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       // Diagnostic only (D-29.8): the same entry with no preference and no
       // message, uncached. The cache cannot remove these bytes.
       const skeleton = await uncached(skeletonEntry(context));
-      const frame = frameOf(text);
+      const frame = hostLine ? {} : frameOf(text);
       const delivered = record && !preview;
       // What the host recorded, and so what the model could see: nothing when
       // the output was lost, only the preview when it was spilled.
       const visible = !record ? '' : preview ? `${text.slice(0, 40)}\n…[preview]…\n${text.slice(-40)}` : text;
       if (record) await host.inject(visible);
       const turn = measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt,
-        scene });
-      if (delivered) applyFrame(view, frame, text);
-      turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}, labelOf(baseline)) : null;
+        scene, hostLine });
+      if (delivered && !hostLine) applyFrame(view, frame, text);
+      // A host line shows no skeleton: the model keeps the one its task entry showed.
+      turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}, labelOf(baseline),
+        { skeleton: !hostLine }) : null;
       // A delta or scene switch whose base the model cannot locate by the
       // delivery rules: it must call read_task_preferences (entry-rules.js).
       turn.rereads_required = delivered && view.unlocated ? 1 : 0;
@@ -290,7 +297,7 @@ const preferenceItems = frame => frame.effective_preferences ?? frame.preference
 // takes it in. produced_bytes is the additionalContext the hook returned;
 // host_visible_bytes is what the host recorded for the model (0 when lost,
 // the preview when spilled). No other context cost is inferred.
-function measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt, scene }) {
+function measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt, scene, hostLine }) {
   const recovery = recoveryOf(frame);
   const omitted = recovery?.messages_omitted ?? 0;
   const bucket = frame.preference_delivery || omitted > 0 ? 'incremental'
@@ -305,7 +312,7 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
   for (const [key] of items) view.sent.add(key);
   const pointer = frame.conversation?.recent_conversation;
   return { session: session.label, client: session.client, generation: session.generation, note, scene,
-    prompt, bucket, delivered, preference_delivery: frame.preference_delivery?.status ?? 'full',
+    prompt, bucket, delivered, preference_delivery: hostLine ? 'host_line' : frame.preference_delivery?.status ?? 'full',
     produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline), skeleton_bytes: bytes(skeleton),
     // A reading-cost hint beside the bytes (src/text/token-estimate.js), never a budget.
     produced_tokens: approxTokens(text), no_cache_tokens: approxTokens(baseline),
@@ -318,7 +325,7 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
     revision_field_bytes: frame.revision ? bytes(`,"revision":${JSON.stringify(frame.revision)}`) : 0,
     skeleton_revision_field_bytes: frame.skeleton_revision
       ? bytes(`,"skeleton_revision":${JSON.stringify(frame.skeleton_revision)}`) : 0,
-    skeleton_delivery: frame.skeleton_unchanged ? 'unchanged' : 'full',
+    skeleton_delivery: hostLine ? 'none' : frame.skeleton_unchanged ? 'unchanged' : 'full',
     skeleton_fields_omitted: typeof frame.skeleton_unchanged === 'string' || Array.isArray(frame.skeleton_unchanged) ? 'all'
       : Object.values(frame.skeleton_unchanged ?? {}).flat().length,
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
@@ -445,7 +452,7 @@ function skeletonEntry(context) {
 // The model view against the same entry without a cache: every current
 // message and preference present, nothing stale, nothing withdrawn, and the
 // base of every delta or scene switch located.
-function correctness(view, expected, withdrawn, label) {
+function correctness(view, expected, withdrawn, label, { skeleton: compareSkeleton = true } = {}) {
   const recovery = recoveryOf(expected);
   const messages = recovery?.messages ?? [];
   const missingMessages = messages.filter(message => view.messages.get(messageKey(recovery, message)) !== message.content)
@@ -464,6 +471,7 @@ function correctness(view, expected, withdrawn, label) {
   const skeleton = [...new Set([...Object.keys(wantedParts), ...Object.keys(held)])]
     .filter(part => canonicalJson(wantedParts[part] ?? null) !== canonicalJson(held[part] ?? null));
   if (view.skeleton[SKELETON_LABEL] !== label) skeleton.push(SKELETON_LABEL);
+  if (!compareSkeleton) skeleton.length = 0;
   const ok = !view.unlocated && !view.skeletonUnlocated && !missingMessages.length && !missingPreferences.length
     && !extraPreferences.length && !withdrawnPresent.length && !skeleton.length;
   return { ok, base_unlocated: view.unlocated, skeleton_unlocated: view.skeletonUnlocated, skeleton_mismatch: skeleton,

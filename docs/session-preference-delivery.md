@@ -48,6 +48,19 @@ claims another scene never matches. A pending item written before this, without
 a scene, confirms nothing: that frame is sent in full again. Like any frame, a
 delivered scene switch also confirms the recent-context messages it carries.
 
+A frame produced but not recorded yet is still a base for exactly the same set
+(design T1). The host writes a hook's context only after the hook returns, so
+two prompts a few seconds apart (queued host notifications, input appended to a
+running Codex turn) used to resend the same delta. The pending item keeps
+`producedAt`, the transcript's length when the frame was produced. While no
+model output (a Claude assistant record, a Codex assistant message or tool
+call) follows that point and the frame is not written anywhere in the
+generation, the next frame with the same snapshot is an empty delta on it,
+named by the revision it showed. Once the model has answered after it and it is
+still missing, or it was written on a branch a rewind left behind, it was lost:
+it is no base, and the next frame builds on what the transcript records, or is
+complete. Any changed set still needs a recorded base.
+
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the
@@ -63,8 +76,9 @@ Its adapter therefore bounds the UserPromptSubmit task entry to 9,000
 characters, label included (`CLAUDE_ENTRY_INLINE_CHARS`, rec#11 D-54); the
 rest of the 10,000 leaves room for an appended notice. The mechanism is
 `src/conversations/entry-inline-budget.js`. The SessionStart restore after a
-compaction and the in-place refresh of a host-notification turn are bounded
-the same way, from what `read_task_preferences` returns. Every other Agent
+compaction and the in-place refresh of a host turn that gets the whole context
+(Host turns below) are bounded the same way, from what `read_task_preferences`
+returns. Every other Agent
 and every entry that fits are unchanged, byte for byte.
 
 An entry over the budget is reduced in this order, each step only while the
@@ -87,7 +101,17 @@ until the preferences are complete (rec#110 item 6).
    then the recent conversation window drops its oldest messages, marked as
    the Provider marks its own window (`truncated`, the latest
    `omitted_sequence`; `read_agent_conversation` reads it whole).
-2. Then preferences go. Closing fields, identity, role, authority, conflicts
+2. Then preferences go. First they take their share, half the limit
+   (`PREFERENCE_SHARE`, design T3), measured as the JSON of what they deliver:
+   every hard rule, the index of the rest and the largest ranked prefix that
+   fit in it, chosen as below. When that complete frame fits with the leanest
+   context, the frame is the richest recall and conversation level that fits
+   beside it; the details are not reduced for it. Before this the preferences
+   took whatever the rest left, so a longer recall or one more guidance
+   sentence listed fewer of them, and a bounded frame whose set shrank is
+   complete: most prompts of a session were whole frames. Where the share
+   does not apply (the hard rules and an index exceed it, or the details do
+   not fit beside it), the search below decides. Closing fields, identity, role, authority, conflicts
    and every field outside `effective_preferences` always stay, and so do hard
    rules. The rest rank by kind and task scene, using the scene table in
    `task-scene.js`: a boundary first (an item a scene switch never revokes,
@@ -186,8 +210,29 @@ A bounded entry is still a complete, confirmable frame:
 - The entry is tried whole first: a delta on a whole base (such as a complete
   `read_task_preferences` result the model read) that fits is sent with
   nothing left out.
-- No stored format changes: a pending item keeps its scope, snapshot, frame
-  hash and scene.
+- A pending item keeps its scope, snapshot, frame hash and scene, and since
+  design T1 an optional `producedAt` (the record stays version 4: a FULI that
+  predates it ignores the field and never takes the frame as a provisional base).
+
+## Host turns (design T1)
+
+Each Agent's adapter names where a prompt turn came from (`turnOrigin`):
+`person`, `host_event` (Claude Code: a prompt that is exactly one
+`<task-notification>` or `<ci-monitor-event>` envelope) or `host_system`
+(an `isMeta` delivery; Codex marks no other). An Agent that cannot tell takes
+every turn as the person's. The shared layer reads only that value
+(`refreshCurrentTaskInPlace` in `src/conversations/unresolved-turns.js`). A
+host turn never begins or switches a task. When this context generation has
+already given the session a frame (recorded, or provisional as above), it gets
+one line saying the turn is not the person's and the current task and the
+context already given still apply: no preference read, scope check, budget fit,
+delta or pending record, and no `checkpoint_required`. One session of 155
+notifications had been given 123k characters this way. Only a generation that
+has given nothing (a compaction whose restore failed, an unreadable record, a
+lost frame, no delivery at all) re-reads the current task in place and gets it
+whole: a missed preference costs more than a resent one. A preference changed
+in the middle of a run of notifications reaches the model at the person's next
+prompt.
 
 ## Coding-task knowledge index
 
@@ -553,10 +598,15 @@ baseline holds only what the Provider would return.
 `test/context-delivery-replay.test.js` holds the gates on these fixed fixtures:
 no turn costs more than the uncached entry except a complete frame's revision
 field (26 B), a `skeleton_revision` field (35 B) and a `recovery.withdrawn`
-block (128 B), repeated notifications and prompts name the skeleton they already
-showed (rec#76), no scenario costs more in
+block (128 B), repeated prompts name the skeleton they already showed (rec#76)
+and notifications of a session holding its context are one line, no scenario costs more in
 total, the scaled scenarios that reuse context cost less, no turn needs a reread
 under the delivery rules, and every model view is whole.
+`test/agents/claude-code/host-event-turns.test.js` runs one Claude Code session
+(`claudeHostEventSession`): a prompt, five notifications (two queued) and a
+prompt with another recall. Every notification is one line, no preference body
+is sent twice and the second prompt is an empty delta; the first host turn
+after a compaction, and the one after a lost frame, get the whole context.
 `test/agents/claude-code/entry-inline-budget.test.js` checks the inline
 budget with a synthetic 60-preference entry: it fits, keeps every hard rule,
 closing field and conflict, ranks boundaries first, counts what it leaves out,

@@ -9,7 +9,7 @@ import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { projectAgentCollaborationPreferences } from '../src/graphiti/collaboration-preference-workflow.js';
-import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
+import { copyPreferenceScope, withPreferenceScope } from '../src/conversations/preference-snapshot.js';
 import { syntheticHost, syntheticPreference } from './synthetic-context-session.js';
 import { agentMemoryView } from '../src/graphiti/project-agent-memory.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../src/graphiti/project-agent-task-entry.js';
@@ -20,6 +20,7 @@ import { TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE } from '../src/graphiti/task-knowledg
 import { createFuliSourceMarker } from '../src/graphiti/source-marker.js';
 import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
 import { employeeTaskEntry } from '../src/employees/task-entry.js';
+import { REMEMBER_GUIDANCE } from '../src/graphiti/task-remember.js';
 import { finishTaskEntryPreferences, taskJudgmentContext } from '../src/graphiti/task-entry-preferences.js';
 
 // Claude Code keeps a hook context longer than this only as a preview.
@@ -234,6 +235,50 @@ function syntheticManagement() {
 
 export const hookFrame = text => JSON.parse(text.split('\n').at(-1));
 
+const HOST_NOTIFICATION = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
+
+// One Claude Code session as the host runs it (design T1, T3): a person's
+// turn, five background-task notifications (the second and third queued, so
+// the third's hook runs before the second's context is recorded), then the
+// person's next turn. That turn has another recall and asks FULI to keep
+// something (remember_guidance), so all but the preferences differ from the
+// first. 70 preferences of 130 characters, about a real working set. Returns
+// each frame as the text the model was given.
+export function claudeHostEventSession() {
+  return claudeEntrySession(async session => {
+    const items = syntheticPreferences(70, { length: 130 });
+    const entry = (token, recall, extra = {}) => {
+      const value = syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+        recall: syntheticRecall(recall, { length: 300 }), conversation: syntheticRecovery(2, { length: 300 }) });
+      return copyPreferenceScope(value, { ...value, ...extra });
+    };
+    const task = { token: 'task-1', sessionId: session.sessionId, sourceApplication: 'claude_code', checkpoint: null };
+    // What read_task_preferences returns for the open task: no recall or conversation.
+    const read = async (_name, { taskContextToken }) => {
+      const { task_knowledge_recall: _recall, conversation: _conversation, ...rest } = entry(taskContextToken, 0);
+      return copyPreferenceScope(entry(taskContextToken, 0), { ...rest, preference_delivery: { status: 'complete' },
+        preferences_complete: true, same_task_recovery_available: true, truncated: false });
+    };
+    const reply = () => session.host.say('assistant', 'SYNTHETIC reply.');
+    const frames = [];
+    const add = (origin, text) => { frames.push({ origin, text }); return text; };
+    add('person', (await session.turn(entry('task-1', 6))).text);
+    await reply();
+    add('host_event', await session.notify(task, read));
+    await reply();
+    const queued = [add('host_event', await session.notify(task, read, { record: false })),
+      add('host_event', await session.notify(task, read, { record: false }))];
+    for (const text of queued) await session.host.inject(text);
+    await reply();
+    for (let index = 0; index < 2; index++) {
+      add('host_event', await session.notify(task, read));
+      await reply();
+    }
+    add('person', (await session.turn(entry('task-2', 2, { remember_guidance: REMEMBER_GUIDANCE }))).text);
+    return frames;
+  });
+}
+
 // One synthetic Claude Code session through the real UserPromptSubmit entry
 // and session delivery cache. `turn(entry)` delivers the entry (built with
 // `session.sessionId`) and records what the host would: the whole context, or
@@ -253,6 +298,17 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
       await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
       return { text, frame: hookFrame(text) };
     };
-    return await fn({ sessionId, host, delivery, turn });
+    // A host event turn (a background task's notification) while `task` is
+    // the session's current task, which read_task_preferences reads as `read`.
+    // The host records its context only with `record`; a queued second event
+    // runs its hook before the first one's is recorded.
+    const notify = async (task, read, { record = true } = {}) => {
+      const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: HOST_NOTIFICATION }, read,
+        { delivery, currentTask: async () => task });
+      const text = output.hookSpecificOutput.additionalContext;
+      if (record) await host.inject(text);
+      return text;
+    };
+    return await fn({ sessionId, host, delivery, turn, notify });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

@@ -3,17 +3,17 @@ import { isSystemPromptEntry } from '../system-prompt.js';
 const TASK_NOTIFICATION = /^\s*<task-notification>\s*<task-id>([^<>\r\n]+)<\/task-id>([\s\S]*)<\/task-notification>\s*$/;
 const CI_MONITOR_TAG = /<(\/?)ci-monitor-event>/g;
 
-// Turns whose task transition cannot be proven (rec#15), or null for a prompt
-// that enters as a new task: 'system' for a host system delivery (isMeta), whose
-// task is still unknown, and 'envelope' for a prompt that is exactly one
-// host-notification envelope, whoever sent it. Neither the hook input nor the
-// transcript written before the hook proves that the host started such a turn,
-// and a notification must not begin or switch a task. These turns re-read the
-// current task in place instead of entering; a person who pastes an envelope
-// gets that refresh too. Any text around the envelope makes it a prompt again.
-export function inPlaceRefreshBasis(input) {
-  if (isSystemPromptEntry(input)) return 'system';
-  return taskNotificationEnvelope(input?.prompt) || ciMonitorEnvelope(input?.prompt) ? 'envelope' : null;
+// Where a prompt turn came from (unresolved-turns.js): 'host_system' for a
+// host system delivery (isMeta), 'host_event' for a prompt that is exactly
+// one host-notification envelope, whoever sent it, and 'person' for anything
+// else. Neither the hook input nor the transcript written before the hook
+// proves that the host started such a turn, and a notification must not begin
+// or switch a task, so host turns never enter; a person who pastes an envelope
+// is taken as a host event too. Any text around the envelope makes it a
+// person's prompt again.
+export function claudeTurnOrigin(input) {
+  if (isSystemPromptEntry(input)) return 'host_system';
+  return taskNotificationEnvelope(input?.prompt) || ciMonitorEnvelope(input?.prompt) ? 'host_event' : 'person';
 }
 
 function taskNotificationEnvelope(prompt) {

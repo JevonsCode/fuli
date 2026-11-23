@@ -104,12 +104,18 @@ export function completePreferenceFrame(value, shown) {
 // The complete frame, or a smaller delta or scene switch against `baseline`,
 // the latest acknowledged frame of the session (preference-session.js).
 // `shown` maps each revision the generation shows to the one set it names.
-export function projectPreferenceDelta(value, baseline, shown) {
+// `provisional`: the hashes of the frame the session was just given that the
+// transcript does not record yet. It is the base only of this same set, which
+// it then names by the revision that frame showed.
+export function projectPreferenceDelta(value, baseline, shown, provisional = null) {
   const snapshot = preferenceSnapshot(value);
   if (!snapshot) return value;
   const plain = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences }, value[SCOPE]);
   const full = withRevision(plain, snapshot, shown);
   const revision = full.revision;
+  if (revision && provisional?.snapshotHash === snapshot.snapshotHash && provisional.scopeHash === snapshot.scopeHash) {
+    baseline = { ...snapshot, revision, omittedIndex: null };
+  }
   if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
   // A frame bounded to an inline budget (entry-inline-budget.js, D-54) lists
   // only the set it delivers; what it leaves out may still be in force. So it

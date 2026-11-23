@@ -30,6 +30,8 @@ const MAX_PENDING = 16;
 // has none, so its next hook frame carries the whole skeleton. Version 4
 // replaces them with `tasks`: [token, project and Agent] hashes, since any task
 // of the same owner may be a base (rec#88); a version 3 list is read as tasks.
+// A pending item's optional `producedAt` (design T1) is read as absent by a
+// version 4 FULI that predates it, which then never takes it as a base.
 const RECORD_VERSION = 4;
 export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, 3, RECORD_VERSION] });
 
@@ -108,6 +110,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // shows nothing so far, and a later turn reads this frame there.
           const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
             : proof.absent && state.floor !== null ? { baseline: null, shown: new Map() } : { baseline: null, shown: null };
+          const provisional = shown && !origin.forceFull ? provisionalFrame(state, proof) : null;
           const floor = state.floor === null ? null : state.floor ?? 0;
           const evidence = origin.forceFull ? undefined
             : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter, floor });
@@ -120,7 +123,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
               { floor, tasks: state.tasks, prompt: origin.taskPrompt });
           const project = candidate => {
             const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
-              : projectPreferenceDelta(candidate, baseline, shown);
+              : projectPreferenceDelta(candidate, baseline, shown, provisional);
             const recent = projectRecentContext(preferences, evidence);
             const value = projectSkeleton(recent.value, skeleton, origin.label);
             const result = output(value);
@@ -146,12 +149,16 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // A pending hash means only produced. Only a matching complete native
           // record above can acknowledge it in a later call/process; a frame
           // without a revision can never be named as a base, so it keeps none.
+          // producedAt is the transcript's length when it was produced: until
+          // the model answers after that point, the frame is on its way into
+          // the transcript (provisionalFrame).
           if (delivered && !result.isError && result.structuredContent?.preferences_complete !== false
               && shownRevision(result.structuredContent)
               && preferenceDeliveryReason(projected, result.structuredContent) === null
               && result.structuredContent?.preference_delivery?.status !== 'blocked') {
             const pending = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
-              frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(delivered) };
+              frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(delivered),
+              ...(proof.known || proof.absent ? { producedAt: proof.known ? proof.size : 0 } : {}) };
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
@@ -164,6 +171,22 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           return result;
         });
       } catch { return result ?? fitUncached(fit, value, output); }
+    },
+    // Whether this context generation has given the session anything: a
+    // frame FULI produced that the transcript records, or one still on its
+    // way (provisionalFrame). A record or transcript that cannot be read has
+    // given nothing (design T1: a host turn then gets the whole context).
+    async delivered(origin) {
+      if (!SESSION.test(origin.nativeSessionId ?? '')) return false;
+      try {
+        return await locked(origin.sourceApplication, origin.nativeSessionId, async state => {
+          const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
+          state = generationState(state, proof, origin.nativeGeneration ? contentHash(origin.nativeGeneration) : null);
+          if (!proof.known || state.floor === null) return false;
+          const recorded = recordedFrames(state, proof);
+          return state.pending.some(item => recorded.has(item.frameHash)) || provisionalFrame(state, proof) !== null;
+        });
+      } catch { return false; }
     },
     // True once the next delivery for the session is a full one: the cache was
     // reset, or this session is never delta-delivered. False when it could not
@@ -251,6 +274,27 @@ function acknowledgedSnapshot(value, current, state, proof) {
   return { shown, baseline: baseline && shown.get(baseline.revision).snapshotHash === baseline.snapshotHash ? baseline : null };
 }
 
+// The hashes of the frames FULI produced that this generation records.
+function recordedFrames(state, proof) {
+  return new Set(proof.frames.filter(frame => frame.offset >= (state.floor ?? 0))
+    .map(frame => preferenceFrameHash(frame.value)));
+}
+
+// The session's latest produced frame while it is still on its way into the
+// transcript: not recorded, and no model output since it was produced. Two
+// host turns a few seconds apart run their hooks before the host writes the
+// first frame, so the second would otherwise resend the same delta (design
+// T1). Once the model answers after it and it is still missing, it was lost:
+// it is no base, and the next frame builds on what the transcript records.
+// Once written it is either recorded or on a branch a rewind left behind.
+// A frame kept without producedAt (an older FULI) is never provisional.
+function provisionalFrame(state, proof) {
+  const latest = state.pending?.at(-1);
+  if (!Number.isSafeInteger(latest?.producedAt) || !(proof.known || proof.absent)) return null;
+  if (proof.known && (proof.written.has(latest.frameHash) || proof.outputAt >= latest.producedAt)) return null;
+  return latest;
+}
+
 // A recorded frame as the set its producer kept the pending hash for, built
 // on the base its own revision field names, in the scene the pending item kept.
 function verifiedFrame(value, frame, expected, revision, shown) {
@@ -284,7 +328,8 @@ async function readState(path) {
         || value.pending.length > MAX_PENDING
         || !(value.floor === undefined || value.floor === null || Number.isSafeInteger(value.floor))
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
-          .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene)))) return UNTRUSTED;
+          .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene))
+          || !(item.producedAt === undefined || (Number.isSafeInteger(item.producedAt) && item.producedAt >= 0)))) return UNTRUSTED;
     const recent = value.recent ?? [];
     const { prompts, ...kept } = value;
     const tasks = skeletonTasks(value.tasks ?? prompts ?? []);

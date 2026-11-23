@@ -28,7 +28,9 @@ const omittedRead = token => ({ tool: 'read_task_preferences', arguments: { task
 const omittedShape = ({ index: _index, ...rest }) => rest;
 
 test('a large entry fits inline: every hard rule, closing field and conflict stays, boundaries rank first, the rest is counted', async () => {
-  const items = syntheticPreferences(60);
+  // Bodies of about 200 characters: the preferences' share of the limit then
+  // holds the hard rules, the index and a few more (design T3).
+  const items = syntheticPreferences(60, { length: 200 });
   const text = await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION }));
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
   const frame = hookFrame(text);
@@ -99,7 +101,8 @@ test('a coding task\'s knowledge index is reduced to a pointer before any prefer
   const withIndex = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION, recall: syntheticIndexRecall(5) })));
   const without = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION })));
   assert.deepEqual(keys(withIndex.effective_preferences), keys(without.effective_preferences));
-  assert.equal(withIndex.task_knowledge_recall.knowledge_index, undefined);
+  // The preferences take their share first; the index keeps what is left (design T3).
+  assert.equal(withIndex.task_knowledge_recall.knowledge_index.items.length, 5);
 });
 
 // rec#75: a delivered preference names its item for revise_personal_knowledge;

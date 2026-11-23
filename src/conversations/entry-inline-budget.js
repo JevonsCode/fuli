@@ -109,6 +109,14 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
+    // The preferences take their share first, and only the recall and the
+    // conversation give way to it; the details give way to hard rules only.
+    // Whether the share applies is decided on the complete frame, as the
+    // search below decides, so a later turn's smaller delta picks the same set.
+    const shared = withinPreferenceShare(value, kept, ranked, limit);
+    const sharedAttempt = shared && fits(complete(shared(leanest)))
+      && bestLevel(levels, levels.length, [], leanest, candidate => deliver(shared(candidate)), fits);
+    if (sharedAttempt) return sharedAttempt;
     const fitsAt = (level, selected, index) => fits(complete(withPreferences(level, selected, preferences.length, index)));
     // The richest level where every hard rule fits, and what the search may
     // leave out there: the ranked rest. Where none fits, the hard rules
@@ -152,20 +160,8 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     }
     const frame = candidate => low === order.length ? candidate
       : withPreferences(candidate, selection(low), preferences.length, indexed);
-    for (const [index, candidate] of richer.entries()) {
-      const attempt = deliver(frame(candidate));
-      if (!fits(attempt)) continue;
-      // A detail level reduces every detail before its own; each of them
-      // comes back on its own while it fits, the last reduced first.
-      let reduced = steps.slice(0, Math.max(0, index - levels.length + 1));
-      let best = attempt;
-      for (const step of [...reduced].reverse()) {
-        const without = reduced.filter(item => item !== step);
-        const restored = deliver(frame(reducedDetails(leanest, without)));
-        if (fits(restored)) [reduced, best] = [without, restored];
-      }
-      return best;
-    }
+    const attempt = bestLevel(richer, levels.length, steps, leanest, candidate => deliver(frame(candidate)), fits);
+    if (attempt) return attempt;
     // Not even the leanest entry fits beside the hard rules (a long role,
     // which is never cut): the blocked frame keeps the token, closing fields
     // and identity, and lists the largest prefix of the same ranking that
@@ -193,6 +189,64 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     });
     return named ?? deliver(blocked(listed, false));
   };
+}
+
+// The first of `richer` (the context levels, then the detail levels after the
+// `contextCount` of them) whose frame fits, or null. A detail level reduces
+// every detail before its own; each of them comes back on its own while it
+// fits, the last reduced first.
+function bestLevel(richer, contextCount, steps, leanest, frameAt, fits) {
+  for (const [index, candidate] of richer.entries()) {
+    const attempt = frameAt(candidate);
+    if (!fits(attempt)) continue;
+    let reduced = steps.slice(0, Math.max(0, index - contextCount + 1));
+    let best = attempt;
+    for (const step of [...reduced].reverse()) {
+      const without = reduced.filter(item => item !== step);
+      const restored = frameAt(reducedDetails(leanest, without));
+      if (fits(restored)) [reduced, best] = [without, restored];
+    }
+    return best;
+  }
+  return null;
+}
+
+// The share of a host's inline limit the preferences of an entry that does
+// not fit whole take first (design T3), measured as the JSON of what they
+// deliver: the listed bodies and the omission with its index. The recall and
+// the conversation use the rest and give way first. When the
+// preferences only took the room the rest left, a longer recall or one more
+// guidance sentence listed fewer of them; a frame whose set shrank is resent
+// in full (preference-snapshot.js), so most of a session's prompts were whole
+// frames. Half the limit holds what real bounded entries listed (70
+// preferences of about 130 characters: hard rules, five to eight bodies and a
+// line for each of the rest) beside an entry's own fields (about 3.5k
+// characters, token-budget.test.js noMatchEntryChars).
+const PREFERENCE_SHARE = 0.5;
+
+// The entry's preferences bounded to their share: every hard rule, the
+// largest ranked prefix and the richest index that fit in it, chosen the way
+// the search below chooses (the best-ranked few before the index, the index
+// before any more of them). Null where they all fit, which the entry's own
+// levels already tried, or where the hard rules and an index of the rest
+// exceed it: the search then bounds them beside the rest.
+function withinPreferenceShare(value, kept, ranked, limit) {
+  const total = value.effective_preferences?.length ?? 0;
+  const share = Math.floor(limit * PREFERENCE_SHARE);
+  const selection = count => new Set([...kept, ...ranked.slice(0, count)]);
+  const fitsShare = (count, index) => JSON.stringify(selectedPreferences(value, selection(count), total, index)).length <= share;
+  if (!total || !fitsShare(0, false)) return null;
+  const indexed = indexDetail(detail => fitsShare(Math.min(RESERVED_RANKED, ranked.length), detail))
+    || indexDetail(detail => fitsShare(0, detail));
+  if (!indexed) return null;
+  let low = 0;
+  let high = ranked.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fitsShare(middle, indexed)) low = middle;
+    else high = middle - 1;
+  }
+  return low === ranked.length ? null : candidate => withPreferences(candidate, selection(low), total, indexed);
 }
 
 // The richest index tier the caller accepts, or false when none is taken.

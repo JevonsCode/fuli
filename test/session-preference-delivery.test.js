@@ -38,15 +38,29 @@ async function fixture(fn) {
       { type: 'response_item', payload: { type: 'function_call_output', call_id: id, output: JSON.stringify(result) } }
     ].map(value => JSON.stringify(value)).join('\n') + '\n');
   };
-  try { await fn({ directory, transcript, service, options, delivered }); }
+  // The model's answer, after whatever came before it.
+  const answered = () => appendFile(transcript, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant',
+    content: [{ type: 'output_text', text: 'SYNTHETIC answer.' }] } }) + '\n');
+  try { await fn({ directory, transcript, service, options, delivered, answered }); }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
 
 test('writing a result never acknowledges it; verified native delivery enables updates and removals across processes', () => fixture(async f => {
   const first = await f.service.deliver(entry(), origin, format);
   assert.equal(first.structuredContent.effective_preferences.length, 12);
+  // Before the model answers, the frame may still be on its way into the
+  // transcript: the same set is an empty delta on it (design T1).
+  const queued = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+  assert.equal(queued.preference_delivery.base_revision, first.structuredContent.revision);
+  assert.deepEqual(queued.preference_updates, []);
+  // Once the model answered and neither is recorded, they were lost.
+  await f.answered();
   const noProof = await f.service.deliver(entry('task-b'), origin, format);
   assert.equal(noProof.structuredContent.preference_delivery, undefined);
+  // Only a changed set never builds on a frame that is not recorded.
+  const changed = entry('task-b');
+  changed.effective_preferences.pop();
+  assert.equal((await f.service.deliver(changed, origin, format)).structuredContent.preference_delivery, undefined);
   await f.delivered('native-call-a', first);
   const next = entry('task-c');
   next.effective_preferences[0].instruction = 'Changed rule';
@@ -194,6 +208,7 @@ test('a Codex hook context confirms by its revision; no provenance or a visible 
     await fixture(async f => {
       const first = await f.service.deliver(entry(), origin, format);
       await appendFile(f.transcript, `${JSON.stringify(record(first))}\n`);
+      await f.answered();
       const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
       assert.equal(next.preference_delivery?.base_revision, confirmed ? first.structuredContent.revision : undefined);
     });
@@ -257,3 +272,16 @@ test('a matching visible block never hides a conflicting one under the same revi
       first.structuredContent.revision);
   });
 });
+
+// Design T1 §⑥: a client whose transcript FULI cannot read (no hook, only the
+// get_collaboration_preferences tool: Cursor, OpenCode) proves nothing, so
+// every frame stays whole and its session is never taken as already given.
+test('a session without a readable transcript gets every frame whole and is never taken as delivered', () => fixture(async f => {
+  const service = createSessionPreferenceDelivery({ ...f.options, locate: async () => null });
+  for (const token of ['task-a', 'task-b']) {
+    const result = (await service.deliver(entry(token), origin, format)).structuredContent;
+    assert.equal(result.effective_preferences.length, 12);
+    assert.equal(result.preference_delivery, undefined);
+  }
+  assert.equal(await service.delivered(origin), false);
+}));
