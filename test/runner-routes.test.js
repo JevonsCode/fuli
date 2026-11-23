@@ -86,7 +86,7 @@ test('scope names are checked at the boundary', () => {
   for (const bad of ['', 'project:', 'everything', 'project:\u0000x', 42, null]) assert.equal(scopeName(bad), null, String(bad));
 });
 
-test('fuli routes lists, follows the paired host only, and refuses to own a scope without a FULI here', async (t) => {
+test('fuli routes lists, follows the paired host only, and refuses every local route until owning scopes is built', async (t) => {
   const dataDir = dataDirectory(t);
   const lines = [];
   const write = (line) => lines.push(line);
@@ -103,13 +103,16 @@ test('fuli routes lists, follows the paired host only, and refuses to own a scop
   await assert.rejects(runRoutesCommand(['follow', 'global', 'aaaa', '--data-dir', dataDir], { write }),
     { code: 'unknown_host' }, 'a fingerprint prefix needs 8 characters at least');
   await assert.rejects(runRoutesCommand(['follow', 'everything', 'Host A', '--data-dir', dataDir], { write }), TypeError);
-  await assert.rejects(runRoutesCommand(['local', 'project:example.test/team/widgets', '--data-dir', dataDir], { write }),
-    { code: 'no_local_fuli' }, 'a computer without a FULI of its own has nowhere to answer a scope from');
-
+  // Owning a scope on a follower is not built yet (step 3): refused whatever this computer has, a FULI of its
+  // own included, so no store of this version holds a second owner for a scope; `global` never.
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
-  lines.length = 0;
-  await runRoutesCommand(['local', 'project:example.test/team/widgets', '--data-dir', dataDir], { write });
-  assert.match(lines.join('\n'), /→ this computer/);
+  await assert.rejects(runRoutesCommand(['local', 'project:example.test/team/widgets', '--data-dir', dataDir], { write }),
+    (error) => error.code === 'local_route_not_yet' && /fuli routes follow/.test(error.message));
+  await assert.rejects(runRoutesCommand(['local', 'global', '--data-dir', dataDir], { write }),
+    { code: 'global_has_one_owner' });
+  const routes = openRoutes(dataDir);
+  assert.ok(routes.all().every((row) => row.owner !== LOCAL_OWNER), 'nothing was written');
+  routes.close();
 });
 
 test('fuli routes follow on a computer paired with no host says so', async (t) => {

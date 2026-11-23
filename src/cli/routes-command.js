@@ -1,9 +1,8 @@
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
 import { callScope, describeRoutes, openRoutes } from '../runner/call-routes.js';
-import { hostOwner, LOCAL_OWNER, scopeName } from '../runner/routes-store.js';
+import { GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, scopeName } from '../runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { writeLine } from './terminal-io.js';
@@ -16,16 +15,23 @@ const USAGE = `fuli routes <action>  (Beta. Which parts of your FULI this comput
     list                          every scope, who owns it, and when a read-only copy here was synced
     follow SCOPE HOST             read and write that scope on HOST (the paired host's name, or the
                                   start of its fingerprint; \`fuli runner status\` names it)
-    local SCOPE                   own that scope on this computer again
+    local SCOPE                   own that scope on this computer (not built yet: refused, says why)
     scope-of PATH                 which scope a call in that folder belongs to
   SCOPE is \`global\`, \`default\`, or \`project:<id>\`; a project's id is what
   \`fuli routes scope-of PATH\` prints for a folder in it.
   Every action takes --data-dir DIR.`;
 // Owning a scope here means answering its calls from this computer's own FULI,
 // which a computer that follows a host does not have yet (step 3 of the design).
-const NO_LOCAL_FULI = 'This computer has no FULI of its own yet, so it cannot own a scope: it would have nowhere to '
-  + 'answer that scope\'s calls from. Taking a scope back is the next step of docs/runner-roles-design.md. '
-  + '`fuli routes follow` and `fuli routes list` work now.';
+// Owning a scope on a computer that follows a host is step 3 of the design; until it is built, no
+// route says `local`, whatever this computer has (a FULI of its own beside a pairing is normal), so no
+// store of this version holds a second owner for a scope when step 3 arrives.
+const LOCAL_NOT_YET = 'Owning a scope on a computer that follows a host is not built yet '
+  + '(docs/runner-roles-design.md, step 3), so no scope is routed to this computer for now. What works now: '
+  + '`fuli routes list` shows what this computer follows, `fuli routes follow SCOPE HOST` points a scope at the paired '
+  + 'host, and `fuli runner leave` makes this computer own everything it has again.';
+// `global` (habits, profile, the FLA roster) has one owner, the host's, always (D1, D2).
+const GLOBAL_STAYS = '`global` (your habits, profile and the FLA roster) has one owner, the computer you follow; '
+  + 'it is never owned by a computer that follows another (docs/runner-roles-design.md D1, D2).';
 
 export async function runRoutesCommand(args, { env = process.env, write = writeLine } = {}) {
   const [action, ...rest] = args;
@@ -69,12 +75,8 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
       return { exitCode: 0 };
     }
     if (action === 'local') {
-      if (!existsSync(join(paths.dataDir, 'graph-runtime.json'))) {
-        throw new ApplicationError('no_local_fuli', NO_LOCAL_FULI);
-      }
-      routes.set(scope, LOCAL_OWNER);
-      write(`${scope} → this computer.`);
-      return { exitCode: 0 };
+      if (scope === GLOBAL_SCOPE) throw new ApplicationError('global_has_one_owner', GLOBAL_STAYS);
+      throw new ApplicationError('local_route_not_yet', LOCAL_NOT_YET);
     }
     throw new TypeError(`Unknown routes action: ${action}\n${USAGE}`);
   } finally {

@@ -83,8 +83,11 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   host (its name, or 8 or more characters of its fingerprint); `fuli routes scope-of PATH` prints
   the scope of a folder. A project's id is read from the folder on this computer: its repository's
   origin key, which the owner matches a folder on, or the repository's own path when it has none.
-- `fuli routes local SCOPE` is refused (`no_local_fuli`) while this computer has no FULI of its
-  own to answer that scope from. Owning a project on a follower is the next step.
+- `fuli routes local SCOPE` is refused (`local_route_not_yet`) until owning a scope on a computer
+  that follows a host is built (the next step), whatever this computer has: a FULI of its own beside
+  a pairing is normal, and a route written now would give that scope a second owner once the next
+  step arrives. `global` is never routed to a follower (`global_has_one_owner`): habits, profile and
+  the FLA roster have one owner, the computer it follows (D1, D2).
 - Each call is routed before anything is sent: by the scope of the folder it names (`global`
   without one), or by the computer that entered the task its token names, so a checkpoint goes
   back to the computer that entered the task whatever the routes became. A call whose owner this

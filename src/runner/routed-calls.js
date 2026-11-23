@@ -8,9 +8,9 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 // paired host and nothing here changes what happens. It refuses rather than
 // writing one computer's scope into another's:
 //
-// - a scope this computer owns, while it has no FULI of its own to answer it
-//   from (owning scopes here is the next step; `fuli routes local` refuses it
-//   until then, so only a hand-edited store gets here);
+// - a scope this computer owns: nothing writes such a route until owning
+//   scopes on a follower is built (step 3; `fuli routes local` refuses it), so
+//   only a store edited by hand or written by a later version gets here;
 // - a scope routed to a host this computer is no longer paired with;
 // - a call under a task another computer entered, which this computer can no
 //   longer reach — its checkpoint must go back to the computer that entered it.
@@ -19,8 +19,9 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 export function routeRefusal({ routes, store, input }) {
   const { scope, owner, byTask } = routeOfCall(routes, input ?? {});
   if (owner === LOCAL_OWNER) {
-    return failure('scope_owned_here', `${scope} is owned by this computer, which has no FULI of its own yet to answer it `
-      + `from. Point it at the host again with \`fuli routes follow ${scope} <host>\`; \`fuli routes list\` shows every route.`);
+    return failure('scope_owned_here', `${scope} is routed to this computer, which cannot answer a scope it follows a host `
+      + 'for yet (owning scopes on a computer that follows a host is not built yet). Point it at the host again with '
+      + `\`fuli routes follow ${scope} <host>\`; \`fuli routes list\` shows every route.`);
   }
   const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
   // No pairing at all: the follower already answers that (runner_not_paired).
