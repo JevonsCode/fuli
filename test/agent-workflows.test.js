@@ -182,6 +182,12 @@ test('the tools need the current task token and act only as the task\'s bound Ag
   await assert.rejects(callAgentTool(unbound, 'list_agent_workflows', { taskContextToken: 'fuli-task-synthetic' }), { code: 'agent_not_bound' });
 });
 
+test('a proposal still naming a retired candidateId is told what to pass instead', async (t) => {
+  const { app } = toolApp(t);
+  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { taskContextToken: 'fuli-task-synthetic',
+    name: 'Synthetic review', candidateId: 'candidate-1' }), { code: 'invalid_input', message: /candidateId was removed: pass your own steps/ });
+});
+
 test('no Agent tool decides a workflow or names another Agent', () => {
   const tools = listAgentTools().filter(({ name }) => /agent_workflow/.test(name));
   assert.deepEqual(tools.map(({ name }) => name).sort(),

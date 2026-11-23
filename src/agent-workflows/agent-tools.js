@@ -1,5 +1,5 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
-import { callingTask } from '../app/calling-task.js';
+import { callingFla } from '../app/calling-task.js';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectExperiences } from '../graphiti/agent-growth.js';
 import { EXPERIENCE_SOURCE } from './port.js';
@@ -14,6 +14,10 @@ const MAX_DRAFT_EXPERIENCES = 10;
 // rejects or retires one: that is the person's, in the console.
 export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
   propose_agent_workflow: async (app, input) => {
+    // A client from before list_workflow_candidates was retired would otherwise only hear that steps are missing.
+    if (input.candidateId != null) {
+      throw new InvalidInputError('candidateId was removed: pass your own steps (or the experienceIds of a draftable topic)');
+    }
     const owner = await boundAgent(app, input);
     const steps = input.steps;
     const source = input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
@@ -38,13 +42,8 @@ function workflows(app) {
   return app.agentWorkflows;
 }
 
-async function boundAgent(app, input) {
-  const task = await callingTask(app, input);
-  if (!task.projectAgentId) {
-    throw new ApplicationError('agent_not_bound', 'Workflows belong to an Agent; this task is not bound to one', { status: 409 });
-  }
-  return { personalSpaceId: app.config.personal.spaceId, agentId: task.projectAgentId,
-    personalProjectId: task.personalProjectId ?? null };
+function boundAgent(app, input) {
+  return callingFla(app, input, { what: 'Workflows belong to an Agent' });
 }
 
 // A Skill drafted from what the person kept (rec#78 step 4): every experience

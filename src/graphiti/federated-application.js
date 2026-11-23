@@ -323,7 +323,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return finishKnowledgeReviewWorkflow(this, input);
   }
 
-
   async recordKnowledgeUsage(input) {
     return recordKnowledgeUsage(this, input);
   }

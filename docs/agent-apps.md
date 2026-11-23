@@ -7,6 +7,7 @@ rolling back, disabling and deleting belong to the local user, in a terminal (`f
 A submitted app belongs to the FLA whose task the call comes from: FULI reads it from the call's
 `taskContextToken`, as it does for workflows. An `agentId` the call still passes must name that FLA, or the
 submission is refused (`agent_not_owner`), so the person never confirms an app under the wrong submitter.
+Apps registered before this version keep the owner they were registered with; FULI does not rewrite them.
 
 ## Trusted mode: no sandbox in this version
 
