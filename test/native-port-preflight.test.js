@@ -4,6 +4,7 @@ import { connect, createServer } from 'node:net';
 import test from 'node:test';
 
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
+import { assertMacNativePortFree, elapsedSeconds } from '../src/native-runtime/macos-ports.js';
 import { assertWindowsNativePortFree } from '../src/native-runtime/windows-processes.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
@@ -93,6 +94,8 @@ test('Windows port preflight reports a real listener on any local address with i
         assert.match(error.message, new RegExp(`端口 ${port} 已被别的程序占用`));
         assert.equal(error.startupFailure.code, 'port_taken');
         assert.equal(error.startupFailure.port, port);
+        assert.match(error.message, /认不出它是不是自己上次没管住的图服务.*任务管理器/s, 'says what it cannot tell, and what to do');
+        assert.equal(error.startupFailure.lostServiceDetectable, false);
         return true;
       });
     } finally { client.destroy(); await new Promise(resolve => server.close(resolve)); }
@@ -117,4 +120,20 @@ test('a service this data directory lost track of stops the start, and is ended 
   assert.deepEqual(ended.events.slice(0, 4), [`orphans:${ports.personalNeo4jBolt},${ports.personalNeo4jHttp}`, 'stop:4900',
     `free:${ports.personalNeo4jBolt}`, `free:${ports.personalNeo4jHttp}`]);
   assert.ok(ended.events.includes('spawn:provider'));
+});
+
+// Review of #1075: on macOS a port another program holds was said in English only, with no reason a client can show.
+test('a port another program holds on macOS is said in both languages, with who holds it', async () => {
+  await assertMacNativePortFree(7687, { listeners: async () => [] });
+  await assert.rejects(assertMacNativePortFree(7687, { listeners: async () => [4321],
+    describe: async () => ({ command: 'java', runningSeconds: 120 }) }), (error) => {
+    assert.equal(error.code, 'port_taken');
+    assert.deepEqual(error.startupFailure, { code: 'port_taken', port: 7687, pid: 4321, command: 'java', runningSeconds: 120 });
+    assert.match(error.message, /端口 7687 已被别的程序 java（进程 4321）占用/);
+    assert.match(error.message, /already in use; its owner was left untouched/);
+    return true;
+  });
+  assert.equal(elapsedSeconds('1-02:03:04'), 93784);
+  assert.equal(elapsedSeconds('03:04'), 184);
+  assert.equal(elapsedSeconds('soon'), null);
 });

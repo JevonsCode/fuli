@@ -127,7 +127,9 @@ export function runDockerCompose(args, runtime = null, {
   const detail = safeProcessDetail(result, homeDir);
   if (/port is already allocated|address already in use|bind.+failed/i.test(detail)) {
     // Said in both languages, with a reason a client can show (the same code the native modes give).
-    const port = Number(/:(\d{2,5})\b/.exec(detail)?.[1]) || null;
+    // The port of an address (`127.0.0.1:8787`, `[::]:8787`, `localhost:8787`), never the minutes or
+    // seconds of a time in the same output (`12:34:56`).
+    const port = Number(/(?:\b\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]*\]|\blocalhost):(\d{2,5})\b/i.exec(detail)?.[1]) || null;
     throw Object.assign(new Error(`FULI 要用的${port ? `端口 ${port} ` : '端口'}已被别的程序占用，容器没有启动。`
       + `请结束占用它的程序，或在设置里换一个端口。 / A local port required by Fuli is already in use.${detailSuffix(detail)}`), {
       code: 'port_taken',

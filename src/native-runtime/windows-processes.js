@@ -65,13 +65,18 @@ export async function assertWindowsNativePortFree(port) {
   if (owners.length) {
     const observed = owners.map(owner => owner.pid + (owner.name ? ' (' + owner.name + ')' : '')).join(', ');
     // Said in both languages, with a reason a client can show (the same code macOS gives).
+    // Windows cannot yet tell a graph service of this data directory that FULI lost track of from another
+    // program (orphan-services.js is macOS only), so it says so and what to do.
     throw Object.assign(new Error(`FULI 要用的端口 ${port} 已被别的程序占用（进程 ${observed}），FULI 没有动它，也没有启动这个服务。`
-      + '请结束那个程序，或在设置里换一个端口。 / The native service port is already in use before Fuli starts its process: '
+      + '在 Windows 上 FULI 还认不出它是不是自己上次没管住的图服务：如果它是 java 或 python，多半是，'
+      + '在任务管理器里结束这个进程再启动；否则在设置里给 FULI 换一个端口。'
+      + ' / The native service port is already in use before Fuli starts its process: '
       + port + ' (owner PIDs: ' + observed + '). The owning process was not touched and the service for this port was not '
-      + 'started; stop that process or choose another port.'), {
+      + 'started. On Windows FULI cannot yet tell whether it is a graph service of its own it lost track of: if it is java or '
+      + 'python it most likely is, so end it in Task Manager and start again; otherwise choose another port in Settings.'), {
       code: 'port_taken',
       startupFailure: { code: 'port_taken', port, pid: owners[0]?.pid ?? null, command: owners[0]?.name ?? null,
-        runningSeconds: null }
+        runningSeconds: null, lostServiceDetectable: false }
     });
   }
 }
