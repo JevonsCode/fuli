@@ -4,6 +4,7 @@ import '../app/fuli_condition.dart';
 import '../app/fuli_controller.dart';
 import '../l10n/strings.dart';
 import '../platform/ports.dart';
+import '../runtime/fuli_runtime.dart';
 import 'glass_bar.dart';
 import 'growth_loading.dart';
 import 'theme.dart';
@@ -149,25 +150,38 @@ class StatusActions extends StatelessWidget {
     if (confirmed == true) await controller.releaseLockAndStart();
   }
 
+  // The plan in the window's words; a switch that can also be backed out
+  // offers both, each with its own button, and says how they differ.
   Future<void> _confirmRecovery(BuildContext context) async {
     final plan = await controller.previewRecovery();
     if (plan == null || !context.mounted) return;
-    final words = strings.recoveryPlanWords(plan);
-    final confirmed = await showDialog<bool>(
+    final alternative = plan.alternative;
+    final other = strings.recoveryAlternativeWords(plan);
+    final words = [...strings.recoveryPlanWords(plan), if (other != null) ...['', other]];
+    final switching = plan.kind == 'finish_switch' || plan.kind == 'back_out_switch';
+    final chosen = await showDialog<RecoveryPlan>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(strings.recoveryTitle),
         content: SingleChildScrollView(child: Text(words.join('\n'))),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.cancel)),
+          if (alternative != null)
+            OutlinedButton(
+              key: const Key('recover-alternative'),
+              onPressed: () => Navigator.of(dialogContext).pop(alternative),
+              child: Text(alternative.kind == 'back_out_switch' ? strings.backOutTo(plan.text('fromVersion')) : strings.keepVersion(plan.text('toVersion'))),
+            ),
           FilledButton(
             key: const Key('recover-confirm'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(strings.recoveryConfirm),
+            onPressed: () => Navigator.of(dialogContext).pop(plan),
+            child: Text(switching && alternative != null
+                ? (plan.kind == 'finish_switch' ? strings.keepVersion(plan.text('toVersion')) : strings.backOutTo(plan.text('fromVersion')))
+                : strings.recoveryConfirm),
           ),
         ],
       ),
     );
-    if (confirmed == true) await controller.recoverAndStart(plan);
+    if (chosen != null) await controller.recoverAndStart(chosen);
   }
 }

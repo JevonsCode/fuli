@@ -30,19 +30,12 @@ RuntimeReport parseControllerReply(String stdout) {
     autostartGaveUpAt: state is Map ? _gaveUpAt(state) : null,
     lockKept: failed ? _failure(reply['lockRelease'], code: 'reason') : null,
     recoveryPlan: parseRecoveryPlan(reply['recoveryPlan']),
+    recoveryRecord: reply['recoveryRecord'] is String ? reply['recoveryRecord'] as String : null,
   );
 }
 
 /// A recovery plan as the CLI or a controller wrote it; null for anything else.
-RecoveryPlan? parseRecoveryPlan(Object? value) {
-  if (value is String) value = _jsonObject(value);
-  if (value is! Map || value['kind'] is! String) return null;
-  final steps = value['steps'];
-  final digest = value['digest'];
-  return RecoveryPlan(value['kind'] as String,
-      [if (steps is List) for (final step in steps) if (step is Map) Map<String, Object?>.from(step)],
-      digest is String ? digest : null, Map<String, Object?>.from(value));
-}
+RecoveryPlan? parseRecoveryPlan(Object? value) => RecoveryPlan.parse(value is String ? _jsonObject(value) : value);
 
 /// The step a line of a start's output reports (src/local-runtime/startup-stage.js
 /// `readStartupMarker`), with the longest it will wait when the start said so.

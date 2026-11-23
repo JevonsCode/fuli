@@ -80,19 +80,15 @@ class ShellCliRuntime implements FuliRuntime {
         error: plan == null ? 'fuli graph runtime recover did not answer.' : null);
   }
 
-  // The CLI's recovery with the confirmed plan's digest (it refuses a plan that changed), then a start.
+  // The CLI recovers only for a person typing in a terminal
+  // (src/cli/native-runtime-command.js); the FULI app recovers through its own
+  // controller. A window running the `fuli` CLI says where to do it.
   @override
   Future<RuntimeReport> recoverAndStart(String digest, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    if (!RegExp(r'^[0-9a-f]{16}$').hasMatch(digest)) return const RuntimeReport(RuntimeState.unknown, error: 'Not a recovery plan digest.');
-    final recovered = await _sh(_mode!, 'fuli graph runtime recover --yes --expect $digest', _commandTimeout);
-    if (recovered == null || recovered.exitCode != 0) {
-      final after = await status();
-      final printed = readStartupFailure('${recovered?.stderr ?? ''}');
-      return RuntimeReport(after.state, consolePort: after.consolePort, failure: printed.failure,
-          error: printed.stderr.trim().isEmpty ? 'fuli graph runtime recover did not finish.' : printed.stderr.trim());
-    }
-    return start(onStage: onStage);
+    final after = await status();
+    return RuntimeReport(after.state, consolePort: after.consolePort,
+        error: 'Run `fuli graph runtime recover` in Terminal: it shows the same plan and recovers once you confirm.');
   }
 
   // The CLI's own checked release (`fuli graph runtime unlock`), then a start.

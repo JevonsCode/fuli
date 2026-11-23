@@ -154,20 +154,24 @@ class FuliController extends ChangeNotifier {
     final report = await runtime.previewRecovery();
     final plan = report.recoveryPlan;
     if (plan == null || plan.kind == 'refused' || plan.kind == 'nothing' || plan.digest == null) {
-      _notice = Notice(plan == null ? strings.actionFailed(report.error ?? '') : strings.recoveryPlanWords(plan).first, error: plan?.kind == 'refused');
+      _notice = Notice(plan == null ? strings.actionFailed(report.error ?? '') : strings.recoveryPlanWords(plan).first,
+          error: plan?.kind == 'refused', logDirectory: plan?.kind == 'refused' ? await runtime.logDirectory() : null);
       if (!_disposed) notifyListeners();
       return null;
     }
     return plan;
   }
 
-  /// Recovers with the plan the person confirmed, then starts FULI.
+  /// Recovers with the plan the person chose (the one shown, or the
+  /// alternative beside it), then starts FULI; says where the record is.
   Future<void> recoverAndStart(RecoveryPlan plan) {
     final digest = plan.digest;
     if (digest == null) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
-      _notice = await _startFailure(await _call(() => runtime.recoverAndStart(digest, onStage: _enterStage))) ?? _notice;
+      final report = await _call(() => runtime.recoverAndStart(digest, onStage: _enterStage));
+      final record = report.recoveryRecord;
+      _notice = await _startFailure(report) ?? (record != null ? Notice(strings.recovered(record)) : _notice);
     });
   }
 

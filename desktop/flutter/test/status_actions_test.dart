@@ -83,7 +83,7 @@ void main() {
 
     await tester.tap(recover);
     await tester.pumpAndSettle();
-    expect(find.textContaining('新版本已经生效：保留它'), findsOneWidget);
+    expect(find.textContaining('已经生效：先确认它能启动'), findsOneWidget);
     expect(find.textContaining('· 解除数据库维护锁'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -94,6 +94,30 @@ void main() {
     await tester.tap(find.byKey(const Key('recover-confirm')));
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('recover-start 0123456789abcdef'));
+  });
+
+  testWidgets('a switch that can also be backed out offers both, and recovers with the one chosen', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',
+        failure: StartupFailure('native_recovery_needed', {'operation': 'update', 'phase': 'switching'})))
+      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef', {
+        'fromVersion': '5.26.0', 'toVersion': '5.26.28',
+        'alternative': {'kind': 'back_out_switch', 'steps': [{'do': 'release-lock'}], 'digest': 'fedcba9876543210'},
+      })
+      ..recoverReport = const RuntimeReport(RuntimeState.running, consolePort: 2727, recoveryRecord: '/x/native-runtime/recovered/recovery-1.json');
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.text('保留 5.26.28 并启动'), findsOneWidget);
+    expect(find.textContaining('也可以撤回到切换前的 5.26.0'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('recover-alternative')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('recover-start fedcba9876543210'));
+    expect(controller.notice?.text, contains('/x/native-runtime/recovered/recovery-1.json'), reason: 'the record is pointed to');
   });
 
   testWidgets('打开控制台 and 启动 / 停止 keep their places while work runs, ends, stops and starts', (tester) async {

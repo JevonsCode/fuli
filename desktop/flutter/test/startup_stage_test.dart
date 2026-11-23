@@ -171,17 +171,41 @@ void main() {
     expect(zh.lockKept(const StartupFailure('asset_operation', {'operation': 'load'})), contains('一次数据库导入留下的'));
   });
 
-  test('a recovery plan and every reason it will not run are said in one language', () {
+  test('a recovery plan and every reason it will not run are said in one language, with a next step', () {
     for (final kind in ['undo_switch', 'finish_switch', 'back_out_switch', 'finish_uninstall', 'clear_interrupted', 'release_dump', 'restore_load']) {
-      final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1'}, {'do': 'release-lock'}], 'd', const {}));
+      final words = zh.recoveryPlanWords(RecoveryPlan(kind, const [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1', 'bytes': 3 * 1024 * 1024}, {'do': 'release-lock'}], 'd', const {}));
       expect(words.first, isNot(kind), reason: kind);
       expect(words.join(), isNot(contains(' / ')), reason: kind);
     }
-    expect(zh.recoveryPlanWords(const RecoveryPlan('clear_interrupted', [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1'}], 'd', {}))[1],
-        '· 把 jvs-a-1 移到 recovered 文件夹（不删）');
-    for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'manifest_changed', 'unknown_assets', 'no_restore_point', 'plan_changed']) {
-      expect(zh.recoveryRefused(reason, 7), startsWith('没有恢复：'), reason: reason);
+    expect(zh.recoveryPlanWords(const RecoveryPlan('clear_interrupted', [{'do': 'move-aside', 'path': '/x/neo4j-assets/jvs-a-1', 'bytes': 3145728}], 'd', {}))[1],
+        '· 把一份数据库程序（jvs-a-1，3.0 MB）移到 recovered 文件夹，不删除');
+    // A load says when its copy is from, what it covers, and that the import is not kept.
+    final load = zh.recoveryPlanWords(const RecoveryPlan('restore_load', [{'do': 'restore', 'from': '/x/b', 'instances': ['personal']}], 'd', {
+      'restorePoint': {'path': '/x/b', 'createdAt': '2026-11-22T00:00:00.000Z', 'instances': ['personal']},
+      'emptied': ['workspace'],
+    })).join('\n');
+    expect(load, contains('这次想导入的内容不会保留，之后需要重新导入'));
+    expect(load, contains('自动留下的备份恢复 个人图谱'));
+    expect(load, contains('工作区图谱 在导入前是空的'));
+    // Finishing a switch shows where the backup is, and the other way out.
+    final finish = RecoveryPlan('finish_switch', const [], 'd', const {'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j',
+      'alternative': {'kind': 'back_out_switch', 'steps': [], 'digest': 'e'}});
+    expect(zh.recoveryPlanWords(finish).join(), contains('升级前的图备份在 /x/before-neo4j'));
+    expect(finish.alternative?.digest, 'e');
+    expect(zh.recoveryAlternativeWords(finish), contains('也可以撤回到切换前的 5.26.0'));
+    expect(zh.recoveryAlternativeWords(const RecoveryPlan('finish_switch', [], 'd', {'alternativeRefused': 'no_fingerprint'})), contains('不能撤回'));
+    for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
+      'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
+      'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'lock_changed', 'step_failed', 'plan_changed']) {
+      final said = zh.recoveryRefused(reason, const {'pid': 7, 'directory': 'neo4j-assets/jvs-a-1', 'step': 'restore'});
+      expect(said, startsWith('没有恢复：'), reason: reason);
+      expect(said, isNot(contains(reason)), reason: reason);
+      expect(said, isNot(contains('fuli ')), reason: '$reason: never a command to type');
     }
+    // After a refusal that can pass, 恢复并启动 stays; one about the lock's holder offers the unlock.
+    expect(zh.recoverable(const StartupFailure('recovery_refused', {'reason': 'restore_failed'})), isTrue);
+    expect(zh.recoverable(const StartupFailure('recovery_refused', {'reason': 'manifest_changed'})), isFalse);
+    expect(zh.releasableLock(const StartupFailure('recovery_refused', {'reason': 'no_holder'})), isTrue);
   });
 
   test('a start stopped at a lock an update left offers no release', () async {

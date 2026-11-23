@@ -33,12 +33,26 @@ class RecoveryPlan {
   final Map<String, Object?> facts;
 
   String? text(String key) => facts[key] is String ? facts[key] as String : null;
+
+  /// The other way out of the same unfinished switch (finish or back out),
+  /// when the plan offers one; the person confirms either by its own digest.
+  RecoveryPlan? get alternative => parse(facts['alternative']);
+
+  /// A plan as the recovery wrote it (a JSON object); null for anything else.
+  static RecoveryPlan? parse(Object? value) {
+    if (value is! Map || value['kind'] is! String) return null;
+    final steps = value['steps'];
+    final digest = value['digest'];
+    return RecoveryPlan(value['kind'] as String,
+        [if (steps is List) for (final step in steps) if (step is Map) Map<String, Object?>.from(step)],
+        digest is String ? digest : null, Map<String, Object?>.from(value));
+  }
 }
 
 class RuntimeReport {
   const RuntimeReport(this.state,
       {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
-      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan});
+      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan, this.recoveryRecord});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
@@ -53,6 +67,8 @@ class RuntimeReport {
   final StartupFailure? lockKept;
   /// The plan a recovery preview answered with.
   final RecoveryPlan? recoveryPlan;
+  /// Where a recovery recorded what it did (native-runtime/recovered/recovery-*.json).
+  final String? recoveryRecord;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
