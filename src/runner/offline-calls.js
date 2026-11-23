@@ -4,6 +4,7 @@ import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { DIAGNOSTIC_EVENTS_TOOL, HOST_DIAGNOSTICS_ONLY } from '../diagnostics/agent-access.js';
 import { annotationsFor } from '../mcp/tool-annotations.js';
 import { sha256Bytes } from '../security/digest.js';
+import { SESSION_LIMIT_REASON } from './protocol.js';
 
 // What a runner (docs/runner.md) answers for a call while its host is away,
 // and what it keeps of the answers it got while the host was there. Task
@@ -17,6 +18,14 @@ import { sha256Bytes } from '../security/digest.js';
 const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
 const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 export const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
+// Continuing an earlier conversation: the host holds it, so what this computer
+// can offer offline is the last recovery context it read for that conversation
+// and the checkpoints it has not been able to deliver yet (rec#144).
+const RESUME_TOOL = 'resume_agent_conversation';
+// How many waiting checkpoints an offline resume carries over.
+const RESUME_CHECKPOINTS = 3;
+// How many waiting checkpoints are looked through for those of the same project.
+const RESUME_SCAN = 200;
 // What an earlier task entry said about the folder rather than about its task.
 const FOLDER_ENTRY_FIELDS = ['effective_preferences', 'active_conflicts', 'deferred_conflicts', 'context', 'project_scope'];
 const OFFLINE_CHECKPOINT_GUIDANCE = 'Offline task: checkpoint only when there are capture candidates or a meaningful workLog. '
@@ -52,10 +61,26 @@ export function rememberAnswer(store, { tool, input }, result) {
   if (key) store.rememberAnswer(key, tool, result);
 }
 
+// A task entry the host answered, with where it was answered said plainly
+// (rec#144: the Agent could not tell "the host is here" from "there is no
+// FULI"). Only task entry carries it, and only when the host's answer is the
+// JSON object every task entry is; anything else is passed through untouched.
+export function hostAnsweredNote(tool, result, { hostName }) {
+  if (!TASK_ENTRY_TOOLS.has(tool) || result?.isError) return result;
+  const content = Array.isArray(result?.content) ? result.content : [];
+  if (content.length > 1 || (content.length === 1 && content[0]?.type !== 'text')) return result;
+  const value = resultValue(result);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.runner !== undefined) return result;
+  const text = JSON.stringify({ ...value, runner: { offline: false, host: hostName,
+    message: `This computer follows FULI on ${hostName}, which answered this entry; reads and checkpoints go there.` } });
+  return { ...result, content: [{ type: 'text', text }], structuredContent: JSON.parse(text) };
+}
+
 // entryId: the id a checkpoint already carried online, whose outcome is unknown; it is queued under that id.
 export function offlineAnswer(store, { tool, input, sourceApplication, sessionId, entryId = null }) {
-  const host = store.host();
-  if (!host || host.revokedAt) return notPaired(host);
+  const unpaired = unpairedAnswer(store);
+  if (unpaired) return unpaired;
+  const hostName = store.host()?.name ?? 'your FULI host';
   if (TASK_ENTRY_TOOLS.has(tool)) {
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
     store.beginOfflineTask({ token, projectPath: input.projectPath ?? null, sourceApplication });
@@ -63,7 +88,10 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     return envelope({ effective_preferences: [], ...folderEntry(earlier ? resultValue(earlier.body) : null),
       taskContextToken: token, task_context_token: token, checkpoint_required: false,
       checkpoint_guidance: OFFLINE_CHECKPOINT_GUIDANCE, runner: offlineNote(earlier?.at,
-        'Your FULI host is unreachable. These are the preferences it last gave for this folder; a checkpoint is queued and delivered when it answers again.') });
+        `FULI is on ${hostName}, which this computer cannot reach right now. FULI is working: these are the preferences `
+        + `${hostName} last gave for this folder, reads answer from what was kept here, and a checkpoint is queued and `
+        + 'delivered when it answers again. Nothing needs to be moved or set up again; say that the host is away, not that '
+        + 'FULI is missing.') });
   }
   if (QUEUED_TOOLS.has(tool)) {
     const id = entryId ?? randomUUID();
@@ -73,6 +101,7 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     return envelope({ status: 'queued_offline', outboxId: id, runner: offlineNote(null,
       'Your FULI host is unreachable. The checkpoint is queued on this computer and delivered when the host answers again.') });
   }
+  if (tool === RESUME_TOOL) return resumeOffline(store, input, hostName);
   const earlier = readOnly(tool) ? store.answer(answerKey(tool, input)) : null;
   if (earlier) {
     const value = resultValue(earlier.body);
@@ -84,13 +113,86 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.');
 }
 
+// The pairing every call needs: null while this computer is paired, else the
+// refusal. A judgment made here needs it too (local-routing.js): its decision
+// is the host's to keep, and nothing of this runner's own survives a revoke.
+// details: what else the refusal carries (a model answer this computer paid for and does not use).
+export function unpairedAnswer(store, details = {}) {
+  const host = store.host();
+  return !host || host.revokedAt ? notPaired(host, details) : null;
+}
+
+// Continuing a conversation while the host is away (rec#144: 「主机每天带回家、
+// runner 留在办公室接着干」). The host holds the conversation, so this computer
+// offers what it has of it: the recovery context the host last gave for this
+// very conversation, and the checkpoints still waiting here for the same
+// project, which are the work done here since. Only what a recovery context
+// holds is repeated (never the earlier task's receipt or duties), and work of
+// another project or folder is never carried in. It says what it carried over
+// and how old it is, and invents nothing: with neither, it says there is nothing.
+function resumeOffline(store, input, hostName) {
+  const conversationId = typeof input.conversationId === 'string' ? input.conversationId : '';
+  const earlier = conversationId ? store.answer(answerKey(RESUME_TOOL, input)) : null;
+  const folder = tokenFolder(store, input.taskContextToken);
+  const waiting = folder === null ? [] : store.queuedCheckpoints(RESUME_SCAN)
+    .filter((entry) => (entry.offlineProjectPath ?? tokenFolder(store, entry.input?.taskContextToken)) === folder)
+    .slice(0, RESUME_CHECKPOINTS);
+  const carried = { recovered_from_cache: Boolean(earlier), undelivered_checkpoints: waiting.length };
+  if (!earlier && !waiting.length) {
+    return failure('host_unreachable', `FULI is on ${hostName}, which this computer cannot reach right now, and nothing `
+      + `of conversation ${conversationId || '(none named)'} is kept here: this computer never read it and has no `
+      + 'checkpoint of this project waiting. Nothing is made up. Start from what the person says, or try again once the '
+      + 'host answers.', { conversation_id: conversationId, ...carried });
+  }
+  const value = earlier ? resultValue(earlier.body) : null;
+  return envelope({
+    ...recoveryContext(value),
+    conversation_id: conversationId,
+    ...carried,
+    undelivered_work: waiting.map((entry) => ({ queued_at: entry.queuedAt, summary: checkpointSummary(entry.input) })),
+    runner: offlineNote(earlier?.at, `FULI is on ${hostName}, which this computer cannot reach right now, so this is not `
+      + `the host's answer. ${earlier ? `It is the recovery context ${hostName} last gave for this conversation, read `
+        + `${earlier.at}; anything said in it since is missing.` : 'Nothing of this conversation was read here.'}`
+      + ` ${waiting.length ? `${waiting.length} checkpoint(s) of this project made here have not reached the host yet; `
+        + 'their work logs are in undelivered_work.' : 'No checkpoint of this project is waiting here.'}`
+      + ' Tell the person this context is from this computer\'s cache and may be out of date.')
+  });
+}
+
+// What a recovery context holds (graph-provider conversation_context.py), and nothing of the task it was read in.
+const RECOVERY_FIELDS = ['latest_checkpoint', 'messages', 'summary_role', 'truncated', 'compaction_summary', 'revision',
+  'omitted_sequence', 'scan_truncated', 'guidance'];
+function recoveryContext(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(RECOVERY_FIELDS.filter((field) => value[field] !== undefined).map((field) => [field, value[field]]));
+}
+
+// The folder a task was entered for, from what this computer kept: a token it
+// gave out offline, or one the host answered a task entry with. null: unknown.
+function tokenFolder(store, token) {
+  if (typeof token !== 'string' || !token) return null;
+  if (isOfflineToken(token)) return store.offlineTask(token)?.projectPath ?? null;
+  for (const { key, body } of store.taskEntries()) {
+    const value = resultValue(body);
+    if (value?.taskContextToken === token || value?.task_context_token === token) return entryFolder(key);
+  }
+  return null;
+}
+
+// The part of a queued checkpoint worth carrying over: what was done, kept short.
+function checkpointSummary(input) {
+  const log = typeof input?.workLog === 'string' ? input.workLog : '';
+  return log.length > 1200 ? `${log.slice(0, 1200)}…` : log;
+}
+
 // No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.
-function notPaired(host) {
+function notPaired(host, details = {}) {
   return host?.revokedAt
     ? failure('runner_revoked', 'This computer\'s pairing was revoked on its FULI host or is not known there. '
-      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.')
+      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.',
+      details)
     : failure('runner_not_paired', 'This computer is not paired with a FULI host. '
-      + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
+      + 'Run `fuli runner invite` on the host and `fuli runner join` here.', details);
 }
 
 // details: what else the caller needs to act on the failure, beside code and message.
@@ -99,11 +201,13 @@ export function failure(code, message, details = {}) {
 }
 
 // Whether a call may be made again after its connection dropped: a read; a
-// checkpoint, which carries an entry id the host applies once; or task entry,
+// checkpoint, which carries an entry id the host applies once; task entry,
 // whose second task supersedes the first in that session (and which has its
-// own offline answer).
+// own offline answer); or resuming a conversation, which attaches the same
+// conversation again with the same effect (and has its own offline answer, so
+// a host that went away mid-session is not answered as an unknown outcome).
 export function repeatable(tool) {
-  return readOnly(tool) || QUEUED_TOOLS.has(tool) || TASK_ENTRY_TOOLS.has(tool);
+  return readOnly(tool) || QUEUED_TOOLS.has(tool) || TASK_ENTRY_TOOLS.has(tool) || tool === RESUME_TOOL;
 }
 
 // A call that changes something, sent before the connection to the host
@@ -115,10 +219,16 @@ export function outcomeUnknownAnswer(tool) {
 
 // The host answered but refused a new MCP session (its session limit, a
 // failure on its side): said as it is, never as the host being away.
+// A host of this version says what to do at its session limit: it is the only
+// side that knows whose sessions are open, so this never guesses that they are
+// this computer's. Any other reason (an older host's bare "session limit
+// reached", a failure on its side) gets a next step that holds either way.
+const GENERAL_NEXT_STEP = 'If it is the session limit, close FULI clients and MCP processes you no longer use, here or '
+  + 'on the host\'s other runners (each holds one session until it exits), then try again; otherwise try again later.';
+
 export function hostRefusedAnswer(status, reason) {
   return failure('host_refused', `Your FULI host answered but refused a new MCP session (HTTP ${status}: ${reason}). `
-    + 'Nothing was sent. If it is the session limit, close FULI clients and MCP processes on this computer that you no '
-    + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
+    + `Nothing was sent.${String(reason).startsWith(SESSION_LIMIT_REASON) ? '' : ` ${GENERAL_NEXT_STEP}`}`);
 }
 
 // A call that needs a task the host entered, made with this computer's
@@ -136,17 +246,61 @@ export function deliveredAnswer(outboxId) {
 }
 
 // The preferences the host last gave a task entry in this project, from any
-// of its folders, for Tonborg's judgment on this runner (local-routing.js):
-// { answeredAt, effective_preferences, active_conflicts } or null.
+// of its folders, for Tonborg's judgment on this runner (local-routing.js,
+// which makes them compact as the host does): { answeredAt, context, whole,
+// entry } or null. context carries what the host's read said it did not read
+// in full. An entry the host could not deliver whole (isWholeEntry) is made
+// whole by the rest this computer read after it with the host's reader
+// (local-routing.js completeEntry), when it did; else whole is false.
 export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
   for (const { at, body } of store.taskEntries()) {
     const value = resultValue(body);
     const context = value?.context;
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
-    return { answeredAt: at, effective_preferences: value.effective_preferences ?? [],
-      active_conflicts: value.active_conflicts ?? [] };
+    if (isWholeEntry(value)) return { answeredAt: at, context, whole: true, entry: entryPreferences(value) };
+    // Only the read made for this very entry: an earlier one, or one of another Agent's or scope's entry, is not its set.
+    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId, token: entryToken(value) }));
+    const rest = read ? resultValue(read.body) : null;
+    return rest && isWholeEntry(rest)
+      ? { answeredAt: read.at, context: rest.context ?? context, whole: true, entry: entryPreferences(rest) }
+      : { answeredAt: at, context, whole: false, entry: entryPreferences(value) };
   }
   return null;
+}
+
+// Whether a task entry, or a read of its preferences, holds every rule and
+// conflict. The host sends one over its delivery limit, or held back as
+// unsafe, blocked: preference_delivery.status 'blocked', preferences_complete
+// false, with only part of the rules (possibly none) and the rest counted in
+// preferences_omitted / active_conflicts_omitted — while its context may still
+// say nothing was cut.
+// A delta or scene_switch frame names only what changed since an earlier one
+// of the same session, so it is not the whole set either.
+const NOT_WHOLE_DELIVERY = new Set(['blocked', 'delta', 'scene_switch']);
+export function isWholeEntry(value) {
+  return Boolean(value) && Array.isArray(value.effective_preferences)
+    && !NOT_WHOLE_DELIVERY.has(value.preference_delivery?.status) && value.preferences_complete !== false
+    && value.preferences_omitted === undefined && value.active_conflicts_omitted === undefined;
+}
+
+// Where this computer keeps the whole read of one task entry's preferences
+// (local-routing.js completeEntry): per project and that entry's task token.
+export function wholePreferencesKey({ personalSpaceId, personalProjectId, token }) {
+  return `preferences:${personalSpaceId}:${personalProjectId}:${token ?? ''}`;
+}
+
+// The task token a task entry was answered with.
+export function entryToken(value) {
+  return value?.taskContextToken ?? value?.task_context_token ?? null;
+}
+
+export function isTaskEntry(tool) {
+  return TASK_ENTRY_TOOLS.has(tool);
+}
+
+function entryPreferences(value) {
+  return { effective_preferences: value.effective_preferences ?? [], active_conflicts: value.active_conflicts ?? [],
+    scope_unknown: value.scope_unknown ?? [] };
 }
 
 function folderEntry(value) {
@@ -155,10 +309,18 @@ function folderEntry(value) {
     .map((field) => [field, value[field]]));
 }
 
-// Task entry is kept per folder (its request differs every time); other
+// Task entry is kept per folder (its request differs every time); a resumed
+// conversation per conversation, as its task token differs every time; other
 // read-only calls per exact input. Calls that change something are not kept.
+// The folder of a kept task entry, from its key (answerKey).
+function entryFolder(key) {
+  const match = /^entry:[^:]+:(.*)$/.exec(String(key ?? ''));
+  return match && match[1] ? match[1] : null;
+}
+
 function answerKey(tool, input) {
   if (TASK_ENTRY_TOOLS.has(tool)) return `entry:${tool}:${input.projectPath ?? ''}`;
+  if (tool === RESUME_TOOL) return typeof input?.conversationId === 'string' ? `resume:${input.conversationId}` : null;
   if (!readOnly(tool)) return null;
   return `read:${tool}:${sha256Bytes(Buffer.from(canonicalJson(input ?? {})))}`;
 }
@@ -168,7 +330,7 @@ function readOnly(tool) {
   try { return annotationsFor(tool).readOnlyHint; } catch { return false; }
 }
 
-function resultValue(result) {
+export function resultValue(result) {
   if (result?.structuredContent !== undefined) return result.structuredContent;
   try { return JSON.parse(result?.content?.find((item) => item.type === 'text')?.text ?? 'null'); } catch { return null; }
 }

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { Agent } from 'node:https';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js'
 import { ApplicationError } from '../app/application-error.js';
 import { pinnedFetch } from './host-connection.js';
 import { displayName, parseInvitation, RUNNER_PATHS } from './protocol.js';
+import { LEFT_MARKER } from './runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // Pairs this computer as a runner (docs/runner.md) with the host that printed
@@ -22,8 +23,10 @@ const PAIR_TIMEOUT_MS = 8000;
 export async function joinHost({ dataDir, invitation: text, name = null, force = false,
   loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')) }) {
   if (existsSync(join(dataDir, 'graph-runtime.json'))) {
-    throw new ApplicationError('runner_has_own_fuli', 'This data directory runs its own FULI. '
-      + 'A runner keeps nothing of its own; join from a computer (or --data-dir) without a FULI setup.');
+    throw new ApplicationError('runner_has_own_fuli', 'This data directory holds a FULI of its own, and joining a host '
+      + 'follows it for everything, which would hide that FULI. Owning some of your FULI here and following another '
+      + 'computer for the rest is a later step (docs/runner-roles-design.md); until then, join from a data directory '
+      + 'without a FULI setup (--data-dir).');
   }
   const host = parseInvitation(text);
   // Before the one-use invitation is spent: a join that would drop checkpoints needs --force.
@@ -50,6 +53,8 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
             + 'again. If you did not use it, someone else may have: check `fuli runner list` on the host and '
             + '`fuli runner revoke` a computer you do not know.');
       }
+      // A pairing ended earlier by `leave` while its store was held open is over: this one starts.
+      rmSync(join(dataDir, LEFT_MARKER), { force: true });
       const store = new RunnerStore(join(dataDir, RUNNER_FILE));
       let kept;
       try {
