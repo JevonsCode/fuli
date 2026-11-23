@@ -84,16 +84,17 @@ async function clearAttempts() {
     </div>
     <GrowthLoading v-if="busy === 'toggle'" variant="inline"
       :label="t(nearby.on ? 'settings.peer.nearbyStopping' : 'settings.peer.nearbyStarting')" />
-    <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+    <UiNotice v-if="error" tone="error" data-no-action="the error of the person's own click; the same button tries again">{{ error }}</UiNotice>
     <UiNotice v-if="!nearby.on && nearby.ended" :tone="nearby.ended.kind === 'paired' ? 'success' : nearby.ended.kind === 'waiting' ? 'info' : 'warning'"
-      data-nearby-ended>
+      data-nearby-ended data-no-action="why discovery ended; the 发现附近的电脑 switch right above starts it again">
       {{ t(`settings.peer.nearbyEnded.${nearby.ended.kind}`, { name: nearby.ended.name ?? '', reason: nearby.ended.reason ?? '' }) }}
     </UiNotice>
 
     <template v-if="nearby.on">
       <p>{{ t('settings.peer.nearbyAutoOff') }}</p>
       <p v-if="!nearby.canPair && coordinatorName && !nearby.limited">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
-      <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited>
+      <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited
+        data-no-action="once 「是我自己在试 / It was me」 is pressed, its confirmation shows right below in its place">
         {{ t('settings.peer.nearbyLimited', { window: nearby.attempts?.lastWindow ?? 0, day: nearby.attempts?.lastDay ?? 0 }) }}
         <template v-if="!clearAsked" #actions>
           <Button size="sm" variant="ghost" data-nearby-clear-ask @click="clearAsked = true">{{ t('settings.peer.clearAsk') }}</Button>
@@ -160,7 +161,8 @@ async function clearAttempts() {
       </div>
       <GrowthLoading v-else-if="pairing?.state === 'connecting'" variant="inline"
         :label="t('settings.peer.connecting', { name: pairing.device.name })" />
-      <UiNotice v-else-if="pairing && outcome" :tone="outcome === 'paired' ? 'success' : outcome === 'waiting' ? 'info' : 'warning'" data-pairing-outcome>
+      <UiNotice v-else-if="pairing && outcome" :tone="outcome === 'paired' ? 'success' : outcome === 'waiting' ? 'info' : 'warning'" data-pairing-outcome
+        data-no-action="how a pairing ended; the device's 配对 button in the list right above tries again">
         {{ t(`settings.peer.pairEnded.${outcome}`, { name: pairing.device.name, reason: pairing.reason ?? '' }) }}
       </UiNotice>
     </template>
