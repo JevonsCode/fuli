@@ -25,6 +25,7 @@ export const AGENT_INTRODUCTIONS_FORMAT = sqliteFormat({
 export class AgentIntroductionStore {
   constructor(path = ':memory:') {
     this.path = path;
+    this.closed = false;
   }
 
   // Closing is final: an entry still running after its hook's deadline closed
