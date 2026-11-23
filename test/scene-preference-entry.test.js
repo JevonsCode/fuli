@@ -154,3 +154,30 @@ test('the Provider-backed registry persists the hook scene as preference_scope',
   assert.deepEqual(bodies[0].preference_scope, { version: 1, work_kind: 'frontend', workflow: null });
   assert.deepEqual(task.preferenceScope, { version: 1, work_kind: 'frontend', workflow: null });
 });
+
+// Coordinator, from real use: scope_unknown listed 7 keys beside
+// task_scope_excluded_count 9, with nothing to say why. Excluded is the items
+// this task definitely does not meet plus the scope-unknown items, and
+// scope_unknown lists their distinct keys; the context now says the first part.
+test('the excluded count is the mismatches plus the scope-unknown items, and says so', async () => {
+  const { projectAgentCollaborationPreferences } = await import('../src/graphiti/collaboration-preference-workflow.js');
+  const item = (key, qualifiers) => ({ id: `item-${key}-${Object.keys(qualifiers).join('')}`, item_kind: 'entity', preference_key: key,
+    preference_scope: 'global', profile_aspect: 'taste', confirmation_status: 'confirmed', instruction: `SYNTHETIC ${key}`,
+    preference_qualifiers: qualifiers });
+  const raw = { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project', project_agent_id: 'lead',
+    truncated: false, source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false },
+    effective_preferences: [
+      item('plain', {}),
+      // Two scope-unknown items with one key: one listed key, two excluded items.
+      item('release-notes', { workflow: 'release' }), item('release-notes', { workflow: 'release', sessionId: 'x' }),
+      // Definitely another scene.
+      item('palette', { workKind: 'design' })
+    ] };
+  const result = projectAgentCollaborationPreferences(raw, { personalProjectId: 'synthetic-project' },
+    { projectAgentId: 'lead', taskScope: { workKind: 'implementation' } });
+  assert.deepEqual(result.scope_unknown, ['release-notes']);
+  assert.equal(result.context.task_scope_excluded_count, 3);
+  assert.equal(result.context.task_scope_mismatch_count, 1);
+  assert.equal(result.context.task_scope_excluded_count - result.context.task_scope_mismatch_count, 2, 'the scope-unknown items');
+  assert.match(result.application_guidance.scope_unknown, /task_scope_excluded_count = task_scope_mismatch_count/);
+});
