@@ -186,35 +186,60 @@ test('a delivered record spends no bytes on fields that are null', async () => {
   assert.equal(old.results[0].entities[0].invalid_at, '2026-05-01T00:00:00Z');
 });
 
-test('a page that fills up carries the best matches, not whichever query was asked first', async () => {
-  // Each query's own results are already ranked; across queries they were
-  // delivered in the order the queries were written. A weak first query then
-  // spent the page and the strong answer waited for a continuation (rec#111).
-  const scores = { weak: [1.2, 1.1, 1], strong: [9, 8.5, 8], middling: [4, 3.5, 3] };
+// One call's queries, each with its own ranked results and score scale. Each
+// record is big enough to fill a page alone, so the pages show the order.
+function scoredApplication(scores, { text = '资料'.repeat(600) } = {}) {
   const app = application();
   app.searchKnowledge = async ({ query }) => ({ query, facts: [],
     entities: scores[query].map((score, i) => ({ id: `${query}-${i}`, space_id: 'space', scope: 'personal',
-      score, summary: `Fact ${i} for ${query}. ` + '资料'.repeat(600) })) });
-  const input = { queries: ['weak', 'strong', 'middling'], limitPerQuery: 3 };
-  const delivered = page => page.results.flatMap(group => (group.entities ?? []).map(item => item.id));
-  const page = await searchCurrentProjectKnowledge(app, resolution, input);
+      score, summary: `Fact ${i} for ${query}. ${text}` })) });
+  return app;
+}
 
-  assert.ok(bytes(page) <= 8 * 1024);
-  assert.equal(page.retrieval_budget.complete, false, 'this page is full');
-  assert.deepEqual(delivered(page), ['strong-0'], 'the best match, though its query was asked second');
-  assert.equal(page.retrieval_budget.total_items, 9, 'the rest are counted and continue');
+const delivered = page => page.results.flatMap(group => (group.entities ?? []).map(item => item.id));
 
-  // Fairness is unchanged: every query still gets its own first result before
-  // any query gets a second one.
-  const order = [];
-  for (let cursor = page.next_cursor, pages = 0; cursor; pages++) {
-    assert.ok(pages < 12);
-    const next = await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor });
-    order.push(...delivered(next));
-    cursor = next.next_cursor;
+async function everyPage(app, input) {
+  const pages = [await searchCurrentProjectKnowledge(app, resolution, input)];
+  while (pages.at(-1).next_cursor) {
+    assert.ok(pages.length < 12);
+    pages.push(await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor: pages.at(-1).next_cursor }));
   }
-  assert.deepEqual(order.slice(0, 2), ['middling-0', 'weak-0'], 'the weakest query is not starved');
-  assert.equal(order[2], 'strong-1', 'no query gets a second result before every query has its first');
+  return pages;
+}
+
+test('results compete across queries by their share of their own best, not by raw scores', async () => {
+  // A query fused with meaning scores in reciprocal ranks (about 0.016-0.033),
+  // a lexical one in relevance bands (4-12). Compared raw, the lexical query
+  // always came first, however weak its results (review of rec#111's fix).
+  const scores = { fused: [0.0328, 0.0325, 0.0161], lexical: [12, 4, 3.9] };
+  for (const queries of [['fused', 'lexical'], ['lexical', 'fused']]) {
+    const input = { queries, limitPerQuery: 3 };
+    const pages = await everyPage(scoredApplication(scores), input);
+    const order = pages.flatMap(delivered);
+
+    assert.ok(pages.length > 1, 'the call needs more than one page');
+    assert.deepEqual(order.slice(0, 2), queries.map(query => `${query}-0`),
+      'each query\'s best comes first, in the order asked, whatever its scale');
+    assert.deepEqual(order.slice(2, 4), ['fused-1', 'lexical-1'],
+      'the one nearly as good as its own best goes before the one a third of it');
+    assert.deepEqual([...order].sort(), [...Object.keys(scores).flatMap(query => [0, 1, 2].map(i => `${query}-${i}`))].sort(),
+      'every record exactly once across the pages');
+  }
+});
+
+test('a continuation of a mixed-scale call reads the same records as the call before it', async () => {
+  const scores = { fused: [0.0328, 0.0325, 0.0161], lexical: [12, 4, 3.9], other: [0.0164] };
+  const input = { queries: ['lexical', 'fused', 'other'], limitPerQuery: 3 };
+  const first = await everyPage(scoredApplication(scores), input);
+  const again = await everyPage(scoredApplication(scores), input);
+
+  assert.deepEqual(again.map(page => page.next_cursor ?? null), first.map(page => page.next_cursor ?? null));
+  assert.deepEqual(again.map(delivered), first.map(delivered));
+  // A second page asked for on its own, by the first page's cursor, is the
+  // second page of the first walk: the order does not depend on the walk.
+  const second = await searchCurrentProjectKnowledge(scoredApplication(scores), resolution,
+    { ...input, cursor: first[0].next_cursor });
+  assert.deepEqual(delivered(second), delivered(first[1]));
 });
 
 // The real per-query result shape: every group carries the call's scope
