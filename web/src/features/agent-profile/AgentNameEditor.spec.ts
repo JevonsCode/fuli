@@ -70,6 +70,20 @@ describe('AgentNameEditor', () => {
     expect(wrapper.find('[data-agent-name-free]').exists()).toBe(false)
   })
 
+  it('says who already has the name and where, and shows 原名 after a recent rename', async () => {
+    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'provider_error',
+      error: 'agent_name_taken: another Agent in this personal space already uses this name; used by: Morgan Vale '
+        + '(agent-x) in Saturn; free names: Nora Lin. Choose one or propose another.' })))
+    const wrapper = mount(AgentNameEditor, { props: { agent: { ...agent(), formerName: 'Morgan Vale' } } })
+    expect(wrapper.get('[data-agent-former-name]').text()).toBe('原名 Morgan Vale')
+    await edit(wrapper, 'morgan vale')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan Vale（Saturn）的名字')
+    expect(wrapper.findAll('[data-agent-name-free] button').map(button => button.text())).toEqual(['Nora Lin'])
+    expect(mount(AgentNameEditor, { props: { agent: agent() } }).find('[data-agent-former-name]').exists()).toBe(false)
+  })
+
   it('gives a renamed built-in role its own name back; other Agents have no such button', async () => {
     putJson.mockResolvedValue(agent('employee.bole', 'Bole', null))
     const role = mount(AgentNameEditor, { props: { agent: agent('employee.bole', 'Bole', '伯乐') } })

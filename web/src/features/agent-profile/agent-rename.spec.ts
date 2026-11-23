@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/api/client'
-import { freeNamesOffered } from './agent-rename'
+import { freeNamesOffered, nameHoldersOffered } from './agent-rename'
 
 // The refusal as the Provider words it (graph-provider/fuli_graph/store_project_agent_naming.py
 // _name_taken), passed through the console as { error, code }. If that wording changes,
@@ -8,6 +8,18 @@ import { freeNamesOffered } from './agent-rename'
 const refusal = (text: string) => new ApiError('409', 409, JSON.stringify({ error: text, code: 'provider_error' }))
 const PROVIDER_TEXT = 'agent_name_taken: another Agent in this personal space already uses this name; '
   + 'free names: Nora Lin, Theo Hart, 林夏. Choose one or propose another.'
+
+describe('nameHoldersOffered', () => {
+  it('reads who uses the name and where from the Provider’s refusal', () => {
+    const text = 'agent_name_taken: another Agent in this personal space already uses this name; '
+      + 'used by: Morgan Vale (agent-x) in Saturn, Station Backup | Tonborg (employee.tonborg); '
+      + 'free names: Nora Lin. Choose one or propose another.'
+    expect(nameHoldersOffered(refusal(text))).toEqual([
+      { name: 'Morgan Vale', projects: 'Saturn, Station Backup' }, { name: 'Tonborg', projects: '' }])
+    expect(freeNamesOffered(refusal(text))).toEqual(['Nora Lin'])
+    expect(nameHoldersOffered(refusal(PROVIDER_TEXT))).toEqual([])
+  })
+})
 
 describe('freeNamesOffered', () => {
   it('reads the free names from the Provider’s refusal', () => {

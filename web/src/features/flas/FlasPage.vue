@@ -27,6 +27,7 @@ import { formatRelativeTime } from '@/lib/relative-time'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import { UiIcon, UiNotice, UiSegmented } from '@/ui'
+import AgentNameChanges from './AgentNameChanges.vue'
 import FlaRow from './FlaRow.vue'
 import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, WORKING_FIRST_ORDER, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
@@ -191,7 +192,8 @@ const sections = computed(() => {
 })
 
 function meta(agent: ProjectAgentRecord) {
-  return [...occupationLabels(agent.occupation).slice(0, 2), agent.employeeNumber ? `FLA ${agent.employeeNumber}` : ''].filter(Boolean).join(' · ')
+  return [agent.formerName ? t('agentProfiles.name.former', { name: agent.formerName }) : '',
+    ...occupationLabels(agent.occupation).slice(0, 2), agent.employeeNumber ? `FLA ${agent.employeeNumber}` : ''].filter(Boolean).join(' · ')
 }
 // Under 按状态 the heading already says free, not reported or switched off;
 // those rows say what the FLA is for instead of repeating it. Elsewhere a
@@ -311,6 +313,7 @@ usePageRefresh(() => Promise.all([roster.reload(), work.load()]))
             data-flas-occupations-fill @click="fillOccupations">{{ t('flas.occupations.fill') }}</Button>
         </template>
       </UiNotice>
+      <AgentNameChanges :personal-space-id="space" />
       <ProjectAgentFirstTask v-if="showFirstTask" :personal-space-id="space" />
 
       <GrowthLoading v-if="firstLoading" :label="t('flas.loading')" />

@@ -18,6 +18,16 @@ export async function renameAgent(agent: Pick<ProjectAgentRecord, 'personalSpace
   return record
 }
 
+/** Who already uses a refused name, and the projects each works in (the Provider's `used by:`). */
+export function nameHoldersOffered(error: unknown): { name: string; projects: string }[] {
+  const reason = apiErrorReason(error, '')
+  if (!reason.startsWith('agent_name_taken')) return []
+  const listed = reason.match(/used by:\s*(.*?); free names:/)?.[1] ?? ''
+  return listed.split(' | ').map(holder => holder.match(/^(.+?) \([^)]*\)(?: in (.+))?$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map(match => ({ name: match[1]!, projects: match[2] ?? '' }))
+}
+
 /** The free names offered when another Agent already uses this one, else null. */
 export function freeNamesOffered(error: unknown): string[] | null {
   const reason = apiErrorReason(error, '')
