@@ -56,6 +56,10 @@ const OUTCOME_UNKNOWN = Symbol('outcome unknown');
 const END_SESSION_MS = 2000;
 // The same for a session this process stops using to open another (a dropped stream, a lost connection).
 const RETIRE_SESSION_MS = 1000;
+// How long a judgment here waits for its project's whole preferences still
+// being read (runnerRouting), and how long one page of that read may take.
+const PREFERENCE_WAIT_MS = 30_000;
+const PREFERENCE_PAGE_MS = 30_000;
 // The host's answer to a runner it does not know: looked into through hello (revoked), never a refusal to report.
 const NOT_PAIRED_STATUS = 403;
 
@@ -80,15 +84,16 @@ class HostRefusal {
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch, preferenceWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
   const sessionId = nativeSession ?? mcpHostSessionId({});
-  const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
   // What the host refused or failed when this process opened its session, for `fuli diagnostics` here.
   const record = diagnosticEventLog(dataDir).record;
+  const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch, record,
+    ...(preferenceWaitMs === undefined ? {} : { waitMs: preferenceWaitMs }) });
   const { server, endHostSession } = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
@@ -396,9 +401,15 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
   async function readHostPreferences(input) {
     const answer = await withHost((host) => host.callTool(toolProfile === 'chat'
       ? { name: 'fuli_call', arguments: { toolName: 'read_task_preferences', input } }
-      : { name: 'read_task_preferences', arguments: input }, undefined, { timeout: CALL_TIMEOUT_MS }));
-    if (!answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN || answer.isError) {
-      throw new Error('The host did not give this task\'s preferences');
+      : { name: 'read_task_preferences', arguments: input }, undefined, { timeout: PREFERENCE_PAGE_MS }));
+    if (!answer || answer instanceof HostRefusal || answer === OUTCOME_UNKNOWN) {
+      throw Object.assign(new Error('The host did not answer for this task\'s preferences'), { code: 'host_unreachable' });
+    }
+    if (answer.isError) {
+      // The host's own code, which says whether reading again from the start may help (preference_cursor_invalid).
+      const said = resultValue(answer);
+      const code = said?.error?.code ?? said?.code ?? 'read_refused';
+      throw Object.assign(new Error(`The host refused this task's preferences (${code})`), { code });
     }
     return resultValue(answer);
   }
@@ -445,9 +456,11 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
 // (routing-setup.js): assess_agent_action is answered here, and so is the
 // outcome report, which a decision made here may get even after the setup
 // is gone. The judgment's modules load on the first call that needs them.
-function runnerRouting({ dataDir, store, fetchImpl }) {
+function runnerRouting({ dataDir, store, fetchImpl, record = () => false, waitMs = PREFERENCE_WAIT_MS }) {
   let local = null;
-  let completing = Promise.resolve();
+  // The whole read of a project's preferences still under way, by project: a
+  // judgment waits for its own project's only, and at most waitMs.
+  const reading = new Map();
   const loaded = () => local ??= import('./local-routing.js')
     .then(({ createLocalRouting }) => createLocalRouting({ dataDir, store, ...(fetchImpl ? { fetchImpl } : {}) }));
   return {
@@ -459,24 +472,39 @@ function runnerRouting({ dataDir, store, fetchImpl }) {
       : { tools: [], descriptions: {} }),
     async call(tool, input, context) {
       const routing = await loaded();
-      // A whole read of the preferences still under way waits first: it is what this judgment needs.
-      if (tool === ASSESS_TOOL) await completing;
-      return tool === OUTCOME_TOOL ? routing.outcome(input, context) : routing.assess(input, context);
+      if (tool === OUTCOME_TOOL) return routing.outcome(input, context);
+      // This project's whole read of its preferences, if one is under way, is
+      // what this judgment needs: waited for, but not past waitMs, after which
+      // the judgment holds and says the read was still running.
+      const pending = reading.get(projectKey(input?.personalSpaceId, input?.personalProjectId));
+      const waited = pending ? await Promise.race([pending.then(() => true),
+        delay(waitMs, false, { ref: false })]) : true;
+      return routing.assess(input, { ...context, ...(waited ? {} : { preferencesStillReading: true }) });
     },
     // A task entry answered online that the host could not deliver whole: while
     // this runner judges executors itself, the rest is read now, in this same
-    // session (local-routing.js completeEntry). The answer is not held for it.
+    // session (local-routing.js completeEntry). The answer is not held for it,
+    // and a read that fails is written to this computer's diagnostics.
     completeEntry(tool, answer, read) {
       if (!isTaskEntry(tool) || routingRoleState(dataDir).state !== 'on') return;
-      completing = Promise.all([completing, loaded().then((routing) => routing.completeEntry(answer, read))])
-        .catch(() => {});
+      const context = resultValue(answer)?.context;
+      const key = projectKey(context?.personal_space_id, context?.personal_project_id);
+      const work = loaded().then((routing) => routing.completeEntry(answer, read)).then((outcome) => {
+        if (outcome && outcome !== 'whole' && outcome !== 'not_needed') {
+          record({ component: 'mcp', operation: 'runner.preferences_read', outcome: 'incomplete', code: outcome });
+        }
+      }, (error) => record({ component: 'mcp', operation: 'runner.preferences_read', outcome: 'failed',
+        code: error?.code ?? 'read_failed', reason: String(error?.message ?? error).slice(0, 200) }))
+        .finally(() => { if (reading.get(key) === work) reading.delete(key); });
+      reading.set(key, work);
     },
     async close() {
-      await completing;
       if (local) (await local).close();
     }
   };
 }
+
+const projectKey = (space, project) => `${space ?? ''}\u0000${project ?? ''}`;
 
 // The tools whose schema requires the host's task token (a checkpoint is queued instead).
 let hostTaskTools = null;

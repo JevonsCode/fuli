@@ -17,7 +17,7 @@ import { createModelSecretStore } from '../model-backends/secret-store.js';
 import { ModelUsageLedger } from '../model-backends/usage-ledger.js';
 import { sha256Bytes } from '../security/digest.js';
 import { resolveSetupPaths } from '../setup/paths.js';
-import { envelope, failure, isWholeEntry, projectPreferences, resultValue, unpairedAnswer, wholePreferencesKey } from './offline-calls.js';
+import { entryToken, envelope, failure, isWholeEntry, projectPreferences, resultValue, unpairedAnswer, wholePreferencesKey } from './offline-calls.js';
 import { preflightExecutors, readRunnerExecutors } from './routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from './routing-ledger.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OPERATION, ROUTING_OUTCOME_ENTRY, routingRoleState } from './routing-setup.js';
@@ -72,6 +72,11 @@ const NO_ENTRY_NEXT_STEP = 'This computer keeps no preferences of the host\'s fo
 const NOT_WHOLE_NEXT_STEP = 'The host could not deliver this project\'s preferences whole in its task entry, and this '
   + 'computer did not read the rest (the host was away or refused the read). Enter a task in the project again while '
   + `the host answers, so the rest is read, ${HOST_JUDGES}`;
+const READING_NEXT_STEP = 'The host could not deliver this project\'s preferences whole in its task entry, and this '
+  + 'computer was still reading the rest when the judgment was asked. Ask again in a moment, '
+  + `${HOST_JUDGES}`;
+// The host's code for a page read whose revision changed or whose cursor expired (task-preference-pages.js).
+const CURSOR_INVALID = 'preference_cursor_invalid';
 const tooManyNextStep = (tooLarge) => (tooLarge
   ? `Preference ${tooLarge} alone is longer than one part this computer's model is given (${MAX_EVIDENCE_CHARS} characters). `
     + `Shorten it on the host, ${HOST_JUDGES}`
@@ -170,7 +175,8 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
       .decide(request);
   }
 
-  async function assess(input, { sourceApplication, sessionId }) {
+  // preferencesStillReading: this project's whole read was still under way when the wait for it ended.
+  async function assess(input, { sourceApplication, sessionId, preferencesStillReading = false }) {
     const role = routingRoleState(dataDir);
     if (role.state === 'invalid') return failure('runner_routing_config_invalid', `${NOT_JUDGED} ${role.error}`);
     let request;
@@ -190,7 +196,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     const { eligible, leftOut } = preflightExecutors(declared.state === 'ok' ? declared.executors : [], required);
     let judged;
     try {
-      judged = eligible.length ? await judge(request, eligible, leftOut)
+      judged = eligible.length ? await judge(request, eligible, leftOut, preferencesStillReading)
         : { selected: { executorId: null, model: null, disposition: 'ask_user', conversationId: null,
           summary: 'No executor declared on this runner passes its local preflight for this task.',
           evidence: ['runner/executors.json and its local preflight'] }, modelReceipt: null };
@@ -238,7 +244,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
   // The model's choice among the executors that passed preflight, or ask_user
   // with no model call when preferences hold it as on the host. Throws with
   // its receipt when the model did not answer (a stop is never retried here).
-  async function judge(request, eligible, leftOut) {
+  async function judge(request, eligible, leftOut, stillReading = false) {
     const scope = { personalSpaceId: request.personalSpaceId, personalProjectId: request.personalProjectId };
     // As on the host: no preferences to judge with, or some rule may be missing, and Tonborg does not recommend.
     const cached = projectPreferences(store, scope);
@@ -248,7 +254,7 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
     if (hold) {
       const cut = preferences.receipt.omitted?.truncated ?? [];
       const nextStep = !cached ? NO_ENTRY_NEXT_STEP : cut.includes('size_limit') ? tooManyNextStep(preferences.tooLarge)
-        : cut.includes('delivery_budget') ? NOT_WHOLE_NEXT_STEP : '';
+        : cut.includes('delivery_budget') ? (stillReading ? READING_NEXT_STEP : NOT_WHOLE_NEXT_STEP) : '';
       return { selected: { executorId: null, model: null, disposition: 'ask_user', conversationId: null,
         summary: `${hold.summary} ${nextStep}`.trim(), evidence: hold.evidence }, modelReceipt: null };
     }
@@ -322,20 +328,29 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
   // A task entry the host could not deliver whole (isWholeEntry): the rest is
   // read now with the host's own reader, in the session that entered the task
   // (the reader binds it), its pages joined in one revision as the host joins
-  // them (joinTaskPreferencePages), and kept for the project
-  // (wholePreferencesKey), where projectPreferences finds it. Nothing is kept
-  // unless the read is whole. read(input): read_task_preferences' answer.
+  // them (joinTaskPreferencePages), and kept for that entry
+  // (wholePreferencesKey), where projectPreferences finds it. A revision that
+  // changed between pages starts the read over, once. Nothing is kept unless
+  // the read is whole. read(input): read_task_preferences' answer. Says
+  // 'not_needed', 'whole' or 'not_whole'; a failed read throws.
   async function completeEntry(answer, read) {
     const value = resultValue(answer);
-    const token = value?.taskContextToken ?? value?.task_context_token;
+    const token = entryToken(value);
     const scope = { personalSpaceId: value?.context?.personal_space_id, personalProjectId: value?.context?.personal_project_id };
-    if (isWholeEntry(value) || !token || !scope.personalSpaceId || !scope.personalProjectId) return false;
-    const rest = await joinTaskPreferencePages((cursor) => read({ taskContextToken: token, ...(cursor ? { cursor } : {}) }));
-    if (!isWholeEntry(rest) || !Array.isArray(rest?.effective_preferences)) return false;
-    store.rememberAnswer(wholePreferencesKey(scope), 'read_task_preferences', envelope({
+    if (isWholeEntry(value) || !token || !scope.personalSpaceId || !scope.personalProjectId) return 'not_needed';
+    const readAll = () => joinTaskPreferencePages((cursor) => read({ taskContextToken: token, ...(cursor ? { cursor } : {}) }));
+    let rest;
+    try {
+      rest = await readAll();
+    } catch (error) {
+      if (error?.code !== CURSOR_INVALID) throw error;
+      rest = await readAll();
+    }
+    if (!isWholeEntry(rest)) return 'not_whole';
+    store.rememberAnswer(wholePreferencesKey({ ...scope, token }), 'read_task_preferences', envelope({
       effective_preferences: rest.effective_preferences, active_conflicts: rest.active_conflicts ?? [],
       scope_unknown: rest.scope_unknown ?? [], context: rest.context ?? value.context }));
-    return true;
+    return 'whole';
   }
 
   return { assess, outcome, completeEntry, close: () => { ledger.close(); usage?.close(); } };

@@ -418,7 +418,13 @@ and the host then delivers it blocked (`preference_delivery.status: "blocked"`,
 then reads the rest right away with the host's own reader
 (`read_task_preferences`, page by page in one revision, joined as the host
 joins them), in the same session that entered the task, as the reader
-requires, and keeps the whole set for the project. The model port takes at
+requires, and keeps the whole set for that entry; a judgment uses only the
+read made for the project's latest entry, never an older entry's or another
+Agent's. A revision that changes between pages starts the read over, once, and
+a read that fails is written to the runner's diagnostics (`fuli diagnostics`,
+operation `runner.preferences_read`). A judgment asked while its project's
+read is still running waits for it at most 30 seconds, then stops and says the
+read was still running; another project's judgment does not wait for it. The model port takes at
 most 20,000 characters per part, and 70 rules of 200 characters already need
 more than one, so every rule and conflict goes, in the host's order, across as
 many parts as it takes, at most four: `preferences`, then `preferences_2` and

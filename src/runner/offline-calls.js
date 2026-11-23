@@ -258,8 +258,9 @@ export function projectPreferences(store, { personalSpaceId, personalProjectId }
     const context = value?.context;
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
     if (isWholeEntry(value)) return { answeredAt: at, context, whole: true, entry: entryPreferences(value) };
-    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId }));
-    const rest = read && read.at >= at ? resultValue(read.body) : null;
+    // Only the read made for this very entry: an earlier one, or one of another Agent's or scope's entry, is not its set.
+    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId, token: entryToken(value) }));
+    const rest = read ? resultValue(read.body) : null;
     return rest && isWholeEntry(rest)
       ? { answeredAt: read.at, context: rest.context ?? context, whole: true, entry: entryPreferences(rest) }
       : { answeredAt: at, context, whole: false, entry: entryPreferences(value) };
@@ -273,14 +274,24 @@ export function projectPreferences(store, { personalSpaceId, personalProjectId }
 // false, with only part of the rules (possibly none) and the rest counted in
 // preferences_omitted / active_conflicts_omitted — while its context may still
 // say nothing was cut.
+// A delta or scene_switch frame names only what changed since an earlier one
+// of the same session, so it is not the whole set either.
+const NOT_WHOLE_DELIVERY = new Set(['blocked', 'delta', 'scene_switch']);
 export function isWholeEntry(value) {
-  return Boolean(value) && value.preference_delivery?.status !== 'blocked' && value.preferences_complete !== false
+  return Boolean(value) && Array.isArray(value.effective_preferences)
+    && !NOT_WHOLE_DELIVERY.has(value.preference_delivery?.status) && value.preferences_complete !== false
     && value.preferences_omitted === undefined && value.active_conflicts_omitted === undefined;
 }
 
-// Where this computer keeps a whole read of a project's preferences (completeEntry).
-export function wholePreferencesKey({ personalSpaceId, personalProjectId }) {
-  return `preferences:${personalSpaceId}:${personalProjectId}`;
+// Where this computer keeps the whole read of one task entry's preferences
+// (local-routing.js completeEntry): per project and that entry's task token.
+export function wholePreferencesKey({ personalSpaceId, personalProjectId, token }) {
+  return `preferences:${personalSpaceId}:${personalProjectId}:${token ?? ''}`;
+}
+
+// The task token a task entry was answered with.
+export function entryToken(value) {
+  return value?.taskContextToken ?? value?.task_context_token ?? null;
 }
 
 export function isTaskEntry(tool) {

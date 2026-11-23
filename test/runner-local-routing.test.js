@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,6 +31,7 @@ import { createTaskPreferencePager } from '../src/graphiti/task-preference-pages
 import { TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../src/mcp/preference-delivery.js';
 import { completePreferenceToolResult, successToolResult } from '../src/mcp/tool-result.js';
 import { deliveredPreferences } from '../src/runner/local-routing.js';
+import { isWholeEntry } from '../src/runner/offline-calls.js';
 import { sha256Bytes } from '../src/security/digest.js';
 
 // Tonborg's executor judgment on a runner (docs/runner.md, "Executor judgment
@@ -470,6 +471,71 @@ test('a task entry the host could not deliver whole, whose rest was not read, st
   assert.equal(runner.model.requests.length, 0);
 });
 
+test('a judgment waits a bounded time for its own project\'s read, and says the read was still running', async (t) => {
+  // The host delivers the entry blocked, and its reader never answers.
+  const runner = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'hang',
+    preferenceWaitMs: 300 });
+  const started = Date.now();
+  const decision = (await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK })).structuredContent;
+  assert.ok(Date.now() - started < 5000, 'not held for the read\'s own timeout');
+  assert.equal(decision.disposition, 'ask_user');
+  assert.match(decision.summary, /was still reading the rest when the judgment was asked/);
+  assert.equal(runner.model.requests.length, 0);
+
+  // Another project's judgment does not wait for this project's read at all.
+  const other = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'hang',
+    preferenceWaitMs: 20_000 });
+  const before = Date.now();
+  const elsewhere = (await other.client.callTool({ name: 'assess_agent_action',
+    arguments: { ...ASK, personalProjectId: 'another-project' } })).structuredContent;
+  assert.ok(Date.now() - before < 5000, 'an unrelated project is not held by this read');
+  assert.deepEqual(elsewhere.evidence, ['preference_delivery:unavailable']);
+});
+
+test('a whole read belongs to its own task entry: a newer entry not read whole is not judged with an older read', async (t) => {
+  const runner = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'real' });
+  const first = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(first.structuredContent.selection.executorId, 'runner-node', 'the first entry was read whole');
+
+  // A newer entry of the project (another task, maybe another Agent's scope), whose rest the host does not serve.
+  runner.deliver('blocked');
+  await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'next' } });
+  const second = (await runner.client.callTool({ name: 'assess_agent_action', arguments: { ...ASK, requestId: 'job-2' } }))
+    .structuredContent;
+  assert.equal(second.disposition, 'ask_user', 'the earlier entry\'s set is not this entry\'s');
+  assert.equal(runner.model.requests.length, 1);
+});
+
+test('a page read whose revision changed starts over once; a read that fails is written to the runner\'s diagnostics', async (t) => {
+  const stale = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'stale-once' });
+  const answer = await stale.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  assert.equal(answer.structuredContent.selection.executorId, 'runner-node', 'read whole on the second try');
+  const firstPages = stale.calls.filter(({ input }) => input?.toolName === 'read_task_preferences' && !input.input.cursor);
+  assert.equal(firstPages.length, 2, 'started over from the first page, once');
+
+  const refused = await routingRunner(t, { preferences: realisticPreferences(75, { chinese: true }), delivery: 'blocked' });
+  await refused.client.callTool({ name: 'assess_agent_action', arguments: ASK });
+  const events = readFileSync(path.join(refused.dataDir, 'diagnostics', 'events.jsonl'), 'utf8').trim().split('\n')
+    .map((line) => JSON.parse(line)).filter((event) => event.operation === 'runner.preferences_read');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].outcome, 'failed');
+});
+
+test('only a frame that holds every rule counts as whole', () => {
+  const whole = { effective_preferences: [], preference_delivery: { status: 'complete' } };
+  assert.equal(isWholeEntry(whole), true);
+  for (const [said, frame] of [
+    ['blocked', { ...whole, preference_delivery: { status: 'blocked' } }],
+    ['a delta of an earlier frame', { ...whole, preference_delivery: { status: 'delta' } }],
+    ['a scene switch', { ...whole, preference_delivery: { status: 'scene_switch' } }],
+    ['incomplete', { ...whole, preferences_complete: false }],
+    ['rules counted, not listed', { ...whole, preferences_omitted: { count: 3 } }],
+    ['conflicts counted, not listed', { ...whole, active_conflicts_omitted: 2 }],
+    ['no list of rules', { preference_delivery: { status: 'complete' } }]]) {
+    assert.equal(isWholeEntry(frame), false, said);
+  }
+});
+
 test('one rule longer than a part is named, and a part of exactly the limit still goes', () => {
   const rule = (instruction) => ({ preference_key: 'habit-long', preference_scope: 'global', instruction, confirmation_status: 'confirmed' });
   const deliver = (instruction) => deliveredPreferences({ answeredAt: '2026-01-01T00:00:00.000Z', context: {},
@@ -556,7 +622,13 @@ test('a request too large to send is refused here as what it is, and no model is
 async function routingRunner(t, { operations = ['executor_routing'], backends, executors, reply,
   projects = [{ projectId: PROJECT, profile: { lifecycle: 'active' } }], preferences = [{ preference_key: 'answer-length',
     preference_scope: 'global', instruction: 'short answers', confirmation_status: 'confirmed' }], conflicts = [],
-  hostContext = {}, entered = true, delivery = 'raw' } = {}) {
+  hostContext = {}, entered = true, delivery: firstDelivery = 'raw', preferenceWaitMs } = {}) {
+  // delivery: 'raw' (the entry as it is), 'real' (through the host's 32 KB limit, its reader serving the rest),
+  // 'blocked' (that limit, its reader refusing), 'hang' (that limit, its reader never answering),
+  // 'stale-once' (as real, but the first page read after the first one says its revision changed).
+  let delivery = firstDelivery;
+  let entries = 0;
+  let staleSent = false;
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-routing-')));
   const model = await fakeModel(reply);
   const host = deviceIdentity(await createDeviceCertificate());
@@ -573,20 +645,31 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
         .map((name) => ({ name, inputSchema: { type: 'object' } })) }));
       server.setRequestHandler(CallToolRequestSchema, (request) => {
         calls.push({ name: request.params.name, input: request.params.arguments });
-        const entry = { effective_preferences: preferences, taskContextToken: 'host-token-1', task_context_token: 'host-token-1',
+        const named = request.params.name === 'fuli_call' ? request.params.arguments?.toolName : request.params.name;
+        if (named === 'get_collaboration_preferences') entries += 1;
+        const token = `host-token-${Math.max(entries, 1)}`;
+        const entry = { effective_preferences: preferences, taskContextToken: token, task_context_token: token,
           checkpoint_required: true, agent_receipt: { markdown: 'receipt' }, active_conflicts: conflicts,
           context: { personal_space_id: SPACE, personal_project_id: PROJECT, ...hostContext } };
-        const named = request.params.name === 'fuli_call' ? request.params.arguments?.toolName : request.params.name;
         if (named === 'get_collaboration_preferences') {
           // As the host delivers a task entry (create-mcp-server.js): through its 32 KB limit, when delivery is real.
           return delivery === 'raw' ? { content: [{ type: 'text', text: JSON.stringify(entry) }], structuredContent: entry }
             : successToolResult(entry, { limitBytes: TASK_PREFERENCE_RESULT_LIMIT_BYTES, itemLimit: 1000, preferenceContext: true });
         }
         if (named === 'read_task_preferences') {
-          if (delivery !== 'real') return { isError: true, content: [{ type: 'text', text: '{"code":"preferences_blocked"}' }] };
+          if (delivery === 'hang') return new Promise(() => {});
+          const cursor = request.params.arguments?.input?.cursor;
+          if (delivery === 'stale-once' && cursor && !staleSent) {
+            staleSent = true;
+            const said = { error: { code: 'preference_cursor_invalid', message: 'Preference pages changed while they were read.' } };
+            return { isError: true, content: [{ type: 'text', text: JSON.stringify(said) }], structuredContent: said };
+          }
+          if (!['real', 'stale-once'].includes(delivery)) {
+            return { isError: true, content: [{ type: 'text', text: '{"code":"preferences_blocked"}' }] };
+          }
           // The host's own pager over the whole set, page by page as read_task_preferences serves it.
           return completePreferenceToolResult(pager.read({ ...entry, deferred_conflicts: [], preferences_complete: true,
-            preference_delivery: { status: 'complete' } }, { cursor: request.params.arguments?.input?.cursor }));
+            preference_delivery: { status: 'complete' } }, { cursor }));
         }
         const value = { outcome: 'recommend', decidedOn: 'host' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
@@ -621,7 +704,7 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
   const client = new Client({ name: 'codex', version: 'test' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const served = await runRunnerMcp({ dataDir, sourceApplication: 'codex', transport: serverSide,
-    lookUp: async () => [], retryAfterMs: 0 });
+    lookUp: async () => [], retryAfterMs: 0, ...(preferenceWaitMs === undefined ? {} : { preferenceWaitMs }) });
   await client.connect(clientSide);
   if (entered) {
     await client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath, taskPrompt: 'first' } });
@@ -639,7 +722,8 @@ async function routingRunner(t, { operations = ['executor_routing'], backends, e
     rmSync(base, { recursive: true, force: true });
   });
   return { client, served, calls, model, judgment, dataDir, projectPath,
-    hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
+    hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; },
+    deliver: (next) => { delivery = next; } };
 }
 
 // An OpenAI-compatible endpoint on loopback that always makes CHOICE, keeping
