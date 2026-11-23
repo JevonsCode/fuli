@@ -275,8 +275,9 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(ownText).slice(0, 8192));
-  const factCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ facts = [] }) => facts), focusTerms));
-  const entityCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ entities = [] }) => entities), focusTerms));
+  const taskTerms = new Set([...contentTerms(ownText), ...categoryTerms(plan.trigger_categories)]);
+  const factCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ facts = [] }) => facts), focusTerms, taskTerms));
+  const entityCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ entities = [] }) => entities), focusTerms, taskTerms));
   // rec#63: how often Agents used each candidate once shown reorders, within
   // the same place, by a bounded factor on the score; it never drops one.
   const prior = usagePriorLookup(application.recallImpressions, {
@@ -678,15 +679,54 @@ function confirmedByPeople(items) {
   return items.length > 0 && items.every((item) => item.confirmation_status === 'confirmed');
 }
 
-function filterRecallCandidates(items, focusTerms) {
+// What a confirmed recalled item has to have to reach the entry whole, with
+// the 「知识增强」 marker (rec#111): something in common with what the task
+// says — a name or identifier it names, a word or pair of Chinese characters
+// of its own text or of the category its words triggered — or a meaning match
+// the Provider's own statistics stood behind (matched_by semantic / both).
+// Being this project's item used to be enough on its own, and for a Chinese
+// prompt without names or identifiers nothing was filtered at all, so a canned
+// category query brought its project's items into tasks that never mentioned
+// them: a dubbing note for a code survey, release notes for a permissions fix,
+// a connector runbook for a receipt. Such a task now has a searched miss.
+// Pending items keep the rule they had: this project's are read on, and those
+// whose head does not match go to the title-only index without a marker
+// (relevantPending, rec#88). A task with no words to compare keeps what was
+// found: FULI does not withhold on a guess.
+function filterRecallCandidates(items, focusTerms, taskTerms = new Set()) {
   const focusTokens = recallFocusTokens(focusTerms);
-  if (!focusTokens.length) return items;
-  return items.filter((item) =>
-    Boolean(item?.defined_project_id) || recallItemMatchesFocus(item, focusTokens));
+  if (!focusTokens.length && !taskTerms.size) return items;
+  return items.filter((item) => matchedByMeaning(item) || recallItemMatchesFocus(item, focusTokens)
+    || (isConfirmed(item) ? sharesTaskTerms(item, taskTerms) : Boolean(item?.defined_project_id)));
+}
+
+const matchedByMeaning = item => item?.matched_by === 'semantic' || item?.matched_by === 'both';
+
+// The words a triggered category's own queries search by count as the task's:
+// "发布一个新版本" wants the project's push-and-submit runbook although it
+// shares no word with it. Words every category's query carries ("runbook",
+// "方法", "流程" …) say what kind of item, not what about, so they do not: a
+// connector runbook is not about authentication because both are runbooks.
+const GENERIC_CATEGORY_TERMS = new Set(['runbook', 'workflow', 'procedure', 'method', 'rule', 'decision', 'previou',
+  'document', '方法', '方式', '流程', '步骤', '规则', '决策', '先前', '文档']);
+function categoryTerms(categories = []) {
+  const queries = RECALL_INTENTS.filter(intent => categories.includes(intent.category)).flatMap(intent => intent.queries);
+  return [...contentTerms(queries.join(' '))].filter(term => !GENERIC_CATEGORY_TERMS.has(term));
+}
+
+function sharesTaskTerms(item, taskTerms) {
+  if (!taskTerms.size) return false;
+  for (const term of contentTerms(recallItemText(item))) if (taskTerms.has(term)) return true;
+  return false;
 }
 
 function recallItemMatchesFocus(item, focusTokens) {
-  const text = singleLine([
+  const text = recallItemText(item).toLocaleLowerCase('en-US');
+  return focusTokens.some((token) => text.includes(token));
+}
+
+function recallItemText(item) {
+  return singleLine([
     item?.key,
     item?.source_entity,
     item?.target_entity,
@@ -695,9 +735,9 @@ function recallItemMatchesFocus(item, focusTokens) {
     item?.name,
     item?.type,
     item?.summary,
+    ...(Array.isArray(item?.search_terms) ? item.search_terms : []),
     ...(Array.isArray(item?.source_uris) ? item.source_uris : [])
-  ].filter(Boolean).join(' ')).toLocaleLowerCase('en-US');
-  return focusTokens.some((token) => text.includes(token));
+  ].filter(Boolean).join(' '));
 }
 
 function recallFocusTokens(terms) {
