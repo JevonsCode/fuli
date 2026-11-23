@@ -131,8 +131,15 @@ export function projectPreferenceDelta(value, baseline, shown) {
   const removed = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(snapshot.units,id))
     .map(([,unit]) => unit.identity);
   if (bounded && removed.length) return full;
-  // A delta stays in its base's scene, so it does not repeat it.
+  // A delta stays in its base's scene, so it does not repeat it. Nor does it
+  // repeat an omission index the base already showed word for word (review of
+  // #1070: at 60 preferences the second turn grew from 1329 to 1883 chars by
+  // resending it); it says index_unchanged instead.
   const { effective_preferences, ...current } = plain;
+  if (sameOmittedIndex(current.preferences_omitted, baseline.omittedIndex)) {
+    const { index: _index, ...omitted } = current.preferences_omitted;
+    current.preferences_omitted = { ...omitted, index_unchanged: true };
+  }
   return smaller({ ...current, preference_updates: updates, preference_delivery: {
     status: 'delta', base_revision: baseline.revision, revision, removed, unchanged: snapshot.preferences.length - updates.length,
     ...DELIVERY_RULES() } }, plain) ?? full;
@@ -219,3 +226,21 @@ function identity(item) {
 }
 
 function unitId(item) { return canonicalJson(identity(item)); }
+
+// The omission index a recorded frame left the model holding: the one it
+// carries, or, for a delta that said index_unchanged, the one its base held.
+// null when it carried none.
+export function frameOmittedIndex(frame, shown) {
+  const omitted = frame?.preferences_omitted;
+  if (Array.isArray(omitted?.index)) return omitted.index;
+  const delivery = frame?.preference_delivery;
+  if (omitted?.index_unchanged === true && delivery?.status === 'delta') {
+    return shown.get(delivery.base_revision)?.omittedIndex ?? null;
+  }
+  return null;
+}
+
+function sameOmittedIndex(omitted, held) {
+  return Array.isArray(omitted?.index) && omitted.index.length > 0 && Array.isArray(held)
+    && canonicalJson(omitted.index) === canonicalJson(held);
+}

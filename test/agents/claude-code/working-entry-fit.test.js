@@ -110,7 +110,9 @@ test('a frame that leaves every preference out still carries its revision, count
     assert.equal(first.frame.preferences_omitted.index.length, 7);
     assert.match(first.frame.revision, /^[0-9a-f]{12}$/);
     const second = await session.turn(await entry('task-2'));
-    assert.equal(second.frame.revision, first.frame.revision, 'the same set names the same revision');
+    // The same set names the same revision; with nothing changed it is a delta on it.
+    assert.equal(second.frame.revision ?? second.frame.preference_delivery?.revision, first.frame.revision,
+      'the same set names the same revision');
     assert.equal(second.frame.preferences_omitted.read.arguments.taskContextToken, 'task-2');
   }));
 

@@ -125,7 +125,14 @@ under `input` while `list_agent_interfaces` shows them at the top level, so
 following the schema alone failed validation on the first call. A
 single-tool `list_agent_interfaces` answer now carries `call`, the exact
 `fuli_call` envelope with each required argument as a `<placeholder>`.
-The label tells the model to read what may apply by key (`keys` below). If the hard
+The label tells the model to read what may apply by key (`keys` below).
+A delta whose index is word for word the one its base frame showed does not
+resend it: `preferences_omitted` says `index_unchanged: true` instead, and the
+session rebuilds the index the model holds from the recorded frames (the
+base's own, or its base's through further `index_unchanged` deltas). Any
+change to what is left out sends the index again. Measured on the synthetic
+60-preference entry: the second turn is 1,403 chars (main: 1,329; with the
+index resent: 1,883). If the hard
 rules alone are longer than the budget (D-69, revising D-54), they are bounded
 the same way: the largest prefix whose complete frame fits, with nothing
 ranked after them. That prefix keeps the most specific rules first (Agent,

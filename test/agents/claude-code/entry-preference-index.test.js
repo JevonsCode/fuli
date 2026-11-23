@@ -90,6 +90,25 @@ test('the index is part of the frame, so the next turn of the same session is st
     assert.equal(second.frame.preference_delivery.status, 'delta');
     assert.deepEqual([second.frame.preference_updates, second.frame.preference_delivery.removed], [[], []]);
     assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count);
-    assert.deepEqual(second.frame.preferences_omitted.index, first.frame.preferences_omitted.index);
+    // The index the base already showed is not sent again (review of #1070).
+    assert.equal(second.frame.preferences_omitted.index, undefined);
+    assert.equal(second.frame.preferences_omitted.index_unchanged, true);
     assert.ok(second.text.length < first.text.length / 2, `${second.text.length} chars against ${first.text.length}`);
+    // And the turn after names the same index through the delta it builds on.
+    const third = await session.turn(entry('task-3'));
+    assert.equal(third.frame.preference_delivery.status, 'delta');
+    assert.equal(third.frame.preferences_omitted.index_unchanged, true);
+  }));
+
+test('a changed set sends the index again, so the model never holds a stale one', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(30);
+    const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
+    const omittedKey = first.frame.preferences_omitted.index.at(-1).split(' ')[0];
+    // The last omitted preference is edited: still omitted, so its line changes.
+    const edited = items.map(item => item.preference_key === omittedKey
+      ? { ...item, instruction: `SYNTHETIC_EDITED: ${item.instruction}` } : item);
+    const second = await session.turn(syntheticLargeEntry({ items: edited, sessionId: session.sessionId, token: 'task-2' }));
+    assert.equal(second.frame.preferences_omitted.index_unchanged, undefined);
+    assert.ok(second.frame.preferences_omitted.index.some(line => line.startsWith(`${omittedKey} — SYNTHETIC_EDITED`)));
   }));

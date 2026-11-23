@@ -96,7 +96,7 @@ function omittedLabel(label, boundedLabel, projected) {
   if (!omitted && !conflicts) return label;
   if (!(omitted ?? conflicts).read) return `${boundedLabel} ${OMITTED_UNREADABLE_LABEL}`;
   return [boundedLabel, ...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
-    ...(omitted?.index?.length ? [OMITTED_INDEX_LABEL] : []),
+    ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
     ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])].join(' ');
 }
 
