@@ -201,6 +201,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
   }
 
   const awaitingAnswer = ({ personalSpaceId }) => store.awaitingAnswer(personalSpaceId);
+  const requestUsed = requestId => store.requestUsed(requestId);
 
   // An Agent app the FLA submitted deposits the repeats the person asked it to
   // make a script of, in the project of the task that submitted it only.
@@ -232,7 +233,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
   }
 
   return { propose, index, read, recordRun, overview, listSpace, decide, noteRepeat, repeatRequested, repeatAnswered,
-    awaitingAnswer, depositApp, entryGrowth, close: () => store.close() };
+    awaitingAnswer, requestUsed, depositApp, entryGrowth, close: () => store.close() };
 }
 
 // "A title and one sentence" (the entry): the purpose up to its first full stop, at most ENTRY_PURPOSE characters.

@@ -33,8 +33,8 @@ function repeatedLine(hint) {
       + '(runtime.entry, not resident, no keys or tokens in its files); they confirm it in the terminal from Agents → Apps.';
   }
   if (hint.answer === 'steps') {
-    return `The person chose to keep ${work} as steps: propose them with propose_agent_workflow {name, purpose, steps}; `
-      + 'their choice confirms it.';
+    return `The person chose to keep ${work} as steps: propose these titles as its steps, unchanged and in this order, `
+      + `with propose_agent_workflow {name, purpose, steps}: ${JSON.stringify(hint.steps)}; their choice confirms only those.`;
   }
   return hint.kind === 'workflow'
     ? `Your workflow ${work} ran through each time: a command it runs every time can become a script (submit_agent_app_version).`

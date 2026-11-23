@@ -128,10 +128,11 @@ async function askOnce(app, personalSpaceId, repeat, legacyAnswers) {
     personalProjectId: repeat.personalProjectId, kind: repeat.workflowName ? 'workflow' : 'steps',
     name: String(repeat.workflowName ?? repeat.steps[0]).slice(0, 120), steps: repeat.steps, taskCount: repeat.tasks.length });
   if (hint && (hint.depositedAt || hint.answer || hint.requestWording === wording)) return false;
-  // Answered in the 0.29 beta wording: that answer stands.
+  // Answered in the 0.29 beta wording: that answer stands, for one repeat only.
   const earlier = hint && !hint.requestId ? legacyAnswers.find(item => item.agentId === repeat.agentId
     && item.personalProjectId === repeat.personalProjectId && plansAlike(listedSteps(item.detail), repeat.steps)) : null;
   if (earlier) {
+    legacyAnswers.splice(legacyAnswers.indexOf(earlier), 1);
     app.agentWorkflows.repeatRequested(hint.key, earlier.requestId, wording);
     app.agentWorkflows.repeatAnswered(hint.key, answerOf(earlier));
     return false;
@@ -177,7 +178,8 @@ async function cancelLegacy(app, personalSpaceId, state) {
       await cancelIfOpen(app, { personalSpaceId, requestId: item.requestId, reason: 'FULI asks this again in clearer words.' });
     }
     const { items: resolved = [] } = await app.listAgentAttention({ personalSpaceId, status: 'resolved', limit: ANSWER_PAGE });
-    state.legacyAnswers = resolved.filter(entry => LEGACY_TITLE.test(entry.title ?? '') && answerOf(entry));
+    state.legacyAnswers = resolved.filter(entry => LEGACY_TITLE.test(entry.title ?? '') && answerOf(entry)
+      && !app.agentWorkflows?.requestUsed?.(entry.requestId));
     return true;
   } catch { return false; }
 }

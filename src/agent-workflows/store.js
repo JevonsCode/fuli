@@ -206,6 +206,12 @@ export class AgentWorkflowStore {
       .all(personalSpaceId, agentId, personalProjectId, personalProjectId).map(hintView);
   }
 
+  // Whether a repeat already stands on this request (an answer is used for one repeat only).
+  requestUsed(requestId) {
+    if (!this.readable) return false;
+    return Boolean(this.db.prepare('SELECT 1 FROM agent_growth_hints WHERE request_id = ? LIMIT 1').get(requestId));
+  }
+
   recordRequest(hintKey, requestId, wording) {
     this.db.prepare('UPDATE agent_growth_hints SET request_id = ?, request_wording = ? WHERE hint_key = ?').run(requestId, wording, hintKey);
   }

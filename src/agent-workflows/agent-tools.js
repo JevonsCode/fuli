@@ -25,7 +25,7 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
       : input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
     const { deposited = [], pendingVersion, ...result } = await workflows(app).propose(owner, { workflowId: input.workflowId,
       name: input.name, purpose: input.purpose, steps, source, workMap: input.workMap });
-    const settled = await settleRepeats(app, owner, result, deposited, pendingVersion);
+    const settled = await settleRepeats(app, owner, result, { deposited, pendingVersion, steps });
     if (settled) return settled;
     const questions = input.workMap?.questions ?? [];
     if (result.status !== 'proposed' || !questions.length || !owner.personalProjectId) return result;
@@ -41,21 +41,36 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
 
 // A proposal that answers a repeat FULI asked the person about (fla-growth/tool-suggestions.js):
 // the person is not asked twice. An unanswered request is withdrawn, since the proposal
-// itself now waits for them; a person who already chose 「只记下这串步骤」 made the
-// decision, so a NEW workflow (version 1, nothing active before) is confirmed as
-// theirs and needs no second click. A change of an existing workflow is never
-// confirmed this way: it waits on the FLA's page, which shows the old steps next
-// to the new ones, since the person chose to keep these steps, not to replace others.
-async function settleRepeats(app, owner, result, deposited, pendingVersion) {
+// itself now waits for them. A person who already chose 「只记下这串步骤」 decided on
+// exactly the steps that request listed, so only a NEW workflow (version 1, nothing
+// active before) whose steps are those, one for one and in order, is confirmed as theirs
+// and needs no second click. Anything else waits on the FLA's page, and the result says
+// why: a step added, changed or moved is not what they chose, and a change of an existing
+// workflow replaces steps they did not choose to replace.
+async function settleRepeats(app, owner, result, { deposited, pendingVersion, steps }) {
   for (const hint of deposited.filter(item => !item.answer)) {
     await cancelIfOpen(app, { personalSpaceId: owner.personalSpaceId, requestId: hint.requestId,
       reason: 'The FLA proposed these steps as a workflow; confirm it on its page.' });
   }
-  if (result.status !== 'proposed' || pendingVersion !== 1 || !deposited.some(item => item.answer === 'steps')) return null;
+  const chosen = deposited.filter(item => item.answer === 'steps');
+  if (result.status !== 'proposed' || !chosen.length) return null;
+  const titles = steps.map(step => step.title);
+  if (pendingVersion !== 1 || !chosen.some(hint => sameSteps(hint.steps, titles))) {
+    return { ...result, note: pendingVersion !== 1
+      ? 'Not confirmed by the person\'s choice 「只记下这串步骤」: this changes an existing workflow. It waits for them on your page; tell them so.'
+      : 'Not confirmed by the person\'s choice 「只记下这串步骤」: these steps are not exactly the ones they chose (count, wording or order differ). '
+        + 'It waits for them on your page; tell them so.' };
+  }
   const decided = workflows(app).decide({ personalSpaceId: owner.personalSpaceId, workflowId: result.workflow.workflowId,
     decision: 'confirm', version: pendingVersion });
   return { status: 'active', workflow: decided.workflow, confirmedBy: 'person_choice',
     note: 'Confirmed by the person\'s choice 「只记下这串步骤」 in 待决策; tell them: 按你在待决策里的选择确认。' };
+}
+
+// The same steps, one for one: only spacing and letter case may differ, nothing fuzzy.
+function sameSteps(chosen, proposed) {
+  const plain = title => String(title ?? '').trim().replace(/\s+/gu, ' ').toLowerCase();
+  return chosen.length === proposed.length && chosen.every((title, index) => plain(title) === plain(proposed[index]));
 }
 
 // An Agent app its FLA submitted is the script the person chose for a repeat:

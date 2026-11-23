@@ -181,12 +181,43 @@ test('a person who chose 「只记下这串步骤」 is not asked to confirm aga
   inbox.answer(request.requestId, '只记下这串步骤');
   await suggestRepeatedTools(application_, { legacyCleared: true });
   // The FLA hears the decision in its next conversation, with what to call.
-  assert.match(flaGrowthEntry(app(workflows), task, opening).repeated, /The person chose to keep .* as steps: propose them with propose_agent_workflow/);
+  assert.match(flaGrowthEntry(app(workflows), task, opening).repeated,
+    /The person chose to keep .* as steps: propose these titles .* propose_agent_workflow .*\["Bump the version","Build the tray zip","Upload the release asset"\]/);
   const proposed = await propose(application_);
   assert.deepEqual([proposed.status, proposed.confirmedBy, proposed.workflow.status], ['active', 'person_choice', 'active']);
   assert.match(proposed.note, /按你在待决策里的选择确认/);
   assert.equal(request.status, 'resolved', 'the answered request is the person\'s and stays as it is');
   assert.deepEqual(flaGrowthEntry(app(workflows), task, opening).workflows.map(item => item.name), ['Weekly release']);
+});
+
+test('「只记下这串步骤」 confirms only those steps one for one: two more, one changed or reordered waits for the person', async (t) => {
+  const variants = {
+    'two more steps': [...RELEASE, 'Push the synthetic tag', 'Deploy to production'],
+    'one step changed': ['Bump the version', 'Skip the tray zip', 'Upload the release asset'],
+    'another order': ['Build the tray zip', 'Bump the version', 'Upload the release asset']
+  };
+  for (const [label, titles] of Object.entries(variants)) {
+    const { workflows } = workflowsAt(t);
+    const inbox = attention();
+    const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+    await suggestRepeatedTools(application_);
+    const [request] = inbox.requests.values();
+    inbox.answer(request.requestId, '只记下这串步骤');
+    await suggestRepeatedTools(application_, { legacyCleared: true });
+    const proposed = await propose(application_, { steps: titles.map(title => ({ title })) });
+    assert.deepEqual([proposed.status, proposed.workflow.status, 'confirmedBy' in proposed], ['proposed', 'proposed', false], label);
+    assert.match(proposed.note, /Not confirmed .*not exactly the ones they chose/, label);
+    assert.equal(workflows.overview({ personalSpaceId: SPACE, agentId: 'fla-1' }).workflows[0].active, null, label);
+  }
+  // Spacing and letter case are the same steps.
+  const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+  await suggestRepeatedTools(application_);
+  inbox.answer([...inbox.requests.values()][0].requestId, '只记下这串步骤');
+  await suggestRepeatedTools(application_, { legacyCleared: true });
+  const same = await propose(application_, { steps: RELEASE.map(title => ({ title: `  ${title.toUpperCase()} ` })) });
+  assert.equal(same.confirmedBy, 'person_choice');
 });
 
 test('「只记下这串步骤」 never replaces a confirmed workflow: the change waits for the person on its page', async (t) => {
@@ -202,6 +233,7 @@ test('「只记下这串步骤」 never replaces a confirmed workflow: the chang
   await suggestRepeatedTools(application_, { legacyCleared: true });
   const proposed = await propose(application_, { workflowId: workflow.workflowId });
   assert.deepEqual([proposed.status, proposed.workflow.status, 'confirmedBy' in proposed], ['proposed', 'active', false]);
+  assert.match(proposed.note, /Not confirmed .*changes an existing workflow/);
   assert.deepEqual(workflows.read(OWNER, { workflowId: workflow.workflowId }), { workflowId: workflow.workflowId, version: 1,
     name: 'Weekly release', purpose: 'Ship', steps: earlier }, 'the confirmed version is still the one in use');
   const shown = workflows.overview({ personalSpaceId: SPACE, agentId: 'fla-1' }).workflows[0];
@@ -283,6 +315,30 @@ test('an answer the person gave to the 0.29 beta question is kept, not asked aga
   await suggestRepeatedTools(application_);
   assert.equal(inbox.requests.size, 1, 'nothing asked in the new words');
   assert.match(flaGrowthEntry(app(workflows), task, opening).repeated, /The person chose a script/);
+});
+
+test('an answer to the 0.29 beta question settles one repeat only, also after a restart', async (t) => {
+  const listed = ['Bump the version', 'Build the tray zip', 'Upload the release asset', 'Announce in the channel', 'Close the milestone'];
+  const first = ['t1', 't2', 't3'].map(id => finished(id, listed.slice(0, 3)));
+  const second = ['t4', 't5', 't6'].map(id => finished(id, listed.slice(2)));
+  const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const beta = await inbox.requestAgentAttention({ idempotencyKey: 'tool-suggestion:beta', agentId: 'fla-1', personalProjectId: 'garden',
+    title: '「Bump the version」这串步骤已重复 3 次以上，要做成工具吗？', detail: ['同样的 5 步：',
+      ...listed.map((title, index) => `${index + 1}. ${title}`)].join('\n'), options: ['做成脚本', '做成 Agent App', '不用'] });
+  inbox.answer(beta.requestId, '做成脚本');
+  // Both repeats are like the steps the beta request listed; the answer goes to the first.
+  await suggestRepeatedTools(application(workflows, inbox, [...first, ...second]));
+  assert.equal([...inbox.requests.values()].filter(item => item.status === 'open').length, 1, 'the second is asked');
+  // After a restart (fresh state) a repeat found later does not take it either.
+  const { workflows: later } = workflowsAt(t);
+  const laterInbox = attention();
+  const again = await laterInbox.requestAgentAttention({ ...beta, idempotencyKey: 'tool-suggestion:beta' });
+  laterInbox.answer(again.requestId, '做成脚本');
+  await suggestRepeatedTools(application(later, laterInbox, first));
+  assert.equal(laterInbox.requests.size, 1, 'the first takes the answer');
+  await suggestRepeatedTools(application(later, laterInbox, [...first, ...second]));
+  assert.equal([...laterInbox.requests.values()].filter(item => item.status === 'open').length, 1, 'the second is asked');
 });
 
 test('a confirmed workflow is named on a conversation\'s first turn by name and one sentence; a proposal is not', (t) => {
