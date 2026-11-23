@@ -275,7 +275,7 @@ const BASELINE = Object.freeze({
   // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
   // rec#85: the same amend field; the chat description drops the field list the schema already
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7333,
+  chatToolSchemaBytes: 7330,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
