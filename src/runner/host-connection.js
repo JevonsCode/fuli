@@ -160,9 +160,11 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   // runner holds there), or null when it does not answer. A search that just
   // found the host already asked, so that answer is given once instead of
   // asking again; a later call asks, since the counts move. A kept connection
-  // proves nothing about now: a host that stopped answering on it is dropped
-  // here, so the next question looks for the host again instead of saying it
-  // is there (review of #1069).
+  // proves nothing about now (review of #1069), but a hello that went unanswered
+  // on it does not prove the host is gone either: the connection also carries
+  // the host's pages and live event streams. So the host is looked for again
+  // on a fresh connection first, while the old one keeps what is in flight on
+  // it; only when that fresh search finds nothing is the old one ended.
   async function hello() {
     const connection = await connect();
     if (!connection) return null;
@@ -176,9 +178,28 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
         { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]) });
       if (answer.status === 200) return await answer.json();
       await answer.body?.cancel();
-    } catch { /* not answering: dropped below */ }
-    if (current === connection) drop();
-    return null;
+    } catch { /* not answering on this connection: looked for again below */ }
+    if (current !== connection) return null;
+    current = null;
+    const fresh = await connect({ knownOnly: true });
+    if (!fresh) {
+      connection.agent.destroy();
+      return null;
+    }
+    retireWhenIdle(connection.agent);
+    const greeting = fresh.greeting;
+    fresh.greeting = null;
+    return greeting;
+  }
+
+  // An agent no longer used for new requests, ended once what it still carries has finished.
+  function retireWhenIdle(agent) {
+    const idle = () => !Object.values(agent.sockets).some((sockets) => sockets.length)
+      && !Object.values(agent.requests).some((queued) => queued.length);
+    if (idle()) { agent.destroy(); return; }
+    const check = () => { if (idle()) { agent.off('free', check); agent.destroy(); } };
+    agent.on('free', check);
+    for (const sockets of Object.values(agent.sockets)) for (const socket of sockets) socket.once('close', check);
   }
 
   // Every request the pinned host answered, whatever it answered, is a moment

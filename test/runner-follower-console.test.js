@@ -71,8 +71,17 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const routes = createRunnerRoutes({ app: {}, store: hostStore, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), consoleOrigin: () => consoleSide.origin });
   let away = false;
+  // helloUnanswered: how many hellos on the kept connection go unanswered while everything else is served.
+  const flaky = { helloUnanswered: 0 };
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
-    route: (request, response, context) => (away ? (request.socket.destroy(), true) : routes.handle(request, response, context)) });
+    route: (request, response, context) => {
+      if (away) return (request.socket.destroy(), true);
+      if (flaky.helloUnanswered > 0 && request.url === '/runner/1/hello') {
+        flaky.helloUnanswered -= 1;
+        return true;
+      }
+      return routes.handle(request, response, context);
+    } });
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
@@ -89,7 +98,7 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
     hostStore.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint,
+  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint, flaky,
     // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
     // kept a dead connection).
     setAway: (value) => { away = value; } };
@@ -255,6 +264,28 @@ test('the entry answers only to this computer under its own name, and says when 
   const awayApi = await get(`${entry.url}/api/tasks`);
   assert.equal(JSON.parse(awayApi.text).error, 'host_unreachable');
   assert.equal(awayApi.headers['x-fuli-source'], 'unavailable');
+});
+
+// Review of #1069: a hello that went unanswered ended the whole connection, and with it the host's
+// pages and live event streams the follower was carrying.
+test('a hello that goes unanswered once does not cut a live event stream from a host that is still there', async (t) => {
+  const { entry, flaky } = await pairedRunner(t);
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, true);
+  let closed = false;
+  const opened = await new Promise((resolve, reject) => {
+    const request = httpRequest(`${entry.url}/api/stream`, (response) => {
+      response.once('data', () => resolve(request));
+      response.on('close', () => { closed = true; });
+    });
+    request.on('error', (error) => (error.code === 'ECONNRESET' ? null : reject(error)));
+    request.end();
+  });
+  t.after(() => opened.destroy());
+  flaky.helloUnanswered = 1;
+  const status = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(status.host.reachable, true, 'found again on a fresh connection');
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(closed, false, 'the stream carried on the earlier connection is still open');
 });
 
 test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
