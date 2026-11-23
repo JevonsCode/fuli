@@ -1,11 +1,11 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rename, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { planLoad } from './load-recovery.js';
+import { planLoad, restoreFailure } from './load-recovery.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import {
   acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, ownIdentity, readLock, runningGraphServices, runtimeInUse, takeOver
@@ -107,8 +107,13 @@ const recovering = lock => lock?.holder?.recovering === true || lock?.holder?.op
 async function planJournal(context, journal, { backOut, keepNewer }) {
   const { paths, stop, end } = context;
   const manifest = readManifest(paths);
+  // [operation] says which way the switch went (an update, or a rollback to
+  // the kept older programs): the words name the versions and that, never
+  // "newer" and "older". A rollback keeps the version number, so a label adds
+  // where each side's programs are when the numbers are the same.
   const facts = { operation: journal.action ?? null, phase: journal.phase ?? null,
     fromVersion: journal.previous?.neo4jVersion ?? null, toVersion: journal.next?.neo4jVersion ?? null,
+    ...sideLabels(paths.nativeRuntimeDir, journal),
     backupPath: journal.next?.previousNeo4jAsset?.graphBackup ?? null };
   if (manifest === undefined) return refused('manifest_changed', facts);
   const archive = { do: 'archive-journal' };
@@ -124,7 +129,11 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
     // A back-out killed after it wrote the older descriptor back: the newer
     // Neo4j already opened the store, so whether the older one still opens it
     // is checked now, and the newer descriptor is written back if it does not.
-    return planned('continue_back_out', [...stop, { do: 'check-start', version: journal.previous.neo4jVersion, revert: journal.next },
+    // An update's programs already in this recovery's folder mean that check
+    // passed (they move only after it): it is not made again, and nothing is
+    // ever written back that names programs no longer in place.
+    const checked = candidateMoved(context, journal);
+    return planned('continue_back_out', [...stop, ...(checked ? [] : [{ do: 'check-start', version: journal.previous.neo4jVersion, revert: journal.next }]),
       ...candidate, archive, ...end], facts);
   }
   if (isDeepStrictEqual(manifest, journal.previous)) {
@@ -133,18 +142,23 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
     return planned('undo_switch', [...stop, ...candidate, archive, ...end], facts);
   }
   if (!isDeepStrictEqual(manifest, journal.next)) return refused('manifest_changed', facts);
-  // The way out when the newer version does not start and going back does not
-  // work either: the descriptor and the programs it names agree, so the lock
-  // and the journal go and nothing is started; a start that fails afterwards
-  // is an ordinary failed start (a new update, or importing the backup from
-  // before the upgrade, are open again).
-  if (keepNewer) return planned('keep_newer', [...stop, archive, ...end], facts);
+  const blocked = await backOutBlocked(context, journal);
+  // Keeping the descriptor in place without a start check archives the
+  // journal, and with it any way back to the other side: it is only for when
+  // going back is not possible, or was tried and wrote this descriptor back
+  // ([keepable]). Otherwise going back comes first.
+  const keepable = Boolean(blocked) || journal.backingOut === true;
+  // The way out when it does not start and going back does not work either:
+  // the descriptor and the programs it names agree, so the lock and the
+  // journal go and nothing is started; a start that fails afterwards is an
+  // ordinary failed start (a new update, or importing the backup from before
+  // the upgrade, are open again).
+  if (keepNewer) return keepable ? planned('keep_newer', [...stop, archive, ...end], facts) : refused('back_out_available', facts);
   // Finishing keeps the newer version once it starts, answers its health check
   // and leaves the store format as it was — what the switch itself checked
   // after it wrote the descriptor (neo4j-lifecycle.js).
   const finish = planned('finish_switch', [...stop, { do: 'check-start', version: journal.next.neo4jVersion },
-    { do: 'check-formats', formats: journal.storeFormats }, archive, ...end], facts);
-  const blocked = await backOutBlocked(context, journal);
+    { do: 'check-formats', formats: journal.storeFormats }, archive, ...end], { ...facts, keepable });
   const back = blocked ? null : planned('back_out_switch', [...stop,
     { do: 'check-formats', formats: journal.storeFormats },
     { do: 'check-fingerprint', home: journal.previous.neo4jHome, fingerprint: journal.previous.neo4jAssetFingerprint },
@@ -154,9 +168,27 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
     { do: 'write-manifest', value: journal.previous },
     // The older version must start on this store, or the newer descriptor is written back.
     { do: 'check-start', version: journal.previous.neo4jVersion, revert: journal.next },
-    ...candidate, archive, ...end], facts);
+    ...candidate, archive, ...end], { ...facts, keepable });
   if (backOut) return back ? { ...back, alternative: finish } : refused(blocked, facts);
   return back ? { ...finish, alternative: back } : { ...finish, alternative: null, alternativeRefused: blocked };
+}
+
+// "5.26.28", or with the same number on both sides (a rollback to the kept
+// programs) "5.26.28 (neo4j-assets/jvs-a-…/neo4j-community-5.26.28)".
+function sideLabels(root, journal) {
+  const { previous, next } = journal;
+  if (!isDescriptor(previous) || !isDescriptor(next)) return {};
+  const label = side => previous.neo4jVersion === next.neo4jVersion ? `${side.neo4jVersion} (${relative(root, side.neo4jHome)})` : side.neo4jVersion;
+  return { fromLabel: label(previous), toLabel: label(next) };
+}
+
+// Whether an update's programs are already in this recovery's folder: a
+// back-out moves them only after the older version started on the store.
+function candidateMoved({ paths, lock }, journal) {
+  if (journal.action !== 'update' || !lock) return false;
+  const root = paths.nativeRuntimeDir, container = dirname(journal.next.neo4jHome);
+  const folder = recoveryFolder(root, recoveryStamp(lockStartedAt(lock)));
+  return !existsSync(container) && existsSync(join(folder, relative(root, container)));
 }
 
 // Why going back to the older version is not offered, or null: the checks a
@@ -283,7 +315,7 @@ export async function applyNativeRecovery({ paths, digest, backOut = false, aban
       const record = keepRecord(root, stamp, folder, plan, done, { stoppedAt: step.do, reason });
       throw Object.assign(new Error(`The recovery stopped at ${step.do} (${reason}); what was done is in ${record}, the lock is kept, and running the recovery again continues it.`),
         { cause: error, code: 'recover_step_failed', step: step.do, reason, record, planKind: plan.kind,
-          facts: { runtimeDir: root, ...choicesBeside(shown, plan), ...error?.facts } });
+          facts: { runtimeDir: root, ...choicesBeside(shown, plan, root), ...error?.facts } });
     }
   }
   const { alternative, alternativeRefused, ...result } = plan;
@@ -296,10 +328,14 @@ export async function applyNativeRecovery({ paths, digest, backOut = false, aban
 // What else the person can do about the same unfinished switch once [plan]
 // stopped, for the words of the refusal: the other way (finish or back out)
 // when it is possible, why not when it is not, the versions and the backup.
-function choicesBeside(shown, plan) {
+function choicesBeside(shown, plan, root) {
   if (!['finish_switch', 'back_out_switch', 'continue_back_out'].includes(plan.kind)) return {};
   const other = plan === shown ? shown.alternative : shown;
-  return { fromVersion: plan.fromVersion, toVersion: plan.toVersion, backupPath: plan.backupPath ?? null,
+  // A back-out that got as far as recording backingOut (and then wrote the
+  // switched-to descriptor back): keeping that descriptor is open from then on.
+  const keepable = plan.keepable === true || readJournal(root)?.value?.backingOut === true;
+  return { operation: plan.operation ?? null, fromVersion: plan.fromVersion, toVersion: plan.toVersion, fromLabel: plan.fromLabel ?? null,
+    toLabel: plan.toLabel ?? null, backupPath: plan.backupPath ?? null, keepable,
     alternative: other?.kind ?? null, alternativeRefused: plan === shown ? shown.alternativeRefused ?? null : null };
 }
 
@@ -351,14 +387,13 @@ async function runStep(step, context) {
         // protects nothing: the lock goes, and why Neo4j did not start is in
         // the result for the ordinary failed start that follows.
         if (step.afterRestore) { context.startFailure = startFailureOf(error, paths); return; }
-        if (step.revert) writeManifest(context, step.revert);
+        // Never a descriptor whose programs are gone.
+        if (step.revert && existsSync(step.revert.neo4jHome)) writeManifest(context, step.revert);
         throw stepFailed('start_failed', `Neo4j ${step.version} did not start and answer its health check.`, error, { startFailure: startFailureOf(error, paths) });
       }
-    case 'mark-restored':
-      if (!await claimLock(root, owner, { identity: deps.identity, identify: deps.whoami, patch: { restored: true } })) {
-        throw stepFailed('lock_changed', 'The lock changed before the restore could be recorded in it.');
-      }
-      return;
+    case 'mark-restored': return markLock(context, { restored: true });
+    // How abandoning the import judged each graph, before anything moves: a run killed part way finishes the same plan.
+    case 'mark-abandoning': return markLock(context, { abandoning: step.abandoning });
     case 'mark-backing-out': {
       const journal = readJsonFile(join(root, JOURNAL), null);
       if (!journal) throw stepFailed('unknown_journal', 'The switch journal is gone.');
@@ -386,7 +421,11 @@ async function runStep(step, context) {
       catch (error) {
         // A copy whose checksums do not match can never be restored: abandoning the import is the way on.
         if (error?.copyDamaged) throw stepFailed('restore_point_damaged', `The copy ${step.from} is damaged.`, error, { why: 'damaged', backupPath: step.from });
-        throw stepFailed('restore_failed', `The graph could not be restored from ${step.from}.`, error, { detail: String(error?.message ?? error) });
+        // A good copy that would not go back: why, as far as FULI can see, is
+        // recorded in the lock, and abandoning the import is open from then on.
+        const failure = await restoreFailure(paths, step.from, error, deps);
+        await claimLock(root, owner, { identity: deps.identity, identify: deps.whoami, patch: { restoreFailed: failure } }).catch(() => false);
+        throw stepFailed('restore_failed', `The graph could not be restored from ${step.from}.`, error, { ...failure, backupPath: step.from });
       }
     case 'prune':
       if (!isRecoveryFolder(root, step.path)) throw stepFailed('unmanaged_path', 'Only an old recovery folder is deleted.');
@@ -397,6 +436,13 @@ async function runStep(step, context) {
       return;
     }
     default: throw new TypeError(`Unknown recovery step: ${step.do}`);
+  }
+}
+
+// Records [patch] in the lock this recovery holds (holder.json).
+async function markLock({ root, owner, deps }, patch) {
+  if (!await claimLock(root, owner, { identity: deps.identity, identify: deps.whoami, patch })) {
+    throw stepFailed('lock_changed', 'The lock changed before this step could be recorded in it.');
   }
 }
 
@@ -442,6 +488,8 @@ function recoveryDependencies(overrides) {
     stopServices: async () => { throw new Error('Stopping the recorded services needs the native runtime.'); },
     checkStart: async () => { throw new Error('Starting Neo4j needs the native runtime.'); },
     restore: async () => { throw new Error('A restore needs the native runtime.'); },
+    // Bytes free on the disk that holds [path].
+    diskFree: async path => { const { bavail, bsize } = await statfs(path); return bavail * bsize; },
     log: (paths) => diagnosticEventLog(paths.dataDir),
     now: Date.now,
     // Who this recovery is, as the lock records its holder.

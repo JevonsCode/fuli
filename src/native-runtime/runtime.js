@@ -381,10 +381,12 @@ export function createNativeGraphServices({
     }
   }
   // [restorePoint]: the copy the import took before it (graph-backup.js), kept
-  // in the lock so a recovery restores from exactly that one (neo4j-recovery.js).
-  const loadDatabase = async (instanceId, fromPath, { restorePoint } = {}) => adminDatabase(await instanceSpec(instanceId), [
+  // in the lock so a recovery restores from exactly that one; beside it, which
+  // instance this load writes and whether it is the import's own rollback, so
+  // abandoning the import knows which graph was half written (load-recovery.js).
+  const loadDatabase = async (instanceId, fromPath, { restorePoint, rollback = false } = {}) => adminDatabase(await instanceSpec(instanceId), [
     'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
-  ], restorePoint ? { restorePoint } : undefined);
+  ], restorePoint ? { restorePoint, loadingInstance: instanceId, ...(rollback ? { rollingBack: true } : {}) } : undefined);
 
   // Reads the content-free census of a running instance over its loopback
   // HTTP endpoint; the caller decides whether the database runs.

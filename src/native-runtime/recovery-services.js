@@ -39,7 +39,14 @@ export function nativeRecoveryServices({ paths, env = process.env }) {
       const adapter = await createGraphBackupAdapter({ mode: 'native', paths,
         createNativeServices: options => services(owner, options) });
       await adapter.stop();
-      for (const entry of manifest.instances) await adapter.load(entry.id, join(from, entry.file));
+      // Which instance a failed restore was writing, and which it brought back
+      // before: abandoning the import afterwards says which graph is which (load-recovery.js).
+      const restored = [];
+      for (const entry of manifest.instances) {
+        try { await adapter.load(entry.id, join(from, entry.file)); }
+        catch (error) { throw Object.assign(error, { instance: entry.id, restored }); }
+        restored.push(entry.id);
+      }
     }
   };
 }

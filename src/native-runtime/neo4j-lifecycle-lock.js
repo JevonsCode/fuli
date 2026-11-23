@@ -261,10 +261,13 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
 
 // A lock that names no holder may still be in use by whoever took it: it is
 // released (or recovered) only once it is older than the longest operation
-// could take. The refusal, or null when it is old enough.
+// could take. Its age counts from when the operation took it (lockStartedAt),
+// which a recovery's claim keeps, not from the lock directory's own time,
+// which rewriting the holder moves. The refusal, or null when it is old enough.
 export function lockTooRecent(lock, now) {
-  if (now - lock.since.getTime() >= RELEASE_AFTER_MS) return null;
-  return { reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
+  const since = lockStartedAt(lock);
+  if (now - since >= RELEASE_AFTER_MS) return null;
+  return { reason: 'too_recent', since: new Date(since).toISOString(), releasableAt: new Date(since + RELEASE_AFTER_MS).toISOString() };
 }
 
 // Why something may still be using this native runtime, or null: the lock's
@@ -309,7 +312,8 @@ function unreferencedAssets(paths) {
   return unused ? join('neo4j-assets', unused) : null;
 }
 
-function processList() {
+// Every running process as `ps` shows it ({ pid, command }), or null when it cannot be listed.
+export function processList() {
   return new Promise((resolve) => {
     execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', timeout: 10_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
       resolve(error ? null : stdout.split('\n').map(line => /^\s*(\d+)\s+(.*)$/.exec(line))

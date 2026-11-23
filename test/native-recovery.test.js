@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
-import { acquireNeo4jLifecycleLock, readLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
+import { createHash } from 'node:crypto';
+import { acquireNeo4jLifecycleLock, lockTooRecent, readLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
 import { applyNativeRecovery, planNativeRecovery } from '../src/native-runtime/neo4j-recovery.js';
 
 const LOCK = '.neo4j-lifecycle.lock';
@@ -221,12 +222,18 @@ test('a back-out killed after any of its steps continues when run again: never t
     assert.deepEqual(shown.steps.map(step => step.do), order);
     const killed = await stoppedAt(applyNativeRecovery({ paths: s.paths, digest: shown.digest, backOut: true, dependencies: killedAfter(k).dependencies }));
     assert.equal(JSON.parse(readFileSync(killed.record, 'utf8')).steps.length, k - 1, `killed after ${order[k - 1]}`);
-    const d = deps();
+    // Once the newer programs moved aside, the older version had started (they move only after that):
+    // it is not checked again, and a check that would fail now never writes back a descriptor naming moved programs.
+    const moved = k > order.indexOf('move-aside');
+    const d = moved ? deps({ checkStart: async () => { throw new Error('would not start now'); } }) : deps();
     const { plan, result } = await recover(s.paths, d, { backOut: true });
     assert.equal(plan.kind, expected[k - 1], `killed after ${order[k - 1]}`);
-    if (plan.kind === 'continue_back_out') {
+    if (plan.kind === 'continue_back_out' && !moved) {
       assert.equal(plan.steps[0].do, 'check-start');
       assert.deepEqual(d.log, ['start 5.26.0'], 'the older version is checked on the store the newer one opened');
+    }
+    if (plan.kind === 'continue_back_out' && moved) {
+      assert.deepEqual(plan.steps.map(step => step.do), ['archive-journal', 'release-lock'], 'killed after the newer programs moved: the check already passed');
     }
     if (result.status) assert.equal(result.status, 'recovered');
     assert.deepEqual(manifestOf(s.paths), s.previous);
@@ -357,7 +364,7 @@ test('an update killed before its journal sets aside its half-installed programs
   assert.deepEqual([refusal.reason, refusal.path], ['unknown_assets', join(foreign.root, 'neo4j-assets', 'jvs-a-6666')]);
 });
 
-async function interruptedLoad(t, restorePoint) {
+async function interruptedLoad(t, restorePoint, holder = {}) {
   const load = runtime(t);
   const copy = join(load.paths.graphBackupDir, 'before-import-2026-11-22T00-00-00-000Z-a');
   mkdirSync(copy);
@@ -370,7 +377,7 @@ async function interruptedLoad(t, restorePoint) {
   for (const store of ['databases', 'transactions']) mkdirSync(join(load.paths.nativeWorkspaceDir, 'data', store, 'neo4j'), { recursive: true });
   const point = restorePoint === undefined ? { path: copy, instances: ['personal'], loading: ['personal', 'workspace'] } : restorePoint;
   const lock = await acquireNeo4jLifecycleLock(load.root, { operation: 'load', identify: holderIdentity,
-    details: point ? { restorePoint: typeof point === 'function' ? point(load, copy) : point } : {} });
+    details: point ? { restorePoint: typeof point === 'function' ? point(load, copy) : point, ...holder } : {} });
   return { ...load, copy, lock };
 }
 
@@ -465,7 +472,7 @@ test('an import whose copy is unknown, gone or damaged is abandoned only on requ
   const plan = await abandon(unknown.paths);
   // personal holds no store at all: nothing of it is there to move.
   assert.deepEqual([plan.kind, plan.copyProblem, plan.allInstances, plan.instances], ['abandon_load', 'unrecorded', true, ['workspace']]);
-  assert.deepEqual(plan.steps.map(step => step.do), ['move-aside', 'move-aside', 'release-lock']);
+  assert.deepEqual(plan.steps.map(step => step.do), ['mark-abandoning', 'move-aside', 'move-aside', 'release-lock']);
   assert.deepEqual(plan.copies.map(copy => copy.path), [join(unknown.paths.graphBackupDir, 'before-import-2026-11-22T09-00-00-000Z-b'), unknown.copy],
     'the copies an import can bring back, newest first');
   assert.equal(plan.copies[0].createdAt, '2026-11-22T00:00:00.000Z');
@@ -496,15 +503,16 @@ test('an import whose copy is unknown, gone or damaged is abandoned only on requ
 });
 
 test('abandoning an import killed after any of its steps is finished by running it again', async (t) => {
-  for (let k = 1; k <= 5; k += 1) {
+  for (let k = 1; k <= 6; k += 1) {
     const load = bothStores(await interruptedLoad(t));
     rmSync(load.copy, { recursive: true });
     const shown = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
-    assert.deepEqual(shown.steps.map(step => step.do), ['move-aside', 'move-aside', 'move-aside', 'move-aside', 'release-lock']);
+    assert.deepEqual(shown.steps.map(step => step.do), ['mark-abandoning', 'move-aside', 'move-aside', 'move-aside', 'move-aside', 'release-lock']);
     await stoppedAt(applyNativeRecovery({ paths: load.paths, digest: shown.digest, abandonImport: true, dependencies: killedAfter(k).dependencies }));
     const { plan, result } = await recover(load.paths, deps(), { abandonImport: true });
-    if (k === 5) assert.equal(plan.kind, 'nothing', 'killed after its lock went: nothing is left');
-    else assert.deepEqual([plan.kind, plan.steps.length, result.status], ['abandon_load', 5 - k, 'recovered']);
+    if (k === 6) assert.equal(plan.kind, 'nothing', 'killed after its lock went: nothing is left');
+    else assert.deepEqual([plan.kind, plan.steps.length, result.status], ['abandon_load', 6 - k, 'recovered']);
+    if (k > 1 && k < 6) assert.equal(plan.steps.some(step => step.do === 'mark-abandoning'), false, `${k}: the judgement recorded before is used, not made again`);
     assert.equal(readdirSync(join(load.root, 'recovered')).filter(name => !name.endsWith('.json')).length, 1, `${k}: one folder, not split across runs`);
     for (const instance of ['personal', 'workspace']) {
       for (const store of ['databases', 'transactions']) assert.ok(existsSync(join(folderOf(load.root), instance, 'data', store, 'neo4j')), `${k}: ${instance} ${store}`);
@@ -668,7 +676,7 @@ test('every reason a recovery gives is said in both languages, with a next step'
   for (const reason of ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
     'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
     'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'restore_point_usable', 'no_import', 'abandon_needs_typing',
-    'lock_changed', 'step_failed', 'plan_changed', 'needs_person', 'recovery_running', 'keep_newer_unavailable']) {
+    'lock_changed', 'step_failed', 'plan_changed', 'needs_person', 'recovery_running', 'keep_newer_unavailable', 'back_out_available']) {
     const text = formatRecoveryPlan({ kind: 'refused', reason, pid: 7, path: '/x/native-runtime/neo4j-assets/jvs-a-1', directory: 'neo4j-assets/jvs-a-1' });
     assert.match(text, /^没有恢复：.+ \/ Not recovered: .+/s, reason);
     assert.doesNotMatch(text, new RegExp(`：${reason} /`), reason);
@@ -777,12 +785,14 @@ test('a switch whose newer version does not start and cannot be backed out offer
   const both = await newerInPlace(t);
   const other = await stoppedAt(recover(both.paths, failing));
   assert.equal(other.facts.alternative, 'back_out_switch');
-  assert.match(formatRecoveryPlan({ kind: 'refused', reason: other.reason, planKind: other.planKind, ...other.facts }), /--back-out/);
+  const otherWords = formatRecoveryPlan({ kind: 'refused', reason: other.reason, planKind: other.planKind, ...other.facts });
+  assert.match(otherWords, /取消更新、留在 5\.26\.0：fuli graph runtime recover --back-out/);
+  assert.doesNotMatch(otherWords, /--keep-newer/, 'going back is still possible, so finishing without a start check is not offered');
 
   // Keeping the newer version: no start, the journal is archived, the lock goes, the descriptor stays.
   const plan = await planNativeRecovery({ paths: stuck.paths, keepNewer: true, dependencies: deps().dependencies });
   assert.deepEqual([plan.kind, plan.steps.map(step => step.do)], ['keep_newer', ['archive-journal', 'release-lock']]);
-  assert.match(formatRecoveryPlan(plan), /保留新版本并解除这把锁.+升级前的图备份在/s);
+  assert.match(formatRecoveryPlan(plan), /完成这次没做完的更新，留在 5\.26\.28，并解除这把锁.+不能再取消这次更新回到 5\.26\.0.+升级前的图备份在/s);
   const d = deps();
   const result = await applyNativeRecovery({ paths: stuck.paths, digest: plan.digest, keepNewer: true, dependencies: d.dependencies });
   assert.equal(result.status, 'recovered');
@@ -818,4 +828,160 @@ test('a recovery claims the lock before its first step, so a second one started 
   assert.deepEqual([second.plan.reason, second.plan.pid, second.applied.reason], ['recovery_running', 1001, 'recovery_running']);
   assert.match(formatRecoveryPlan(second.plan), /另一个恢复（进程 1001）正在进行/);
   assert.ok(holderAt, 'the claim kept when the load took its lock');
+});
+
+// The copy interruptedLoad names, made good: its dump is there and matches its checksum.
+function goodCopy(load) {
+  writeFileSync(join(load.copy, 'personal.dump'), 'personal before the import');
+  const sha256 = createHash('sha256').update('personal before the import').digest('hex');
+  writeFileSync(join(load.copy, 'manifest.json'), JSON.stringify({ format: 'fuli-neo4j-backup', version: 1, createdAt: '2026-11-22T00:00:00.000Z',
+    sourceMode: 'native', instances: [{ id: 'personal', file: 'personal.dump', sha256 }] }));
+  return load;
+}
+
+test('abandoning an import moves only the graph it was writing: one it finished holds the new data, and the words say so', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  // personal was imported whole; the import was killed half way through workspace, and its copy is gone.
+  const load = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  rmSync(load.copy, { recursive: true });
+  const plan = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([plan.halfWritten, plan.imported, plan.beforeImport, plan.instances], [['workspace'], ['personal'], [], ['workspace']]);
+  assert.ok(plan.steps.filter(step => step.do === 'move-aside').every(step => step.path.startsWith(load.paths.nativeWorkspaceDir)), 'only workspace moves');
+  const words = formatRecoveryPlan(plan);
+  assert.match(words, /personal：已经完整导入了这次的新数据，留在原位。放弃导入不会让它回到导入前。这次导入前的副本用不了/);
+  assert.match(words, /personal: it already holds all of this import's new data/);
+  assert.match(words, /workspace：被打断时正在写入它，可能只写了一半/);
+  const { result } = await recover(load.paths, deps(), { abandonImport: true });
+  assert.equal(result.status, 'recovered');
+  assert.ok(existsSync(join(load.paths.nativePersonalDir, 'data', 'databases', 'neo4j')), 'personal stays');
+  assert.equal(existsSync(join(load.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j')), false);
+
+  // Not reached yet: still the data from before. During the import's own rollback, one rolled back is before-import data too.
+  const early = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'personal' }));
+  rmSync(early.copy, { recursive: true });
+  const first = await planNativeRecovery({ paths: early.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([first.halfWritten, first.imported, first.beforeImport], [['personal'], [], ['workspace']]);
+  assert.match(formatRecoveryPlan(first), /workspace：还是导入前的数据，留在原位/);
+  const rolling = bothStores(await interruptedLoad(t, { path: 'x', instances: ['personal', 'workspace'], loading: ['personal', 'workspace'] },
+    { loadingInstance: 'workspace', rollingBack: true }));
+  const back = await planNativeRecovery({ paths: rolling.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([back.halfWritten, back.beforeImport, back.unclear], [['workspace'], ['personal'], []]);
+});
+
+test('abandoning killed between moving a graph\'s database and its transaction logs puts both in one folder when run again', async (t) => {
+  const load = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  rmSync(load.copy, { recursive: true });
+  const shown = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual(shown.steps.map(step => step.do), ['mark-abandoning', 'move-aside', 'move-aside', 'release-lock']);
+  await stoppedAt(applyNativeRecovery({ paths: load.paths, digest: shown.digest, abandonImport: true, dependencies: killedAfter(2).dependencies }));
+  // Run again as an ordinary recovery: the recorded judgement is finished all the same.
+  const { plan, result } = await recover(load.paths, deps());
+  assert.deepEqual([plan.kind, plan.steps.map(step => step.do), result.status], ['abandon_load', ['move-aside', 'release-lock'], 'recovered']);
+  assert.equal(readdirSync(join(load.root, 'recovered')).filter(name => !name.endsWith('.json')).length, 1);
+  for (const store of ['databases', 'transactions']) assert.ok(existsSync(join(folderOf(load.root), 'workspace', 'data', store, 'neo4j')), store);
+  assert.ok(existsSync(join(load.paths.nativePersonalDir, 'data', 'databases', 'neo4j')));
+
+  // An older FULI's lock, judged by file times: the transaction logs left behind are old, but the database already moved, so they follow.
+  const old = await interruptedLoad(t, null);
+  const folder = join(old.root, 'recovered', '2026-11-23T03-00-00-000Z');
+  const hourAgo = (Date.now() - 60 * 60_000) / 1000;
+  utimesSync(join(old.paths.nativeWorkspaceDir, 'data', 'transactions', 'neo4j'), hourAgo, hourAgo);
+  mkdirSync(join(folder, 'workspace', 'data', 'databases'), { recursive: true });
+  renameSync(join(old.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j'), join(folder, 'workspace', 'data', 'databases', 'neo4j'));
+  const lock = readLock(old.root);
+  writeFileSync(join(lock.path, 'holder.json'), JSON.stringify({ ...lock.holder, at: new Date(NOW).toISOString() }));
+  const legacy = await planNativeRecovery({ paths: old.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([legacy.written, legacy.untouched], [['workspace'], []]);
+});
+
+test('a copy that is good but will not go back says why, and abandoning the import is open after it, keeping that copy listed', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' })));
+  const failing = { restore: async () => { throw Object.assign(new Error('No space left on device'), { instance: 'personal', restored: [] }); },
+    diskFree: async () => 1024, listProcesses: async () => [{ pid: 66, command: `java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf` }] };
+  const stopped = await stoppedAt(recover(load.paths, deps(failing)));
+  assert.equal(stopped.reason, 'restore_failed');
+  assert.deepEqual([stopped.facts.freeBytes, stopped.facts.holders.map(({ pid }) => pid), stopped.facts.instance], [1024, [66], 'personal']);
+  assert.ok(stopped.facts.neededBytes > 0);
+  assert.equal(readLock(load.root).holder.restoreFailed.detail, 'No space left on device', 'the failure is recorded in the lock');
+  const words = formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, ...stopped.facts });
+  assert.match(words, /磁盘剩余 1\.0 KB，导回大约需要 .+还有进程在用图谱的目录：66/);
+  assert.match(words, /副本本身是好的.+--abandon-import/s);
+  // The ordinary plan tries again and says abandoning is open; abandoning keeps that copy and says it is good.
+  const again = await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies });
+  assert.equal(again.restoreFailed.detail, 'No space left on device');
+  assert.match(formatRecoveryPlan(again), /上次导回没有成功.+--abandon-import/s);
+  const abandon = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([abandon.kind, abandon.copyProblem, abandon.halfWritten], ['abandon_load', 'restore_failed', ['personal', 'workspace']]);
+  assert.ok(abandon.copies.some(copy => copy.path === load.copy), 'the good copy stays offered');
+  assert.match(formatRecoveryPlan(abandon), /副本是好的（校验和对得上）.+原因解决后可以用下面列出的 fuli graph import 命令把它导回/s);
+  assert.doesNotMatch(formatRecoveryPlan(abandon), /用不了|已损坏|找不到/);
+  // Without a failed restore, a good copy is not abandoned.
+  const fine = goodCopy(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  assert.equal((await planNativeRecovery({ paths: fine.paths, abandonImport: true, dependencies: deps().dependencies })).reason, 'restore_point_usable');
+});
+
+test('finishing a switch without a start check is open only once going back is impossible or was tried', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const keep = paths => planNativeRecovery({ paths, keepNewer: true, dependencies: deps().dependencies });
+  // Going back is possible: refused, pointing to it.
+  const open = await newerInPlace(t);
+  const refusal = await keep(open.paths);
+  assert.equal(refusal.reason, 'back_out_available');
+  assert.match(formatRecoveryPlan(refusal), /现在还能取消更新、留在 5\.26\.0.+--back-out/);
+  assert.equal((await planNativeRecovery({ paths: open.paths, dependencies: deps().dependencies })).keepable, false);
+  // Going back was tried and wrote the switched-to descriptor back (backingOut): open.
+  const tried = await newerInPlace(t);
+  const journal = JSON.parse(readFileSync(join(tried.root, 'neo4j-transaction.json'), 'utf8'));
+  writeFileSync(join(tried.root, 'neo4j-transaction.json'), JSON.stringify({ ...journal, backingOut: true }));
+  assert.equal((await keep(tried.paths)).kind, 'keep_newer');
+  // Going back is not possible (no fingerprint): open.
+  assert.equal((await keep((await newerInPlace(t, { fingerprint: null })).paths)).kind, 'keep_newer');
+  // A back-out whose older version did not start: keeping is offered from then on.
+  const failed = await newerInPlace(t);
+  const stopped = await stoppedAt(recover(failed.paths, deps({ checkStart: async () => { throw new Error('no answer'); } }), { backOut: true }));
+  assert.equal(stopped.facts.keepable, true);
+  assert.match(formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, planKind: stopped.planKind, ...stopped.facts }),
+    /5\.26\.0 没能启动或没有应答，描述文件已经写回 5\.26\.28.+--keep-newer.+之后不能再回到 5\.26\.0/s);
+});
+
+test('an unfinished rollback is worded as a rollback, with the versions and programs on each side, never "newer" or an upgrade backup', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const { paths, root } = runtime(t);
+  const previous = { status: 'ready', neo4jVersion: '5.26.28', neo4jHome: asset(root, '2222', '5.26.28'), neo4jAssetFingerprint: 'fp' };
+  const next = { ...previous, neo4jHome: asset(root, '1111', '5.26.28'), previousNeo4jAsset: { home: previous.neo4jHome, version: '5.26.28' } };
+  writeFileSync(paths.nativeRuntimeManifestPath, JSON.stringify(next));
+  await acquireNeo4jLifecycleLock(root, { operation: 'rollback', identify: holderIdentity });
+  switchJournal(root, { previous, next, action: 'rollback' });
+  const plan = await planNativeRecovery({ paths, dependencies: deps().dependencies });
+  assert.deepEqual([plan.kind, plan.alternative.kind], ['finish_switch', 'back_out_switch']);
+  const words = formatRecoveryPlan(plan);
+  assert.match(words, /完成这次没做完的回退，改用 5\.26\.28 \(neo4j-assets\/jvs-a-1111\/neo4j-community-5\.26\.28\)/);
+  assert.match(words, /也可以取消回退、留在 5\.26\.28 \(neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28\)/);
+  assert.match(words, /Finish the unfinished rollback to 5\.26\.28/);
+  assert.doesNotMatch(words, /新版本|旧版本|\bnewer\b|\bolder\b|升级前|upgrade/);
+  const back = formatRecoveryPlan(plan.alternative);
+  assert.match(back, /取消这次没做完的回退，留在 5\.26\.28 \(neo4j-assets\/jvs-a-2222/);
+  assert.doesNotMatch(back, /新版本|旧版本|\bnewer\b|\bolder\b/, back);
+  // An update says update.
+  const update = await newerInPlace(t);
+  assert.match(formatRecoveryPlan(await planNativeRecovery({ paths: update.paths, dependencies: deps().dependencies })), /完成这次没做完的更新，改用 5\.26\.28：/);
+});
+
+test('a lock\'s age counts from when its operation took it, which a recovery\'s claim keeps', async (t) => {
+  const { root } = runtime(t);
+  await acquireNeo4jLifecycleLock(root, { operation: 'start', identify: holderIdentity });
+  const lock = readLock(root);
+  writeFileSync(join(lock.path, 'holder.json'), JSON.stringify({ ...lock.holder, at: new Date(Date.now() - 2 * 60 * 60_000).toISOString() }));
+  assert.equal(lockTooRecent(readLock(root), Date.now()), null, 'rewriting the holder made the directory new, not the lock');
+  writeFileSync(join(lock.path, 'holder.json'), JSON.stringify({ ...lock.holder, at: new Date().toISOString() }));
+  assert.equal(lockTooRecent(readLock(root), Date.now()).reason, 'too_recent');
+});
+
+test('a store moved beside an earlier one goes back under its own name', async (t) => {
+  const { graphStoresIn } = await import('../src/native-runtime/recovered-dir.js');
+  const { root } = runtime(t);
+  const folder = join(root, 'recovered', '2026-11-23T03-00-00-000Z');
+  mkdirSync(join(folder, 'personal', 'data', 'databases', 'neo4j-1763866800000'), { recursive: true });
+  assert.deepEqual(graphStoresIn(folder, root).map(({ to }) => to), [join(root, 'personal', 'data', 'databases', 'neo4j')]);
 });

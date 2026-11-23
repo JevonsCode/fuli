@@ -1,5 +1,5 @@
 import { lstatSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 // native-runtime/recovered/: what a recovery sets aside instead of deleting it
 // (src/native-runtime/neo4j-recovery.js). Each recovery has its own folder,
@@ -63,7 +63,9 @@ export const GRAPH_STORE_DIRS = Object.freeze([['data', 'databases'], ['transact
 // The graph data a recovery moved into [folder]: each store under an instance
 // directory (personal, workspace), as { instance, from, to } — where it is now
 // and, given the native runtime [root], where it came from (a recovery keeps
-// the path relative to the runtime when it moves something).
+// the path relative to the runtime when it moves something). A store moved
+// beside an earlier one carries a time suffix (neo4j-<ms>); it goes back
+// under its own name, neo4j, all the same.
 export function graphStoresIn(folder, root = null) {
   const stores = [];
   for (const instance of listNames(folder)) {
@@ -71,8 +73,9 @@ export function graphStoresIn(folder, root = null) {
       const dir = join(folder, instance, ...parts);
       if (!isDirectory(dir)) continue;
       const names = listNames(dir);
-      for (const from of names.length ? names.map(name => join(dir, name)) : [dir]) {
-        stores.push({ instance, from, to: root ? join(root, relative(folder, from)) : null });
+      const home = root ? join(root, instance, ...parts) : null;
+      for (const name of names.length ? names : [null]) {
+        stores.push({ instance, from: name ? join(dir, name) : dir, to: home && (name ? join(home, /^neo4j-\d+$/.test(name) ? 'neo4j' : name) : home) });
       }
     }
   }
