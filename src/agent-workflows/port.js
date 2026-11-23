@@ -8,8 +8,8 @@ import { plansAlike } from '../fla-growth/step-similarity.js';
 
 // The workflows port (rec#60 D-78): an Agent's repeated work, grown by the
 // Agent and confirmed by the person.
-// - The bound Agent proposes a workflow, or a change of one, from a learned
-//   workflow candidate or its own steps (agent-tools.js). A proposal is a new
+// - The bound Agent proposes a workflow, or a change of one, from
+//   its own steps or kept experiences (agent-tools.js). A proposal is a new
 //   version that waits; it never becomes active by itself.
 // - Only the person confirms, rejects or retires, in the local console, at the
 //   version the page showed. A confirmed version is the active one; rejecting a
@@ -58,9 +58,9 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
   function propose(owner, input) {
     const proposal = proposalFields(input);
     return store.transaction(() => {
-      // One workflow per learned candidate or set of kept experiences: proposing it again proposes a change of that one.
+      // One workflow per set of kept experiences: proposing it again proposes a change of that one.
       const existing = input.workflowId ? owned(owner, input.workflowId)
-        : proposal.source.startsWith('candidate:') || proposal.source.startsWith(EXPERIENCE_SOURCE)
+        : proposal.source.startsWith(EXPERIENCE_SOURCE)
         ? store.fromSource(owner.personalSpaceId, owner.agentId, proposal.source) : null;
       const time = at();
       if (existing) {

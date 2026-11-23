@@ -156,9 +156,9 @@ Workflows are the Agent's own repeated work as named, ordered steps, in
 `agent-workflows.sqlite` (format 3). The task's bound Agent, read from the current
 `taskContextToken`, is the only owner a tool acts for:
 
-- `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
-  repeated often enough across sessions, or from the Agent's own steps; with `workflowId` it
-  proposes a change. Every proposal is a new version and older versions are kept.
+- `propose_agent_workflow` proposes a workflow from the Agent's own steps; with `workflowId` it
+  proposes a change. (Learned X-then-Y candidates, `list_workflow_candidates`, were removed on
+  11-23: their only input was retired on 11-11, so the list stayed empty.) Every proposal is a new version and older versions are kept.
 - A project Skill draft (rec#78 step 4) is a proposal from three or more of the Agent's own kept
   experiences (`experienceIds`, checked against the project's current kept items). It must carry a
   `workMap` (inputs, outputs, dependencies, branches, acceptance; at most three questions, which FULI

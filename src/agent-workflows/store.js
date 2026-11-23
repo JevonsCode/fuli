@@ -125,7 +125,7 @@ export class AgentWorkflowStore {
       ORDER BY created_at, workflow_id`).all(personalSpaceId).map(workflowView);
   }
 
-  // The Agent's workflow a candidate was first proposed from, if any.
+  // The Agent's workflow a set of kept experiences was first proposed from, if any.
   fromSource(personalSpaceId, agentId, source) {
     if (!this.readable) return null;
     return workflowView(this.db.prepare(`SELECT w.* FROM agent_workflows w JOIN agent_workflow_versions v

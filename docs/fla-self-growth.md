@@ -55,7 +55,8 @@ FULI 里零件都有，链条断了三处：
 - **发现重复**有两套。图谱那套（`list_workflow_candidates` →
   `graph-provider/fuli_graph/workflow_candidates.py`）靠 `fuli_workflow_session_authority`
   的证据，而唯一写这个证据的 `record_workflow_transition_observation` 已在 11-11 退役
-  （`src/agent-tools/retired-tools.js`），所以新装的机器上候选永远是空的。活着的那套是
+  （`src/agent-tools/retired-tools.js`），所以新装的机器上候选永远是空的（JS 一侧的
+  `list_workflow_candidates` 和 `propose_agent_workflow` 的 `candidateId` 已在 #1085 删掉）。活着的那套是
   `src/fla-growth/tool-suggestions.js`：同一位 FLA 在同一项目的 3 个以上已完成任务里，
   计划步骤序列逐条一模一样（或某个启用的工作流在 3 个任务里按同一版本跑完）。
 - **提示沉淀**只提示人，不提示 FLA。上面那套每小时跑一次，向人提一条待拍板问「要做成

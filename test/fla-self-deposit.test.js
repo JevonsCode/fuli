@@ -252,14 +252,11 @@ test('a person who chose a script: the FLA is told to submit an Agent app, and s
   await suggestRepeatedTools(application_, { legacyCleared: true });
   assert.match(flaGrowthEntry(app(workflows), task, opening).repeated,
     /The person chose a script .* submit_agent_app_version .* confirm it in the terminal from Agents → Apps/);
-  // Whose repeat it settles is the calling task's FLA and project, never the agentId passed.
-  await appSubmitted(application_, { personalSpaceId: SPACE, agentId: 'fla-1' }, { appId: 'app-no-token', status: 'pending' });
-  const elsewhere = { ...application_, taskContextRegistry: { context: async () => ({ projectAgentId: 'fla-1', personalProjectId: 'orchard' }) } };
-  await appSubmitted(elsewhere, { taskContextToken: 'fuli-task-synthetic', agentId: 'fla-1' }, { appId: 'app-orchard', status: 'pending' });
-  const other = { ...application_, taskContextRegistry: { context: async () => ({ projectAgentId: 'fla-2', personalProjectId: 'garden' }) } };
-  await appSubmitted(other, { taskContextToken: 'fuli-task-synthetic', agentId: 'fla-1' }, { appId: 'app-other', status: 'pending' });
-  assert.deepEqual(depositedBy(), [null], 'no token, another project, another FLA: still owed');
-  await appSubmitted(application_, { taskContextToken: 'fuli-task-synthetic' }, { appId: 'app-synthetic', status: 'pending' });
+  // Whose repeat it settles is the submitting task's FLA and project (callingAppOwner).
+  await appSubmitted(application_, { ...OWNER, personalProjectId: 'orchard' }, { appId: 'app-orchard', status: 'pending' });
+  await appSubmitted(application_, { ...OWNER, agentId: 'fla-2' }, { appId: 'app-other', status: 'pending' });
+  assert.deepEqual(depositedBy(), [null], 'another project, another FLA: still owed');
+  await appSubmitted(application_, OWNER, { appId: 'app-synthetic', status: 'pending' });
   assert.deepEqual(depositedBy(), ['app:app-synthetic']);
 });
 
