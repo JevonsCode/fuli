@@ -309,4 +309,20 @@ describe('DataFormatPage', () => {
       { label: 'agent-roundtable.sqlite', migrationId: 'roundtable/9-x' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.text()).toContain('已撤销 roundtable/9-x，存储回到版本 8')
   })
+
+  it('says what graph/23 changes in the person\'s words, and keeps a step it does not know as the Provider wrote it', async () => {
+    setLocale('zh-CN')
+    const temporaryNames = { ...plan(), stores: [{ ...plan().stores[1]!, step: { ...plan().stores[1]!.step,
+      id: 'graph/23-temporary-project-names', summary: 'a temporary project stores no name', fromVersion: 22, toVersion: 23, count: 259 } },
+    plan().stores[0]!] }
+    api.getJson.mockResolvedValue(temporaryNames)
+    const wrapper = await mountPage()
+    const [graph, other] = wrapper.findAll('[data-step-description]')
+    expect(graph!.text()).toContain('临时项目 #编号')
+    expect(graph!.text()).toContain('你起过名的项目不动')
+    expect(graph!.text()).toContain('撤销')
+    expect(other!.text()).toBe('identity keys')
+    expect(wrapper.get('[data-store-plan]').text()).toContain('259')
+    wrapper.unmount()
+  })
 })

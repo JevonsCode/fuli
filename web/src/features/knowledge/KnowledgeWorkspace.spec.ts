@@ -152,7 +152,7 @@ describe('KnowledgeWorkspace', () => {
     const projects = [
       { project_id: 'formal', personal_space_id: 'space-1', profile: { name: '正式项目' } },
       { project_id: 'temporary', personal_space_id: 'space-1', scope_type: 'temporary' as const, profile: { name: '临时项目测试' } },
-      { project_id: fallback, personal_space_id: 'space-1', profile: { name: '会话回退测试' } },
+      { project_id: fallback, personal_space_id: 'space-1', profile: { name: '会话项目 / Conversation project' } },
       { project_id: 'archived', personal_space_id: 'space-1', status: 'archived', profile: { name: '归档项目测试' } },
     ]
     useConsoleStore().state = {

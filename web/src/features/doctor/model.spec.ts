@@ -23,4 +23,12 @@ describe('doctorItemView for outdated sessions', () => {
     setLocale('en-US', { persist: false })
     expect(doctorItemView(sessions('0.21.0')).hint).toBe('3 sessions still run 0.21.0; restart them to load the new version.')
   })
+
+  it('says a waiting graph step keeps the graph read-only, and that one confirmation can be undone', () => {
+    const waiting = (steps: string[]) => doctorItemView({ id: 'data_format_waiting:graph', kind: 'data_format_waiting',
+      severity: 'warning', fix: 'person', data: { store: 'graph', label: 'graph (personal)', steps } } as DoctorItem)
+    expect(waiting(['graph/23-temporary-project-names']).hint).toContain('写不进图谱')
+    expect(waiting(['graph/23-temporary-project-names']).to).toBe('/settings/data-format')
+    expect(waiting(['agent-apps/7-identity-keys']).hint).toBe('请在数据格式页看一下再确认。')
+  })
 })

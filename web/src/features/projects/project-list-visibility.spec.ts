@@ -12,7 +12,7 @@ describe('project listing visibility', () => {
     const projects = [
       project('formal', { profile: { name: '会话项目' } }),
       project('temp', { scope_type: 'temporary' }),
-      project(`conversation-${'a'.repeat(64)}`),
+      project(`conversation-${'a'.repeat(64)}`, { profile: { name: '会话项目 / Conversation project' } }),
       project('fallback', { profile: { name: 'x', origin: 'conversation_fallback' } }),
       project('archived', { status: 'archived' }),
       project('archived-profile', { profile: { name: 'x', lifecycle: 'archived' } }),

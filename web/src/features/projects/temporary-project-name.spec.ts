@@ -3,7 +3,8 @@ import { setLocale } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { projectDisplayName } from './project-origin'
 import { projectScopeGroups } from './project-scope-choices'
-import { givenProjectTitle, temporaryProjectName, temporaryProjectNumber } from './temporary-project-name'
+import { givenProjectTitle, temporaryProjectName } from './temporary-project-name'
+import { hasTemporaryOrigin } from './project-origin'
 
 // Synthetic projects only: a digest of one repeated character, synthetic names.
 const temporaryId = (seed: string) => `temporary-${seed.repeat(64)}`
@@ -44,6 +45,15 @@ describe('temporary project names', () => {
     for (const choice of temporary) {
       expect(projectDisplayName(choice.project, choice.label.slice(1))).toBe(`临时项目 ${choice.label}`)
     }
-    expect(temporaryProjectNumber(temporaryId('e'))).toBe('eeeeeeee')
+    expect(projectDisplayName(project(temporaryId('e'), '', { scope_type: 'temporary' }))).toBe('临时项目 #eeeeeeee')
+  })
+
+  it('takes scope_type first; a generated ID counts only while nobody named it, and a readable ID never', () => {
+    const digest = 'ab12'.repeat(16)
+    expect(hasTemporaryOrigin(project('synthetic-any', 'Anything', { scope_type: 'temporary' }))).toBe(true)
+    expect(hasTemporaryOrigin(project(`conversation-${digest}`, '会话项目 / Conversation project', { scope_type: 'registered' }))).toBe(true)
+    expect(hasTemporaryOrigin(project(`conversation-${digest}`, 'Synthetic garden notes', { scope_type: 'registered' }))).toBe(false)
+    expect(hasTemporaryOrigin(project('temporary-fix', 'Temporary fix', { scope_type: 'registered' }))).toBe(false)
+    expect(hasTemporaryOrigin(project('conversation-notes', 'Conversation notes'))).toBe(false)
   })
 })
