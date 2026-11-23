@@ -55,8 +55,14 @@ async function hostConsole(t) {
   return { origin: `http://127.0.0.1:${server.address().port}`, seen };
 }
 
+// A connection that never finds the host and opens nothing: for a test that must not depend on
+// the network it runs on (the address a person adds would otherwise be tried for real).
+const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => null, drop() {}, close() {},
+  postJson: async () => ({ reachable: false }), current: null, pinFailed: false });
+
 // A host listener with one paired runner, and that runner's console entry.
-async function pairedRunner(t, { clients = null } = {}) {
+// nowhere: the entry's connection never reaches anything.
+async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -70,7 +76,7 @@ async function pairedRunner(t, { clients = null } = {}) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
-  const connection = createHostConnection({ store, identity: runner, lookUp: async () => [] });
+  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner, lookUp: async () => [] });
   const delivered = [];
   const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients,
     deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
@@ -87,6 +93,17 @@ async function pairedRunner(t, { clients = null } = {}) {
     // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
     // kept a dead connection).
     setAway: (value) => { away = value; } };
+}
+
+// A request whose path is sent exactly as written (no URL normalisation on the way).
+function rawGet(base, rawPath) {
+  const { hostname, port } = new URL(base);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({ hostname, port, path: rawPath, method: 'GET', headers: { host: `127.0.0.1:${port}` } },
+      (response) => { response.resume(); response.on('end', () => resolve({ status: response.statusCode })); });
+    request.on('error', reject);
+    request.end();
+  });
 }
 
 function get(url, { headers = {}, method = 'GET', body = null } = {}) {
@@ -314,10 +331,27 @@ test('`/remote/<host>/` reaches only the paired host, and lands on its own path'
   assert.equal(consoleSide.seen.length, seen, 'a host this computer is not paired with is never reached');
 });
 
+// Review of #1069: a doubled slash after the host's name, a raw `..`, and a malformed escape.
+test('the named proxy and the console relay stay on the host\'s console, whatever the path', async (t) => {
+  const { entry, consoleSide } = await pairedRunner(t);
+  await get(`${entry.url}/remote/host-a//evil.example/api/tasks`);
+  assert.equal(consoleSide.seen.at(-1).url, '/evil.example/api/tasks', 'a path of the console, never another address');
+  assert.equal(consoleSide.seen.at(-1).host, new URL(consoleSide.origin).host);
+  const seen = consoleSide.seen.length;
+  for (const raw of ['/../runner/1/mcp', '/../../replay', '/%2e%2e/runner/1/mcp']) {
+    const escaped = await rawGet(entry.url, raw);
+    assert.ok([400, 404].includes(escaped.status), `${raw}: ${escaped.status}`);
+  }
+  assert.equal(consoleSide.seen.length, seen, 'nothing outside the console was reached on the host');
+  assert.equal((await get(`${entry.url}/remote/%E0%A4%A/api/tasks`)).status, 400, 'a malformed escape is the caller\'s');
+  const badJson = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{not json',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(badJson.status, 400);
+});
+
 // The host does not answer: one button, then one field, instead of a dead end.
 test('「添加主机地址」 takes a private address from this computer\'s own page and nothing else', async (t) => {
-  const { entry, store, setAway } = await pairedRunner(t);
-  setAway(true);
+  const { entry, store } = await pairedRunner(t, { nowhere: true });
   const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
   assert.match(page.text, /添加主机地址/, 'the next step is offered while the host is away');
   assert.match(page.text, /不在线/, 'the page says plainly that the host did not answer, never "not checked"');
@@ -475,6 +509,12 @@ test('a pairing, not a missing runtime file, makes a computer follow its host', 
     setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
     planSetup: () => assert.fail('a computer that follows a host plans no graph runtime') });
   assert.equal(result.status, 'runner');
+  // `fuli update` runs `fuli setup --yes --connected-only` with the new version: the pairing stays.
+  const updated = await runSetupCommand(['--data-dir', dataDir, '--yes', '--connected-only'], { write: () => {},
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    planSetup: () => assert.fail('an update never sets a FULI up over the pairing') });
+  assert.equal(updated.status, 'runner');
+  assert.equal(isRunnerDataDirectory(dataDir), true);
 });
 
 test('fuli setup on a runner sets up its clients only', async (t) => {

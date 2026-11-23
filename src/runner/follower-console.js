@@ -81,7 +81,11 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       local(response, 403, { error: 'cross_origin' });
       return;
     }
-    const url = new URL(request.url ?? '/', 'http://runner.invalid');
+    let url;
+    try { url = new URL(request.url ?? '/', 'http://runner.invalid'); } catch {
+      local(response, 400, { error: 'bad_path' });
+      return;
+    }
     if (clients && await localSource(response, () =>
       handleClientConnectionRequest({ request, response, url, system: clients }))) return;
     if (url.pathname === STATUS_PATH) {
@@ -102,8 +106,8 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     const host = store.host();
     const named = url.pathname.startsWith(REMOTE_PREFIX) ? namedHost(url.pathname, host) : null;
     if (named?.error) {
-      local(response, 404, { error: named.error, message: 'This computer carries only the console of the host it is '
-        + 'paired with. `fuli runner status` names it.' });
+      local(response, named.status ?? 404, { error: named.error, message: 'This computer carries only the console of the '
+        + 'host it is paired with. `fuli runner status` names it.' });
       return;
     }
     // A page of the host, asked for by the host's name: answered at the host's own path on this
@@ -169,7 +173,12 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       local(response, 503, { error: 'not_paired' });
       return;
     }
-    const address = String((await readJson(request))?.address ?? '').trim();
+    let asked;
+    try { asked = await readJson(request); } catch {
+      local(response, 400, { error: 'invalid_json', message: '请求的内容读不懂。 / The request could not be read.' });
+      return;
+    }
+    const address = String(asked?.address ?? '').trim();
     if (!isGuestSourceAddress(address)) {
       local(response, 400, { error: 'not_a_private_address',
         message: '只填主机的局域网地址（10.x、172.16-31.x、192.168.x）。 / A private address only (10.x, 172.16-31.x, 192.168.x).' });
@@ -191,6 +200,12 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
 
   async function relay(request, response, reached, path, host) {
     const target = new URL(`${RUNNER_PATHS.console}${path}`, reached.origin);
+    // `/../..` sent raw by a program on this computer would leave the console's prefix and reach the
+    // host's other runner paths (`/runner/1/mcp`, `/replay`): only the console is carried.
+    if (target.origin !== reached.origin || !target.pathname.startsWith(`${RUNNER_PATHS.console}/`)) {
+      local(response, 400, { error: 'not_console_path' });
+      return;
+    }
     const headers = Object.fromEntries(Object.entries(request.headers).filter(([name]) => !HOP_HEADERS.has(name)));
     if (request.headers.origin !== undefined) headers[SAME_ORIGIN_HEADER] = '1';
     // A page the band is added to is read as it is written: no compressed body to rewrite.
@@ -273,7 +288,8 @@ function unpairedAnswer(host) {
 // of the fingerprint the pairing pinned); nothing else is ever reached.
 function namedHost(pathname, host) {
   const [name, ...rest] = pathname.slice(REMOTE_PREFIX.length).split('/');
-  const asked = decodeURIComponent(name ?? '').toLowerCase();
+  let asked;
+  try { asked = decodeURIComponent(name ?? '').toLowerCase(); } catch { return { error: 'bad_path', status: 400 }; }
   if (!host) return { error: 'not_paired' };
   if (!asked || ![hostSlug(host.name), host.name.toLowerCase(), host.fingerprint.slice(0, 16)].includes(asked)) {
     return { error: 'unknown_host' };
@@ -282,7 +298,7 @@ function namedHost(pathname, host) {
   return { path: `/${rest.filter(Boolean).join('/')}${rest.length > 1 && rest.at(-1) === '' ? '/' : ''}` };
 }
 
-export function hostSlug(name) {
+function hostSlug(name) {
   return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'host';
 }
 

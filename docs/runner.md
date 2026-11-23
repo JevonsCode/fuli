@@ -116,10 +116,12 @@ the host's console is one page application that reads its own absolute paths.
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
   runner sets up its clients only. A runner never gets a graph runtime by accident.
 - **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
-  (`src/runner/runner-mode.js`). A computer that was set up as a FULI of its own before it joined,
-  or that a start wrote a runtime file for, used to stop counting as a runner, and its clients then
-  silently used an empty local FULI (docs/runner-roles-design.md §1.1). `fuli runner leave` is the
-  one way to end it.
+  (`src/runner/runner-mode.js`). A paired computer that a start or `fuli setup` later wrote a
+  runtime file for used to stop counting as a runner, and its clients then silently used an empty
+  local FULI (docs/runner-roles-design.md §1.1). `fuli runner leave` is the one way to end a
+  pairing; when a client's process still holds the store open (Windows), `leave` leaves
+  `runner/left` beside it so the computer is no longer a follower. `fuli runner join` still refuses
+  a data directory that holds a FULI of its own.
 - The host's and the runner's console ports should match for receipt links to open as they are.
 
 ## What a runner's call may do on the host

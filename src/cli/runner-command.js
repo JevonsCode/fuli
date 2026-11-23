@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
@@ -8,6 +8,7 @@ import { deliverOutbox } from '../runner/outbox-delivery.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
+import { LEFT_MARKER } from '../runner/runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -49,7 +50,7 @@ const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown
 const JOIN_AGAIN = 'Join again: `fuli runner invite` on the host, then `fuli runner join INVITATION` here.';
 
 export async function runRunnerCommand(args, { env = process.env, fetchImpl = fetch, write = writeLine,
-  join: joinRunner = joinHost, setupClients = setUpRunnerClients } = {}) {
+  join: joinRunner = joinHost, setupClients = setUpRunnerClients, remove = rmSync } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = () => resolveSetupPaths({ dataDir, env });
@@ -85,7 +86,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     write(`Runner console: ${served.url}`);
     return new Promise(() => {});
   }
-  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force') });
+  if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove });
   if (action === 'status' || action === 'sync' || action === 'add-address') {
     const named = action === 'add-address' ? positional(rest) : null;
     // An address a host serves: the paired certificate is checked there anyway, but nothing is sent anywhere else.
@@ -150,7 +151,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
 // decisions made here, so the MCP entry no longer serves as a runner. Checkpoints that never reached the host are knowledge the person
 // would lose: with any left it only says how many, unless --force. The host
 // lists the runner until the person revokes it there.
-async function leaveHost(dataDir, write, { force = false } = {}) {
+async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}) {
   const file = join(dataDir, RUNNER_FILE);
   const store = new RunnerStore(file);
   let host;
@@ -171,10 +172,12 @@ async function leaveHost(dataDir, write, { force = false } = {}) {
     return { exitCode: 0 };
   }
   try {
-    rmSync(file, { force: true });
-    rmSync(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
+    remove(file, { force: true });
+    remove(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
   } catch {
-    // A client's FULI process has it open: it is empty now and answers that this computer is not paired.
+    // A client's FULI process has it open (Windows): the store is empty now, and the marker says the
+    // pairing ended, so this computer is not taken for a follower while the file stays.
+    writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
   }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(`Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);

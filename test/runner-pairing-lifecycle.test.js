@@ -16,6 +16,7 @@ import { offlineAnswer } from '../src/runner/offline-calls.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
+import { isRunnerDataDirectory } from '../src/runner/runner-mode.js';
 import { ANSWERS_KEPT, OFFLINE_TOKEN_DAYS, RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 const HOST = { name: 'Host A', fingerprint: 'f'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.168.1.20'] };
@@ -335,4 +336,20 @@ test('a revoked follower keeps its waiting checkpoints, refused, and loses what 
     .map((row) => [row.id, row.last_error]),
   [['old-1', 'invalid_input'], ['old-2', 'invalid_input'], ['waiting', 'runner_revoked']]);
   assert.equal(store.answer('read:kept'), null, 'what was read from the host goes at once');
+});
+
+// Review of #1069: on Windows a client's process can hold the store open, so `leave` could not delete
+// it, and the empty file kept the computer counted as a follower for ever.
+test('a pairing left while its store was held open no longer makes this computer a follower', async (t) => {
+  const dataDir = dataDirectory(t);
+  mkdirSync(path.join(dataDir, 'runner'));
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  store.saveHost(HOST);
+  store.close();
+  assert.equal(isRunnerDataDirectory(dataDir), true);
+  const result = await runRunnerCommand(['leave', '--data-dir', dataDir], { write: () => {},
+    remove: () => { throw Object.assign(new Error('synthetic: the file is in use'), { code: 'EBUSY' }); } });
+  assert.equal(result.exitCode, 0);
+  assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), true, 'the file stayed');
+  assert.equal(isRunnerDataDirectory(dataDir), false, 'but the pairing is over');
 });

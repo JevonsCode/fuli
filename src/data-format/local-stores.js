@@ -113,7 +113,7 @@ const sqliteStores = () => [
   [RUNNER_HOST_FILE, RUNNER_HOST_FORMAT],
   // A runner's host, its last answers, offline task tokens and outbox (docs/runner.md).
   [RUNNER_FILE, RUNNER_FORMAT],
-  // What a runner's own Tonborg chose there and how each choice did, kept 30 days (docs/runner.md).
+  // What a runner's own Tonborg chose there and how each choice did, kept until `fuli runner leave` (docs/runner.md).
   [ROUTING_LEDGER_FILE, ROUTING_LEDGER_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.

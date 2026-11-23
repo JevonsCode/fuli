@@ -8,12 +8,17 @@ import { dirname, join, resolve } from 'node:path';
 // decides with it before loading anything else.
 //
 // The pairing alone decides, never the absence of `graph-runtime.json`: a
-// computer that was set up as a FULI of its own before it joined a host, or
-// that a start wrote a runtime for, kept its runtime file and so stopped
-// counting as a runner, which silently ended the pairing for its clients
-// (docs/runner-roles-design.md §1.1). A runtime beside a pairing is now simply
+// paired computer that a start or `fuli setup` later wrote a runtime file for
+// stopped counting as a runner, which silently ended the pairing for its
+// clients (docs/runner-roles-design.md §1.1). `fuli runner join` itself still
+// refuses a data directory that holds a FULI of its own. A runtime beside a pairing is now simply
 // a FULI that follows another one; `fuli runner leave` removes the pairing.
 const RUNNER_STORE = join('runner', 'runner.sqlite');
+// Written by `fuli runner leave` when it could not delete the store (a process
+// still has it open, as happens on Windows): the store is empty then, and this
+// says the pairing ended, so the computer is not taken for a follower for ever.
+// `fuli runner join` removes it.
+export const LEFT_MARKER = join('runner', 'left');
 
 // What every client's prompt hook says on a runner, where the client can put
 // model-visible text at a prompt.
@@ -35,7 +40,7 @@ export function runnerSessionStartContext(sessionId) {
 // Start, setup and FULI.app ask it too: on a runner they never set up a graph
 // runtime and never write over the pairing.
 export function isRunnerDataDirectory(dataDir) {
-  return existsSync(join(dataDir, RUNNER_STORE));
+  return existsSync(join(dataDir, RUNNER_STORE)) && !existsSync(join(dataDir, LEFT_MARKER));
 }
 
 // The same, for a hook or MCP command line naming --runtime-config.
