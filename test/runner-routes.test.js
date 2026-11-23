@@ -187,3 +187,24 @@ test('a token says which FULI issued it, and the host gets its own token back', 
     { issuer: null, args: { taskContextToken: 'runner-offline-x' } });
   assert.equal(issuedToken('ab'.repeat(32), token), token, 'never named twice');
 });
+
+// Design §7.1, review of #1075: a scope this computer already has data of is not followed elsewhere.
+test('fuli routes follow refuses a scope this computer\'s own FULI already has, and says why', async (t) => {
+  const dataDir = dataDirectory(t);
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
+  const asked = [];
+  const fetchImpl = async (url) => { asked.push(new URL(url).pathname);
+    return Response.json([{ project_id: 'widgets' }, { project_id: 'notes' }]); };
+  const write = () => {};
+  await assert.rejects(runRoutesCommand(['follow', 'project:widgets', 'Host A', '--data-dir', dataDir], { write, fetchImpl }),
+    (error) => error.code === 'scope_has_local_data' && /already has project widgets/.test(error.message));
+  await assert.rejects(runRoutesCommand(['follow', 'default', 'Host A', '--data-dir', dataDir], { write, fetchImpl }),
+    { code: 'scope_has_local_data' });
+  await runRoutesCommand(['follow', 'project:gadgets', 'Host A', '--data-dir', dataDir], { write, fetchImpl });
+  assert.deepEqual(asked, ['/api/personal-projects', '/api/personal-projects'], 'it asked this computer\'s own FULI');
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', dataDir], { write,
+    fetchImpl: async () => { throw new Error('connection refused'); } }), { code: 'local_fuli_not_running' });
+  const routes = openRoutes(dataDir);
+  assert.deepEqual(routes.all().map((row) => row.scope).filter((scope) => scope.startsWith('project:')), ['project:gadgets']);
+  routes.close();
+});

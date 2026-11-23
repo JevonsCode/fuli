@@ -86,6 +86,10 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   the host's resolver itself (`resolvePersonalProjectPath`: repository root, a worktree's original
   repository, the folder's name, a child project's marker) over the projects this computer knows.
   A folder of no known project is `default`.
+- `fuli routes follow` first checks that this computer has no data of that scope already (design
+  §7.1): on a computer with a FULI of its own, `global` and `default` are refused, and a project is
+  refused when that FULI has it (`scope_has_local_data`), which it asks the running FULI
+  (`local_fuli_not_running` when it is not running). Moving a scope between computers is a later step.
 - `fuli routes local SCOPE` is refused (`local_route_not_yet`) until owning a scope on a computer
   that follows a host is built (the next step), whatever this computer has: a FULI of its own beside
   a pairing is normal, and a route written now would give that scope a second owner once the next
