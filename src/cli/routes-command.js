@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
+import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { callScope, describeRoutes, knownProjects, openRoutes } from '../runner/call-routes.js';
 import { GLOBAL_SCOPE, hostOwner, LOCAL_OWNER, PROJECT_PREFIX, scopeName } from '../runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
@@ -35,7 +36,8 @@ const LOCAL_NOT_YET = 'Owning a scope on a computer that follows a host is not b
 const GLOBAL_STAYS = '`global` (your habits, profile and the FLA roster) has one owner, the computer you follow; '
   + 'it is never owned by a computer that follows another (docs/runner-roles-design.md D1, D2).';
 
-export async function runRoutesCommand(args, { env = process.env, write = writeLine, fetchImpl = fetch } = {}) {
+export async function runRoutesCommand(args, { env = process.env, write = writeLine, fetchImpl = fetch,
+  readConfig = readGraphRuntimeConfig } = {}) {
   const [action, ...rest] = args;
   const dataDir = option(rest, '--data-dir');
   const paths = resolveSetupPaths({ dataDir, env });
@@ -75,7 +77,7 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
       }
       // A scope this computer already has data of is not followed elsewhere: that data would be hidden,
       // and two computers would hold one scope (design §7.1). Moving a scope is a later step.
-      const local = await localScopeData({ dataDir: paths.dataDir, env, scope, fetchImpl });
+      const local = await localScopeData({ dataDir: paths.dataDir, env, scope, fetchImpl, readConfig });
       if (local) throw new ApplicationError(local.code, local.message);
       routes.set(scope, hostOwner(host.fingerprint));
       write(`${scope} → ${host.name}. Calls in that scope now read and write there.`);
@@ -94,26 +96,40 @@ export async function runRoutesCommand(args, { env = process.env, write = writeL
 
 // Whether this computer has data of this scope already: null when it has none
 // (no FULI of its own, or one without that project), else why it is refused.
-async function localScopeData({ dataDir, env, scope, fetchImpl }) {
-  if (!existsSync(join(dataDir, 'graph-runtime.json'))) return null;
+// The project list is the running console's own (`GET /api/personal-projects`
+// for this data directory's personal space); a console that cannot be reached
+// and one that answered with an error are said apart.
+async function localScopeData({ dataDir, env, scope, fetchImpl, readConfig = readGraphRuntimeConfig }) {
+  const configPath = join(dataDir, 'graph-runtime.json');
+  if (!existsSync(configPath)) return null;
   if (!scope.startsWith(PROJECT_PREFIX)) {
     return { code: 'scope_has_local_data', message: `This computer holds a FULI of its own, with its own ${scope} data; `
       + 'following a host for it would hide that data, and moving a scope between computers is not built yet '
       + '(docs/runner-roles-design.md §7). Nothing was changed.' };
   }
   const id = scope.slice(PROJECT_PREFIX.length);
-  let projects;
-  try {
-    const answer = await fetchImpl(`${localConsoleUrl({ dataDir, env })}/api/personal-projects`,
-      { signal: AbortSignal.timeout(10_000) });
-    if (!answer.ok) throw new Error(`HTTP ${answer.status}`);
-    const body = await answer.json();
-    projects = Array.isArray(body) ? body : Array.isArray(body?.projects) ? body.projects : [];
-  } catch {
+  let spaceId;
+  try { spaceId = readConfig(configPath).personal.spaceId; } catch (error) {
+    return { code: 'local_fuli_unreadable', message: `This computer's own FULI settings (graph-runtime.json) could not be `
+      + `read (${String(error?.message ?? error).slice(0, 200)}), so it cannot be checked for project ${id}. `
+      + '`fuli doctor` says what is wrong. Nothing was changed.' };
+  }
+  const url = new URL('/api/personal-projects', localConsoleUrl({ dataDir, env }));
+  url.searchParams.set('personalSpaceId', spaceId);
+  let answer;
+  try { answer = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) }); } catch {
     return { code: 'local_fuli_not_running', message: 'This computer holds a FULI of its own, which must be running so '
       + `it can be checked for project ${id} before that project is followed elsewhere: start it with \`fuli start\`, `
       + 'then run this again. Nothing was changed.' };
   }
+  let body = null;
+  try { body = await answer.json(); } catch { body = null; }
+  if (!answer.ok) {
+    return { code: 'local_fuli_refused', message: `This computer's own FULI answered but could not list its projects `
+      + `(HTTP ${answer.status}${body?.error ? `: ${body.error}` : ''}), so it cannot be checked for project ${id}. `
+      + '`fuli status` and `fuli diagnostics` say why. Nothing was changed.' };
+  }
+  const projects = Array.isArray(body) ? body : Array.isArray(body?.projects) ? body.projects : [];
   if (!projects.some((project) => project?.project_id === id)) return null;
   return { code: 'scope_has_local_data', message: `This computer's own FULI already has project ${id}; following a host `
     + 'for it would hide that project here, and moving a project between computers is not built yet '

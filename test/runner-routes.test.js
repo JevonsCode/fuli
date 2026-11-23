@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { runRoutesCommand } from '../src/cli/routes-command.js';
+import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
+import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
@@ -189,22 +193,56 @@ test('a token says which FULI issued it, and the host gets its own token back', 
 });
 
 // Design §7.1, review of #1075: a scope this computer already has data of is not followed elsewhere.
-test('fuli routes follow refuses a scope this computer\'s own FULI already has, and says why', async (t) => {
-  const dataDir = dataDirectory(t);
-  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
+// The console here is the real route (graph-api-router.js) over loopback, with a stub of the app behind it.
+async function ownConsole(t, dataDir, { projects = [], fail = null } = {}) {
   const asked = [];
-  const fetchImpl = async (url) => { asked.push(new URL(url).pathname);
-    return Response.json([{ project_id: 'widgets' }, { project_id: 'notes' }]); };
+  const app = { config: { personal: { spaceId: 'space-synthetic' } }, listPersonalProjects: async (input) => {
+    asked.push(input);
+    if (fail) throw Object.assign(new Error('synthetic failure'), { status: fail });
+    return projects;
+  } };
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1');
+    handleGraphApiRequest({ request, response, url, app }).then((handled) => {
+      if (!handled) { response.writeHead(404); response.end(); }
+    }).catch((error) => { response.writeHead(error.status ?? 500, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ error: 'synthetic_failure' })); });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  writeFileSync(path.join(dataDir, 'runtime-settings.json'),
+    JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS, ports: { ...DEFAULT_RUNTIME_SETTINGS.ports, console: server.address().port } }));
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
+  return asked;
+}
+
+const readConfig = () => ({ personal: { spaceId: 'space-synthetic' } });
+
+test('fuli routes follow refuses a scope this computer\'s own FULI already has, asking its real console route', async (t) => {
+  const dataDir = dataDirectory(t);
+  const asked = await ownConsole(t, dataDir, { projects: [{ project_id: 'widgets' }, { project_id: 'notes' }] });
   const write = () => {};
-  await assert.rejects(runRoutesCommand(['follow', 'project:widgets', 'Host A', '--data-dir', dataDir], { write, fetchImpl }),
+  await assert.rejects(runRoutesCommand(['follow', 'project:widgets', 'Host A', '--data-dir', dataDir], { write, readConfig }),
     (error) => error.code === 'scope_has_local_data' && /already has project widgets/.test(error.message));
-  await assert.rejects(runRoutesCommand(['follow', 'default', 'Host A', '--data-dir', dataDir], { write, fetchImpl }),
+  assert.deepEqual(asked, [{ personalSpaceId: 'space-synthetic' }], 'this data directory\'s own personal space');
+  await assert.rejects(runRoutesCommand(['follow', 'default', 'Host A', '--data-dir', dataDir], { write, readConfig }),
     { code: 'scope_has_local_data' });
-  await runRoutesCommand(['follow', 'project:gadgets', 'Host A', '--data-dir', dataDir], { write, fetchImpl });
-  assert.deepEqual(asked, ['/api/personal-projects', '/api/personal-projects'], 'it asked this computer\'s own FULI');
-  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', dataDir], { write,
-    fetchImpl: async () => { throw new Error('connection refused'); } }), { code: 'local_fuli_not_running' });
+  await runRoutesCommand(['follow', 'project:gadgets', 'Host A', '--data-dir', dataDir], { write, readConfig });
   const routes = openRoutes(dataDir);
   assert.deepEqual(routes.all().map((row) => row.scope).filter((scope) => scope.startsWith('project:')), ['project:gadgets']);
   routes.close();
+});
+
+test('a console that cannot be reached and one that answers with an error are said apart', async (t) => {
+  const refusing = dataDirectory(t);
+  await ownConsole(t, refusing, { fail: 503 });
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', refusing],
+    { write: () => {}, readConfig }), (error) => error.code === 'local_fuli_refused' && /HTTP 503/.test(error.message));
+  const away = dataDirectory(t);
+  writeFileSync(path.join(away, 'graph-runtime.json'), '{"synthetic":true}');
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', away], { write: () => {}, readConfig,
+    fetchImpl: async () => { throw new TypeError('fetch failed'); } }), { code: 'local_fuli_not_running' });
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', away], { write: () => {},
+    readConfig: () => { throw new Error('synthetic: unreadable'); } }), { code: 'local_fuli_unreadable' });
 });
