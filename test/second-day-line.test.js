@@ -18,7 +18,7 @@ const HABITS = [{ id: 'pref-1', item_kind: 'entity', instruction: 'Synthetic rul
   { id: 'rel-1', item_kind: 'relationship', instruction: 'Synthetic rule three' }];
 // What FULI resolved for the entry. An entry bounded to a host's inline limit
 // replaces this sentence with the split it delivered (entry-habits-line.js).
-const habitsLine = (token, count) => `FULI 习惯：这个新对话为你准备了 ${count} 条习惯 · ${count} habits ready for this conversation · `
+const habitsLine = (token, count) => `FULI 习惯：这个新对话为你准备了 ${count} 条习惯 · `
   + `[看看是哪几条](${CONSOLE}/habits/${taskKeyFor(token).slice(0, 16)})`;
 
 function application({ captureEnabled = true, store = new RecallImpressionsStore(':memory:'), conversation = null,
@@ -60,7 +60,7 @@ test('a new conversation with 3 habits ends its receipt with the line and the li
   const entry = await viaTool(app, 'session-new');
   assert.equal(entry.agent_receipt.markdown, `${IDENTITY}\n${habitsLine(entry.taskContextToken, 3)}`);
   assert.equal(entry.agent_receipt.markdown.split('\n').at(-1),
-    `FULI 习惯：这个新对话为你准备了 3 条习惯 · 3 habits ready for this conversation · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor('fuli-task-second-day-1').slice(0, 16)})`);
+    `FULI 习惯：这个新对话为你准备了 3 条习惯 · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor('fuli-task-second-day-1').slice(0, 16)})`);
 });
 
 test('the same session\'s second task, 0 habits, a resumed task and no assigned Agent show no line', async () => {

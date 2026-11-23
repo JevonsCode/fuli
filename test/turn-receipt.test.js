@@ -335,7 +335,7 @@ test('a first task\'s checkpoint receipt keeps the habits line its entry showed;
       preferences: habits, opensConversation: true });
     return task;
   };
-  const line = task => `FULI 习惯：这个新对话为你准备了 2 条习惯 · 2 habits ready for this conversation · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor(task.token).slice(0, 16)})`;
+  const line = task => `FULI 习惯：这个新对话为你准备了 2 条习惯 · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor(task.token).slice(0, 16)})`;
   const quiet = token => checkpointTaskKnowledge(app, { taskContextToken: token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Small talk.' });
   const first = opened();

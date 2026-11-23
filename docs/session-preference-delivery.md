@@ -478,7 +478,7 @@ full frame.
 
 The receipt of the first task of a new conversation ends with one more line:
 
-    FULI 习惯：这个新对话为你准备了 N 条习惯 · N habits ready for this conversation · [看看是哪几条](<console>/habits/<16 hex>)
+    FULI 习惯：这个新对话为你准备了 N 条习惯 · [看看是哪几条](<console>/habits/<16 hex>)
 
 It says 准备 (made ready), never 用了 (applied): FULI sees what it handed over;
 only the reply shows whether the assistant followed them. N is the number of
@@ -490,14 +490,15 @@ A frame bounded to a host's inline limit replaces that sentence with the two
 numbers it can see once the fit has run (`src/conversations/entry-habits-line.js`,
 rec#146 item 6):
 
-    FULI 习惯：这个新对话直接带上 M 条习惯，另外 K 条可以随时读 · M habits carried here, K more on request · [看看是哪几条](...)
+    FULI 习惯：这个新对话为你准备了 N 条习惯：直接带上 M 条，另外 K 条随时可读 · [看看是哪几条](...)
 
-M is `effective_preferences.length` of the delivered frame and K is
-`preferences_omitted.count`. Until this, a receipt read “你的 70 条习惯” beside
+M is `effective_preferences.length` of the delivered frame, K is
+`preferences_omitted.count` and N is their sum — the same N a later
+checkpoint, roundtable or pause receipt states from the stored row, so the
+two lines agree. One language, like every other receipt line. Until this, a receipt read “你的 70 条习惯” beside
 eight delivered ones. Only that one sentence changes; the link and every other
 receipt line stay as they were. The receipt paths off the entry
-(`storedHabitsLine`, a checkpoint, roundtable or pause receipt) run before any
-fit and still say the resolved count. The link
+(`storedHabitsLine`) do not know the split and say the prepared total. The link
 names the task by the first 16 hex characters of its delivery key; the page
 reads the local row (`GET /api/habit-deliveries/:taskKey`, owner reads only,
 404 once the row is past the 180-day retention).

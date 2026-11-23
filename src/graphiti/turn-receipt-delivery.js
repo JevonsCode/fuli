@@ -47,14 +47,18 @@ function habitsLine(application, delivery) {
 
 // The lead that marks a habits line, and the sentence that follows it. Both are
 // shared with the entry frame's rewrite, so the two can never drift apart.
+// One language, like every other receipt line (the console has no per-person
+// language setting the receipt could follow): a bilingual line doubled its
+// length and read "1 habits" (review of #1070).
 export const HABITS_LEAD = 'FULI 习惯：';
-export const preparedHabits = count => `这个新对话为你准备了 ${count} 条习惯 · ${count} habits ready for this conversation`;
+export const preparedHabits = count => `这个新对话为你准备了 ${count} 条习惯`;
 
 // The same sentence once the entry knows what its host's inline limit left
 // room for: what the assistant has in front of it, and what it can read when a
-// task may touch it. Plain words, Chinese and English (rec#146 item 6).
+// task may touch it (rec#146 item 6). The two add up to the prepared count a
+// later checkpoint receipt states, so the two lines never disagree.
 export const deliveredHabits = (inline, readable) =>
-  `这个新对话直接带上 ${inline} 条习惯，另外 ${readable} 条可以随时读 · ${inline} habits carried here, ${readable} more on request`;
+  `这个新对话为你准备了 ${inline + readable} 条习惯：直接带上 ${inline} 条，另外 ${readable} 条随时可读`;
 
 // A checkpoint, roundtable or pause receipt replaces the entry's, so a task
 // whose entry opened the conversation says it again from its stored row: one
