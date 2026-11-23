@@ -253,7 +253,11 @@ const BASELINE = Object.freeze({
   // docs/workstreams.md: the lead's hand-off of a task to a line rides on begin_task_context's existing
   // workKind ("workstream:<name>", told only to the lead of a divided project), so no Agent pays for a
   // parameter of its own: unchanged at 192,745 B (a separate parameter measured +143 B).
-  fullToolSchemaBytes: 192745,
+  // 11-23: list_workflow_candidates is retired (nothing fed it since 11-11), and submit_agent_app_version
+  // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
+  // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
+  // Both together: 191,752 B, measured on the merge.
+  fullToolSchemaBytes: 191752,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.

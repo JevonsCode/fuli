@@ -321,28 +321,6 @@ test('provider client maps every persistent knowledge review endpoint', async ()
   assert.equal(calls.every(({ options }) => options.method === 'POST'), true);
 });
 
-test('provider client maps workflow reads without exposing the human review channel', async () => {
-  const calls = [];
-  const client = new GraphitiProviderClient({
-    baseUrl: 'http://127.0.0.1:8787',
-    accessToken: 'local-test-token',
-    fetchImpl: async (url, options) => {
-      calls.push({ url, options });
-      return jsonResponse(200, {});
-    }
-  });
-  const scope = {
-    personal_space_id: 'personal-1',
-    personal_project_id: 'project-1'
-  };
-
-  await client.searchWorkflowCandidates(scope);
-  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ['/v1/workflow-candidates/search']);
-  assert.equal(calls[0].options.method, 'POST');
-  assert.equal(client.reviewWorkflowCandidate, undefined);
-  assert.equal(client.recommendWorkflowCandidates, undefined);
-});
-
 // 11-11: workflow observations were removed; an old runtime config's token is
 // still accepted but never sent.
 test('a client built with the old workflow observation token never sends it', async () => {
@@ -356,8 +334,10 @@ test('a client built with the old workflow observation token never sends it', as
       return jsonResponse(200, {});
     }
   });
-  await client.searchWorkflowCandidates({ personal_space_id: 'personal-1' });
+  await client.reviseKnowledgeItem('item-1', { personal_space_id: 'personal-1' });
   assert.equal(client.recordWorkflowObservation, undefined);
+  // 11-23: nor does it read learned workflow candidates any more.
+  assert.equal(client.searchWorkflowCandidates, undefined);
   assert.equal('x-fuli-workflow-observation-token' in calls[0].options.headers, false);
 });
 

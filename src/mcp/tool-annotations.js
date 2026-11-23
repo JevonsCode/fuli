@@ -57,7 +57,6 @@ const READ_TOOLS = new Set([
   'list_project_agent_routing_learning',
   'get_agent_score_card',
   'resolve_knowledge_tags',
-  'list_workflow_candidates',
   'preview_personal_project_action',
   'get_graphiti_status'
 ]);

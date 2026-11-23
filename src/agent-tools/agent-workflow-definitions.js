@@ -12,11 +12,10 @@ export const AGENT_WORKFLOW_DEFINITIONS = [
   {
     name: 'propose_agent_workflow',
     title: 'WRITE · Propose your workflow',
-    description: 'For work you repeat: steps from a list_workflow_candidates candidateId or your own; workflowId proposes a new version. A Skill draft from a draftable topic names its experienceIds and needs workMap (purpose is the goal; questions: at most 3, never what docs or history answer). Only the person activates it; nothing runs by itself.',
+    description: 'For work you repeat: your own steps; workflowId proposes a new version. A Skill draft from a draftable topic names its experienceIds and needs workMap (purpose is the goal; questions: at most 3, never what docs or history answer). Only the person activates it; nothing runs by itself.',
     inputSchema: objectSchema({
       taskContextToken: token,
       workflowId,
-      candidateId: boundedString(200),
       name: boundedString(80),
       purpose: boundedString(300),
       steps: arraySchema(objectSchema({ title: boundedString(120), detail: boundedString(600) }, ['title']),

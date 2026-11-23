@@ -109,7 +109,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_executor_routing_rule: 32 * 1024,
   list_project_agent_routing_learning: 64 * 1024,
   get_agent_score_card: 32 * 1024,
-  list_workflow_candidates: 32 * 1024,
   role_work: 256 * 1024,
   plan_agent_collaboration: 64 * 1024
 });
