@@ -1,17 +1,19 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, rename, rm, statfs } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { planLoad, restoreFailure } from './load-recovery.js';
+import { diskFree, planLoad, restoreFailure } from './load-recovery.js';
 import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
 import {
   acquireNeo4jLifecycleLock, claimLock, lockStartedAt, lockTooRecent, ownIdentity, readLock, runningGraphServices, runtimeInUse, takeOver
 } from './neo4j-lifecycle-lock.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
-import { expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp } from './recovered-dir.js';
+import {
+  expiredRecoveryFolders, graphDataFolders, isRecoveryFolder, listNames, recoveryFolder, recoveryRecordPath, recoveryStamp, setAsideInto
+} from './recovered-dir.js';
 import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } from './recovery-plan.js';
 
 // `fuli graph runtime recover`: brings a native runtime back from an operation
@@ -433,11 +435,8 @@ async function runStep(step, context) {
     case 'write-manifest': return writeManifest(context, step.value);
     case 'move-aside': {
       if (!inside(root, step.path)) throw stepFailed('unmanaged_path', 'Only what is inside the native runtime is set aside.');
-      if (!existsSync(step.path)) return; // moved by an earlier run
-      const to = join(folder, relative(root, step.path));
-      await mkdir(dirname(to), { recursive: true, mode: 0o700 });
-      // Never over something an earlier run of this recovery already put there.
-      return rename(step.path, existsSync(to) ? `${to}-${Date.now()}` : to);
+      // Gone when an earlier run moved it.
+      return setAsideInto(root, folder, step.path);
     }
     case 'rename':
       if (!existsSync(step.path)) return;
@@ -534,8 +533,7 @@ function recoveryDependencies(overrides) {
     stopServices: async () => { throw new Error('Stopping the recorded services needs the native runtime.'); },
     checkStart: async () => { throw new Error('Starting Neo4j needs the native runtime.'); },
     restore: async () => { throw new Error('A restore needs the native runtime.'); },
-    // Bytes free on the disk that holds [path].
-    diskFree: async path => { const { bavail, bsize } = await statfs(path); return bavail * bsize; },
+    diskFree,
     log: (paths) => diagnosticEventLog(paths.dataDir),
     now: Date.now,
     // Who this recovery is, as the lock records its holder.

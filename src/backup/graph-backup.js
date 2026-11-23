@@ -103,6 +103,12 @@ export async function importGraphData({
   let lifecycle = null;
   const rollbackEntries = [];
   let rollbackReady = false;
+  // The one lease this import holds from before it writes its first graph
+  // until every graph is whole again (adapter.holdImport; a runtime without
+  // one locks nothing). It is kept when that never happens, so nothing starts
+  // on a half-written graph: a recovery takes over from what its lock records.
+  let lease = null;
+  let kept = false;
   try {
     lifecycle = await adapter.stop();
     for (const entry of manifest.instances) {
@@ -132,23 +138,32 @@ export async function importGraphData({
     } else {
       await rm(rollbackRoot, { recursive: true, force: true });
     }
-    // What a recovery of a load killed part way goes back to (neo4j-recovery.js):
+    // What a recovery of an import killed part way goes back to (neo4j-recovery.js):
     // this copy (null when every instance was empty before), which instances it
     // holds, and which this import overwrites.
     const restorePoint = { path: rollbackReady ? rollbackRoot : null,
       instances: rollbackEntries.map(({ id }) => id), loading: manifest.instances.map(({ id }) => id) };
-    // Where this import stands with each graph (graph-import-states.js): every
-    // load's lock carries all of it, with the graph it is about to write
-    // already marked, so abandoning a killed import never guesses from the order.
+    // Where this import stands with each graph (graph-import-states.js), in the
+    // lock before that graph is written and again once it is written, failed
+    // or back, so a recovery or abandoning the import never guesses. A state
+    // that could not be recorded (a full disk) stops the import where it is:
+    // nothing more is written, and the lock stays.
     const graphStates = Object.fromEntries(manifest.instances.map(({ id }) => [id, GRAPH_STATE.untouched]));
-    const loadMarked = (id, path, state, rollback) => {
-      graphStates[id] = state;
-      return adapter.load(id, path, { rollback, restorePoint, graphStates: { ...graphStates } });
+    lease = typeof adapter.holdImport === 'function'
+      ? await adapter.holdImport({ restorePoint, graphStates: { ...graphStates } })
+      : UNLOCKED;
+    let unrecorded = null;
+    const mark = async (changes) => {
+      if (unrecorded) throw unrecorded;
+      Object.assign(graphStates, changes);
+      try { await lease.record({ graphStates: { ...graphStates } }); }
+      catch (error) { unrecorded = error; throw error; }
     };
     try {
       for (const entry of manifest.instances) {
-        await loadMarked(entry.id, join(source, entry.file), GRAPH_STATE.writing, false);
-        graphStates[entry.id] = GRAPH_STATE.imported;
+        await mark({ [entry.id]: GRAPH_STATE.writing });
+        await adapter.load(entry.id, join(source, entry.file));
+        await mark({ [entry.id]: GRAPH_STATE.imported });
       }
       if (typeof adapter.reconcile === 'function') {
         await adapter.reconcile({
@@ -159,28 +174,46 @@ export async function importGraphData({
         });
       }
     } catch (error) {
+      // Every graph this import wrote goes back: from the copy when it had
+      // data before, or emptied again when it had none (adapter.setAside).
+      // Graphs it never wrote stay as they are.
       let rollbackError = null;
-      for (const [id, state] of Object.entries(graphStates)) {
-        if (state === GRAPH_STATE.writing) graphStates[id] = GRAPH_STATE.importFailed;
-      }
-      for (const entry of rollbackEntries) {
+      let restoreError = null;
+      if (!unrecorded) {
         try {
-          await loadMarked(entry.id, entry.path, GRAPH_STATE.restoring, true);
-          graphStates[entry.id] = GRAPH_STATE.restored;
+          const touched = Object.keys(graphStates).filter(id => graphStates[id] !== GRAPH_STATE.untouched);
+          const failed = touched.filter(id => graphStates[id] === GRAPH_STATE.writing);
+          if (failed.length) await mark(Object.fromEntries(failed.map(id => [id, GRAPH_STATE.importFailed])));
+          for (const id of touched) {
+            const copy = rollbackEntries.find(entry => entry.id === id);
+            if (!copy && typeof adapter.setAside !== 'function') {
+              rollbackError ??= new Error(`The ${id} graph was empty before the import and this runtime cannot empty it again.`);
+              continue;
+            }
+            await mark({ [id]: GRAPH_STATE.restoring });
+            try {
+              if (copy) await adapter.load(id, copy.path);
+              else await adapter.setAside(id);
+            } catch (caught) {
+              rollbackError ??= caught;
+              if (copy) restoreError ??= caught;
+              await mark({ [id]: GRAPH_STATE.restoreFailed });
+              continue;
+            }
+            await mark({ [id]: GRAPH_STATE.restored });
+          }
+          // Every graph is back: a recovery of an import killed from here on
+          // only releases the lock (load-recovery.js).
+          if (!rollbackError) await lease.record({ restored: true });
         } catch (caught) {
-          graphStates[entry.id] = GRAPH_STATE.restoreFailed;
-          rollbackError ??= caught;
+          unrecorded ??= caught;
         }
       }
-      if (rollbackError) {
-        // The copy taken before is kept (rollbackReady): say where, and how to bring it back.
-        const back = rollbackReady
-          ? ` The graph from before the import is kept at ${rollbackRoot}; bring it back with: fuli graph import --input "${rollbackRoot}" --yes`
-          : '';
-        throw new AggregateError([error, rollbackError],
-          `Graph import failed and its automatic rollback was incomplete.${back}`);
-      }
-      throw error;
+      if (!unrecorded && !rollbackError) throw rolledBack(error);
+      kept = true;
+      if (!unrecorded && restoreError) await lease.restoreFailed?.(rollbackRoot, restoreError).catch(() => {});
+      throw incompleteImport(error, unrecorded ?? rollbackError, {
+        unrecorded: Boolean(unrecorded), locked: lease.locked, copy: rollbackReady ? rollbackRoot : null });
     }
     return {
       status: 'imported',
@@ -193,8 +226,47 @@ export async function importGraphData({
     if (!rollbackReady) await rm(rollbackRoot, { recursive: true, force: true });
     throw error;
   } finally {
-    if (lifecycle?.resume === true) await adapter.start(lifecycle);
+    // Only with every graph whole: the lease goes, and what ran before starts again.
+    if (!kept) {
+      await lease?.release();
+      if (lifecycle?.resume === true) await adapter.start(lifecycle);
+    }
   }
+}
+
+// A runtime whose imports hold no lock (containers, and native outside macOS).
+const UNLOCKED = Object.freeze({ locked: false, record: async () => {}, release: async () => {} });
+
+const RECOVER = 'fuli graph runtime recover';
+
+// An import that failed and whose rollback brought every graph back.
+function rolledBack(error) {
+  const detail = error?.message ?? String(error);
+  return new Error(`导入没有成功：${detail}。每个图谱都已退回导入前的数据。`
+    + ` / Graph import failed: ${detail}. Every graph is back to its data from before the import.`, { cause: error });
+}
+
+// An import that failed and left a graph that may be half written: its
+// rollback did not finish ([cause]), or a graph's state could not be recorded
+// in the lock ([unrecorded]), so nothing more was written. With the lock kept
+// ([locked]), starts are refused until a recovery brings the graphs back.
+function incompleteImport(error, cause, { unrecorded, locked, copy }) {
+  const detail = error?.message ?? String(error);
+  const why = cause === error ? '' : cause?.message ?? String(cause);
+  const [stopped, stoppedEn] = unrecorded
+    ? [`没能把各图谱的进度记进数据库维护锁${why ? `（${why}）` : ''}，所以没有接着写，也没有退回`,
+      `the progress of each graph could not be recorded in the maintenance lock${why ? ` (${why})` : ''}, so nothing more was written or rolled back`]
+    : [`自动退回没有做完（${why}）`, `its automatic rollback did not finish (${why})`];
+  const [hold, holdEn] = locked
+    ? [`维护锁留着，FULI 不会在写了一半的图谱上启动。运行 ${RECOVER}：它先说明怎样把图谱恢复到导入前，确认后再做。`,
+      `The maintenance lock is kept, so FULI does not start on a half-written graph. Run \`${RECOVER}\`: it says how it brings the graphs back to before the import, and does it once you confirm.`]
+    : ['图服务没有重新启动；把图谱导回之前不要启动 FULI。', 'The graph services were not started again; do not start FULI before the graph is brought back.'];
+  const [back, backEn] = copy
+    ? [`导入前的副本在 ${copy}，也可以用 fuli graph import --input "${copy}" --yes 导回。`,
+      ` The graph from before the import is kept at ${copy}; it can also be brought back with: fuli graph import --input "${copy}" --yes`]
+    : ['', ''];
+  return Object.assign(new AggregateError([error, cause], `导入没有成功：${detail}；${stopped}。${hold}${back}`
+    + ` / Graph import failed: ${detail}; ${stoppedEn}. ${holdEn}${backEn}`), { code: 'graph_import_incomplete', lockKept: locked });
 }
 
 export async function readGraphBackupManifest(inputDir) {

@@ -58,7 +58,10 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = ow
   await removeLeftovers(root);
   const owner = join(path, 'owner');
   async function assertHeld() { if (await readFile(owner, 'utf8') !== token) throw new Error('Neo4j lifecycle lock ownership changed.'); }
-  return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
+  return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); },
+    // Adds [patch] to what the lock records (holder.json, replaced whole or not
+    // at all); throws when it could not be recorded.
+    async record(patch) { if (!await claimLock(root, token, { identify, patch })) throw new Error('Neo4j lifecycle lock ownership changed.'); } };
 }
 
 // This process as `ps` shows it, so a later reader can tell it from a stranger with its PID.

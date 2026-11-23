@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { restoreFailure } from '../native-runtime/load-recovery.js';
+import { lockStartedAt, readLock } from '../native-runtime/neo4j-lifecycle-lock.js';
+import { instanceGraphStores, recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import { ensureContainerRuntime } from '../setup/container-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
@@ -77,11 +80,30 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     });
   }
 
-  async function load(instance, source, { restorePoint, graphStates } = {}) {
+  async function load(instance, source) {
     await withStagingDirectory(source, async (stage) => {
       await copyFile(source, join(stage, 'neo4j.dump'));
-      await services.loadDatabase(instance, stage, { restorePoint, graphStates });
+      await services.loadDatabase(instance, stage);
     });
+  }
+
+  // One lease for a whole import (graph-backup.js): every load and its
+  // rollback run under it, and its lock records [details] for a recovery
+  // (neo4j-recovery.js). A rollback that could not bring the copy [from] back
+  // records why, as a recovery's own failed restore does (restoreFailed).
+  async function holdImport(details) {
+    const lease = await services.hold('load', details);
+    return { ...lease, restoreFailed: async (from, error) => lease.record({ restoreFailed: await restoreFailure(paths, from, error) }) };
+  }
+
+  // Empties an instance that was empty before the import: its half-written
+  // database and transaction logs move into the recovery folder of the
+  // import's lock, where a recovery would put them (load-recovery.js), never deleted.
+  async function setAside(instance) {
+    const root = paths.nativeRuntimeDir;
+    const lock = readLock(root);
+    const folder = recoveryFolder(root, recoveryStamp(lock ? lockStartedAt(lock) : Date.now()));
+    for (const store of instanceGraphStores(paths, instance)) await setAsideInto(root, folder, store);
   }
 
   function hasData(instance) {
@@ -115,6 +137,8 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     start,
     dump,
     load,
+    holdImport,
+    setAside,
     hasData,
     census,
     selection: () => graphBackupSelection(paths),

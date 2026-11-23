@@ -1,5 +1,6 @@
-import { lstatSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { mkdir, rename } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 
 // native-runtime/recovered/: what a recovery sets aside instead of deleting it
 // (src/native-runtime/neo4j-recovery.js). Each recovery has its own folder,
@@ -59,6 +60,22 @@ export function expiredRecoveryFolders(root, now) {
 // (FULI's neo4j.conf puts them in <instance>/transactions; Neo4j's own default,
 // which older layouts used, is data/transactions).
 export const GRAPH_STORE_DIRS = Object.freeze([['data', 'databases'], ['transactions'], ['data', 'transactions']]);
+
+// An instance's database and its transaction logs (GRAPH_STORE_DIRS), whether or not they exist.
+export function instanceGraphStores(paths, id) {
+  const instance = id === 'personal' ? paths.nativePersonalDir : paths.nativeWorkspaceDir;
+  return GRAPH_STORE_DIRS.map(parts => join(instance, ...parts, 'neo4j'));
+}
+
+// Sets [path], inside the native runtime [root], aside into the recovery
+// [folder] at the same path relative to the runtime — beside, never over,
+// what an earlier run already put there. Nothing to do when it is gone.
+export async function setAsideInto(root, folder, path) {
+  if (!existsSync(path)) return;
+  const to = join(folder, relative(root, path));
+  await mkdir(dirname(to), { recursive: true, mode: 0o700 });
+  await rename(path, existsSync(to) ? `${to}-${Date.now()}` : to);
+}
 
 // The graph data a recovery moved into [folder]: each store under an instance
 // directory (personal, workspace), as { instance, from, to } — where it is now

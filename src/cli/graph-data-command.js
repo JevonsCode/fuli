@@ -36,10 +36,15 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
       throw new Error('Could not confirm that the running Fuli console stopped. Graph data was not changed.');
     }
   }
+  // An import that left a graph which may be half written starts nothing (graph-backup.js says why).
+  let incomplete = false;
   try {
     return await transferGraphData({ action, options, paths, mode, write, dependencies });
+  } catch (error) {
+    incomplete = error?.code === 'graph_import_incomplete';
+    throw error;
   } finally {
-    if (consoleWasRunning) {
+    if (consoleWasRunning && !incomplete) {
       write('Starting Fuli again...');
       await runtime.start();
     }

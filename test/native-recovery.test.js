@@ -927,9 +927,9 @@ test('a copy that is good but will not go back says why, and abandoning the impo
   assert.equal((await planNativeRecovery({ paths: fine.paths, abandonImport: true, dependencies: deps().dependencies })).reason, 'restore_point_usable');
 });
 
-// The lock each load of a real import (graph-backup.js) took, in order, with
-// [fails] deciding which loads fail: an import killed during load k leaves
-// exactly locks[k] behind.
+// What the lock of a real import (graph-backup.js) recorded while each of its
+// loads ran, in order, with [fails] deciding which loads fail: an import
+// killed during load k leaves exactly locks[k] behind.
 async function importLocks(t, fails) {
   const { exportGraphData, importGraphData } = await import('../src/backup/graph-backup.js');
   const root = mkdtempSync(join(tmpdir(), 'fuli-import-'));
@@ -937,9 +937,15 @@ async function importLocks(t, fails) {
   await exportGraphData({ outputDir: join(root, 'source'), sourceMode: 'native', instances: ['personal', 'workspace'],
     adapter: { async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `new:${id}`); }, async start() {} } });
   const locks = [];
+  let graphStates = null;
   await importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter: {
     async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `old:${id}`); }, async start() {},
-    async load(id, _from, { rollback, graphStates }) {
+    async holdImport(details) {
+      graphStates = details.graphStates;
+      return { locked: true, async record(patch) { graphStates = patch.graphStates ?? graphStates; }, async release() {} };
+    },
+    async load(id, from) {
+      const rollback = readFileSync(from, 'utf8').startsWith('old:');
       locks.push({ id, rollback, graphStates });
       if (fails(id, rollback)) throw new Error('load failed');
     } } }).catch(() => {});

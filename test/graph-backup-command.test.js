@@ -98,6 +98,18 @@ test('graph copy stops a running console first and starts it again even after a 
     importData: async () => { events.push('import'); throw new Error('synthetic load failure'); }
   }), /synthetic load failure/);
   assert.deepEqual(events, ['inspect', 'stop', 'import', 'start']);
+
+  // An import that left a graph that may be half written starts nothing; its error says why and what to run.
+  events.length = 0;
+  await assert.rejects(runGraphDataCommand('import', ['--input', '/portable', '--yes'], {
+    ...common,
+    createAdapter: async () => ({ instances: ['personal'] }),
+    importData: async () => {
+      events.push('import');
+      throw Object.assign(new Error('rollback did not finish; run fuli graph runtime recover'), { code: 'graph_import_incomplete' });
+    }
+  }), /runtime recover/);
+  assert.deepEqual(events, ['inspect', 'stop', 'import']);
 });
 
 test('graph copy refuses to touch data when the running console cannot be confirmed stopped', async () => {
