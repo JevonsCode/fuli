@@ -162,7 +162,7 @@ test('「重新监听」 opens the listener again on the loopback console only, 
   const calls = [];
   const peer = { listenAgain: async () => { calls.push('listen'); return { role: 'coordinator' }; },
     disable: async () => { calls.push('disable'); return { role: null }; } };
-  const remote = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {}, remoteAddress: '192.168.1.20' });
+  const remote = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {}, remoteAddress: '192.0.2.20' });
   assert.equal(remote.status, 403);
   const local = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {} });
   assert.equal(local.status, 200);
