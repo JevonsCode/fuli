@@ -49,6 +49,34 @@ function checkpointNotSaved(error) {
   };
 }
 
+// A checkpoint whose task is already closed with other content — most often by
+// the Stop hook at the end of the turn before, when a later turn (a host
+// notification, a background result) still holds that token. It used to be a
+// validation error about "different input", read by Agents as a retry to fix;
+// it is a status that says nothing was saved and how to keep it.
+const CLOSED_TASK_GUIDANCE = 'FULI did not save this checkpoint: the task this taskContextToken names is already closed '
+  + '(the Stop hook closes a turn that recorded no checkpoint, or an earlier checkpoint closed it), so this call saved '
+  + 'nothing. To keep this turn\'s knowledge, call get_collaboration_preferences now (projectPath = current working '
+  + 'directory, taskPrompt = one line saying what this turn did) and call checkpoint_task_knowledge again with that '
+  + 'token and the same content. To correct the closed task\'s own reason or workLog instead, call again with amend: true.';
+const closedRefusals = new WeakSet();
+
+export function closedTaskRefusal() {
+  const error = new Error('Task already closed');
+  closedRefusals.add(error);
+  return error;
+}
+
+function checkpointOnClosedTask() {
+  return {
+    status: 'checkpoint_not_saved',
+    reason: 'task_closed',
+    checkpoint_required: false,
+    retry: { tool: 'checkpoint_task_knowledge', same_content: true, new_token: true },
+    guidance: CLOSED_TASK_GUIDANCE
+  };
+}
+
 // The checkpoint's first read of its task; a token refused here is marked as refused before any write.
 export async function admittedTask(read) {
   try {
@@ -66,6 +94,7 @@ export async function withCheckpointSaveStatus(checkpoint) {
   } catch (error) {
     if (isProviderOutage(error)) return checkpointIncomplete(error);
     if (admissionRefusals.has(error)) return checkpointNotSaved(error);
+    if (closedRefusals.has(error)) return checkpointOnClosedTask();
     throw error;
   }
 }

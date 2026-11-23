@@ -140,6 +140,7 @@ test('a repeat complaint is never auto-closed and carries the guidance; an ordin
     { sessionId: 's', taskPrompt: '上次就说过，这个项目用 pnpm。' }, { entryVia: 'hook' });
   assert.equal(repeating.checkpoint_required, true);
   assert.equal(repeating.remember_guidance, REPEAT_GUIDANCE);
+  assert.equal(repeating.checkpoint_reason, 'the person says they asked for this before');
   const question = await beginTaskFromPreferences(application, preferences,
     { sessionId: 's', taskPrompt: '为什么这里不用 pnpm？' }, { entryVia: 'hook' });
   assert.equal(question.checkpoint_required, false);

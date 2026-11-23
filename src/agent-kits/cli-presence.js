@@ -20,11 +20,13 @@ const SHELL_TIMEOUT_MS = 4000;
 const WSL_TIMEOUT_MS = 15_000;
 // The program name is a positional parameter, never shell text.
 const SHELL_PROBE = 'command -v -- "$1" >/dev/null';
+const SHELL_LOCATE = 'command -v -- "$1"';
 
 export function createCliPresence({
   platform = process.platform,
   env = process.env,
   run = runQuietly,
+  capture = runCapturing,
   now = () => Date.now()
 } = {}) {
   const cache = new Map();
@@ -41,6 +43,17 @@ export function createCliPresence({
   }
 
   return {
+    // The absolute path of a program this computer runs itself (never one only in
+    // WSL), or null: what a caller runs when FULI's own PATH is shorter than the
+    // person's terminal. Not cached; it is asked only when the person acts.
+    async locate(program) {
+      if (typeof program !== 'string' || !PROGRAM.test(program)) return null;
+      const direct = onPathAt(program, { platform, env });
+      if (direct || platform === 'win32') return direct;
+      const shell = /\/(?:ba|z)?sh$/.test(env.SHELL ?? '') ? env.SHELL : '/bin/sh';
+      const found = (await capture(shell, ['-lic', SHELL_LOCATE, 'probe', program], SHELL_TIMEOUT_MS))?.trim().split('\n').at(-1);
+      return found && found.startsWith('/') && isProgram(found, platform) ? found : null;
+    },
     async find(program) {
       if (typeof program !== 'string' || !PROGRAM.test(program)) return null;
       const cached = cache.get(program);
@@ -52,12 +65,20 @@ export function createCliPresence({
   };
 }
 
-function onPath(program, { platform, env }) {
+function onPath(program, options) {
+  return onPathAt(program, options) !== null;
+}
+
+// The first matching program on PATH, or null.
+function onPathAt(program, { platform, env }) {
   const directories = (env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : delimiter).filter(Boolean);
   const names = platform === 'win32'
     ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => program + extension.toLowerCase())
     : [program];
-  return directories.some((directory) => names.some((name) => isProgram(join(directory, name), platform)));
+  for (const directory of directories) {
+    for (const name of names) if (isProgram(join(directory, name), platform)) return join(directory, name);
+  }
+  return null;
 }
 
 function isProgram(path, platform) {
@@ -74,5 +95,12 @@ function isProgram(path, platform) {
 function runQuietly(command, args, timeout) {
   return new Promise((resolve) => {
     execFile(command, args, { timeout, windowsHide: true, stdio: 'ignore' }, (error) => resolve(!error));
+  });
+}
+
+// Resolves the command's standard output when it exited with 0 within the time, else null; never rejects.
+function runCapturing(command, args, timeout) {
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout, windowsHide: true, encoding: 'utf8' }, (error, stdout) => resolve(error ? null : stdout));
   });
 }

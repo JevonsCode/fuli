@@ -26,7 +26,10 @@ import {
 export async function planLocalSetup(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller),
+  detect = (paths) => {
+    const ports = agentKitPorts(paths, { env });
+    return detectAgents(ports.clientInstaller, { presence: ports.clientPresence });
+  },
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
   settingsExist = existsSync,
