@@ -362,7 +362,8 @@ It does not start FULI:
   started again; the stop is recorded before FULI stops, so no session brings it back meanwhile;
 - while a whole-store restore holds the data, or a local store's format step waits for the person
   (`fuli migrate status`): start FULI yourself and confirm it under 设置 › 数据格式;
-- after 3 automatic starts within 10 minutes, until you start FULI yourself.
+- after 3 automatic starts within 10 minutes, until you start FULI yourself; `fuli status` and the
+  desktop window say so while FULI is down.
 
 In those cases the hooks' "Fuli context is unavailable" text says which one applies.
 When a hook itself fails, the same text names the error code, the rule that refused the call (never

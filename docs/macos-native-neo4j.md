@@ -65,7 +65,13 @@ outside those directories and are retained. The runtime stays stopped. A later
 install uses the existing external data; removal does not imply data erasure.
 
 An interrupted operation leaves `.neo4j-lifecycle.lock` and/or
-`neo4j-transaction.json`. Ordinary setup/start refuses them. Inspect the recorded
+`neo4j-transaction.json`. The lock records the process that took it
+(`holder.json`); a start that finds that process gone and no
+`neo4j-transaction.json` takes the lock over, so a start that was killed does not
+block every later one. A lock that names no holder (taken before FULI recorded
+one), a lock whose holder still runs, and any transaction journal are left
+alone: ordinary setup/start refuses them and says since when the lock has been
+held and whether its holder runs. Inspect the recorded
 old/new descriptors, actual process groups, listeners and offline store formats
 before manually completing recovery. Do not delete a lock merely because it is
 old. Recovery never copies or overwrites a database. Crash/power-loss recovery is
