@@ -26,6 +26,7 @@ import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJo
 import { entryRules } from '../../src/conversations/entry-rules.js';
 import { SKELETON_LABEL, SKELETON_UNCHANGED_LABEL, skeletonParts } from '../../src/conversations/entry-skeleton.js';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
+import { approxTokens } from '../../src/text/token-estimate.js';
 
 const SPACE = 'synthetic-space';
 const PROJECT = 'project';
@@ -306,6 +307,13 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
   return { session: session.label, client: session.client, generation: session.generation, note, scene,
     prompt, bucket, delivered, preference_delivery: frame.preference_delivery?.status ?? 'full',
     produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline), skeleton_bytes: bytes(skeleton),
+    // A reading-cost hint beside the bytes (src/text/token-estimate.js), never a budget.
+    produced_tokens: approxTokens(text), no_cache_tokens: approxTokens(baseline),
+    // What the host's inline limit left the model: the listed set, what it
+    // counts as left out, and whether the frame was blocked outright.
+    preferences_omitted: frame.preferences_omitted?.count ?? 0,
+    preferences_indexed: frame.preferences_omitted?.index?.length ?? 0,
+    blocked: frame.preference_delivery?.status === 'blocked',
     // The exact encoding a complete frame adds so a later frame can name it.
     revision_field_bytes: frame.revision ? bytes(`,"revision":${JSON.stringify(frame.revision)}`) : 0,
     skeleton_revision_field_bytes: frame.skeleton_revision

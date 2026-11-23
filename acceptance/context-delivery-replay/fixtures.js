@@ -94,5 +94,37 @@ function scaled(seed) {
     defaults: [...general, ...boundary], messages, replacement: text(random, 'SYNTHETIC replacement: ', 120, 1500, { code: true }) });
 }
 
+// rec#111/#137: a person with a large confirmed set. Same generator as
+// `scaled`, 73 preferences instead of 11, so an entry cannot carry them all
+// inline and the host's inline limit decides what the model sees. Two of them
+// state their scope in prose only ("仅适用于…"), as the reported ones did.
+function many(seed) {
+  const random = seeded(seed);
+  const preferences = (key, count, qualifiers, aspect, marker) => Array.from({ length: count }, (_, index) =>
+    rule(index ? `${key}-${index + 1}` : key, text(random, `SYNTHETIC_${marker} ${index + 1}: `, 120, 400), qualifiers, aspect));
+  const boundary = preferences('no-unapproved-push', 3, {}, 'judgment_preference', 'BOUNDARY');
+  const hard = [rule('synthetic-hard-rule', 'SYNTHETIC_HARD: 合成测试数据一律不写入真实目录。',
+    { constraint: 'hard' }, 'judgment_preference')];
+  const general = preferences('tradeoffs', 30, {}, 'personality', 'GENERAL');
+  const spacing = preferences('spacing', 20, { tasteDomain: 'frontend' }, 'taste', 'FRONTEND');
+  const palette = preferences('palette', 18, { tasteDomain: 'design' }, 'taste', 'DESIGN');
+  const radius = preferences('radius', 1, { tasteDomain: 'frontend' }, 'taste', 'FRONTEND_ADDED');
+  // Scope stated in prose only: FULI cannot filter these from the qualifiers.
+  const prose = [
+    rule('synthetic-locale-rule', '仅适用于合成结算需求：地区只按 locale 判断，不要用时区推断。', {}, 'personality'),
+    rule('synthetic-timesheet-rule', 'Only for synthetic timesheet work: round every entry to half an hour.', {}, 'personality')
+  ];
+  const editedSpacing = [{ ...spacing[0], instruction: text(random, 'SYNTHETIC_FRONTEND_EDITED: ', 120, 400) }, ...spacing.slice(1)];
+  const messages = Object.fromEntries(Object.entries(SCALED_GROUPS).map(([group, count]) => [group,
+    Array.from({ length: count }, (_, index) => {
+      const role = index % 2 ? 'assistant' : 'user';
+      return [role, text(random, `SYNTHETIC ${group} ${index + 1} (${role}): `, 120, 1500, { code: true })];
+    })]));
+  return Object.freeze({ name: 'many', boundary: [...boundary, ...hard], general: [...general, ...prose], spacing, palette, radius,
+    editedSpacing, defaults: [...general, ...prose, ...spacing, ...palette, ...boundary, ...hard], messages,
+    replacement: text(random, 'SYNTHETIC replacement: ', 120, 1500, { code: true }) });
+}
+
 export const SCALED_SEED = 0x29_04_15;
-export const FIXTURES = Object.freeze({ tiny: TINY, scaled: scaled(SCALED_SEED) });
+export const MANY_SEED = 0x29_11_23;
+export const FIXTURES = Object.freeze({ tiny: TINY, scaled: scaled(SCALED_SEED), many: many(MANY_SEED) });

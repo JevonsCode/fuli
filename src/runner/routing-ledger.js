@@ -1,15 +1,16 @@
 import { existsSync } from 'node:fs';
 
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // What Tonborg decided on this runner (docs/runner.md, "Executor judgment on
 // a runner") and how each choice turned out: one record per decision, kept
 // so a repeated requestId gets the same answer, an outcome is reported once,
 // and the next judgment here reads the earlier ones as feedback. A copy of
 // each decision and outcome goes to the host through the outbox; the host's
-// Tonborg ledger is the record of them. Records older than KEEP_MS are deleted.
+// Tonborg ledger is the record of them. Nothing here expires with time, as
+// nothing a follower keeps does (runner-store.js); `fuli runner leave` deletes
+// the file.
 export const ROUTING_LEDGER_FILE = 'runner/routing.sqlite';
-const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const ROUTING_LEDGER_FORMAT = sqliteFormat({
   store: 'runner-routing',
@@ -51,12 +52,9 @@ export class RoutingLedger {
 
   // record: the decision as it is answered and sent; requestFingerprint tells a repeated request from another one.
   save(record, requestFingerprint) {
-    immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO decisions(id, space, project, request_id, request_fingerprint, body, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId, record.requestId,
-        requestFingerprint, JSON.stringify(record), record.createdAt);
-      this.db.prepare('DELETE FROM decisions WHERE created_at <= ?').run(new Date(this.now() - KEEP_MS).toISOString());
-    });
+    this.db.prepare(`INSERT INTO decisions(id, space, project, request_id, request_fingerprint, body, created_at)
+      VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId, record.requestId,
+      requestFingerprint, JSON.stringify(record), record.createdAt);
   }
 
   // How the chosen executor did, once per decision: false when it was reported already.

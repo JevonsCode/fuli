@@ -79,7 +79,7 @@ test('once the host answers, the runner\'s decision and its outcome reach Tonbor
     await deliverOutbox({ store: runner.served.store, connection: runner.served.connection });
     await delay(100);
   }
-  assert.deepEqual(runner.served.store.outbox(), { queued: 0, failedCount: 0, failed: [] });
+  assert.deepEqual(runner.served.store.outbox(), { queued: 0, failedCount: 0, failed: [], entries: [] });
 
   const [record] = runner.judgment.store().records(SPACE, { personalProjectId: PROJECT });
   assert.equal(record.kind, 'routing');
