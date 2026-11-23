@@ -44,7 +44,7 @@ const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task,
 
 export async function withStandingOwner(application, resolution, input) {
   const matches = standingMatches(application, input.taskPrompt)
-    .filter(({ assignment, matchedOn }) => assignment.source === 'user' && matchedOn.includes('words')
+    .filter(({ assignment, matchedOn = [] }) => assignment.source === 'user' && matchedOn.includes('words')
       && assignment.projectId !== resolution.personalProjectId);
   if (!matches.length || !routable(resolution, input) || hostInternalActivity(application, input)
     || await promptNamesProject(application, input.taskPrompt)) return resolution;

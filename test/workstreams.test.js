@@ -266,8 +266,9 @@ test('the lead sees the lines as facts and the rule by reference; a project with
 
 test('how far a line got is its own latest task, not the owner\'s older or other work', async () => {
   const before = new Date(Date.now() - 90 * 86_400_000).toISOString();
-  const now = new Date().toISOString();
   const { app } = fixture({ seed: [SPRING, COUPON], workLog: { 'fla-orin': new Error('Synthetic Provider timeout') } });
+  // After the lines opened, whatever the clock's resolution.
+  const now = new Date(Date.now() + 60_000).toISOString();
   const id = lineId(app);
   app.personal.getProjectAgentMemory = (read => async input => {
     const value = await read(input);
