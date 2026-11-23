@@ -32,6 +32,7 @@ import {
   listExecutors,
   listProjectAgentRoutingLearning,
   resetProjectAgentRoutingLearning,
+  submitProjectAgentTask,
   viewProjectAgentActivity,
   viewProjectAgentTask
 } from '../src/graphiti/project-agent-workflows.js';
@@ -946,4 +947,23 @@ test('start:false reaches the Provider so a task is assigned to the backlog with
   assert.equal(providerProjectAgentTaskSubmit({ ...base, start: false }).start, false);
   assert.equal('start' in providerProjectAgentTaskSubmit(base), false);
   assert.equal(projectAgentTaskSubmitInput.properties.start.type, 'boolean');
+});
+
+test('a task\'s executor hint no registered executor lists is refused before the task is stored, with the names there are', async () => {
+  const submitted = [];
+  const application = { personal: {
+    listExecutors: async () => ({ executors: [{ executor_id: 'local', capabilities: ['testing', 'Coding'] }] }),
+    submitProjectAgentTask: async (input) => { submitted.push(input); return { task: { task_id: 'task-1' } }; }
+  } };
+  const input = { personalSpaceId: 'space-1', personalProjectId: 'project-1', idempotencyKey: 'hints-1', title: 'Synthetic task',
+    objective: 'Check the hints.', workKind: 'implementation', requiredCapabilities: ['hotel planning'] };
+  await assert.rejects(submitProjectAgentTask(application, { ...input, executorCapabilityHints: ['coding', 'run the browser'] }), (error) => {
+    assert.equal(error.code, 'invalid_input');
+    assert.equal(error.message, 'executorCapabilityHints[1]: no registered executor lists this capability. Pass only names from this list, or none: coding, testing');
+    return true;
+  });
+  assert.equal(submitted.length, 0);
+  // The Agent's own requiredCapabilities are staffing words, never checked against executors.
+  await submitProjectAgentTask(application, { ...input, executorCapabilityHints: ['TESTING'] });
+  assert.equal(submitted.length, 1);
 });

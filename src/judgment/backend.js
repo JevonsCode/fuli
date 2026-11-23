@@ -20,12 +20,15 @@ export function createJudgmentBackend({ bridge = null, legacy = runJudgment } = 
     }
     if (!bridge) throw Object.assign(new Error('No judgment backend is available'), { code: 'judgment_backend_unavailable' });
     // execution: set on a rerun that applies a session answer (role_work).
-    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume, execution: call.execution ?? null });
+    // inline: no work package; a model that cannot answer leaves the work undone (role-work.js).
+    const outcome = await bridge.decide(judgmentRequest(call), { resume: call.resume, execution: call.execution ?? null,
+      inline: call.inline === true });
     if (outcome.status !== 'answered') return outcome;
     const { envelope, modelReceipt } = outcome;
     return outcome.mode === 'model_api'
       ? { status: 'answered', mode: 'model_api', independent: true, value: envelope.payload, client: null,
-        model: modelReceipt.actualModel ?? modelReceipt.requestedModel, sessionId: null, modelReceipt }
+        model: modelReceipt.actualModel ?? modelReceipt.requestedModel, sessionId: null, modelReceipt,
+        rejectedItems: envelope.rejectedItems ?? [] }
       : { status: 'answered', mode: 'current_session', independent: false, value: envelope.payload,
         client: outcome.session.sourceApplication, model: null, sessionId: outcome.session.sessionRef,
         modelReceipt, workPackageId: outcome.workPackageId };
@@ -41,8 +44,9 @@ export function judgmentAnswer(response) {
     throw Object.assign(new Error(`Tonborg's model did not answer (${response.status}: ${response.modelReceipt.reason})`),
       { code: response.modelReceipt.reason, modelReceipt: response.modelReceipt });
   }
+  // rejectedItems: the keys of a batch (call.items) the model's answer left without a usable item, with why.
   return { value: response.value ?? parseModelJson(response.body), client: response.client ?? null,
-    model: response.model ?? null, sessionId: response.sessionId ?? null,
+    model: response.model ?? null, sessionId: response.sessionId ?? null, rejectedItems: response.rejectedItems ?? [],
     judgedBy: response.mode ? { mode: response.mode, independent: response.independent } : null,
     modelReceipt: response.modelReceipt ?? null };
 }
@@ -124,7 +128,7 @@ export function judgmentRequest(call) {
     instructions: call.instructions,
     evidence: Object.entries(call.data).filter(([, value]) => value !== undefined)
       .map(([key, value]) => ({ id: key, personalProjectId, text: JSON.stringify(value) })),
-    output: { type: 'structured', schema: call.schema },
+    output: { type: 'structured', schema: call.schema, ...(call.items ? { items: call.items } : {}) },
     decisions: ['propose']
   };
 }

@@ -23,6 +23,8 @@ function sendOverNodeHttp(url, { method = 'GET', headers = {}, body, signal }) {
   return new Promise((resolve, reject) => {
     // No pooled socket: a server that closed one between calls would read as a network fault.
     const outgoing = send(url, { method, headers, signal, agent: false }, (incoming) => {
+      // As fetch does for a body still being read: it ends with why it was cut, so a time limit reads as a timeout.
+      signal?.addEventListener('abort', () => incoming.destroy(signal.reason), { once: true });
       const received = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
         for (const item of [value].flat()) received.append(name, item);

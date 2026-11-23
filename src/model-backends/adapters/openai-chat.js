@@ -22,7 +22,7 @@ export const openAiChatAdapter = Object.freeze({
   supports: () => true,
   observesLocalBuild,
   observeLocalBuild,
-  async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl }) {
+  async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl, stallMs }) {
     const state = { text: '', refusal: '', finish: null, actualModel: null, usage: reportedUsage({ definition: DEFINITION }) };
     const sent = await postJson({ fetchImpl, signal, url: `${connection.endpoint}/chat/completions`,
       headers: { ...connection.headers, ...(secret ? { authorization: `Bearer ${secret}` } : {}) },
@@ -48,7 +48,7 @@ export const openAiChatAdapter = Object.freeze({
         const failure = absorb(state, await readJsonBody(response), 'message');
         if (failure) return attemptFailure(failure, state);
       } else {
-        for await (const { data } of serverSentEvents(response)) {
+        for await (const { data } of serverSentEvents(response, { stallMs, answering: () => state.text.length > 0 })) {
           if (data === '[DONE]') break;
           const failure = absorb(state, JSON.parse(data), 'delta');
           if (failure) return attemptFailure(failure, state);
