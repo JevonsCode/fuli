@@ -92,7 +92,7 @@ async function exportBundle() {
       </CardAction>
     </CardHeader>
     <div class="diagnostics-body">
-      <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+      <UiNotice v-if="error" tone="error" data-no-action="the error of the person's own click; the same button tries again">{{ error }}</UiNotice>
       <div v-if="oldLogBytes" class="diagnostics-old-logs" data-diagnostics-old-logs>
         <span>{{ t('settings.diagnostics.oldLogs', { size: formatBytes(oldLogBytes) }) }}</span>
         <Button type="button" size="sm" variant="outline" :loading="clearing" :loading-label="t('settings.diagnostics.clearingOldLogs')"

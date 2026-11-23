@@ -1,7 +1,8 @@
 export const roundtableMessages = {
   'zh-CN': {
     threads: '对话',
-    list: { instant: '即时对话', board: '留言板', collapse: '收起对话列表', expand: '展开对话列表', none: '选择一段对话' },
+    list: { instant: '即时对话', board: '留言板', collapse: '收起对话列表', expand: '展开对话列表', none: '选择一段对话',
+      generatedSubject: '{names} 的对话', agentConversation: 'Agent 之间的对话' },
     prompts: {
       open: 'Agent 怎么开始对话', hint: '复制下面一句，粘贴到你和 Agent 的对话里。',
       discuss: '请 2–4 位 FLA 一起讨论', pair: '指定两位 FLA 讨论', relay: '让一位 FLA 去问另一位', continue: '让一位 FLA 接着在这里做',
@@ -22,6 +23,7 @@ export const roundtableMessages = {
       failed: '没有送到 {name}：{reason}',
     },
     instantBlocked: '{name} 现在不能即时回复：{reason}。发给 {name} 的消息会留在留言板。',
+    reasonActions: { share: '去共享设置', clients: '去接入客户端' },
     chat: { kinds: { direct: '私聊', group: '群聊' }, memberCount: '{count} 位', empty: '这个群里还没有人发言。', remoteUnavailable: '另一台电脑上的群暂时读不到。' },
     count: '{count} 段对话',
     empty: '还没有对话',
@@ -66,7 +68,8 @@ export const roundtableMessages = {
   },
   'en-US': {
     threads: 'Conversations',
-    list: { instant: 'Instant chat', board: 'Message board', collapse: 'Collapse conversation list', expand: 'Expand conversation list', none: 'Choose a conversation' },
+    list: { instant: 'Instant chat', board: 'Message board', collapse: 'Collapse conversation list', expand: 'Expand conversation list', none: 'Choose a conversation',
+      generatedSubject: 'Conversation of {names}', agentConversation: 'A conversation between Agents' },
     prompts: {
       open: 'How Agents start talking', hint: 'Copy a line and paste it into your chat with an Agent.',
       discuss: 'Invite 2–4 FLAs to discuss', pair: 'Have two named FLAs discuss', relay: 'Have one FLA ask another', continue: 'Have one FLA carry on here',
@@ -87,6 +90,7 @@ export const roundtableMessages = {
       failed: 'Not delivered to {name}: {reason}',
     },
     instantBlocked: '{name} cannot reply instantly right now: {reason}. Messages to {name} stay on the board.',
+    reasonActions: { share: 'Open sharing', clients: 'Connect a client' },
     chat: { kinds: { direct: 'Direct', group: 'Group' }, memberCount: '{count} members', empty: 'No one has spoken in this room yet.', remoteUnavailable: 'Rooms on the other computer are unavailable right now.' },
     count: '{count} conversations',
     empty: 'No conversations yet',

@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NoticeRow from './NoticeRow.vue'
 
@@ -16,5 +16,32 @@ describe('NoticeRow', () => {
     expect(badge.attributes('title')).toBeTruthy()
     const stable = mount(NoticeRow, { props: { item: notice('fla_joined') }, global: { plugins: [router] } })
     expect(stable.find('[data-beta-badge]').exists()).toBe(false)
+  })
+})
+
+describe('a runner pairing the person does not recognise', () => {
+  it('is revoked from the notice itself after one confirming click, never by a terminal command', async () => {
+    const calls: [string, RequestInit | undefined][] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { calls.push([url, init]); return Response.json({ ok: true }) }))
+    try {
+      const row = mount(NoticeRow, { props: { item: notice('runner_paired') }, global: { plugins: [router] } })
+      expect(row.text()).not.toMatch(/fuli runner/)
+      await row.get('[data-runner-revoke]').trigger('click')
+      expect(calls).toHaveLength(0)
+      expect(row.get('[data-runner-revoke]').text()).toBe('确认撤销')
+      await row.get('[data-runner-revoke]').trigger('click')
+      await flushPromises()
+      expect(calls.map(([url, init]) => [url, init?.method])).toEqual([['/api/runners/ab12', 'DELETE']])
+      expect(row.get('[data-runner-revoked]').text()).toContain('已撤销')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('can be left alone: 取消 puts the row back', async () => {
+    const row = mount(NoticeRow, { props: { item: notice('runner_paired') }, global: { plugins: [router] } })
+    await row.get('[data-runner-revoke]').trigger('click')
+    await row.get('[data-runner-revoke-cancel]').trigger('click')
+    expect(row.get('[data-runner-revoke]').text()).toBe('撤销')
   })
 })

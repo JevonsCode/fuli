@@ -118,7 +118,7 @@ async function add() {
             placeholder="~/.acme/skills" aria-describedby="custom-client-skills-hint" />
           <p id="custom-client-skills-hint" class="custom-form__hint">{{ t('settings.connection.custom.skillsDirHint') }}</p>
         </div>
-        <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+        <UiNotice v-if="error" tone="error" data-no-action="the error of the person's own click; the same button tries again">{{ error }}</UiNotice>
       </form>
       <DialogFooter v-if="byHand">
         <Button type="button" variant="ghost" :disabled="pending" @click="close">{{ t('settings.connection.custom.cancel') }}</Button>

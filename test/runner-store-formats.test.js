@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,6 +7,8 @@ import test from 'node:test';
 
 import { openFormattedDatabase, sqliteFormat } from '../packages/roundtable/src/storage/database-format.js';
 import { RUNNER_HOST_FORMAT, RunnerHostStore } from '../src/runner/host-store.js';
+import { openRoutes } from '../src/runner/call-routes.js';
+import { ROUTES_FILE } from '../src/runner/routes-store.js';
 import { RUNNER_FORMAT, RunnerStore } from '../src/runner/runner-store.js';
 
 // Both runner stores exactly as 0.29.0-beta.1 declared them (version 1, from
@@ -150,4 +152,35 @@ test('the schema comparison above sees a store that differs from a fresh one', (
   assert.notDeepEqual(schema(path), freshSchema(t, RunnerHostStore));
   // Layout alone is not a difference.
   assert.equal(statement('CREATE TABLE a( x TEXT ,\n y TEXT )'), statement('CREATE TABLE a(x TEXT,y TEXT)'));
+});
+
+// docs/runner-roles-design.md §10: a runner data directory as a beta shipped it (runner store at version
+// 1, no routes) becomes `global → host` and `default → host` on its first start, and keeps what waits.
+test('a beta runner data directory gets its routes to the host on first use, and its outbox is kept', async (t) => {
+  const dataDir = directory(t);
+  mkdirSync(join(dataDir, 'runner'));
+  const path = join(dataDir, 'runner', 'runner.sqlite');
+  beta1Store(path, BETA1_RUNNER, `
+    INSERT INTO host VALUES(1, 'Host A', '${'f'.repeat(64)}', 'synthetic-pem', 2730, '["192.0.2.20"]', '192.0.2.20', '2026-11-17T10:00:00.000Z');
+    INSERT INTO outbox(id, tool, input, source_application, queued_at, state)
+      VALUES('queued-1', 'checkpoint_task_knowledge', '{"workLog":"synthetic"}', 'codex', '2026-11-17T10:20:00.000Z', 'queued');`);
+  assert.equal(existsSync(join(dataDir, ROUTES_FILE)), false, 'a beta has no routes');
+
+  // Closed in the test, not after it: the folder is removed after it, and Windows refuses to delete an open file.
+  const routes = openRoutes(dataDir);
+  try {
+    assert.deepEqual(routes.all().map((row) => [row.scope, row.owner]),
+      [['global', `host:${'f'.repeat(64)}`], ['default', `host:${'f'.repeat(64)}`]]);
+    assert.equal(routes.owner('project:example.test/team/widgets'), `host:${'f'.repeat(64)}`);
+  } finally {
+    routes.close();
+  }
+  assert.equal(version(path), RUNNER_FORMAT.version, 'the runner store reached the current version on the way');
+  const store = new RunnerStore(path);
+  try {
+    assert.equal(store.outbox().queued, 1);
+    assert.equal(store.claimNext().id, 'queued-1');
+  } finally {
+    store.close();
+  }
 });

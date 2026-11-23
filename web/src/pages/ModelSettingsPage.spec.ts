@@ -140,6 +140,21 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-use-details] [data-tonborg-delegation]').exists()).toBe(false)
   })
 
+  it("opens Tonborg's settings right at its projects from 「去选项目」's link, then drops the link", async () => {
+    routing.route.query = { edit: 'tonborg', focus: 'projects', tab: 'x' }
+    Element.prototype.scrollIntoView = vi.fn()
+    try {
+      const wrapper = await mountPage()
+      const dialog = wrapper.get('[data-model-role-dialog]')
+      const egress = dialog.get('[data-model-egress]')
+      expect(egress.classes()).toContain('is-asked')
+      expect(document.activeElement).toBe(egress.element)
+      expect(routing.replace).toHaveBeenCalledWith({ query: { tab: 'x' }, hash: '' })
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+
   it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {
     const wrapper = await mountPage()
     let details = await openDetails(wrapper, 'tonborg')
@@ -147,6 +162,8 @@ describe('ModelSettingsPage', () => {
     expect(details.get('[data-model-guide]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/#tonborg')
     expect(details.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
     expect(details.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
+    expect(details.get('[data-model-fact="operations"]').text()).toContain('确认知识')
+    expect(details.get('[data-model-fact="operations"]').text()).not.toContain('knowledge_review')
     expect(details.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
     expect(details.get('[data-model-fact="fallback"]').text()).toContain('允许')
     expect(details.find('[data-model-check]').exists()).toBe(true)
@@ -293,7 +310,8 @@ describe('ModelSettingsPage', () => {
     expect(dialog.find('[data-model-budget="maxOutputTokens"]').exists()).toBe(false)
     await dialog.get('[data-model-advanced] button').trigger('click')
     await flushPromises()
-    expect(dialog.text()).toContain('已接入：knowledge_review')
+    // Task types are ticked by name, never typed as codes.
+    expect(dialog.findAll('[data-model-operation]').map(row => row.text())).toContain('确认知识')
     await dialog.get('[data-model-name] input').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
     await dialog.get('form').trigger('submit')
@@ -442,6 +460,11 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
     expect(wrapper.get('[data-model-stale]').text()).toContain('没有保存')
     expect(api.getJson.mock.calls.length).toBeGreaterThan(reads)
+    // The edit that was not saved is one click away again.
+    await wrapper.get('[data-model-stale-edit]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
   })
 
   it('reads the settings again and locks the form when the file stopped validating during the edit', async () => {
@@ -459,6 +482,9 @@ describe('ModelSettingsPage', () => {
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
     expect(wrapper.get('[data-model-config-invalid]').text()).toContain('roles.nobody')
+    // A file that does not validate: the person's AI repairs it, then it is read again here.
+    expect(wrapper.find('[data-model-config-invalid] [data-ai-help="task.models"]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-config-invalid] [data-model-config-reload]').exists()).toBe(true)
     expect(wrapper.findAll('[data-model-role-edit]').every(button => button.attributes('disabled') !== undefined)).toBe(true)
     await dialog.get('form').trigger('submit')
     expect(api.putJson).toHaveBeenCalledTimes(1)

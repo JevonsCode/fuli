@@ -8,6 +8,7 @@ import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js'
 import { ApplicationError } from '../app/application-error.js';
 import { pinnedFetch } from './host-connection.js';
 import { displayName, parseInvitation, RUNNER_PATHS } from './protocol.js';
+import { hostOwner, ROUTES_FILE, RoutesStore } from './routes-store.js';
 import { LEFT_MARKER } from './runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
@@ -62,6 +63,13 @@ export async function joinHost({ dataDir, invitation: text, name = null, force =
           port: host.port, addresses: host.addresses, lastAddress: address });
       } finally {
         store.close();
+      }
+      // `fuli runner join` is 「follow everything」 on this host (docs/runner-roles-design.md §3).
+      const routes = new RoutesStore(join(dataDir, ROUTES_FILE));
+      try {
+        routes.joined(hostOwner(host.fingerprint));
+      } finally {
+        routes.close();
       }
       // outbox: checkpoints a join to another host dropped, or a join to the same host queued again.
       return { host: { name: displayName(body?.name, host.name), fingerprint: host.fingerprint, address, port: host.port },

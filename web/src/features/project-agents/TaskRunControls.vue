@@ -251,7 +251,7 @@ function stateLabel(state: string) {
         <label><input v-model="retryStart" type="radio" name="retry-start" value="queue" /> {{ t('taskRuns.retryQueue') }}</label>
         <label><input v-model="retryStart" type="radio" name="retry-start" value="backlog" /> {{ t('taskRuns.retryBacklog') }}</label>
       </fieldset>
-      <UiNotice v-if="retrySlow">{{ t('taskRuns.retrySlow') }}</UiNotice>
+      <UiNotice v-if="retrySlow" data-no-action="says a submission is still running; there is nothing to do but wait">{{ t('taskRuns.retrySlow') }}</UiNotice>
       <p v-if="retryUnknown?.resent" role="alert" class="task-run-risk">{{ t('taskRuns.retryStillUnknown') }}</p>
       <template v-if="uncertain && !retryUnknown">
         <p role="note" class="task-run-risk">{{ t('taskRuns.retryRisk') }}</p>

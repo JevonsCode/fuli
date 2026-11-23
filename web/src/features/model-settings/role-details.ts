@@ -1,4 +1,5 @@
 import { t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { connectionService, formatCount, modelName, localBuildText, SEMANTIC_ROLE, trustStatusText, type ModelRoleView, type ModelRolesPayload } from './model'
 
 // What a use's 「查看详情」 dialog lists of its role (rec#8, rec#38): who
@@ -32,7 +33,9 @@ export function roleFacts(view: ModelRoleView, payload: ModelRolesPayload, local
     { key: 'model', label: t('modelSettings.model'), value: modelName(connection), code: true },
     ...localBuildFact(view, locale),
     { key: 'secretRef', label: t('modelSettings.secretRef'), value: connection.secretRef ?? t('modelSettings.none'), code: Boolean(connection.secretRef) },
-    { key: 'operations', label: t('modelSettings.operations'), value: view.allowedOperations?.join(', ') || t('modelSettings.none'), code: Boolean(view.allowedOperations?.length) },
+    // By name, never the codes (11-23); one this console does not know yet shows as written.
+    { key: 'operations', label: t('modelSettings.operations'),
+      value: view.allowedOperations?.map(operation => tableLabel('modelSettings.operationNames', operation) ?? operation).join(' · ') || t('modelSettings.none') },
     { key: 'egress', label: t('modelSettings.egress'), value: egress
       ? [t('modelSettings.egressProjects', { count: egress.approvedProjects.length }), egress.allowUnassigned ? t('modelSettings.egressUnassigned') : ''].filter(Boolean).join(' · ')
       : t('modelSettings.none') },

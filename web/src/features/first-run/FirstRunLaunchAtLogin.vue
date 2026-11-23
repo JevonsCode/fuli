@@ -39,7 +39,7 @@ onMounted(async () => { enabled.value = await readLaunchAtLogin() })
       <Switch :model-value="enabled" :disabled="saving" :aria-label="t('firstRun.login.label')" data-first-run-login-switch
         @update:model-value="value => change(value === true)" />
     </label>
-    <UiNotice v-if="failed" tone="error">{{ t('firstRun.login.failed') }}</UiNotice>
+    <UiNotice v-if="failed" tone="error" data-no-action="the switch right above, the person's own click, tries again">{{ t('firstRun.login.failed') }}</UiNotice>
   </section>
 </template>
 

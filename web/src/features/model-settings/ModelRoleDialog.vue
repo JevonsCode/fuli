@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -16,6 +16,7 @@ import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { t, currentLocale } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { UiDialog, UiSegmented } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
@@ -129,12 +130,19 @@ const savedKeys = ref<string[]>([])
 // Dreaming and retrieval terms are two of Astro's task types; each switch is that entry in the list.
 const operationSwitch = (name: string) => computed({
   get: () => operationList(draft.value?.operations).includes(name),
-  set(on: boolean) {
-    if (!draft.value) return
-    const others = operationList(draft.value.operations).filter(operation => operation !== name)
-    draft.value = { ...draft.value, operations: (on ? [...others, name] : others).join(', ') }
-  },
+  set(on: boolean) { setOperation(name, on) },
 })
+// Task types with a switch of their own in this form are not offered twice.
+const OWN_SWITCH = new Set(['dreaming', 'retrieval_terms'])
+const operationChoices = computed(() => [...new Set([...wired.value, ...operationList(draft.value?.operations)])]
+  .filter(operation => !OWN_SWITCH.has(operation)))
+function setOperation(name: string, on: boolean) {
+  if (!draft.value) return
+  const others = operationList(draft.value.operations).filter(operation => operation !== name)
+  draft.value = { ...draft.value, operations: (on ? [...others, name] : others).join(', ') }
+}
+// What a task type is called; one this console does not know yet shows as written.
+const operationName = (operation: string) => tableLabel('modelSettings.operationNames', operation) ?? operation
 const dreamingOn = operationSwitch('dreaming')
 const termsOn = operationSwitch('retrieval_terms')
 function operationList(text = '') { return text.split(',').map(item => item.trim()).filter(Boolean) }
@@ -161,6 +169,14 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+// 「有单价才能设费用上限」 comes with the way there: turn prices on and start at the first price.
+async function addPrices() {
+  if (!draft.value) return
+  draft.value.priced = true
+  await nextTick()
+  document.getElementById('model-role-input-price')?.focus()
 }
 </script>
 
@@ -270,15 +286,16 @@ async function save() {
               <FieldDescription>{{ t('modelSettings.headersHint') }}</FieldDescription>
             </Field>
 
-            <Field>
-              <FieldLabel for="model-role-operations">{{ t('modelSettings.operations') }}</FieldLabel>
-              <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="inactive"
-                data-model-operations />
-              <FieldDescription>
-                {{ t('modelSettings.operationsHint') }}
-                {{ wired.length ? t('modelSettings.wired', { operations: wired.join(', ') }) : t('modelSettings.notWired') }}
-              </FieldDescription>
-            </Field>
+            <!-- Chosen, never typed: the task types this role can send to its model (11-23). -->
+            <fieldset class="model-role-operations" data-model-operations>
+              <legend class="model-role-operations-label">{{ t('modelSettings.operations') }}</legend>
+              <label v-for="operation in operationChoices" :key="operation" class="model-role-operation" :data-model-operation="operation">
+                <Checkbox :model-value="operationList(draft.operations).includes(operation)" :disabled="inactive"
+                  @update:model-value="value => setOperation(operation, value === true)" />
+                <span>{{ operationName(operation) }}</span>
+              </label>
+              <FieldDescription v-if="!operationChoices.length">{{ t('modelSettings.notWired') }}</FieldDescription>
+            </fieldset>
 
             <p class="model-role-muted" data-model-limits-hint>{{ t('modelSettings.limitsHint') }}</p>
             <div class="model-role-grid">
@@ -291,7 +308,12 @@ async function save() {
                 <FieldLabel for="model-role-cost-cap">{{ t('modelSettings.maxCostPerWindow') }}</FieldLabel>
                 <Input id="model-role-cost-cap" v-model="draft.maxCostPerWindow" type="number" min="0" step="any"
                   :disabled="inactive || !draft.priced" />
-                <FieldDescription v-if="!draft.priced">{{ t('modelSettings.costNeedsPrice') }}</FieldDescription>
+                <FieldDescription v-if="!draft.priced">
+                  {{ t('modelSettings.costNeedsPrice') }}
+                  <Button variant="link" size="sm" class="h-auto p-0" :disabled="inactive" data-model-add-prices @click="addPrices">
+                    {{ t('modelSettings.addPrices') }}
+                  </Button>
+                </FieldDescription>
               </Field>
             </div>
 
@@ -330,4 +352,7 @@ async function save() {
 .model-role-list :deep(.growth-loading__content) { min-width: 0; }
 .model-role-list-refresh { flex: none; min-height: 24px; padding-inline: 0; user-select: none; }
 .model-role-inactive { opacity: .5; }
+.model-role-operations { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.model-role-operations-label { width: 100%; margin-bottom: 2px; font-size: var(--text-label, 13px); font-weight: 500; }
+.model-role-operation { display: inline-flex; align-items: center; gap: 8px; }
 </style>

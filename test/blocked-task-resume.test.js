@@ -114,8 +114,8 @@ test('with the Organisation permission off nothing is cleared and the refusal na
   await assert.rejects(record(app, report()), (error) => {
     assert.equal(error.code, 'delegation_category_off');
     assert.match(error.message, /not cleared and the report was not recorded/);
-    assert.match(error.message, /设置 › AI 权限 › 组织/);
-    assert.match(error.message, /Settings › AI permissions › Organisation/);
+    assert.match(error.message, /设置 › AI 能做什么 › 组织/);
+    assert.match(error.message, /Settings › What AI may do › Organisation/);
     return true;
   });
   assert.deepEqual(provider, []);
