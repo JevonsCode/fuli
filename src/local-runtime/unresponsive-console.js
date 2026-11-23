@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { createProcessInspector } from '../agent-services/process-identity.js';
 import { checkLocalConsoleHealth } from './console-health.js';
-import { isProcessAlive, stopProcess, waitForExit } from './processes.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from './processes.js';
 
 // Ending the recorded FULI console when it has to go: a start replacing an
 // older one, a stop, or a console that stays alive without answering (rec#94:
@@ -70,7 +70,7 @@ export async function consoleProcessOwned(pid, paths, {
 }
 
 function dependencies(overrides) {
-  const deps = { isAlive: isProcessAlive, health: checkLocalConsoleHealth, owned: consoleProcessOwned,
+  const deps = { isAlive: isOwnProcessRunning, health: checkLocalConsoleHealth, owned: consoleProcessOwned,
     signal: stopProcess, wait: delay, now: Date.now, limits: CONSOLE_STOP_LIMITS, ...overrides };
   deps.waitForExit ??= (pid, timeoutMs) => waitForExit(pid, timeoutMs, { isAlive: deps.isAlive, wait: deps.wait, now: deps.now });
   return deps;

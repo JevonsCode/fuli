@@ -1,7 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, readFile, readdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+
+import { acquireNeo4jLifecycleLock, neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 
 export async function assertManagedNeo4jHome(paths, home, version) {
   if (!isAbsolute(home ?? '')) throw new Error('Neo4j asset home must be absolute.');
@@ -38,18 +40,6 @@ export async function neo4jAssetFingerprint(home) {
   return hash.digest('hex');
 }
 
-export async function acquireNeo4jLifecycleLock(root) {
-  const path = join(root, '.neo4j-lifecycle.lock'), token = randomUUID();
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  if (!(await lstat(root)).isDirectory()) throw new Error('Neo4j runtime must not be a symbolic link.');
-  try { await mkdir(path, { mode: 0o700 }); }
-  catch (error) { if (error.code === 'EEXIST') throw new Error('A Neo4j lifecycle lock exists. Inspect an interrupted operation before retrying.'); throw error; }
-  const owner = join(path, 'owner');
-  await writeFile(owner, token, { flag: 'wx', mode: 0o600 });
-  async function assertHeld() { if (await readFile(owner, 'utf8') !== token) throw new Error('Neo4j lifecycle lock ownership changed.'); }
-  return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
-}
-
 export function assetContainer(paths, home) {
   return dirname(home) === resolve(paths.nativeRuntimeDir) ? home : dirname(home);
 }
@@ -79,24 +69,26 @@ export async function managedNeo4jContainers(paths, versions) {
 
 // Normal setup/start/stop/admin work shares the exclusive lifecycle lease. Only
 // the operation that already owns the lease may reenter while switching assets.
-export async function withNativeAssetOperation(paths, env, action) {
-  const lockPath = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+// [operation] names what takes it (start, stop), so a later start knows what an
+// interrupted holder left behind (neo4j-lifecycle-lock.js).
+export async function withNativeAssetOperation(paths, env, action, { operation = 'start', identity } = {}) {
+  const root = paths.nativeRuntimeDir;
+  await releaseAbandonedNeo4jLifecycleLock(root, identity);
   try {
-    const owner = await readFile(join(lockPath, 'owner'), 'utf8');
+    const owner = await readFile(join(root, '.neo4j-lifecycle.lock', 'owner'), 'utf8');
     if (owner && env.FULI_NATIVE_ASSET_OPERATION === owner) return action(env);
-    throw new Error('A native Neo4j lifecycle operation is in progress.');
+    throw await neo4jLifecycleLockError(root, identity);
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
+  const lock = await acquireNeo4jLifecycleLock(root, { operation });
   try {
-    await lstat(join(paths.nativeRuntimeDir, 'neo4j-transaction.json'));
-    throw new Error('A native Neo4j transaction needs recovery before starting services.');
-  } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const lock = await acquireNeo4jLifecycleLock(paths.nativeRuntimeDir);
-  try {
-    try {
-      await lstat(join(paths.nativeRuntimeDir, 'neo4j-transaction.json'));
-      throw new Error('A native Neo4j transaction needs recovery before starting services.');
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (await journalExists(root)) throw await neo4jLifecycleLockError(root, identity);
     return await action({ ...env, FULI_NATIVE_ASSET_OPERATION: lock.token });
   }
   finally { await lock.release(); }
+}
+
+async function journalExists(root) {
+  try { await lstat(join(root, 'neo4j-transaction.json')); return true; }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
