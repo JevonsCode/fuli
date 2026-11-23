@@ -23,18 +23,18 @@ export interface ProjectSubTeam {
   unavailableMemberIds: string[]
 }
 
+/** How far a line got: its latest task, from the owner's work log. */
+export interface WorkstreamTask {
+  status: string | null
+  summary: string | null
+  at: string | null
+}
+
 /**
  * One line of work inside the project, owned by one FLA (docs/workstreams.md).
  * `decidedBy` is 'user' when the person opened or confirmed it; a lead cannot
  * then change it.
  */
-export interface WorkstreamTask {
-  taskId: string
-  title: string | null
-  status: string | null
-  updatedAt: string | null
-}
-
 export interface ProjectWorkstream {
   assignmentId: string
   name: string
@@ -46,8 +46,10 @@ export interface ProjectWorkstream {
   startedAt: string
   changedAt: string
   revision: number
-  /** How far this line got: its owner's latest task. Absent on a read that did not ask for it. */
+  /** null: no task of this line yet. Absent on a read that did not ask how far it got. */
   latestTask?: WorkstreamTask | null
+  /** The owner's work log could not be read, so how far it got is unknown. */
+  progressUnreadable?: boolean
 }
 
 export interface ProjectTeam {
@@ -62,17 +64,24 @@ export interface ProjectTeam {
   /** Absent on servers before R-11. */
   subTeams?: ProjectSubTeam[]
   subTeamSuggestion?: { suggested: boolean; memberCount: number; threshold: number }
-  /** Absent on servers that do not divide a project into workstreams yet. */
+  /** Only on this computer; absent over the LAN and on older servers. */
   workstreams?: ProjectWorkstream[]
 }
 
-/** `withProgress` also reads how far each workstream got; only the ledger needs it. */
-export function readProjectTeam(personalSpaceId: string, personalProjectId: string,
-  { withProgress = false } = {}) {
-  const query = new URLSearchParams({ personalSpaceId, personalProjectId,
-    ...(withProgress ? { withProgress: '1' } : {}) })
-  return getJson<ProjectTeam>(`/api/project-team?${query}`)
-}
+const person = z.object({ agentId: z.string(), name: z.string() })
+const projectTeamShape = shapeFor<ProjectTeam>(z.object({
+  personalProjectId: z.string(),
+  status: z.enum(['ready', 'no_lead', 'lead_unavailable']),
+  lead: person.nullable(),
+  members: z.array(person),
+  collaborators: z.array(person),
+  peers: z.array(person),
+}))
+
+const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
+  ownerAgentId: z.string(), ownerOnProject: z.boolean(), revision: z.number() })
+const projectWorkstreamsShape = shapeFor<{ personalProjectId: string; workstreams: ProjectWorkstream[] }>(
+  z.object({ personalProjectId: z.string(), workstreams: z.array(workstreamLine) }))
 
 /** One FLA's ledger: the lines of the projects it leads, and the lines it owns. */
 export interface AgentWorkstreamLedger {
@@ -86,20 +95,37 @@ export interface AgentWorkstreamLedger {
   }[]
 }
 
-// The fields the ledger widget relies on: which project, which line, who.
-const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), ownerAgentId: z.string() })
 const agentWorkstreamsShape = shapeFor<AgentWorkstreamLedger>(z.object({
   agentId: z.string(),
   projects: z.array(z.object({ projectId: z.string(), projectName: z.string(), leads: z.boolean(),
     workstreams: z.array(workstreamLine) })),
 }))
 
-export function readAgentWorkstreams(agentId: string) {
-  const query = new URLSearchParams({ agentId })
-  return getJson(`/api/workstreams?${query}`, agentWorkstreamsShape)
+// The pieces of one project page read the team at the same moment; they share
+// that one request instead of sending one each. A later read asks again.
+const teamReads = new Map<string, Promise<ProjectTeam>>()
+
+export function readProjectTeam(personalSpaceId: string, personalProjectId: string) {
+  const key = `${personalSpaceId}\u0000${personalProjectId}`
+  const pending = teamReads.get(key)
+  if (pending) return pending
+  const query = new URLSearchParams({ personalSpaceId, personalProjectId })
+  const read = getJson(`/api/project-team?${query}`, projectTeamShape)
+    .finally(() => teamReads.delete(key))
+  teamReads.set(key, read)
+  return read
 }
 
-/** Opens a line of work for one member of this project. Local console only. */
+/** A project's lines with how far each got. This computer only. */
+export function readProjectWorkstreams(personalProjectId: string) {
+  return getJson(`/api/workstreams?${new URLSearchParams({ personalProjectId })}`, projectWorkstreamsShape)
+}
+
+export function readAgentWorkstreams(agentId: string) {
+  return getJson(`/api/workstreams?${new URLSearchParams({ agentId })}`, agentWorkstreamsShape)
+}
+
+/** Opens a line of work for one member of this project. */
 export function openWorkstream(personalProjectId: string, body: {
   leadAgentId: string; terms: string[]; responsibility: string
 }) {
@@ -120,8 +146,21 @@ export function editWorkstreamTerms(assignmentId: string, body: {
   return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/terms`, body)
 }
 
+/** This line's words move into another line and this one ends, as one change. */
+export function mergeWorkstream(assignmentId: string, body: {
+  into: string; expectedRevision: number; targetRevision: number
+}) {
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/merge`, body)
+}
+
+/** Some words leave this line for a new line of another member, as one change. */
+export function splitWorkstream(assignmentId: string, body: {
+  expectedRevision: number; terms: string[]; extraTerms: string[]; leadAgentId: string; responsibility: string
+}) {
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/split`, body)
+}
+
 /** Ends the line from now on. Its record and every revision stay. */
 export function endWorkstream(assignmentId: string, expectedRevision: number) {
-  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/retire`,
-    { expectedRevision })
+  return postJson(`/api/standing-assignments/${encodeURIComponent(assignmentId)}/retire`, { expectedRevision })
 }

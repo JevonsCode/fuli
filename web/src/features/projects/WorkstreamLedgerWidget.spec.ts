@@ -2,9 +2,10 @@ import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getJson = vi.hoisted(() => vi.fn())
-vi.mock('@/api/client', () => ({ getJson, postJson: vi.fn() }))
+vi.mock('@/api/client', async (actual) => ({ ...(await actual<typeof import('@/api/client')>()), getJson, postJson: vi.fn() }))
 
 import WorkstreamLedgerWidget from './WorkstreamLedgerWidget.vue'
+import { ApiError } from '@/api/client'
 import { setLocale, t } from '@/i18n'
 import type { AgentWorkstreamLedger } from './project-team-api'
 
@@ -19,11 +20,10 @@ const ledger: AgentWorkstreamLedger = {
       assignmentId: 'line-spring', name: 'Spring sale page', terms: ['spring-sale'],
       ownerAgentId: 'fla-ember', ownerName: 'Ember Vale', ownerOnProject: true, decidedBy: 'host',
       startedAt: '2026-11-20T00:00:00.000Z', changedAt: '2026-11-20T00:00:00.000Z', revision: 1,
-      latestTask: { taskId: 'task-1', title: 'New hero image', status: 'running',
-        updatedAt: '2026-11-23T02:00:00.000Z' },
+      latestTask: { status: 'running', summary: 'New hero image', at: '2026-11-23T02:00:00.000Z' },
     }, {
       assignmentId: 'line-coupon', name: 'Coupon centre', terms: ['coupon'],
-      ownerAgentId: 'fla-orin', ownerName: 'Orin Pike', ownerOnProject: true, decidedBy: 'user',
+      ownerAgentId: 'fla-former', ownerName: 'Fern Holt', ownerOnProject: false, decidedBy: 'user',
       startedAt: '2026-11-21T00:00:00.000Z', changedAt: '2026-11-21T00:00:00.000Z', revision: 1,
       latestTask: null,
     }],
@@ -51,7 +51,7 @@ describe('WorkstreamLedgerWidget', () => {
     widget.unmount()
   })
 
-  it('each row says which line, who and how far', async () => {
+  it('each row says which line, who and how far; an owner who left is marked', async () => {
     getJson.mockResolvedValue(ledger)
     const widget = mountWidget()
     await flushPromises()
@@ -59,8 +59,9 @@ describe('WorkstreamLedgerWidget', () => {
     expect(rows[0].text()).toContain('Spring sale page')
     expect(rows[0].text()).toContain('Ember Vale')
     expect(rows[0].text()).toContain('New hero image')
-    // A line with no task yet says so rather than looking finished.
+    expect(rows[0].find('[data-owner-gone]').exists()).toBe(false)
     expect(rows[1].text()).toContain(t('projects.workstreams.noTask'))
+    expect(rows[1].get('[data-owner-gone]').text()).toBe(t('projects.workstreams.ownerLeft'))
     widget.unmount()
   })
 
@@ -72,7 +73,16 @@ describe('WorkstreamLedgerWidget', () => {
     widget.unmount()
   })
 
-  it('a failed read says so and retries', async () => {
+  it('over the LAN it says the ledger is read only here, without a retry that cannot work', async () => {
+    getJson.mockRejectedValue(new ApiError('no', 403, JSON.stringify({ code: 'local_user_only' })))
+    const widget = mountWidget()
+    await flushPromises()
+    expect(widget.get('[data-ledger-local-only]').text()).toBe(t('projects.workstreams.localOnly'))
+    expect(widget.find('button').exists()).toBe(false)
+    widget.unmount()
+  })
+
+  it('another failure says so and retries', async () => {
     getJson.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(ledger)
     const widget = mountWidget()
     await flushPromises()
