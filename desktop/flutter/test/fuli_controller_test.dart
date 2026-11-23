@@ -25,7 +25,7 @@ class _GatedRuntime extends FixedRuntime {
   final Future<RuntimeReport> started;
 
   @override
-  Future<RuntimeReport> start() => started;
+  Future<RuntimeReport> start({StageListener? onStage}) => started;
 }
 
 class _RecordingCheckLog implements CheckLog {
