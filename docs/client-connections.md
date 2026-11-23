@@ -387,8 +387,16 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
 tray bundle (`runtime/agent-kits/*.exe`, listed under `agentKits` in `native-bundle.json` and in the
 portable and tray inventories), then a copy downloaded into `native-runtime/agent-kits/` of the data
 directory the first time the console needs it (never at import time, never from a hook). Downloads
-use the pinned URL and are published only after their SHA-256 matches the pin; a copy that no longer
-matches is refused, not replaced. Offline or on a platform without a release asset the component is
+use the pinned URL and are published only after their SHA-256 matches the pin. `resolve` refuses a
+copy that no longer matches; the next download need (`ensure`) moves it aside as `<name>.unverified-<time>`
+(kept, never deleted) and downloads again. One FULI process downloads a component at a time: it holds
+`<name>.lock`, which records its PID, start time and a token, and writes its own
+`<name>.download-<token>` before renaming the verified copy into place. Another process waits and uses
+that copy; `fuli setup` prints 「另一个 FULI 正在下载客户端组件 …」 while it waits, and the console does not
+wait but says so on the clients card and reads again every 3 seconds. A lock whose process has ended
+(its PID gone, or now another program by its start time) is taken over at once; one whose holder cannot
+be checked (no `ps`, as on Windows) only after 11 minutes. A take-over moves the lock aside only while it
+is still the one judged, and a holder removes only a lock that still carries its token. Offline or on a platform without a release asset the component is
 unavailable: session links keep FULI's own rules, and clients can be neither detected nor
 connected (see above).
 

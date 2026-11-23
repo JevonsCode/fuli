@@ -67,7 +67,8 @@ export function createSystemService({
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
   // Codex's /fla prompt files (src/agents/codex/fla-prompts.js), kept while the console runs.
   codexFlaPrompts = null,
-  agentKits = agentKitPorts(paths, { runtimeConfigPath,
+  // The console never holds a request open for another FULI's download: it says so and reads again.
+  agentKits = agentKitPorts(paths, { runtimeConfigPath, waitForOthers: false,
     ...(codexFlaPrompts ? { clientPrompts: () => ({ codex: codexFlaPrompts.prompts() }) } : {}) }),
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   // The client apps FULI quits and reopens around an update (src/agents/client-apps.js).

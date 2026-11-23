@@ -36,7 +36,8 @@ export async function runSetupCommand(args, dependencies = {}) {
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
   const copy = copyableValueStyle({ output: dependencies.output, env: dependencies.env });
-  let plan = await planSetup(options, dependencies);
+  // Detection may wait for another FULI's download of agent-installer, and says so.
+  let plan = await planSetup(options, { ...dependencies, onProgress: write });
   if (options.connectedOnly) {
     plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
       ['current', 'outdated'].includes(entryState(agent.integrationDetails))

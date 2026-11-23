@@ -56,6 +56,19 @@ test('connected-only setup refreshes clients with the FULI entry, not newly dete
   assert.doesNotMatch(output.join('\n'), /Claude Desktop: skipped/);
 });
 
+test('setup says so while its client detection waits for another FULI\'s download', async () => {
+  const output = [];
+  await runSetupCommand(['--yes'], {
+    planSetup: (_options, { onProgress }) => {
+      onProgress('另一个 FULI 正在下载客户端组件 agent-installer，等它完成。');
+      return samplePlan();
+    },
+    applySetup: async () => ({ status: 'ready', runtime: {}, agents: [] }),
+    write: (line) => output.push(line)
+  });
+  assert.equal(output[0], '另一个 FULI 正在下载客户端组件 agent-installer，等它完成。');
+});
+
 test('setup reminds existing clients to reconnect after a manual package upgrade even when config is unchanged', () => {
   const output = formatSetupResult({ status: 'ready', runtime: {}, agents: [
     { label: 'Example client', status: 'connected', newTaskRequired: false }

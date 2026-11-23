@@ -1,5 +1,5 @@
 import { inspectAgent } from '../agent-kits/client-detection.js';
-import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
+import { CLIENT_COMPONENT_DOWNLOADING, CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 
 // Steps that mean the person restarts or reloads the client to load FULI.
 const RESTART_CODES = new Set(['restart_client', 'reload_config']);
@@ -13,7 +13,8 @@ const UNKNOWN_OUTCOME = 'agent-installer did not answer in time, so the client m
 // local console. agent: { id, label }. Answers { id, label, status:
 // 'connected' | 'partial' | 'failed', message?, reason?, restartRequired,
 // newTaskRequired?, nextSteps?, selfCheck? }; `reason` is
-// 'client_component_unavailable' when agent-installer cannot be had here.
+// 'client_component_unavailable' when agent-installer cannot be had here,
+// 'client_component_downloading' while another FULI downloads it.
 export async function installAgent(installer, agent) {
   let answer;
   try {
@@ -22,9 +23,7 @@ export async function installAgent(installer, agent) {
     return failed(agent, error?.code === 'unknown_outcome' ? UNKNOWN_OUTCOME
       : error instanceof Error ? error.message : 'Agent connection failed');
   }
-  if (answer.status !== 'available') {
-    return { ...failed(agent, CLIENT_COMPONENT_UNAVAILABLE), reason: 'client_component_unavailable' };
-  }
+  if (answer.status !== 'available') return componentFailure(agent, answer);
   const client = answer.clients.find(({ id }) => id === agent.id);
   if (!client) return failed(agent, 'agent-installer did not answer for this client');
   const connected = connectedResult(agent, client);
@@ -58,4 +57,11 @@ function connectedResult(agent, client) {
 
 function failed(agent, message) {
   return { id: agent.id, label: agent.label, status: 'failed', message };
+}
+
+// agent-installer could not be had: being downloaded by another FULI, or not at all.
+export function componentFailure(agent, answer) {
+  return answer.downloading
+    ? { ...failed(agent, CLIENT_COMPONENT_DOWNLOADING), reason: 'client_component_downloading' }
+    : { ...failed(agent, CLIENT_COMPONENT_UNAVAILABLE), reason: 'client_component_unavailable' };
 }

@@ -267,6 +267,25 @@ it('says when agent-installer could not detect anything instead of listing no cl
   wrapper.unmount()
 })
 
+it('says another FULI is downloading agent-installer and reads again soon until the clients show', async () => {
+  vi.useFakeTimers()
+  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => 'visible')
+  let downloading = true
+  const calls = routed(() => Response.json(downloading ? { ...statusOf(), available: false, componentDownloading: true }
+    : statusOf([{ id: 'gemini', status: 'not_connected' }])))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  expect(wrapper.get('[data-component-downloading]').text()).toContain('另一个 FULI 正在下载客户端组件 agent-installer')
+  expect(wrapper.find('[data-detection-unavailable]').exists()).toBe(false)
+  downloading = false
+  await vi.advanceTimersByTimeAsync(3_000)
+  await flushPromises()
+  expect(statusCalls(calls)).toBe(2)
+  expect(wrapper.find('[data-component-downloading]').exists()).toBe(false)
+  expect(wrapper.find('[data-client-status]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
 it('rechecks while the page is visible, without overlapping requests, and stops after unmount', async () => {
   vi.useFakeTimers()
   let visibility: DocumentVisibilityState = 'visible'
@@ -388,6 +407,18 @@ it('reports partial installs without claiming success and allows retry', async (
   expect(wrapper.text()).toContain('接入未完成')
   expect(wrapper.text()).not.toContain('需要重启客户端')
   expect(wrapper.get('[data-connect-client="gemini"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})
+
+it('says another FULI is downloading agent-installer when a connection waits on it', async () => {
+  routed(() => Response.json(statusOf([{ id: 'gemini', status: 'not_connected' }])),
+    (url) => Response.json(url.endsWith('/connect')
+      ? { id: 'gemini', status: 'failed', restartRequired: false, reason: 'client_component_downloading' } : configuration))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  await wrapper.get('[data-connect-client="gemini"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toBe('另一个 FULI 正在下载客户端组件 agent-installer，下载完成后再试。')
   wrapper.unmount()
 })
 

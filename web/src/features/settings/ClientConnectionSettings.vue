@@ -30,7 +30,7 @@ import { STATUS_ICONS, awaitsFirstConnection, canConnect, changedExplanation, cl
 // is the manual card's (ClientManualConnection.vue).
 const { observation, checking, checkError, connectingAll, busy, check, writing } = injectClientConnectionStatus()
 const connecting = ref('')
-const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'clientRunning'>>({})
+const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'componentDownloading' | 'clientRunning'>>({})
 // 「重启并更新」 (rec issue 106): the client being confirmed, the one restarting, and each one's last outcome.
 const confirming = ref<ClientObservation | null>(null)
 const restarting = ref('')
@@ -93,6 +93,7 @@ async function connectOne(clientId: string) {
       const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId })
       if (!unmounted) connectionFeedback.value[clientId] = result.status === 'connected' ? 'restart'
         : result.reason === 'client_component_unavailable' ? 'componentUnavailable'
+          : result.reason === 'client_component_downloading' ? 'componentDownloading'
           : result.reason === 'client_running' ? 'clientRunning' : 'connectError'
     } catch {
       if (!unmounted) connectionFeedback.value[clientId] = 'connectError'
@@ -199,7 +200,10 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
           <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
             data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
         </UiNotice>
-        <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>
+        <UiNotice v-if="observation?.available === false && observation.componentDownloading" tone="info" data-component-downloading>
+          {{ t('settings.connection.clients.downloading') }}
+        </UiNotice>
+        <UiNotice v-else-if="observation?.available === false" tone="warning" data-detection-unavailable>
           {{ t('settings.connection.clients.unavailable') }}
           <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
             data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>

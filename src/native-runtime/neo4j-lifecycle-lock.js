@@ -4,9 +4,8 @@ import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/
 import { execFile } from 'node:child_process';
 import { basename, join, sep } from 'node:path';
 
-import { processState } from '../local-runtime/processes.js';
 import { readJsonFile } from '../storage/json-file.js';
-import { processCommand, processMatchesCommand, processStartTime } from './process-identity.js';
+import { currentProcessIdentity, PROCESS_IDENTITY, recordedProcessState } from './process-identity.js';
 import { NATIVE_DOWNLOAD_TIMEOUT_MS } from './resumable-download.js';
 
 // The one lifecycle lease of a native runtime directory: starts, stops and the
@@ -33,7 +32,7 @@ const journalPath = root => join(root, JOURNAL);
 // The holder is written beside the token before the lock appears: a directory
 // is prepared under a unique name and renamed into place, so a lock is never
 // seen without its owner and holder, and two takers cannot both succeed.
-export async function acquireNeo4jLifecycleLock(root, { operation, identify = ownIdentity } = {}) {
+export async function acquireNeo4jLifecycleLock(root, { operation, identify = currentProcessIdentity } = {}) {
   const path = lockPath(root), token = randomUUID();
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (!(await lstat(root)).isDirectory()) throw new Error('Neo4j runtime must not be a symbolic link.');
@@ -59,12 +58,6 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = ow
   return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
 }
 
-// This process as `ps` shows it, so a later reader can tell it from a stranger with its PID.
-async function ownIdentity() {
-  const [command, startedAt] = await Promise.all([processCommand(process.pid), processStartTime(process.pid)]);
-  return { pid: process.pid, command, startedAt };
-}
-
 // The lock as it stands, or null when there is none. [holder] is null for a
 // lock taken before FULI recorded its holder.
 function readLock(root) {
@@ -76,20 +69,6 @@ function readLock(root) {
   try { holder = JSON.parse(readFileSync(join(path, 'holder.json'), 'utf8')); } catch { /* an older lock names no holder */ }
   return { path, since, owner, holder: Number.isInteger(holder?.pid) && holder.pid > 0 ? holder : null };
 }
-
-// 'running', 'gone' (ended, or its PID is now another program) or 'unknown' (no holder recorded).
-// A holder `ps` cannot read counts as running: nothing is taken over on a guess.
-async function holderState(holder, identity) {
-  if (!holder) return 'unknown';
-  if (identity.state(holder.pid) === 'gone') return 'gone';
-  if (typeof holder.startedAt === 'string' && typeof holder.command === 'string') {
-    const [startedAt, sameCommand] = await Promise.all([identity.startTime(holder.pid), identity.matches(holder.pid, holder.command)]);
-    if (startedAt !== null && (startedAt !== holder.startedAt || !sameCommand)) return 'gone';
-  }
-  return 'running';
-}
-
-const IDENTITY = { state: processState, startTime: processStartTime, matches: processMatchesCommand };
 
 // A process killed while preparing a lock or taking one over leaves its
 // directory behind (`.new-*`, `.stale-*`); a later lock clears those old
@@ -161,16 +140,16 @@ async function moveAside(root, owner) {
 
 // A start or stop that ended without releasing its lock (it was killed) leaves
 // nothing half done, so the next one takes the lock over. Answers whether it did.
-export async function releaseAbandonedNeo4jLifecycleLock(root, identity = IDENTITY) {
+export async function releaseAbandonedNeo4jLifecycleLock(root, identity = PROCESS_IDENTITY) {
   const lock = readLock(root);
   if (!lock?.holder || existsSync(journalPath(root)) || !SERVICE_OPERATIONS.has(lock.holder.operation)) return false;
-  if (await holderState(lock.holder, identity) !== 'gone') return false;
+  if (await recordedProcessState(lock.holder, identity) !== 'gone') return false;
   return takeOver(root, lock.owner, identity);
 }
 
 // Why the lock, or a switch journal, keeps a start from running: the facts a
 // person needs (src/local-runtime/startup-failure.js), as one error.
-export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
+export async function neo4jLifecycleLockError(root, identity = PROCESS_IDENTITY) {
   const lock = readLock(root);
   const facts = { since: lock?.since.toISOString() ?? null, operation: lock?.holder?.operation ?? null,
     pid: lock?.holder?.pid ?? null, lockPath: lockPath(root) };
@@ -188,7 +167,7 @@ export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
         backupName: backupPath ? basename(backupPath) : null, backupPath, journalPath: journalPath(root) }
     });
   }
-  const holder = await holderState(lock?.holder ?? null, identity);
+  const holder = await recordedProcessState(lock?.holder ?? null, identity);
   const command = holder === 'running' ? commandName(lock.holder.command) : null;
   return Object.assign(new Error(`A native Neo4j lifecycle operation is in progress: its lock has been held since ${facts.since}`
     + ({ running: ` by process ${facts.pid}, which is still running.`, gone: ` by process ${facts.pid} (${facts.operation}), which has ended.`,
@@ -210,7 +189,7 @@ function commandName(command) {
 // holder cannot be checked. Never one an update, rollback or uninstall left: it
 // may have left files half installed. Released only when every check passes;
 // otherwise it answers the first that did not.
-export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, identity = IDENTITY, listProcesses = processList }) {
+export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, identity = PROCESS_IDENTITY, listProcesses = processList }) {
   const root = paths.nativeRuntimeDir;
   const lock = readLock(root);
   if (!lock) return { released: false, reason: 'no_lock' };
@@ -218,7 +197,7 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
   if (lock.holder && !SERVICE_OPERATIONS.has(lock.holder.operation)) {
     return { released: false, reason: 'asset_operation', operation: lock.holder.operation ?? null };
   }
-  if (await holderState(lock.holder, identity) === 'running') return { released: false, reason: 'holder_running', pid: lock.holder.pid };
+  if (await recordedProcessState(lock.holder, identity) === 'running') return { released: false, reason: 'holder_running', pid: lock.holder.pid };
   const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
   for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
     if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'

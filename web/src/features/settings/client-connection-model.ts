@@ -34,13 +34,16 @@ export type RunnerFacts = { version: string, hostName: string | null, hostReacha
   skew?: { older: 'host' | 'runner' } }
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
 // probing: at least one client is still being looked for; the next read waits for that to finish.
-export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, probing?: boolean, clients: ClientObservation[],
+// componentDownloading: agent-installer is unavailable only because another FULI is downloading it now.
+export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, probing?: boolean,
+  componentDownloading?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] },
   runner?: RunnerFacts }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
+// client_component_downloading: another FULI is downloading it now.
 // client_running: a client that writes its cached configuration back is, or may be, running (rec issue 106).
 export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
-  reason?: 'client_component_unavailable' | 'client_running' }
+  reason?: 'client_component_unavailable' | 'client_component_downloading' | 'client_running' }
 // 「重启并更新」's answer: which step ended it (src/system/client-restart.js).
 const RESTART_STATUSES = ['connected', 'quit_failed', 'connect_failed', 'reopen_failed', 'check_failed'] as const
 export type RestartStatus = typeof RESTART_STATUSES[number]
