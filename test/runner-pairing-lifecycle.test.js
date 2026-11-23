@@ -108,17 +108,35 @@ test('the cache keeps within its size by letting go of the answers used longest 
   assert.ok(store.answer('read:fresh'));
 });
 
-test('an offline task token lasts 30 days; a checkpoint queued under it keeps its folder', () => {
+test('an offline task token lasts 30 days from its last use; a checkpoint queued under it keeps its folder', () => {
   let now = Date.parse('2026-11-01T00:00:00Z');
   const store = pairedRunner({ now: () => now });
   store.beginOfflineTask({ token: 'runner-offline-synthetic', projectPath: '/synthetic', sourceApplication: 'codex' });
   store.enqueue({ id: 'queued-under-it', tool: 'checkpoint_task_knowledge', input: { taskContextToken: 'runner-offline-synthetic' },
     sourceApplication: 'codex', offlineProjectPath: '/synthetic' });
   now += (OFFLINE_TOKEN_DAYS - 1) * DAY_MS;
-  assert.equal(store.offlineTask('runner-offline-synthetic')?.projectPath, '/synthetic');
-  now += 2 * DAY_MS;
+  assert.equal(store.offlineTask('runner-offline-synthetic')?.projectPath, '/synthetic', 'used: its days start again');
+  now += (OFFLINE_TOKEN_DAYS - 1) * DAY_MS;
+  assert.ok(store.offlineTask('runner-offline-synthetic'), 'still in use, though its task began long ago');
+  now += (OFFLINE_TOKEN_DAYS + 1) * DAY_MS;
   assert.equal(store.offlineTask('runner-offline-synthetic'), null);
-  assert.equal(store.claimNext().offlineProjectPath, '/synthetic', 'the queued checkpoint is delivered as before');
+  assert.equal(store.claimNext().offlineProjectPath, '/synthetic', 'the checkpoint queued while it was valid goes as before');
+});
+
+// Review of #1069: a checkpoint under an expired offline token was queued and only refused by the host later.
+test('a checkpoint under an offline token that is no longer valid is refused before it is queued', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const store = pairedRunner({ now: () => now });
+  store.beginOfflineTask({ token: 'runner-offline-synthetic', projectPath: '/synthetic', sourceApplication: 'codex' });
+  now += (OFFLINE_TOKEN_DAYS + 1) * DAY_MS;
+  const answer = offlineAnswer(store, { tool: 'checkpoint_task_knowledge', sourceApplication: 'codex',
+    input: { taskContextToken: 'runner-offline-synthetic', workLog: 'synthetic' } });
+  assert.equal(text(answer).code, 'offline_task_expired');
+  assert.match(text(answer).message, /get_collaboration_preferences/);
+  assert.equal(store.outbox().queued, 0, 'nothing was queued');
+  const unknown = offlineAnswer(store, { tool: 'checkpoint_task_knowledge', sourceApplication: 'codex',
+    input: { taskContextToken: 'runner-offline-never-given-here' } });
+  assert.equal(text(unknown).code, 'offline_task_expired');
 });
 
 test('joining the same host again queues its refused checkpoints again; joining another host drops them and says how many', () => {

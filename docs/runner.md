@@ -468,10 +468,12 @@ The cache has a size instead of an age: at most 5000 answers or 64 MB. Past eith
 used longest ago go first; an answer used lately stays however old it is. `/local` and
 `fuli runner status` say how much is kept against those bounds.
 
-A task token given out while the host is away lasts 30 days. It is not cached content: it names a
+A task token given out while the host is away lasts 30 days from its last use. It is not cached content: it names a
 task in progress that the host never saw, and a task not continued for a month is not one anyone
 continues, so a checkpoint under it would be replayed into a task context long gone. A checkpoint
-queued under such a token keeps its folder in the outbox and is delivered as before.
+under a token that is no longer valid is refused at once (`offline_task_expired`, enter the task
+again), not queued for the host to refuse later; one queued while the token was valid keeps its
+folder in the outbox and is delivered as before.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops
@@ -509,7 +511,8 @@ still waiting on a runner is delivered again under its id); `runner` 1 → 2
 adds `host.revoked_at`, 2 → 3 adds `host.last_seen_at` (when the host last
 answered anything this computer asked, shown as 「上次连上」) and 3 → 4 adds
 `answers.used_at` (when a kept answer was last used, so the cache lets go of the
-answers used longest ago). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
+answers used longest ago), and 4 → 5 adds `offline_tasks.used_at` (an offline task
+token's 30 days count from its last use). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or

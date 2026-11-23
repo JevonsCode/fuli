@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { DIAGNOSTIC_EVENTS_TOOL, HOST_DIAGNOSTICS_ONLY } from '../diagnostics/agent-access.js';
 import { annotationsFor } from '../mcp/tool-annotations.js';
+import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 import { sha256Bytes } from '../security/digest.js';
 import { SESSION_LIMIT_REASON } from './protocol.js';
 
@@ -106,6 +107,9 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
     const id = entryId ?? randomUUID();
     const token = typeof input.taskContextToken === 'string' ? input.taskContextToken : null;
     const offlineTask = isOfflineToken(token) ? store.offlineTask(token) : null;
+    // A token this computer gave out offline that is no longer one (unused for 30 days, or never
+    // given out here): refused now, before it is queued, not when the host refuses it later.
+    if (isOfflineToken(token) && !offlineTask) return offlineTokenExpiredAnswer();
     store.enqueue({ id, tool, input, sourceApplication, sessionId, offlineProjectPath: offlineTask?.projectPath ?? null });
     return envelope({ status: 'queued_offline', outboxId: id, runner: offlineNote(null,
       'Your FULI host is unreachable. The checkpoint is queued on this computer and delivered when the host answers again.') });
@@ -236,6 +240,14 @@ export function offlineTaskAnswer(tool) {
   return failure('offline_task_token', `${tool} needs a task your FULI host entered, and this task was entered on this `
     + 'computer while the host was away (a runner-offline- token the host never knew). The host answers again: enter the '
     + `task again with get_collaboration_preferences, then call ${tool} with its taskContextToken.`);
+}
+
+// A checkpoint under an offline token that is no longer valid: nothing was
+// queued, and the task is entered again for a token that is.
+export function offlineTokenExpiredAnswer() {
+  return failure('offline_task_expired', 'This task was entered on this computer while the host was away, and its '
+    + `runner-offline- token was not used for ${OFFLINE_TOKEN_DAYS} days, so it is no longer a task. Nothing was queued. `
+    + 'Enter the task again with get_collaboration_preferences and checkpoint with the token it gives.');
 }
 
 // A queued checkpoint the host has now applied.

@@ -32,10 +32,12 @@ const CLAIM_MS = REPLAY_WAIT_MS + 60 * 1000;
 export const ANSWERS_KEPT = 5000;
 export const ANSWER_BYTES_KEPT = 64 * 1024 * 1024;
 // An offline task token is not cached content: it names a task in progress that
-// the host never saw. A task not continued for this long is not one anyone
-// continues, and a checkpoint under its token would be replayed into a task
-// context long gone, so the token stops being one. A checkpoint queued under it
-// keeps its folder in the outbox and is delivered as before.
+// the host never saw. A task not continued for this long (counted from the
+// token's last use) is not one anyone continues, and a checkpoint under it would
+// be replayed into a task context long gone, so the token stops being one and a
+// checkpoint under it is refused before it is queued (offline-calls.js). A
+// checkpoint queued while it was valid keeps its folder in the outbox and is
+// delivered as before.
 export const OFFLINE_TOKEN_DAYS = 30;
 const OFFLINE_TOKEN_MS = OFFLINE_TOKEN_DAYS * 24 * 60 * 60 * 1000;
 // Why a checkpoint waits refused: the host did not know this runner (revoked).
@@ -68,6 +70,10 @@ export const RUNNER_FORMAT = sqliteFormat({
   }, {
     id: 'runner/4-answer-used', to: 4, kind: 'add-columns', table: 'answers',
     summary: 'when each kept answer was last used, so the cache keeps what is used and lets go of what is not',
+    columns: { used_at: 'TEXT' }
+  }, {
+    id: 'runner/5-offline-task-used', to: 5, kind: 'add-columns', table: 'offline_tasks',
+    summary: 'when an offline task token was last used, so its 30 days count from its last use, not its start',
     columns: { used_at: 'TEXT' }
   }]
 });
@@ -249,18 +255,23 @@ export class RunnerStore {
 
   beginOfflineTask({ token, projectPath, sourceApplication }) {
     immediateTransaction(this.db, () => {
-      this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at)
-        VALUES(?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, this.#nowIso());
-      this.db.prepare('DELETE FROM offline_tasks WHERE started_at <= ?').run(this.#tokensSince());
+      const at = this.#nowIso();
+      this.db.prepare(`INSERT INTO offline_tasks(token, project_path, source_application, started_at, used_at)
+        VALUES(?, ?, ?, ?, ?)`).run(token, projectPath ?? null, sourceApplication, at, at);
+      this.db.prepare('DELETE FROM offline_tasks WHERE COALESCE(used_at, started_at) <= ?').run(this.#tokensSince());
     });
   }
 
-  // A token this computer gave out offline within OFFLINE_TOKEN_DAYS, or null.
+  // A token this computer gave out offline and used within OFFLINE_TOKEN_DAYS,
+  // or null. Reading it counts as using it: the days count from its last use.
   offlineTask(token) {
     if (this.#missing()) return null;
-    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ? AND started_at > ?').get(token, this.#tokensSince());
-    return row ? { token: row.token, projectPath: row.project_path, sourceApplication: row.source_application,
-      startedAt: row.started_at } : null;
+    const row = this.db.prepare('SELECT * FROM offline_tasks WHERE token = ? AND COALESCE(used_at, started_at) > ?')
+      .get(token, this.#tokensSince());
+    if (!row) return null;
+    this.db.prepare('UPDATE offline_tasks SET used_at = ? WHERE token = ?').run(this.#nowIso(), token);
+    return { token: row.token, projectPath: row.project_path, sourceApplication: row.source_application,
+      startedAt: row.started_at };
   }
 
   // offlineProjectPath: the folder of the task an offline token entered; the host enters it again at replay.
