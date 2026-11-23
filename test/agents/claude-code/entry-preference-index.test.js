@@ -6,16 +6,16 @@
 // transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
-import { OMITTED_INDEX_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { syntheticPreference } from '../test-support/synthetic-context-session.js';
-import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences } from '../test-support/synthetic-large-entry.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
+import { OMITTED_INDEX_LABEL } from '../../../src/conversations/entry-inline-budget.js';
+import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
+import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences } from '../../../test-support/synthetic-large-entry.js';
 
 const INLINE_CHARS = 9000;
 const SESSION = '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84';
 const keys = items => (items ?? []).map(item => item.preference_key);
-const entryFor = async (items, prompt) => {
-  const input = { session_id: SESSION, cwd: '/synthetic/project', prompt };
+const entryFor = async (items, prompt, cwd = '/synthetic/project') => {
+  const input = { session_id: SESSION, cwd, prompt };
   const text = (await claudeLifecycleOutput('UserPromptSubmit', input,
     async () => syntheticLargeEntry({ items, sessionId: SESSION }))).hookSpecificOutput.additionalContext;
   return { text, frame: hookFrame(text) };
@@ -56,19 +56,28 @@ test('the index never costs a hard rule its full body', async () => {
   assert.deepEqual(hard.filter(key => !keys(frame.effective_preferences).includes(key)), []);
 });
 
-test('a preference whose prose states a scope this task never mentions is ranked below the rest and named with it', async () => {
+test('a preference whose prose states a scope this session\'s project does not meet ranks below the rest and is named with it', async () => {
   const scoped = syntheticPreference('synthetic-locale',
     '仅适用于合成结算需求：地区只按 locale 判断，不要用时区推断。', {}, 'personality');
   const items = [scoped, ...syntheticPreferences(29)];
-  const unrelated = await entryFor(items, '帮我评审这份合成 PRD 的验收标准');
-  assert.equal(keys(unrelated.frame.effective_preferences).includes('synthetic-locale'), false,
-    'an unrelated task does not spend its inline budget on it');
+  const elsewhere = await entryFor(items, '帮我评审这份合成 PRD 的验收标准');
+  assert.equal(keys(elsewhere.frame.effective_preferences).includes('synthetic-locale'), false,
+    'another project does not spend its inline budget on it');
   // It is never lost: the index names it and says what it is limited to.
-  assert.ok(unrelated.frame.preferences_omitted.index.includes(
-    'synthetic-locale — 仅适用于合成结算需求：地区只按 locale 判断，不要用时区推断。 · 仅适用于 合成结算需求'));
-  // A task that is about it gets it back in the ordinary ranking.
-  const related = await entryFor(items, '合成结算需求的地区判断改一下');
-  assert.ok(keys(related.frame.effective_preferences).includes('synthetic-locale'));
+  assert.ok(elsewhere.frame.preferences_omitted.index.some(line => line.startsWith('synthetic-locale — ')
+    && line.endsWith(' · 仅适用于 合成结算需求')));
+  // A session in that project gets it back in the ordinary ranking.
+  const there = await entryFor(items, '帮我评审这份合成 PRD 的验收标准', '/synthetic/合成结算');
+  assert.ok(keys(there.frame.effective_preferences).includes('synthetic-locale'));
+});
+
+test('the prompt does not move the selection, so the next turn of a session can be a delta', async () => {
+  const scoped = syntheticPreference('synthetic-locale',
+    '仅适用于合成结算需求：地区只按 locale 判断，不要用时区推断。', {}, 'personality');
+  const items = [scoped, ...syntheticPreferences(29)];
+  const one = await entryFor(items, '合成结算需求的地区判断改一下');
+  const two = await entryFor(items, '帮我评审这份合成 PRD 的验收标准');
+  assert.deepEqual(keys(one.frame.effective_preferences), keys(two.frame.effective_preferences));
 });
 
 test('the index is part of the frame, so the next turn of the same session is still a delta', () =>

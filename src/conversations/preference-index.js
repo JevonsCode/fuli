@@ -1,32 +1,40 @@
 // One short line for every preference a task entry cannot spell out (rec#137).
 // An entry bounded to a host's inline limit used to name what it left out by
 // count alone, so the only way to learn what existed was to page a whole
-// revision at the MCP budget. The index names each omitted item by key, scope
-// and one sentence instead, and the omission's own read call expands the ones
-// that may apply.
+// revision at the MCP budget. The index names each omitted item by key, with
+// its scope layer where it is not global and the opening of what it says, and
+// read_task_preferences reads the ones that may apply by key.
 //
-// Where an instruction states its own scope in prose only ("仅适用于…", "Only
-// for…"), FULI lifts that clause into applies_when (rec#111): a restriction
-// written in a sentence is otherwise invisible to every filter, and an Agent
-// has applied such a rule to an unrelated task. It is a marker, never a
-// removal: a misread clause must not silently drop a rule the person set.
+// Where an instruction states the scope it applies to in prose only ("仅适用于
+// X", "Only for X"), FULI lifts that phrase into the line as "· 仅适用于 X"
+// (rec#111): a restriction written in a sentence is otherwise invisible to
+// every filter, and an Agent has applied such a rule to an unrelated task. It
+// is a marker and a ranking, never a removal: a misread clause must not
+// silently drop a rule the person set.
 import { singleLineExcerpt } from '../text/single-line.js';
 
 // Long enough for one clause, short enough that a whole set of them costs less
 // than a handful of bodies. Each line is one string, not an object: repeating
-// three JSON key names per item would cost more than the words do.
+// JSON key names per item would cost more than the words do.
 const GIST_CHARS = 36;
 const SCOPE_CHARS = 24;
 const SEPARATOR = ' — ';
 const SCOPE_MARK = ' · 仅适用于 ';
+// A cut that drops an exception would turn the rule into its opposite
+// ("Never squash merge, except on relea…"), so such a line says so.
+const EXCEPTION = /(?:除非|除了|例外|但是?|不过|except|unless|but\b|other than)/giu;
+const EXCEPTION_MARK = ' (有例外，读全文 / has exceptions, read in full)';
 
-// The restrictive openers a person writes by hand. Each captures the scope it
-// names, up to the punctuation that ends the clause.
+// Only words that say what a rule applies to. "只在…" / "Only when…" / "Only
+// on…" describe when an action may happen ("只在用户确认后才推送到远端" is a
+// rule about pushing, for every task), so they are not scopes (review of
+// #1070).
 const STATED_SCOPE = [
-  /^仅(?:适用于|限|用于)\s*([^，,。：:；;]{2,40})/,
-  /^只(?:适用于|在|针对)\s*([^，,。：:；;]{2,40})/,
-  /^Only\s+(?:for|when|in|on)\s+([^,.:;]{2,60})/i,
-  /^Applies?\s+only\s+to\s+([^,.:;]{2,60})/i
+  /^(?:仅|只)适用于\s*([^，,。：:；;]{2,40})/u,
+  /^仅限(?:于)?\s*([^，,。：:；;]{2,40})/u,
+  /^Only\s+for\s+([^,.:;]{2,60})/iu,
+  /^Appl(?:ies|y)\s+only\s+to\s+([^,.:;]{2,60})/iu,
+  /^Only\s+applies\s+to\s+([^,.:;]{2,60})/iu
 ];
 
 // The scope an instruction states in prose, or null. A session clause is
@@ -37,18 +45,25 @@ export function statedPreferenceScope(instruction) {
   const text = instruction.trim();
   for (const pattern of STATED_SCOPE) {
     const scope = pattern.exec(text)?.[1]?.trim();
-    if (scope && !/会话/.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
+    if (scope && !/会话/u.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
   }
   return null;
 }
 
-// What one omitted preference is about, in one line: its key, the opening of
-// what it says, and the scope it states in prose where it states one. Never
-// the whole body, so an index of a large set stays cheaper than one
-// spelled-out rule.
+// What one omitted preference is about, in one line: its key, its layer where
+// that is not global (a key may exist at two layers), the opening of what it
+// says, and the scope it states in prose where it states one. Never the whole
+// body.
 export function preferenceIndexLine(item) {
-  const scope = statedPreferenceScope(item?.instruction);
-  return `${item?.preference_key ?? ''}${SEPARATOR}${singleLineExcerpt(item?.instruction ?? '', GIST_CHARS)}`
+  const instruction = typeof item?.instruction === 'string' ? item.instruction : '';
+  const scope = statedPreferenceScope(instruction);
+  const layer = item?.preference_scope && item.preference_scope !== 'global' ? ` (${item.preference_scope})` : '';
+  const gist = singleLineExcerpt(instruction, GIST_CHARS);
+  const cut = gist.endsWith('…') && gist.length < instruction.length;
+  // Any exception word the cut does not keep whole, including one it splits.
+  const kept = GIST_CHARS - 1;
+  const dropped = cut && [...instruction.matchAll(EXCEPTION)].some(match => match.index + match[0].length > kept);
+  return `${item?.preference_key ?? ''}${layer}${SEPARATOR}${gist}${dropped ? EXCEPTION_MARK : ''}`
     + (scope ? `${SCOPE_MARK}${scope}` : '');
 }
 
@@ -61,24 +76,40 @@ export function preferenceIndex(preferences, selected, detail = 'full') {
   return detail === 'keys' ? omitted.map(item => item?.preference_key ?? '') : omitted.map(preferenceIndexLine);
 }
 
-// Whether a prose-stated scope has anything to do with this task's own words:
-// every word of the scope has to be there, so "only for synthetic timesheet
-// work" does not meet every task that happens to say "synthetic". Unknown (no
-// prompt, no stated scope) counts as related: this only ranks, never drops,
-// and an item FULI cannot place must not be pushed out by a guess.
-export function statedScopeMeetsTask(item, taskPrompt) {
+// Whether a prose-stated scope names this session's project. It is read
+// against the project — its ID, its name, the folder the session works in —
+// not each prompt: what a session is about does not change turn to turn, so
+// the inline selection stays the same and the next turn can still be a delta.
+// A scoped rule that does not meet it ranks after the unrestricted ones and
+// is named in the index with its scope; the model reads it by key when the
+// task turns out to touch it. Without a stated scope, or with nothing to
+// compare against, it counts as met: FULI never pushes an item out on a guess.
+export function statedScopeMeetsProject(item, projectWords = []) {
   const scope = statedPreferenceScope(item?.instruction);
-  if (!scope || typeof taskPrompt !== 'string' || !taskPrompt.trim()) return true;
-  const prompt = taskPrompt.toLowerCase();
-  return scopeTerms(scope).every(term => prompt.includes(term));
+  const haystack = projectWords.filter(word => typeof word === 'string' && word.trim()).join(' ').toLowerCase();
+  if (!scope || !haystack) return true;
+  return scopeMatches(scope, haystack);
 }
 
-// The words of the stated scope worth looking for in a prompt: CJK runs of at
-// least two characters and Latin words of at least three, without the filler
-// that would match anything.
-const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when', '需求', '任务', '工作']);
-function scopeTerms(scope) {
-  const terms = [...scope.toLowerCase().matchAll(/[\p{Script=Han}]{2,}|[a-z][a-z0-9_-]{2,}/gu)].map(([term]) => term);
-  const kept = terms.filter(term => !FILLER.has(term));
-  return kept.length ? kept : terms;
+// At least half of the scope's distinctive units appear: Latin words of
+// three letters or more, and pairs of adjacent Chinese characters, so
+// "合成结算需求" meets "结算需求" without demanding the whole run. Half, not
+// more: where FULI is unsure it gives the rule rather than withholds it.
+function scopeMatches(scope, haystack) {
+  const units = scopeUnits(scope);
+  if (!units.length) return true;
+  return units.filter(unit => haystack.includes(unit)).length * 2 >= units.length;
+}
+
+const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when',
+  '需求', '任务', '工作', '项目']);
+function scopeUnits(scope) {
+  const units = [];
+  for (const [run] of scope.toLowerCase().matchAll(/[\p{Script=Han}]+|[a-z][a-z0-9_-]{2,}/gu)) {
+    if (/^\p{Script=Han}/u.test(run)) {
+      if (run.length === 1) continue;
+      for (let index = 0; index < run.length - 1; index++) units.push(run.slice(index, index + 2));
+    } else units.push(run);
+  }
+  return units.filter(unit => !FILLER.has(unit));
 }

@@ -20,7 +20,7 @@ const BLOCKED_BOUNDARY = 'Keep the delivered space, project, Agent and session i
 const PARTIAL_BLOCKED_LABEL = 'Fuli preference delivery is blocked: only part of the preferences is listed.';
 const PARTIAL_RECOVERABLE = 'Apply them while you recover the rest; do not finish the task on them alone.';
 const PARTIAL_UNRECOVERABLE = 'Apply them; do not finish the task on them alone.';
-const PARTIAL_GUIDANCE = 'effective_preferences lists the hard rules and the preferences most relevant to this task that fit, if any; preferences_omitted counts the rest and, where it carries an index, names each of them by key with one line and its applies_when.';
+const PARTIAL_GUIDANCE = 'effective_preferences lists the hard rules and the preferences most relevant to this task that fit, if any; preferences_omitted counts the rest; its index, where present, names each in one line.';
 const NONE_DELIVERED = 'No complete preferences are delivered here.';
 // preferences_omitted (rec#11 D-54) belongs to the frame: its hash binds what the frame says it left out.
 const PREFERENCE_FIELDS = ['effective_preferences', 'preference_updates', 'preference_delivery', 'preferences_omitted', 'revision', 'scope_unknown', 'active_conflicts', 'deferred_conflicts', 'conflicts',

@@ -82,7 +82,7 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
     label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedNote: taskReceiptInstruction(value) });
   const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
-  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength, { taskPrompt }) : WHOLE_ENTRY;
+  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength, { projectPath: input.cwd ?? null }) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,

@@ -2,7 +2,8 @@ import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
-import { preferenceIndex, statedScopeMeetsTask } from './preference-index.js';
+import { basename } from 'node:path';
+import { preferenceIndex, statedScopeMeetsProject } from './preference-index.js';
 import { withDeliveredHabits } from './entry-habits-line.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
@@ -17,7 +18,8 @@ export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry
 // rec#137): one line each, so the model expands what may apply instead of
 // paging the whole revision to find out what exists.
 export const OMITTED_INDEX_LABEL = 'preferences_omitted.index names every one of them: "key — what it says", and '
-  + '"仅适用于 X" where the preference states its own scope. Read only the ones this task may touch.';
+  + '"仅适用于 X" where the preference states its own scope. Read only the ones this task may touch, by key: '
+  + 'read_task_preferences with keys.';
 // Added when hard rules are among them (D-69). A delta repeats it every turn,
 // so it asks for one read, not one per turn.
 export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferences_omitted.includes_always_inline): '
@@ -53,13 +55,15 @@ export function fitUncached(fit, value, render) {
 //    where that is not enough, the preferences lose their IDs first and step
 //    1 is tried again;
 // 2. then preferences go, lowest ranked first, except hard rules
-//    (preferenceAlwaysInline). The rest rank by kind and task scene: a
-//    boundary a scene switch never revokes first, then an item whose own scene
-//    key names the task's work kind, then human-confirmed before
-//    agent-confirmed, then the Provider's order. The set is the largest ranked
-//    prefix whose complete frame fits with the leanest context of step 1, so
-//    the same preferences select the same set on the next turn, and a delta
-//    follows;
+//    (preferenceAlwaysInline). The rest rank by stated scope, kind and task
+//    scene: an item whose prose-stated scope the session's project does not
+//    meet last, then a boundary a scene switch never revokes first, then an
+//    item whose own scene key names the task's work kind, then human-confirmed
+//    before agent-confirmed, then the Provider's order. The set is the largest
+//    ranked prefix whose complete frame fits with the leanest context of step
+//    1, so the same preferences select the same set on the next turn, and a
+//    delta follows. What is left out is named in preferences_omitted.index
+//    where that fits, never at the cost of a hard rule's body;
 // 3. where even the hard rules do not fit beside the rest, the entry's details
 //    give way to them, one at a time, each to a count or preview with its
 //    reader (D-72, detailLevels): the working-memory previews (global layer
@@ -79,9 +83,10 @@ export function fitUncached(fit, value, render) {
 // identity, lists the largest prefix of the same ranking that fits beside them
 // with the rest counted, and recovers through read_task_preferences where the
 // reader can serve the task (taskPreferenceRead).
-// `taskPrompt`: this turn's own words, so a preference that states its scope in
-// prose and has nothing to do with them ranks below the rest (rec#111).
-export function inlineEntryFit(limit, length, { taskPrompt = null } = {}) {
+// `projectPath`: the folder the session works in, which with the entry's own
+// project ID and name is what a preference's prose-stated scope is read
+// against (preference-index.js, rec#111).
+export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
   return (whole, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
     // but delivers nothing: it does not fit. Size only grows with the entry,
@@ -101,7 +106,7 @@ export function inlineEntryFit(limit, length, { taskPrompt = null } = {}) {
       if (fits(attempt)) return attempt;
     }
     const preferences = Array.isArray(value.effective_preferences) ? value.effective_preferences : [];
-    const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value), taskPrompt);
+    const { kept, ranked } = inlineRanking(preferences, entryWorkKind(value), projectWords(value, projectPath));
     const leanest = levels.at(-1);
     const steps = detailSteps(leanest);
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
@@ -208,14 +213,16 @@ const specificity = item => SCOPE_SPECIFICITY[item.preference_scope] ?? 3;
 
 // Indexes into effective_preferences: those that always stay, most specific
 // scope first, then the Provider's order, and the rest in rank order. An item
-// whose instruction states a scope this task's own words never mention ranks
-// after the rest (statedScopeMeetsTask, rec#111): it is the one least likely to
-// belong here, and it is still named in the index with its applies_when.
-function inlineRanking(preferences, workKind, taskPrompt = null) {
+// whose instruction states a scope this session's project does not meet ranks
+// after the rest (statedScopeMeetsProject, rec#111): it is the one least
+// likely to belong here, and the index still names it with "· 仅适用于 X".
+// Nothing in the ranking depends on the turn's prompt, so the same set selects
+// the same items on the next turn and a delta follows.
+function inlineRanking(preferences, workKind, words = []) {
   const kept = [], optional = [];
   preferences.forEach((item, index) => (preferenceAlwaysInline(item) ? kept : optional).push(index));
   kept.sort((a, b) => specificity(preferences[a]) - specificity(preferences[b]) || a - b);
-  const rank = index => [statedScopeMeetsTask(preferences[index], taskPrompt) ? 0 : 1,
+  const rank = index => [statedScopeMeetsProject(preferences[index], words) ? 0 : 1,
     preferenceSceneReplaceable(preferences[index]) ? 1 : 0,
     preferenceNamesWorkKind(preferences[index], workKind) ? 0 : 1,
     preferences[index].confirmation_status === 'confirmed' ? 0 : 1, index];
@@ -345,4 +352,11 @@ function recallPointer(recall) {
     pending_fallback: _pending, confirmed_use: _confirmed, retrieval_budget: _budget, ...summary } = recall;
   return { ...summary, items_omitted: facts.length + entities.length + (index?.items.length ?? 0),
     read: { tool: 'search_current_project_knowledge' } };
+}
+
+// What a prose-stated scope is read against: the project this entry matched
+// (its ID and name) and the folder the session works in. Stable for a session.
+function projectWords(value, projectPath) {
+  return [value.context?.personal_project_id, value.project_agent_context?.project_brief?.name,
+    typeof projectPath === 'string' && projectPath.trim() ? basename(projectPath) : null];
 }
