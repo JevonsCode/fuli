@@ -51,11 +51,18 @@ describe('ProjectScopePicker with hundreds of temporary projects', () => {
     expect(items[0]!.get('label').attributes('title')).toBe(last.project_id)
   })
 
-  it('全选 takes every project, folded ones included; 清空 lets every one go', async () => {
+  it('全选 takes the formal projects only and says a later project is not in it; the folded row takes the temporary ones; 清空 lets every one go', async () => {
     const { wrapper, toggles } = mountPicker()
+    expect(wrapper.get('[data-project-scope-note]').text()).toBe('之后新建的项目不会自动加入')
     await wrapper.get('[data-project-scope-all]').trigger('click')
+    expect(toggles.at(-1)).toEqual([[projectScopeKey(projects[0]!), projectScopeKey(projects[1]!)], true])
+    // The temporary row's own box takes all 130 of them.
+    await wrapper.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
     expect(toggles.at(-1)![1]).toBe(true)
-    expect(toggles.at(-1)![0]).toHaveLength(132)
+    expect(toggles.at(-1)![0]).toHaveLength(130)
+    // With the formal ones chosen, 全选 has nothing left to take, whatever temporary ones wait.
+    expect(mountPicker([projectScopeKey(projects[0]!), projectScopeKey(projects[1]!)]).wrapper
+      .get('[data-project-scope-all]').attributes('disabled')).toBeDefined()
     const all = mountPicker(projects.map(projectScopeKey))
     await all.wrapper.get('[data-project-scope-clear]').trigger('click')
     expect(all.toggles.at(-1)![1]).toBe(false)

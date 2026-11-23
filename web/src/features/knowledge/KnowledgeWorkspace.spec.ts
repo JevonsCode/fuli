@@ -145,7 +145,7 @@ describe('KnowledgeWorkspace', () => {
     vi.useRealTimers()
   })
 
-  it('borrows other projects with the shared picker: 全选 adds them all to the address, 清空 takes them out', async () => {
+  it('borrows other projects with the shared picker: 全选 adds the formal ones, the folded row the temporary ones, 清空 takes them out', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const projects = [
@@ -170,6 +170,9 @@ describe('KnowledgeWorkspace', () => {
     expect(picker.findAll('[data-project-scope-formal]').map(row => row.text())).toEqual(['其他项目'])
     expect(picker.get('[data-project-scope-temporary-count]').text()).toBe('0/1')
     await picker.get('[data-project-scope-all]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.context).toEqual(['other'])
+    await picker.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.context).toEqual(['other', `temporary-${'c'.repeat(64)}`])
     await wrapper.get('[data-personal-context-picker] [data-project-scope-clear]').trigger('click')
