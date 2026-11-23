@@ -6,7 +6,8 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { modelDetailsLink } from '@/features/model-settings/details-link'
+import { modelDetailsLink, modelProjectsLink } from '@/features/model-settings/details-link'
+import { hasTemporaryOrigin } from '@/features/projects/project-origin'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { UiNotice } from '@/ui'
@@ -46,14 +47,25 @@ onMounted(load)
 watch(() => props.personalSpaceId, load)
 
 const settingsTarget = modelDetailsLink('tonborg', 'delegation')
-// Which projects Tonborg's model may read is set in its details (编辑 → the approved projects).
-const approveTarget = modelDetailsLink('tonborg')
+// Which projects Tonborg's model may read: its settings form, opened right at that list.
+const approveTarget = modelProjectsLink('tonborg')
 const connected = computed(() => state.value?.model?.connected === true)
 // No model configured for Tonborg at all: the current session confirms for it.
 // A configured model that is off keeps the session's answers suggestions.
 const standsIn = computed(() => !connected.value && state.value?.model?.sessionStandsIn === true)
 // rec issue 124: on, it still confirms nothing its model may not read; then the line says so instead of 「正在替你确认」.
-const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach) : null))
+const temporaryIds = computed(() => new Set((store.state?.personalProjects ?? [])
+  .filter(project => project.personal_space_id === props.personalSpaceId && hasTemporaryOrigin(project))
+  .map(project => project.project_id)))
+const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach, temporaryIds.value) : null))
+// The approved counts, named and temporary apart; temporary ones only where the space has any.
+const reachCounts = computed(() => {
+  const notice = reach.value
+  if (!notice) return ''
+  const parts = [t('reviewList.delegation.reach.formalCount', { ...notice.formal })]
+  if (notice.temporary.total) parts.push(t('reviewList.delegation.reach.temporaryCount', { ...notice.temporary }))
+  return parts.join(t('reviewList.delegation.reach.joiner'))
+})
 const hint = computed(() => {
   if (!state.value) return ''
   // Without a model of its own the current session confirms for Tonborg.
@@ -89,8 +101,9 @@ async function change(enabled: boolean) {
         @update:model-value="change(Boolean($event))" />
     </div>
     <UiNotice v-if="reach" tone="warning" class="tonborg-delegation__reach" data-tonborg-reach>
-      {{ t(`reviewList.delegation.reach.${reach.key}`, { approved: reach.approved, total: reach.total }) }}
-      <template v-if="settingsLink" #actions>
+      {{ t(`reviewList.delegation.reach.${reach.key}`, { counts: reachCounts }) }}
+      <!-- Every notice says what to do next (docs/console-design.md): here, choose the projects. -->
+      <template #actions>
         <Button variant="link" size="sm" as-child>
           <RouterLink :to="approveTarget" :title="t('reviewList.delegation.reach.approveTitle')" data-tonborg-approve-link>
             {{ t('reviewList.delegation.reach.approve') }}

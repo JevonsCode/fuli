@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import BuiltinEmbeddingDialog from '@/features/model-settings/BuiltinEmbeddingDialog.vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
 import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
-import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
+import { linkedModelDetails, linkedModelEdit, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
 import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
@@ -112,6 +112,15 @@ function edit(role: ModelRoleId, focus: 'projects' | null = null) {
   editingFocus.value = focus
   editing.value = role
 }
+// A link into a role's settings form (「去选项目」 under 交给 Tonborg 确认) opens it
+// at the part it names once the roles are read; the address then drops the link.
+watch([payload, () => route.query.edit], ([value]) => {
+  const linked = value ? linkedModelEdit(route.query) : null
+  if (!linked) return
+  edit(linked.role, linked.focus)
+  const { edit: _role, focus: _focus, ...query } = route.query
+  void router.replace({ query, hash: '' })
+}, { immediate: true })
 
 const openUse = (use: ModelUseId) => { details.value = useRole(use) }
 

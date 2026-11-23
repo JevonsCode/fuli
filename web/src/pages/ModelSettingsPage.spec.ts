@@ -137,6 +137,21 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-use-details] [data-tonborg-delegation]').exists()).toBe(false)
   })
 
+  it("opens Tonborg's settings right at its projects from 「去选项目」's link, then drops the link", async () => {
+    routing.route.query = { edit: 'tonborg', focus: 'projects', tab: 'x' }
+    Element.prototype.scrollIntoView = vi.fn()
+    try {
+      const wrapper = await mountPage()
+      const dialog = wrapper.get('[data-model-role-dialog]')
+      const egress = dialog.get('[data-model-egress]')
+      expect(egress.classes()).toContain('is-asked')
+      expect(document.activeElement).toBe(egress.element)
+      expect(routing.replace).toHaveBeenCalledWith({ query: { tab: 'x' }, hash: '' })
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+
   it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {
     const wrapper = await mountPage()
     let details = await openDetails(wrapper, 'tonborg')
