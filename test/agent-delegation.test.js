@@ -109,8 +109,8 @@ test('a category the person took back, or an off-by-default one, refuses before 
   assert.equal(off.ran, false);
   assert.equal(off.sent.statusCode, 403);
   assert.equal(off.sent.body.code, 'delegation_category_off');
-  assert.match(off.sent.body.error, /设置 › AI 权限/);
-  assert.match(off.sent.body.error, /Settings › AI permissions/);
+  assert.match(off.sent.body.error, /设置 › AI 能做什么 › 项目/);
+  assert.match(off.sent.body.error, /Settings › What AI may do › Projects/);
   const lan = await gate(port, 'POST', '/api/peer/join');
   assert.deepEqual([lan.ran, lan.sent.body.code], [false, 'delegation_category_off']);
   port.setCategory('lan_roundtable', true);
@@ -170,7 +170,7 @@ test('a refusal the person can undo links the console page that turns it on, at 
   assert.ok(access.sent.body.error.endsWith(' http://127.0.0.1:2800/settings?tab=ai'), access.sent.body.error);
   // Without an address the refusal still names the page, and carries no broken link.
   const plain = await gate(delegation(t), 'PATCH', '/api/recall-policy', { agentAccess: false });
-  assert.ok(plain.sent.body.error.endsWith('Settings › Access.'), plain.sent.body.error);
+  assert.ok(plain.sent.body.error.endsWith('Settings › What AI may do › Agent access.'), plain.sent.body.error);
 });
 
 test('the gate passes the person\'s own requests and refuses delegation from another computer or with Agent access off', async (t) => {
