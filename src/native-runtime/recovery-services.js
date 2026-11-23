@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { readVerifiedGraphBackup } from '../backup/graph-backup.js';
+import { GRAPH_STATE } from '../backup/graph-import-states.js';
 import { createGraphBackupAdapter, managedGraphInstances } from '../backup/runtime-adapters.js';
 import { createNativeGraphServices } from './runtime.js';
 
@@ -27,9 +28,10 @@ export function nativeRecoveryServices({ paths, env = process.env }) {
     },
     // The whole graph back from an import's own copy, the way the import's
     // rollback loads it (graph-backup.js): checksums first, no new copy of the
-    // half-written store.
+    // half-written store. [mark] records in the lock where each graph stands
+    // (graph-import-states.js) before it is written, and once it is back or failed.
     // A copy that fails its checks is marked [copyDamaged]: it will never restore.
-    restore: async ({ from, instances }, owner) => {
+    restore: async ({ from, instances }, owner, mark = async () => {}) => {
       let manifest;
       try { manifest = await readVerifiedGraphBackup(from); }
       catch (error) { throw Object.assign(new Error(`The copy ${from} failed its checks.`, { cause: error }), { copyDamaged: true }); }
@@ -39,13 +41,14 @@ export function nativeRecoveryServices({ paths, env = process.env }) {
       const adapter = await createGraphBackupAdapter({ mode: 'native', paths,
         createNativeServices: options => services(owner, options) });
       await adapter.stop();
-      // Which instance a failed restore was writing, and which it brought back
-      // before: abandoning the import afterwards says which graph is which (load-recovery.js).
-      const restored = [];
       for (const entry of manifest.instances) {
+        await mark(entry.id, GRAPH_STATE.restoring);
         try { await adapter.load(entry.id, join(from, entry.file)); }
-        catch (error) { throw Object.assign(error, { instance: entry.id, restored }); }
-        restored.push(entry.id);
+        catch (error) {
+          await mark(entry.id, GRAPH_STATE.restoreFailed).catch(() => {});
+          throw error;
+        }
+        await mark(entry.id, GRAPH_STATE.restored);
       }
     }
   };

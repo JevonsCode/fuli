@@ -145,9 +145,13 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
   const blocked = await backOutBlocked(context, journal);
   // Keeping the descriptor in place without a start check archives the
   // journal, and with it any way back to the other side: it is only for when
-  // going back is not possible, or was tried and wrote this descriptor back
-  // ([keepable]). Otherwise going back comes first.
-  const keepable = Boolean(blocked) || journal.backingOut === true;
+  // going back is not possible, or was tried and wrote this descriptor back,
+  // or was tried and stopped at the store format or the programs' fingerprint
+  // (backOutFailed, recorded in the journal by that step) ([keepable]).
+  // Otherwise going back comes first.
+  const backOutFailed = BACK_OUT_CHECKS.has(journal.backOutFailed) ? journal.backOutFailed : null;
+  const keepable = Boolean(blocked) || journal.backingOut === true || Boolean(backOutFailed);
+  if (backOutFailed) facts.backOutFailed = backOutFailed;
   // The way out when it does not start and going back does not work either:
   // the descriptor and the programs it names agree, so the lock and the
   // journal go and nothing is started; a start that fails afterwards is an
@@ -159,9 +163,10 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
   // after it wrote the descriptor (neo4j-lifecycle.js).
   const finish = planned('finish_switch', [...stop, { do: 'check-start', version: journal.next.neo4jVersion },
     { do: 'check-formats', formats: journal.storeFormats }, archive, ...end], { ...facts, keepable });
+  // A back-out stopped by either check records it in the journal (backOutFailed).
   const back = blocked ? null : planned('back_out_switch', [...stop,
-    { do: 'check-formats', formats: journal.storeFormats },
-    { do: 'check-fingerprint', home: journal.previous.neo4jHome, fingerprint: journal.previous.neo4jAssetFingerprint },
+    { do: 'check-formats', formats: journal.storeFormats, backOut: true },
+    { do: 'check-fingerprint', home: journal.previous.neo4jHome, fingerprint: journal.previous.neo4jAssetFingerprint, backOut: true },
     // Recorded before the older descriptor is written: a back-out killed after
     // that is continued, never mistaken for a switch that never took effect.
     { do: 'mark-backing-out' },
@@ -174,12 +179,30 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
 }
 
 // "5.26.28", or with the same number on both sides (a rollback to the kept
-// programs) "5.26.28 (neo4j-assets/jvs-a-…/neo4j-community-5.26.28)".
+// programs) "5.26.28 (neo4j-assets/jvs-a-…/neo4j-community-5.26.28)" and when
+// each side's programs were installed, which the words name instead of the
+// directory (recovery-plan-text.js, strings.dart).
 function sideLabels(root, journal) {
   const { previous, next } = journal;
   if (!isDescriptor(previous) || !isDescriptor(next)) return {};
-  const label = side => previous.neo4jVersion === next.neo4jVersion ? `${side.neo4jVersion} (${relative(root, side.neo4jHome)})` : side.neo4jVersion;
-  return { fromLabel: label(previous), toLabel: label(next) };
+  const same = previous.neo4jVersion === next.neo4jVersion;
+  const label = side => same ? `${side.neo4jVersion} (${relative(root, side.neo4jHome)})` : side.neo4jVersion;
+  return { fromLabel: label(previous), toLabel: label(next),
+    ...(same ? { fromInstalledAt: installedAt(previous.neo4jHome), toInstalledAt: installedAt(next.neo4jHome) } : {}) };
+}
+
+// When FULI installed the programs at [home]: when it wrote the receipt in
+// their jvs-a-* directory (neo4j-lifecycle.js), else when that directory was
+// made; null when neither can be read.
+function installedAt(home) {
+  const container = dirname(home);
+  for (const [path, time] of [[join(container, 'fuli-asset-owner.json'), 'mtimeMs'], [container, 'birthtimeMs']]) {
+    try {
+      const ms = statSync(path)[time];
+      if (ms > 0) return new Date(ms).toISOString();
+    } catch { /* not there */ }
+  }
+  return null;
 }
 
 // Whether an update's programs are already in this recovery's folder: a
@@ -199,13 +222,19 @@ async function backOutBlocked({ paths, deps, stop }, journal) {
   if (!neo4jAssetFingerprint) return 'no_fingerprint';
   try { await assertManagedNeo4jHome(paths, neo4jHome, neo4jVersion); } catch { return 'unmanaged_path'; }
   try { if (await deps.fingerprint(neo4jHome) !== neo4jAssetFingerprint) return 'assets_changed'; } catch { return 'assets_changed'; }
-  // Read now when nothing runs; the step reads it again either way.
+  // Read now when nothing runs; the step reads it again either way. It is read
+  // with the programs the descriptor names (neo4j-store-formats.js): when they
+  // cannot read it, going back cannot be checked, so it is not offered.
   if (!stop.length) {
     try { if (JSON.stringify(await deps.storeFormats(paths, journal.next)) !== JSON.stringify(journal.storeFormats)) return 'format_changed'; }
-    catch { /* unreadable now: the step decides */ }
+    catch { return 'format_unreadable'; }
   }
   return null;
 }
+
+// The back-out checks whose failure the journal records (backOutFailed): each
+// leaves going back unproven, so keeping the descriptor opens.
+const BACK_OUT_CHECKS = new Set(['format_unreadable', 'format_changed', 'assets_changed']);
 
 // An update's candidate programs (its own neo4j-assets/jvs-a-* directory),
 // which the older descriptor does not use; a rollback's target is the kept
@@ -333,9 +362,11 @@ function choicesBeside(shown, plan, root) {
   const other = plan === shown ? shown.alternative : shown;
   // A back-out that got as far as recording backingOut (and then wrote the
   // switched-to descriptor back): keeping that descriptor is open from then on.
-  const keepable = plan.keepable === true || readJournal(root)?.value?.backingOut === true;
+  const journal = readJournal(root)?.value;
+  const keepable = plan.keepable === true || journal?.backingOut === true || BACK_OUT_CHECKS.has(journal?.backOutFailed);
   return { operation: plan.operation ?? null, fromVersion: plan.fromVersion, toVersion: plan.toVersion, fromLabel: plan.fromLabel ?? null,
-    toLabel: plan.toLabel ?? null, backupPath: plan.backupPath ?? null, keepable,
+    toLabel: plan.toLabel ?? null, fromInstalledAt: plan.fromInstalledAt ?? null, toInstalledAt: plan.toInstalledAt ?? null,
+    backupPath: plan.backupPath ?? null, keepable, backOutFailed: plan.backOutFailed ?? (BACK_OUT_CHECKS.has(journal?.backOutFailed) ? journal.backOutFailed : null),
     alternative: other?.kind ?? null, alternativeRefused: plan === shown ? shown.alternativeRefused ?? null : null };
 }
 
@@ -370,14 +401,14 @@ async function runStep(step, context) {
     case 'check-formats': {
       let now;
       try { now = await deps.storeFormats(paths, readJsonFile(paths.nativeRuntimeManifestPath, null)); }
-      catch (error) { throw stepFailed('format_unreadable', 'The store format could not be read.', error); }
-      if (JSON.stringify(now) !== JSON.stringify(step.formats)) throw stepFailed('format_changed', 'The store format is not the one from before the switch.');
+      catch (error) { throw backOutStopped(step, root, stepFailed('format_unreadable', 'The store format could not be read.', error)); }
+      if (JSON.stringify(now) !== JSON.stringify(step.formats)) throw backOutStopped(step, root, stepFailed('format_changed', 'The store format is not the one from before the switch.'));
       return;
     }
     case 'check-fingerprint': {
       let same = false;
       try { same = await deps.fingerprint(step.home) === step.fingerprint; } catch { /* unreadable: changed */ }
-      if (!same) throw stepFailed('assets_changed', 'The older Neo4j programs changed; backing out is unsafe.');
+      if (!same) throw backOutStopped(step, root, stepFailed('assets_changed', 'The older Neo4j programs changed; backing out is unsafe.'));
       return;
     }
     case 'check-start':
@@ -416,8 +447,11 @@ async function runStep(step, context) {
       await mkdir(folder, { recursive: true, mode: 0o700 });
       return rename(join(root, JOURNAL), join(folder, JOURNAL));
     }
-    case 'restore':
-      try { return await deps.restore({ from: step.from, instances: step.instances }, owner); }
+    case 'restore': {
+      // Each graph's state goes into the lock before it is written (graph-import-states.js):
+      // a restore killed part way, or failed, is never judged by an earlier attempt's record.
+      const mark = (id, state) => markLock(context, { graphStates: { ...readLock(root)?.holder?.graphStates, [id]: state } });
+      try { return await deps.restore({ from: step.from, instances: step.instances }, owner, mark); }
       catch (error) {
         // A copy whose checksums do not match can never be restored: abandoning the import is the way on.
         if (error?.copyDamaged) throw stepFailed('restore_point_damaged', `The copy ${step.from} is damaged.`, error, { why: 'damaged', backupPath: step.from });
@@ -427,6 +461,7 @@ async function runStep(step, context) {
         await claimLock(root, owner, { identity: deps.identity, identify: deps.whoami, patch: { restoreFailed: failure } }).catch(() => false);
         throw stepFailed('restore_failed', `The graph could not be restored from ${step.from}.`, error, { ...failure, backupPath: step.from });
       }
+    }
     case 'prune':
       if (!isRecoveryFolder(root, step.path)) throw stepFailed('unmanaged_path', 'Only an old recovery folder is deleted.');
       return rm(step.path, { recursive: true, force: true });
@@ -437,6 +472,17 @@ async function runStep(step, context) {
     }
     default: throw new TypeError(`Unknown recovery step: ${step.do}`);
   }
+}
+
+// A back-out's check that failed is recorded in the switch journal
+// (backOutFailed, written whole or not at all), so the next plan opens keeping
+// the switched-to descriptor: going back cannot be proven, and finishing may
+// not start either. Answers [error] to throw.
+function backOutStopped(step, root, error) {
+  if (!step.backOut) return error;
+  const journal = readJsonFile(join(root, JOURNAL), null);
+  if (journal) writeJsonFileAtomic(join(root, JOURNAL), { ...journal, backOutFailed: error.reason });
+  return error;
 }
 
 // Records [patch] in the lock this recovery holds (holder.json).

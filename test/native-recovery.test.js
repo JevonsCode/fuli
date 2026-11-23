@@ -700,8 +700,9 @@ test('every reason a recovery gives is said in both languages, with a next step'
   assert.match(abandon, /没有记下导入的是哪些图谱，所以每个图谱都按文件的修改时间判断/);
   assert.match(abandon, /fuli graph import --input "\/x\/fuli-data\/backups\/graph\/before-import-0" --data-dir "\/x\/fuli-data" --yes/);
   assert.match(abandon, /永久删除旧的恢复文件夹 .+超过 40 天，之后又有至少 4 次恢复/, 'the clean-up says it deletes, by the rule the plan carries');
-  assert.match(abandon, /personal：导入开始后它的库被写过，可能只写了一半/);
-  assert.match(abandon, /workspace：判断不了它有没有被这次导入写过.+一起挪开；它的库是完好的可能性很大/);
+  assert.match(abandon, /personal：看文件的修改时间，导入开始后它的库被写过，可能只写了一半/);
+  assert.match(abandon, /workspace：判断不了它有没有被这次导入写过.+为安全起见一起挪开，不删除.+怎么搬回来见下面/);
+  assert.match(abandon, /确认之后，再运行恢复只会接着把放弃做完，不会再自动导回；想回到导入前，请用下面列出的导回命令/);
   assert.match(abandon, /Abandon .+whether this import wrote it cannot be told/s);
   assert.match(abandon, /先退出 FULI（fuli stop）.+\n  mv "\/x\/fuli-data\/native-runtime\/recovered\/2026-11-22T00-00-00-000Z\/personal\/data\/databases\/neo4j" "\/x\/fuli-data\/native-runtime\/personal\/data\/databases\/neo4j"/s,
     'how to move it back, with the paths filled in');
@@ -842,7 +843,7 @@ function goodCopy(load) {
 test('abandoning an import moves only the graph it was writing: one it finished holds the new data, and the words say so', async (t) => {
   const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
   // personal was imported whole; the import was killed half way through workspace, and its copy is gone.
-  const load = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  const load = bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } }));
   rmSync(load.copy, { recursive: true });
   const plan = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
   assert.deepEqual([plan.halfWritten, plan.imported, plan.beforeImport, plan.instances], [['workspace'], ['personal'], [], ['workspace']]);
@@ -850,26 +851,27 @@ test('abandoning an import moves only the graph it was writing: one it finished 
   const words = formatRecoveryPlan(plan);
   assert.match(words, /personal：已经完整导入了这次的新数据，留在原位。放弃导入不会让它回到导入前。这次导入前的副本用不了/);
   assert.match(words, /personal: it already holds all of this import's new data/);
-  assert.match(words, /workspace：被打断时正在写入它，可能只写了一半/);
+  assert.match(words, /workspace：这次导入写它的时候停下了（被打断或失败），可能只写了一半/);
   const { result } = await recover(load.paths, deps(), { abandonImport: true });
   assert.equal(result.status, 'recovered');
   assert.ok(existsSync(join(load.paths.nativePersonalDir, 'data', 'databases', 'neo4j')), 'personal stays');
   assert.equal(existsSync(join(load.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j')), false);
 
-  // Not reached yet: still the data from before. During the import's own rollback, one rolled back is before-import data too.
-  const early = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'personal' }));
+  // Not reached yet: still the data from before.
+  const early = bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'writing', workspace: 'untouched' } }));
   rmSync(early.copy, { recursive: true });
   const first = await planNativeRecovery({ paths: early.paths, abandonImport: true, dependencies: deps().dependencies });
   assert.deepEqual([first.halfWritten, first.imported, first.beforeImport], [['personal'], [], ['workspace']]);
   assert.match(formatRecoveryPlan(first), /workspace：还是导入前的数据，留在原位/);
-  const rolling = bothStores(await interruptedLoad(t, { path: 'x', instances: ['personal', 'workspace'], loading: ['personal', 'workspace'] },
-    { loadingInstance: 'workspace', rollingBack: true }));
-  const back = await planNativeRecovery({ paths: rolling.paths, abandonImport: true, dependencies: deps().dependencies });
-  assert.deepEqual([back.halfWritten, back.beforeImport, back.unclear], [['workspace'], ['personal'], []]);
+  // A graph the lock names no state for is judged by its file times, the others by their state.
+  const mixed = bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported' } }));
+  rmSync(mixed.copy, { recursive: true });
+  const partly = await planNativeRecovery({ paths: mixed.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([partly.imported, partly.written, partly.allInstances], [['personal'], ['workspace'], false]);
 });
 
 test('abandoning killed between moving a graph\'s database and its transaction logs puts both in one folder when run again', async (t) => {
-  const load = bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  const load = bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } }));
   rmSync(load.copy, { recursive: true });
   const shown = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
   assert.deepEqual(shown.steps.map(step => step.do), ['mark-abandoning', 'move-aside', 'move-aside', 'release-lock']);
@@ -896,29 +898,156 @@ test('abandoning killed between moving a graph\'s database and its transaction l
 
 test('a copy that is good but will not go back says why, and abandoning the import is open after it, keeping that copy listed', async (t) => {
   const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
-  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' })));
-  const failing = { restore: async () => { throw Object.assign(new Error('No space left on device'), { instance: 'personal', restored: [] }); },
-    diskFree: async () => 1024, listProcesses: async () => [{ pid: 66, command: `java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf` }] };
+  const load = goodCopy(bothStores(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } })));
+  const failing = { restore: async (_copy, _owner, mark) => {
+    await mark('personal', 'restoring');
+    await mark('personal', 'restoreFailed');
+    throw new Error('No space left on device');
+  }, diskFree: async () => 1024, listProcesses: async () => [{ pid: 66, command: `/opt/java/bin/java -Dneo4j.conf=${load.paths.nativePersonalDir}/conf --secret` }] };
   const stopped = await stoppedAt(recover(load.paths, deps(failing)));
   assert.equal(stopped.reason, 'restore_failed');
-  assert.deepEqual([stopped.facts.freeBytes, stopped.facts.holders.map(({ pid }) => pid), stopped.facts.instance], [1024, [66], 'personal']);
-  assert.ok(stopped.facts.neededBytes > 0);
+  assert.deepEqual([stopped.facts.freeBytes, stopped.facts.holders], [1024, [{ pid: 66, name: 'java' }]], 'a process holding the store is kept by PID and program name only');
+  assert.ok(stopped.facts.leastBytes > 0);
   assert.equal(readLock(load.root).holder.restoreFailed.detail, 'No space left on device', 'the failure is recorded in the lock');
+  assert.doesNotMatch(JSON.stringify(readLock(load.root).holder.restoreFailed), /neo4j\.conf|--secret/, 'no command line in the lock');
   const words = formatRecoveryPlan({ kind: 'refused', reason: stopped.reason, ...stopped.facts });
-  assert.match(words, /磁盘剩余 1\.0 KB，导回大约需要 .+还有进程在用图谱的目录：66/);
+  assert.match(words, /磁盘剩余 1\.0 KB，导回至少需要 .+还有进程在用图谱的目录：66（java）.+kill 66/);
   assert.match(words, /副本本身是好的.+--abandon-import/s);
   // The ordinary plan tries again and says abandoning is open; abandoning keeps that copy and says it is good.
   const again = await planNativeRecovery({ paths: load.paths, dependencies: deps().dependencies });
   assert.equal(again.restoreFailed.detail, 'No space left on device');
   assert.match(formatRecoveryPlan(again), /上次导回没有成功.+--abandon-import/s);
   const abandon = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
-  assert.deepEqual([abandon.kind, abandon.copyProblem, abandon.halfWritten], ['abandon_load', 'restore_failed', ['personal', 'workspace']]);
+  assert.deepEqual([abandon.kind, abandon.copyProblem, abandon.restoreUnfinished, abandon.halfWritten], ['abandon_load', 'restore_failed', ['personal'], ['workspace']]);
   assert.ok(abandon.copies.some(copy => copy.path === load.copy), 'the good copy stays offered');
   assert.match(formatRecoveryPlan(abandon), /副本是好的（校验和对得上）.+原因解决后可以用下面列出的 fuli graph import 命令把它导回/s);
   assert.doesNotMatch(formatRecoveryPlan(abandon), /用不了|已损坏|找不到/);
   // Without a failed restore, a good copy is not abandoned.
-  const fine = goodCopy(await interruptedLoad(t, undefined, { loadingInstance: 'workspace' }));
+  const fine = goodCopy(await interruptedLoad(t, undefined, { graphStates: { personal: 'imported', workspace: 'writing' } }));
   assert.equal((await planNativeRecovery({ paths: fine.paths, abandonImport: true, dependencies: deps().dependencies })).reason, 'restore_point_usable');
+});
+
+// The lock each load of a real import (graph-backup.js) took, in order, with
+// [fails] deciding which loads fail: an import killed during load k leaves
+// exactly locks[k] behind.
+async function importLocks(t, fails) {
+  const { exportGraphData, importGraphData } = await import('../src/backup/graph-backup.js');
+  const root = mkdtempSync(join(tmpdir(), 'fuli-import-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  await exportGraphData({ outputDir: join(root, 'source'), sourceMode: 'native', instances: ['personal', 'workspace'],
+    adapter: { async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `new:${id}`); }, async start() {} } });
+  const locks = [];
+  await importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter: {
+    async stop() { return { resume: false }; }, async dump(id, to) { writeFileSync(to, `old:${id}`); }, async start() {},
+    async load(id, _from, { rollback, graphStates }) {
+      locks.push({ id, rollback, graphStates });
+      if (fails(id, rollback)) throw new Error('load failed');
+    } } }).catch(() => {});
+  return locks;
+}
+
+// What abandoning an import whose own copy is gone does with each graph, killed with [graphStates] in its lock.
+async function abandonWith(t, graphStates) {
+  const load = bothStores(await interruptedLoad(t, undefined, { graphStates }));
+  rmSync(load.copy, { recursive: true });
+  const plan = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+  const { result } = await recover(load.paths, deps(), { abandonImport: true });
+  assert.equal(result.status, 'recovered');
+  const stays = id => existsSync(join(id === 'personal' ? load.paths.nativePersonalDir : load.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j'));
+  return { plan, stays };
+}
+
+test('an import that failed on its second graph and was killed while rolling the first one back: abandoning moves both, and says why each', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const locks = await importLocks(t, (id, rollback) => id === 'workspace' && !rollback);
+  const killed = locks.find(({ id, rollback }) => id === 'personal' && rollback);
+  assert.deepEqual(killed.graphStates, { personal: 'restoring', workspace: 'importFailed' }, 'the failed graph is in the rollback\'s lock');
+  const { plan, stays } = await abandonWith(t, killed.graphStates);
+  assert.deepEqual([plan.restoreUnfinished, plan.halfWritten, plan.imported, plan.beforeImport], [['personal'], ['workspace'], [], []]);
+  assert.deepEqual([stays('personal'), stays('workspace')], [false, false], 'both may be half written: both move aside, nothing deleted');
+  const words = formatRecoveryPlan(plan);
+  assert.match(words, /personal：把它从这次导入前的副本导回时停下了（被打断或没有成功），可能只写了一半/);
+  assert.match(words, /workspace：这次导入写它的时候停下了（被打断或失败），可能只写了一半/);
+  assert.doesNotMatch(words, /也可能还是导入前|留在原位/, 'no graph is left in place on a guess');
+});
+
+test('an import rollback that failed on one graph and was killed on the next: both move aside, the failed one is never taken for data from before', async (t) => {
+  const locks = await importLocks(t, (id, rollback) => (id === 'workspace' && !rollback) || (id === 'personal' && rollback));
+  const killed = locks.find(({ id, rollback }) => id === 'workspace' && rollback);
+  assert.deepEqual(killed.graphStates, { personal: 'restoreFailed', workspace: 'restoring' });
+  const { plan, stays } = await abandonWith(t, killed.graphStates);
+  assert.deepEqual([plan.restoreUnfinished, plan.beforeImport], [['personal', 'workspace'], []]);
+  assert.deepEqual([stays('personal'), stays('workspace')], [false, false]);
+});
+
+test('a restore that failed, then on a retry brought one graph back and was killed on the next: abandoning keeps the one brought back and moves the other', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  // The import was killed writing workspace; its copy (good) holds both graphs.
+  const load = bothStores(await interruptedLoad(t, (_load, copy) => ({ path: copy, instances: ['personal', 'workspace'], loading: ['personal', 'workspace'] }),
+    { graphStates: { personal: 'imported', workspace: 'writing' } }));
+  const entries = ['personal', 'workspace'].map(id => ({ id, file: `${id}.dump`, sha256: createHash('sha256').update(`${id} before`).digest('hex') }));
+  for (const id of ['personal', 'workspace']) writeFileSync(join(load.copy, `${id}.dump`), `${id} before`);
+  writeFileSync(join(load.copy, 'manifest.json'), JSON.stringify({ format: 'fuli-neo4j-backup', version: 1, createdAt: '2026-11-22T00:00:00.000Z', sourceMode: 'native', instances: entries }));
+  // First recovery: personal would not go back (no space).
+  const first = await stoppedAt(recover(load.paths, deps({ restore: async (_copy, _owner, mark) => {
+    await mark('personal', 'restoring');
+    await mark('personal', 'restoreFailed');
+    throw new Error('No space left on device');
+  }, diskFree: async () => 1024 })));
+  assert.equal(first.reason, 'restore_failed');
+  assert.equal(readLock(load.root).holder.graphStates.personal, 'restoreFailed');
+  // Space freed, tried again: personal is back, then it was killed while workspace was being written.
+  await stoppedAt(recover(load.paths, deps({ restore: async (_copy, _owner, mark) => {
+    await mark('personal', 'restoring');
+    await mark('personal', 'restored');
+    await mark('workspace', 'restoring');
+    throw new Error('killed');
+  } })));
+  assert.deepEqual(readLock(load.root).holder.graphStates, { personal: 'restored', workspace: 'restoring' }, 'each graph\'s state was updated before it was written');
+  // The window still offers abandoning (the earlier failure); the person takes it.
+  const plan = await planNativeRecovery({ paths: load.paths, abandonImport: true, dependencies: deps().dependencies });
+  assert.deepEqual([plan.kind, plan.beforeImport, plan.restoreUnfinished, plan.halfWritten, plan.imported], ['abandon_load', ['personal'], ['workspace'], [], []]);
+  const words = formatRecoveryPlan(plan);
+  assert.match(words, /personal：还是导入前的数据，留在原位/);
+  assert.match(words, /workspace：把它从这次导入前的副本导回时停下了.+原因解决后，可以用下面这次导入前的副本把它导回/s);
+  const { result } = await recover(load.paths, deps(), { abandonImport: true });
+  assert.equal(result.status, 'recovered');
+  assert.ok(existsSync(join(load.paths.nativePersonalDir, 'data', 'databases', 'neo4j')), 'personal, brought back, stays');
+  assert.equal(existsSync(join(load.paths.nativeWorkspaceDir, 'data', 'databases', 'neo4j')), false, 'workspace, half written, moves aside');
+  assert.equal(existsSync(join(load.root, LOCK)), false, 'the record goes with the lock');
+});
+
+test('a newer version that does not start and whose programs cannot read the store format can still be kept and unlocked', async (t) => {
+  const { formatRecoveryPlan } = await import('../src/cli/recovery-plan-text.js');
+  const broken = { storeFormats: async () => { throw new Error('java: bad CPU type'); }, checkStart: async () => { throw new Error('no answer'); } };
+  // Read at plan time (nothing runs): going back cannot be checked, so keeping is open at once.
+  const stuck = await newerInPlace(t);
+  const plan = await planNativeRecovery({ paths: stuck.paths, dependencies: deps(broken).dependencies });
+  assert.deepEqual([plan.kind, plan.alternative, plan.alternativeRefused, plan.keepable], ['finish_switch', null, 'format_unreadable', true]);
+  const words = formatRecoveryPlan(plan);
+  assert.match(words, /不能取消更新、回到 5\.26\.0：读不出存储格式：读它用的是现在生效的这一份程序和 Java/);
+  assert.match(words, /如果 5\.26\.28 也起不来，可以完成更新并解除这把锁.+--keep-newer/);
+  const finish = await stoppedAt(recover(stuck.paths, deps(broken)));
+  assert.deepEqual([finish.reason, finish.facts.keepable], ['start_failed', true]);
+  const keep = await planNativeRecovery({ paths: stuck.paths, keepNewer: true, dependencies: deps(broken).dependencies });
+  assert.equal(keep.kind, 'keep_newer');
+  assert.equal((await applyNativeRecovery({ paths: stuck.paths, digest: keep.digest, keepNewer: true, dependencies: deps(broken).dependencies })).status, 'recovered');
+  assert.equal(existsSync(join(stuck.root, LOCK)), false);
+  assert.equal(existsSync(join(stuck.root, 'neo4j-transaction.json')), false);
+  assert.equal((await planNativeRecovery({ paths: stuck.paths, dependencies: deps(broken).dependencies })).kind, 'nothing', 'an ordinary failed start is next');
+
+  // Services were running at plan time, so going back was offered; it stopped at the format: recorded, and keeping opens.
+  const running = await newerInPlace(t);
+  writeFileSync(running.paths.nativeProcessStatePath, JSON.stringify({ databases: { personal: { pid: 77, command: 'java' } } }));
+  const alive = { state: pid => pid === 77 ? 'running' : 'gone', startTime: async () => null, matches: async pid => pid === 77 };
+  const backed = await stoppedAt(recover(running.paths, deps({ ...broken, identity: alive }), { backOut: true }));
+  assert.deepEqual([backed.reason, backed.facts.keepable, backed.facts.backOutFailed], ['format_unreadable', true, 'format_unreadable']);
+  assert.equal(JSON.parse(readFileSync(join(running.root, 'neo4j-transaction.json'), 'utf8')).backOutFailed, 'format_unreadable');
+  rmSync(running.paths.nativeProcessStatePath);
+  const again = await planNativeRecovery({ paths: running.paths, dependencies: deps(broken).dependencies });
+  assert.deepEqual([again.keepable, again.backOutFailed], [true, 'format_unreadable']);
+  assert.match(formatRecoveryPlan(again), /上次取消更新、回到 5\.26\.0 没有走通：读不出存储格式/);
+  assert.equal((await planNativeRecovery({ paths: running.paths, keepNewer: true, dependencies: deps(broken).dependencies })).kind, 'keep_newer');
 });
 
 test('finishing a switch without a start check is open only once going back is impossible or was tried', async (t) => {
@@ -956,12 +1085,14 @@ test('an unfinished rollback is worded as a rollback, with the versions and prog
   const plan = await planNativeRecovery({ paths, dependencies: deps().dependencies });
   assert.deepEqual([plan.kind, plan.alternative.kind], ['finish_switch', 'back_out_switch']);
   const words = formatRecoveryPlan(plan);
-  assert.match(words, /完成这次没做完的回退，改用 5\.26\.28 \(neo4j-assets\/jvs-a-1111\/neo4j-community-5\.26\.28\)/);
-  assert.match(words, /也可以取消回退、留在 5\.26\.28 \(neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28\)/);
+  assert.match(words, /完成这次没做完的回退，改用 5\.26\.28（更新前保留的那一份程序，安装于 [^）]+）/);
+  assert.match(words, /也可以取消回退、留在 5\.26\.28（回退前在用的那一份程序，安装于 [^）]+）/);
+  assert.match(words, /cancel the rollback and stay on 5\.26\.28 \(the programs in use before the rollback, installed /);
+  assert.doesNotMatch(words, /jvs-a-/, 'the install time names each side, not the hashed directory');
   assert.match(words, /Finish the unfinished rollback to 5\.26\.28/);
   assert.doesNotMatch(words, /新版本|旧版本|\bnewer\b|\bolder\b|升级前|upgrade/);
   const back = formatRecoveryPlan(plan.alternative);
-  assert.match(back, /取消这次没做完的回退，留在 5\.26\.28 \(neo4j-assets\/jvs-a-2222/);
+  assert.match(back, /取消这次没做完的回退，留在 5\.26\.28（回退前在用的那一份程序，安装于 /);
   assert.doesNotMatch(back, /新版本|旧版本|\bnewer\b|\bolder\b/, back);
   // An update says update.
   const update = await newerInPlace(t);

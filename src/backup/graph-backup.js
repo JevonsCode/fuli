@@ -11,6 +11,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
+import { GRAPH_STATE } from './graph-import-states.js';
 import { sha256File } from '../security/digest.js';
 
 const BACKUP_FORMAT = 'fuli-neo4j-backup';
@@ -136,9 +137,18 @@ export async function importGraphData({
     // holds, and which this import overwrites.
     const restorePoint = { path: rollbackReady ? rollbackRoot : null,
       instances: rollbackEntries.map(({ id }) => id), loading: manifest.instances.map(({ id }) => id) };
+    // Where this import stands with each graph (graph-import-states.js): every
+    // load's lock carries all of it, with the graph it is about to write
+    // already marked, so abandoning a killed import never guesses from the order.
+    const graphStates = Object.fromEntries(manifest.instances.map(({ id }) => [id, GRAPH_STATE.untouched]));
+    const loadMarked = (id, path, state, rollback) => {
+      graphStates[id] = state;
+      return adapter.load(id, path, { rollback, restorePoint, graphStates: { ...graphStates } });
+    };
     try {
       for (const entry of manifest.instances) {
-        await adapter.load(entry.id, join(source, entry.file), { rollback: false, restorePoint });
+        await loadMarked(entry.id, join(source, entry.file), GRAPH_STATE.writing, false);
+        graphStates[entry.id] = GRAPH_STATE.imported;
       }
       if (typeof adapter.reconcile === 'function') {
         await adapter.reconcile({
@@ -150,10 +160,15 @@ export async function importGraphData({
       }
     } catch (error) {
       let rollbackError = null;
+      for (const [id, state] of Object.entries(graphStates)) {
+        if (state === GRAPH_STATE.writing) graphStates[id] = GRAPH_STATE.importFailed;
+      }
       for (const entry of rollbackEntries) {
         try {
-          await adapter.load(entry.id, entry.path, { rollback: true, restorePoint });
+          await loadMarked(entry.id, entry.path, GRAPH_STATE.restoring, true);
+          graphStates[entry.id] = GRAPH_STATE.restored;
         } catch (caught) {
+          graphStates[entry.id] = GRAPH_STATE.restoreFailed;
           rollbackError ??= caught;
         }
       }

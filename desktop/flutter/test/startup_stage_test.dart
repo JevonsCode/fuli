@@ -203,16 +203,22 @@ void main() {
         contains('不能取消更新、回到 5.26.0'));
     // An unfinished rollback: its target is the kept older programs, so it is worded as a rollback with each side's programs, never newer / older.
     const rollbackFacts = {'operation': 'rollback', 'fromVersion': '5.26.28', 'toVersion': '5.26.28',
-      'fromLabel': '5.26.28 (neo4j-assets/jvs-a-2)', 'toLabel': '5.26.28 (neo4j-assets/jvs-a-1)'};
+      'fromLabel': '5.26.28 (neo4j-assets/jvs-a-2)', 'toLabel': '5.26.28 (neo4j-assets/jvs-a-1)',
+      'fromInstalledAt': '2026-11-20T06:00:00.000Z', 'toInstalledAt': '2026-10-02T06:00:00.000Z'};
     final rollback = RecoveryPlan('finish_switch', const [{'do': 'check-start', 'version': '5.26.28'}], 'd', const {...rollbackFacts,
       'alternative': {'kind': 'back_out_switch', 'steps': [], 'digest': 'e'}});
     final rollbackWords = [...zh.recoveryPlanWords(rollback), zh.recoveryAlternativeWords(rollback)!, zh.finishSwitchTo(rollback.facts), zh.cancelSwitch(rollback.facts),
       zh.recoveryRefused('start_failed', const {...rollbackFacts, 'planKind': 'back_out_switch', 'keepable': true})].join('\n');
-    expect(rollbackWords, contains('完成这次没做完的回退，改用 5.26.28 (neo4j-assets/jvs-a-1)'));
-    expect(rollbackWords, contains('取消回退，留在 5.26.28 (neo4j-assets/jvs-a-2) 并启动'));
+    // Each side by which copy of the programs it is and when it was installed, never the hashed directory.
+    expect(rollbackWords, matches(RegExp('完成这次没做完的回退，改用 5.26.28（更新前保留的那一份程序，安装于 [^）]+）')));
+    expect(rollbackWords, matches(RegExp('取消回退，留在 5.26.28（回退前在用的那一份程序，安装于 [^）]+） 并启动')));
+    expect(rollbackWords, isNot(contains('jvs-a-')));
     expect(rollbackWords, isNot(matches(RegExp('新版本|旧版本|升级前'))));
-    final rollbackEn = [...en.recoveryPlanWords(rollback), en.finishSwitchTo(rollback.facts)].join('\n');
-    expect(rollbackEn, contains('Finish the unfinished rollback to 5.26.28 (neo4j-assets/jvs-a-1)'));
+    final rollbackEn = [...en.recoveryPlanWords(rollback), en.finishSwitchTo(rollback.facts), en.cancelSwitch(rollback.facts)].join('\n');
+    expect(rollbackEn, contains('Finish the unfinished rollback to 5.26.28 (the programs kept from before the update, installed '));
+    expect(rollbackEn, contains('stay on 5.26.28 (the programs in use before the rollback, installed '));
+    // Without an install time, the directory tells them apart.
+    expect(zh.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), '取消回退，留在 5.26.28 (neo4j-assets/jvs-a-2) 并启动');
     expect(rollbackEn, isNot(matches(RegExp(r'\bnewer\b|\bolder\b'))));
     for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
       'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
@@ -241,23 +247,25 @@ void main() {
     })).join('\n');
     expect(abandon, contains('已损坏（读不出或校验和不对）：/x/b'));
     expect(abandon, contains('每个图谱都按文件的修改时间判断'));
-    expect(abandon, contains('个人图谱：导入开始后它的库被写过，可能只写了一半'));
-    expect(abandon, contains('工作区图谱：判断不了它有没有被这次导入写过，所以一起挪开；它的库是完好的可能性很大'));
+    expect(abandon, contains('个人图谱：看文件的修改时间，导入开始后它的库被写过，可能只写了一半'));
+    expect(abandon, contains('工作区图谱：判断不了它有没有被这次导入写过，为安全起见一起挪开，不删除'));
+    expect(abandon, contains('确认之后，再点「恢复并启动」只会接着把放弃做完，不会再自动导回'));
     expect(abandon, contains('mv "/x/native-runtime/recovered/t/personal/data/databases/neo4j" "/x/native-runtime/personal/data/databases/neo4j"'));
     expect(abandon, contains('fuli graph import --input "/x/backups/graph/before-import-0" --data-dir "/x" --yes'));
     // Abandoning after an import that stopped half way through one graph: the one it finished holds the new data, and says so.
     final judged = zh.recoveryPlanWords(const RecoveryPlan('abandon_load', [], 'd', {
       'copyProblem': 'restore_failed', 'backupPath': '/x/b', 'dataDir': '/x', 'halfWritten': ['workspace'], 'imported': ['personal'],
-      'beforeImport': [], 'unclear': [], 'inCopy': ['personal'], 'restoreFailed': {'detail': 'No space left on device', 'freeBytes': 1024, 'neededBytes': 4096,
-        'holders': [{'pid': 66, 'command': 'java'}]},
+      'restoreUnfinished': ['personal'], 'beforeImport': [], 'inCopy': ['personal'], 'restoreFailed': {'detail': 'No space left on device', 'freeBytes': 1024, 'leastBytes': 4096,
+        'holders': [{'pid': 66, 'name': 'java'}]},
       'copies': [{'path': '/x/b', 'createdAt': '2026-11-20T00:00:00.000Z', 'bytes': 2048, 'instances': ['personal']}],
     })).join('\n');
-    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回大约需要 4.0 KB。还有进程在用图谱的目录：66（java）'));
-    expect(judged, contains('个人图谱：已经完整导入了这次的新数据，留在原位。放弃导入不会让它回到导入前。想让它也回到导入前'));
-    expect(judged, contains('工作区图谱：被打断时正在写入它'));
+    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回至少需要 4.0 KB。还有进程在用图谱的目录：66（java），可能是 FULI 之前没关掉的数据库；先在「活动监视器」里结束它'));
+    expect(judged, contains('个人图谱：把它从这次导入前的副本导回时停下了（被打断或没有成功），可能只写了一半。继续的话会变成空的'));
+    expect(judged, contains('原因解决后，可以用下面这次导入前的副本把它导回'));
+    expect(judged, contains('工作区图谱：这次导入写它的时候停下了（被打断或失败）'));
     expect(judged, contains('fuli graph import --input "/x/b"'));
     expect(zh.abandonableImport(const StartupFailure('recovery_refused', {'reason': 'restore_failed'})), isTrue);
-    expect(zh.recoveryRefused('restore_failed', const {'detail': 'No space left on device', 'freeBytes': 1024, 'neededBytes': 4096, 'backupPath': '/x/b'}),
+    expect(zh.recoveryRefused('restore_failed', const {'detail': 'No space left on device', 'freeBytes': 1024, 'leastBytes': 4096, 'backupPath': '/x/b'}),
         allOf(contains('磁盘剩余 1.0 KB'), contains('副本本身是好的：/x/b'), contains('「放弃这次导入…」')));
     // Clearing old recovery folders says it deletes them, by the rule the plan carries.
     expect(zh.recoveryPlanWords(const RecoveryPlan('release_dump', [{'do': 'prune', 'path': '/x/recovered/a', 'bytes': 1024, 'keepDays': 40, 'keepRuns': 4}], 'd', {}))[1],
@@ -270,6 +278,12 @@ void main() {
     final keepable = zh.recoveryRefused('start_failed', const {'planKind': 'finish_switch', 'alternativeRefused': 'no_fingerprint', 'operation': 'update',
       'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'keepable': true});
     expect(keepable, contains('「完成更新并解除这把锁…」：不做启动检查，之后不能再回到 5.26.0'));
+    // Going back stopped at the store format, which the programs now in effect could not read: why, and that keeping is open.
+    final unreadable = {'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'keepable': true, 'backOutFailed': 'format_unreadable'};
+    expect(zh.recoveryRefused('start_failed', {...unreadable, 'planKind': 'finish_switch'}), contains('取消更新没有走通：读不出存储格式'));
+    expect(zh.recoveryPlanWords(RecoveryPlan('finish_switch', const [], 'd', unreadable)).join(), contains('上次取消更新、回到 5.26.0 没有走通：读不出存储格式'));
+    expect(zh.recoveryAlternativeWords(const RecoveryPlan('finish_switch', [], 'd', {'operation': 'update', 'fromVersion': '5.26.0', 'alternativeRefused': 'format_unreadable'})),
+        contains('读它用的是现在生效的这一份程序和 Java'));
     expect(alone, contains('端口 7687 被进程 55 占着'));
     expect(alone, contains('日志在 /x/personal/logs'));
     expect(zh.recoveryRefused('start_failed', const {'planKind': 'finish_switch', 'alternative': 'back_out_switch', 'operation': 'update', 'fromVersion': '5.26.0'}),

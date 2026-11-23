@@ -77,10 +77,10 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     });
   }
 
-  async function load(instance, source, { restorePoint, rollback = false } = {}) {
+  async function load(instance, source, { restorePoint, graphStates } = {}) {
     await withStagingDirectory(source, async (stage) => {
       await copyFile(source, join(stage, 'neo4j.dump'));
-      await services.loadDatabase(instance, stage, { restorePoint, rollback });
+      await services.loadDatabase(instance, stage, { restorePoint, graphStates });
     });
   }
 

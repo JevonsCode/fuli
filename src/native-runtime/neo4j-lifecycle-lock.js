@@ -229,7 +229,7 @@ export async function neo4jLifecycleLockError(root, identity = IDENTITY) {
 const text = value => typeof value === 'string' && value ? value : null;
 
 // The program's own name from a command line ("java", "node").
-function commandName(command) {
+export function commandName(command) {
   const first = String(command ?? '').trim().split(/\s+/)[0];
   return first ? first.split('/').pop() : null;
 }

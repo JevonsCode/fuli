@@ -3,7 +3,8 @@ import { basename, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { readGraphBackupManifest, readVerifiedGraphBackup } from '../backup/graph-backup.js';
-import { lockStartedAt, processList } from './neo4j-lifecycle-lock.js';
+import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from '../backup/graph-import-states.js';
+import { commandName, lockStartedAt, processList } from './neo4j-lifecycle-lock.js';
 import { diskSize, GRAPH_STORE_DIRS, listNames, recoveryFolder, recoveryStamp } from './recovered-dir.js';
 import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } from './recovery-plan.js';
 
@@ -12,10 +13,10 @@ import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } fro
 // on its own — abandoning the import.
 //
 // What the lock records for it: the import's own copy and the instances it
-// loads (restorePoint), the instance being written now (loadingInstance) and
-// whether that is the import's own rollback (rollingBack); a recovery adds
-// that the copy is back (restored), why bringing it back failed
-// (restoreFailed), and how abandoning judged each graph (abandoning).
+// loads (restorePoint), and where the import stands with each graph
+// (graphStates, graph-import-states.js), written before each graph is
+// written; a recovery adds that the copy is back (restored), why bringing it
+// back failed (restoreFailed), and how abandoning judged each graph (abandoning).
 
 // File times may be truncated to the second (and a little more on some disks):
 // a store counts as written by an import when anything in it changed this
@@ -106,7 +107,7 @@ async function restoreCopy(paths, point, { verify }) {
 function planAbandon({ paths, lock, stop, end }, point, problem) {
   const recorded = lock.holder.abandoning;
   const judged = recorded ?? judge(paths, lock, point, problem);
-  const moving = [...judged.halfWritten ?? [], ...judged.written ?? [], ...judged.unsure ?? []];
+  const moving = [...judged.halfWritten ?? [], ...judged.restoreUnfinished ?? [], ...judged.written ?? [], ...judged.unsure ?? []];
   const moved = moving.flatMap(id => storesOf(paths, id).filter(store => existsSync(store)));
   const folder = abandonFolder(paths, lock);
   return planned('abandon_load', [...stop, ...(recorded ? [] : [{ do: 'mark-abandoning', abandoning: judged }]), ...moved.map(moveAside), ...end],
@@ -117,48 +118,44 @@ function planAbandon({ paths, lock, stop, end }, point, problem) {
 
 const abandonFolder = (paths, lock) => recoveryFolder(paths.nativeRuntimeDir, recoveryStamp(lockStartedAt(lock)));
 
-// What each graph holds when the import is abandoned, from what the lock
-// recorded: the instance being written when it stopped (or the one a failed
-// restore was writing) is half written; one the import finished before it
-// holds this import's new data ([imported]); one it had not reached yet, or
-// one a rollback or a restore brought back, holds the data from before the
-// import ([beforeImport]); during the import's own rollback, one it had not
-// reached may hold either ([unclear]). Instances with no store are left out.
-// A lock from before FULI recorded the instance (an older FULI's) is judged by
-// file times instead (judgeByTimes).
+// What each graph holds when the import is abandoned, from the state the lock
+// recorded for it (graph-import-states.js): one this import was writing, or
+// failed to write ([halfWritten]), or one being brought back from the copy, or
+// that failed to come back ([restoreUnfinished]), may be half written and
+// moves aside; one it wrote whole holds its new data ([imported]); one it did
+// not write, or one brought back, holds the data from before ([beforeImport]).
+// Instances with no store are left out. Only a graph the lock names no state
+// for — every one, in an older FULI's lock — is judged by file times (judgeByTimes).
 function judge(paths, lock, point, problem) {
-  const { holder } = lock;
   const base = { copyProblem: problem.why, backupPath: problem.backupPath ?? null, ...(problem.restoreFailed ? { restoreFailed: problem.restoreFailed } : {}) };
   const named = Array.isArray(point?.loading) && point.loading.length > 0 && point.loading.every(id => INSTANCES.has(id));
-  const current = holder.loadingInstance;
-  if (!named || !point.loading.includes(current)) return { ...base, ...judgeByTimes(paths, lock, point, named) };
-  const failed = holder.restoreFailed;
-  const before = (list, id) => list.includes(id) && list.indexOf(id) < list.indexOf(current);
-  const judged = { halfWritten: [], imported: [], beforeImport: [], unclear: [] };
+  if (!named) return { ...base, ...judgeByTimes(paths, lock, [...INSTANCES]), allInstances: true };
+  const states = recordedGraphStates(lock.holder.graphStates) ?? {};
+  const judged = { halfWritten: [], restoreUnfinished: [], imported: [], beforeImport: [] };
+  const unrecorded = [];
   for (const id of [...new Set(point.loading)]) {
     if (!storesOf(paths, id).some(store => existsSync(store))) continue;
-    const kind = failed?.instance === id ? 'halfWritten'
-      : failed?.restored?.includes(id) ? 'beforeImport'
-        : id === current ? 'halfWritten'
-          : holder.rollingBack === true ? (before(point.instances ?? [], id) ? 'beforeImport' : 'unclear')
-            : before(point.loading, id) ? 'imported' : 'beforeImport';
-    judged[kind].push(id);
+    const holds = graphStateHolds(states[id]);
+    if (holds === 'partial') judged[[GRAPH_STATE.restoring, GRAPH_STATE.restoreFailed].includes(states[id]) ? 'restoreUnfinished' : 'halfWritten'].push(id);
+    else if (holds === 'new') judged.imported.push(id);
+    else if (holds === 'before') judged.beforeImport.push(id);
+    else unrecorded.push(id);
   }
-  return { ...base, ...judged, inCopy: [...point.instances ?? []] };
+  return { ...base, ...judged, ...judgeByTimes(paths, lock, unrecorded), allInstances: false, inCopy: [...point.instances ?? []] };
 }
 
-// An older FULI's load lock: Neo4j is stopped while an import loads, so a
-// store with anything changed since that load took its lock (WRITE_SLACK_MS)
-// was written by it ([written]); when that cannot be told (a file time that
-// cannot be read) the instance moves aside too ([unsure]); the others stay
-// ([untouched]). A lock that names no instances means every one is looked at.
+// A graph whose state the lock does not name (an older FULI's lock names
+// none): Neo4j is stopped while an import loads, so a store with anything
+// changed since that load took its lock (WRITE_SLACK_MS) was written by it
+// ([written]); when that cannot be told (a file time that cannot be read)
+// it moves aside too, to be safe ([unsure]); the others stay ([untouched]).
 // An instance with a store already in this recovery's folder counts as
 // written: the rest of it follows.
-function judgeByTimes(paths, lock, point, named) {
+function judgeByTimes(paths, lock, ids) {
   const since = lockStartedAt(lock) - WRITE_SLACK_MS;
   const folder = abandonFolder(paths, lock);
   const written = [], unsure = [], untouched = [];
-  for (const id of named ? [...new Set(point.loading)] : [...INSTANCES]) {
+  for (const id of ids) {
     const all = storesOf(paths, id);
     const stores = all.filter(store => existsSync(store));
     if (!stores.length) continue;
@@ -166,7 +163,7 @@ function judgeByTimes(paths, lock, point, named) {
     const touched = partly ? true : Number.isFinite(since) ? writtenSince(stores, since) : null;
     (touched === false ? untouched : touched ? written : unsure).push(id);
   }
-  return { written, unsure, untouched, allInstances: !named };
+  return { written, unsure, untouched };
 }
 
 // Whether anything under [paths] changed at [since] or later; null when a time cannot be read.
@@ -207,17 +204,16 @@ function importCopies(paths, unusable) {
 
 // Why bringing the import's copy back failed, as far as FULI can see, for the
 // lock (restoreFailed) and the words: the error, the free space beside the
-// space a restore needs (it copies each dump to a staging folder and writes
-// the database from it: about twice the copy), the processes still naming a
-// graph instance's directory (an orphaned Neo4j holding the store), and which
-// instance it was writing and which it brought back before (recovery-services.js).
+// least a restore needs (it copies each dump to a staging folder and writes
+// the database from it, which takes more than the compressed dump: at least
+// twice the copy), and the processes still naming a graph instance's
+// directory (an orphaned Neo4j holding the store), by PID and program name only.
 export async function restoreFailure(paths, from, error, { diskFree, listProcesses = processList } = {}) {
   let freeBytes = null;
   try { freeBytes = await diskFree(paths.dataDir); } catch { /* unknown */ }
   const dirs = [paths.nativePersonalDir, paths.nativeWorkspaceDir].filter(Boolean);
   const processes = await listProcesses().catch(() => null) ?? [];
   const holders = processes.filter(({ pid, command }) => pid !== process.pid && dirs.some(dir => command.includes(dir)))
-    .map(({ pid, command }) => ({ pid, command: command.length > 160 ? `${command.slice(0, 157)}...` : command }));
-  return { detail: String(error?.message ?? error), freeBytes, neededBytes: 2 * diskSize(from), holders,
-    ...(typeof error?.instance === 'string' ? { instance: error.instance, restored: [...error.restored ?? []] } : {}) };
+    .map(({ pid, command }) => ({ pid, name: commandName(command) }));
+  return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders };
 }

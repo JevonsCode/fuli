@@ -568,7 +568,7 @@ test('a dump refused after a hard stop is retried once after a database-only sta
   assert.deepEqual(events, ['dump-1', 'start-database', 'stop-4800', 'dump-2']);
 });
 
-test('a load records in its lock the import\'s copy, the instance it writes and whether it is the import\'s rollback', async (t) => {
+test('a load records in its lock the import\'s copy and where the import stands with each graph, before neo4j-admin writes', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'fuli-load-holder-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const paths = { ...PATHS, nativeRuntimeDir: join(root, 'native-runtime') };
@@ -581,10 +581,12 @@ test('a load records in its lock the import\'s copy, the instance it writes and 
     run: async () => { holders.push(JSON.parse(readFileSync(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock', 'holder.json'), 'utf8'))); }
   });
   const restorePoint = { path: '/x/backups/graph/before-import-1', instances: ['personal'], loading: ['personal', 'workspace'] };
-  await services.loadDatabase('workspace', '/stage/in', { restorePoint });
-  await services.loadDatabase('personal', '/stage/in', { restorePoint, rollback: true });
-  assert.deepEqual(holders.map(({ operation, restorePoint: point, loadingInstance, rollingBack }) => [operation, point, loadingInstance, rollingBack]), [
-    ['load', restorePoint, 'workspace', undefined],
-    ['load', restorePoint, 'personal', true]
-  ]);
+  const writing = { personal: 'imported', workspace: 'writing' };
+  const restoring = { personal: 'restoring', workspace: 'importFailed' };
+  await services.loadDatabase('workspace', '/stage/in', { restorePoint, graphStates: writing });
+  await services.loadDatabase('personal', '/stage/in', { restorePoint, graphStates: restoring });
+  assert.deepEqual(holders.map(({ operation, restorePoint: point, graphStates }) => [operation, point, graphStates]), [
+    ['load', restorePoint, writing],
+    ['load', restorePoint, restoring]
+  ], 'the lock holder is read while neo4j-admin runs');
 });

@@ -276,7 +276,9 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/desktop/windows-update-command.js', 'the outcome of one update run, handed to the tray that started it and read once'],
   ['src/native-runtime/neo4j-lifecycle.js', 'Neo4j runtime manifest and journal; store versions are checked by neo4j-store-formats.js'],
   ['src/native-runtime/runtime.js', 'Neo4j process state of the running console'],
-  ['src/native-runtime/neo4j-lifecycle-lock.js', 'the lifecycle lock\'s holder record (who holds it, and what a recovery needs), removed with the lock'],
+  ['src/native-runtime/neo4j-lifecycle-lock.js', 'the lifecycle lock\'s holder record (who holds it, and what a recovery needs: an import\'s copy and each graph\'s state), removed with the lock. '
+    + 'A later FULI reads it (it recovers what an older one left); every field added since is optional when read, so it carries no version, and a lock '
+    + 'without them is judged by file times (load-recovery.js judgeByTimes)'],
   ['src/native-runtime/neo4j-recovery.js', 'the Neo4j runtime manifest and switch journal a recovery writes back, and its own recovery record'],
   ['src/mcp/process-registry.js', 'each running MCP server\'s version and recent sessions, removed when it exits'],
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],

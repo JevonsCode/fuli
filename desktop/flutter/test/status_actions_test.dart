@@ -146,7 +146,7 @@ void main() {
     await tester.tap(abandon);
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('abandon-import-preview'));
-    expect(find.textContaining('个人图谱：导入开始后它的库被写过'), findsOneWidget);
+    expect(find.textContaining('个人图谱：看文件的修改时间，导入开始后它的库被写过'), findsOneWidget);
     expect(find.textContaining('没有可以导回的导入前副本'), findsOneWidget);
     expect(find.text('放弃导入，清空这些图谱'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -199,7 +199,7 @@ void main() {
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'refused',
         failure: StartupFailure('recovery_refused', {'reason': 'restore_failed', 'detail': 'No space left on device', 'backupPath': '/x/b'})))
       ..recoveryPlan = const RecoveryPlan('restore_load', [{'do': 'restore', 'from': '/x/b', 'instances': ['personal']}, {'do': 'release-lock'}],
-          '0123456789abcdef', {'restoreFailed': {'detail': 'No space left on device', 'freeBytes': 1024, 'neededBytes': 4096}});
+          '0123456789abcdef', {'restoreFailed': {'detail': 'No space left on device', 'freeBytes': 1024, 'leastBytes': 4096}});
     final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
     await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
     await controller.refresh();

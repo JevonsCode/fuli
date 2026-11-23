@@ -92,11 +92,13 @@ test('failed graph import restores the target from an automatic rollback dump', 
   const inputDir = join(root, 'source');
   const loaded = [];
   const restorePoints = new Set();
+  const states = [];
   const adapter = {
     async stop() { return { resume: true }; },
     async dump(instance, destination) { await writeFile(destination, `old:${instance}`); },
     async load(instance, source, options = {}) {
       restorePoints.add(JSON.stringify(options.restorePoint));
+      states.push(options.graphStates);
       loaded.push({ instance, body: await readFile(source, 'utf8'), rollback: options.rollback });
       if (instance === 'workspace' && !options.rollback) throw new Error('load failed');
     },
@@ -123,6 +125,30 @@ test('failed graph import restores the target from an automatic rollback dump', 
   assert.match(point.path, /[\\/]rollback[\\/]before-import-/);
   assert.deepEqual([point.instances, point.loading], [['personal', 'workspace'], ['personal', 'workspace']]);
   assert.deepEqual((await readGraphBackupManifest(point.path)).instances.map(({ id }) => id), ['personal', 'workspace']);
+  // Each load's lock says where the import stands with every graph, the one about to be written already marked.
+  assert.deepEqual(states, [
+    { personal: 'writing', workspace: 'untouched' },
+    { personal: 'imported', workspace: 'writing' },
+    { personal: 'restoring', workspace: 'importFailed' },
+    { personal: 'restored', workspace: 'restoring' }
+  ]);
+});
+
+test('a rollback load that fails is recorded as such in the next load\'s lock, so it is never taken for data from before', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-graph-rollback-failed-'));
+  await exportGraphData({ outputDir: join(root, 'source'), sourceMode: 'container', instances: ['personal', 'workspace'],
+    adapter: { async stop() { return { resume: false }; }, async dump(instance, destination) { await writeFile(destination, `new:${instance}`); }, async start() {} } });
+  const states = [];
+  await assert.rejects(importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter: {
+    async stop() { return { resume: false }; },
+    async dump(instance, destination) { await writeFile(destination, `old:${instance}`); },
+    async load(instance, _source, options = {}) {
+      states.push(options.graphStates);
+      if (instance === 'workspace' ? !options.rollback : options.rollback) throw new Error('load failed');
+    },
+    async start() {}
+  } }), /rollback was incomplete/);
+  assert.deepEqual(states.at(-1), { personal: 'restoreFailed', workspace: 'restoring' });
 });
 
 test('an import whose automatic rollback did not finish names the copy it kept and the command that brings it back', async () => {
