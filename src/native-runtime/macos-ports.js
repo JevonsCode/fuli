@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 
 // Inspect all listening addresses, including wildcard/IPv6 sockets. Never signal
 // a listener while checking it. lsof failure is unknown, never a free port.
-async function listenerPids(port) {
+export async function listenerPids(port) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid native service port.');
   const text = await new Promise((resolve, reject) => execFile('/usr/sbin/lsof', [
     '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fp'
@@ -31,7 +31,7 @@ export async function assertMacNativePortOwner(entry, port) {
   throw new Error(`Native service port ${port} ownership could not be verified.`);
 }
 
-async function processGroup(pid) {
+export async function processGroup(pid) {
   return new Promise((resolve, reject) => execFile('/bin/ps', ['-p', String(pid), '-o', 'pgid='], {
     encoding: 'utf8', timeout: 10_000
   }, (error, stdout) => {

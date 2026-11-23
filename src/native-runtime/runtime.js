@@ -20,6 +20,7 @@ import { dirname, join, relative } from 'node:path';
 
 import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
+import { stopOrphanedServices } from './orphan-services.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
@@ -82,11 +83,14 @@ export function createNativeGraphServices({
     : platform === 'darwin' ? assertMacNativePortOwner : async () => {},
   verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree
     : platform === 'darwin' ? assertMacNativePortFree : async () => {},
+  // A graph service of this data directory that FULI lost track of, holding its port (orphan-services.js).
+  stopOrphans = platform === 'darwin' ? stopOrphanedServices : async () => [],
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date(),
   // A start that failed, in the data directory's diagnostics log (rec#73).
-  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {}
+  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {},
+  recordOrphan = paths.dataDir ? diagnosticEventLog(paths.dataDir).record : () => false
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
@@ -119,7 +123,10 @@ export function createNativeGraphServices({
         ) {
           databases[spec.id] = existing;
         } else {
-          // Nothing is spawned while another process holds either Neo4j port.
+          // Nothing is spawned while another process holds either Neo4j port; one this data
+          // directory started and lost track of is ended first (orphan-services.js).
+          await stopOrphans({ instanceDir: spec.instanceDir, ports: [spec.boltPort, spec.httpPort],
+            stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
           await verifyPortFree(spec.boltPort);
           await verifyPortFree(spec.httpPort);
           const child = await spawnDatabase(databaseSpec(spec));
@@ -155,6 +162,8 @@ export function createNativeGraphServices({
         ) {
           providers[spec.id] = existing;
         } else {
+          await stopOrphans({ instanceDir: spec.instanceDir, ports: [spec.providerPort],
+            stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
           await verifyPortFree(spec.providerPort);
           const child = await spawnProvider(providerSpec(spec));
           if (!Number.isInteger(child?.pid)) {

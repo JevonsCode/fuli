@@ -20,7 +20,7 @@ const ENVIRONMENT = ['FULI_PERSONAL_NEO4J_PASSWORD=personal-password', 'FULI_WOR
   'FULI_WORKSPACE_BOOTSTRAP_TOKEN=workspace-bootstrap-token-12', 'FULI_NEO4J_HEAP_INITIAL_SIZE=128m',
   'FULI_NEO4J_HEAP_MAX_SIZE=256m', 'FULI_NEO4J_PAGECACHE_SIZE=64m'].join('\n');
 
-function fixture({ busy = new Set(), state = null } = {}) {
+function fixture({ busy = new Set(), state = null, orphans = null } = {}) {
   const events = [];
   let processState = state;
   const services = createNativeGraphServices({
@@ -30,6 +30,10 @@ function fixture({ busy = new Set(), state = null } = {}) {
     readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
     readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
     waitForDatabase: async () => {}, verifyPortOwner: async () => {},
+    ...(orphans ? { stopOrphans: async ({ ports: asked, instanceDir }) => {
+      events.push(`orphans:${asked.join(',')}`);
+      return orphans({ asked, instanceDir });
+    } } : {}),
     verifyPortFree: async port => {
       events.push(`free:${port}`);
       if (busy.has(port)) throw new Error(`port ${port} is already in use`);
@@ -92,4 +96,16 @@ test('Windows port preflight reports a real listener on any local address with i
     await assertWindowsNativePortFree(port);
   }
   await assert.rejects(assertWindowsNativePortFree(0), /Invalid native service port/);
+});
+
+// A killed start can leave this data directory's own graph service on its port: it is looked for and
+// ended (orphan-services.js) before the port is checked, and only then is anything spawned.
+test('a service this data directory lost track of is looked for on each port before the port is checked', async () => {
+  const seen = [];
+  const f = fixture({ orphans: ({ asked, instanceDir }) => { seen.push(instanceDir); return []; } });
+  await f.services.start();
+  assert.deepEqual(f.events, [`orphans:${ports.personalNeo4jBolt},${ports.personalNeo4jHttp}`,
+    `free:${ports.personalNeo4jBolt}`, `free:${ports.personalNeo4jHttp}`, 'spawn:database',
+    `orphans:${ports.personalProvider}`, `free:${ports.personalProvider}`, 'spawn:provider']);
+  assert.ok(seen.every((dir) => typeof dir === 'string' && dir.length > 0), 'it is asked about this data directory only');
 });
