@@ -474,11 +474,17 @@ export function withRecoveredSource(recall, continuation, { consoleUrl, spaceId,
 }
 
 // Which earlier work this reply picks up, short enough for a lead: the client
-// it ran in and the day it last ran. Both come from the record; neither is
-// guessed, and a missing one simply drops out of the line.
-function continuationLead({ client_label: label = null, when = null } = {}) {
-  const day = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(when ?? ''));
-  return `续接${label ? `${label} 里` : ''}${day ? `${day[2]}-${day[3]} 的` : ''}工作`;
+// it ran in and the day it last ran, on this computer's calendar (a UTC date
+// would put an evening's work in Shanghai on the day before). Both come from
+// the record; neither is guessed, and a missing one simply drops out. The
+// lead is Chinese like every other FULI source marker beside it.
+export function continuationLead({ client_label: label = null, when = null } = {}) {
+  const time = when ? new Date(when) : null;
+  const day = time && !Number.isNaN(time.getTime())
+    ? `${String(time.getMonth() + 1).padStart(2, '0')}-${String(time.getDate()).padStart(2, '0')}` : null;
+  if (label && day) return `续接 ${label} 里 ${day} 的工作`;
+  if (label) return `续接 ${label} 里的工作`;
+  return day ? `续接 ${day} 的工作` : '续接之前的工作';
 }
 
 function recallWithoutSearch(status, plan) {

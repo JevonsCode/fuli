@@ -302,10 +302,10 @@ test('confirmed matches keep pending items out of the automatic recall', async (
 
 test('continued work gets its own source marker when recall found nothing', () => {
   const recall = { status: 'no_match', sourceMarker: { status: 'no_match' }, noMatchSourceMarker: { status: 'no_match' }, facts: [], entities: [] };
-  const continuation = { show: true, evidence: 'same_branch', from: { client_label: 'Codex', when: '2026-11-22T09:14:00Z' } };
+  const continuation = { show: true, evidence: 'same_branch', from: { client_label: 'Codex', when: '2026-11-22T09:14:00' } };
   const marked = withRecoveredSource(recall, continuation, { consoleUrl: 'http://127.0.0.1:2727', spaceId: 'space', agentId: 'lead' });
   assert.equal(marked.sourceMarker.status, 'recovered');
-  assert.match(marked.sourceMarker.leadMarkdown, /续接Codex 里11-22 的工作\]\(http:\/\/127\.0\.0\.1:2727\/agents\/space\/lead\)/);
+  assert.match(marked.sourceMarker.leadMarkdown, /续接 Codex 里 11-22 的工作\]\(http:\/\/127\.0\.0\.1:2727\/agents\/space\/lead\)/);
   assert.equal(marked.noMatchSourceMarker.status, 'no_match');
   assert.equal(withRecoveredSource({ ...recall, status: 'matched' }, continuation, { spaceId: 'space', agentId: 'lead' }).sourceMarker.status, 'no_match');
   // Recovering plenty is not continuing: a session that keeps working stays unmarked.

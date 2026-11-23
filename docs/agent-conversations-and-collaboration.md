@@ -40,22 +40,32 @@
 
 | 依据 | `evidence` | 判据 |
 | --- | --- | --- |
-| 人这一轮说了要在这里接着做 | `stated_by_user` | 本轮点名 FLA（`#FLA 姓名` / `@姓名` / 选择器），或带着 checkpoint 的接续提示进来。会话里一直绑着的那位不算「这一轮说了」 |
-| FULI 认出是同一件事 | `same_branch` | 这位 FLA 最近还有别的会话，和本会话在同一个项目、同一条 Git 分支上，且这条分支不是 `main` / `master` / `develop` 这类大家都在上面的主干 |
+| 人说了要接哪一段 | `stated_by_user` | 第一条消息是 FULI 的接续指令，点名这位 FLA **和**它的某个对话（`#FLA {agentId}` 加 `conversationId`），或显式调用 `resume_agent_conversation`。按那个对话 ID 找来源，不看时间窗口。只点名 FLA、交一件新任务，是指定谁来做，**不算续接** |
+| FULI 认出是同一件事 | `same_branch` | 这位 FLA 最近 7 天还有别的会话，和本会话在同一个仓库目录、同一条 Git 分支上，且这条分支不是 `main`、`master`、`develop`、`release`、`staging`、`test`、`prod`、`production`、`gh-pages` 这类多人共用的长期分支 |
 
-同一条分支上有不止一段最近的工作时，分不清接的是哪一段，就不显示（`reason: ambiguous`）。
-其他情况（新会话做另一件事、这位 FLA 没有更早的工作）也不显示。
+不显示的情况一律不解释：同一条分支上有不止一段工作（分不清接哪段）、读不到分支（不在 Git 里、detached HEAD、读取超时）、
+读不到点名的那个对话、新会话做另一件事、这位 FLA 没有更早的工作。
+
+只有本会话第一轮、且有点名的对话或可比较的非主干分支时，入口才多读一次这位 FLA 最近 20 个对话；
+超过 500 ms 或出错就当没有，不拖慢入口。
 
 显示时 `conversation.continuation` 写清：
 
 - `from`：哪个客户端（`client_label`）、哪个会话（`session_short`，原生会话号前 8 位）、什么时候（`when`）、
-  属于哪个项目（`personal_project_id`）、做到哪一步（`status`）、当时用的模型（`model` 与 `model_source`）。
-- `carried`：带过来了多少——有没有上次的工作小结、最近几条原文、更早的多少条折叠进了摘要。
+  属于哪个项目（`personal_project_id`）、来源对话做到哪一步（`status`）、当时用的模型（`model` 与 `model_source`）。
+- `context: not_loaded`：入口时来源对话的内容还没进上下文。`resume_agent_conversation` 才把它带过来，
+  它的回答里有同样的 `continuation`，`carried` 数清带过来多少。
 
-**模型一栏不猜。** 各客户端能给什么以它自己的钩子输入为准（`src/agents/client-provenance.js`）：
-Claude Code 从自己的 transcript 读实际回答的模型（`actual`）；Codex 给的是请求的模型（`requested`），
-实际回答的可能不是它；Cursor、OpenCode、DeepSeek Harness、Claude 桌面端根本不给模型，
-记录里 `model_reason` 写 `client_sends_none`；更早、当时没记的写 `not_recorded`。两种都不回填估算值。
+开头那行写成「◇ FULI · 续接 Codex 里 11-22 的工作」，日期按这台电脑的时区，和别的 FULI 来源标记一样用中文。
+
+**模型一栏不猜。** 写的是 FULI 自己读到了什么（`src/agents/client-provenance.js`），不替客户端下结论：
+Claude Code 从自己的对话记录读实际回答的模型（`actual`）；Codex 给的是请求的模型（`requested`），实际回答的可能不是它。
+Cursor、OpenCode、DeepSeek Harness、Claude 桌面端的 FULI 钩子不读模型，`model_reason` 写 `not_read`——
+这只说明 FULI 没读，**不等于客户端不提供**，还没核实过。FULI 读、但这一段没有的写 `not_recorded`
+（更早的记录，或第一轮对话记录里还没有回答，所以只有一轮的 Claude Code 会话会一直是这个）；
+不知道是哪个客户端的写 `client_not_recorded`。都不回填估算值。
+
+同一个会话中途换了模型，记录只留最后一次读到的那个（Provider 按会话覆盖），统计会全部算在那个模型名下。
 
 接口里只传原因码，不传拼好的句子：界面按自己的语言说（Jevons 2026-11-18「该展示成英文就展示成英文，
 该映射展示成中文就该展示成中文」），所以没有中英文拼在一起的字符串被存下来或传出去。

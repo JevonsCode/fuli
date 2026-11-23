@@ -1,8 +1,8 @@
 import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.js';
 import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation, conversationProvenance } from './agent-conversations.js';
-import { continuationDecision } from '../conversations/continuation-decision.js';
-import { workingBranch } from '../conversations/working-branch.js';
+import { entryContinuation } from './conversation-continuation.js';
+import { workingRepository } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
@@ -130,16 +130,12 @@ export async function beginTaskFromPreferences(application, preferences, {
     }
   }
   // Only an Agent's conversation keeps where it ran; a task without one reads no Git files.
-  const branch = task.projectAgentId ? await workingBranch(projectPath) : null;
+  const repository = task.projectAgentId ? await workingRepository(projectPath) : null;
   const conversation = await beginConversation(application, task, conversationProvenance({ projectPath, clientModel,
-    branch, taskPrompt, resumed: Boolean(resumed || existingTask) }));
+    branch: repository?.branch ?? null, taskPrompt, resumed: Boolean(resumed || existingTask) }));
   // Whether this turn picks up work from another session or client, and so
-  // whether the reply opens with a continuation line at all (rec#147). The
-  // person said so when they named this FLA this turn or arrived on a
-  // checkpoint continuation prompt; a carried session binding is not saying so.
-  const continuation = continuationDecision(conversation, { branch,
-    personalProjectId: preferences.context?.personal_project_id ?? null,
-    statedByUser: Boolean(resumed) || ['named', 'picked'].includes(preferences[FLA_ROUTE]?.origin) });
+  // whether the reply opens with a continuation line at all (rec#147).
+  const continuation = await entryContinuation(application, task, conversation, { taskPrompt, repository });
   // A conversation the Provider saved without recovering an earlier one is new
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
