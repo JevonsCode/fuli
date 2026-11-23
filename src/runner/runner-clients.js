@@ -42,8 +42,8 @@ export function createRunnerClients({ paths, apps = clientApps(), host = null,
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: async () => {
-      const [observation, paired] = await Promise.all([observer.observe(), host ? host() : null]);
+    clientConnectionStatus: async (options) => {
+      const [observation, paired] = await Promise.all([observer.observe(options), host ? host() : null]);
       const skew = versionSkew({ hostVersion: paired?.version ?? null, runnerVersion: FULI_VERSION });
       return { ...observation, runner: { version: FULI_VERSION,
         hostName: paired?.name ?? null, hostReachable: paired?.reachable === true, hostVersion: paired?.version ?? null,

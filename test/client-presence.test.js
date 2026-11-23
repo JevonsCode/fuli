@@ -38,7 +38,7 @@ const observerOf = (t, presence, clients = NEW_COMPUTER) => createClientConnecti
 
 test('a client installed here but with no configuration yet still counts as on this computer', async () => {
   const presence = cliPresence(['cursor-agent']);
-  assert.deepEqual(await presence.find(['cursor', 'kiro', 'opencode']), { installed: new Set(['cursor']), inWsl: new Set() });
+  assert.deepEqual(await presence.find(['cursor', 'kiro', 'opencode']), { installed: new Set(['cursor']), inWsl: new Set(), pending: new Set() });
   const answer = await detectClients(installerWith(NEW_COMPUTER), { presence });
   assert.deepEqual(answer.clients.map(({ id, detected }) => [id, detected]),
     [['codex', true], ['cursor', true], ['kiro', false]]);
@@ -91,21 +91,25 @@ test('setup connects a client whose CLI is here, and names the ones that are not
   assert.match(preview, /Not on this computer: Kiro/);
 });
 
-test('the console tells "installed but not connected" from "not installed", and never waits for a shell to say so', async (t) => {
+test('the console never waits for a shell, never calls a client still being looked for missing, and reads again when it is found', async (t) => {
   let release;
   const shell = new Promise((resolve) => { release = resolve; });
   const presence = createClientPresence({ presence: { find: async (command) => { await shell; return command === 'cursor-agent' ? 'native' : null; } } });
   const observer = observerOf(t, presence);
-  // The first read answers at once from what is known (nothing yet) and starts the probe.
+  // The first read answers at once: Cursor is still being looked for, not "not installed".
   const first = await observer.observe();
   assert.deepEqual(first.clients.map(({ id, status }) => [id, status]),
-    [['codex', 'connected'], ['cursor', 'not_detected'], ['kiro', 'not_detected']]);
+    [['codex', 'connected'], ['cursor', 'probing'], ['kiro', 'not_detected']]);
+  assert.equal(first.probing, true);
+  // A read that asks to wait for the search answers when it ends, with what it found.
+  const waiting = observer.observe({ afterProbe: true });
   release();
-  await new Promise((resolve) => setImmediate(resolve));
-  // The next read shows what the probe found.
-  const next = await observer.observe();
+  const next = await waiting;
   assert.deepEqual(next.clients.map(({ id, status }) => [id, status]),
     [['codex', 'connected'], ['cursor', 'not_connected'], ['kiro', 'not_detected']]);
+  assert.equal(next.probing, undefined);
+  // "Still looking" was never recorded as a change of the client.
+  assert.deepEqual(next.clients.find(({ id }) => id === 'cursor').changes, []);
 });
 
 test('a client only inside WSL is not on this Windows computer for FULI: never written, and said apart', async (t) => {
@@ -129,8 +133,7 @@ test('a client only inside WSL is not on this Windows computer for FULI: never w
   // The console's tile carries it, waiting for the probe like any other.
   const observer = observerOf(t, presence);
   await observer.observe();
-  await new Promise((resolve) => setImmediate(resolve));
-  const tile = (await observer.observe()).clients.find(({ id }) => id === 'cursor');
+  const tile = (await observer.observe({ afterProbe: true })).clients.find(({ id }) => id === 'cursor');
   assert.deepEqual([tile.status, tile.inWsl], ['not_detected', true]);
 });
 

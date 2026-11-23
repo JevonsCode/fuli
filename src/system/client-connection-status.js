@@ -52,7 +52,10 @@ export function createClientConnectionObserver({ installer, customClients, histo
   // History that could not be written stays reliable for this observer.
   let retained = null;
 
-  async function observe() {
+  // afterProbe: answer once the probes running now have finished, so the page
+  // can read again the moment they do instead of on its next round.
+  async function observe({ afterProbe = false } = {}) {
+    if (afterProbe && presence?.settled) await presence.settled();
     const observedAt = now().toISOString();
     // A status read never waits for a login shell: what the last probe found, the next one meanwhile.
     const answer = await detectClients(installer, { presence, wait: false });
@@ -81,6 +84,10 @@ export function createClientConnectionObserver({ installer, customClients, histo
       }
       const previouslyConnected = record.previouslyConnected || PRESENT.has(statusOf(client, false));
       const status = statusOf(client, previouslyConnected);
+      // Still being looked for: said as such, never stored, never counted as missing.
+      if (client.probing && status === 'not_detected') {
+        return { shown: view(client, { ...record, status: 'probing' }, { ...extra, components: client.components }) };
+      }
       // Only an entry that differs from this console's is read for what it names.
       const configured = status === 'changed' ? configuredInstall(client.mcpPaths, { homeDir, platform }) : null;
       // Only another installation can be written back: an entry naming the console's own (its Skills or hooks
@@ -115,6 +122,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
     }
     const removable = customClients.removable();
     return { scope: 'configuration', observedAt, available: true, historySaved, clients: views,
+      ...(views.some(({ status }) => status === 'probing') ? { probing: true } : {}),
       ...(ownInstall ? { installs: installsOf(ownInstall, views, platform) } : {}),
       customClients: answer.clients.filter((client) => !client.builtin).map((client) => ({
         id: client.id, label: client.label, detected: client.detected,

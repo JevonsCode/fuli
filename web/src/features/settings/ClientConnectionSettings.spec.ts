@@ -30,15 +30,17 @@ function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:0
     clients: clients.map((client) => ({ id: 'codex', label: 'Codex', detected: true, status: 'connected',
       previouslyConnected: true, since: observedAt, changes: [], ...client })) }
 }
+// A status read, with or without ?afterProbe=1.
+const isStatus = (url: string) => new URL(url, 'http://console.invalid').pathname.endsWith('/status')
 function routed(status: () => Promise<Response> | Response, other: (url: string, options?: RequestInit) => Response | Promise<Response> = () => Response.json(configuration)) {
   const calls: [string, RequestInit | undefined][] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
     calls.push([url, options])
-    return url.endsWith('/status') ? status() : other(url, options)
+    return isStatus(url) ? status() : other(url, options)
   }))
   return calls
 }
-const statusCalls = (calls: [string, RequestInit | undefined][]) => calls.filter(([url]) => url.endsWith('/status')).length
+const statusCalls = (calls: [string, RequestInit | undefined][]) => calls.filter(([url]) => isStatus(url)).length
 
 it('is never folded away: it checks clients and loads the snippet as soon as it shows', async () => {
   const calls = routed(() => Response.json(statusOf([{}])))
@@ -101,6 +103,35 @@ it('on a runner says its hooks do nothing and which computer runs the older FULI
   const first = wrapper.get('[data-client-first-run="cursor"]').text()
   expect(first).toContain('信任这个文件夹')
   expect(first).toContain('cursor-agent mcp enable fuli')
+  wrapper.unmount()
+})
+
+it('shows a client still being looked for as 检测中, not as missing, and reads again as soon as the search ends', async () => {
+  const replies = [
+    { ...statusOf([{ id: 'codex', status: 'connected' }, { id: 'cursor', label: 'Cursor', status: 'probing', detected: false }]), probing: true },
+    statusOf([{ id: 'codex', status: 'connected' }, { id: 'cursor', label: 'Cursor', status: 'not_connected' }], '2026-10-13T08:00:01.000Z'),
+  ]
+  const calls = routed(() => Response.json(replies.shift()))
+  const wrapper = mount(ClientCards)
+  for (let round = 0; round < 4; round++) await flushPromises()
+  const statusUrls = calls.map(([url]) => url).filter((url) => url.includes('/status'))
+  // The second read waits on the server for the search, rather than for the next 15-second round.
+  expect(statusUrls).toEqual(['/api/system/client-connection/status', '/api/system/client-connection/status?afterProbe=1'])
+  expect(wrapper.get('[data-client-status="not_connected"]').text()).toContain('Cursor')
+  wrapper.unmount()
+})
+
+it('a client being looked for is not counted as not installed', async () => {
+  let release: (() => void) | undefined
+  routed(() => new Promise<Response>((resolve) => {
+    release = () => resolve(Response.json({ ...statusOf([{ id: 'codex', status: 'connected' },
+      { id: 'cursor', label: 'Cursor', status: 'probing', detected: false }]), probing: true }))
+  }))
+  const wrapper = mount(ClientCards)
+  release!()
+  await flushPromises()
+  expect(wrapper.get('[data-client-status="probing"]').text()).toContain('检测中')
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端')
   wrapper.unmount()
 })
 

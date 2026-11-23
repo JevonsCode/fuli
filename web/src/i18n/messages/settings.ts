@@ -101,7 +101,7 @@ export const settingsMessages = {
         },
         unknownWithLast: '配置文件无法读取，先不判断。上次看到的是“{status}”。',
         status: { connected: '已接入', changed: '需要更新', skills_left: '只剩技能文件', removed: '已移除',
-          not_connected: '未接入', not_detected: '未发现', unknown: '无法确认', inWsl: '在 WSL 里' },
+          not_connected: '未接入', not_detected: '未发现', probing: '检测中', unknown: '无法确认', inWsl: '在 WSL 里' },
         explain: {
           connected: '配置中有当前版本的 FULI。',
           changed: '配置里还有 FULI，但和当前版本不一致。点「更新接入」改成当前版本。',
@@ -109,6 +109,7 @@ export const settingsMessages = {
           removed: '之前接入过，现在配置里已没有 FULI。不会自动重新安装，需要时点「重新接入」。',
           not_connected: '已安装该客户端，但还没有接入 FULI。',
           not_detected: '没有在本机发现该客户端。',
+          probing: '正在这台电脑上找它，马上就好。',
           inWsl: '它装在 WSL 里，这台 Windows 上的 FULI 接不到它。要用它，就在 WSL 里也装上 FULI 再接入。',
           unknown: '配置文件无法读取或格式有误，暂不判断是否已移除。',
         },
@@ -607,7 +608,7 @@ export const settingsMessages = {
         },
         unknownWithLast: 'The configuration cannot be read, so nothing is concluded. Last seen as “{status}”.',
         status: { connected: 'Connected', changed: 'Update needed', skills_left: 'Skills only', removed: 'Removed',
-          not_connected: 'Not connected', not_detected: 'Not found', unknown: 'Cannot confirm', inWsl: 'Inside WSL' },
+          not_connected: 'Not connected', not_detected: 'Not found', probing: 'Checking', unknown: 'Cannot confirm', inWsl: 'Inside WSL' },
         explain: {
           connected: 'The configuration has the current FULI entry.',
           changed: 'FULI is still configured but differs from this version. Choose Update connection to bring it up to date.',
@@ -615,6 +616,7 @@ export const settingsMessages = {
           removed: 'Connected before, but FULI is no longer in its configuration. It will not be reinstalled automatically; choose Reconnect if you need it.',
           not_connected: 'The client is installed but not connected to FULI.',
           not_detected: 'This client was not found on this computer.',
+          probing: 'Looking for it on this computer; this takes a moment.',
           inWsl: 'It is installed inside WSL, where FULI on this Windows computer cannot reach it. To use it, install FULI inside WSL as well and connect it there.',
           unknown: 'The configuration cannot be read or is malformed, so removal is not concluded.',
         },

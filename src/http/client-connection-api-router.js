@@ -36,7 +36,7 @@ export async function handleClientConnectionRequest({ request, response, url, sy
 
   if (url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, await system.clientConnectionStatus());
+    sendJson(response, 200, await system.clientConnectionStatus({ afterProbe: url.searchParams.get('afterProbe') === '1' }));
     return true;
   }
 

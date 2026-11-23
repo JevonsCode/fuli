@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { shapeOf } from '@/api/response-shape'
 
 export type Format = 'standard' | 'vscode' | 'server'
-export type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
+// probing: FULI is still looking for this client's command here; it is neither found nor missing yet.
+export type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'probing' | 'unknown'
 // overwritten: the client wrote back the entry an update had just replaced (rec issue 106).
 export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string, overwritten?: boolean }
 // A FULI installation: its folder (home as ~) and package version, when it has one.
@@ -30,7 +31,8 @@ export type CustomClient = { id: string, label: string, detected: boolean, statu
 export type RunnerFacts = { version: string, hostName: string | null, hostReachable: boolean, hostVersion: string | null,
   skew?: { older: 'host' | 'runner' } }
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
-export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
+// probing: at least one client is still being looked for; the next read waits for that to finish.
+export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, probing?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] },
   runner?: RunnerFacts }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
@@ -47,7 +49,7 @@ export const restartResultShape = shapeOf(z.looseObject({ id: z.string(), status
 // The mark inside a client's status circle: an icon, so it sits in the centre at any font;
 // a client FULI is simply not in shows the empty circle.
 export const STATUS_ICONS: Readonly<Record<ClientStatus, 'check' | 'close' | 'warning' | 'help' | null>> = { connected: 'check',
-  changed: 'warning', skills_left: 'warning', removed: 'close', not_connected: null, not_detected: null, unknown: 'help' }
+  changed: 'warning', skills_left: 'warning', removed: 'close', not_connected: null, not_detected: null, probing: null, unknown: 'help' }
 
 // The connect button says what it does for this status; it runs the same install every time.
 export function connectActionKey(status: ClientStatus): 'connect' | 'reconnect' | 'update' {

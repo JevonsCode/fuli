@@ -55,8 +55,10 @@ only Codex was connected. The commands asked for are each client's own documente
 person's login shell (`src/agent-kits/cli-presence.js`), because FULI may run with a shorter `PATH`
 than their terminal. Answers are kept for a few minutes, and only clients agent-installer did not
 find are asked about. A status page never waits for that shell: it shows what the last probe found
-and starts the next one in the background, so a client found that way appears on the following
-read; `fuli setup` and a connection wait for the answer, because they write. On Windows only a
+and starts the next one in the background. A client whose command has not been answered yet is
+「检测中」 (`probing`), never 「未发现」, and is not counted among the clients not on this computer; the
+page then reads again with `?afterProbe=1`, which answers as soon as the search ends, so the client
+shows found or not without waiting for the next 15-second round; `fuli setup` and a connection wait for the answer, because they write. On Windows only a
 command Windows itself runs counts: a client found only inside WSL reads its configuration from
 the Linux home, so it is never written under `%USERPROFILE%`. Its tile says 「在 WSL 里」 and that FULI
 on this Windows cannot reach it, and `fuli setup` names it to be set up inside WSL. DeepSeek

@@ -42,7 +42,9 @@ export async function detectClients(installer, { presence = null, wait = true } 
   return { status: 'available', clients: clients.map((client) => {
     if (found?.installed.has(client.id)) return { ...client, detected: true };
     // Only inside WSL: not on this computer for FULI, which says so (client-presence.js).
-    return found?.inWsl.has(client.id) ? { ...client, inWsl: true } : client;
+    if (found?.inWsl.has(client.id)) return { ...client, inWsl: true };
+    // Its command is still being looked for: not yet known to be missing.
+    return found?.pending?.has(client.id) ? { ...client, probing: true } : client;
   }) };
 }
 

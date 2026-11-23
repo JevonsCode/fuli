@@ -33,6 +33,8 @@ export const CLIENT_COMMANDS = Object.freeze({
 // last probe and starts the next in the background (wait: false), and the
 // following read shows what it found. Setup and a connection wait for the
 // answer, because they write. One instance per process shares the answers.
+const UNANSWERED = Symbol('unanswered');
+
 export function createClientPresence({ presence = createCliPresence(), commands = CLIENT_COMMANDS } = {}) {
   const known = new Map();
   const running = new Map();
@@ -46,18 +48,23 @@ export function createClientPresence({ presence = createCliPresence(), commands 
     return running.get(command);
   };
   return {
-    // { installed, inWsl }: sets of ids among `ids`. wait: false answers from the
-    // last probes only (unknown counts as not found) and refreshes them meanwhile.
+    // { installed, inWsl, pending }: sets of ids among `ids`. wait: false answers
+    // from the last probes only and refreshes them meanwhile; a client whose
+    // command has never been answered yet is `pending`, not "not found".
     async find(ids, { wait = true } = {}) {
       const asked = ids.filter((id) => Object.hasOwn(commands, id));
       const answers = await Promise.all(asked.map(async (id) => [id, await Promise.all(commands[id].map((command) => {
         if (wait) return probe(command);
         void probe(command);
-        return known.get(command) ?? null;
+        return known.has(command) ? known.get(command) : UNANSWERED;
       }))]));
       const installed = new Set(answers.filter(([, found]) => found.includes('native')).map(([id]) => id));
       const inWsl = new Set(answers.filter(([id, found]) => !installed.has(id) && found.includes('wsl')).map(([id]) => id));
-      return { installed, inWsl };
-    }
+      const pending = new Set(answers.filter(([id, found]) => !installed.has(id) && !inWsl.has(id) && found.includes(UNANSWERED))
+        .map(([id]) => id));
+      return { installed, inWsl, pending };
+    },
+    // Resolves once the probes running now have answered (each is bounded by cli-presence's timeouts).
+    settled: () => Promise.all([...running.values()]).then(() => undefined)
   };
 }

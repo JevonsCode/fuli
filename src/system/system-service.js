@@ -217,7 +217,7 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: observeClients,
+    clientConnectionStatus: (options) => clientObserver.observe(options),
     issueReport: createIssueReport({ log: eventLog, observeClients, liveProcesses }),
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
