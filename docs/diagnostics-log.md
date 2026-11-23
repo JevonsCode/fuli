@@ -54,7 +54,10 @@ user names and passwords are dropped, local paths become `[path]`, and long opaq
   Repeated scans of the same configuration problem produce one event until it clears or changes.
 - **MCP tool calls**: a tool call that throws, as `refused` with the tool's own code or as `failed` with
   `internal_error`. A `failed` reason names the error's class, its cause's code and the first line of FULI's own code
-  that raised it (`Tool execution failed (TypeError at src/…/module.js:51)`), never its message.
+  that raised it (`Tool execution failed (TypeError at src/…/module.js:51)`), never its message. A call whose runtime
+  lease could not reach FULI's own console (refused, unreachable, timed out, never started) is `failed` with the
+  controlled code `runtime_unavailable` and the same sentence the Agent saw (rec#39): nothing ran, one retry, no old
+  token. It names a reason, never the console's address, port or error text.
 - **Roundtable wakes**: a client woken for an ask (a local one or a paired device's) that did not answer, as `failed`
   with its detail code (`client_not_found`, `spawn_error`, `login_required`, `client_exit_nonzero`,
   `no_final_answer`, `output_too_large`, `timed_out`, `mcp_config_unreadable`), the client, a resumed or new session, and the exit code and

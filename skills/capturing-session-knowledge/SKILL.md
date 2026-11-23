@@ -63,7 +63,7 @@ memory, team and managers only as their `read` calls (`get_project_agent_memory`
 same for a manager whose board is empty (its `read` instead of tools and title fields), shows a team gap
 by `execution_reason` alone (staff it through `get_project_team`), and names Tonborg without its policy
 (`assess_agent_action` reads it). A blocked transcript handoff
-remains unverified even if the preference fallback and task-summary checkpoint succeed.
+remains unverified even if the preference fallback and task-summary checkpoint succeed. If any FULI tool answers `runtime_unavailable`, FULI's own console could not be reached and nothing ran: there is no task, token, receipt or checkpoint to rely on, so claim none. Follow the one step its message gives (retry once in a few seconds, or tell the person once to start FULI), never reuse an old token, and do not loop.
 
 ## Mandatory reply identity
 

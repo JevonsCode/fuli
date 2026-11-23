@@ -5,6 +5,8 @@ export const ApplicationErrorCode = Object.freeze({
   CONNECTOR_RESPONSE_INVALID: 'connector_response_invalid',
   INVALID_INPUT: 'invalid_input',
   NOT_FOUND: 'not_found',
+  // FULI's own console, which every tool call needs for its runtime lease, did not answer (rec#39).
+  RUNTIME_UNAVAILABLE: 'runtime_unavailable',
   VALIDATION: 'validation'
 });
 
