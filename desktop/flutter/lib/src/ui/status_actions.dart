@@ -166,16 +166,18 @@ class StatusActions extends StatelessWidget {
     final plan = await controller.previewRecovery();
     if (plan == null || !context.mounted) return;
     final alternative = plan.alternative;
+    // Finishing without a start check: only when the plan says going back is
+    // not possible or was tried (neo4j-recovery.js `keepable`), a choice of its own.
+    final keepable = plan.kind == 'finish_switch' && plan.facts['keepable'] == true;
+    // A good copy that would not go back: abandoning the import is open beside trying again.
+    final abandonable = plan.kind == 'restore_load' && plan.facts['restoreFailed'] is Map;
     if (controller.recoversInTerminal) {
       return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative),
-        if (controller.keepableSwitch && plan.kind == 'finish_switch') 'fuli graph runtime recover --keep-newer']);
+        if (keepable) 'fuli graph runtime recover --keep-newer', if (abandonable) 'fuli graph runtime recover --abandon-import']);
     }
     final other = strings.recoveryAlternativeWords(plan);
     final words = [...strings.recoveryPlanWords(plan), if (other != null) ...['', other]];
     final switching = plan.kind == 'finish_switch' || plan.kind == 'back_out_switch';
-    // After finishing or backing out did not get Neo4j to start: keeping the
-    // newer version and releasing the lock, a choice of its own.
-    final keepable = controller.keepableSwitch && plan.kind == 'finish_switch';
     final chosen = await showDialog<RecoveryPlan>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -187,19 +189,25 @@ class StatusActions extends StatelessWidget {
             OutlinedButton(
               key: const Key('keep-newer'),
               onPressed: () => Navigator.of(dialogContext).pop(const RecoveryPlan('keep_newer', [], null, {})),
-              child: Text(strings.keepNewer),
+              child: Text(strings.keepNewer(plan.facts)),
+            ),
+          if (abandonable)
+            OutlinedButton(
+              key: const Key('abandon-import'),
+              onPressed: () => Navigator.of(dialogContext).pop(const RecoveryPlan('abandon_load', [], null, {})),
+              child: Text(strings.abandonImport),
             ),
           if (alternative != null)
             OutlinedButton(
               key: const Key('recover-alternative'),
               onPressed: () => Navigator.of(dialogContext).pop(alternative),
-              child: Text(alternative.kind == 'back_out_switch' ? strings.backOutTo(plan.text('fromVersion')) : strings.keepVersion(plan.text('toVersion'))),
+              child: Text(alternative.kind == 'back_out_switch' ? strings.cancelSwitch(plan.facts) : strings.finishSwitchTo(plan.facts)),
             ),
           FilledButton(
             key: const Key('recover-confirm'),
             onPressed: () => Navigator.of(dialogContext).pop(plan),
             child: Text(switching && alternative != null
-                ? (plan.kind == 'finish_switch' ? strings.keepVersion(plan.text('toVersion')) : strings.backOutTo(plan.text('fromVersion')))
+                ? (plan.kind == 'finish_switch' ? strings.finishSwitchTo(plan.facts) : strings.cancelSwitch(plan.facts))
                 : strings.recoveryConfirm),
           ),
         ],
@@ -207,6 +215,7 @@ class StatusActions extends StatelessWidget {
     );
     if (chosen == null || !context.mounted) return;
     if (chosen.kind == 'keep_newer') return _confirmKeepNewer(context);
+    if (chosen.kind == 'abandon_load' && chosen.digest == null) return _confirmAbandon(context);
     await controller.recoverAndStart(chosen);
     if (context.mounted) await _showKeptGraphData(context);
   }
@@ -220,7 +229,7 @@ class StatusActions extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(strings.keepNewerTitle),
+        title: Text(strings.keepNewerTitle(plan.facts)),
         content: SingleChildScrollView(
             child: SelectableText([
           if (why != null) strings.recoveryRefused(why.text('reason'), why.facts),

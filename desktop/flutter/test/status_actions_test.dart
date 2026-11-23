@@ -84,7 +84,7 @@ void main() {
 
     await tester.tap(recover);
     await tester.pumpAndSettle();
-    expect(find.textContaining('已经生效：先确认它能启动'), findsOneWidget);
+    expect(find.textContaining('已经生效；先确认它能启动'), findsOneWidget);
     expect(find.textContaining('· 解除数据库维护锁'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -102,7 +102,7 @@ void main() {
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',
         failure: StartupFailure('native_recovery_needed', {'operation': 'update', 'phase': 'switching'})))
       ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef', {
-        'fromVersion': '5.26.0', 'toVersion': '5.26.28',
+        'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'keepable': false,
         'alternative': {'kind': 'back_out_switch', 'steps': [{'do': 'release-lock'}], 'digest': 'fedcba9876543210'},
       })
       ..recoverReport = const RuntimeReport(RuntimeState.running, consolePort: 2727, recoveryRecord: '/x/native-runtime/recovered/recovery-1.json');
@@ -113,8 +113,10 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('recover-start')));
     await tester.pumpAndSettle();
-    expect(find.text('保留 5.26.28 并启动'), findsOneWidget);
-    expect(find.textContaining('也可以撤回到切换前的 5.26.0'), findsOneWidget);
+    expect(find.text('完成更新，改用 5.26.28 并启动'), findsOneWidget);
+    expect(find.text('取消更新，留在 5.26.0 并启动'), findsOneWidget);
+    expect(find.textContaining('也可以取消更新、留在 5.26.0'), findsOneWidget);
+    expect(find.byKey(const Key('keep-newer')), findsNothing, reason: 'cancelling the update is still possible, so finishing without a start check is not offered');
     await tester.tap(find.byKey(const Key('recover-alternative')));
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('recover-start fedcba9876543210'));
@@ -161,8 +163,9 @@ void main() {
     final api = DemoFuliApi()..reachable = false;
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'refused',
         failure: StartupFailure('recovery_refused', {'reason': 'start_failed', 'planKind': 'finish_switch', 'alternativeRefused': 'no_fingerprint',
-          'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j', 'startFailure': {'message': 'no answer'}})))
-      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef', {'alternativeRefused': 'no_fingerprint', 'toVersion': '5.26.28'})
+          'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'keepable': true, 'backupPath': '/x/before-neo4j', 'startFailure': {'message': 'no answer'}})))
+      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef',
+          {'alternativeRefused': 'no_fingerprint', 'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'keepable': true})
       ..recoverReport = const RuntimeReport(RuntimeState.stopped, keptGraphData: [{'path': '/x/recovered/t', 'bytes': 2048, 'instances': ['workspace'],
         'stores': [{'from': '/x/recovered/t/workspace/data/databases/neo4j', 'to': '/x/workspace/data/databases/neo4j'}]}]);
     final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
@@ -175,17 +178,46 @@ void main() {
     expect(find.byKey(const Key('recover-alternative')), findsNothing, reason: 'going back is not there');
     final keep = find.byKey(const Key('keep-newer'));
     expect(tester.widget(keep), isA<OutlinedButton>());
+    expect(find.text('完成更新并解除这把锁…'), findsOneWidget);
     runtime.recoveryPlan = const RecoveryPlan('keep_newer', [{'do': 'archive-journal'}, {'do': 'release-lock'}], 'bbbbbbbbbbbbbbbb',
-        {'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j'});
+        {'operation': 'update', 'fromVersion': '5.26.0', 'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j'});
     await tester.tap(keep);
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('keep-newer-preview'));
     expect(find.textContaining('fuli graph import --input "/x/before-neo4j" --yes'), findsOneWidget);
+    expect(find.text('完成更新，留在 5.26.28，并解除这把锁？'), findsOneWidget);
+    expect(find.textContaining('不能再取消这次更新回到 5.26.0'), findsOneWidget);
     expect(find.textContaining('没能启动或没有应答'), findsNWidgets(2), reason: 'why it does not start comes first in the confirmation too');
     expect(runtime.calls.where((call) => call.startsWith('keep-newer-start')), isEmpty);
     await tester.tap(find.byKey(const Key('keep-newer-confirm')));
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('keep-newer-start bbbbbbbbbbbbbbbb'));
+  });
+
+  testWidgets('a good copy that would not go back offers abandoning the import beside trying again', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'refused',
+        failure: StartupFailure('recovery_refused', {'reason': 'restore_failed', 'detail': 'No space left on device', 'backupPath': '/x/b'})))
+      ..recoveryPlan = const RecoveryPlan('restore_load', [{'do': 'restore', 'from': '/x/b', 'instances': ['personal']}, {'do': 'release-lock'}],
+          '0123456789abcdef', {'restoreFailed': {'detail': 'No space left on device', 'freeBytes': 1024, 'neededBytes': 4096}});
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    expect(find.descendant(of: primary, matching: find.byKey(const Key('recover-start'))), findsOneWidget, reason: 'trying again stays the primary way');
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('上次导回没有成功：No space left on device。磁盘剩余 1.0 KB'), findsOneWidget);
+    runtime.recoveryPlan = const RecoveryPlan('abandon_load', [{'do': 'release-lock'}], 'aaaaaaaaaaaaaaaa',
+        {'copyProblem': 'restore_failed', 'backupPath': '/x/b', 'dataDir': '/x', 'halfWritten': ['personal'], 'copies': []});
+    await tester.tap(find.byKey(const Key('abandon-import')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-preview'));
+    expect(find.textContaining('副本是好的（校验和对得上）：/x/b'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('abandon-import-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-start aaaaaaaaaaaaaaaa'));
   });
 
   testWidgets('after a recovery that left graph data in the recovered folder, the window says where it is and how to move it back', (tester) async {
