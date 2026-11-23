@@ -30,7 +30,8 @@ import { reachableModules } from '../test-support/module-graph.js';
 // The host is a real runner listener on loopback with a reduced MCP server: its
 // task entry carries a receipt and a checkpoint duty, as a real entry does.
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const HOST_TOOLS = ['get_collaboration_preferences', 'checkpoint_task_knowledge', 'search_current_project_knowledge'];
+const HOST_TOOLS = ['get_collaboration_preferences', 'checkpoint_task_knowledge', 'search_current_project_knowledge',
+  'resume_agent_conversation'];
 
 test('a paired runner refuses host diagnostic events online and offline in both MCP profiles', async (t) => {
   const runner = await pairedRunner(t);
@@ -52,7 +53,7 @@ test('a paired runner refuses host diagnostic events online and offline in both 
 // replayHangs: the host takes an outbox entry and never answers it.
 // dropFirst: tool names whose first call the host takes and then drops with the session, as a restart does.
 async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs, serve = true, replayHangs = false,
-  dropFirst = [] } = {}) {
+  dropFirst = [], resumeAnswer = null } = {}) {
   const drop = new Set(dropFirst);
   const host = deviceIdentity(await createDeviceCertificate());
   const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-runner-away-')));
@@ -81,7 +82,9 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
         const value = name === 'get_collaboration_preferences'
           ? { effective_preferences: ['short answers'], taskContextToken: 'host-token-1', checkpoint_required: true,
             agent_receipt: { required: true, markdown: 'earlier task receipt' } }
-          : { status: 'recorded' };
+          : name === 'resume_agent_conversation'
+            ? (resumeAnswer ?? { recovery_context: `what ${input.conversationId} last held` })
+            : { status: 'recorded' };
         return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
       });
       return server;
@@ -137,6 +140,96 @@ async function pairedRunner(t, { listDelayMs = 0, toolsWaitMs, checkpointWaitMs,
   return { client, calls, replayed, listChanged, served, state, projectPath, dataDir, store, routes,
     hostAway: () => { state.away = true; }, hostBack: () => { state.away = false; } };
 }
+
+// rec#144: the client's AI took a follower whose host was away for a computer
+// without a FULI, because nothing in a task entry said where it was answered.
+test('a task entry says which computer answered it, online and offline', async (t) => {
+  const runner = await pairedRunner(t);
+  const online = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'first' } });
+  assert.equal(online.structuredContent.runner.offline, false);
+  assert.equal(online.structuredContent.runner.host, 'Host A');
+  assert.equal(online.structuredContent.agent_receipt.markdown, 'earlier task receipt', 'the host\'s own answer is kept whole');
+  assert.deepEqual(JSON.parse(online.content[0].text), online.structuredContent);
+
+  await runner.hostAway();
+  const offline = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'second' } });
+  assert.equal(offline.structuredContent.runner.offline, true);
+  assert.match(offline.structuredContent.runner.message, /Host A.*FULI is working/s);
+  assert.match(offline.structuredContent.runner.message, /Nothing needs to be moved or set up again/);
+});
+
+// rec#144: 「主机每天带回家、runner 留在办公室接着干」, which failed exactly when the host was away.
+test('a conversation resumed while the host is away comes from this computer\'s cache, and says so', async (t) => {
+  const runner = await pairedRunner(t);
+  // The task is entered in this project's folder: its token is the host's.
+  await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'online' } });
+  const online = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-1', conversationId: 'conversation-1' } });
+  assert.equal(online.structuredContent.recovery_context, 'what conversation-1 last held');
+
+  await runner.hostAway();
+  const otherFolder = path.join(path.dirname(runner.projectPath), 'other-project');
+  mkdirSync(otherFolder);
+  for (const [folder, workLog] of [[runner.projectPath, 'synthetic work done since'], [otherFolder, 'work of another project']]) {
+    const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+      arguments: { projectPath: folder, taskPrompt: 'offline' } });
+    await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+      arguments: { taskContextToken: entry.structuredContent.taskContextToken, workLog } });
+  }
+
+  const offline = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-1', conversationId: 'conversation-1' } });
+  assert.equal(offline.isError, undefined);
+  assert.equal(offline.structuredContent.runner.offline, true);
+  assert.ok(offline.structuredContent.runner.answeredAt, 'it says when the context it repeats was read');
+  assert.equal(offline.structuredContent.recovered_from_cache, true);
+  assert.equal(offline.structuredContent.undelivered_checkpoints, 1, 'it says how much it carried over');
+  assert.deepEqual(offline.structuredContent.undelivered_work.map((work) => work.summary), ['synthetic work done since'],
+    'work of another project is never carried in');
+  assert.match(offline.structuredContent.runner.message, /cache/);
+});
+
+test('an offline resume repeats only the recovery context, never the earlier task\'s receipt or duties', async (t) => {
+  const runner = await pairedRunner(t, { resumeAnswer: { latest_checkpoint: { status: 'done', summary: 'synthetic' },
+    messages: [], status: 'resumed', agent_receipt: { markdown: 'earlier receipt' }, checkpoint_required: true } });
+  await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-1', conversationId: 'conversation-1' } });
+  await runner.hostAway();
+  const offline = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-1', conversationId: 'conversation-1' } });
+  assert.equal(offline.isError, undefined, offline.content?.[0]?.text);
+  assert.deepEqual(offline.structuredContent.latest_checkpoint, { status: "done", summary: "synthetic" });
+  for (const field of ['agent_receipt', 'checkpoint_required', 'status']) {
+    assert.equal(offline.structuredContent[field], undefined, field);
+  }
+});
+
+test('a conversation resumed offline with only unrelated work waiting says there is nothing', async (t) => {
+  const runner = await pairedRunner(t);
+  await runner.hostAway();
+  const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
+    arguments: { projectPath: runner.projectPath, taskPrompt: 'offline' } });
+  await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: entry.structuredContent.taskContextToken, workLog: 'unrelated' } });
+  const answer = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-of-a-task-never-entered-here', conversationId: 'conversation-9' } });
+  assert.equal(answer.isError, true);
+  assert.equal(JSON.parse(answer.content[0].text).undelivered_checkpoints, 0);
+});
+
+test('a conversation this computer never read, with nothing waiting, says so and makes nothing up', async (t) => {
+  const runner = await pairedRunner(t);
+  await runner.hostAway();
+  const answer = await runner.client.callTool({ name: 'resume_agent_conversation',
+    arguments: { taskContextToken: 'host-token-1', conversationId: 'conversation-never-read' } });
+  assert.equal(answer.isError, true);
+  const failure = JSON.parse(answer.content[0].text);
+  assert.equal(failure.code, 'host_unreachable');
+  assert.equal(failure.recovered_from_cache, false);
+  assert.equal(failure.undelivered_checkpoints, 0);
+  assert.match(failure.message, /Nothing is made up/);
+});
 
 test('an offline task entry repeats the folder\'s preferences, not the earlier task\'s receipt or checkpoint duty', async (t) => {
   const runner = await pairedRunner(t);
