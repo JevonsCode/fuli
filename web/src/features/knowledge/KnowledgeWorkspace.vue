@@ -145,8 +145,16 @@ const mode = computed<KnowledgeMode>(() => {
   if (route.params.mode === 'overview' && overviewAvailable.value) return 'overview'
   return 'directory'
 })
-// An address from before the limit may name more; only the first ones are borrowed.
+// An address from before the limit may name more; only the first ones are
+// borrowed, and the page says so once for that address.
 const contextIds = computed(() => queryValues(route.query.context).slice(0, MAX_BORROWED_PROJECTS))
+let trimmedAddress = ''
+watch(() => queryValues(route.query.context), (named) => {
+  const address = named.join('\n')
+  if (named.length <= MAX_BORROWED_PROJECTS || address === trimmedAddress) return
+  trimmedAddress = address
+  store.notify(t('knowledge.workspace.workspace.view.borrowTrimmed', { count: named.length, max: MAX_BORROWED_PROJECTS }))
+}, { immediate: true })
 const graphContextKey = computed(() => JSON.stringify([
   props.personalProjectsOnly,
   scope.value,
@@ -1072,7 +1080,9 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
           <strong>{{ t('knowledge.workspace.workspace.view.currentContext') }}</strong>
           <p>{{ t('knowledge.workspace.workspace.view.contextCopy') }} {{ t('knowledge.workspace.workspace.view.borrowLimit', { max: MAX_BORROWED_PROJECTS }) }}</p>
           <!-- The shared picker: named projects first, temporary ones folded, 全选 / 清空, a page at a time. -->
+          <!-- A one-off view, not a setting: no note about projects made later. -->
           <ProjectScopePicker :projects="availableContexts" :selected="contextKeys" id-prefix="borrow-context"
+            :later-projects-note="false" :max-selected="MAX_BORROWED_PROJECTS"
             data-personal-context-picker @toggle="toggleContexts" />
         </div>
       </details>

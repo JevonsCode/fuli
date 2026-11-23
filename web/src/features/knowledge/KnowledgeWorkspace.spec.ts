@@ -181,6 +181,48 @@ describe('KnowledgeWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('says once that an old link borrowing more than the limit keeps the first ones, and opens the temporary row instead of taking some', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const temporary = Array.from({ length: 21 }, (_, index) => ({ project_id: `temporary-${index.toString(16).padStart(64, '0')}`,
+      personal_space_id: 'space-1', scope_type: 'temporary' as const, profile: { name: '' } }))
+    const named = Array.from({ length: 22 }, (_, index) => ({ project_id: `synthetic-${index}`, personal_space_id: 'space-1',
+      profile: { name: `Synthetic ${index}` } }))
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: '我' }],
+      personalProjects: [{ project_id: 'current', personal_space_id: 'space-1', profile: { name: '当前项目' } }, ...named, ...temporary],
+      projects: [], subscriptions: [],
+    }
+    const notify = vi.spyOn(useConsoleStore(), 'notify')
+    getJson.mockResolvedValue({ nodes: [], edges: [] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: { template: '<div />' } },
+    ] })
+    const context = named.map(project => `context=${project.project_id}`).join('&')
+    await router.push(`/personal/space-1/projects/current/graph?${context}`)
+    const wrapper = mount(KnowledgeWorkspace, { global: {
+      plugins: [pinia, router], stubs: { KnowledgeWorkspaceDialogs: true, CreateProjectEntry: true },
+    } })
+    await finishInitialLoading()
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith('这个链接借鉴了 22 个项目，只保留前 20 个。')
+    await router.push(`/personal/space-1/projects/current/directory?${context}`)
+    await flushPromises()
+    expect(notify).toHaveBeenCalledTimes(1)
+
+    const picker = wrapper.get('[data-personal-context-picker]')
+    // A one-off view, not a setting: nothing about projects made later.
+    expect(picker.find('[data-project-scope-note]').exists()).toBe(false)
+    await picker.get('[data-project-scope-clear]').trigger('click')
+    await flushPromises()
+    await picker.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.context ?? []).toEqual([])
+    expect(picker.get('[data-project-scope-temporary-limit]').text()).toContain('20')
+    expect(picker.find('[data-project-scope-temporary-list]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it.each(['graph', 'directory'])('defaults to formal projects in the %s view and reveals temporary projects without writes', async (mode) => {
     const pinia = createPinia()
     setActivePinia(pinia)

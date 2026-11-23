@@ -54,6 +54,8 @@ describe('ProjectScopePicker with hundreds of temporary projects', () => {
   it('全选 takes the formal projects only and says a later project is not in it; the folded row takes the temporary ones; 清空 lets every one go', async () => {
     const { wrapper, toggles } = mountPicker()
     expect(wrapper.get('[data-project-scope-note]').text()).toBe('之后新建的项目不会自动加入')
+    const note = wrapper.get('[data-project-scope-note]')
+    expect(wrapper.get('[data-project-scope-all]').attributes('aria-describedby')).toBe(note.attributes('id'))
     await wrapper.get('[data-project-scope-all]').trigger('click')
     expect(toggles.at(-1)).toEqual([[projectScopeKey(projects[0]!), projectScopeKey(projects[1]!)], true])
     // The temporary row's own box takes all 130 of them.
@@ -67,5 +69,29 @@ describe('ProjectScopePicker with hundreds of temporary projects', () => {
     await all.wrapper.get('[data-project-scope-clear]').trigger('click')
     expect(all.toggles.at(-1)![1]).toBe(false)
     expect([...all.toggles.at(-1)![0]].sort()).toEqual(projects.map(projectScopeKey).sort())
+  })
+
+  it('leaves the note out where the choice is not a setting', () => {
+    const wrapper = mount(ProjectScopePicker, { props: { projects, selected: [], idPrefix: 'spec', laterProjectsNote: false } })
+    expect(wrapper.find('[data-project-scope-note]').exists()).toBe(false)
+    expect(wrapper.get('[data-project-scope-all]').attributes('aria-describedby')).toBeUndefined()
+  })
+
+  it('with a limit, a temporary row that would pass it opens for picking one by one instead of taking some', async () => {
+    const toggles: [string[], boolean][] = []
+    const wrapper = mount(ProjectScopePicker, { props: { projects, selected: [], idPrefix: 'spec', maxSelected: 20,
+      onToggle: (keys: string[], on: boolean) => { toggles.push([keys, on]) } } })
+    await wrapper.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
+    await flushPromises()
+    expect(toggles).toEqual([])
+    expect(wrapper.get('[data-project-scope-temporary-limit]').text()).toBe('全部临时项目会超过 20 个的上限，请在下面逐个选择。')
+    expect(wrapper.findAll('[data-project-scope-temporary-item]')).toHaveLength(50)
+    // Under the limit the row takes them all, as without one.
+    const small = mount(ProjectScopePicker, { props: { projects: projects.slice(0, 5), selected: [], idPrefix: 'small', maxSelected: 20,
+      onToggle: (keys: string[], on: boolean) => { toggles.push([keys, on]) } } })
+    await small.get('[data-project-scope-temporary] button[role="checkbox"]').trigger('click')
+    expect(toggles).toHaveLength(1)
+    expect([...toggles[0]![0]].sort()).toEqual(projects.slice(2, 5).map(projectScopeKey).sort())
+    expect(toggles[0]![1]).toBe(true)
   })
 })

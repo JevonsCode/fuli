@@ -6,8 +6,10 @@
 // takes or clears them all and which opens to pick them one by one. Hundreds of
 // temporary projects are taken only by that row, never by 全选 in passing. The
 // choice is a list, not 「all」: a project made later is not in it, which the
-// note beside 全选 says. A single choice from a field uses OptionCombobox with
-// projectScopeOptions and foldGroup.
+// note beside 全选 says where the choice is a setting (laterProjectsNote). With
+// maxSelected, a temporary row that would pass the limit opens for picking one
+// by one instead of taking some of them in list order. A single choice from a
+// field uses OptionCombobox with projectScopeOptions and foldGroup.
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,7 +29,11 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** Prefix for element IDs, unique on the page. */
   idPrefix: string
-}>(), { disabled: false })
+  /** Say beside 全选 that projects made later are not included: true where the choice is a saved setting. */
+  laterProjectsNote?: boolean
+  /** At most this many chosen; the caller refuses the rest. */
+  maxSelected?: number
+}>(), { disabled: false, laterProjectsNote: true, maxSelected: undefined })
 
 /** These keys turned on or off. */
 const emit = defineEmits<{ toggle: [keys: string[], on: boolean] }>()
@@ -53,6 +59,22 @@ watch(() => open.value && shownTemporary.value.length > 0, (shown) => {
 const nothingShown = computed(() => !shownFormal.value.length && !shownTemporary.value.length)
 
 const elementId = (choice: ProjectScopeChoice) => `${props.idPrefix}-${choice.key}`
+const noteId = computed(() => `${props.idPrefix}-later-note`)
+
+// The temporary row takes or clears them all; taking them all past maxSelected
+// would keep only some, in list order, so the row opens for picking instead.
+const temporaryOverLimit = ref(false)
+watch(open, (shown) => { if (!shown) temporaryOverLimit.value = false })
+function toggleTemporary(on: boolean) {
+  const keys = groups.value.temporary.map(choice => choice.key)
+  const adding = keys.filter(key => !chosen.value.has(key)).length
+  temporaryOverLimit.value = on && props.maxSelected !== undefined && chosen.value.size + adding > props.maxSelected
+  if (temporaryOverLimit.value) {
+    expanded.value = true
+    return
+  }
+  emit('toggle', keys, on)
+}
 
 // Hundreds of temporary projects open a page at a time, newest first; a search
 // starts again from its first page, so the match a person typed for is in view.
@@ -69,10 +91,11 @@ const hiddenTemporary = computed(() => shownTemporary.value.length - pagedTempor
       :aria-label="t('projects.scopePicker.search')" data-project-scope-search @keydown.enter.prevent />
     <div class="project-scope-bulk">
       <Button variant="ghost" size="xs" data-project-scope-all :disabled="disabled || !formalKeys.length || allFormalChosen"
+        :aria-describedby="laterProjectsNote ? noteId : undefined"
         @click="emit('toggle', formalKeys, true)">{{ t('projects.scopePicker.selectAll') }}</Button>
       <Button variant="ghost" size="xs" data-project-scope-clear :disabled="disabled || !someShownChosen"
         @click="emit('toggle', shownKeys, false)">{{ t('projects.scopePicker.clear') }}</Button>
-      <span class="project-scope-note" data-project-scope-note>{{ t('projects.scopePicker.selectAllNote') }}</span>
+      <span v-if="laterProjectsNote" :id="noteId" class="project-scope-note" data-project-scope-note>{{ t('projects.scopePicker.selectAllNote') }}</span>
     </div>
     <div class="project-scope-list" data-project-scope-list>
       <div v-for="choice in shownFormal" :key="choice.key" class="project-scope-row" data-project-scope-formal>
@@ -84,7 +107,7 @@ const hiddenTemporary = computed(() => shownTemporary.value.length - pagedTempor
         <div class="project-scope-row project-scope-group" data-project-scope-temporary>
           <Checkbox :id="`${idPrefix}-temporary`" :model-value="temporary.state" :disabled="disabled"
             :aria-label="t('projects.scopePicker.allTemporary')"
-            @update:model-value="value => emit('toggle', groups.temporary.map(choice => choice.key), value === true)" />
+            @update:model-value="value => toggleTemporary(value === true)" />
           <Button variant="ghost" size="xs" class="project-scope-group-toggle" :aria-expanded="open" data-project-scope-temporary-toggle
             @click="expanded = !open">
             <span>{{ t('projects.scopePicker.temporary') }}</span>
@@ -92,6 +115,9 @@ const hiddenTemporary = computed(() => shownTemporary.value.length - pagedTempor
             <UiIcon :name="open ? 'chevron-up' : 'chevron-down'" :size="14" />
           </Button>
         </div>
+        <p v-if="temporaryOverLimit" class="project-scope-muted" role="status" data-project-scope-temporary-limit>
+          {{ t('projects.scopePicker.temporaryOverLimit', { max: maxSelected ?? 0 }) }}
+        </p>
         <div v-if="open" class="project-scope-children" data-project-scope-temporary-list>
           <div v-for="choice in pagedTemporary" :key="choice.key" class="project-scope-row" data-project-scope-temporary-item>
             <Checkbox :id="elementId(choice)" :model-value="chosen.has(choice.key)" :disabled="disabled"

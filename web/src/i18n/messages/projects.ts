@@ -93,7 +93,7 @@ export const projectMessages = {
     },
     temporary: '临时项目 #{number}',
     temporaryDated: '临时项目 #{number} · {time}',
-    scopePicker: { search: '搜索项目', noMatch: '没有匹配的项目。', temporary: '临时项目', allTemporary: '全部临时项目', selectAll: '全选', selectAllNote: '之后新建的项目不会自动加入', clear: '清空', showMore: '再显示 {count} 个（还有 {rest} 个）' },
+    scopePicker: { search: '搜索项目', noMatch: '没有匹配的项目。', temporary: '临时项目', allTemporary: '全部临时项目', selectAll: '全选', selectAllNote: '之后新建的项目不会自动加入', temporaryOverLimit: '全部临时项目会超过 {max} 个的上限，请在下面逐个选择。', clear: '清空', showMore: '再显示 {count} 个（还有 {rest} 个）' },
     createDialog: {
       open: '新建项目',
       title: '新建项目',
@@ -389,7 +389,7 @@ export const projectMessages = {
     },
     temporary: 'Temporary project #{number}',
     temporaryDated: 'Temporary project #{number} · {time}',
-    scopePicker: { search: 'Search projects', noMatch: 'No project matches.', temporary: 'Temporary projects', allTemporary: 'All temporary projects', selectAll: 'Select all', selectAllNote: 'Projects added later are not included', clear: 'Clear', showMore: 'Show {count} more ({rest} left)' },
+    scopePicker: { search: 'Search projects', noMatch: 'No project matches.', temporary: 'Temporary projects', allTemporary: 'All temporary projects', selectAll: 'Select all', selectAllNote: 'Projects added later are not included', temporaryOverLimit: 'All temporary projects would pass the limit of {max}; pick them one by one below.', clear: 'Clear', showMore: 'Show {count} more ({rest} left)' },
     createDialog: {
       open: 'New project',
       title: 'New project',
