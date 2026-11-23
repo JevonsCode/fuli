@@ -150,9 +150,9 @@ test('a complete frame names the preferences its base had that are gone, not one
     preferences_omitted: { count: 9 } });
   const frame = projectPreferenceDelta(bounded, base, new Map(), null, preferenceSnapshot(whole));
   assert.equal(frame.preference_delivery, undefined);
-  assert.deepEqual(frame.preferences_withdrawn, ['rule-3 (project)']);
+  assert.deepEqual(frame.preferences_removed, ['rule-3 (project)']);
   // An unbounded change is a delta, which names removals itself.
   const delta = projectPreferenceDelta(whole, base, new Map());
-  assert.equal(delta.preferences_withdrawn, undefined);
+  assert.equal(delta.preferences_removed, undefined);
   assert.equal(delta.preference_delivery.removed.length, 1);
 });

@@ -71,12 +71,16 @@ given it again.
 
 A complete frame sent in place of a delta replaces the set of the frames
 before it, but the bodies they showed are still in the conversation, and a
-complete frame carries no rule reference saying so. So it names, in
-`preferences_withdrawn`, each preference of its base that the whole entry no
-longer has (deleted, disabled, or not of this scene), by key and layer as the
-index names them (`"rule-3"`, `"rule-3 (project)"`). One it only leaves out
-under an inline budget is still in force and is not named. The field is there
-only when something is gone: 27 bytes plus each name quoted (and a comma between names), nothing otherwise
+complete frame carries no rule reference saying so (the reference rides only
+on a delta or scene switch). So it names each preference of its base that the
+whole entry no longer has, by key and layer as the index names them
+(`"rule-3"`, `"rule-3 (project)"`), in a field whose name says what that
+means: `preferences_removed` for one deleted or disabled, and
+`preferences_out_of_scene` for a scene item of a base in another scene, which
+applies again once a later frame lists it. One it only leaves out under an
+inline budget is still in force and is not named. Each field is there only
+when it has a name: 25 and 30 bytes plus each name quoted (34 and 39 bytes
+for one key like `rule-12`), nothing otherwise
 (`session-preference-delta.test.js`).
 
 Instruction fingerprints use the same mandatory projection as compact entry.
@@ -139,9 +143,11 @@ until the preferences are complete (rec#110 item 6).
    delivers fits, and then the rest are added in rank order while that frame
    (most often a delta, which does not repeat a body the model holds) still
    fits, up to a cap: what a first frame would list beside the leanest
-   context, by rank (what main lists on its lightest turn). A preference added
-   or changed since competes for that room by rank; hard rules are never
-   counted. A turn with a lighter recall therefore catches up on bodies a
+   context, by rank (what main lists on its lightest turn), plus each
+   preference added since whose rank falls within that: the person just set
+   it, and main would give it a body on the next turn, so it never waits for
+   room in a session already at its cap. One ranked past the cap is only
+   named, as on main. Hard rules are never counted. A turn with a lighter recall therefore catches up on bodies a
    richer first frame could only name, and none is ever taken back while it
    fits; past the cap nothing more is spelled out, so the bodies of every
    preference are not sent one turn after another (which preferences deserve
@@ -161,7 +167,13 @@ until the preferences are complete (rec#110 item 6).
    lost frame that added bodies is never named as a base. In another scope
    (another project or work kind; the snapshot's `scopeHash` differs) the
    frame is complete anyway, so nothing is held: it chooses afresh, as a
-   generation's first frame does. Only where the base's bodies do not fit
+   generation's first frame does. Where the hard rules alone, or with an
+   index of the rest, already exceed half the limit there is no floor, and
+   then nothing is held either: the search below chooses each frame afresh, as
+   main does, so such a frame may list fewer than its base and is then
+   complete. Holding is built on the floor's room; without it a later frame
+   could not keep its base and still fit the hard rules, which come first.
+   Only where the base's bodies do not fit
    (a body grew, or this turn must be complete, such as one whose base listed
    a preference that was since deleted) do they give way, as a complete frame
    beside the leanest context: a preference changed since the base first, so

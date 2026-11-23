@@ -290,7 +290,8 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // one only sends its body once in the delta. So the base's set, with the floor,
 // takes the richest level where the frame this turn actually delivers fits,
 // and then the rest are added in rank order while it still fits, up to what
-// one complete frame holds beside the leanest context: a turn with a lighter
+// one complete frame holds beside the leanest context, plus any preference
+// added since that ranks within that: a turn with a lighter
 // recall spells out what a richer first frame only named, never more than the
 // lightest turn would list whole, so the bodies of every preference are not
 // sent one turn after another. While an earlier frame is still on its way
@@ -304,16 +305,22 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
   const status = new Map(ranked.map(index => [index, heldStatus(preferences[index], held)]));
   const of = (...kinds) => ranked.filter(index => kinds.includes(status.get(index)));
   const floorItems = ranked.slice(0, floor.count);
-  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...ranked])];
+  // The most a generation spells out: what a first frame would list beside
+  // the leanest context, by rank, its index tier included (as main listed on
+  // its lightest turn). A first frame that a rich recall kept below it catches
+  // up; nothing goes past it but what the base already holds, and a
+  // preference added since whose rank is within it: the person just set it,
+  // and main would give it a body on the next turn. One ranked past it is
+  // only named, as on main. Hard rules are never counted.
+  const lightest = richerIndex(leanest, ranked);
+  const capOf = order => largestCount(0, order.length, count => fitsAt(leanest, selection(order, count), lightest));
+  const cap = capOf(ranked);
+  const added = ranked.filter((index, rank) => status.get(index) === 'new' && rank >= floor.count && rank < cap);
+  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...added, ...ranked])];
   const base = new Set([...of('listed', 'changed'), ...floorItems]).size;
   const indexed = richerIndex(leanest, growing);
-  // The most a generation spells out: what a first frame would list beside
-  // the leanest context, its index tier included (as main listed on its
-  // lightest turn). A first frame that a rich recall kept below it catches up;
-  // nothing goes past it but what the base already holds. Hard rules are
-  // never counted.
-  const lightest = richerIndex(leanest, ranked);
-  const most = Math.max(base, largestCount(0, ranked.length, count => fitsAt(leanest, selection(ranked, count), lightest)));
+  // The cap of what was there before, so the added ones are on top of it.
+  const most = Math.max(base, capOf(ranked.filter(index => status.get(index) !== 'new'))) + added.length;
   for (const index of new Set([indexed, 'keys'])) {
     const at = count => listing(selection(growing, count), index);
     const level = levels.find(candidate => delivers(at(base)(candidate)));

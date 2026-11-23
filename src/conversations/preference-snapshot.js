@@ -120,7 +120,7 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
     baseline = { ...snapshot, revision, omittedIndex: null };
   }
   if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
-  const complete = withWithdrawn(full, baseline, whole ?? snapshot);
+  const complete = withGone(full, baseline, whole ?? snapshot);
   // A frame bounded to an inline budget (entry-inline-budget.js, D-54) lists
   // only the set it delivers; what it leaves out may still be in force. So it
   // never names a removal or takes back a scene's items: it is a delta that
@@ -156,15 +156,20 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
 }
 
 // A complete frame replaces the set of the frames before it, but a body they
-// showed is still in the conversation, and nothing else tells the model to
-// stop following it. So a complete frame in place of a delta names, by key
-// and layer, each preference of its base the whole entry no longer has:
-// deleted, disabled, or not of this scene. One it only leaves out under an
-// inline budget is still in force and is not named.
-function withWithdrawn(full, baseline, current) {
-  const withdrawn = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(current.units, id))
-    .map(([, item]) => preferenceName(item.identity)).sort();
-  return withdrawn.length ? copyPreferenceScope(full, { ...full, preferences_withdrawn: withdrawn }) : full;
+// showed is still in the conversation, and a complete frame carries no rule
+// reference saying so. So a complete frame in place of a delta names, by key
+// and layer, each preference of its base the whole entry no longer has, in a
+// field whose name says what that means: preferences_removed for one deleted
+// or disabled, preferences_out_of_scene for a scene item of a base in another
+// scene (it applies again there). One it only leaves out under an inline
+// budget is still in force and is not named.
+function withGone(full, baseline, current) {
+  const gone = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(current.units, id)).map(([, item]) => item);
+  const away = item => baseline.scopeHash !== current.scopeHash && item.scene;
+  const names = items => items.map(item => preferenceName(item.identity)).sort();
+  const removed = names(gone.filter(item => !away(item))), outOfScene = names(gone.filter(away));
+  return gone.length ? copyPreferenceScope(full, { ...full, ...(removed.length ? { preferences_removed: removed } : {}),
+    ...(outOfScene.length ? { preferences_out_of_scene: outOfScene } : {}) }) : full;
 }
 
 // Reconstruct only instruction fingerprints from an actually delivered delta

@@ -19,7 +19,7 @@ import { codexLifecycleOutput } from '../../src/agents/codex/lifecycle-event.js'
 import { codexPreferenceEvidence } from '../../src/agents/codex/preference-evidence.js';
 import { claudePreferenceEvidence } from '../../src/agents/claude-code/preference-evidence.js';
 import { createSessionPreferenceDelivery } from '../../src/conversations/preference-session.js';
-import { withPreferenceScope } from '../../src/conversations/preference-snapshot.js';
+import { copyPreferenceScope, withPreferenceScope } from '../../src/conversations/preference-snapshot.js';
 import { beginConversation, resumeConversation } from '../../src/graphiti/agent-conversations.js';
 import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
@@ -113,6 +113,19 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     const target = hosts.get(`${source}:${sessionId}`);
     return target && { path: target.path, adapter: source === 'codex' ? codexPreferenceEvidence : claudePreferenceEvidence };
   } });
+  // What a new session would be given for an entry: its first frame, with the
+  // revision and skeleton revision a session frame carries and the uncached
+  // entry does not. An inline budget sizes those too, so this is the set a
+  // session's own first frame could list; comparing against the uncached one
+  // reported a body or two as missing that no session frame has room for.
+  let firsts = 0;
+  const firstFrame = async (client, prompted, entry, currentTask) => {
+    const index = ++firsts;
+    const own = createSessionPreferenceDelivery({ directory: join(directory, `first-${index}`), locate: async source =>
+      ({ path: join(directory, `first-${index}.jsonl`), adapter: source === 'codex' ? codexPreferenceEvidence : claudePreferenceEvidence }) });
+    return (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry, { delivery: own, currentTask }))
+      .hookSpecificOutput.additionalContext;
+  };
   const app = { config: { personal: { spaceId: SPACE } }, getCapturePolicy: () => ({ enabled: true }),
     personal: { conversation: provider.conversation },
     taskContextRegistry: { context: async token => tasks.get(token) } };
@@ -246,10 +259,22 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       if (hostLine) context = readTask(session.token);
       // The same entry through the same hook with no session cache. It reuses
       // this turn's Provider snapshot: a fair serialization comparison, not an
-      // independent second retrieval.
+      // independent second retrieval. The copy keeps the entry's private
+      // preference scope (its work kind): structuredClone drops it, and an
+      // inline budget then ranked without the task's scene, so the comparison
+      // listed other bodies than any session would (not a missed delivery).
       const uncached = async entry => (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry,
         { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }) })).hookSpecificOutput.additionalContext;
-      const baseline = await uncached(structuredClone(context));
+      const baseline = await uncached(copyPreferenceScope(context, structuredClone(context)));
+      // The preferences this turn should leave the model holding at least: a
+      // new session's first frame for this entry. A host line sends nothing by
+      // design (T1), so the model keeps what its entry turn gave it: the
+      // expectation of that turn, not of a refresh with more room.
+      const current = new Map((context.effective_preferences ?? []).map(item => [item.preference_key, item.instruction]));
+      if (!hostLine) {
+        session.expected = frameOf(await firstFrame(client, prompted, copyPreferenceScope(context, structuredClone(context)),
+          async () => ({ ...tasks.get(context.taskContextToken) })));
+      }
       // Diagnostic only (D-29.8): the same entry with no preference and no
       // message, uncached. The cache cannot remove these bytes.
       const skeleton = await uncached(skeletonEntry(context));
@@ -264,7 +289,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       if (delivered && !hostLine) applyFrame(view, frame, text);
       // A host line shows no skeleton: the model keeps the one its task entry showed.
       turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}, labelOf(baseline),
-        { skeleton: !hostLine }) : null;
+        { skeleton: !hostLine, preferences: session.expected, current }) : null;
       // A delta or scene switch whose base the model cannot locate by the
       // delivery rules: it must call read_task_preferences (entry-rules.js).
       turn.rereads_required = delivered && view.unlocated ? 1 : 0;
@@ -452,21 +477,21 @@ function skeletonEntry(context) {
 // The model view against the same entry without a cache: every current
 // message and preference present, nothing stale, nothing withdrawn, and the
 // base of every delta or scene switch located.
-function correctness(view, expected, withdrawn, label, { skeleton: compareSkeleton = true } = {}) {
+function correctness(view, expected, withdrawn, label, { skeleton: compareSkeleton = true, preferences = expected,
+  current = new Map() } = {}) {
   const recovery = recoveryOf(expected);
   const messages = recovery?.messages ?? [];
   const missingMessages = messages.filter(message => view.messages.get(messageKey(recovery, message)) !== message.content)
     .map(message => message.sequence);
-  const wanted = new Map((expected.effective_preferences ?? []).map(item => [item.preference_key, item.instruction]));
+  const wanted = new Map((preferences.effective_preferences ?? []).map(item => [item.preference_key, item.instruction]));
   const missingPreferences = [...wanted].filter(([key, value]) => view.preferences.get(key) !== value).map(([key]) => key);
-  // A body the model was legally given earlier and that is still in force is
-  // not extra: a session never lists fewer than its base (design T3), so it
-  // can hold more bodies than the uncached entry has room for. What that entry
-  // leaves out is in force; what is gone is checked by withdrawn_present.
-  const omitted = expected.preferences_omitted;
-  const inForce = key => Boolean(omitted) && (!Array.isArray(omitted.index)
-    || omitted.index.some(entry => entry === key || String(entry).startsWith(`${key} `)));
-  const extraPreferences = [...view.preferences.keys()].filter(key => !wanted.has(key) && !inForce(key));
+  // A body the model was legally given earlier and that is still in force, as
+  // it is now, is not extra: a session never lists fewer than its base (design
+  // T3), so it can hold more bodies than a first frame has room for. One whose
+  // body the model holds in an older version is reported; what is gone is
+  // checked by withdrawn_present.
+  const extraPreferences = [...view.preferences].filter(([key, value]) => !wanted.has(key) && current.get(key) !== value)
+    .map(([key]) => key);
   const withdrawnPresent = [
     ...(withdrawn.preferences ?? []).filter(key => view.preferences.has(key)).map(key => `preference:${key}`),
     ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content.slice(0, 32)}`)
