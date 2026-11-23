@@ -239,10 +239,25 @@ test('a runner of an earlier version follows its host for every scope and answer
   assert.deepEqual(runner.served.routes.all().map((row) => row.scope), ['global', 'default']);
   const entry = await runner.client.callTool({ name: 'get_collaboration_preferences',
     arguments: { projectPath: runner.projectPath, taskPrompt: 'routed' } });
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token-1');
   assert.equal(runner.calls.at(-1).name, 'get_collaboration_preferences', 'the host answered it');
-  // The task is the host's: whatever the routes become, its calls go back there.
+  // The token names the FULI that issued it (design §4.4), and the host gets its own token back.
+  const fingerprint = runner.served.store.host().fingerprint;
+  assert.equal(entry.structuredContent.taskContextToken, `fuli-from-${fingerprint.slice(0, 16)}.host-token-1`);
+  assert.equal(entry.structuredContent.agent_receipt.markdown, 'earlier task receipt', 'nothing else of the answer changes');
+  await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: entry.structuredContent.taskContextToken, workLog: 'synthetic' } });
+  assert.equal(runner.calls.at(-1).input.taskContextToken, 'host-token-1');
+  // A token passed as the host wrote it still goes back there; only its digest is kept here.
   assert.match(runner.served.routes.taskOwner('host-token-1'), /^host:/);
+  assert.equal(runner.served.routes.db.prepare("SELECT COUNT(*) AS n FROM task_owners WHERE token_sha256 = 'host-token-1'")
+    .get().n, 0, 'the token itself is not stored');
+
+  // A token another FULI issued reaches nothing here.
+  const before = runner.calls.length;
+  const foreign = await runner.client.callTool({ name: 'checkpoint_task_knowledge',
+    arguments: { taskContextToken: `fuli-from-${'9'.repeat(16)}.host-token-1`, workLog: 'synthetic' } });
+  assert.equal(JSON.parse(foreign.content[0].text).code, 'task_owner_not_paired');
+  assert.equal(runner.calls.length, before);
 });
 
 test('a scope routed to a computer this one is not paired with reaches nothing, and says where to fix it', async (t) => {

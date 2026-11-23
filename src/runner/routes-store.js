@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { sha256Bytes } from '../security/digest.js';
 
 // Which parts of the person's FULI this computer reads and writes on another
 // one (docs/runner-roles-design.md §3). A scope is `global`, `default`, or
@@ -15,6 +16,8 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // (step 3). Nothing writes them yet, and `fuli routes list` shows them when
 // they are set.
 export const ROUTES_FILE = 'runner/routes.sqlite';
+// How long a task's owner is kept after its token was last used: as long as an offline task token lasts.
+export const TASK_OWNER_DAYS = 30;
 export const GLOBAL_SCOPE = 'global';
 export const DEFAULT_SCOPE = 'default';
 export const LOCAL_OWNER = 'local';
@@ -31,7 +34,7 @@ export const ROUTES_FORMAT = sqliteFormat({
       replica_synced_at TEXT,
       updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS task_owners(
-      token TEXT PRIMARY KEY,
+      token_sha256 TEXT PRIMARY KEY,
       owner TEXT NOT NULL,
       at TEXT NOT NULL);`,
   migrations: []
@@ -104,21 +107,33 @@ export class RoutesStore {
     });
   }
 
-  // Which computer entered this task. A task token is the owner's, and the
-  // checkpoint of that task goes back to the computer that entered it, whatever
-  // the routes became meanwhile (docs/runner-roles-design.md §4). Kept until
-  // the pairing ends, as everything a follower keeps is.
+  // Which computer entered this task, for a token a client passes as the host
+  // wrote it, without the issuer the client was given it with (task-issuer.js):
+  // the token itself says where it goes; this is the fallback. Only the token's
+  // SHA-256 is kept, never the token, and an entry not used for TASK_OWNER_DAYS
+  // goes, as an offline task token does.
   rememberTaskOwner(token, owner) {
     if (typeof token !== 'string' || !token) return;
-    this.db.prepare(`INSERT INTO task_owners(token, owner, at) VALUES(?, ?, ?)
-      ON CONFLICT(token) DO UPDATE SET owner = excluded.owner, at = excluded.at`)
-      .run(token, owner, new Date(this.now()).toISOString());
+    immediateTransaction(this.db, () => {
+      const at = new Date(this.now()).toISOString();
+      this.db.prepare(`INSERT INTO task_owners(token_sha256, owner, at) VALUES(?, ?, ?)
+        ON CONFLICT(token_sha256) DO UPDATE SET owner = excluded.owner, at = excluded.at`).run(tokenDigest(token), owner, at);
+      this.db.prepare('DELETE FROM task_owners WHERE at <= ?').run(this.#ownersSince());
+    });
   }
 
-  // The owner of a task token, or null when this computer never saw it entered.
+  // The owner of a task token, or null when this computer never saw it entered (or not lately).
   taskOwner(token) {
     if (this.#missing() || typeof token !== 'string' || !token) return null;
-    return this.db.prepare('SELECT owner FROM task_owners WHERE token = ?').get(token)?.owner ?? null;
+    const digest = tokenDigest(token);
+    const row = this.db.prepare('SELECT owner FROM task_owners WHERE token_sha256 = ? AND at > ?').get(digest, this.#ownersSince());
+    if (!row) return null;
+    this.db.prepare('UPDATE task_owners SET at = ? WHERE token_sha256 = ?').run(new Date(this.now()).toISOString(), digest);
+    return row.owner;
+  }
+
+  #ownersSince() {
+    return new Date(this.now() - TASK_OWNER_DAYS * 24 * 60 * 60 * 1000).toISOString();
   }
 
   // `fuli runner join`: 「follow everything」 on the host just joined. `global`
@@ -146,4 +161,8 @@ export class RoutesStore {
 
 function order(scope) {
   return scope === GLOBAL_SCOPE ? 0 : scope === DEFAULT_SCOPE ? 1 : 2;
+}
+
+function tokenDigest(token) {
+  return sha256Bytes(Buffer.from(token, 'utf8'));
 }

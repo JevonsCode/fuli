@@ -95,8 +95,12 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   without one), or by the computer that entered the task its token names, so a checkpoint goes
   back to the computer that entered the task whatever the routes became. A call whose owner this
   computer cannot reach is refused with the command that fixes it, never sent to another computer:
-  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope marked as this
-  computer's while it has no FULI of its own).
+  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope routed to this
+  computer, which nothing writes yet).
+- A task token says which FULI issued it (design §4.4): a token the host issues reaches the client
+  as `fuli-from-<the host's fingerprint, 16 characters>.<the host's own token>`, and the host gets its
+  own token back. A token passed as the host wrote it goes by the owner remembered for it here: only
+  its SHA-256, kept 30 days from its last use, never the token.
 - A computer that follows nothing loads none of the router's modules.
 
 ## The console on a runner

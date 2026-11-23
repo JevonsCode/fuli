@@ -7,7 +7,8 @@ import test from 'node:test';
 import { runRoutesCommand } from '../src/cli/routes-command.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
-import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName } from '../src/runner/routes-store.js';
+import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
+import { issuedToken, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 // docs/runner-roles-design.md §3, §4, §10. Synthetic computers and folders only.
@@ -87,9 +88,9 @@ test('a task\'s checkpoint goes to the computer that entered the task, whatever 
   routes.set('default', hostOwner('a'.repeat(64)));
   routes.rememberTaskOwner('task-token-1', hostOwner('b'.repeat(64)));
   assert.deepEqual(routeOfCall(routes, { taskContextToken: 'task-token-1' }),
-    { scope: 'global', owner: hostOwner('b'.repeat(64)), byTask: true });
+    { scope: 'global', owner: hostOwner('b'.repeat(64)), issuer: null, byTask: true });
   assert.deepEqual(routeOfCall(routes, { taskContextToken: 'never-seen' }),
-    { scope: 'global', owner: hostOwner('a'.repeat(64)), byTask: false });
+    { scope: 'global', owner: hostOwner('a'.repeat(64)), issuer: null, byTask: false });
   routes.close();
 });
 
@@ -159,4 +160,30 @@ test('leaving the host deletes the routes to it, so this computer owns everythin
   store.close();
   await runRunnerCommand(['leave', '--data-dir', dataDir], { write: () => {} });
   assert.equal(existsSync(path.join(dataDir, 'runner', 'routes.sqlite')), false);
+});
+
+// Review of #1075: the remembered owner of a token is the fallback; only its digest is kept, for 30 days from its last use.
+test('a token\'s remembered owner keeps no token and goes 30 days after its last use', () => {
+  let now = Date.parse('2026-11-01T00:00:00Z');
+  const routes = new RoutesStore(':memory:', { now: () => now });
+  routes.rememberTaskOwner('fuli-task-synthetic', hostOwner('a'.repeat(64)));
+  assert.equal(routes.db.prepare('SELECT token_sha256 FROM task_owners').get().token_sha256.length, 64);
+  now += (TASK_OWNER_DAYS - 1) * 24 * 60 * 60 * 1000;
+  assert.equal(routes.taskOwner('fuli-task-synthetic'), hostOwner('a'.repeat(64)), 'used: its days start again');
+  now += (TASK_OWNER_DAYS + 1) * 24 * 60 * 60 * 1000;
+  assert.equal(routes.taskOwner('fuli-task-synthetic'), null);
+  routes.close();
+});
+
+test('a token says which FULI issued it, and the host gets its own token back', () => {
+  const token = issuedToken('AB'.repeat(32), 'fuli-task-synthetic');
+  assert.equal(token, `fuli-from-${'ab'.repeat(8)}.fuli-task-synthetic`);
+  assert.ok(token.length <= 128, 'within every tool\'s token length');
+  assert.deepEqual(withIssuedToken('checkpoint_task_knowledge', { taskContextToken: token, workLog: 'x' }),
+    { issuer: 'ab'.repeat(8), args: { taskContextToken: 'fuli-task-synthetic', workLog: 'x' } });
+  assert.deepEqual(withIssuedToken('fuli_call', { toolName: 'resume_agent_conversation', input: { taskContextToken: token } }),
+    { issuer: 'ab'.repeat(8), args: { toolName: 'resume_agent_conversation', input: { taskContextToken: 'fuli-task-synthetic' } } });
+  assert.deepEqual(withIssuedToken('checkpoint_task_knowledge', { taskContextToken: 'runner-offline-x' }),
+    { issuer: null, args: { taskContextToken: 'runner-offline-x' } });
+  assert.equal(issuedToken('ab'.repeat(32), token), token, 'never named twice');
 });

@@ -15,23 +15,29 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 // - a call under a task another computer entered, which this computer can no
 //   longer reach — its checkpoint must go back to the computer that entered it.
 //
-// input: the call's arguments (through fuli_call, its input).
-export function routeRefusal({ routes, store, input }) {
-  const { scope, owner, byTask } = routeOfCall(routes, input ?? {}, { known: knownProjects(store, routes) });
+// input: the call's arguments (through fuli_call, its input), with the task
+// token as its issuer wrote it; issuer: the issuer its token named, if any.
+export function routeRefusal({ routes, store, input, issuer = null }) {
+  const { scope, owner, byTask } = routeOfCall(routes, input ?? {}, { known: knownProjects(store, routes), issuer });
+  const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
+  if (issuer) {
+    return !paired || paired.startsWith(issuer) ? null : failure('task_owner_not_paired', ENTERED_ELSEWHERE);
+  }
   if (owner === LOCAL_OWNER) {
     return failure('scope_owned_here', `${scope} is routed to this computer, which cannot answer a scope it follows a host `
       + 'for yet (owning scopes on a computer that follows a host is not built yet). Point it at the host again with '
       + `\`fuli routes follow ${scope} <host>\`; \`fuli routes list\` shows every route.`);
   }
-  const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
   // No pairing at all: the follower already answers that (runner_not_paired).
   if (!paired || ownerFingerprint(owner) === paired) return null;
   return byTask
-    ? failure('task_owner_not_paired', 'This task was entered on a computer this one is no longer paired with, so the '
-      + 'call cannot go back to it. Enter the task again with get_collaboration_preferences and use the token it gives.')
+    ? failure('task_owner_not_paired', ENTERED_ELSEWHERE)
     : failure('scope_owner_not_paired', `${scope} belongs to a computer this one is no longer paired with. `
       + `\`fuli routes list\` shows it; \`fuli routes follow ${scope} <host>\` points it at the host paired now.`);
 }
+
+const ENTERED_ELSEWHERE = 'This task was entered on a computer this one is no longer paired with, so the call cannot '
+  + 'go back to it. Enter the task again with get_collaboration_preferences and use the token it gives.';
 
 // A task entry the host answered: its token is that host's, so whatever the
 // routes become, the calls and the checkpoint of that task go back there.

@@ -25,9 +25,10 @@ import { openRoutes } from './call-routes.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer,
   offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
-  rememberAnswer, repeatable, withoutOfflineToken } from './offline-calls.js';
+  rememberAnswer, repeatable, TASK_ENTRY_TOOLS, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { routeRefusal, rememberTaskOwner } from './routed-calls.js';
+import { answerWithIssuer, withIssuedToken } from './task-issuer.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
@@ -336,7 +337,9 @@ function createRunnerServer({ store, routes = null, connection, routing, record 
   }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args = {} } = request.params;
+    const { name } = request.params;
+    // A token the host issued names it (task-issuer.js): the host gets its own token back.
+    const { args, issuer } = withIssuedToken(name, request.params.arguments ?? {});
     const asked = effectiveCall(name, args);
     const refused = hostOnlyAnswer(asked.tool);
     if (refused) return refused;
@@ -348,7 +351,7 @@ function createRunnerServer({ store, routes = null, connection, routing, record 
       return answer;
     }
     // Where this call goes (docs/runner-roles-design.md §4), decided before anything is sent.
-    const misrouted = routes ? routeRefusal({ routes, store, input: asked.input }) : null;
+    const misrouted = routes ? routeRefusal({ routes, store, input: asked.input, issuer }) : null;
     if (misrouted) return misrouted;
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
@@ -385,7 +388,8 @@ function createRunnerServer({ store, routes = null, connection, routing, record 
     if (store.outbox().queued) void deliverSoon();
     // Task entry says where it was answered, so the client's AI never takes a
     // follower for a computer without a FULI (rec#144).
-    return hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
+    const noted = hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
+    return TASK_ENTRY_TOOLS.has(call.tool) ? answerWithIssuer(noted, store.host()?.fingerprint) : noted;
   });
 
   // A listing or read the host answered; a refused session lists nothing, and a read says why.

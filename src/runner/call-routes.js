@@ -102,11 +102,15 @@ export function openRoutes(dataDir) {
 // Where one call goes, decided before anything is sent. A task token names the
 // computer that entered that task, so its checkpoint goes back there whatever
 // the routes became meanwhile; everything else goes by the folder's scope.
-// Answers { scope, owner }.
-export function routeOfCall(routes, { projectPath = null, taskContextToken = null } = {}, options) {
+// Answers { scope, owner, issuer, byTask }.
+// issuer: the start of the fingerprint of the FULI that issued the call's task
+// token, read off the token itself (task-issuer.js); else the token's owner as
+// remembered here, for a token passed without it.
+export function routeOfCall(routes, { projectPath = null, taskContextToken = null } = {}, { issuer = null, ...options } = {}) {
   const scope = callScope(projectPath, options);
+  if (issuer) return { scope, owner: null, issuer, byTask: true };
   const entered = routes.taskOwner(taskContextToken);
-  return { scope, owner: entered ?? routes.owner(scope), byTask: Boolean(entered) };
+  return { scope, owner: entered ?? routes.owner(scope), issuer: null, byTask: Boolean(entered) };
 }
 
 // What `fuli routes list` prints, and what the console shows.
