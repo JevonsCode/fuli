@@ -68,6 +68,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // The start awaitAddress has under way, if any: a stop waits for it, so it closes what that start opened
   // and whatever the stop clears afterwards (turning the roundtable off clears its settings) stays cleared.
   let listenWork = null;
+  // The narrowing of a wildcard listener under way, if any (narrowListener).
+  let narrowing = null;
   // Counts stops asked for. One rule for whatever starts something (service start, the retry, turning the
   // roundtable or nearby pairing on, joining, moving the listener): the operation takes the count when it
   // begins and hands it to each step, and a step that finds the count moved does nothing more. A listener or
@@ -892,12 +894,17 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // While nearby pairing is off, a wildcard listener moves to the one address
   // its paired devices reached it on, or, when none has connected yet, to this
   // computer's first physical LAN address; devices on several addresses keep it everywhere.
-  async function narrowListener() {
-    if (!coordinator || coordinator.host !== NEARBY_LISTEN_HOST || store().setting('nearby')) return;
+  // Several reasons to narrow arrive together (nearby pairing ending, a paired device's first
+  // contact, the publisher): they share the move under way. Two moves at once each stopped the
+  // other's listener and neither opened one, so nothing listened and nothing said why.
+  function narrowListener() {
+    if (!coordinator || coordinator.host !== NEARBY_LISTEN_HOST || store().setting('nearby')) return narrowing ?? Promise.resolve();
     const reached = store().setting('reachedAddresses') ?? {};
     const addresses = new Set(trustedFingerprints().map((nodeId) => reached[nodeId]).filter((address) => address && !LOOPBACK.test(address)));
     const address = addresses.size === 1 ? [...addresses][0] : addresses.size === 0 ? localAddresses()[0] : null;
-    if (address) await rebindCoordinator(address);
+    if (!address) return Promise.resolve();
+    narrowing ??= rebindCoordinator(address).finally(() => { narrowing = null; });
+    return narrowing;
   }
 
   // The person's 「重新监听」: the coordinator's listener on its saved address once

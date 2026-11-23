@@ -290,6 +290,33 @@ test('both computers share after a nearby pairing whose coordinator then moves i
   } finally { await desk.close(); await laptop.close(); }
 });
 
+// Two reasons to narrow the listener at once (nearby pairing ending while a paired device first reaches it,
+// or the publisher's check) are one move: each move stopped the other's listener and neither opened a new one.
+test('two narrowings of the listener at once move it once and leave it listening', { timeout: 30_000 }, async () => {
+  const bus = discoveryBus();
+  const listener = recordedListener();
+  const options = { nearbyListenHost: '0.0.0.0', pairedGraceMs: 60_000, interfaces: () => LAN };
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: options }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { ...options, startServer: listener.startServer } })]);
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const seen = await until(desk.runtime, (status) => status.nearby.devices.length > 0, 'the laptop to be listed');
+    await desk.runtime.pairNearby({ fingerprint: seen.nearby.devices[0].fingerprint.slice(0, 6) });
+    const [here, there] = await Promise.all([until(desk.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'desk code'),
+      until(laptop.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'laptop code')]);
+    await desk.runtime.confirmPairing({ requestId: here.nearby.pairing.requestId, code: there.nearby.pairing.code });
+    await laptop.runtime.confirmPairing({ requestId: there.nearby.pairing.requestId, code: here.nearby.pairing.code });
+    await until(desk.runtime, (status) => status.role === 'member' && status.groupSize === 2, 'the desk to join');
+    await until(laptop.runtime, (status) => status.coordinator?.listening && status.groupSize === 2, 'the laptop to see the desk');
+
+    await Promise.all([laptop.runtime.nearbyOff(), laptop.runtime.nearbyOff()]);
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, laptop.app.peer.nodeStore().setting('coordinator').host], [true, '127.0.0.1']);
+    assert.deepEqual(listener.asked, ['0.0.0.0', '127.0.0.1'], 'moved once');
+  } finally { await desk.close(); await laptop.close(); }
+});
+
 test('a device that leaves by itself ends the coordinator\'s waiting share for it, as a revoke does', { timeout: 30_000 }, async () => {
   const [laptop, desk] = await Promise.all([device('laptop', { runtimeOptions: { autoShareRetryMs: 50, autoShareAttempts: 1_000 } }), device('desk')]);
   try {
