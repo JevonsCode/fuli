@@ -19,6 +19,11 @@ import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
 
+// Why a recovery read requires a checkpoint: it does not recompute what closes
+// the task, the entry that opened it did (rec#137). Short on purpose: the
+// reader's whole result shares one 32 KiB envelope with the role and receipt.
+const RECOVERY_REASON = 'set by the entry that opened this task';
+
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
 const WORKER_ASSIGNMENT = Object.freeze({ selection_reason: 'worker_run_admitted', match_basis: ['sealed_worker_run'] });
 const PAGERS = new WeakMap();
@@ -90,7 +95,13 @@ export async function readTaskPreferences(application, {
       ...(team?.guidance ? { team_guidance: team.guidance } : {}),
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
-    taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+    taskContextToken: task.token, task_context_token: task.token,
+    // A recovery read of an open task does not recompute what closes it: the
+    // entry that opened the task decided that, and this read says so instead
+    // of letting the two disagree without a word (rec#137).
+    checkpoint_required: task.checkpoint?.phase !== 'complete',
+    checkpoint_reason: task.checkpoint?.phase === 'complete' ? 'this task is already checkpointed'
+      : RECOVERY_REASON,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance(),
     ...(judgment ? { judgment_context: judgment } : {}),
@@ -167,16 +178,32 @@ function blocked(message) { return new ApplicationError('preference_recovery_blo
 // preferences_complete stays false, so no session takes it as the base of a
 // delta. A key this task does not have is named back, never guessed.
 const KEYED_GUIDANCE = 'These are only the preferences you asked for by key; the rest of this task\'s set still applies '
-  + 'as the entry delivered it. A key in missing is not one of this task\'s preferences now.';
+  + 'as the entry delivered it. in_conflict: an unresolved conflict holds that key — apply no alternative until it is resolved '
+  + '(read it with read_task_preferences without keys). scope_unknown: it is limited to a work kind, workflow or session '
+  + 'this task does not state. missing: not one of this task\'s preferences now.';
 function keyedPreferences(task, projection, keys) {
   const wanted = new Set(keys);
   const effective = projection.effective_preferences.filter(item => wanted.has(item.preference_key));
   const found = new Set(effective.map(item => item.preference_key));
+  // A key that is not delivered may still be held somewhere other than the
+  // set (review of #1070): an unresolved conflict, or a scope this task does
+  // not state. Calling those "missing" told the model the rule was gone.
+  const conflicted = new Set((projection.active_conflicts ?? []).map(conflict => conflict.preference_key));
+  const unknown = new Set(projection.scope_unknown ?? []);
+  const rest = [...wanted].filter(key => !found.has(key));
+  const listed = keysOf => rest.filter(keysOf);
+  const done = task.checkpoint?.phase === 'complete';
   const value = {
-    taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+    taskContextToken: task.token, task_context_token: task.token,
+    checkpoint_required: !done,
+    checkpoint_reason: done ? 'this task is already checkpointed'
+      : RECOVERY_REASON,
     context: projection.context,
     effective_preferences: effective,
-    preference_delivery: { status: 'keys', requested: wanted.size, missing: [...wanted].filter(key => !found.has(key)),
+    preference_delivery: { status: 'keys', requested: wanted.size,
+      in_conflict: listed(key => conflicted.has(key)),
+      scope_unknown: listed(key => !conflicted.has(key) && unknown.has(key)),
+      missing: listed(key => !conflicted.has(key) && !unknown.has(key)),
       guidance: KEYED_GUIDANCE },
     preferences_complete: false, same_task_recovery_available: true, truncated: false
   };

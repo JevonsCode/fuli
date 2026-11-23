@@ -516,6 +516,23 @@ async def test_task_entry_keeps_the_lead_but_does_not_claim_execution_is_staffed
 
 
 @pytest.mark.asyncio
+async def test_task_entry_tells_a_small_task_nothing_about_staffing():
+    # rec#146 item 2: a two-command task is not told to coordinate execution.
+    store = TeamContextStore([candidate('lead', ['planning'], ['planning']),
+        candidate('member', ['verification'], ['test execution'])])
+    result = await store.resolve_project_agent_context({'id': 'principal'}, context_request(task_size='small'))
+    assert result.status == 'ready'
+    assert result.agent.agent_id == 'lead'
+    assert result.execution_reason is None
+    assert result.execution_agent_id is None
+    assert not any('Execution is not staffed' in item or 'coordinate_project_agent_task' in item
+                   for item in result.match_basis)
+    gap = TeamContextStore([candidate('lead', ['planning'], ['planning'])], members=[])
+    result = await gap.resolve_project_agent_context({'id': 'principal'}, context_request(task_size='small'))
+    assert not any('HR recruitment' in item for item in result.match_basis)
+
+
+@pytest.mark.asyncio
 async def test_task_entry_routes_a_team_gap_to_existing_recruitment():
     store = TeamContextStore([candidate('lead', ['planning'], ['planning'])], members=[])
     result = await store.resolve_project_agent_context({'id': 'principal'}, context_request())

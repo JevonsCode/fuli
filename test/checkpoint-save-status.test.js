@@ -85,3 +85,31 @@ test('a content refusal still fails as before', async () => {
   const refusal = new ProviderRequestError('bad content', { code: 'provider_error', status: 422 });
   await assert.rejects(dispatchGraphTool(appFailingWith(refusal), 'checkpoint_task_knowledge', INPUT), refusal);
 });
+
+// Coordinator, from real use: a turn started by a host notification after the
+// Stop hook closed the task called checkpoint_task_knowledge with that token
+// and got nothing it could act on. It is a status that says nothing was saved
+// and how to keep this turn's knowledge, through the real workflow.
+test('a checkpoint on a task already closed with other content says so and how to keep this turn', async () => {
+  const { app, steps } = checkpointApp({});
+  // The Stop hook closed it at the end of the turn before.
+  const closed = await dispatchGraphTool(app, 'checkpoint_task_knowledge', { ...INPUT,
+    reason: 'Auto-closed by the Stop hook: the Agent recorded no checkpoint for this task.' });
+  assert.equal(closed.status === 'checkpoint_not_saved', false);
+  steps.length = 0;
+  const result = await dispatchGraphTool(app, 'checkpoint_task_knowledge', { ...INPUT, reason: 'Synthetic background result checked' });
+  assert.deepEqual(steps, ['context'], 'nothing written');
+  assert.deepEqual([result.status, result.reason, result.checkpoint_required], ['checkpoint_not_saved', 'task_closed', false]);
+  assert.deepEqual(result.retry, { tool: 'checkpoint_task_knowledge', same_content: true, new_token: true });
+  assert.match(result.guidance, /already closed/);
+  assert.match(result.guidance, /get_collaboration_preferences now/);
+  assert.match(result.guidance, /amend: true/);
+});
+
+test('the same content on a closed task is still the idempotent retry it was', async () => {
+  const { app } = checkpointApp({});
+  const first = await dispatchGraphTool(app, 'checkpoint_task_knowledge', INPUT);
+  const again = await dispatchGraphTool(app, 'checkpoint_task_knowledge', INPUT);
+  assert.notEqual(again.status, 'checkpoint_not_saved');
+  assert.equal(again.status, first.status);
+});

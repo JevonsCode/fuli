@@ -27,6 +27,18 @@ test('a condition on an action is not a scope', () => {
   assert.equal(preferenceIndexLine(item('push-confirm', '只在用户确认后才推送到远端。')).includes('仅适用于'), false);
 });
 
+// Review of #1070: a time or a condition after 仅限 / Only for is not a scope.
+test('a time or a condition after a scope word is not a scope', () => {
+  assert.equal(statedPreferenceScope('仅限周五发布，其他时间不要发版。'), null);
+  assert.equal(statedPreferenceScope('仅限工作日上午部署合成服务。'), null);
+  assert.equal(statedPreferenceScope('仅限用户确认后推送到合成远端。'), null);
+  assert.equal(statedPreferenceScope('Only for Friday releases: never ship on other days.'), null);
+  assert.equal(statedPreferenceScope('Only for deploys after approval, use the synthetic pipeline.'), null);
+  // A project or scene name after it still is one.
+  assert.equal(statedPreferenceScope('仅限合成支付项目：提交前跑全量测试'), '合成支付项目');
+  assert.equal(statedPreferenceScope('Only for synthetic timesheet work: round to half an hour.'), 'synthetic timesheet work');
+});
+
 test('an unrestricted instruction states no scope, and a session clause is left to the session reader', () => {
   assert.equal(statedPreferenceScope('地区只按 locale 判断。'), null);
   assert.equal(statedPreferenceScope('Keep the cursor stable across pages.'), null);
