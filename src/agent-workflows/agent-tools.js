@@ -1,11 +1,9 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
-import { callingTask } from '../app/calling-task.js';
-import { requiredString } from '../validation/values.js';
+import { callingFla } from '../app/calling-task.js';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { projectExperiences } from '../graphiti/agent-growth.js';
 import { EXPERIENCE_SOURCE } from './port.js';
 
-const CANDIDATE_READ_LIMIT = 100;
 // rec#78 step 4: a topic with this many kept experiences is ready for a Skill draft.
 const DRAFT_EXPERIENCES = 3;
 const MAX_DRAFT_EXPERIENCES = 10;
@@ -16,12 +14,13 @@ const MAX_DRAFT_EXPERIENCES = 10;
 // rejects or retires one: that is the person's, in the console.
 export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
   propose_agent_workflow: async (app, input) => {
-    if (input.candidateId && input.steps) throw new InvalidInputError('Pass candidateId or steps, not both');
-    if (input.candidateId && input.experienceIds) throw new InvalidInputError('Pass candidateId or experienceIds, not both');
+    // A client from before list_workflow_candidates was retired would otherwise only hear that steps are missing.
+    if (input.candidateId != null) {
+      throw new InvalidInputError('candidateId was removed: pass your own steps (or the experienceIds of a draftable topic)');
+    }
     const owner = await boundAgent(app, input);
-    const steps = input.candidateId ? await candidateSteps(app, owner, input.candidateId) : input.steps;
-    const source = input.candidateId ? `candidate:${input.candidateId}`
-      : input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
+    const steps = input.steps;
+    const source = input.experienceIds ? await experienceSource(app, owner, input.experienceIds) : 'agent';
     const result = await workflows(app).propose(owner, { workflowId: input.workflowId, name: input.name, purpose: input.purpose,
       steps, source, workMap: input.workMap });
     const questions = input.workMap?.questions ?? [];
@@ -43,32 +42,8 @@ function workflows(app) {
   return app.agentWorkflows;
 }
 
-async function boundAgent(app, input) {
-  const task = await callingTask(app, input);
-  if (!task.projectAgentId) {
-    throw new ApplicationError('agent_not_bound', 'Workflows belong to an Agent; this task is not bound to one', { status: 409 });
-  }
-  return { personalSpaceId: app.config.personal.spaceId, agentId: task.projectAgentId,
-    personalProjectId: task.personalProjectId ?? null };
-}
-
-// A learned X-then-Y pattern the Provider has seen often enough across
-// sessions (its own policy decides how often) becomes the proposal's steps.
-async function candidateSteps(app, owner, candidateId) {
-  const id = requiredString(candidateId, 'candidateId', 200);
-  const page = await app.listWorkflowCandidates({ personalSpaceId: owner.personalSpaceId,
-    personalProjectId: owner.personalProjectId, limit: CANDIDATE_READ_LIMIT });
-  const candidate = page.candidates.find((item) => item.candidateId === id);
-  if (!candidate) {
-    throw new ApplicationError('workflow_candidate_not_found', 'No workflow candidate in this scope has this candidateId', { status: 404 });
-  }
-  const repeated = candidate.occurrenceCount >= page.policy.minimumOccurrences
-    && candidate.distinctSessionCount >= page.policy.minimumDistinctSessions;
-  if (!repeated || candidate.status === 'rejected') {
-    throw new ApplicationError('workflow_candidate_not_repeated',
-      'This candidate was rejected or has not repeated often enough across sessions; propose your own steps instead', { status: 409 });
-  }
-  return [{ title: candidate.sourceStepName }, { title: candidate.targetStepName }];
+function boundAgent(app, input) {
+  return callingFla(app, input, { what: 'Workflows belong to an Agent' });
 }
 
 // A Skill drafted from what the person kept (rec#78 step 4): every experience

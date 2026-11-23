@@ -136,7 +136,7 @@ test('a missing store reads as no workflows and is never created by a read', (t)
   assert.equal(inspectLocalStores(directory).find(({ label }) => label === 'agent-workflows.sqlite').state, 'current');
 });
 
-function toolApp(t, { projectAgentId = 'fla-builder', candidates = [] } = {}) {
+function toolApp(t, { projectAgentId = 'fla-builder' } = {}) {
   const { workflows } = workflowsIn(t);
   const tokens = [];
   const app = {
@@ -147,14 +147,10 @@ function toolApp(t, { projectAgentId = 'fla-builder', candidates = [] } = {}) {
       tokens.push([token, sourceApplication]);
       if (token !== 'fuli-task-synthetic') throw new TypeError('Unknown task context');
       return { sessionId: 'session-a', personalProjectId: 'project-a', projectAgentId, sourceApplication: 'codex' };
-    } },
-    listWorkflowCandidates: async (input) => ({ input, policy: { minimumOccurrences: 3, minimumDistinctSessions: 3 }, candidates })
+    } }
   };
   return { app, workflows, tokens };
 }
-
-const candidate = (overrides) => ({ candidateId: 'candidate-1', sourceStepName: 'Open the synthetic PR',
-  targetStepName: 'Run the synthetic checks', occurrenceCount: 4, distinctSessionCount: 3, status: 'pending', ...overrides });
 
 test('the tools need the current task token and act only as the task\'s bound Agent', async (t) => {
   const { app, workflows, tokens } = toolApp(t);
@@ -186,20 +182,10 @@ test('the tools need the current task token and act only as the task\'s bound Ag
   await assert.rejects(callAgentTool(unbound, 'list_agent_workflows', { taskContextToken: 'fuli-task-synthetic' }), { code: 'agent_not_bound' });
 });
 
-test('a proposal from a learned candidate takes its steps; a candidate not repeated enough is refused', async (t) => {
-  const { app, workflows } = toolApp(t, { candidates: [candidate(), candidate({ candidateId: 'candidate-2', distinctSessionCount: 2 }),
-    candidate({ candidateId: 'candidate-3', status: 'rejected' })] });
-  const input = { taskContextToken: 'fuli-task-synthetic', name: 'Synthetic PR flow', purpose: 'Learned from repeated work' };
-  const first = await callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'candidate-1' });
-  const [view] = workflows.overview({ personalSpaceId: 'space-a', agentId: 'fla-builder' }).workflows;
-  assert.deepEqual(view.pending.steps.map(({ title }) => title), ['Open the synthetic PR', 'Run the synthetic checks']);
-  assert.equal(view.pending.source, 'candidate:candidate-1');
-  const again = await callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'candidate-1' });
-  assert.deepEqual([again.status, again.workflow.workflowId], ['unchanged', first.workflow.workflowId], 'one workflow per candidate');
-  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'candidate-2' }), { code: 'workflow_candidate_not_repeated' });
-  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'candidate-3' }), { code: 'workflow_candidate_not_repeated' });
-  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'missing' }), { code: 'workflow_candidate_not_found' });
-  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { ...input, candidateId: 'candidate-1', steps: STEPS }), { code: 'invalid_input' });
+test('a proposal still naming a retired candidateId is told what to pass instead', async (t) => {
+  const { app } = toolApp(t);
+  await assert.rejects(callAgentTool(app, 'propose_agent_workflow', { taskContextToken: 'fuli-task-synthetic',
+    name: 'Synthetic review', candidateId: 'candidate-1' }), { code: 'invalid_input', message: /candidateId was removed: pass your own steps/ });
 });
 
 test('no Agent tool decides a workflow or names another Agent', () => {

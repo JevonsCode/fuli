@@ -9,6 +9,7 @@ import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate
 import { reportAgentService } from '../agent-services/agent-report.js';
 import { recordFlaLesson } from '../fla-growth/lessons.js';
 import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
+import { callingAppOwner } from '../agent-apps/calling-owner.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
 import { DIAGNOSTIC_HANDLERS } from '../diagnostics/agent-tool.js';
@@ -118,7 +119,7 @@ const HANDLERS = Object.freeze({
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
   call_employee_tool: (app, input) => employeeService(app).callTool(input),
-  submit_agent_app_version: (app, input) => agentApps(app).submit(input),
+  submit_agent_app_version: async (app, input) => agentApps(app).submit({ ...input, ...await callingAppOwner(app, input) }),
   list_agent_apps: (app, input) => input.appId ? agentApps(app).read(input) : agentApps(app).list(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
   read_task_preferences: (app, input) => app.readTaskPreferences(input),
@@ -258,7 +259,6 @@ const HANDLERS = Object.freeze({
     app.ignoreProjectAgentRoutingLearning(input),
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
-  list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
   // The console's own edits reach reviseKnowledgeItem as the person; this Agent
   // path is not verifiably the person, so it stops with automatic recording.
   revise_personal_knowledge: (app, input) => captureGuard(app, sessionCaptureScope(input),

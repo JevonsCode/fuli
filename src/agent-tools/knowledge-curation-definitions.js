@@ -34,19 +34,8 @@ const personalProjectActionRequired = [
   'personalSpaceId', 'itemKind', 'itemId', 'mode', 'reason'
 ];
 
-// A person's curation of what FULI learned: learned workflow steps, revisions and the personal project an entity belongs to.
+// A person's curation of what FULI learned: revisions and the personal project an entity belongs to.
 export const KNOWLEDGE_CURATION_DEFINITIONS = [
-  {
-    name: 'list_workflow_candidates',
-    title: 'READ · List learned workflow candidates',
-    description: 'Read persisted X-to-Y workflow candidates and their condition, explainable occurrence count, distinct-session count, recency, confirmation authority, negative evidence, declines, review status, and durable authorization. candidateVersion changes only when the rule definition changes; evidenceRevision tracks added or changed evidence; decisionRevision tracks review/authorization state transitions, including reset after a rule change. Rejected candidates and evidence remain in history. This read never executes a step or grants authority.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      personalProjectId: nullableStringSchema(),
-      afterStepKey: nullableStringSchema(),
-      limit: integerSchema({ minimum: 1, maximum: 100 })
-    }, ['personalSpaceId'])
-  },
   {
     name: 'revise_personal_knowledge',
     description: 'Confirm, correct (a new version supersedes the old), mark_outdated (negative feedback that ends validity), invalidate, restore, or link a replacement for one personal entity or relationship; history and evidence are kept. A replacement link needs an invalidated item and an exact replacement ID and kind. Same personal-only operation as the management UI; Agent attribution is kept.',
