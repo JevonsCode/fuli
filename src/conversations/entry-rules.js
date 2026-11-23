@@ -77,6 +77,18 @@ export function containsEntryRules(value, section) {
   return Boolean(value) && Object.entries(expected).every(([key, text]) => isDeepStrictEqual(value[key], text));
 }
 
+// True when the value says nothing the section does not: every key it carries
+// is a static one with exactly the shared text, and it carries at least one.
+// A subset counts, so an entry that leaves out a rule this task has no use for
+// (task-size.js, rec#146 item 2) still references the whole section and names
+// what it left out (task-context-view.js). A value with a key of its own, or
+// with changed text, is not within the rules and is delivered as it is.
+export function withinEntryRules(value, section) {
+  const expected = entryRules().sections[section];
+  const keys = value && typeof value === 'object' ? Object.keys(value) : [];
+  return keys.length > 0 && keys.every(key => Object.hasOwn(expected, key) && isDeepStrictEqual(value[key], expected[key]));
+}
+
 // A shared sentence becomes its reference; any other text is kept as is.
 export function ruleTextView(value, section) {
   return value === entryRules().sections[section] ? entryRulesReference(section) : value;

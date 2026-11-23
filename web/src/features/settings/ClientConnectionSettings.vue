@@ -12,8 +12,10 @@ import { formatDateTime } from '@/lib/date-time'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import ClientConnectionDetails from './ClientConnectionDetails.vue'
+import ClientFirstRun from './ClientFirstRun.vue'
 import ClientRestartConfirm from './ClientRestartConfirm.vue'
 import CustomClientDialog from './CustomClientDialog.vue'
+import RunnerUpdateAi from './RunnerUpdateAi.vue'
 import { ADD_CLIENT_QUERY_KEYS, addClientDraft, type AddClientDraft } from './add-client-prompt'
 import { injectClientConnectionStatus } from './client-connection-status'
 import { restartClient, restartOutcomeText, type RestartOutcome } from './client-restart'
@@ -38,6 +40,10 @@ const details = ref<string | null>(null)
 let unmounted = false
 const clients = computed(() => clientTiles(observation.value))
 const summary = computed(() => connectionSummary(observation.value))
+// On a runner (docs/runner.md) its own clients are listed, its hooks do nothing
+// here, and the two computers can run different FULI versions (rec issue 144).
+const runner = computed(() => observation.value?.runner ?? null)
+const runnerSkew = computed(() => runner.value?.skew ?? null)
 const installs = computed(() => observation.value?.installs)
 const otherInstalls = computed(() => installs.value?.others ?? [])
 const detailClient = computed(() => clients.value.find(client => client.id === details.value))
@@ -129,8 +135,22 @@ async function connectAll() {
 function formatTime(value: string) {
   return formatDateTime(value, currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: '—' })
 }
+// An unreadable configuration file, shown in Finder or Explorer for the person to fix.
+const revealFailed = ref<Record<string, boolean>>({})
+async function revealFile(client: ClientTile) {
+  revealFailed.value = { ...revealFailed.value, [client.id]: false }
+  try {
+    await postJson('/api/system/client-connection/reveal', { clientId: client.id })
+  } catch {
+    revealFailed.value = { ...revealFailed.value, [client.id]: true }
+  }
+}
 function explanation(client: ClientTile) {
   if (awaitsFirstConnection(client)) return t('settings.connection.custom.notConnected')
+  if (client.inWsl && client.status === 'not_detected') return t('settings.connection.clients.explain.inWsl')
+  if (client.status === 'unknown' && client.entryFile) {
+    return t('settings.connection.clients.unreadable', { path: client.entryFile.path, problem: client.entryFile.problem })
+  }
   if (client.status === 'unknown' && client.lastKnownStatus) {
     return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
   }
@@ -155,7 +175,8 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       <!-- Reserved height: the summary appears without moving anything below it. -->
       <CardDescription class="connection-summary" data-connection-summary>
         <GrowthLoading v-if="bulk" variant="inline" data-connecting-all :label="t('settings.connection.clients.connectingAll', bulk)" />
-        <template v-else-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
+        <template v-else-if="observation?.available !== false && (summary.total || summary.notInstalled)">{{
+          t(summary.notInstalled ? 'settings.connection.summaryWithMissing' : 'settings.connection.summary', summary) }}</template>
       </CardDescription>
       <CardAction class="connection-actions">
         <!-- Its progress shows once, in the summary line; the button only waits. -->
@@ -175,6 +196,16 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
         <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
         <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
+        <UiNotice v-if="runner" tone="info" data-runner-clients>
+          {{ runner.hostName ? t('settings.connection.clients.runner.note', { host: runner.hostName }) : t('settings.connection.clients.runner.notPaired') }}
+          <template v-if="runnerSkew && runner"> {{ t(`settings.connection.clients.runner.${runnerSkew.older === 'runner' ? 'runnerOlder' : 'hostOlder'}`,
+            { host: runner.hostName ?? '', hostVersion: runner.hostVersion ?? '', runnerVersion: runner.version }) }}</template>
+          <!-- This computer's copy is older: the update is handed to the person's own AI here, since a
+               runner's page cannot run the host's update (the relay refuses it, docs/runner.md). -->
+          <template v-if="runnerSkew?.older === 'runner' && runner?.hostVersion" #actions>
+            <RunnerUpdateAi :host-version="runner.hostVersion" />
+          </template>
+        </UiNotice>
         <UiNotice v-if="installs && otherInstalls.length" tone="warning" data-two-installs>
           {{ t('settings.connection.clients.twoInstalls.notice', { count: otherInstalls.length + 1, version: installs.console.version ?? '—',
             clients: otherInstalls.flatMap(other => other.clients).join('、') }) }}
@@ -188,7 +219,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             <div class="client-row__body">
               <div class="client-row__head">
                 <strong :title="client.label">{{ client.label }}</strong>
-                <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
+                <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.inWsl && client.status === 'not_detected' ? 'inWsl' : client.status}`) }}</span>
                 <Button v-if="client.custom?.removable" size="icon-sm" variant="ghost" class="client-row__action" :data-remove-custom-client="client.id"
                   :disabled="busy" :loading="removing === client.id" :loading-label="t('settings.connection.custom.removing', { client: client.label })"
                   :title="t('settings.connection.custom.remove', { client: client.label })"
@@ -209,6 +240,10 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
                 </li>
               </ul>
               <p v-if="withoutLifecycle(client)" class="client-row__meta client-row__note" data-client-no-lifecycle>{{ t('settings.connection.parts.noLifecycle') }}</p>
+              <ClientFirstRun v-if="client.firstRun" :client-id="client.firstRun.id" :command="client.firstRun.command" />
+              <p v-if="revealFailed[client.id]" role="alert">{{ t('settings.connection.clients.revealFailed') }}</p>
+              <Button v-if="client.status === 'unknown' && client.entryFile" size="sm" variant="outline" class="client-row__action"
+                :data-reveal-client-file="client.id" @click="revealFile(client)">{{ t('settings.connection.clients.revealFile') }}</Button>
               <p v-for="path in client.custom?.mcpPaths" :key="path" class="client-row__meta" :title="path">{{ t('settings.connection.custom.where', { path }) }}</p>
               <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">

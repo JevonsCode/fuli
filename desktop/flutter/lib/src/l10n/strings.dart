@@ -1,4 +1,5 @@
 import '../doctor/doctor_report.dart';
+import '../runtime/fuli_runtime.dart';
 
 // Every sentence the client shows, in Chinese and English, chosen once from
 // the system locale. Each entry keeps both languages side by side.
@@ -89,6 +90,49 @@ class Strings {
   String get repairingOne => _t('正在修复…', 'Fixing…');
   String repairingMany(int count) => _t('正在修复 $count 件事…', 'Fixing ${_things(count)}…');
   String get starting => _t('正在启动 FULI…', 'Starting FULI…');
+  // The steps a start really goes through (src/local-runtime/startup-stage.js),
+  // shown under the loading mark while that step runs. An id this version does
+  // not know keeps the plain "starting" sentence rather than showing the id.
+  String? startupStage(String? stage) => switch (stage) {
+        'checking' => _t('正在看 FULI 现在的状态…', 'Checking what FULI is doing now…'),
+        'first_setup' => _t('第一次启动，正在安装 FULI…', 'First start: installing FULI…'),
+        'start_wait' => _t('正在等另一次启动结束…', 'Waiting for another start to finish…'),
+        'graph_runtime' => _t('正在准备图数据库…', 'Getting the graph database ready…'),
+        'graph_install' => _t('正在安装图数据库程序…', 'Installing the graph database programs…'),
+        'graph_start' => _t('正在启动图数据库…', 'Starting the graph database…'),
+        'database_wait' => _t('正在等图数据库打开端口…', 'Waiting for the graph database to open its ports…'),
+        'provider_wait' => _t('正在等 Provider 就绪…', 'Waiting for the Provider…'),
+        'graph_setup' => _t('正在核对知识图谱的设置…', 'Checking the knowledge graph setup…'),
+        'console_start' => _t('正在打开控制台…', 'Starting the console…'),
+        'console_open' => _t('正在打开控制台窗口…', 'Opening the console window…'),
+        _ => null,
+      };
+
+  /// The line under a step that has run longer than usual: how long it has
+  /// waited, and the longest it will wait when the start reported that limit
+  /// ([maxSeconds], taken from the wait's own constant). Nothing else: what it
+  /// waits for is the step's own sentence above it.
+  String startupStageSlow(Duration waited, int? maxSeconds) {
+    final waiting = _t('已经等了${_spell(waited)}。', 'Waiting ${_spell(waited)} so far.');
+    final limit = startupStageLimit(maxSeconds);
+    return limit == null ? waiting : '$waiting${chinese ? '' : ' '}$limit';
+  }
+
+  /// The longest the step will wait, or null when its wait has no fixed limit.
+  /// A screen reader hears this, not the waited time that changes every few seconds.
+  String? startupStageLimit(int? maxSeconds) =>
+      maxSeconds == null ? null : _t('最多等${_spell(Duration(seconds: maxSeconds))}。', 'It waits up to ${_spell(Duration(seconds: maxSeconds))}.');
+
+  // "1 分 20 秒" / "1 min 20 s", from whole seconds only; hours and days alone.
+  String _spell(Duration waited) {
+    final seconds = waited.inSeconds;
+    if (waited.inDays > 0) return _t(' ${waited.inDays} 天', '${waited.inDays} d');
+    if (waited.inHours > 0) return _t(' ${waited.inHours} 小时', '${waited.inHours} h');
+    if (seconds < 60) return _t(' $seconds 秒', '$seconds seconds');
+    final minutes = seconds ~/ 60, rest = seconds % 60;
+    if (rest == 0) return _t(' $minutes 分钟', '$minutes min');
+    return _t(' $minutes 分 $rest 秒', '$minutes min $rest s');
+  }
   String get stopping => _t('正在停止 FULI…', 'Stopping FULI…');
   String get restarting => _t('正在重启 FULI…', 'Restarting FULI…');
   String get changingPort => _t('正在换端口并重启 FULI…', 'Moving FULI to another port and restarting it…');
@@ -113,6 +157,162 @@ class Strings {
   String get updateNotBack =>
       _t('FULI 还没有重新应答，稍后会再检查。', 'FULI has not answered again yet; it is checked again shortly.');
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
+  // A start that failed for a reason it named (src/local-runtime/startup-failure.js):
+  // what happened, then the next step as the button beside it; never a command
+  // to type. Null for a code this version does not know.
+  String? startFailedBecause(StartupFailure failure) {
+    final since = _clock(failure.text('since'));
+    final pid = failure.number('pid');
+    final seconds = failure.number('seconds') ?? 60;
+    return switch (failure.code) {
+      // A switch journal waits for recovery: never a reason to release the lock.
+      // What happened, what state the data is in, what not to do: FULI has no
+      // way to finish or undo the switch (src/native-runtime/neo4j-lifecycle.js).
+      'native_recovery_needed' => _recoveryNeeded(failure),
+      'native_lifecycle_lock' => switch (failure.text('holder')) {
+          'running' => _t('没有启动：数据库维护锁从 $since 起被进程 $pid${_named(failure)}占着。等它结束后再点「启动 FULI」。',
+              'FULI did not start: process $pid${_named(failure)} has held the database maintenance lock since $since. Choose Start FULI once it has ended.'),
+          'gone' => _interrupted(failure, since),
+          _ => _t('没有启动：数据库维护锁从 $since 起一直没放开，没有记录是谁加的。',
+              'FULI did not start: the database maintenance lock has been held since $since with no record of who took it.'),
+        },
+      'port_taken' => _portTaken(failure),
+      'console_not_answering' => failure.number('stillRunningPid') != null
+          ? _t('没有启动：控制台 $seconds 秒内没有应答，停它时也没停下来，进程 ${failure.number('stillRunningPid')} 可能还在。数据都在。',
+              'FULI did not start: the console did not answer within $seconds s and did not end when stopped; process ${failure.number('stillRunningPid')} may still run. Your data is kept.')
+          : _t('没有启动：控制台 $seconds 秒内没有应答。图数据库和 Provider 还在运行，数据都在。可以再点「启动 FULI」重试。',
+              'FULI did not start: the console did not answer within $seconds s. The graph database and Provider still run and your data is kept. Choose Start FULI to retry.'),
+      'console_exited' => _t('没有启动：控制台启动时退出了。图数据库和 Provider 还在运行，数据都在。可以再点「启动 FULI」重试。',
+          'FULI did not start: the console exited while starting. The graph database and Provider still run and your data is kept. Choose Start FULI to retry.'),
+      'console_port_reserved' => _t('没有启动：Windows 保留了控制台的端口 ${failure.number('port')}。在托盘菜单选「换一个端口」再试。',
+          'FULI did not start: Windows reserves the console port ${failure.number('port')}. Choose Use another port in the tray menu and try again.'),
+      'provider_not_ready' => _t('没有启动：Provider 启动后一直没有就绪。可以再点「启动 FULI」重试。',
+          'FULI did not start: the Provider started but never became ready. Choose Start FULI to retry.'),
+      'provider_exited' => _t('没有启动：Provider 在启动时退出了。可以再点「启动 FULI」重试。',
+          'FULI did not start: the Provider exited while starting. Choose Start FULI to retry.'),
+      _ => null,
+    };
+  }
+
+  // A switch journal waits (src/native-runtime/neo4j-lifecycle-lock.js): what
+  // the code can show of the data, never a reason to release the lock. FULI has
+  // no way to finish or undo it, so the next step is said as it is.
+  String _recoveryNeeded(StartupFailure failure) {
+    const keep = '在那之前不要删除数据库维护锁，也不要用别的版本的 FULI 打开这份数据。';
+    const keepEn = 'Until then, do not remove the maintenance lock or open this data with another FULI version.';
+    if (failure.text('phase') == 'removing-assets') {
+      return _t('没有启动：有一次数据库卸载没做完。卸载只删数据库程序文件，知识数据文件没有被改动。FULI 现在没有能完成这一步的办法，需要人来处理。$keep',
+          'FULI did not start: a database uninstall did not finish. An uninstall removes only the database programs; your knowledge data files were not changed. '
+              'FULI has no way to finish this step yet, so a person needs to handle it. $keepEn');
+    }
+    final from = failure.text('fromVersion'), to = failure.text('toVersion'), backup = failure.text('backupName');
+    final versions = from != null && to != null ? _t('（$from → $to）', ' ($from → $to)') : '';
+    final kept = failure.facts['upgrade'] == true && backup != null
+        ? _t('升级前的图备份在 FULI 数据文件夹的 backups/graph/$backup。', ' The graph backup from before the upgrade is in backups/graph/$backup in the FULI data folder.')
+        : '';
+    return _t(
+        '没有启动：有一次数据库${_operation(failure.text('operation'))}$versions没做完。FULI 没有复制或替换知识数据文件，但切换途中新版本的数据库可能已经打开过它们，被新版本打开过之后旧版本可能再也打不开。$kept'
+            'FULI 现在没有能完成或撤销这一步的办法，需要人来恢复。$keep',
+        'FULI did not start: a database ${failure.text('operation') ?? 'switch'}$versions did not finish. FULI did not copy or replace your knowledge data files, '
+            'but the newer database may already have opened them during the switch, and the older one may not open them again.$kept '
+            'FULI has no way to finish or undo this step yet, so a person needs to recover it. $keepEn');
+  }
+
+  // A lock an operation left when it ended before any switch journal: what it
+  // can have changed, and that FULI has no button for it.
+  String _interrupted(StartupFailure failure, String since) {
+    // Until a recovery command exists, the exact manual steps are what the
+    // terminal's start prints (src/local-runtime/startup-failure.js).
+    const none = 'FULI 目前没有能解除这把锁的按钮，需要人来处理；在终端里启动 FULI 时会列出要做的步骤。';
+    const noneEn = 'FULI has no button that releases this lock yet; a person needs to handle it, and starting FULI in a terminal lists the steps.';
+    return switch (failure.text('operation')) {
+      'load' => _t('没有启动：一次图数据库导入在 $since 中途停了，留下了维护锁。导入会覆盖数据库，所以数据库可能只写入了一半。$none',
+          'FULI did not start: a graph database load stopped part way at $since and left its maintenance lock. A load overwrites the database, so it may be only half written. $noneEn'),
+      'dump' => _t('没有启动：一次图数据库导出在 $since 中途停了，留下了维护锁。导出只读数据库，知识数据没有被改动。$none',
+          'FULI did not start: a graph database dump stopped part way at $since and left its maintenance lock. A dump only reads the database; your knowledge data was not changed. $noneEn'),
+      final operation => _t(
+          '没有启动：一次数据库${_operation(operation)}在 $since 中途停了，留下了维护锁。它停在改动知识数据之前，数据没有被改动，但可能留下了装了一半的程序文件。$none',
+          'FULI did not start: a database ${operation ?? 'operation'} stopped part way at $since, before it changes any knowledge data, and left its maintenance lock; '
+              'it may have left programs half installed. $noneEn'),
+    };
+  }
+
+  // The operation a lock or journal names, in a Chinese sentence.
+  String _operation(String? operation) =>
+      const {'update': '更新', 'rollback': '回退', 'uninstall': '卸载', 'dump': '导出', 'load': '导入'}[operation] ?? '切换';
+
+  // " (java)" / "（java）" when the holder's program is known.
+  String _named(StartupFailure failure) {
+    final command = failure.text('command');
+    return command == null ? '' : _t('（$command）', ' ($command)');
+  }
+
+  String _portTaken(StartupFailure failure) {
+    final port = failure.number('port'), pid = failure.number('pid'), command = failure.text('command');
+    final running = failure.number('runningSeconds');
+    final who = ['进程 $pid', ?command].join(' · ');
+    final whoEn = ['process $pid', ?command].join(' · ');
+    return _t(
+        '没有启动：端口 $port 被另一个程序占着（$who${running == null ? '' : '，已运行${_spell(Duration(seconds: running))}'}），FULI 没有动它。如果它是之前没停干净的 FULI 图数据库，结束它后再点「启动 FULI」。',
+        'FULI did not start: another program holds port $port ($whoEn${running == null ? '' : ', running for ${_spell(Duration(seconds: running))}'}); FULI left it alone. If it is a FULI graph database that did not stop cleanly, end it, then choose Start FULI.');
+  }
+
+  // A lock a person may release: only one with no recorded holder. A start's
+  // or stop's lock whose holder ended is taken over by the start itself, and an
+  // update's, rollback's or uninstall's may have left files half installed
+  // (src/native-runtime/neo4j-lifecycle-lock.js).
+  bool releasableLock(StartupFailure failure) =>
+      failure.code == 'native_lifecycle_lock' && failure.text('holder') == 'unknown';
+
+  // Fits the status bar's primary place (status_actions.dart `_primaryWidth`).
+  String get releaseLockAndStart => _t('解除这把锁并启动', 'Unlock and start');
+  String get releaseLockTitle => _t('解除数据库维护锁？', 'Release the database maintenance lock?');
+  String get releaseLockBody => _t(
+      'FULI 会先核对：没有没做完的数据库切换，记录里的图服务都已停止，没有别的 FULI 命令在用这份数据，锁也已经放了足够久。任何一项不满足都不会解除，并告诉你是哪一项。',
+      'FULI checks first: no database switch is unfinished, the graph services it recorded have stopped, no other FULI command is using this data, '
+          'and the lock is old enough. If any check fails, the lock stays and FULI says which one.');
+  String get releaseLockConfirm => _t('核对后解除并启动', 'Check, release and start');
+
+  // Why a confirmed release kept the lock (lockReleaseRefusal in src/local-runtime/startup-failure.js).
+  String lockKept(StartupFailure kept) {
+    final pid = kept.number('pid');
+    return switch (kept.code) {
+      'recovery_needed' => _t('锁没有解除：有一次数据库切换没做完，需要先恢复。', 'The lock was kept: a database switch did not finish and needs recovery first.'),
+      'holder_running' => _t('锁没有解除：进程 $pid 还在用它。', 'The lock was kept: process $pid still holds it.'),
+      'services_running' => _t('锁没有解除：FULI 记录的图服务（进程 $pid）还在运行。', 'The lock was kept: a graph service FULI recorded (process $pid) still runs.'),
+      'fuli_running' => _t('锁没有解除：另一个 FULI 命令（进程 $pid）正在用这份数据。', 'The lock was kept: another FULI command (process $pid) is using this data.'),
+      'cannot_inspect' => _t('锁没有解除：看不到正在运行的程序，没法确认没人在用。', 'The lock was kept: the running programs could not be listed, so nobody using it could be ruled out.'),
+      'too_recent' => _t('锁没有解除：它加上不久，一次数据库更新可能还在进行。${_clock(kept.text('releasableAt'))} 之后再试。',
+          'The lock was kept: it is recent and a database update may still be running. Try again after ${_clock(kept.text('releasableAt'))}.'),
+      'no_lock' => _t('锁已经不在了，点「启动 FULI」即可。', 'The lock is already gone; choose Start FULI.'),
+      'asset_operation' => _t('锁没有解除：它是一次数据库${_operation(kept.text('operation'))}留下的，这个按钮不解除它。',
+          'The lock was kept: a database ${kept.text('operation') ?? 'operation'} left it, and this button does not release that.'),
+      'unfinished_assets' => _t('锁没有解除：有没装完的数据库程序，可能是一次被打断的更新留下的。',
+          'The lock was kept: unfinished database programs remain, possibly from an interrupted update.'),
+      'changed' => _t('锁没有解除：它在核对时被换掉了。', 'The lock was kept: it changed while it was being checked.'),
+      _ => _t('锁没有解除。', 'The lock was kept.'),
+    };
+  }
+
+  // Client sessions stopped starting FULI after repeated starts did not keep it up.
+  String autostartGaveUp(String at) => _t('自动重启已经停了：$at 起 FULI 自己启动了几次都没能保持运行，不会再自己起来。点「启动 FULI」再试。',
+      'Automatic restarts have stopped: since $at FULI started itself several times without staying up, and will not start by itself again. Choose Start FULI to try again.');
+  String get viewStartupLog => _t('查看启动日志', 'View the startup log');
+
+  // "11-23 01:24" in this computer's time, from an ISO time; the text itself when it is none.
+  String _clock(String? iso) {
+    final at = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+    if (at == null) return iso ?? '?';
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(at.month)}-${two(at.day)} ${two(at.hour)}:${two(at.minute)}';
+  }
+
+  /// [autostartGaveUp]'s time, from the status report's ISO time.
+  String clockOf(String iso) => _clock(iso);
+  // Which step of the start did not finish. [step] is a startupStage sentence.
+  String startFailedAtStep(String step, String reason) => _t(
+      '没有启动成功，卡在「${step.replaceAll('…', '')}」：$reason',
+      'FULI did not start; it stopped at "${step.replaceAll('…', '')}": $reason');
   // The graph service here was set up by a newer FULI (runtime/provider_conflict.dart); nothing was changed.
   String startFailedNewerData(String installed, String current) => _t(
       '没有启动：这里的数据是更新的 FULI（$installed）保存的，现在是 $current。数据没有改动，更新 FULI 后再启动。',

@@ -26,7 +26,10 @@ import {
 export async function planLocalSetup(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller),
+  detect = (paths) => {
+    const ports = agentKitPorts(paths, { env });
+    return detectAgents(ports.clientInstaller, { presence: ports.clientPresence });
+  },
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
   settingsExist = existsSync,
@@ -116,7 +119,8 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     noStart: options.noStart,
     allowProviderDowngrade: options.allowProviderDowngrade === true,
     env: dependencies.env ?? process.env,
-    onProgress: dependencies.onProgress
+    onProgress: dependencies.onProgress,
+    onStage: dependencies.onStage
   });
   // Every client is written through agent-installer (client-installer.js).
   const selected = plan.agents.filter(({ available, selected }) => available && selected !== false);

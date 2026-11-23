@@ -5,12 +5,20 @@ import { FULI_MARK, markCut } from '@/lib/brand'
 
 const props = withDefaults(defineProps<{
   label: string
+  /**
+   * One small line under the label when a wait is taking long: what it is
+   * waiting on and how long it has waited. It must come from the real request
+   * state, never from invented progress. Not shown on the inline variant,
+   * which sits beside an action and has no room for it.
+   */
+  detail?: string
   variant?: 'page' | 'compact' | 'inline'
 }>(), { variant: 'page' })
 
 // The mark's drawn size per variant; it picks the optical cut (micro for inline).
 const MARK_PIXELS = { page: 48, compact: 28, inline: 16 } as const
 const gradientId = useId()
+const detail = computed(() => props.variant === 'inline' ? '' : props.detail ?? '')
 const pixels = computed(() => MARK_PIXELS[props.variant])
 const cut = computed(() => markCut(pixels.value))
 const paths = computed(() => FULI_MARK[cut.value])
@@ -24,7 +32,7 @@ const { ink } = FULI_MARK
     role="status"
     aria-live="polite"
     aria-atomic="true"
-    :aria-label="props.label"
+    :aria-label="detail ? `${props.label} ${detail}` : props.label"
     :style="{ '--growth-loading-size': `${pixels}px` }"
   >
     <span class="growth-loading__content">
@@ -58,6 +66,7 @@ const { ink } = FULI_MARK
         </svg>
       </span>
       <span class="growth-loading__label">{{ props.label }}</span>
+      <span v-if="detail" class="growth-loading__detail">{{ detail }}</span>
     </span>
   </span>
 </template>
@@ -131,5 +140,16 @@ const { ink } = FULI_MARK
 
 .growth-loading--inline .growth-loading__label {
   text-align: left;
+}
+
+/* One small line under the label; never wider than a readable measure. */
+.growth-loading__detail {
+  max-width: 44ch;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
 }
 </style>

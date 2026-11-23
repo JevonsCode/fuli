@@ -1,0 +1,28 @@
+// A start that failed for a reason a desktop client can act on (a graph
+// service of this data directory FULI lost track of, a taken port) carries that
+// reason as `error.startupFailure`. The CLI runs in its own process, so it
+// prints the reason on one more stderr line after the message, and the desktop
+// controller (desktop-controller.js) reads it back from there, never by
+// matching the message's words. Only these fields cross, nothing else of the
+// error (no paths, no addresses).
+const PREFIX = 'FULI_STARTUP_FAILURE ';
+const MAX_LINE = 4096;
+
+export function startupFailureLine(error) {
+  const failure = error?.startupFailure;
+  if (!failure || typeof failure.code !== 'string') return null;
+  const line = `${PREFIX}${JSON.stringify(failure)}`;
+  return line.length <= MAX_LINE ? line : null;
+}
+
+// The reason a failed CLI run printed, and its stderr without that line.
+export function readStartupFailure(stderr) {
+  const lines = String(stderr ?? '').split('\n');
+  let failure = null;
+  const rest = lines.filter((line) => {
+    if (!line.startsWith(PREFIX)) return true;
+    try { failure = JSON.parse(line.slice(PREFIX.length)); } catch { failure = null; }
+    return false;
+  });
+  return { failure: failure && typeof failure.code === 'string' ? failure : null, stderr: rest.join('\n') };
+}

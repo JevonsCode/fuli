@@ -35,10 +35,13 @@ const INSTRUCTIONS = 'You are Jefa, FULI\'s project manager. A task started in a
 const NONE_OPTION = Object.freeze({ id: NONE, description: 'The task does not clearly continue one of the board tasks.' });
 const PROMPT_VERSION = `${OPERATION}:${contentHash({ instructions: INSTRUCTIONS, none: NONE_OPTION }).slice(0, 16)}`;
 const GATE = Object.freeze({ status: 'suggestion_only', role: ROLE, operation: OPERATION });
-const INLINE_GUIDANCE = 'Jefa\'s model gave no board match (see reason). Match the board yourself as usual: '
-  + 'read_board, then create or update through call_employee_tool with the version you read.';
 // A read refused by the employee gates means Jefa may no longer see the board.
 const PERMISSION_CODES = Object.freeze(['assignment_required', 'project_not_found', 'tool_not_permitted']);
+// The hint statuses a task entry carries: a match to confirm, the news that
+// what would have been matched changed under it, and the one-word skip that
+// says FULI chose not to ask. A timeout, a refusal and "match it yourself as
+// usual" are what the session does anyway, so they stay out of the entry.
+const SHOWN_IN_ENTRY = new Set(['suggested', 'superseded', 'skipped']);
 
 // entry: a task entry that began (or retried) its task. Without a hint it is
 // returned as it is, so the entry answers exactly as before this hint existed.
@@ -51,7 +54,11 @@ export async function withBoardMatch(application, entry, { sessionId, sourceAppl
   const task = { token: entry.task_context_token, sessionId, sourceApplication, project,
     conversationId: entry.conversation?.conversation_id ?? null };
   const hint = await suggestBoardMatch(application, task, manager, taskPrompt);
-  if (!hint) return entry;
+  // Only a hint the session can act on reaches the entry (rec#139). A timeout,
+  // a refusal or "match it yourself as usual" told the Agent nothing it did not
+  // already know from manager_guidance, and an entry reading
+  // `status: failed, reason: timeout` learned only that FULI had waited.
+  if (!hint || !SHOWN_IN_ENTRY.has(hint.status)) return entry;
   return { ...entry, project_management_context: { ...entry.project_management_context,
     managers: managers.map(candidate => candidate === manager ? { ...manager, suggested_match: hint } : candidate) } };
 }
@@ -99,7 +106,7 @@ function matchResult(application, request, outcome, receipt, chosen, late) {
   if (outcome.modelReceipt.attempts && !application.modelBackends.allowsEgress(request)) {
     return { status: 'superseded', reason: 'permission_changed', ...receipt };
   }
-  if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, guidance: INLINE_GUIDANCE, ...receipt };
+  if (outcome.status === 'inline') return { status: 'inline', reason: outcome.fallbackReason, ...receipt };
   if (outcome.status !== 'answered') return { status: outcome.status, reason: outcome.modelReceipt.reason, ...receipt };
   if (!chosen) return null;
   if (late) return { status: 'superseded', reason: late, ...receipt };
