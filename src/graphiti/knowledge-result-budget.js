@@ -42,10 +42,6 @@ function itemPreview(item, textBytes) {
 const withoutNullFields = item => (item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.entries(item).filter(([, value]) => value !== null)) : item);
 
-// How well this record matched. A result without one sorts last rather than
-// ahead of everything.
-const matchScore = item => (typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0);
-
 function marker(value, consoleUrl) {
   return createFuliSourceMarker({ ...value, consoleUrl, projectScopePriority: 'strict' });
 }
@@ -145,22 +141,9 @@ function pageKnowledgeSearch(value, { cursor, context, consoleUrl, toolName, lim
     }
     return result;
   });
-  // Every query gets its next result before any query gets another, so no
-  // query starves. Within that round the result closer to its own query's
-  // best goes first (rec#111). Scores are compared only as a share of that
-  // best: a query fused with meaning scores in reciprocal ranks (about
-  // 0.016-0.033), a lexical one in relevance bands (about 4-12), so a raw
-  // score says nothing across queries, nor across a query's facts and
-  // entities. Each query's first results tie at 1 and keep the order asked.
-  const best = lists.map(list => Object.fromEntries(['facts', 'entities'].map(kind =>
-    [kind, Math.max(0, ...list.filter(entry => entry.kind === kind).map(entry => matchScore(entry.item)))])));
-  const shareOfBest = entry => (best[entry.group][entry.kind] > 0
-    ? matchScore(entry.item) / best[entry.group][entry.kind] : 0);
   const entries = [];
   for (let i = 0; i < Math.max(0, ...lists.map(list => list.length)); i++) {
-    const round = [];
-    lists.forEach((list, group) => { if (list[i]) round.push({ ...list[i], group }); });
-    entries.push(...round.sort((left, right) => shareOfBest(right) - shareOfBest(left)));
+    lists.forEach((list, group) => { if (list[i]) entries.push({ ...list[i], group }); });
   }
   for (const entry of entries) {
     // Search scores/view counters are volatile; the record body stays stable

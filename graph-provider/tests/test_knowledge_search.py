@@ -8,7 +8,6 @@ from fuli_graph.knowledge_search import (
     _dedupe_ranked_edges,
     _dedupe_ranked_entities,
     _edge_matches,
-    _edge_record,
     _edge_relevance,
     _entity_search_result,
     _item_scope_metadata,
@@ -516,86 +515,23 @@ def test_edge_relevance_promotes_literal_match_without_losing_semantic_order():
     assert later_score > first_score
 
 
-def _synthetic_project_edges():
-    """One project's relationships: every one of them names the project, which
-    is therefore the one word that tells none of them apart."""
-    facts = [
-        ('STAGING_ADDRESS', '潮池账本的预发布环境地址是 https://staging.example.test。'),
-        ('RELEASE_RUNBOOK', '发布潮池账本：先打 tag，再跑发布命令，最后贴一份变更说明。'),
-        ('ERROR_CODE', '潮池账本的错误码一律用四位数字。'),
-        ('ONCALL_CHANNEL', '潮池账本的值班频道处理线上故障。'),
-        ('VERIFY_COMMAND', '潮池账本跑验收用项目自己的验收命令。'),
-        ('SETTLEMENT_RULE', '潮池账本的结算日按账户的本地时间计算。'),
-        ('REVIEW_OWNER', '潮池账本的接口改动由平台组拍板。'),
-        ('RETRY_POLICY', '潮池账本对账接口失败后退避重试三次。'),
-        ('IMPORT_FORMAT', '潮池账本的对账文件只收 UTF-8 的 CSV。'),
-        ('RATE_LIMIT', '潮池账本的对外接口每个租户每分钟六百次。'),
+def test_edge_matches_scores_each_candidate_as_edge_relevance_does():
+    """The recall-rate benchmark scores relationships through _edge_matches,
+    so it must be the search's own per-candidate scoring, nothing added."""
+    edges = [SimpleNamespace(uuid=name, name=name, fact=fact,
+                             source_node_uuid=f'{name}-source', target_node_uuid=f'{name}-target')
+             for name, fact in (('RELEASE_RUNBOOK', '发布潮池账本：先打 tag。'),
+                                ('ERROR_CODE', '潮池账本的错误码一律用四位数字。'),
+                                ('ONCALL_CHANNEL', '潮池账本的值班频道处理线上故障。'))]
+    terms = {'ERROR_CODE': {'retrieval_terms': ['错误码约定']}}
+
+    matched = _edge_matches('潮池账本 错误码', edges, {}, terms)
+
+    assert [edge.uuid for _, edge in matched] == [edge.uuid for edge in edges]
+    assert [score for score, _ in matched] == [
+        _edge_relevance('潮池账本 错误码', edge, {}, position, len(edges), terms.get(edge.uuid))
+        for position, edge in enumerate(edges)
     ]
-    return [SimpleNamespace(uuid=name, name=name, fact=fact,
-                            source_node_uuid=f'{name}-source', target_node_uuid=f'{name}-target')
-            for name, fact in facts]
-
-
-def _matches(query, edges, names=None):
-    """{name: relevance} of every candidate, as search_knowledge scores them."""
-    return {edge.name: score for score, edge in _edge_matches(query, edges, names or {}, {})}
-
-
-def _distinctive(scores):
-    return [name for name, score in sorted(scores.items(), key=lambda item: -item[1]) if score >= 1]
-
-
-def test_naming_the_project_does_not_outrank_the_fact_the_query_names():
-    """rec#111: a relationship's terms are weighed like an entity's. Before, a
-    query carrying the project's name matched every fact the project stores
-    about as well as the one it asked about."""
-    edges = _synthetic_project_edges()
-
-    # The project's own name says nothing about which of its facts answers
-    # this: only the fact the rest of the query names matches distinctively.
-    assert _distinctive(_matches('潮池账本 发布流程 打 tag', edges)) == ['RELEASE_RUNBOOK']
-    assert _distinctive(_matches('潮池账本 错误码 约定', edges)) == ['ERROR_CODE']
-    assert _distinctive(_matches('潮池账本 值班 频道', edges)) == ['ONCALL_CHANNEL']
-    # A word that does tell them apart still matches on its own.
-    assert _distinctive(_matches('值班频道', edges)) == ['ONCALL_CHANNEL']
-    # A query that is only the project's name still matches every fact in it:
-    # the whole query is written in each one, and there is nothing better.
-    assert len(_distinctive(_matches('潮池账本', edges))) == len(edges)
-    # Too few candidates to weigh: every term counts the same, as before.
-    assert _term_weights('潮池账本', [_edge_record(edge, {}) for edge in edges[:7]]) == {}
-
-
-def test_a_fact_sharing_only_the_project_name_is_still_found_below_every_distinctive_match():
-    """Weighing orders, it does not exclude. A question in other words than
-    the answer's (上线 for 发布) shares only the project's name with it; the
-    unweighed threshold found it before the weighing, and it still does, as
-    a weak match ranked under any match on a word that tells facts apart."""
-    edges = _synthetic_project_edges()
-
-    nothing_distinctive = _matches('潮池账本 上线 步骤', edges)
-    assert all(0 < score < 0.25 for score in nothing_distinctive.values()), nothing_distinctive
-    assert len(nothing_distinctive) == len(edges)
-
-    one_distinctive = _matches('潮池账本 线上 步骤', edges)
-    assert _distinctive(one_distinctive) == ['ONCALL_CHANNEL'], 'the fact that carries 线上'
-    weak = {name: score for name, score in one_distinctive.items() if name != 'ONCALL_CHANNEL'}
-    assert weak['RELEASE_RUNBOOK'] > 0, 'the answer asked in other words is still a match'
-    assert max(weak.values()) < 0.25 < one_distinctive['ONCALL_CHANNEL']
-
-    # Not a match before the weighing is not one after it either.
-    assert _matches('上线 步骤', edges) == {name: 0.0 for name in nothing_distinctive}
-
-
-def test_an_endpoint_name_is_weighed_with_the_fact_it_belongs_to():
-    """Endpoint names are part of what a relationship matches on, so they are
-    part of what the weighing sees: a shared endpoint tells nothing apart."""
-    edges = _synthetic_project_edges()
-    names = {edge.source_node_uuid: '潮池账本' for edge in edges}
-    records = [_edge_record(edge, names) for edge in edges]
-    weights = _term_weights('潮池账本 值班频道', records)
-
-    assert weights['值班'] > weights['潮池'], 'the shared endpoint name weighs least'
-    assert _distinctive(_matches('潮池账本 值班频道', edges, names)) == ['ONCALL_CHANNEL']
 
 
 @pytest.mark.asyncio

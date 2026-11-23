@@ -58,28 +58,27 @@ Agent reads, and what gets cut.
 ## How the ranking is real
 
 `rank_fixture_world.py` imports `fuli_graph.knowledge_search` and runs the
-Provider's own `_edge_matches` (relationship term weights and relevance),
-`_relevance`, `_term_weights`, `_ranked_relevance`, `knowledge_weight`, the
+Provider's own `_edge_matches` (relationship relevance), `_relevance`,
+`_term_weights` (entities), `_ranked_relevance`, `knowledge_weight`, the
 documented sort keys and the dedupe, then projects results through the real
 `fact_result` / `_entity_search_result`. Nothing is scored in JavaScript, and a
 result item here is byte-for-byte the shape `/v1/search` returns.
 
-Candidates are drawn per query, as the search draws them. A relationship's
-term weights are counted over that search's own candidates, so which ones are
-candidates decides what counts as a common word, not only the order. The
-search takes what Graphiti's hybrid search returns (at most
-`min(max(limit * 8, 40), 100)`) plus what retrieval terms find; the mirror
-takes the relationships that share at least one term with the query, in
-fixture order, under the same cap, plus the retrieval-term finds. Entities are
-scored over everything in scope, as the search scores them.
+Candidates are drawn per query, as the search draws them. The search takes
+what Graphiti's hybrid search returns (at most `min(max(limit * 8, 40), 100)`)
+plus what retrieval terms find, and a relationship's position in that list is
+part of its score; the mirror takes the relationships that share at least one
+term with the query, in fixture order, under the same cap, plus the
+retrieval-term finds. Entities are scored over everything in scope, with
+their term weights, as the search scores them.
 
 ## What it does not cover
 
 - Graphiti's own hybrid search: its BM25 tokenizer, its candidates found by
   meaning, its order. The stand-in above shares only the shape: a real pool
-  differs in which relationships are in it, so a word can be common in one and
-  distinctive in the other, and a relationship the stand-in finds by a shared
-  term the real search may never return (or the reverse).
+  differs in which relationships are in it and in their order, and a
+  relationship the stand-in finds by a shared term the real search may never
+  return (or the reverse).
 - Authorization, visitor scope, Cypher-side filtering, tag re-ranking.
 - Semantic vectors and RRF fusion: the fixture stores no vectors, so
   `standing_out` contributes nothing, exactly as it does on an install with

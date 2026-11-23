@@ -14,18 +14,17 @@ Reads one JSON request on stdin and writes one JSON response on stdout:
         "candidates": {"<id>": scored candidates in scope}}
 
 What it covers: a stand-in for candidate generation (below), candidate
-scoping, the history and confirmation filters, `_edge_matches` (term weights
-over this search's own candidates, with its fallback), `_relevance`,
-`_ranked_relevance`, the documented sort keys, and deduplication.
+scoping, the history and confirmation filters, `_edge_matches`, `_relevance`,
+`_term_weights` (entities), `_ranked_relevance`, the documented sort keys, and
+deduplication.
 
-Candidate generation: `search_knowledge` weighs a relationship's terms over
-the candidates Graphiti's hybrid search returned (at most
-`min(max(limit * 8, 40), 100)`) plus those its retrieval terms find, all of
-them already related to the query. The stand-in takes, in fixture order, the
-relationships that share at least one term with the query, under the same
-cap, plus the retrieval-term finds. Graphiti also returns candidates by
-meaning and by BM25 over its own tokenizer, so real pools differ: who counts
-as "common" can differ too.
+Candidate generation: `search_knowledge` scores the candidates Graphiti's
+hybrid search returned (at most `min(max(limit * 8, 40), 100)`) plus those its
+retrieval terms find, all of them already related to the query. The stand-in
+takes, in fixture order, the relationships that share at least one term with
+the query, under the same cap, plus the retrieval-term finds. Graphiti also
+returns candidates by meaning and by BM25 over its own tokenizer, and in its
+own order, so real pools and the position each candidate scores at differ.
 
 What it does not cover, and so cannot measure: Graphiti's own hybrid search
 (BM25 tokenization, embeddings, its own order), authorization, Cypher-side

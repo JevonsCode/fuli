@@ -207,39 +207,18 @@ async function everyPage(app, input) {
   return pages;
 }
 
-test('results compete across queries by their share of their own best, not by raw scores', async () => {
+test('queries take turns in the order asked, whatever their scores', async () => {
   // A query fused with meaning scores in reciprocal ranks (about 0.016-0.033),
-  // a lexical one in relevance bands (4-12). Compared raw, the lexical query
-  // always came first, however weak its results (review of rec#111's fix).
+  // a lexical one in relevance bands (4-12): raw scores say nothing across
+  // queries, and a share of each query's best depends on how its scores are
+  // spread (rec#111 review), so neither decides the order.
   const scores = { fused: [0.0328, 0.0325, 0.0161], lexical: [12, 4, 3.9] };
   for (const queries of [['fused', 'lexical'], ['lexical', 'fused']]) {
-    const input = { queries, limitPerQuery: 3 };
-    const pages = await everyPage(scoredApplication(scores), input);
-    const order = pages.flatMap(delivered);
+    const pages = await everyPage(scoredApplication(scores), { queries, limitPerQuery: 3 });
 
     assert.ok(pages.length > 1, 'the call needs more than one page');
-    assert.deepEqual(order.slice(0, 2), queries.map(query => `${query}-0`),
-      'each query\'s best comes first, in the order asked, whatever its scale');
-    assert.deepEqual(order.slice(2, 4), ['fused-1', 'lexical-1'],
-      'the one nearly as good as its own best goes before the one a third of it');
-    assert.deepEqual([...order].sort(), [...Object.keys(scores).flatMap(query => [0, 1, 2].map(i => `${query}-${i}`))].sort(),
-      'every record exactly once across the pages');
+    assert.deepEqual(pages.flatMap(delivered), [0, 1, 2].flatMap(i => queries.map(query => `${query}-${i}`)));
   }
-});
-
-test('a continuation of a mixed-scale call reads the same records as the call before it', async () => {
-  const scores = { fused: [0.0328, 0.0325, 0.0161], lexical: [12, 4, 3.9], other: [0.0164] };
-  const input = { queries: ['lexical', 'fused', 'other'], limitPerQuery: 3 };
-  const first = await everyPage(scoredApplication(scores), input);
-  const again = await everyPage(scoredApplication(scores), input);
-
-  assert.deepEqual(again.map(page => page.next_cursor ?? null), first.map(page => page.next_cursor ?? null));
-  assert.deepEqual(again.map(delivered), first.map(delivered));
-  // A second page asked for on its own, by the first page's cursor, is the
-  // second page of the first walk: the order does not depend on the walk.
-  const second = await searchCurrentProjectKnowledge(scoredApplication(scores), resolution,
-    { ...input, cursor: first[0].next_cursor });
-  assert.deepEqual(delivered(second), delivered(first[1]));
 });
 
 // The real per-query result shape: every group carries the call's scope

@@ -49,10 +49,6 @@ MIN_WEIGHED_CANDIDATES = 8
 # characters that only meet across a word boundary (按钮设计 -> 钮设): it
 # counts against a match, at half the weight of the rarest real term.
 UNSEEN_TERM_FACTOR = 0.5
-# A relationship that shares only common words with the query keeps this share
-# of its unweighed relevance (at most about 4.5): under 0.25, below the lowest
-# a distinctive match ranks at (band 1, half weight, the farthest scope).
-COMMON_TERMS_SHARE = 0.05
 # How many items with a vector of the query's model one search compares (rec#88).
 SEMANTIC_CANDIDATE_LIMIT = 5000
 # A preference key's separators, so `reply-language` is also the words "reply language".
@@ -1084,8 +1080,8 @@ def _edge_record(edge, names: dict[str, str], retrieval: dict | None = None) -> 
 
 
 def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
-                    retrieval: dict | None = None, term_weights: dict[str, float] | None = None) -> float:
-    lexical = _relevance(query, _edge_record(edge, names, retrieval), term_weights)
+                    retrieval: dict | None = None) -> float:
+    lexical = _relevance(query, _edge_record(edge, names, retrieval))
     if lexical == 0:
         return 0.0
     semantic_order = max(0.0, (total - position) / max(total, 1)) * 0.5
@@ -1093,19 +1089,9 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
 
 
 def _edge_matches(query: str, edges, names: dict[str, str], edge_terms: dict) -> list:
-    """[(relevance, edge)] in candidate order. A relationship's terms are
-    weighed by how few of these candidates carry them, as an entity's are
-    (rec#111), so one that matches on a word telling it apart ranks above one
-    that shares only words most of them carry (the project's name). Weighing
-    orders, it does not exclude: a match on common words alone is what a
-    question asked in other words than the answer's still has, so it stays a
-    match as it was before the weighing, below every distinctive one."""
-    def relevance(position, edge, term_weights):
-        return _edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid), term_weights)
-
-    term_weights = _term_weights(query, [_edge_record(edge, names, edge_terms.get(edge.uuid)) for edge in edges])
-    return [((relevance(position, edge, term_weights)
-              or (relevance(position, edge, None) * COMMON_TERMS_SHARE if term_weights else 0.0)), edge)
+    """[(relevance, edge)] in candidate order, the candidate's position
+    standing for its semantic order."""
+    return [(_edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid)), edge)
             for position, edge in enumerate(edges)]
 
 
