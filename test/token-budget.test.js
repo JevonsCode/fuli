@@ -279,6 +279,9 @@ const BASELINE = Object.freeze({
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
+  // Jevons 11-23: the same writing-for-the-person sentence as chat (+130 B), paid for by dropping
+  // what get_user_taste_skill's own description says and the inheritance detail
+  // application_guidance carries, and shorter lease and token wording: still 2,048 B.
   instructionsBytes: 2048,
   // T-P00: the chat profile's own instructions name only listed tools, so a
   // client no longer spends a request on discovery first: 2,041 -> 1,251 B.
@@ -286,7 +289,12 @@ const BASELINE = Object.freeze({
   // rec#51: the same " if searched", 1,238 -> 1,250 B (+12 B), measured.
   // Runner sessions: close FULI connections and test scripts once unused, so
   // none holds a host session until its idle timeout, 1,250 -> 1,327 B (+77 B), measured.
-  chatInstructionsBytes: 1327,
+  // Jevons 11-23: one sentence on writing for the person (conclusion and asks first, short, a
+  // diagram or table when clearer, clickable choices, after the source marker and before the
+  // receipt). Every ordinary reply needs it, and hooks tell Agents never to read the rules
+  // resource for an ordinary task, so it is said once per session here: 1,327 -> 1,460 B (+133 B).
+  // The full profile carries it too at no growth: two sentences its tools already say were cut.
+  chatInstructionsBytes: 1460,
   // T-TOKEN-2: the entry receipt keeps only what must be copied, defaults and
   // empty values are omitted, and the scope, receipt and details rule text is
   // referenced: 3,449 -> 1,775 chars.

@@ -154,8 +154,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   assert.match(instructions, /before tools\/answer/i);
   assert.match(instructions, /projectPath=cwd/i);
   assert.match(instructions, /effective_preferences/);
-  assert.match(instructions, /personal-global everywhere/i);
-  assert.match(instructions, /matched project.*authorized inheritable parent/i);
+  assert.match(instructions, /clickable choices not typing/);
   assert.match(instructions, /before (?:saying|answering|claiming).*(?:do not know|don't know|unknown)/i);
   assert.match(instructions, /active child first.*inheritable parent/i);
   assert.match(instructions, /extra projects=exact IDs/i);
