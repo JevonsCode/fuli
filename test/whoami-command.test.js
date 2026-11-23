@@ -12,9 +12,10 @@ import { projectIdentityCache } from '../src/system/project-identity-cache.js';
 const ANSWER = Object.freeze({
   space: { id: 'space-7f3', name: 'Workshop' },
   project: { id: 'proj-blue', name: 'Blue Kettle' },
-  lead: { id: 'agent-21', name: 'Rowan Vale' },
+  lead: { id: 'agent-21', name: 'Rowan Vale', role: 'Kettle lead' },
   projectResolution: 'matched', basis: 'git_origin'
 });
+const FIELDS = ['space', 'project', 'lead', 'projectResolution', 'basis', 'computer', 'offline', 'answeredAt'];
 
 const dataDir = (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-whoami-'));
@@ -40,7 +41,7 @@ test('whoami on the host answers the folder it runs in, with no token or address
   const text = output.written.join('\n');
   assert.match(text, /Space: Workshop \(space-7f3\)/);
   assert.match(text, /Project: Blue Kettle \(proj-blue\)/);
-  assert.match(text, /Lead FLA: Rowan Vale \(agent-21\)/);
+  assert.match(text, /Lead FLA: Rowan Vale, Kettle lead \(agent-21\)/);
   assert.match(text, /This computer: the FULI host/);
   assert.doesNotMatch(text, /token|certificate|127\.0\.0\.1/i);
 });
@@ -55,9 +56,22 @@ test('--project takes a project ID or a folder, and --json is the same answer', 
   await runWhoAmICommand(['--project', '/work/blue-kettle', '--json'], options);
   assert.deepEqual(asked, [{ personalProjectId: 'proj-blue' }, { projectPath: '/work/blue-kettle' }]);
   const shown = JSON.parse(output.written.at(-1));
+  // Every field is always there, so a script never tests for a missing key.
+  assert.deepEqual(Object.keys(shown), FIELDS);
   assert.deepEqual(shown.project, ANSWER.project);
-  assert.deepEqual(shown.computer, { role: 'host' });
+  assert.deepEqual(shown.computer, { role: 'host', hostReachable: null });
   assert.equal(shown.offline, false);
+  assert.equal(typeof shown.answeredAt, 'string');
+});
+
+test('an unmatched folder still has every field, with null where there is nothing', async (t) => {
+  const output = lines();
+  await runWhoAmICommand(['--json'], { env: { FULI_DATA_DIR: dataDir(t) }, write: output.write, cwd: () => '/work/loose',
+    isRunner: () => false, fetchImpl: answered({ space: { id: 'space-7f3', name: 'Workshop' }, project: null, lead: null,
+      projectResolution: 'unmatched' }) });
+  const shown = JSON.parse(output.written[0]);
+  assert.deepEqual(Object.keys(shown), FIELDS);
+  assert.deepEqual([shown.project, shown.lead, shown.basis, shown.projectResolution], [null, null, null, 'unmatched']);
 });
 
 test('a runner asks the host with its folder\'s facts, and keeps the answer for when the host is away', async (t) => {
@@ -75,7 +89,8 @@ test('a runner asks the host with its folder\'s facts, and keeps the answer for 
   const away = lines();
   const result = await runWhoAmICommand(['--json'], { ...options, write: away.write,
     fetchImpl: async () => { throw new Error('host unreachable'); } });
-  assert.equal(result.exitCode, 0);
+  // An earlier answer is usable but not current: its own exit code, beside the offline field.
+  assert.equal(result.exitCode, 3);
   const shown = JSON.parse(away.written[0]);
   assert.deepEqual(shown.project, ANSWER.project);
   assert.deepEqual(shown.computer, { role: 'runner', hostReachable: false });
@@ -114,6 +129,21 @@ test('whoami refuses a folder and a project ID together, and an unknown flag', a
   await assert.rejects(() => runWhoAmICommand(['--project'], options), /Missing value/);
   await assert.rejects(() => projectIdentity({}, { projectPath: '/work/x', personalProjectId: 'proj-blue' }),
     /Name a folder or a project ID, not both/);
+});
+
+test('the lead is named by the FLA\'s own name, not its role', async () => {
+  const app = {
+    config: { personal: { spaceId: 'space-7f3' } },
+    personal: {
+      listSpaces: async () => [{ id: 'space-7f3', name: 'Workshop' }],
+      listPersonalProjects: async () => [{ project_id: 'proj-blue', profile: { name: 'Blue Kettle' } }],
+      getProjectAgentCoordinationPolicy: async () => ({ team_lead_agent_id: 'agent-21' }),
+      getProjectAgent: async () => ({ agent_id: 'agent-21', profile: { name: 'Kettle lead', display_name: 'Rowan Vale' } })
+    }
+  };
+  const answer = await projectIdentity(app, { personalProjectId: 'proj-blue' });
+  assert.deepEqual(answer.lead, { id: 'agent-21', name: 'Rowan Vale', role: 'Kettle lead' });
+  assert.equal(answer.basis, 'project_id');
 });
 
 test('an unmatched folder says so rather than guessing a project, and a project with no lead says that', async () => {

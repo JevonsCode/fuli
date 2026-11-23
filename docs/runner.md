@@ -246,8 +246,12 @@ fuli whoami --json
 ```
 
 It gives the personal space (ID and name), the project (ID and name) the folder resolves to, the
-FLA leading that project (ID and name), and whether this computer is the host or a runner. It
-returns no token, no certificate and no address, enters no task and writes nothing to knowledge.
+FLA leading that project (ID, its own name and its role), and whether this computer is the host or
+a runner. It returns no token, no certificate and no address, enters no task and writes nothing to
+knowledge. `--json` always has the same fields, `null` where there is nothing: `space`, `project`,
+`lead`, `projectResolution`, `basis`, `computer.role`, `computer.hostReachable` (`null` on the
+host), `offline` and `answeredAt`. A script should read `offline` (or the exit code): `0` answered
+now, `3` the host's earlier answer, `2` no answer at all.
 
 On a runner it goes through the console entry above, which relays it to the host console
 (`POST /api/whoami`), and sends the folder's facts with it so the host resolves the folder by
