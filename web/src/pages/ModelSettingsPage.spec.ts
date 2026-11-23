@@ -159,6 +159,8 @@ describe('ModelSettingsPage', () => {
     expect(details.get('[data-model-guide]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/#tonborg')
     expect(details.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
     expect(details.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
+    expect(details.get('[data-model-fact="operations"]').text()).toContain('确认知识')
+    expect(details.get('[data-model-fact="operations"]').text()).not.toContain('knowledge_review')
     expect(details.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
     expect(details.get('[data-model-fact="fallback"]').text()).toContain('允许')
     expect(details.find('[data-model-check]').exists()).toBe(true)
