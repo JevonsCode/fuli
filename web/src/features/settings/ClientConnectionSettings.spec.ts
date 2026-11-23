@@ -23,22 +23,24 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, components?: Record<string, string> }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: { id: string, command: string }, inWsl?: boolean, entryFile?: { path: string, problem: string }, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
     clients: clients.map((client) => ({ id: 'codex', label: 'Codex', detected: true, status: 'connected',
       previouslyConnected: true, since: observedAt, changes: [], ...client })) }
 }
+// A status read, with or without ?afterProbe=1.
+const isStatus = (url: string) => new URL(url, 'http://console.invalid').pathname.endsWith('/status')
 function routed(status: () => Promise<Response> | Response, other: (url: string, options?: RequestInit) => Response | Promise<Response> = () => Response.json(configuration)) {
   const calls: [string, RequestInit | undefined][] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
     calls.push([url, options])
-    return url.endsWith('/status') ? status() : other(url, options)
+    return isStatus(url) ? status() : other(url, options)
   }))
   return calls
 }
-const statusCalls = (calls: [string, RequestInit | undefined][]) => calls.filter(([url]) => url.endsWith('/status')).length
+const statusCalls = (calls: [string, RequestInit | undefined][]) => calls.filter(([url]) => isStatus(url)).length
 
 it('is never folded away: it checks clients and loads the snippet as soon as it shows', async () => {
   const calls = routed(() => Response.json(statusOf([{}])))
@@ -80,6 +82,127 @@ it('can retry a failed configuration request', async () => {
   wrapper.unmount()
 })
 
+it('on a runner says its hooks do nothing and which computer runs the older FULI (rec issues 144, 145)', async () => {
+  const runner = { version: '0.28.1', hostName: 'Workshop Mac', hostReachable: true, hostVersion: '0.29.0',
+    skew: { older: 'runner' as const } }
+  routed(() => Response.json({ ...statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected',
+    firstRun: { id: 'cursor', command: 'cursor-agent mcp enable fuli' } }]), runner }))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const notice = wrapper.get('[data-runner-clients]').text()
+  expect(notice).toContain('Workshop Mac')
+  expect(notice).toContain('可能漏')
+  expect(notice).toContain('这台是 0.28.1，主机是 0.29.0')
+  expect(notice).toContain('这台旧了')
+  // The update goes to the person's own AI through the one AI entry (UiAiButton).
+  const entry = wrapper.get('[data-runner-update]')
+  expect(entry.attributes('data-ai-entry')).toBe('')
+  expect(entry.attributes('aria-label')).toBe('让 AI 来做：更新这台电脑的 FULI')
+  // Cursor's own first question is said on its tile, in words for the person only.
+  const first = wrapper.get('[data-client-first-run="cursor"]').text()
+  expect(first).toContain('信任这个文件夹')
+  expect(first).not.toContain('--trust')
+  wrapper.unmount()
+})
+
+it('runs Cursor\'s first-run step for one folder after showing the command, and says how it went', async () => {
+  const posted: unknown[] = []
+  routed(() => Response.json(statusOf([{ id: 'cursor', label: 'Cursor', status: 'connected',
+    firstRun: { id: 'cursor', command: 'cursor-agent mcp enable fuli' } }])), (url, options) => {
+    if (url.endsWith('/first-run')) {
+      posted.push(JSON.parse(String(options?.body)))
+      return Response.json({ id: 'cursor', status: 'no_answer', command: 'cursor-agent mcp enable fuli', folder: '/work/blue-kettle', waitedMs: 20000 })
+    }
+    return Response.json(configuration)
+  })
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  await wrapper.get('[data-first-run-start]').trigger('click')
+  await wrapper.get('[data-first-run-folder]').setValue('/work/blue-kettle')
+  // What will run, and where, before it runs.
+  expect(wrapper.get('[data-first-run-command]').text()).toBe('将在 /work/blue-kettle 里运行：cursor-agent mcp enable fuli')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(posted).toEqual([{ clientId: 'cursor', folder: '/work/blue-kettle' }])
+  expect(wrapper.get('[data-first-run-outcome="no_answer"]').text()).toContain('20 秒内没有回应')
+  wrapper.unmount()
+})
+
+it('shows a client still being looked for as 检测中, not as missing, and reads again as soon as the search ends', async () => {
+  const replies = [
+    { ...statusOf([{ id: 'codex', status: 'connected' }, { id: 'cursor', label: 'Cursor', status: 'probing', detected: false }]), probing: true },
+    statusOf([{ id: 'codex', status: 'connected' }, { id: 'cursor', label: 'Cursor', status: 'not_connected' }], '2026-10-13T08:00:01.000Z'),
+  ]
+  const calls = routed(() => Response.json(replies.shift()))
+  const wrapper = mount(ClientCards)
+  for (let round = 0; round < 4; round++) await flushPromises()
+  const statusUrls = calls.map(([url]) => url).filter((url) => url.includes('/status'))
+  // The second read waits on the server for the search, rather than for the next 15-second round.
+  expect(statusUrls).toEqual(['/api/system/client-connection/status', '/api/system/client-connection/status?afterProbe=1'])
+  expect(wrapper.get('[data-client-status="not_connected"]').text()).toContain('Cursor')
+  wrapper.unmount()
+})
+
+it('a client being looked for is not counted as not installed', async () => {
+  let release: (() => void) | undefined
+  routed(() => new Promise<Response>((resolve) => {
+    release = () => resolve(Response.json({ ...statusOf([{ id: 'codex', status: 'connected' },
+      { id: 'cursor', label: 'Cursor', status: 'probing', detected: false }]), probing: true }))
+  }))
+  const wrapper = mount(ClientCards)
+  release!()
+  await flushPromises()
+  expect(wrapper.get('[data-client-status="probing"]').text()).toContain('检测中')
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端')
+  wrapper.unmount()
+})
+
+it('says which configuration file has a problem instead of offering an update that would fail again, and shows it', async () => {
+  const posted: string[] = []
+  routed(() => Response.json(statusOf([{ id: 'opencode', label: 'OpenCode', status: 'unknown', lastKnownStatus: null,
+    entryFile: { path: '~/.config/opencode/opencode.json', problem: 'Invalid JSON.' } }])), (url) => {
+    posted.push(url)
+    return url.endsWith('/reveal') ? Response.json({ id: 'opencode', revealed: true }) : Response.json(configuration)
+  })
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const tile = wrapper.get('[data-client-status="unknown"]')
+  expect(tile.text()).toContain('~/.config/opencode/opencode.json 有问题')
+  expect(tile.text()).toContain('Invalid JSON.')
+  expect(tile.find('[data-connect-client]').exists()).toBe(false)
+  await wrapper.get('[data-reveal-client-file="opencode"]').trigger('click')
+  await flushPromises()
+  expect(posted.filter((url) => url.endsWith('/reveal'))).toHaveLength(1)
+  wrapper.unmount()
+})
+
+it('shows a client installed only inside WSL with why FULI cannot connect it, and does not count it as missing', async () => {
+  routed(() => Response.json(statusOf([
+    { id: 'codex', status: 'connected' },
+    { id: 'opencode', label: 'OpenCode', status: 'not_detected', detected: false, inWsl: true },
+    { id: 'kiro', label: 'Kiro', status: 'not_detected', detected: false },
+  ])))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const tile = wrapper.get('[data-client-status="not_detected"]')
+  expect(tile.text()).toContain('在 WSL 里')
+  expect(tile.text()).toContain('这台 Windows 上的 FULI 接不到它')
+  expect(tile.find('[data-connect-client]').exists()).toBe(false)
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端，另有 1 个这台电脑上没装')
+  wrapper.unmount()
+})
+
+it('says nothing about a runner on the host, and nothing about versions when they match', async () => {
+  routed(() => Response.json({ ...statusOf([{}]),
+    runner: { version: '0.29.0', hostName: 'Workshop Mac', hostReachable: false, hostVersion: '0.29.0' } }))
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  expect(wrapper.get('[data-runner-clients]').text()).not.toContain('版本')
+  expect(wrapper.find('[data-runner-update]').exists()).toBe(false)
+  expect(wrapper.find('[data-client-first-run="codex"]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
 it('tells on the client row that open sessions need a restart, and says nothing when none do', async () => {
   routed(() => Response.json(statusOf([{ id: 'codex', restartSessions: 2 }, { id: 'cursor', label: 'Cursor', restartSessions: 0 }])))
   const wrapper = mount(ClientCards)
@@ -99,7 +222,8 @@ it('sums the detected and hand-described clients FULI is in, and keeps the summa
   const wrapper = mount(ClientCards)
   expect(wrapper.find('[data-connection-summary]').exists()).toBe(true)
   await flushPromises()
-  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端')
+  // A client FULI knows of but did not find here is counted apart, never silently dropped (rec issues 90, 145).
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端，另有 1 个这台电脑上没装')
   expect(wrapper.findAll('[data-client-status]').map((row) => row.attributes('data-client-status'))).toEqual(['connected', 'not_connected', 'connected'])
   expect(wrapper.get('[data-custom-client="acme-agent"]').text()).toContain('配置文件：~/.acme/mcp.json')
   // The add tile closes the grid, after every client.
@@ -499,7 +623,7 @@ it('shows every capability on each tile: installed, needing an update, or not su
     .toBe('这个客户端不支持：不会自动开任务和收尾，要靠 Agent 按 FULI 的说明调用，也不会自动记录对话。')
   const tile = (id: string) => wrapper.get(`[data-client-parts="${id}"]`).element.closest('li.client-row')!
   expect(tile('claude-code').querySelector('[data-client-no-lifecycle]')).toBeNull()
-  expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('不会自动记录对话')
+  expect(tile('kiro').querySelector('[data-client-no-lifecycle]')!.textContent).toContain('靠模型自己进入任务')
   // Each part is explained by the glossary's 「?」 and by its hover title.
   expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('data-term')).toBe('setting.clientPart.skills')
   expect(wrapper.get('[data-client-parts="claude-code"] [data-part="skills"]').attributes('title')).toBe('需更新：教客户端里的 Agent 怎么用 FULI。')

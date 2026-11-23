@@ -16,7 +16,8 @@ export const CLIENT_RUNNING = '客户端正在运行，会把旧配置写回：�
 // one of them is written only when it is known to be closed (rec#106).
 // customClients: the custom-client store (custom-clients.js); a client that is
 // not built in is written only when the person added it here.
-export function createClientInstaller({ installer, install = installAgent, apps = {}, customClients = NO_CUSTOM_CLIENTS }) {
+export function createClientInstaller({ installer, install = installAgent, apps = {}, customClients = NO_CUSTOM_CLIENTS,
+  presence = null }) {
   let busy = false;
   return async (input) => {
     assertJsonObject(input, 'Client connection');
@@ -30,7 +31,7 @@ export function createClientInstaller({ installer, install = installAgent, apps 
       if (app && await app.running().catch(() => null) !== false) {
         return { id: input.clientId, status: 'failed', restartRequired: false, reason: 'client_running', message: CLIENT_RUNNING };
       }
-      const detected = await detectClients(installer);
+      const detected = await detectClients(installer, { presence });
       const result = detected.status === 'available'
         ? await install(installer, connectable(detected.clients, input.clientId, customClients.removable()))
         : { status: 'failed', reason: 'client_component_unavailable', message: CLIENT_COMPONENT_UNAVAILABLE };

@@ -8,11 +8,12 @@ import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
 import { isProcessAlive, waitForExit } from '../local-runtime/processes.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
-import { SAME_NETWORK_LIMIT } from './follower-status.js';
+import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
 import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
+import { versionSkewLine } from './version-skew.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
 
 // `fuli start | stop | restart | status | open` on a runner (docs/runner.md):
@@ -42,7 +43,7 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
     // with the console or with a client's calls about the host being reachable.
     return ours
       ? { status: 'running', role: 'runner', url, pid: state.pid, host: state.host, outbox: state.outbox,
-        capabilities: state.capabilities, line: state.line }
+        capabilities: state.capabilities, line: state.line, ...(state.versions ? { versions: state.versions } : {}) }
       : { status: 'stopped', role: 'runner', url };
   }
   async function start(input) {
@@ -95,6 +96,8 @@ export function formatFollowerResult(command, result) {
   return [`This computer follows a FULI host. Console: ${result.url} (this computer's own state at ${result.url}${LOCAL_PATH})`,
     result.line ? result.line.en : 'Host: not known',
     ...(result.host?.mcpSessions ? [mcpSessionsLine(result.host.mcpSessions)] : []),
+    // The host and this computer on different FULI versions (rec#144): said, never enforced.
+    ...(result.versions?.skew ? [versionSkewLine(result.versions.skew, result.host?.name ?? null)] : []),
     ...capabilityLines(result.capabilities)].join('\n');
 }
 
@@ -121,7 +124,7 @@ export async function serveFollowerConsole({ dataDir, port }) {
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity });
   const served = await startFollowerConsole({ dataDir, port, store, connection,
-    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }) }) });
+    clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }), status: () => followerStatus({ store, connection, dataDir }) }) });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {
     connection.close();
