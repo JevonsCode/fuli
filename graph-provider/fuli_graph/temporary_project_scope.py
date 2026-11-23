@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 from fastapi import HTTPException
 from typing import Literal
@@ -60,6 +61,20 @@ def is_temporary_project_id(project_id: str) -> bool:
     """Whether an ID is one FULI generated for a temporary scope. A caller that
     holds the record reads its scope_type; this is for the ones holding an ID."""
     return project_id.startswith(TEMPORARY_ID_PREFIXES)
+
+
+_GENERATED_ID = re.compile(r'^(?:temporary|conversation)-([0-9a-f]{64})$')
+# As long as the console's own short number (web temporary-project-name.ts).
+_NUMBER_LENGTH = 8
+
+
+def project_reference(project_id: str, name: str) -> str:
+    """How text FULI writes about a project refers to it: its name, or, for a
+    project nobody named, '#' and the same short number the console shows."""
+    if name:
+        return name
+    digest = _GENERATED_ID.match(project_id)
+    return f'#{digest.group(1)[:_NUMBER_LENGTH] if digest else project_id}'
 
 
 def _scope_key(parts: list) -> str:
