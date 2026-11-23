@@ -4,6 +4,7 @@ import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { DIAGNOSTIC_EVENTS_TOOL, HOST_DIAGNOSTICS_ONLY } from '../diagnostics/agent-access.js';
 import { annotationsFor } from '../mcp/tool-annotations.js';
 import { sha256Bytes } from '../security/digest.js';
+import { SESSION_LIMIT_REASON } from './protocol.js';
 
 // What a runner (docs/runner.md) answers for a call while its host is away,
 // and what it keeps of the answers it got while the host was there. Task
@@ -115,10 +116,16 @@ export function outcomeUnknownAnswer(tool) {
 
 // The host answered but refused a new MCP session (its session limit, a
 // failure on its side): said as it is, never as the host being away.
+// A host of this version says what to do at its session limit: it is the only
+// side that knows whose sessions are open, so this never guesses that they are
+// this computer's. Any other reason (an older host's bare "session limit
+// reached", a failure on its side) gets a next step that holds either way.
+const GENERAL_NEXT_STEP = 'If it is the session limit, close FULI clients and MCP processes you no longer use, here or '
+  + 'on the host\'s other runners (each holds one session until it exits), then try again; otherwise try again later.';
+
 export function hostRefusedAnswer(status, reason) {
   return failure('host_refused', `Your FULI host answered but refused a new MCP session (HTTP ${status}: ${reason}). `
-    + 'Nothing was sent. If it is the session limit, close FULI clients and MCP processes on this computer that you no '
-    + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
+    + `Nothing was sent.${String(reason).startsWith(SESSION_LIMIT_REASON) ? '' : ` ${GENERAL_NEXT_STEP}`}`);
 }
 
 // A call that needs a task the host entered, made with this computer's

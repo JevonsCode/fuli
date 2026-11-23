@@ -34,7 +34,7 @@ export function completeToolResult(value, limitBytes) {
 // The reader already supplies an explicit business projection. Never pass it
 // through the generic string/array sanitizer and then call it complete.
 export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE_RESULT_LIMIT_BYTES) {
-  if (!value || (value.preferences_complete !== true && !['blocked', 'paginated'].includes(value.preference_delivery?.status))) {
+  if (!value || (value.preferences_complete !== true && !['blocked', 'paginated', 'keys'].includes(value.preference_delivery?.status))) {
     throw new ApplicationError('validation', 'Incomplete preference reader projection');
   }
   const allowed = new Set(['effective_preferences', 'scope_unknown', 'active_conflicts', 'deferred_conflicts',

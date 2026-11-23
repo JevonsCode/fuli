@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { DIAGNOSTIC_EVENTS_TOOL } from '../diagnostics/agent-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { REPLAY_WAIT_MS } from './protocol.js';
 
 // A runner's own record (docs/runner.md): the host it paired with, the last
@@ -145,16 +146,21 @@ export class RunnerStore {
     this.db.prepare('UPDATE host SET last_address = ?, addresses = ? WHERE id = 1').run(address, JSON.stringify(addresses));
   }
 
-  // Addresses the host says it has, or the person names (`fuli runner add-address`):
-  // kept after the ones known already, so each network the two computers meet on
-  // is remembered (home, office) and tried next time without being told again.
-  // first: put them ahead of the others, for an address the person just named.
-  learnHostAddresses(addresses, { first = false } = {}) {
+  // Addresses the host says it has, or the person names (`fuli runner
+  // add-address`), so each network the two computers meet on (home, office, a
+  // VPN) is tried next time without being told again. The newest come first
+  // and the list makes room by dropping the one learned longest ago, instead
+  // of staying full for ever once a host has moved networks KNOWN_ADDRESSES
+  // times. The address that last answered is kept apart (last_address) and
+  // tried whatever this list holds. Only an address a runner may reach a host
+  // at is written, whichever way it was learned.
+  learnHostAddresses(addresses) {
     const host = this.host();
     if (!host) return;
-    const fresh = addresses.filter((address) => typeof address === 'string' && address && !host.addresses.includes(address));
-    const merged = first ? [...new Set([...addresses, ...host.addresses])] : [...host.addresses, ...fresh];
-    this.db.prepare('UPDATE host SET addresses = ? WHERE id = 1').run(JSON.stringify(merged.slice(0, KNOWN_ADDRESSES)));
+    const learned = addresses.filter((address) => isReachableHostAddress(address));
+    if (!learned.length) return;
+    const merged = [...new Set([...learned, ...host.addresses])].slice(0, KNOWN_ADDRESSES);
+    this.db.prepare('UPDATE host SET addresses = ? WHERE id = 1').run(JSON.stringify(merged));
   }
 
   rememberAnswer(key, tool, body) {
