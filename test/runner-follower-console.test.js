@@ -364,7 +364,7 @@ test('「添加主机地址」 takes a private address from this computer\'s own
   const noOrigin = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"192.0.2.20"}',
     headers: { 'content-type': 'application/json' } });
   assert.equal(noOrigin.status, 405);
-  for (const address of ['198.51.100.7', 'host.example', '', '127.0.0.1\n10.0.0.1']) {
+  for (const address of ['198.51.100.7', 'host.example', '', '127.0.0.1\n10.0.0.1', '100.128.0.1']) {
     const refused = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: JSON.stringify({ address }),
       headers: { 'content-type': 'application/json', origin: entry.url } });
     assert.equal(refused.status, 400, address);
@@ -377,6 +377,11 @@ test('「添加主机地址」 takes a private address from this computer\'s own
   assert.equal(saved.status, 200);
   assert.equal(JSON.parse(saved.text).reachable, false, 'it says plainly that the address did not answer');
   assert.equal(store.host().addresses[0], '10.0.0.20', 'the address is tried first next time');
+  // A VPN's carrier-grade address (Tailscale and the like) is one a host is reached at, as with add-address.
+  const vpn = await get(`${entry.url}${ADDRESS_PATH}`, { method: 'POST', body: '{"address":"100.84.12.9"}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(vpn.status, 200);
+  assert.equal(store.host().addresses[0], '100.84.12.9');
 });
 
 test('「现在重试」 delivers now and only from this computer\'s own page', async (t) => {

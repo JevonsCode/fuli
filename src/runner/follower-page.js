@@ -95,7 +95,7 @@ function addAddress(host) {
   <p class="note en">If ${escape(host.name)} does not answer, run <code>fuli runner list</code> there and put the address it shows here.</p>
   <button type="button" data-address-open>添加主机地址 / Add the host's address</button>
   <form data-address-form hidden>
-    <input name="address" inputmode="numeric" autocomplete="off" placeholder="10.0.0.20"
+    <input name="address" inputmode="numeric" autocomplete="off" placeholder="10.0.0.20 / 100.64.0.20"
       aria-label="主机的局域网地址 / the host's private address">
     <button type="submit">保存并重试 / Save and try again</button>
   </form>

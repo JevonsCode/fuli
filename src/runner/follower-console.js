@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import { handleClientConnectionRequest } from '../http/client-connection-api-router.js';
 import { readJson, sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { isGuestSourceAddress } from '../server/lan-access.js';
+import { isReachableHostAddress } from '../server/lan-access.js';
 import { listenServer } from '../server/listen.js';
 import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
 import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, SYNC_PATH } from './follower-page.js';
@@ -160,8 +160,9 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   }
 
   // 「添加主机地址」: where the host is, when this computer cannot find it by
-  // itself (the two are on one network but in different subnets, so mDNS does
-  // not carry). Only a private address, as `fuli runner add-address` takes:
+  // itself (the two are on one network but in different subnets, or on a VPN,
+  // so mDNS does not carry). Only an address a host can be reached at on a LAN
+  // or VPN, exactly what `fuli runner add-address` takes:
   // the paired certificate is checked there anyway, but no request of this
   // computer's is ever sent anywhere else.
   async function addHostAddress(request, response, sameOrigin) {
@@ -179,12 +180,13 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       return;
     }
     const address = String(asked?.address ?? '').trim();
-    if (!isGuestSourceAddress(address)) {
+    if (!isReachableHostAddress(address)) {
       local(response, 400, { error: 'not_a_private_address',
-        message: '只填主机的局域网地址（10.x、172.16-31.x、192.168.x）。 / A private address only (10.x, 172.16-31.x, 192.168.x).' });
+        message: '只填主机在局域网或 VPN 里的地址：10.x、172.16-31.x、192.168.x，或 Tailscale 这类工具给的 100.64-127.x。'
+          + ' / The host\'s address on your LAN or VPN only: 10.x, 172.16-31.x, 192.168.x, or 100.64-127.x from Tailscale and the like.' });
       return;
     }
-    store.learnHostAddresses([address], { first: true });
+    store.learnHostAddresses([address]);
     connection.drop();
     const state = await status();
     local(response, 200, { reachable: state.host?.reachable ?? false, line: followerLine(state) });
