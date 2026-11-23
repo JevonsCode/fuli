@@ -185,11 +185,11 @@ export class RunnerStore {
     return row ? { at: row.at, body: JSON.parse(row.body) } : null;
   }
 
-  // Every kept task entry, newest first, as { at, body }: what the host last gave for each folder.
+  // Every kept task entry, newest first, as { key, at, body }: what the host last gave for each folder.
   taskEntries() {
     if (this.#missing()) return [];
-    return this.db.prepare(`SELECT at, body FROM answers WHERE key LIKE 'entry:%' ORDER BY at DESC`)
-      .all().map((row) => ({ at: row.at, body: JSON.parse(row.body) }));
+    return this.db.prepare(`SELECT key, at, body FROM answers WHERE key LIKE 'entry:%' ORDER BY at DESC`)
+      .all().map((row) => ({ key: row.key, at: row.at, body: JSON.parse(row.body) }));
   }
 
   // When the host last answered anything this computer kept, or null.
@@ -260,9 +260,10 @@ export class RunnerStore {
   // (offline-calls.js).
   queuedCheckpoints(limit = 3) {
     if (this.#missing()) return [];
-    return this.db.prepare(`SELECT id, input, queued_at FROM outbox WHERE state = 'queued'
+    return this.db.prepare(`SELECT id, input, queued_at, offline_project_path FROM outbox WHERE state = 'queued'
       AND tool = 'checkpoint_task_knowledge' ORDER BY seq DESC LIMIT ?`).all(limit)
-      .map((row) => ({ id: row.id, queuedAt: row.queued_at, input: JSON.parse(row.input) }));
+      .map((row) => ({ id: row.id, queuedAt: row.queued_at, input: JSON.parse(row.input),
+        offlineProjectPath: row.offline_project_path ?? null }));
   }
 
   outbox() {
