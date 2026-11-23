@@ -7,9 +7,10 @@ so a number here means "the right thing arrived", not "something arrived".
 ```bash
 npm run measure:recall-rate
 npm run measure:recall-rate -- --json /tmp/recall-rate.json
+npm run measure:recall-rate -- --without-retrieval-terms
 ```
 
-About 25 seconds, almost all of it Python start-up. **No Neo4j, no embedding
+About 2 seconds, most of it Python start-up. **No Neo4j, no embedding
 model, no network, no model call.** It needs the Provider importable: the
 `.venv` from the Provider validation steps in `docs/development.md`, or any
 Python 3.12 that can `import fuli_graph`. `FULI_BENCHMARK_PYTHON=<path>` picks
@@ -22,6 +23,14 @@ facts (addresses, commands, decisions, runbooks), global and project
 preferences, scope-qualified preferences, superseded historical versions, and
 near misses that share words with the right answer but are the wrong answer.
 Nothing names a real person, project, host or path.
+
+Hard cases carry a `category` and are also reported apart: a question in other
+words than the answer's (`synonym`), one that shares only the project's name
+with its answer (`project_name_only`), the same item name in two projects in
+scope (`same_name`), and items written without retrieval terms
+(`no_retrieval_terms`). `--without-retrieval-terms` ranks the same world with
+every hand-written retrieval term removed, which shows how much of a result
+the terms carry rather than the item's own words.
 
 **A — preferences the entry delivers on its own.** Runs the real
 `preferenceTaskApplicability` for each task scope.
@@ -49,27 +58,44 @@ Agent reads, and what gets cut.
 ## How the ranking is real
 
 `rank_fixture_world.py` imports `fuli_graph.knowledge_search` and runs the
-Provider's own `_edge_relevance`, `_relevance`, `_term_weights`,
-`_ranked_relevance`, `knowledge_weight`, the documented sort keys and the
-dedupe, then projects results through the real `fact_result` /
-`_entity_search_result`. Nothing is scored in JavaScript, and a result item
-here is byte-for-byte the shape `/v1/search` returns.
+Provider's own `_edge_matches` (relationship term weights and relevance),
+`_relevance`, `_term_weights`, `_ranked_relevance`, `knowledge_weight`, the
+documented sort keys and the dedupe, then projects results through the real
+`fact_result` / `_entity_search_result`. Nothing is scored in JavaScript, and a
+result item here is byte-for-byte the shape `/v1/search` returns.
+
+Candidates are drawn per query, as the search draws them. A relationship's
+term weights are counted over that search's own candidates, so which ones are
+candidates decides what counts as a common word, not only the order. The
+search takes what Graphiti's hybrid search returns (at most
+`min(max(limit * 8, 40), 100)`) plus what retrieval terms find; the mirror
+takes the relationships that share at least one term with the query, in
+fixture order, under the same cap, plus the retrieval-term finds. Entities are
+scored over everything in scope, as the search scores them.
 
 ## What it does not cover
 
-- Graphiti's own hybrid candidate generation. Fixture order stands in for it,
-  which only moves the `semantic_order` tie-break inside a relevance band.
+- Graphiti's own hybrid search: its BM25 tokenizer, its candidates found by
+  meaning, its order. The stand-in above shares only the shape: a real pool
+  differs in which relationships are in it, so a word can be common in one and
+  distinctive in the other, and a relationship the stand-in finds by a shared
+  term the real search may never return (or the reverse).
 - Authorization, visitor scope, Cypher-side filtering, tag re-ranking.
 - Semantic vectors and RRF fusion: the fixture stores no vectors, so
   `standing_out` contributes nothing, exactly as it does on an install with
   fewer than 12 vectored items in scope.
-- Provider wall time. C's ranking time is the scoring stage alone, on 32 items,
+- Provider wall time. C's ranking time is the scoring stage alone, on 37 items,
   in one warm process. It is a regression signal, not a latency measurement;
   rec#126's segmented timing is the method for that.
-- Real knowledge volume. 32 items is small, so IDF has little to work with;
-  a bigger store makes term weighing matter more, not less.
+- Real knowledge volume and real questions. 37 items, and a query ranks about
+  4 of the 14 it scores, so a right answer meets little competition; the
+  questions were written knowing the answers. A full score here says the
+  pieces that are real code agree with the stated answers on this world, not
+  what share of real questions find their answer.
 
-`rank_fixture_world.py` mirrors about fifteen lines of `search_knowledge`'s
-scoring and ordering stage rather than calling it (that stage is inseparable
-from its Cypher reads). `test_recall_rate_mirror.py` fails if the functions it
-mirrors change shape, so the mirror cannot drift silently.
+`rank_fixture_world.py` mirrors about twenty lines of `search_knowledge`'s
+candidate, scoring and ordering stage rather than calling it (that stage is
+inseparable from its Cypher reads). `test_recall_rate_mirror.py` fails if the
+functions it mirrors change shape, or if the search's candidate cap or its
+relationship scoring call changes, so those cannot drift silently; the rest of
+the flow can.
