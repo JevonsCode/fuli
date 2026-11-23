@@ -414,6 +414,19 @@ describe('JudgmentWorkbench', () => {
     expect(details.text()).toContain('12345678-1234-1234-1234-123456789012')
   })
 
+  it('says which computer judged a decision only when it was another one', async () => {
+    getJson.mockReset().mockResolvedValue({ records: [
+      record({ id: 'from-runner', decidedOn: 'runner', runner: { name: 'Study desk' } }),
+      record({ id: 'from-here' }),
+    ] })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+
+    const marks = wrapper.findAll('[data-decided-on]')
+    expect(marks).toHaveLength(1)
+    expect(marks[0].text()).toContain('Study desk')
+  })
+
   it('uses familiar thumbs-up and thumbs-down feedback icons', async () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()

@@ -87,6 +87,10 @@ const FAILURE_RECOVERY = Object.freeze({
     + 'Do not retry it or judge it again with another model, endpoint or session; ask again only after the person grants what was refused.',
   model_paused: 'The Tonborg budget is used up; ask again after it resets or the person raises it.',
   invalid_answer: 'The answer did not match the eligible executors or conversations; ask again.',
+  // Refused before any model was called, so nothing was spent; rejected names the part.
+  request_rejected: 'The judgment request was too large to send, so no model was called and nothing was spent; '
+    + 'rejected names the part. Asking again sends the same request: shrink that part, or have the host judge it '
+    + '(remove roles.tonborg from model-backends.json on the runner).',
   unknown: 'Try again; if it repeats, report the error code and step.'
 });
 export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was selected or run, and this is no execution receipt. '
@@ -95,6 +99,7 @@ export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was select
 
 function failureCategory(error) {
   if (error.modelReceipt) return MODEL_STOP[error.modelReceipt.status] ?? 'model';
+  if (error.code === 'request_rejected') return 'request_rejected';
   if (error instanceof TypeError || error.name === 'ZodError') return 'invalid_answer';
   if (UNREACHABLE.has(error.code)) return 'provider_unreachable';
   if (error.code !== 'provider_error') return 'unknown';

@@ -10,10 +10,13 @@ const MAX_SESSIONS = 20
 // `<sourceApplication>:<sessionId>`; null entries are skipped). Until it
 // arrives, and whenever the launcher is unavailable or the request fails, the
 // map is empty and every link follows the configured template as before.
-// pending: the request for the current keys is still out.
+// pending: the request for the current keys is still out. launcher: whether
+// the session launcher answered ('available'), said it cannot ('unavailable',
+// or a console it refuses), or has not been asked yet (null).
 export function useSessionLaunchOffers(sessionKeys: Ref<(string | null)[]>) {
   const offers = shallowRef(new Map<string, SessionLaunchOffer>())
   const pending = ref(false)
+  const launcher = ref<'available' | 'unavailable' | null>(null)
   const keys = computed(() => [...new Set(sessionKeys.value.filter((key): key is string => key !== null))]
     .slice(0, MAX_SESSIONS))
   let version = 0
@@ -25,13 +28,16 @@ export function useSessionLaunchOffers(sessionKeys: Ref<(string | null)[]>) {
     const query = new URLSearchParams(keys.value.map((key) => ['session', key]))
     try {
       const answer = await getJson<SessionLaunchOffers>(`/api/session-launch/offers?${query}`)
-      if (current !== version || answer?.launcher !== 'available') return
+      if (current !== version) return
+      launcher.value = answer?.launcher === 'available' ? 'available' : 'unavailable'
+      if (answer?.launcher !== 'available') return
       offers.value = new Map(answer.offers.map((offer) => [`${offer.sourceApplication}:${offer.sessionId}`, offer]))
     } catch {
       // The configured templates keep deciding.
+      if (current === version) launcher.value = 'unavailable'
     } finally {
       if (current === version) pending.value = false
     }
   }, { immediate: true })
-  return { offers, pending }
+  return { offers, pending, launcher }
 }
