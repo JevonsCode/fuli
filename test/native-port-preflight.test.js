@@ -94,7 +94,9 @@ test('Windows port preflight reports a real listener on any local address with i
         assert.match(error.message, new RegExp(`端口 ${port} 已被别的程序占用`));
         assert.equal(error.startupFailure.code, 'port_taken');
         assert.equal(error.startupFailure.port, port);
-        assert.match(error.message, /认不出它是不是自己上次没管住的图服务.*任务管理器/s, 'says what it cannot tell, and what to do');
+        assert.match(error.message, /认不出它是不是自己之前启动后没管住的图服务.*命令行.*FULI 数据目录/s,
+          'says what it cannot tell, and how a person can tell');
+        assert.doesNotMatch(error.message, /java|python/, 'no guess from the program\'s name that would end another program');
         assert.equal(error.startupFailure.lostServiceDetectable, false);
         return true;
       });
