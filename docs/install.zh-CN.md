@@ -254,7 +254,9 @@ fuli graph migrate --to native
 
 反向迁移只需交换 `container` 和 `native`。导出会短暂停止来源数据库，完成后只恢复导出前
 确实在运行的服务；导入会先校验清单和每个 dump 的 SHA-256，再停止目标数据库。替换前的
-目标数据会自动保存在数据目录下的 `backups/graph`，导入失败时会立即尝试回滚。执行前应让
+目标数据会自动保存在数据目录下的 `backups/graph`，导入失败时会立即回滚。在 macOS 内置数据库上，
+整个导入和回滚期间都持有数据库维护锁；回滚没能把每个图谱都恢复时，锁会留着，FULI 不会在写了一半的
+图谱上启动：运行 `fuli graph runtime recover`（或在桌面窗口里点「恢复并启动」）。执行前应让
 正在写图数据的 Agent 请求结束。
 
 导入完成后会使用目标安装自己的 bootstrap token 重新签发本机 Provider 访问令牌，并原子

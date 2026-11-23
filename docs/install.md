@@ -306,8 +306,10 @@ Client integrations are not changed.
 Swap `container` and `native` for the reverse direction. Export briefly stops the source database
 and resumes only services that were actually running beforehand. Import validates the manifest and
 every dump's SHA-256 before stopping the target. It preserves the old target under `backups/graph`
-inside the data directory and attempts an immediate rollback if loading fails. Let active Agent graph
-writes finish before either operation.
+inside the data directory and rolls back immediately if loading fails. On macOS native, the whole
+import and its rollback hold the database maintenance lock; when the rollback cannot bring every graph
+back, the lock stays and nothing starts on a half-written graph: run `fuli graph runtime recover` (or
+「恢复并启动」 in the desktop window). Let active Agent graph writes finish before either operation.
 
 After loading, Fuli uses the target installation's bootstrap token to rotate local Provider access
 credentials and atomically updates the runtime configuration; plaintext access tokens are never added
