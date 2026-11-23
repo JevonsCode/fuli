@@ -19,6 +19,14 @@ export function taskKnowledgeGuidance() {
         + 'request_agent_attention options while they are away, numbered options only where the client has neither. Never ask them to type an answer they could pick. '
         + 'Give complete links they can click, never a path or an identifier for them to assemble, and no internal code, enum value or English type name they did not choose. '
         + 'A summary an FLA writes for the person in a roundtable follows the same rule.',
+      // Jevons 11-24: "I already did X, why don't you Y" means the person wants it kept.
+      repeat_signal: 'When the person says they already asked for something ("I already told you", "as I said", 我已经说过了, 上次就讲过, 不是说过了吗, 怎么又…), '
+        + 'that is a signal to keep it, not only to apologise and comply. A plain question ("why not use X here?") is not one. '
+        + 'First check whether FULI already holds it (effective_preferences, task_knowledge_recall, search). If it does, store nothing new: tell the person in one line '
+        + 'why it did not apply this time (it was not delivered, its scope did not cover this, or it was delivered and you did not follow it) and record the last case in the checkpoint workLog. '
+        + 'If it does not and you can tell what it is and where it applies, keep it this turn with checkpoint_task_knowledge remember, quote their words, '
+        + 'and say in one line what you kept and where it applies. If the content or the scope (this project or everywhere) is unclear, ask once with clickable choices, '
+        + 'for example this project / everywhere / do not keep; never make them type it again.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'The owner checkpoints after integration when there are capture candidates, experiences, memory changes, explicit knowledge usage, collaborators or a meaningful workLog. For routine finishes follow checkpoint_guidance; checkpoint_required remains true when automatic closure is unavailable. Coordinated workers return evidence and must not begin or checkpoint an inherited parent context. Explicit checkpoints use capture_candidates or retain_nothing; assigned employees include a concise truthful workLog, even without knowledge capture. Memory changes include agentMemory with the loaded revision and bounded merged notes. Do not overwrite truncated context or store raw transcripts.'
     };

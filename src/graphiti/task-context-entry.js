@@ -5,6 +5,7 @@ import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
+import { REPEAT_GUIDANCE, repeatComplaint } from './task-repeat-signal.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
@@ -118,7 +119,9 @@ export async function beginTaskFromPreferences(application, preferences, {
   // A request to keep something is never a routine auto-closed task.
   const remembering = rememberRequested(taskPrompt);
   const updating = updateRequested(taskPrompt);
-  const autoClosed = !remembering && !updating
+  // "I already told you …": something that should have been kept (task-repeat-signal.js).
+  const repeating = !remembering && repeatComplaint(taskPrompt);
+  const autoClosed = !remembering && !updating && !repeating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   // A task the Stop hook closes by itself has no model checkpoint to keep
   // what the person stated as a project rule: the entry keeps it, pending
@@ -155,7 +158,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     task_context_token: task.token,
     checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
-    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
+    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : repeating ? { remember_guidance: REPEAT_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,

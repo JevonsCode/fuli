@@ -49,6 +49,10 @@ test('the event is versioned, keyed by request and kept apart from completion so
   assert.deepEqual(event.options, ['Postgres', 'SQLite']);
   assert.equal(event.detail.length, 500);
   assert.equal(event.openUrl, 'http://127.0.0.1:2727/inbox');
+  // A notifier shows the person a word, not the enum (Jevons 11-23); `kind` stays for machines.
+  assert.equal(event.kind, 'question');
+  assert.equal(event.kindLabel, '需要答复');
+  assert.equal(needsPersonEvent({ ...open, kind: 'something_new' }).kindLabel, null);
 });
 
 test('an open request is posted once; closed requests and an empty address send nothing', async () => {
