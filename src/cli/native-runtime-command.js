@@ -2,15 +2,18 @@ import { createInterface } from 'node:readline/promises';
 import { manageNativeNeo4j, planNativeNeo4j } from '../native-runtime/neo4j-lifecycle.js';
 import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
-import { NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
+import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j-recovery.js';
+import { createNativeGraphServices, NATIVE_NEO4J_VERSION } from '../native-runtime/runtime.js';
+import { runGraphDataCommand } from './graph-data-command.js';
+import { formatRecoveryPlan } from './recovery-plan-text.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { runSetupCommand } from './setup-command.js';
 import { writeLine } from './terminal-io.js';
 
 export function parseNativeRuntimeOptions(args = []) {
   const [action, ...flags] = args;
-  if (!['install', 'update', 'rollback', 'uninstall', 'unlock'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall or unlock.');
-  const result = { action, preview: false, yes: false, dataDir: null }, seen = new Set();
+  if (!['install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall, unlock or recover.');
+  const result = { action, preview: false, yes: false, dataDir: null, expect: null, backOut: false, json: false }, seen = new Set();
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i];
     if (seen.has(flag)) throw new Error(`Duplicate ${flag}`);
@@ -18,6 +21,9 @@ export function parseNativeRuntimeOptions(args = []) {
     if (flag === '--preview') result.preview = true;
     else if (flag === '--yes') result.yes = true;
     else if (flag === '--data-dir' && flags[i + 1]?.trim() && !flags[i + 1].startsWith('--')) result.dataDir = flags[++i];
+    else if (action === 'recover' && flag === '--expect' && /^[0-9a-f]{16}$/.test(flags[i + 1] ?? '')) result.expect = flags[++i];
+    else if (action === 'recover' && flag === '--back-out') result.backOut = true;
+    else if (action === 'recover' && flag === '--json') result.json = true;
     else throw new Error(`Invalid graph runtime option: ${flag}`);
   }
   return result;
@@ -29,6 +35,7 @@ export async function runNativeRuntimeCommand(args, dependencies = {}) {
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options.dataDir, env });
   const write = dependencies.write ?? writeLine;
   if (options.action === 'unlock') return unlock(paths, options, write, dependencies);
+  if (options.action === 'recover') return recover(paths, options, write, { ...dependencies, env });
   const plan = options.action === 'install' ? { neo4jVersion: NATIVE_NEO4J_VERSION }
     : await (dependencies.plan ?? planNativeNeo4j)({ paths, action: options.action });
   write(`Native Neo4j ${options.action}: ${plan.neo4jVersion ?? NATIVE_NEO4J_VERSION}\nData: ${paths.dataDir}\nKnowledge data is preserved. Java is not installed or upgraded.`);
@@ -60,4 +67,36 @@ async function unlock(paths, options, write, dependencies) {
   }
   // Why it kept the lock, in words and as the reason line a desktop client reads (startup-failure-line.js).
   throw Object.assign(new Error(lockReleaseRefusal(result)), { startupFailure: { code: 'lock_kept', ...result } });
+}
+
+// Brings the runtime back from an operation killed part way (neo4j-recovery.js):
+// shows the plan, and does it only when confirmed, or with --yes --expect <the
+// plan's digest> as the desktop controller sends after the person confirmed.
+// For the person only: no Agent tool reaches it (operating-fuli).
+async function recover(paths, options, write, dependencies) {
+  const recovery = {
+    stopServices: (_paths, owner) => createNativeGraphServices({ paths,
+      env: { ...dependencies.env, FULI_NATIVE_ASSET_OPERATION: owner } }).stopDatabases(),
+    restore: from => (dependencies.importGraph ?? runGraphDataCommand)('import', ['--input', from, '--yes', '--data-dir', paths.dataDir],
+      { env: dependencies.env, write }),
+    ...dependencies.recovery
+  };
+  const plan = await (dependencies.planRecovery ?? planNativeRecovery)({ paths, backOut: options.backOut, dependencies: recovery });
+  if (options.json && options.preview) {
+    write(JSON.stringify(plan));
+    return { status: 'preview', exitCode: 0 };
+  }
+  write(formatRecoveryPlan(plan));
+  if (plan.kind === 'nothing') return { status: 'nothing', exitCode: 0 };
+  if (plan.kind === 'refused') throw Object.assign(new Error(formatRecoveryPlan(plan)), { startupFailure: { code: 'recovery_refused', ...plan } });
+  if (options.preview) return { status: 'preview', exitCode: 0 };
+  if (options.yes ? options.expect !== plan.digest : !await (dependencies.confirm ?? confirmAction)('Recover')) {
+    if (options.yes) throw Object.assign(new Error(formatRecoveryPlan({ kind: 'refused', reason: 'plan_changed' })),
+      { startupFailure: { code: 'recovery_refused', reason: 'plan_changed' } });
+    return { status: 'cancelled', exitCode: 1 };
+  }
+  const result = await (dependencies.applyRecovery ?? applyNativeRecovery)({ paths, digest: plan.digest, backOut: options.backOut, dependencies: recovery });
+  if (result.kind === 'refused') throw Object.assign(new Error(formatRecoveryPlan(result)), { startupFailure: { code: 'recovery_refused', ...result } });
+  write('已恢复，可以启动 FULI 了。 / Recovered; FULI can start now.');
+  return { status: 'recovered', kind: result.kind, exitCode: 0 };
 }

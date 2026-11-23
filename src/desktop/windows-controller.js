@@ -83,13 +83,15 @@ export function tidyInstallation(context, action, { removeLeftovers = removeReti
 
 if (isMainModule(import.meta.url)) {
   try {
-    if (process.argv.length !== 3) throw new Error('Expected exactly one tray action.');
+    // One action; `recover-start` also takes the digest of the plan the person confirmed.
+    if (process.argv.length !== (process.argv[2] === 'recover-start' ? 4 : 3)) throw new Error('Expected exactly one tray action.');
     const context = loadTrayContext();
     tidyInstallation(context, process.argv[2]);
     const result = process.argv[2] === 'context'
       ? { ok: true, dataDir: context.dataDir, logDir: context.logDir,
         nativeLogDir: context.nativeLogDir, instanceKey: context.instanceKey }
-      : await runTrayAction(process.argv[2], context, { onStage: stageReporter(process.env) });
+      : await runTrayAction(process.argv[2], context, { onStage: stageReporter(process.env),
+        recoveryDigest: process.argv[3] ?? null });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

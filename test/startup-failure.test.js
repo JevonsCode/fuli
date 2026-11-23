@@ -144,20 +144,21 @@ test('a holder gone with a switch journal waiting: recovery, never a reason to r
     /卸载只删数据库程序文件，知识数据文件没有被改动/);
 });
 
-test('an interrupted dump, load or update says what it can have changed, and the exact manual steps', async () => {
+test('an interrupted dump, load or update says what it can have changed, and points to the recovery', async () => {
   const base = { code: 'native_lifecycle_lock', holder: 'gone', since: '2026-11-22T17:24:35.000Z', pid: 9, lockPath: '/x/native-runtime/.neo4j-lifecycle.lock' };
   const load = await formatStartupFailure({ ...base, operation: 'load' });
   assert.match(load, /数据库可能只写入了一半/);
-  assert.match(load, /FULI 目前没有命令能解除这把锁/);
-  assert.match(load, /fuli graph import --input/);
+  assert.match(load, /fuli graph runtime recover/);
+  assert.match(load, /导入前自动留下的备份整库恢复/);
   assert.doesNotMatch(load, /没有被改动/);
   const dump = await formatStartupFailure({ ...base, operation: 'dump' });
   assert.match(dump, /导出只读数据库，知识数据没有被改动/);
-  assert.match(dump, /删掉 \/x\/native-runtime\/\.neo4j-lifecycle\.lock 这个文件夹/);
   const update = await formatStartupFailure({ ...base, operation: 'update' });
   assert.match(update, /停在改动知识数据之前/);
-  assert.match(update, /\/x\/native-runtime\/neo4j-assets 里没有被 \/x\/native-runtime\/manifest\.json 引用的 jvs-a-\*/);
-  for (const text of [load, dump, update]) assert.doesNotMatch(text, /fuli graph runtime unlock/, 'unlock refuses these locks');
+  for (const text of [load, dump, update]) {
+    assert.match(text, /fuli graph runtime recover/);
+    assert.doesNotMatch(text, /fuli graph runtime unlock/, 'unlock refuses these locks');
+  }
 });
 
 test('the three holders of a lock read differently, each with its own next step', async () => {
@@ -167,7 +168,7 @@ test('the three holders of a lock read differently, each with its own next step'
   assert.match(running, /等进程 4321 结束后再启动/);
   const gone = await formatStartupFailure({ ...base, holder: 'gone', operation: 'update' });
   assert.match(gone, /一次数据库更新在 .* 中途停了/);
-  assert.match(gone, /\/x\/native-runtime\/neo4j-assets/);
+  assert.match(gone, /fuli graph runtime recover/);
   assert.doesNotMatch(gone, /unlock/);
   const unknown = await formatStartupFailure({ ...base, holder: 'unknown' });
   assert.match(unknown, /没有记录是谁加的/);

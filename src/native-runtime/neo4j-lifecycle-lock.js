@@ -218,31 +218,55 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
   if (lock.holder && !SERVICE_OPERATIONS.has(lock.holder.operation)) {
     return { released: false, reason: 'asset_operation', operation: lock.holder.operation ?? null };
   }
-  if (await holderState(lock.holder, identity) === 'running') return { released: false, reason: 'holder_running', pid: lock.holder.pid };
-  const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
-  for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
-    if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
-      && await identity.matches(entry.pid, entry.command)) {
-      return { released: false, reason: 'services_running', pid: entry.pid };
-    }
-  }
+  const busy = await runtimeInUse({ paths, lock, identity, listProcesses });
+  if (busy) return { released: false, ...busy };
   // An old-format lock may be an interrupted update's: its half-installed
   // candidate sits in neo4j-assets, named by neither the manifest's Neo4j nor
   // the one it keeps for a rollback.
   const unfinished = unreferencedAssets(paths);
   if (unfinished) return { released: false, reason: 'unfinished_assets', directory: unfinished };
-  // Another FULI command for this data: its CLI or a desktop controller. The
-  // console server, MCP processes and hooks name the data too but take no lock.
-  const processes = await listProcesses();
-  if (!processes) return { released: false, reason: 'cannot_inspect' };
-  const other = processes.find(({ pid, command }) => pid !== process.pid && pid !== process.ppid
-    && command.includes(paths.dataDir) && /(?:\/src\/cli\.js|-controller\.js|\/(?:fuli|fl))(?:\s|$)/.test(command));
-  if (other) return { released: false, reason: 'fuli_running', pid: other.pid };
   const ageMs = now() - lock.since.getTime();
   if (ageMs < RELEASE_AFTER_MS) {
     return { released: false, reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
   }
   return await takeOver(root, lock.owner, identity) ? { released: true } : { released: false, reason: 'changed' };
+}
+
+// Why something may still be using this native runtime, or null: the lock's
+// holder still runs, a graph service processes.json records still runs as
+// itself, or another FULI CLI or desktop controller works on this data. A
+// release and a recovery both ask this before they touch the lock.
+// [services]: false when the caller stops the recorded services itself.
+export async function runtimeInUse({ paths, lock = readLock(paths.nativeRuntimeDir), identity = IDENTITY, listProcesses = processList,
+  services = true }) {
+  if (lock && await holderState(lock.holder, identity) === 'running') return { reason: 'holder_running', pid: lock.holder.pid };
+  if (services) {
+    const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
+    for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
+      if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
+        && await identity.matches(entry.pid, entry.command)) {
+        return { reason: 'services_running', pid: entry.pid };
+      }
+    }
+  }
+  // The console server, MCP processes and hooks name the data too but take no lock.
+  const processes = await listProcesses();
+  if (!processes) return { reason: 'cannot_inspect' };
+  const other = processes.find(({ pid, command }) => pid !== process.pid && pid !== process.ppid
+    && command.includes(paths.dataDir) && /(?:\/src\/cli\.js|-controller\.js|\/(?:fuli|fl))(?:\s|$)/.test(command));
+  return other ? { reason: 'fuli_running', pid: other.pid } : null;
+}
+
+// The lock as it stands, for a recovery: since when, its token and what it
+// recorded about its holder; null without a lock.
+export function lifecycleLockOf(root) {
+  return readLock(root);
+}
+
+// Releases a lock a recovery has dealt with, the way a take-over does: one at
+// a time, and only the lock that was judged. Answers whether it was released.
+export function releaseLifecycleLock(root, owner, identity = IDENTITY) {
+  return takeOver(root, owner, identity);
 }
 
 // The first neo4j-assets/jvs-a-* directory the manifest does not use, or null.

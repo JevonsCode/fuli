@@ -21,7 +21,7 @@ import { findNpmCopies } from './npm-copies.js';
 // and the macOS app (macos-controller.js) only differ in how they find the
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start']);
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start', 'recover-preview', 'recover-start']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -63,7 +63,7 @@ export async function runTrayAction(action, context, {
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
-  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock
+  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -96,6 +96,31 @@ export async function runTrayAction(action, context, {
       throw new Error('启动命令都结束了，但 FULI 没有进入运行状态。 / The start finished, but FULI did not reach its running state.');
     }
   };
+  // 「恢复并启动」: first the plan the window shows in the confirmation, then —
+  // with that plan's digest — the recovery itself (`fuli graph runtime recover`,
+  // which refuses when anything changed since), and an ordinary start.
+  if (action === 'recover-preview') {
+    const result = await invoke(['graph', 'runtime', 'recover', '--preview', '--json']);
+    const line = String(result.stdout ?? '').trim().split('\n').pop();
+    let plan = null;
+    try { plan = JSON.parse(line); } catch { /* answered below */ }
+    if (result.code !== 0 || !plan?.kind) {
+      const error = cliError(result);
+      return { ok: false, action, status: 'unknown', label: '状态未知 / Unknown', error: error.message,
+        ...(error.startupFailure ? { failure: error.startupFailure } : {}) };
+    }
+    return { ok: true, action, status: 'stopped', label: trayStateLabel({ status: 'stopped' }), recoveryPlan: plan };
+  }
+  if (action === 'recover-start') {
+    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error('recover-start needs the digest of the plan the person confirmed.');
+    try { await command(['graph', 'runtime', 'recover', '--yes', '--expect', recoveryDigest]); }
+    catch (error) {
+      const state = await inspect({ step: false }).catch(() => null);
+      return { ok: false, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown',
+        state, error: error.message, ...(error.startupFailure ? { failure: error.startupFailure } : {}) };
+    }
+    action = 'start';
+  }
   // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
   // check passes (neo4j-lifecycle-lock.js), then this is an ordinary start.
   if (action === 'release-lock-start') {
