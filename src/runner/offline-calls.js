@@ -115,10 +115,11 @@ export function outcomeUnknownAnswer(tool) {
 
 // The host answered but refused a new MCP session (its session limit, a
 // failure on its side): said as it is, never as the host being away.
+// The host's own reason says what to do: it is the only side that knows whose
+// sessions are open, so this never guesses that they are this computer's.
 export function hostRefusedAnswer(status, reason) {
   return failure('host_refused', `Your FULI host answered but refused a new MCP session (HTTP ${status}: ${reason}). `
-    + 'Nothing was sent. If it is the session limit, close FULI clients and MCP processes on this computer that you no '
-    + 'longer use (each holds one session until it exits; `fuli runner status` shows how many), then try again.');
+    + 'Nothing was sent.');
 }
 
 // A call that needs a task the host entered, made with this computer's

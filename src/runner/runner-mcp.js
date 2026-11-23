@@ -90,7 +90,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
   // What the host refused or failed when this process opened its session, for `fuli diagnostics` here.
   const record = diagnosticEventLog(dataDir).record;
-  const server = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const { server, endHostSession } = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -99,7 +99,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     if (stdio) for (const signal of ['SIGINT', 'SIGTERM']) process.off(signal, close);
     // First the host releases this process's MCP session (bounded), while the connection still carries it;
     // then a delivery in flight is cut at once (its entry stays queued) instead of holding the process.
-    await server.endHostSession();
+    await endHostSession();
     connection.close();
     await server.close();
     await routing.close();
@@ -411,8 +411,8 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     client = null;
     await close();
   };
-  server.endHostSession = endHostSession;
-  return server;
+  // endHostSession beside the server rather than on it: the MCP SDK owns that object.
+  return { server, endHostSession };
 }
 
 // Tonborg's executor judgment on this runner while the person set it up here
