@@ -59,8 +59,7 @@ test('the index never costs a hard rule its full body', async () => {
 test('a preference whose prose states a scope this session\'s project does not meet ranks below the rest and is named with it', async () => {
   const scoped = syntheticPreference('synthetic-locale',
     '仅适用于合成结算需求：地区只按 locale 判断，不要用时区推断。', {}, 'personality');
-  // Bodies short enough that the preferences' share holds several besides the hard rules (design T3).
-  const items = [scoped, ...syntheticPreferences(29, { length: 150 })];
+  const items = [scoped, ...syntheticPreferences(29)];
   const elsewhere = await entryFor(items, '帮我评审这份合成 PRD 的验收标准');
   assert.equal(keys(elsewhere.frame.effective_preferences).includes('synthetic-locale'), false,
     'another project does not spend its inline budget on it');

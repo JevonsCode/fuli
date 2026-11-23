@@ -120,7 +120,7 @@ def test_task_context_begin_records_whether_the_lifecycle_hook_delivered_it():
 
 def test_task_context_begin_keeps_what_the_person_asked_of_the_task():
     payload = {'personal_space_id': 'space-1', 'session_id': 'session-1',
-               'source_application': 'claude_code', 'token': 'fuli-task-request'}
+               'source_application': 'claude_code', 'token': 'fuli-task-checkpoint-request'}
     # A new task always records the key, so a later read tells it from a task kept before it.
     assert TaskContextBegin.model_validate(payload).model_dump(mode='json')['checkpoint_request'] is None
     for request in ('remember', 'update'):
