@@ -27,10 +27,11 @@ const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 // own working folder).
 export function createFuliRoundtableHost(app, { warn = line => process.stderr.write(line), wakeFolder = null } = {}) {
   const spaceId = () => app.config.personal.spaceId;
-  const projectView = project => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
+  // language: read once per call (applicationLanguage reads the settings file), never once per project.
+  const projectView = (project, language = applicationLanguage(app)) => ({ projectId: project.project_id ?? project.personal_project_id ?? project.id,
     // A temporary project has no stored name; `temporary` is what says so, and
     // the words are written for whoever shows them (project-display-name.js).
-    name: projectDisplayName(project, applicationLanguage(app)) || null,
+    name: projectDisplayName(project, language) || null,
     temporary: isTemporaryProject(project),
     // The project task entry makes for a session it could not match: it has no repository and no name of its own.
     sessionOnly: SESSION_PROJECT_ID.test(project.project_id ?? '') || project.profile?.origin === 'conversation_fallback',
@@ -70,7 +71,10 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         projectId: session.personal_project_id, lastActive: session.last_active }));
     },
     taskContext: (token, client) => app.taskContextRegistry.context(token, client),
-    listProjects: async () => (await projects()).map(projectView),
+    listProjects: async () => {
+      const language = applicationLanguage(app);
+      return (await projects()).map(project => projectView(project, language));
+    },
     getProject: async projectId => projectView(await app.personal.getPersonalProject(spaceId(), projectId)),
     projectLeadId,
     staffProjectLead: ({ projectId, client }) => app.personal.staffDefaultProjectLead({ personal_space_id: spaceId(),
@@ -85,8 +89,10 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     // space whose terms or responsibility it names finds the lead it routes to.
     // A project whose lead cannot be read is left out; the others still match.
     async matchWork(query) {
-      const open = new Map((await projects()).map(projectView).filter(project => !project.temporary && !project.archived)
-        .map(project => [project.projectId, project.name]));
+      // Temporary and archived projects are left out before anything is named.
+      const language = applicationLanguage(app);
+      const open = new Map((await projects()).filter(project => !isTemporaryProject(project) && project.profile?.lifecycle !== 'archived')
+        .map(project => projectView(project, language)).map(project => [project.projectId, project.name]));
       const standing = standingMatches(query)
         .filter(({ assignment }) => open.has(assignment.projectId))
         .map(({ assignment, matchedTerms }) => ({ agentId: assignment.leadAgentId, projectId: assignment.projectId,
@@ -127,7 +133,8 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
       const all = await projects();
       const resolved = app.projectPathResolver(path, all);
       if (resolved.status === 'matched' && resolved.personalProjectId === projectId) return true;
-      const project = all.map(projectView).find(entry => entry.projectId === projectId);
+      const record = all.find(entry => (entry.project_id ?? entry.personal_project_id ?? entry.id) === projectId);
+      const project = record ? projectView(record) : null;
       // Temporary and archived projects are left out, as the resolver and matchWork leave them out.
       if (!project || project.temporary || project.archived) return false;
       if (resolved.status === 'ambiguous' && resolved.reason === 'repository_remote_conflict'

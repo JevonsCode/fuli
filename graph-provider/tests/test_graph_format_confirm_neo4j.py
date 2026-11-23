@@ -464,10 +464,10 @@ ROLE_OCCUPATION_SEED = (
 )
 
 
-def _project(node_id, project_id, name, *, scope_type=None, purpose='Synthetic purpose.'):
+def _project(node_id, project_id, name, *, scope_type=None, purpose='Synthetic purpose.', profile_name=None):
     """One personal project as an earlier FULI stored it: the name in its own
-    column and inside profile_json."""
-    profile = json.dumps({'name': name, 'purpose': purpose, 'lifecycle': 'active',
+    column and inside profile_json (profile_name: a profile that says otherwise)."""
+    profile = json.dumps({'name': name if profile_name is None else profile_name, 'purpose': purpose, 'lifecycle': 'active',
                           'boundaries': ['Synthetic boundary.']}, ensure_ascii=False)
     scope = f", scope_type: '{scope_type}'" if scope_type else ''
     return (f"\nCREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {{id: '{node_id}', "
@@ -488,6 +488,9 @@ TEMPORARY_NAME_SEED = (
     + _project('renamed-scope', 'temporary-' + 'd' * 64, 'Synthetic renamed scope', scope_type='temporary')
     + _project('claimed', 'conversation-' + 'e' * 64, 'Synthetic garden notes')
     + _project('formal', 'synthetic-formal', 'Synthetic formal project')
+    # The column says FULI's name, the profile a person's: the person's stays.
+    + _project('mismatched', 'conversation-' + '9' * 64, '会话项目 / Conversation project',
+               profile_name='Synthetic own words')
 )
 TEMPORARY_NAME_READ = """
     MATCH (p:FuliPersonalProject) RETURN p.id AS id, p.name AS name, p.scope_type AS scope_type,
@@ -697,13 +700,68 @@ async def test_temporary_names_clear_only_what_fuli_generated(graph):
         profile, old_profile = json.loads(row['profile_json']), json.loads(old['profile_json'])
         assert profile == {**old_profile, 'name': ''}, 'only the name changes inside the profile'
         assert row['updated_at'] == old['updated_at'], 'last use stays, so the order does not change'
-    for kept in ('renamed-scope', 'claimed', 'formal'):
+    for kept in ('renamed-scope', 'claimed', 'formal', 'mismatched'):
         assert after[kept] == before[kept]
     # Every record reads back: an empty name is a valid stored profile.
     projects = {item['project_id']: item for item in listed}
     assert projects['conversation-' + _DIGEST]['scope_type'] == 'temporary'
     assert projects['conversation-' + _DIGEST]['profile']['name'] == ''
     assert projects['conversation-' + 'e' * 64]['profile']['name'] == 'Synthetic garden notes'
+    assert await _version(driver) == GRAPH_FORMAT_VERSION
+
+
+@pytest.mark.asyncio
+async def test_a_conversation_project_with_its_lead_a_task_and_knowledge_reads_as_temporary_after_the_step(graph):
+    """Like the 259 on Jevons's computer: a conversation fallback saved as
+    registered under FULI's name, with FLAs, a task and knowledge in it. After
+    graph/23 the project is temporary with no name; its task reads as temporary,
+    its knowledge's scope is temporary and names no project, and the FLAs keep
+    their stored names (#FLA reaches them by name)."""
+    from test_project_agent_memory_neo4j import seed_agent
+    from test_turn_receipt_neo4j import commit, view
+    settings, driver = graph
+    conversation = 'conversation-' + 'f' * 64
+    async with provider_client(_reviewed(settings)) as (client, token):
+        space_id = (await client.post('/v1/spaces', json={'name': 'Synthetic conversations', 'kind': 'personal'})).json()['id']
+        scope = {'personal_space_id': space_id, 'personal_project_id': conversation}
+        for agent in ('owner', 'specialist'):
+            await seed_agent(client, space_id, project=conversation, agent=agent, allowed_clients=['codex'])
+        task = await client.post('/v1/project-agent-tasks', json={**scope,
+            'idempotency_key': 'synthetic-conversation-task', 'title': 'Synthetic conversation task',
+            'objective': 'Verify a task in a conversation project.', 'work_kind': 'implementation',
+            'source_application': 'codex', 'staffing_intent': 'reuse_preferred', 'lead_agent_id': 'specialist',
+            'coordinator_agent_id': 'owner', 'routing_reason': 'Synthetic migration acceptance.'})
+        assert task.status_code == 200, task.text
+        task_id = task.json()['task']['task_id']
+        held = await commit(client, space_id, [{'key': 'gate', 'name': 'Synthetic staging gate', 'type': 'ProjectFact',
+                                                'summary': 'Synthetic staging gate'}], project=conversation)
+        item_id = held['entity_ids'][0]
+        # What the conversation fallback wrote until 2026-10-18: FULI's name, saved as registered.
+        renamed = await client.put('/v1/personal-projects', json={'personal_space_id': space_id, 'project_id': conversation,
+            'profile': {'name': '会话项目 / Conversation project', 'lifecycle': 'active',
+                        'purpose': '为尚未归属已有项目的会话提供独立的负责人和上下文。'}})
+        assert renamed.status_code == 200, renamed.text
+        agents_before = sorted(agent['profile']['name'] for agent in (await client.get(
+            '/v1/project-agents', params=scope)).json())
+    await driver.execute_query("MATCH (f:FuliDataFormat {store: 'graph'}) SET f.version = 22")
+
+    async with provider_client(_reviewed(settings), token) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == 'graph/23-temporary-project-names' and plan['step']['count'] == 1, plan
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        [project] = [item for item in (await client.get('/v1/personal-projects', params={
+            'personal_space_id': space_id})).json() if item['project_id'] == conversation]
+        assert (project['scope_type'], project['profile']['name']) == ('temporary', '')
+        read = (await client.get(f'/v1/project-agent-tasks/{task_id}', params=scope)).json()
+        assert read['project_scope']['type'] == 'temporary'
+        item = await view(client, space_id, item_id)
+        assert item['scope']['kind'] == 'temporary'
+        assert item['scope']['projects'] == [{'id': conversation, 'name': None, 'temporary': True}]
+        agents_after = sorted(agent['profile']['name'] for agent in (await client.get(
+            '/v1/project-agents', params=scope)).json())
+        assert agents_after == agents_before, 'FLA names are not migrated'
     assert await _version(driver) == GRAPH_FORMAT_VERSION
 
 

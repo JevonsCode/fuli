@@ -352,3 +352,22 @@ test('a receipt that carries an introduction is sent that turn, and the plain on
   assert.equal(Object.hasOwn(fourth.frame, 'agent_receipt'), false);
   assert.equal(fourth.frame.skeleton_unchanged, third.frame.skeleton_revision);
 }));
+
+// Review of #1076: the reason beside the checkpoint requirement repeats while
+// the requirement does, so a later frame of the session names it instead of
+// paying its seventy characters again; a changed reason is sent again.
+test('the checkpoint reason is sent once, then named, and again when it changes', () => fixture(async f => {
+  const reasoned = (token, reason) => {
+    const value = entry(f.sessionId, token);
+    return withPreferenceScope({ ...value, checkpoint_reason: reason }, {
+      personal_space_id: 'synthetic-space', personal_project_id: 'project', project_agent_id: 'lead', session_id: f.sessionId,
+      source_application: 'claude_code', preference_scope: { version: 1, work_kind: null, workflow: null } });
+  };
+  const first = await f.turn(reasoned('task-a', 'the Stop hook closes this task'), 'Do the thing');
+  assert.equal(first.frame.checkpoint_reason, 'the Stop hook closes this task');
+  const next = await f.turn(reasoned('task-b', 'the Stop hook closes this task'), 'Do the next thing');
+  assert.equal(Object.hasOwn(next.frame, 'checkpoint_reason'), false);
+  assert.equal(next.frame.checkpoint_required, true, 'the requirement itself is always there');
+  const changed = await f.turn(reasoned('task-c', 'this turn asks FULI to keep something'), 'Remember this');
+  assert.equal(changed.frame.checkpoint_reason, 'this turn asks FULI to keep something');
+}));

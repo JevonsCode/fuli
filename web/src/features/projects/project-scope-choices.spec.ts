@@ -19,7 +19,7 @@ describe('project scope groups', () => {
       project('alpha', 'Alpha'),
       project('named-like-temporary', '临时会话 / Temporary session'),
       temporary('a'),
-      project(`conversation-${hex('b')}`, 'Anything'),
+      project(`conversation-${hex('b')}`, '会话项目 / Conversation project'),
       project('old-fallback', 'Old', { profile: { name: 'Old', origin: 'conversation_fallback' } }),
     ])
     expect(groups.formal.map(choice => choice.label)).toEqual(['Alpha', '临时会话 / Temporary session'])
@@ -40,7 +40,7 @@ describe('project scope groups', () => {
   it('numbers temporary projects by their ID: unique when IDs share a prefix, a digest or a whole ID across spaces', () => {
     const sharedPrefix = [temporary('', { project_id: `temporary-${'ab12cd34'}${'0'.repeat(56)}` }),
       temporary('', { project_id: `temporary-${'ab12cd34'}${'1'.repeat(56)}` })]
-    const sameDigest = [temporary('e'), project(`conversation-${hex('e')}`, 'x')]
+    const sameDigest = [temporary('e'), project(`conversation-${hex('e')}`, '会话项目 / Conversation project')]
     const sameId = [temporary('f'), temporary('f', { personal_space_id: 'space-b' })]
     const all = [...sharedPrefix, ...sameDigest, ...sameId]
     const labels = projectScopeGroups(all).temporary.map(choice => choice.label)

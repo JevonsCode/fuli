@@ -53,7 +53,6 @@ export async function nameableProjects(application) {
   return (await application.personal.listPersonalProjects(application.config.personal.spaceId)).filter(nameable);
 }
 
-export { projectDisplayName };
 
 // `writer` is who the purpose comes from: the person by default, an Agent for its own draft.
 export async function createProjectNamed(application, name, purpose, writer = PERSON_WRITER) {
@@ -64,7 +63,7 @@ export async function createProjectNamed(application, name, purpose, writer = PE
 
 // Display names only, for a compact triage candidate list.
 export async function projectNames(application, limit) {
-  return (await nameableProjects(application)).map(projectDisplayName).slice(0, limit);
+  return (await nameableProjects(application)).map(project => projectDisplayName(project)).slice(0, limit);
 }
 
 // Only the user's own description on the "新项目：" line is kept; other prompt

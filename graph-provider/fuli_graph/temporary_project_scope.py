@@ -28,11 +28,17 @@ _SESSION_PROFILE = ProjectProfile(lifecycle='active',
     purpose='Holds what a session saved before anyone chose where it applies.',
     boundaries=['Scope pending: nothing here applies to other projects or FLAs.',
                 'Items move only when the person chooses their scope.'])
-# A temporary project's ID, whichever generation made it: the session scopes
-# this module derives, and the conversation fallback task entry wrote until
-# 2026-10-18. Callers that hold a record read scope_type instead; this is for
-# the ones that hold only an ID.
-TEMPORARY_ID_PREFIXES = ('temporary-', 'conversation-')
+# Every name FULI ever generated for a project it opened by itself. graph/23
+# clears them; until a person confirms that step a graph still holds them.
+GENERATED_NAMES = (
+    '临时任务 / Temporary task',
+    '临时会话 / Temporary session',
+    '会话项目 / Conversation project',
+)
+# A generated temporary project ID: a session or task scope this module derives,
+# or the conversation fallback task entry wrote until 2026-10-18. A name a person
+# typed can make a readable ID such as 'temporary-fix'; that is never this.
+_GENERATED_ID = re.compile(r'^(?:temporary|conversation)-([0-9a-f]{64})$')
 
 
 class TemporaryProjectEnsure(StrictModel):
@@ -57,13 +63,15 @@ def conversation_fallback_project_id(space_id: str, source_application: str, ses
     return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
 
 
-def is_temporary_project_id(project_id: str) -> bool:
-    """Whether an ID is one FULI generated for a temporary scope. A caller that
-    holds the record reads its scope_type; this is for the ones holding an ID."""
-    return project_id.startswith(TEMPORARY_ID_PREFIXES)
+def is_temporary_project(project_id: str, scope_type: str | None, name: str | None) -> bool:
+    """Whether a project is one FULI opened by itself. Its scope_type says so
+    first. A generated ID still holding no name or a generated one counts too:
+    that is a conversation fallback a graph waiting for graph/23 has not marked
+    yet. A conversation project a person named stays theirs."""
+    if scope_type == 'temporary':
+        return True
+    return bool(_GENERATED_ID.match(project_id)) and (name or '').strip() in ('', *GENERATED_NAMES)
 
-
-_GENERATED_ID = re.compile(r'^(?:temporary|conversation)-([0-9a-f]{64})$')
 # As long as the console's own short number (web temporary-project-name.ts).
 _NUMBER_LENGTH = 8
 

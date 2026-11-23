@@ -52,9 +52,11 @@ export function temporaryIdOrigin(projectId: string) {
   return GENERATED_ID.exec(projectId)?.[1]?.[0] ?? 'x'
 }
 
-/** One project's number on its own, where there is no list to keep it unique within. */
-export const temporaryProjectNumber = (projectId: string) =>
-  temporaryNumberSource(projectId).slice(0, NUMBER_LENGTH)
+/** An ID FULI generated for a temporary scope; a readable one a name made ('temporary-fix') is not. */
+export const isGeneratedTemporaryId = (projectId: string) => GENERATED_ID.test(projectId)
+
+// One project's number on its own, where there is no list to keep it unique within.
+const temporaryProjectNumber = (projectId: string) => temporaryNumberSource(projectId).slice(0, NUMBER_LENGTH)
 
 /**
  * A temporary project's name in the console's language: the title someone gave

@@ -22,6 +22,9 @@ export const dataFormatMessages = {
     more: '另 {count} 条',
     runsFirst: '先自动执行',
     undo: '撤销',
+    stepDescriptions: {
+      'graph_23-temporary-project-names': 'FULI 自己开的项目不再存一个写死的名字（「会话项目 / Conversation project」「临时会话」「临时任务」），以后都叫「临时项目 #编号」，界面是中文就显示中文，英文就显示英文。你起过名的项目不动；任务、知识和 FLA 也不动。确认前图谱只读；确认后可以在本页撤销。',
+    },
     undoAvailable: '可撤销（只放回这次改动的记录）',
     undoRestoreOnly: '不能单独撤销，只能整库恢复',
     backup: '备份',
@@ -106,6 +109,9 @@ export const dataFormatMessages = {
     more: '{count} more',
     runsFirst: 'Runs first',
     undo: 'Undo',
+    stepDescriptions: {
+      'graph_23-temporary-project-names': 'Projects FULI opened by itself stop storing a fixed name (“会话项目 / Conversation project”, “Temporary session”, “Temporary task”) and read as “Temporary project #number” in the console’s language. Projects you named stay as they are, and so do their tasks, knowledge and FLAs. The graph is read-only until you confirm; you can undo it on this page afterwards.',
+    },
     undoAvailable: 'Can be undone (puts back only the records it changed)',
     undoRestoreOnly: 'Cannot be undone on its own; only a whole restore',
     backup: 'Backup',

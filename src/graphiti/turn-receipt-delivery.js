@@ -45,6 +45,17 @@ function habitsLine(application, delivery) {
     + markdownLink('看看是哪几条', `${receiptConsoleUrl(application)}/habits/${delivery.taskKey.slice(0, TASK_KEY_PREFIX_LENGTH)}`);
 }
 
+// Whether this task's entry opened its conversation, from the row the entry
+// wrote (knowledge-impressions); null when there is no row or it cannot be read.
+export function entryOpenedConversation(application, task) {
+  try {
+    const row = application.recallImpressions?.delivery(taskKeyFor(task.token).slice(0, TASK_KEY_PREFIX_LENGTH));
+    return row ? Boolean(row.opensConversation) : null;
+  } catch {
+    return null;
+  }
+}
+
 // The lead that marks a habits line, and the sentence that follows it. Both are
 // shared with the entry frame's rewrite, so the two can never drift apart.
 // One language, like every other receipt line (the console has no per-person
@@ -55,8 +66,9 @@ export const preparedHabits = count => `这个新对话为你准备了 ${count} 
 
 // The same sentence once the entry knows what its host's inline limit left
 // room for: what the assistant has in front of it, and what it can read when a
-// task may touch it (rec#146 item 6). The two add up to the prepared count a
-// later checkpoint receipt states, so the two lines never disagree.
+// task may touch it (rec#146 item 6). Their sum is every preference the entry
+// resolved; a later receipt counts its stored row (ids once, at most 100), so
+// it is the same number unless ids are missing, shared or over the cap.
 export const deliveredHabits = (inline, readable) =>
   `这个新对话为你准备了 ${inline + readable} 条习惯：直接带上 ${inline} 条，另外 ${readable} 条随时可读`;
 

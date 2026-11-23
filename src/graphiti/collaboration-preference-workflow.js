@@ -163,7 +163,7 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
   const source_windows = sourceWindows(raw, projectResolution.personalProjectId);
   const result = { ...raw, source_windows, truncated: raw.truncated === true || Object.values(source_windows).some(value => value !== false) };
   const deferredConflicts = deferredPreferenceConflicts(result, result.queued_conflicts);
-  const { effectivePreferences, scopeUnknown } = taskScopedPreferences(result, taskScope);
+  const { effectivePreferences, scopeUnknown, mismatched } = taskScopedPreferences(result, taskScope);
   const applicationGuidance = guidanceFor(projectResolution.personalProjectId, projectAgentId);
   return {
     effective_preferences: effectivePreferences
@@ -174,7 +174,12 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
     application_guidance: applicationGuidance,
     ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {}),
     context: { ...preferenceContext(result, deferredConflicts, projectResolution),
+      // excluded = mismatch (this task definitely does not meet the scope)
+      // + the scope_unknown items; scope_unknown lists their distinct keys,
+      // so it can be shorter than the difference (coordinator: 7 keys beside 9).
       task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
+      // Only when there is one: every full read shares one 32 KiB envelope.
+      ...((result.task_scope_mismatch_count ?? 0) + mismatched ? { task_scope_mismatch_count: (result.task_scope_mismatch_count ?? 0) + mismatched } : {}),
       task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
   };
 }
@@ -184,10 +189,12 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
 function taskScopedPreferences(result, taskScope) {
   const effectivePreferences = [];
   const scopeUnknown = new Set(result.scope_unknown ?? []);
+  let mismatched = 0;
   for (const item of result.effective_preferences ?? []) {
     const applicability = preferenceTaskApplicability(item, taskScope);
     if (applicability === 'applies') effectivePreferences.push(item);
     else if (applicability === 'scope_unknown') scopeUnknown.add(item.preference_key);
+    else mismatched += 1;
   }
-  return { effectivePreferences, scopeUnknown: [...scopeUnknown].sort() };
+  return { effectivePreferences, scopeUnknown: [...scopeUnknown].sort(), mismatched };
 }

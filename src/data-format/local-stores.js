@@ -52,6 +52,7 @@ import { FORMAT_NOTICE_DELIVERY_FORMAT } from './notice-delivery.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
+import { PROJECT_IDENTITY_CACHE_FILE, PROJECT_IDENTITY_CACHE_FORMAT } from '../system/project-identity-cache.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
 import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption-store.js';
@@ -113,7 +114,7 @@ const sqliteStores = () => [
   [RUNNER_HOST_FILE, RUNNER_HOST_FORMAT],
   // A runner's host, its last answers, offline task tokens and outbox (docs/runner.md).
   [RUNNER_FILE, RUNNER_FORMAT],
-  // What a runner's own Tonborg chose there and how each choice did, kept 30 days (docs/runner.md).
+  // What a runner's own Tonborg chose there and how each choice did, kept until `fuli runner leave` (docs/runner.md).
   [ROUTING_LEDGER_FILE, ROUTING_LEDGER_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
@@ -148,6 +149,8 @@ const jsonStores = () => [
   ['model-backends.json', MODEL_BACKEND_CONFIG_FORMAT],
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
+  // A runner's copy of the host's last `fuli whoami` answer, shown marked offline (rec#145).
+  [PROJECT_IDENTITY_CACHE_FILE, PROJECT_IDENTITY_CACHE_FORMAT],
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
   ['format-notice-delivery.json', FORMAT_NOTICE_DELIVERY_FORMAT],
   ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],

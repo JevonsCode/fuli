@@ -81,6 +81,10 @@ export interface JudgmentDecisionRecord {
   // The knowledge it judged was permanently deleted (rec#5 C9): its words are gone and nothing brings it back.
   hard_deleted?: boolean
   selection?: JudgmentSelection | null
+  // Which computer judged it: absent on this one's own, 'runner' with that
+  // computer's name on one a runner's own Tonborg made (docs/runner.md).
+  decidedOn?: 'runner'
+  runner?: { name: string | null; fingerprint?: string } | null
   disposition?: 'continue_current' | 'reuse_conversation' | 'new_session' | 'delegate' | 'ask_user'
   conversationId?: string | null
   execution: JudgmentExecution

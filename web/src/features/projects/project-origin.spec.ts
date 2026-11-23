@@ -15,7 +15,9 @@ describe('project origin', () => {
 
   it('treats only non-archived, non-temporary, non-fallback projects as formal projects', () => {
     expect(isFormalProject(project('fuli', 'Fuli'))).toBe(true)
-    expect(isFormalProject(project(fallbackId('a'), 'Fallback'))).toBe(false)
+    expect(isFormalProject(project(fallbackId('a'), '会话项目 / Conversation project'))).toBe(false)
+    // A conversation project a person named is theirs.
+    expect(isFormalProject(project(fallbackId('a'), 'Synthetic garden notes'))).toBe(true)
     expect(isFormalProject({ ...project('temp-1', 'Temp'), scope_type: 'temporary' })).toBe(false)
     expect(isFormalProject({ ...project('old', 'Old'), profile: { name: 'Old', lifecycle: 'archived' } })).toBe(false)
   })
@@ -31,9 +33,9 @@ describe('project origin', () => {
 
   it('lists people-made projects first in their order and fallbacks after, newest first', () => {
     const ordered = pickerOrder([
-      project(fallbackId('1'), 'x', '2026-10-15T00:00:00Z'),
+      project(fallbackId('1'), '会话项目 / Conversation project', '2026-10-15T00:00:00Z'),
       project('zeta', 'Zeta'),
-      project(fallbackId('2'), 'x', '2026-10-17T00:00:00Z'),
+      project(fallbackId('2'), '会话项目 / Conversation project', '2026-10-17T00:00:00Z'),
       project('alpha', 'Alpha'),
     ])
     expect(ordered.map(item => item.project_id)).toEqual(['zeta', 'alpha', fallbackId('2'), fallbackId('1')])
@@ -41,10 +43,10 @@ describe('project origin', () => {
 
   it('falls back to the creation time and orders undated fallbacks last, the same way every time', () => {
     const input = [
-      project(fallbackId('a'), 'x'),
-      project(fallbackId('c'), 'x', null, '2026-10-16T00:00:00Z'),
-      project(fallbackId('b'), 'x', 'not a time'),
-      project(fallbackId('d'), 'x', '2026-10-17T00:00:00Z'),
+      project(fallbackId('a'), ''),
+      project(fallbackId('c'), '', null, '2026-10-16T00:00:00Z'),
+      project(fallbackId('b'), '', 'not a time'),
+      project(fallbackId('d'), '', '2026-10-17T00:00:00Z'),
     ]
     // Undated and unreadable times tie as oldest and fall back to ID order.
     const expected = [fallbackId('d'), fallbackId('c'), fallbackId('a'), fallbackId('b')]

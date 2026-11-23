@@ -149,7 +149,7 @@ fallback tasks are closed as `retain_nothing` / `reported` at the next entry in 
 session, and hook-delivered tasks by Stop. Capture candidates, experiences, memory changes,
 explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
 still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
-A checkpoint is recorded once: a retry with different input is refused and never overwrites it.
+A checkpoint is recorded once: a retry with different input is refused and never overwrites it (on a closed task, as `checkpoint_not_saved` with `reason: task_closed`; use `amend: true` to correct it).
 If you checkpointed too early and the outcome changed later in the same task, call it again with
 the same token and `disposition`, `amend: true`, and only the corrected `reason` and `workLog`.
 FULI appends the correction and keeps the first record as history. Capture, `remember`,

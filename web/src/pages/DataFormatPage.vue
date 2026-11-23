@@ -14,6 +14,7 @@ import {
 } from '@/features/data-format/model'
 import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { UiEmpty, UiNotice } from '@/ui'
 import { usePageRefresh } from '@/layouts/page-refresh'
 
@@ -159,6 +160,11 @@ onMounted(load)
 onBeforeUnmount(() => reading?.abort())
 // The top bar's 刷新 reads the data format plan again.
 usePageRefresh(load)
+// What a step changes, in the person's words where the console knows that step;
+// otherwise the Provider's own summary. Keys are the step IDs with '/' as '_'.
+const stepDescription = (step: { id: string, summary: string }) =>
+  tableLabel('dataFormat.stepDescriptions', step.id.replace(/[^A-Za-z0-9_-]/g, '_')) ?? step.summary
+
 </script>
 
 <template>
@@ -226,7 +232,7 @@ usePageRefresh(load)
               <span>{{ store.label }}</span>
               <Badge variant="outline">{{ t(`dataFormat.kinds.${store.kind}`) }}</Badge>
             </CardTitle>
-            <CardDescription>{{ store.step.summary }}</CardDescription>
+            <CardDescription data-step-description>{{ stepDescription(store.step) }}</CardDescription>
           </CardHeader>
           <dl class="data-format-facts data-format-body">
             <div><dt>{{ t('dataFormat.step') }}</dt><dd><code>{{ store.step.id }}</code></dd></div>

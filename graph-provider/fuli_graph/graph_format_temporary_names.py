@@ -27,14 +27,10 @@ else on any record changes.
 import json
 
 from .graph_format_journal import RecordJournal, RecordTouch
+# Every name FULI ever generated, matched exactly: a name a person happens to
+# have typed that is not on this list stays.
+from .temporary_project_scope import GENERATED_NAMES
 
-# Every name FULI ever generated for a temporary project. Nothing is matched by
-# shape: a name a person happens to have typed that is not on this list stays.
-GENERATED_NAMES = (
-    '临时任务 / Temporary task',
-    '临时会话 / Temporary session',
-    '会话项目 / Conversation project',
-)
 
 
 def _literal(text: str) -> str:
@@ -53,18 +49,23 @@ _GENERATED_TEMPORARY_NAME = (
 )
 
 
-async def pending_temporary_names(driver, _settings) -> list[str]:
-    """Temporary projects still holding a name FULI generated."""
+async def _generated(driver, **options) -> list[dict]:
+    """The projects whose name FULI generated in both places it is stored: the
+    `name` column matched above, and the profile's own name, which is generated
+    too or missing. One whose profile carries a person's name is left alone."""
     records, _, _ = await driver.execute_query(
-        _GENERATED_TEMPORARY_NAME + 'RETURN item.id AS key', routing_='r')
-    return sorted(str(record['key']) for record in records)
+        _GENERATED_TEMPORARY_NAME + 'RETURN item.id AS id, item.profile_json AS profile_json', **options)
+    return [record for record in records if _profile_name(record['profile_json']) in ('', *GENERATED_NAMES)]
+
+
+async def pending_temporary_names(driver, _settings) -> list[str]:
+    """Projects still holding a name FULI generated."""
+    return sorted(str(record['id']) for record in await _generated(driver, routing_='r'))
 
 
 async def apply_temporary_names(driver, _settings, *, apply_id=None) -> None:
-    records, _, _ = await driver.execute_query(
-        _GENERATED_TEMPORARY_NAME + 'RETURN item.id AS id, item.profile_json AS profile_json')
     rows = [{'id': str(record['id']), 'profile_json': _without_name(record['profile_json'])}
-            for record in records]
+            for record in await _generated(driver)]
     if not rows:
         return
     await driver.execute_query(
@@ -73,6 +74,13 @@ async def apply_temporary_names(driver, _settings, *, apply_id=None) -> None:
         MATCH (item:FuliPersonalProject {id: row.id})
         SET item.name = '', item.profile_json = row.profile_json, item.scope_type = 'temporary'
         ''', rows=rows)
+
+
+def _profile_name(profile_json) -> str:
+    try:
+        return str((json.loads(profile_json) if profile_json else {}).get('name') or '').strip()
+    except (TypeError, ValueError):
+        return ''
 
 
 def _without_name(profile_json) -> str:

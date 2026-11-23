@@ -1,5 +1,5 @@
 import type { PersonalProject } from '@/types'
-import { type ProjectNaming, temporaryProjectName } from './temporary-project-name'
+import { type ProjectNaming, givenProjectTitle, isGeneratedTemporaryId, temporaryProjectName } from './temporary-project-name'
 
 // The identity task entry generated for an unmatched session until 2026-10-18.
 const CONVERSATION_FALLBACK_ID = /^conversation-[0-9a-f]{64}$/
@@ -22,9 +22,16 @@ export function isFormalProject(project: Pick<PersonalProject, 'project_id' | 's
   return !hasTemporaryOrigin(project)
 }
 
-/** Started temporary, archived or not: marked temporary, or a session fallback (its generated ID or recorded origin). */
+/**
+ * Started temporary, archived or not. Its scope_type says so first, as the
+ * Provider stores it, and a recorded fallback origin. A generated ID with no
+ * name of its own counts too: a conversation fallback a graph waiting for
+ * graph/23 has not marked yet. One a person named is theirs (Node's
+ * isTemporaryProject and the Provider's is_temporary_project use this rule).
+ */
 export function hasTemporaryOrigin(project: ProjectNaming) {
-  return isConversationFallback(project) || project.scope_type === 'temporary' || project.profile?.origin === 'conversation_fallback'
+  if (project.scope_type === 'temporary' || project.profile?.origin === 'conversation_fallback') return true
+  return isGeneratedTemporaryId(project.project_id) && !givenProjectTitle(project)
 }
 
 /** Most recently used first; equal or unknown times fall back to ID order, the same way every time. */
