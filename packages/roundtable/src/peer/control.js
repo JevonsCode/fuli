@@ -46,6 +46,7 @@ async function route(request, url, peer, readJson) {
     const body = await readJson(request);
     return peer.enableCoordinator({ host: body.host, port: body.port ?? 0, name: body.name });
   }
+  if (pathname === '/api/peer/listen' && method === 'POST') { await readJson(request); return peer.listenAgain(); }
   if (pathname === '/api/peer/invitations' && method === 'POST') { await readJson(request); return peer.createInvitation(); }
   if (pathname === '/api/peer/invitations/preview' && method === 'POST') {
     return peer.previewInvitation((await readJson(request)).invitation);
