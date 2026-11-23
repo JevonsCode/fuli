@@ -11,7 +11,7 @@ export const STANDING_ASSIGNMENT_DEFINITIONS = [
   {
     name: 'register_standing_assignment',
     title: 'WRITE · Route, correct or end a kind of work',
-    description: 'The user\'s rule that some work goes to its own project from now on, or its change or end. preview writes nothing; ask once with its restatement; on a clear yes, confirm with the same input and confirmationDigest: reuses or creates project and lead. Never does work. change retire, reassign (projectName, leadAgentId, default lead) or edit_terms (addTerms, removeTerms) corrects the one its term names. change delegate: the lead gives an unrelated line of its project to a member (terms, responsibility as name, leadAgentId); one confirm, no digest.',
+    description: 'The user\'s rule that some work goes to a project from now on, or its change or end. preview writes nothing; ask once with its restatement; on a clear yes, confirm with the same input and confirmationDigest: reuses or creates project and lead. Never does work. change retire, reassign (projectName, leadAgentId) or edit_terms (addTerms, removeTerms) corrects the one its term names. change delegate: the lead gives a member an unrelated line of its project (terms, responsibility as name, leadAgentId); confirm, no digest.',
     inputSchema: objectSchema({
       action: enumSchema(['preview', 'confirm']),
       change: enumSchema(['register', 'delegate', 'retire', 'reassign', 'edit_terms']),
