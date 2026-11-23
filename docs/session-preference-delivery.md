@@ -136,14 +136,20 @@ until the preferences are complete (rec#110 item 6).
    the frame complete again (a bounded frame never names a removal), while
    adding one only sends its body once in the delta. So the base's bodies and
    the floor take the richest level where the frame this turn actually
-   delivers fits, and then the rest are added in rank order (one added since
-   the base, or now at another layer, first) while that frame still fits:
-   most often a delta, which does not repeat a body the model holds. A turn
-   with a lighter recall therefore spells out bodies an earlier one could only
-   name, and none is ever taken back while it fits; the synthetic
-   60-preference entry lists 10 bodies, then 12 more in its next turn's
-   8,942-character delta (main and the held-whole set sent a 1,403-character
-   empty delta and never listed more). Before the held set, the preferences
+   delivers fits, and then the rest are added in rank order while that frame
+   (most often a delta, which does not repeat a body the model holds) still
+   fits, up to a cap: what a first frame would list beside the leanest
+   context, by rank (what main lists on its lightest turn). A preference added
+   or changed since competes for that room by rank; hard rules are never
+   counted. A turn with a lighter recall therefore catches up on bodies a
+   richer first frame could only name, and none is ever taken back while it
+   fits; past the cap nothing more is spelled out, so the bodies of every
+   preference are not sent one turn after another (which preferences deserve
+   a body beyond that is for ranking by when they apply to decide). The
+   synthetic 60-preference entry lists 10 bodies, already its cap, and its
+   next turn is the 1,403-character empty delta, as on main; a first frame
+   beside a rich recall listing 6 catches up to 9 on the next lighter turn
+   and stays there. Before the held set, the preferences
    took whatever the rest left, so a longer recall or one more guidance
    sentence listed fewer of them and most prompts of a session were whole
    frames; while the set was held whole, a generation whose first frame came

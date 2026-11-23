@@ -459,7 +459,14 @@ function correctness(view, expected, withdrawn, label, { skeleton: compareSkelet
     .map(message => message.sequence);
   const wanted = new Map((expected.effective_preferences ?? []).map(item => [item.preference_key, item.instruction]));
   const missingPreferences = [...wanted].filter(([key, value]) => view.preferences.get(key) !== value).map(([key]) => key);
-  const extraPreferences = [...view.preferences.keys()].filter(key => !wanted.has(key));
+  // A body the model was legally given earlier and that is still in force is
+  // not extra: a session never lists fewer than its base (design T3), so it
+  // can hold more bodies than the uncached entry has room for. What that entry
+  // leaves out is in force; what is gone is checked by withdrawn_present.
+  const omitted = expected.preferences_omitted;
+  const inForce = key => Boolean(omitted) && (!Array.isArray(omitted.index)
+    || omitted.index.some(entry => entry === key || String(entry).startsWith(`${key} `)));
+  const extraPreferences = [...view.preferences.keys()].filter(key => !wanted.has(key) && !inForce(key));
   const withdrawnPresent = [
     ...(withdrawn.preferences ?? []).filter(key => view.preferences.has(key)).map(key => `preference:${key}`),
     ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content.slice(0, 32)}`)

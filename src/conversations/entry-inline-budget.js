@@ -65,7 +65,8 @@ export function fitUncached(fit, value, render) {
 //    to more preferences (sharedFit). The first frame of a generation or a
 //    scope chooses the set; a later frame (`held`, what its base frame spelled
 //    out) never lists fewer while that fits beside the leanest context of
-//    step 1, and adds more while the frame it delivers fits (heldFit). What
+//    step 1, and adds more while the frame it delivers fits, up to what one
+//    complete frame holds beside that leanest context (heldFit). What
 //    is left out is named in
 //    preferences_omitted.index where that fits, never at the cost of a hard
 //    rule's body;
@@ -288,11 +289,12 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // bounded frame never names a removal, preference-snapshot.js), while adding
 // one only sends its body once in the delta. So the base's set, with the floor,
 // takes the richest level where the frame this turn actually delivers fits,
-// and then the rest are added in rank order (one added or moved to another
-// layer since the base first) while it still fits: a turn with a lighter
-// recall spells out more of what the base only named, and a body the limit
-// can hold is never left out to keep room empty. While an earlier frame is
-// still on its way (preference-session.js) it adds none.
+// and then the rest are added in rank order while it still fits, up to what
+// one complete frame holds beside the leanest context: a turn with a lighter
+// recall spells out what a richer first frame only named, never more than the
+// lightest turn would list whole, so the bodies of every preference are not
+// sent one turn after another. While an earlier frame is still on its way
+// (preference-session.js) it adds none.
 // Only where the base's set does not fit even so (a body grew, or this frame
 // must be complete) does it give way, as a complete frame beside the leanest
 // context: a preference changed since the base first, so the model is not left
@@ -302,13 +304,20 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
   const status = new Map(ranked.map(index => [index, heldStatus(preferences[index], held)]));
   const of = (...kinds) => ranked.filter(index => kinds.includes(status.get(index)));
   const floorItems = ranked.slice(0, floor.count);
-  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...of('new'), ...ranked])];
+  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...ranked])];
   const base = new Set([...of('listed', 'changed'), ...floorItems]).size;
   const indexed = richerIndex(leanest, growing);
+  // The most a generation spells out: what a first frame would list beside
+  // the leanest context, its index tier included (as main listed on its
+  // lightest turn). A first frame that a rich recall kept below it catches up;
+  // nothing goes past it but what the base already holds. Hard rules are
+  // never counted.
+  const lightest = richerIndex(leanest, ranked);
+  const most = Math.max(base, largestCount(0, ranked.length, count => fitsAt(leanest, selection(ranked, count), lightest)));
   for (const index of new Set([indexed, 'keys'])) {
     const at = count => listing(selection(growing, count), index);
     const level = levels.find(candidate => delivers(at(base)(candidate)));
-    if (level) return frameAt(at(held.grow ? largestCount(base, growing.length, count => delivers(at(count)(level))) : base));
+    if (level) return frameAt(at(held.grow ? largestCount(base, most, count => delivers(at(count)(level))) : base));
   }
   const giving = [...new Set([...of('changed'), ...ranked.filter((index, rank) => rank < floor.count || status.get(index) !== 'indexed'),
     ...ranked])];

@@ -218,6 +218,9 @@ test('the large-set fixture names every preference it leaves out and stays locat
   for (const scenario of many.scenarios) {
     if (scenario.rereads_required > 0) failures.push(`${scenario.scenario}: ${scenario.rereads_required} rereads`);
     if (scenario.correctness.withdrawn_present.length) failures.push(`${scenario.scenario}: withdrawn present`);
+    // A body the session holds beyond what the uncached entry lists is still in force (design T3).
+    const extra = scenario.detail.filter(turn => turn.correctness?.extra_preferences.length);
+    if (extra.length) failures.push(`${scenario.scenario}: extra ${extra.map(turn => turn.note).join(', ')}`);
     if (scenario.produced_bytes > scenario.no_cache_bytes) {
       failures.push(`${scenario.scenario}: produced ${scenario.produced_bytes} B, no cache ${scenario.no_cache_bytes} B`);
     }

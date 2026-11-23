@@ -142,7 +142,7 @@ test('an entry that fits is the same as without an inline budget, and other Agen
   assert.doesNotMatch(text, /preferences_omitted/);
 });
 
-test('a bounded frame is confirmed from its Claude transcript record and the next turn adds what now fits as a delta', () =>
+test('a bounded frame is confirmed from its Claude transcript record and the next turn is a small delta', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
     const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
@@ -150,18 +150,15 @@ test('a bounded frame is confirmed from its Claude transcript record and the nex
     assert.match(first.frame.revision, /^[0-9a-f]{12}$/);
     const second = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-2' }));
     const delivery = second.frame.preference_delivery;
-    assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
     assert.equal(delivery.status, 'delta');
     assert.equal(delivery.base_revision, first.frame.revision);
-    assert.deepEqual(delivery.removed, []);
+    // The first frame already lists what one complete frame holds, so the
+    // delta's room spells out no more (design T3: the generation's cap).
+    assert.deepEqual([second.frame.preference_updates, delivery.removed], [[], []]);
     assert.equal(delivery.unchanged, first.frame.effective_preferences.length);
-    // The delta does not resend the bodies the model holds, so it has room for
-    // bodies the first frame could only name; it spells them out once.
-    const added = keys(second.frame.preference_updates);
-    assert.ok(added.length > 0);
-    assert.deepEqual(added.filter(key => keys(first.frame.effective_preferences).includes(key)), []);
-    assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count - added.length);
+    assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count);
     assert.equal(second.frame.preferences_omitted.read.arguments.taskContextToken, 'task-2');
+    assert.ok(second.text.length < 3000, `${second.text.length} chars`);
   }));
 
 test('an omitted preference is never delivered: a later whole frame lists every one of them as an update', () =>
@@ -221,10 +218,11 @@ test('new preferences are added to the held set as a delta, never by leaving a h
   }));
 
 // Design T3: holding the set means never fewer, not never more. A first frame
-// beside a rich recall spells out about the preferences' floor; later turns
-// with a light recall spell out more as deltas, and a rich recall again takes
-// none of them back.
-test('a later frame never lists fewer than its base and spells out more as deltas when the recall leaves room', () =>
+// beside a rich recall spells out about the preferences' floor; a later turn
+// with a light recall catches up, as deltas, to what one complete frame holds
+// beside the leanest context, and no further: a rich recall again takes none
+// back, a light one adds none past it.
+test('a later frame never lists fewer than its base and catches up to one complete frame\'s worth as deltas', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
     const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
@@ -233,7 +231,7 @@ test('a later frame never lists fewer than its base and spells out more as delta
     const alone = hookFrame(await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION })));
     assert.ok(first.frame.effective_preferences.length < alone.effective_preferences.length, 'the rich recall took room');
     let listed = new Set(keys(first.frame.effective_preferences));
-    for (const [token, recall] of [['task-2', 1], ['task-3', 1], ['task-4', 6]]) {
+    for (const [token, recall, adds] of [['task-2', 1, true], ['task-3', 1, false], ['task-4', 6, false]]) {
       const { text, frame } = await session.turn(entry(token, recall));
       assert.ok(text.length <= INLINE_CHARS, `${token}: ${text.length} chars`);
       assert.equal(frame.preference_delivery.status, 'delta', `${token}: never resent whole`);
@@ -241,11 +239,11 @@ test('a later frame never lists fewer than its base and spells out more as delta
       assert.equal(frame.preference_delivery.unchanged, listed.size, `${token}: none taken back`);
       const added = keys(frame.preference_updates);
       assert.deepEqual(added.filter(key => listed.has(key)), [], `${token}: only bodies not yet spelled out`);
-      if (recall === 1) assert.ok(added.length > 0, `${token}: more spelled out`);
+      assert.equal(added.length > 0, adds, `${token}: ${added.length} added`);
       listed = new Set([...listed, ...added]);
       assert.equal(frame.preferences_omitted?.count ?? 0, 60 - listed.size, token);
     }
-    assert.ok(listed.size > alone.effective_preferences.length, 'past what one complete frame holds');
+    assert.ok(listed.size <= alone.effective_preferences.length, 'never past what one complete frame holds');
   }));
 
 // A frame that spells out more names itself as the next base. While it is
@@ -254,8 +252,9 @@ test('a later frame never lists fewer than its base and spells out more as delta
 test('while a frame that spelled out more is on its way, the next one adds none and builds on the recorded base', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
-    const entry = token => syntheticLargeEntry({ items, sessionId: session.sessionId, token });
-    const first = await session.turn(entry('task-1'));
+    const entry = (token, recall = 1) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+      recall: syntheticRecall(recall, { length: 700 }), conversation: syntheticRecovery(recall > 1 ? 4 : 0, { length: 600 }) });
+    const first = await session.turn(entry('task-1', 6));
     const lost = await session.turn(entry('task-2'), { record: false });
     assert.ok(lost.frame.preference_updates.length > 0);
     const next = await session.turn(entry('task-3'));
@@ -273,7 +272,9 @@ test('a preference added or changed since the base frame is delivered as a delta
       recall: syntheticRecall(6, { length: 300 }) });
     const first = await session.turn(entry('task-1', items));
     const [changedKey] = keys(first.frame.effective_preferences).slice(-1);
-    const added = syntheticPreference('synthetic-added', 'SYNTHETIC added: keep commit subjects short.', {}, 'personality');
+    // A boundary ranks first, so it is among the bodies the generation's cap
+    // holds; a new one ranked low would compete for that room like any other.
+    const added = syntheticPreference('synthetic-added', 'SYNTHETIC added: ask before deleting shared data.', {}, 'judgment_preference');
     const next = [...items.map(item => item.preference_key === changedKey
       ? { ...item, instruction: `${item.instruction} (changed)` } : item), added];
     const { frame } = await session.turn(entry('task-2', next));
