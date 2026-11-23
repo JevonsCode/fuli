@@ -17,13 +17,14 @@ const KEEP_NEWER = `${RECOVER} --keep-newer`;
 // the older one. With the same number on both sides (a rollback to the
 // programs kept from before the update), each side says which copy of the
 // programs it is and when it was installed (fromInstalledAt / toInstalledAt);
-// only when that time is unknown, its directory (fromLabel / toLabel).
+// only when that time is unknown, which copy it is and its directory (fromLabel / toLabel).
 function switchWords(plan) {
   const [verb, verbEn] = { update: ['更新', 'update'], rollback: ['回退', 'rollback'] }[plan.operation] ?? ['切换', 'switch'];
   const side = (version, label, installedAt, [zh, en]) => {
     const at = installedAt ? localClockTime(installedAt, { date: true }) ?? installedAt : null;
-    if (!at) return [label ?? version ?? '?', label ?? version ?? '?'];
-    return [`${version}（${zh}，安装于 ${at}）`, `${version} (${en}, installed ${at})`];
+    if (at) return [`${version}（${zh}，安装于 ${at}）`, `${version} (${en}, installed ${at})`];
+    if (label && label !== version) return [`${version}（${zh}，${label}）`, `${version} (${en}, ${label})`];
+    return [version ?? '?', version ?? '?'];
   };
   const roles = plan.operation === 'rollback'
     ? [['回退前在用的那一份程序', 'the programs in use before the rollback'], ['更新前保留的那一份程序', 'the programs kept from before the update']]

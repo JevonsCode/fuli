@@ -325,17 +325,20 @@ class Strings {
   // With the same version on both sides (a rollback to the programs kept from
   // before the update), each side says which copy of the programs it is and
   // when it was installed (fromInstalledAt / toInstalledAt); only when that
-  // time is unknown, its directory (fromLabel / toLabel).
+  // time is unknown, which copy it is and its directory (fromLabel / toLabel).
   ({String verb, String verbEn, String from, String to, String fromEn, String toEn}) _switchWords(Map<String, Object?> facts) {
     String? text(String key) => facts[key] is String ? facts[key] as String : null;
     final rollback = text('operation') == 'rollback';
     final (verb, verbEn) = switch (text('operation')) { 'update' => ('更新', 'update'), 'rollback' => ('回退', 'rollback'), _ => ('切换', 'switch') };
     (String, String) side(String key, String zh, String en) {
-      final version = text('${key}Version'), installed = text('${key}InstalledAt');
-      final fallback = text('${key}Label') ?? version ?? '?';
-      if (installed == null || version == null) return (fallback, fallback);
-      final at = _clock(installed);
-      return ('$version（$zh，安装于 $at）', '$version ($en, installed $at)');
+      final version = text('${key}Version'), installed = text('${key}InstalledAt'), label = text('${key}Label');
+      if (version == null) return ('?', '?');
+      if (installed != null) {
+        final at = _clock(installed);
+        return ('$version（$zh，安装于 $at）', '$version ($en, installed $at)');
+      }
+      if (label != null && label != version) return ('$version（$zh，$label）', '$version ($en, $label)');
+      return (version, version);
     }
 
     final (from, fromEn) = rollback

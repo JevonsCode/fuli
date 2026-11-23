@@ -203,7 +203,7 @@ void main() {
         contains('不能取消更新、回到 5.26.0'));
     // An unfinished rollback: its target is the kept older programs, so it is worded as a rollback with each side's programs, never newer / older.
     const rollbackFacts = {'operation': 'rollback', 'fromVersion': '5.26.28', 'toVersion': '5.26.28',
-      'fromLabel': '5.26.28 (neo4j-assets/jvs-a-2)', 'toLabel': '5.26.28 (neo4j-assets/jvs-a-1)',
+      'fromLabel': 'neo4j-assets/jvs-a-2', 'toLabel': 'neo4j-assets/jvs-a-1',
       'fromInstalledAt': '2026-11-20T06:00:00.000Z', 'toInstalledAt': '2026-10-02T06:00:00.000Z'};
     final rollback = RecoveryPlan('finish_switch', const [{'do': 'check-start', 'version': '5.26.28'}], 'd', const {...rollbackFacts,
       'alternative': {'kind': 'back_out_switch', 'steps': [], 'digest': 'e'}});
@@ -217,8 +217,9 @@ void main() {
     final rollbackEn = [...en.recoveryPlanWords(rollback), en.finishSwitchTo(rollback.facts), en.cancelSwitch(rollback.facts)].join('\n');
     expect(rollbackEn, contains('Finish the unfinished rollback to 5.26.28 (the programs kept from before the update, installed '));
     expect(rollbackEn, contains('stay on 5.26.28 (the programs in use before the rollback, installed '));
-    // Without an install time, the directory tells them apart.
-    expect(zh.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), '取消回退，留在 5.26.28 (neo4j-assets/jvs-a-2) 并启动');
+    // Without an install time, each side still says which copy it is, then its directory.
+    expect(zh.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), '取消回退，留在 5.26.28（回退前在用的那一份程序，neo4j-assets/jvs-a-2） 并启动');
+    expect(en.cancelSwitch({...rollbackFacts, 'fromInstalledAt': null}), 'Cancel the rollback, stay on 5.26.28 (the programs in use before the rollback, neo4j-assets/jvs-a-2) and start');
     expect(rollbackEn, isNot(matches(RegExp(r'\bnewer\b|\bolder\b'))));
     for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
       'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',

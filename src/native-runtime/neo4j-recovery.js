@@ -150,8 +150,12 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
   // going back is not possible, or was tried and wrote this descriptor back,
   // or was tried and stopped at the store format or the programs' fingerprint
   // (backOutFailed, recorded in the journal by that step) ([keepable]).
-  // Otherwise going back comes first.
-  const backOutFailed = BACK_OUT_CHECKS.has(journal.backOutFailed) ? journal.backOutFailed : null;
+  // Otherwise going back comes first. That record no longer counts once the
+  // check it failed passes now (backOutBlocked): the programs' fingerprint is
+  // checked here always, the store format only when nothing runs.
+  const recorded = BACK_OUT_CHECKS.has(journal.backOutFailed) ? journal.backOutFailed : null;
+  const checkedNow = !blocked && (recorded === 'assets_changed' || !stop.length);
+  const backOutFailed = recorded && !checkedNow ? recorded : null;
   const keepable = Boolean(blocked) || journal.backingOut === true || Boolean(backOutFailed);
   if (backOutFailed) facts.backOutFailed = backOutFailed;
   // The way out when it does not start and going back does not work either:
@@ -180,15 +184,16 @@ async function planJournal(context, journal, { backOut, keepNewer }) {
   return back ? { ...finish, alternative: back } : { ...finish, alternative: null, alternativeRefused: blocked };
 }
 
-// "5.26.28", or with the same number on both sides (a rollback to the kept
-// programs) "5.26.28 (neo4j-assets/jvs-a-…/neo4j-community-5.26.28)" and when
-// each side's programs were installed, which the words name instead of the
-// directory (recovery-plan-text.js, strings.dart).
+// Each side's version, or with the same number on both sides (a rollback to
+// the kept programs) its programs' directory ("neo4j-assets/jvs-a-…/neo4j-community-5.26.28")
+// and when they were installed: the words say which copy of the programs each
+// side is, and when it was installed, or only without that time its directory
+// (recovery-plan-text.js, strings.dart).
 function sideLabels(root, journal) {
   const { previous, next } = journal;
   if (!isDescriptor(previous) || !isDescriptor(next)) return {};
   const same = previous.neo4jVersion === next.neo4jVersion;
-  const label = side => same ? `${side.neo4jVersion} (${relative(root, side.neo4jHome)})` : side.neo4jVersion;
+  const label = side => same ? relative(root, side.neo4jHome) : side.neo4jVersion;
   return { fromLabel: label(previous), toLabel: label(next),
     ...(same ? { fromInstalledAt: installedAt(previous.neo4jHome), toInstalledAt: installedAt(next.neo4jHome) } : {}) };
 }
@@ -346,7 +351,7 @@ export async function applyNativeRecovery({ paths, digest, backOut = false, aban
       const record = keepRecord(root, stamp, folder, plan, done, { stoppedAt: step.do, reason });
       throw Object.assign(new Error(`The recovery stopped at ${step.do} (${reason}); what was done is in ${record}, the lock is kept, and running the recovery again continues it.`),
         { cause: error, code: 'recover_step_failed', step: step.do, reason, record, planKind: plan.kind,
-          facts: { runtimeDir: root, ...choicesBeside(shown, plan, root), ...error?.facts } });
+          facts: { runtimeDir: root, ...choicesBeside(shown, plan, root, step.backOut === true && BACK_OUT_CHECKS.has(reason) ? reason : null), ...error?.facts } });
     }
   }
   const { alternative, alternativeRefused, ...result } = plan;
@@ -359,16 +364,19 @@ export async function applyNativeRecovery({ paths, digest, backOut = false, aban
 // What else the person can do about the same unfinished switch once [plan]
 // stopped, for the words of the refusal: the other way (finish or back out)
 // when it is possible, why not when it is not, the versions and the backup.
-function choicesBeside(shown, plan, root) {
+// [backOutFailed]: the back-out check that failed just now, if that is where it stopped.
+function choicesBeside(shown, plan, root, backOutFailed) {
   if (!['finish_switch', 'back_out_switch', 'continue_back_out'].includes(plan.kind)) return {};
   const other = plan === shown ? shown.alternative : shown;
   // A back-out that got as far as recording backingOut (and then wrote the
-  // switched-to descriptor back): keeping that descriptor is open from then on.
+  // switched-to descriptor back), or that a check stopped just now: keeping
+  // that descriptor is open from then on. An older record of a failed check
+  // counts only as far as the plan let it (planJournal).
   const journal = readJournal(root)?.value;
-  const keepable = plan.keepable === true || journal?.backingOut === true || BACK_OUT_CHECKS.has(journal?.backOutFailed);
+  const keepable = plan.keepable === true || journal?.backingOut === true || Boolean(backOutFailed);
   return { operation: plan.operation ?? null, fromVersion: plan.fromVersion, toVersion: plan.toVersion, fromLabel: plan.fromLabel ?? null,
     toLabel: plan.toLabel ?? null, fromInstalledAt: plan.fromInstalledAt ?? null, toInstalledAt: plan.toInstalledAt ?? null,
-    backupPath: plan.backupPath ?? null, keepable, backOutFailed: plan.backOutFailed ?? (BACK_OUT_CHECKS.has(journal?.backOutFailed) ? journal.backOutFailed : null),
+    backupPath: plan.backupPath ?? null, keepable, backOutFailed: backOutFailed ?? plan.backOutFailed ?? null,
     alternative: other?.kind ?? null, alternativeRefused: plan === shown ? shown.alternativeRefused ?? null : null };
 }
 

@@ -1072,6 +1072,25 @@ test('finishing a switch without a start check is open only once going back is i
   assert.equal((await keep(tried.paths)).kind, 'keep_newer');
   // Going back is not possible (no fingerprint): open.
   assert.equal((await keep((await newerInPlace(t, { fingerprint: null })).paths)).kind, 'keep_newer');
+  // A back-out stopped at a check earlier, but that check passes now: the old record no longer opens it.
+  for (const backOutFailed of ['format_unreadable', 'format_changed', 'assets_changed']) {
+    const fixed = await newerInPlace(t);
+    const recorded = JSON.parse(readFileSync(join(fixed.root, 'neo4j-transaction.json'), 'utf8'));
+    writeFileSync(join(fixed.root, 'neo4j-transaction.json'), JSON.stringify({ ...recorded, backOutFailed }));
+    assert.equal((await keep(fixed.paths)).reason, 'back_out_available', backOutFailed);
+    const shown = await planNativeRecovery({ paths: fixed.paths, dependencies: deps().dependencies });
+    assert.deepEqual([shown.keepable, shown.backOutFailed, shown.alternative?.kind], [false, undefined, 'back_out_switch'], backOutFailed);
+    // Finishing then fails to start: the refusal still points to going back, not to keeping.
+    const finish = await stoppedAt(recover(fixed.paths, deps({ checkStart: async () => { throw new Error('no answer'); } })));
+    assert.deepEqual([finish.reason, finish.facts.keepable, finish.facts.backOutFailed, finish.facts.alternative], ['start_failed', false, null, 'back_out_switch'], backOutFailed);
+  }
+  // While services run the store format is not read at plan time: a recorded format failure still opens it.
+  const busy = await newerInPlace(t);
+  const busyJournal = JSON.parse(readFileSync(join(busy.root, 'neo4j-transaction.json'), 'utf8'));
+  writeFileSync(join(busy.root, 'neo4j-transaction.json'), JSON.stringify({ ...busyJournal, backOutFailed: 'format_changed' }));
+  writeFileSync(busy.paths.nativeProcessStatePath, JSON.stringify({ databases: { personal: { pid: 77, command: 'java' } } }));
+  const alive = { state: pid => pid === 77 ? 'running' : 'gone', startTime: async () => null, matches: async pid => pid === 77 };
+  assert.equal((await planNativeRecovery({ paths: busy.paths, keepNewer: true, dependencies: deps({ identity: alive }).dependencies })).kind, 'keep_newer');
   // A back-out whose older version did not start: keeping is offered from then on.
   const failed = await newerInPlace(t);
   const stopped = await stoppedAt(recover(failed.paths, deps({ checkStart: async () => { throw new Error('no answer'); } }), { backOut: true }));
@@ -1100,6 +1119,11 @@ test('an unfinished rollback is worded as a rollback, with the versions and prog
   const back = formatRecoveryPlan(plan.alternative);
   assert.match(back, /取消这次没做完的回退，留在 5\.26\.28（回退前在用的那一份程序，安装于 /);
   assert.doesNotMatch(back, /新版本|旧版本|\bnewer\b|\bolder\b/, back);
+  // Without an install time each side still says which copy it is, then its directory.
+  const untimed = formatRecoveryPlan({ ...plan, fromInstalledAt: null, toInstalledAt: null });
+  assert.match(untimed, /改用 5\.26\.28（更新前保留的那一份程序，neo4j-assets\/jvs-a-1111\/neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /留在 5\.26\.28（回退前在用的那一份程序，neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /stay on 5\.26\.28 \(the programs in use before the rollback, neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28\)/);
   // An update says update.
   const update = await newerInPlace(t);
   assert.match(formatRecoveryPlan(await planNativeRecovery({ paths: update.paths, dependencies: deps().dependencies })), /完成这次没做完的更新，改用 5\.26\.28：/);
