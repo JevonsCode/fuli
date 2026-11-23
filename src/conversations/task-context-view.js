@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { containsEntryRules, DETAILS_GUIDANCE, ENTRY_RULES_URI, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+import { containsEntryRules, DETAILS_GUIDANCE, ENTRY_RULES_URI, entryRules, entryRulesReference, ruleTextView, withinEntryRules } from './entry-rules.js';
 import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-workflow.js';
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
@@ -31,10 +31,15 @@ export function compactTaskContext(value) {
   // Off-flags of a fresh task: a resumed or orphaned checkpoint says so.
   if (share && value.resumed_checkpoint === false) delete result.resumed_checkpoint;
   if (share && value.previous_checkpoint_missing === false) delete result.previous_checkpoint_missing;
-  // Task-independent rule text is referenced, not repeated on every turn.
-  if (share && containsEntryRules(value.task_guidance, 'task_guidance')
-    && Object.keys(value.task_guidance).length === Object.keys(entryRules().sections.task_guidance).length) {
-    result.task_guidance = entryRulesReference('task_guidance');
+  // Task-independent rule text is referenced, not repeated on every turn. An
+  // entry that leaves a rule out because this task has no use for it
+  // (task-size.js, rec#146 item 2) names the one it left out, so the reference
+  // still stands for the whole section and nothing is hidden.
+  if (share && withinEntryRules(value.task_guidance, 'task_guidance')) {
+    const omitted = Object.keys(entryRules().sections.task_guidance)
+      .filter(key => !Object.hasOwn(value.task_guidance, key));
+    result.task_guidance = { ...entryRulesReference('task_guidance'),
+      ...(omitted.length ? { not_for_this_task: omitted } : {}) };
   }
   if (sharedApplication) {
     const shared = entryRules().sections.application_guidance;

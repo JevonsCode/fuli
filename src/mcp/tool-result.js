@@ -39,7 +39,7 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
   }
   const allowed = new Set(['effective_preferences', 'scope_unknown', 'active_conflicts', 'deferred_conflicts',
     'application_guidance', 'task_guidance', 'judgment_context', 'agent_receipt', 'context',
-    'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_guidance', 'project_scope', 'worker_run',
+    'project_agent_context', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'checkpoint_guidance', 'project_scope', 'worker_run',
     'preference_delivery', 'revision', 'preferences_complete', 'same_task_recovery_available', 'truncated']);
   // One JSON form for both channels: undefined fields never differ between them.
   const envelope = jsonEnvelope;
@@ -51,6 +51,13 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
     candidate = blockedPreferenceRecovery(value, 'unsafe_projection');
   }
   let result = envelope(entryFieldOrder(candidate));
+  // A read by key that does not fit is fixed by asking for fewer keys, not a
+  // blocked recovery that told the model to give up on the task's preferences
+  // (review of #1070).
+  if (jsonBytes(result) > limitBytes && candidate === value && value.preference_delivery?.status === 'keys') {
+    throw new ApplicationError('validation', `These ${value.preference_delivery.requested} preferences together do not fit `
+      + `one result (${Math.floor(limitBytes / 1024)} KB): read them with fewer keys at a time.`);
+  }
   if (jsonBytes(result) > limitBytes) {
     result = envelope(blockedPreferenceRecovery(value, 'delivery_budget'));
     if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');
@@ -141,15 +148,18 @@ export function hookAdditionalContextToolResult(
 
 export function errorToolResult(error) {
   const controlled = isControlledError(error);
-  const code = controlled ? error.code : 'internal_error';
+  const unexpected = controlled ? null : uncontrolledFailure(error);
+  const code = controlled ? error.code : unexpected.code;
   const message = controlled
     ? applicationErrorMessage(error)
-    : 'Tool execution failed';
+    : unexpected.message;
   const validationErrors = controlled ? reportedValidationErrors(error) : [];
+  const next = NEXT_STEPS[code];
   const structuredContent = {
     error: {
       code,
       message,
+      ...(next ? { next } : {}),
       ...(validationErrors.length ? { validationErrors } : {})
     }
   };
@@ -165,6 +175,42 @@ export function errorToolResult(error) {
     isError: true
   };
 }
+
+// What a failure FULI did not anticipate still says (the coordinator's count:
+// 32 get_collaboration_preferences failures in two weeks, every one
+// "internal_error: Tool execution failed"). Only the kind of failure is read,
+// from the error and its causes; no message text of it is passed on. A
+// refused connection is not one of these kinds: only the layer that connects
+// to FULI's own console may say FULI is not running (app/fuli-not-running.js),
+// and anything else refused is a failure inside FULI (review of #1076).
+const TIMED_OUT = new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+const DROPPED = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
+function uncontrolledFailure(error) {
+  const chain = [];
+  for (let item = error, depth = 0; item && typeof item === 'object' && depth < 8; item = item.cause, depth++) chain.push(item);
+  const codes = chain.map(item => item.code).filter(code => typeof code === 'string');
+  const names = chain.map(item => item.name);
+  if (codes.some(code => TIMED_OUT.has(code)) || names.some(name => name === 'TimeoutError' || name === 'AbortError')) {
+    return { code: 'fuli_timeout', message: 'This call did not finish in time, so whether it finished is unknown.' };
+  }
+  if (codes.some(code => DROPPED.has(code))) {
+    return { code: 'fuli_connection_lost', message: 'A connection dropped during this call, so whether it finished is unknown.' };
+  }
+  return { code: 'internal_error', message: 'Tool execution failed inside FULI; it recorded where in its diagnostics.' };
+}
+
+// The one thing to do next, by code, for the failures an Agent meets most:
+// said in the result so it never has to guess from a code.
+const NEXT_STEPS = Object.freeze({
+  fuli_not_running: 'Tell the person FULI is not running and ask them to open it (the FULI app); retry once it is.',
+  fuli_timeout: 'Retry once with exactly the same arguments; if it times out again, tell the person FULI is slow to answer.',
+  fuli_connection_lost: 'Retry once with exactly the same arguments; a write that already finished is not repeated.',
+  provider_unavailable: 'FULI is running but its knowledge service is not ready (starting or stopped). Wait a moment and retry once; '
+    + 'if it stays unavailable, tell the person to check FULI\'s status page.',
+  provider_timeout: 'FULI\'s knowledge service did not answer in time. Retry once with the same arguments; if it fails again, tell the person.',
+  internal_error: 'Retry once with exactly the same arguments; if it fails again, tell the person FULI hit an internal error '
+    + '(read_diagnostic_events shows where).'
+});
 
 function reportedValidationErrors(error) {
   if (!Array.isArray(error?.validationErrors)) return [];

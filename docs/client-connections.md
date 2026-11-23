@@ -41,6 +41,51 @@ VS Code's `servers` envelope; `--format server` prints only `type`, `command`, a
 Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PATH`.
 `fuli mcp --tools` lists the available tool contract without starting a task.
 
+### Which clients are on this computer
+
+A built-in client counts as being on this computer when
+[agent-installer](https://github.com/JevonsCode/agent-installer) finds it — FULI's own `PATH`, or a
+configuration file the client has already written — **or** when the client's own command is
+installed here (`src/agent-kits/client-presence.js`). The second case exists because the first one
+misses a client that has never written its configuration, which on a new computer is most of them:
+in rec#145 a new Mac had Cursor and OpenCode installed with no `~/.cursor/mcp.json` and no `mcp`
+section in `opencode.json`, so `fuli setup`, `fuli runner join` and 「一键接入」 skipped both and
+only Codex was connected. The commands asked for are each client's own documented one —
+`cursor-agent` and `cursor`, `claude`, `codex`, `opencode` — and they are asked of the
+person's login shell (`src/agent-kits/cli-presence.js`), because FULI may run with a shorter `PATH`
+than their terminal. Answers are kept for a few minutes, and only clients agent-installer did not
+find are asked about. A status page never waits for that shell: it shows what the last probe found
+and starts the next one in the background. A client whose command has not been answered yet is
+「检测中」 (`probing`), never 「未发现」, and is not counted among the clients not on this computer; the
+page then reads again with `?afterProbe=1`, which answers as soon as the search ends, so the client
+shows found or not without waiting for the next 15-second round; `fuli setup` and a connection wait for the answer, because they write. On Windows only a
+command Windows itself runs counts: a client found only inside WSL reads its configuration from
+the Linux home, so it is never written under `%USERPROFILE%`. Its tile says 「在 WSL 里」 and that FULI
+on this Windows cannot reach it, and `fuli setup` names it to be set up inside WSL. DeepSeek
+Harness is not looked for by command — Linux has an unrelated `dsh` (distributed shell) — and is
+left to agent-installer, which finds it by its own folder; so is Antigravity, for which FULI has no
+verified mark. A name alone is not proof: the command must be an executable file (not an alias or
+shell function) that answers with its client's own mark — `claude --version` names Claude Code,
+`codex --version` starts `codex-cli`, `cursor-agent --help` names the Cursor Agent, `cursor --version`
+prints a version, a commit and an architecture, `opencode --help` lists `opencode mcp` (the archived Go
+`opencode` has no such command and reads another configuration). A leftover shim that no longer
+answers, or another product of the same name, is not counted.
+
+This is FULI's only detection of its own, and it decides nothing else: everything read or written
+in a client still goes through agent-installer. Checked with the real agent-installer 0.5.1 in a
+temporary home (`test/agent-kits/client-detection.test.js`): asked for a client it did not find, it
+writes it in full anyway — `~/.cursor/mcp.json`, `hooks.json` and the Skills; `opencode.jsonc`, the
+Skills and the plugin under `~/.config/opencode/` — and then reads it back as connected; a file that
+was already there is copied to `backups/agents/<client>/` first and the person's own entries stay;
+a file it cannot parse is reported (the connection says partial) and left byte for byte as it was,
+though the client's other parts are still written. Its tile then says **配置文件有问题** — which file and
+what agent-installer said about it (for example `Invalid JSON.`) — instead of an update that would
+only fail again, and offers 「在文件夹中显示」, which selects that file in Finder or Explorer (the
+path agent-installer reports for that client, never one a request names). Because it writes for any client it is asked
+for, FULI's check that the client is really here is what keeps it from creating a folder for a
+client that is not installed. agent-installer does not look for `cursor-agent`, only `cursor`; this
+should move upstream once it can find a client by its CLI name.
+
 ### Client status in Settings
 
 **Settings → Client connection** is always open. Its summary counts the clients FULI is in (「已接入
@@ -64,6 +109,39 @@ automatically. Fuli keeps only the latest status and the last five changes per c
 `client-connection-observations.json` in its data directory; if that file is damaged, history
 starts over, and if it cannot be saved, the console keeps history until restart with an unsaved
 notice.
+
+**Listed is not connected** (rec#90, rec#145). The summary counts the two apart: 「已接入 2/3 个客户端，
+另有 1 个这台电脑上没装」, where the second number is the clients that are on this computer and the
+last one the built-in clients that are not. A client that is not here keeps no tile — there is
+nothing to do on it — but it is never dropped from the count, so the line can never read as "all of
+them" while FULI is in none. `fuli setup`'s preview says the same thing as `Not on this computer: …`.
+
+**Cursor's first run in a folder.** `cursor-agent` asks 「trust this folder」 and 「approve MCP」 the
+first time it runs in a project folder, and prints nothing at all until they are answered, so a CLI
+another process started in the background looks alive and does nothing (rec#145). Checked against
+the installed CLI and Cursor's own documentation, which disagree:
+[cursor.com/docs/cli/reference/parameters](https://cursor.com/docs/cli/reference/parameters) lists
+`--trust`, "Trust the workspace without prompting (headless mode only)", but `cursor-agent`
+2026.01.23-916f423 answers `error: unknown option '--trust'` and its `--help` does not list it, so
+FULI never passes it. `--approve-mcps` is accepted, and that build's help says it "only works with
+--print/headless mode", which the interactive run FULI opens is not. `cursor-agent mcp enable fuli`,
+documented as "Add an MCP server to the local approved list", run inside the folder wrote
+`~/.cursor/projects/<folder>/mcp-approvals.json` — per folder, not per computer (the documentation
+does not say which). No flag therefore answers the folder question for an interactive run, and FULI
+passes no flag this CLI would refuse. While Cursor is connected, its CLI is on this computer and no
+folder has FULI approved yet, Cursor's tile says what the CLI will ask and offers 「替我在一个目录里批准
+FULI」: the person names a project folder, the tile shows `cursor-agent mcp enable fuli` and that
+folder, and on 运行 FULI runs exactly that there (it enables FULI's own entry and nothing else;
+`POST /api/system/client-connection/first-run`, this computer only). It waits at most 20 seconds and
+says how it went: approved, Cursor's CLI not found, failed with the CLI's own last line, or no answer
+— most likely the 「trust this folder」 question, which only Cursor's CLI itself can answer. Once FULI
+is approved in any folder the tile stops repeating it. The words are only in the console's messages;
+the command comes from `src/agents/cursor/first-run.js` through `src/agents/client-first-run.js`.
+
+**Clients that enter a task by themselves.** A client with neither lifecycle hooks nor a plugin
+says so on its tile: the model has to enter the task by following FULI's MCP instructions and can
+miss it, and its conversations are not recorded. On a runner that is true of every client, because a
+runner's hooks load nothing (below).
 
 An outdated tile names the difference: the FULI version (or installation) its entry runs against the
 console's. Its one-line **Last change** opens **View details**: every kept change with full times, and
@@ -321,7 +399,9 @@ update that README's tag and commit; set `version` and every platform's SHA-256 
 `test/windows-installed-client-config.test.js` (the pin, bundle, launcher and client detection tests
 download and verify the new assets; the client tests connect and remove every built-in client in a
 temporary home). To try an unreleased build first, point `FULI_AGENT_INSTALLER` (or
-`AGENT_INSTALLER_BIN`) at it; the tests use it too. A change to what the manifest asks for shows
+`AGENT_INSTALLER_BIN`) at it; the tests use it too. Without the executable those tests skip, except
+with `FULI_REQUIRE_AGENT_KITS=1`, which CI sets on its three node jobs: there a download that broke
+fails the run instead of passing as skipped. A change to what the manifest asks for shows
 in `test/fixtures/installer-manifest-snapshot.json` (`test/agent-kits/installer-manifest.test.js`).
 
 ## Common failure recovery
@@ -379,7 +459,8 @@ knowledge stay on this one. On this computer run `fuli runner invite`; on the ot
 `fuli runner join <invitation>`. Join pairs the two computers (mutual TLS, both certificates
 pinned) and sets up that computer's clients exactly as `fuli setup` would; their FULI tools then
 answer through this computer. Lifecycle hooks do nothing on a runner, so its clients enter tasks
-through FULI's MCP tools. See [docs/runner.md](runner.md) for how folders are matched and what a
+through FULI's MCP tools — its own 客户端接入 page says so, with its host's name and which of the two
+computers runs the older FULI. See [docs/runner.md](runner.md) for how folders are matched and what a
 runner does while this computer is away.
 
 ## Remote clients
@@ -422,6 +503,6 @@ DeepSeek Harness（DSH，`@deepseek-ai/dsh` 0.2.x 预览版）在找到 `dsh` �
 
 从 DSH 的插件列表安装的人用 `packages/dsh-connector`（包名 `fuli-dsh-connector`，需要 FULI 0.27.0 及以上，`dsh plugin --profile <名字> add "github:JevonsCode/fuli#path:/packages/dsh-connector"`）：它不带 FULI 的代码，在 FULI 的数据目录（`FULI_DATA_DIR`，否则 FULI 的默认位置）找到上面那个 bundle，加载它的生命周期插件，并按 bundle 里 `fuli-mcp` 那一行通过 DSH 自带的 `@deepseek-ai/dsh-mcp-client` 启动 FULI MCP（等第一次工具列表返回再继续，所以第一轮就有 `mcp__fuli__*`）。如果当前 profile 启动时已经加载了 FULI 控制台接入的 `fuli-dsh`（按 DSH 的 `profileContext.startedBundles` 判断，而不是看共享文件），连接器什么都不做，避免重复；别的 profile 接入了、或 `<DSH 主目录>/plugins/fuli` 里有共享副本，都不影响当前 profile 里的连接器；找不到 FULI 时只记一行日志。Windows 安装时选了别的数据目录、又没设 `FULI_DATA_DIR` 的，请从 FULI 控制台接入。
 
-OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；设置了配置覆盖环境变量（`OPENCODE_CONFIG`、`OPENCODE_CONFIG_CONTENT`、`OPENCODE_CONFIG_DIR`）时，agent-installer 把它标为手动接入，界面提供官方手动接入指引，不自动写入。全局 `opencode.jsonc` 存在时写入它，否则写 `opencode.json`。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
+OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；设置了配置覆盖环境变量（`OPENCODE_CONFIG`、`OPENCODE_CONFIG_CONTENT`、`OPENCODE_CONFIG_DIR`）时，agent-installer 把它标为手动接入，界面提供官方手动接入指引，不自动写入。已有的 `opencode.json` 或 `opencode.jsonc` 就写进那一份；两份都没有时新建 `opencode.jsonc`（OpenCode 两种都读）。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
 
 配置目录遵循客户端官方覆盖变量（由 agent-installer 读取）：Gemini 的 `GEMINI_CLI_HOME` 替代主目录后追加 `.gemini/settings.json`，Codex 的 `CODEX_HOME` 替代 `.codex`，Qwen 的 `QWEN_HOME` 替代 `.qwen`，Kiro 的 `KIRO_HOME` 替代 `.kiro`。后两者分别追加 `settings.json` 和 `settings/mcp.json`。

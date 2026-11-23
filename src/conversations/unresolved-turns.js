@@ -59,7 +59,8 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
 function noValidContext(refresh) {
   const [zh, en] = NO_VALID_CONTEXT[refresh.status];
   return `FULI：本轮没有建立有效的任务上下文（${zh}），没有创建或切换任务。 FULI: no valid task context is established for this turn `
-    + `(${en}${refresh.reason ? `: ${refresh.reason}` : ''}); no task was created or switched. ${START_NEW_WORK}`;
+    + `(${en}${refresh.reason ? `: ${refresh.reason}` : ''}); no task was created or switched. `
+    + (refresh.status === 'task_closed' ? CONTINUE_CLOSED_WORK : START_NEW_WORK);
 }
 
 // A refresh turn whose unresolved state could not be kept anywhere does not
@@ -79,6 +80,16 @@ export function unprotectedTurnReason(why) {
 // Bilingual where the person reads it too; this part is for the model.
 export const START_NEW_WORK = 'If this turn is new work, start a task explicitly with get_collaboration_preferences '
   + '(projectPath = current working directory, taskPrompt = the request) and use the taskContextToken it returns.';
+// A host notification (a background task finished, a CI event) after the
+// session's task was closed when its last turn ended: the middle of a long
+// piece of work, with no token left to checkpoint it (coordinator, from real
+// use). It never reopens the closed task, whose turn this one may not be;
+// it says how to continue in one call, and that the old token is closed.
+export const CONTINUE_CLOSED_WORK = 'The task this session was working on was closed when its last turn ended (the Stop '
+  + 'hook closes a turn that recorded no checkpoint), so its taskContextToken can no longer checkpoint. If this turn '
+  + 'continues that work, call get_collaboration_preferences now (projectPath = current working directory, taskPrompt = '
+  + 'one line saying what this turn continues and what the notification reports) and use the taskContextToken it '
+  + 'returns for everything in this turn, the checkpoint included. If it is new work, do the same with the request.';
 const NO_VALID_CONTEXT = Object.freeze({
   no_task: ['本会话没有当前任务', 'this session has no current task'],
   task_closed: ['本会话的当前任务已关闭', 'the current task of this session is closed'],

@@ -25,7 +25,7 @@ const NONE_DELIVERED = 'No complete preferences are delivered here.';
 // preferences_omitted (rec#11 D-54) belongs to the frame: its hash binds what the frame says it left out.
 const PREFERENCE_FIELDS = ['effective_preferences', 'preference_updates', 'preference_delivery', 'preferences_omitted', 'revision', 'scope_unknown', 'active_conflicts', 'deferred_conflicts', 'conflicts',
   'application_guidance', 'task_guidance', 'judgment_context'];
-const REQUIRED_ENTRY_FIELDS = ['taskContextToken', 'task_context_token', 'checkpoint_required', 'agent_receipt'];
+const REQUIRED_ENTRY_FIELDS = ['taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'agent_receipt'];
 const IDENTITY_FIELDS = ['context', 'project_scope', 'worker_run', 'sessionId', 'session_id',
   'sourceApplication', 'source_application', 'sourceSessionId', 'source_session_id',
   'personalSpaceId', 'personal_space_id', 'personalProjectId', 'personal_project_id',

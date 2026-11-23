@@ -342,3 +342,31 @@ test('an explicit remotely disabled acquisition remains a valid no-op', async ()
     assert.deepEqual(requests, ['POST']);
   } finally { await client.close(); }
 });
+
+// Review of #1076: only the connection to FULI's own console may say FULI is
+// not running. Every tool call takes its lease there first, so a refused
+// connection here is that case; anything else fails as before.
+test('a console that refuses the lease connection is fuli_not_running, and nothing ran', async () => {
+  const refused = Object.assign(new TypeError('fetch failed'),
+    { cause: Object.assign(new Error('synthetic refusal'), { code: 'ECONNREFUSED', syscall: 'connect' }) });
+  let ran = false;
+  const client = createRuntimeLeaseClient({
+    runtimeConfigPath: '/data/graph-runtime.json', paths: PATHS,
+    readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+    readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+    fetchImpl: async () => { throw refused; },
+    setHeartbeat: () => ({ unref() {} }), clearHeartbeat: () => {}
+  });
+  await assert.rejects(client.withGraphLease('mcp:test', async () => { ran = true; }),
+    { code: 'fuli_not_running', message: /not running, so nothing was done/ });
+  assert.equal(ran, false);
+  // Any other failure of that request is not presented as FULI not running.
+  const other = createRuntimeLeaseClient({
+    runtimeConfigPath: '/data/graph-runtime.json', paths: PATHS,
+    readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+    readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+    fetchImpl: async () => Response.json({ message: 'synthetic refusal' }, { status: 500 }),
+    setHeartbeat: () => ({ unref() {} }), clearHeartbeat: () => {}
+  });
+  await assert.rejects(other.withGraphLease('mcp:test', async () => {}), error => error.code !== 'fuli_not_running');
+});

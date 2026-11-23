@@ -1,3 +1,4 @@
+import { SMALL, taskSize } from './task-size.js';
 import { projectBrief } from './project-brief.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { projectSnapshot, scopedAgentMemoryView } from './project-agent-memory.js';
@@ -37,7 +38,10 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
-      required_capabilities: input.requiredCapabilities ?? []
+      required_capabilities: input.requiredCapabilities ?? [],
+      // A small task is not routed for execution (rec#146 item 2); only sent
+      // when small, so a standard request stays byte for byte what it was.
+      ...(taskSize(input.taskPrompt) === SMALL ? { task_size: SMALL } : {})
     };
     const delegation = application.roundtable?.taskEntryDelegation?.({
       sessionId: input.receivingSessionId ?? input.sessionId

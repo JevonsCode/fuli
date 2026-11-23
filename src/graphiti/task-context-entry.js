@@ -16,6 +16,8 @@ import { validationError } from '../app/application-error.js';
 import { withStandingRoute } from './task-entry-standing-owner.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { checkpointReason } from './checkpoint-reason.js';
+import { taskGuidanceFor, taskSize } from './task-size.js';
 
 export async function beginTaskContext(application, {
   sessionId,
@@ -121,6 +123,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const updating = updateRequested(taskPrompt);
   const autoClosed = !remembering && !updating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  const checkpointRequired = !autoClosed && task.checkpoint?.phase !== 'complete';
   // A task the Stop hook closes by itself has no model checkpoint to keep
   // what the person stated as a project rule: the entry keeps it, pending
   // review (task-stated-rules.js). Never fails the entry.
@@ -156,7 +159,10 @@ export async function beginTaskFromPreferences(application, preferences, {
     conversation: continuation.show ? { ...conversation, continuation } : conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
+    checkpoint_required: checkpointRequired,
+    // Why, in one short sentence: the flag flipped between turns with nothing
+    // to explain it (rec#137).
+    checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, updating, task, entryVia }),
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
@@ -166,7 +172,10 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, continuation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance()
+    // A task of two commands is not told how to divide work between Agents
+    // (rec#146 item 2); the rules keep that text and the entry names it as not
+    // applying here (task-context-view.js).
+    task_guidance: taskGuidanceFor(taskKnowledgeGuidance(), taskSize(taskPrompt))
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
 }
 

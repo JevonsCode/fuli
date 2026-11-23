@@ -16,6 +16,8 @@ import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createIssueReport } from '../diagnostics/issue-report.js';
+import { createClientFileReveal } from './client-file-reveal.js';
+import { createClientFirstRunAction } from './client-first-run-action.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createClientRestart } from './client-restart.js';
 import { clientApps } from '../agents/client-apps.js';
@@ -76,9 +78,10 @@ export function createSystemService({
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps, diagnosticEvents: eventLog
+    apps, diagnosticEvents: eventLog, presence: agentKits.clientPresence
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients,
+    presence: agentKits.clientPresence }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
     inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),
@@ -216,7 +219,9 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: observeClients,
+    clientConnectionStatus: (options) => clientObserver.observe(options),
+    runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),
+    revealClientFile: createClientFileReveal({ installer: agentKits.clientInstaller }),
     issueReport: createIssueReport({ log: eventLog, observeClients, liveProcesses }),
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),

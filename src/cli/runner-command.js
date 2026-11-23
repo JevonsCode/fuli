@@ -10,6 +10,8 @@ import { ROUTING_LEDGER_FILE, RoutingLedger } from '../runner/routing-ledger.js'
 import { MODEL_BACKENDS_FILE } from '../runner/routing-setup.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
+import { versionSkewLine } from '../runner/version-skew.js';
+import { PROJECT_IDENTITY_CACHE_FILE } from '../system/project-identity-cache.js';
 import { LEFT_MARKER } from '../runner/runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
@@ -65,6 +67,8 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     if (!invitation) throw new TypeError(`Missing invitation\n${USAGE}`);
     const joined = await joinRunner({ dataDir: paths().dataDir, invitation, name: option(rest, '--name') ?? null,
       force: rest.includes('--force') });
+    // Who owns a project is the host's answer: what an earlier pairing said does not carry over.
+    remove(join(paths().dataDir, PROJECT_IDENTITY_CACHE_FILE), { force: true });
     write(`Paired with ${joined.host.name} (${joined.host.address}:${joined.host.port}).`);
     write(`This runner's fingerprint: ${joined.runner.fingerprint.slice(0, 16)}…`);
     if (joined.outbox?.dropped) {
@@ -126,6 +130,8 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
             + '`fuli runner add-address ADDRESS` with the host\'s address, which `fuli runner list` shows there.');
         }
         if (state.host.mcpSessions) write(mcpSessionsLine(state.host.mcpSessions));
+        // Neither side is blocked; the person is only told which copy is older (rec#144).
+        if (state.versions?.skew) write(versionSkewLine(state.versions.skew, state.host.name));
         if (state.host.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);
@@ -184,6 +190,9 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
     storeGone ? null : `${RUNNER_FILE}: emptied, so it holds nothing of the pairing any more`,
     removed(join(dataDir, ROUTING_LEDGER_FILE), remove) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE))
   ].filter(Boolean);
+  // The host's last `fuli whoami` answers belonged to its knowledge too. A JSON
+  // file no process keeps open: if it stays anyway, a new pairing overwrites it.
+  removed(join(dataDir, PROJECT_IDENTITY_CACHE_FILE), remove);
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(stayed.length
     ? `Left ${host.name}. A FULI process of a client here still has these files open, so they could not be deleted:`
