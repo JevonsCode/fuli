@@ -99,6 +99,48 @@ test('a download is published only after its checksum matches the pin', async (t
   assert.deepEqual(readdirSync(dirname(downloadedExecutablePath(root, bad))), [], 'a refused download leaves nothing behind');
 });
 
+// Two FULI processes needing the same component at once (two clients connected
+// on first use, or parallel test processes sharing one cache): the second waits
+// for the first and uses its copy instead of failing.
+test('a second download of the same asset waits for the first and uses its copy', async (t) => {
+  const root = directory(t);
+  const bytes = 'synthetic release asset';
+  const asset = { component: LAUNCHER, version: '9.9.7', name: 'agent-session-launcher-test', url: 'https://example.invalid/asset',
+    sha256: sha256(bytes) };
+  let downloads = 0;
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const first = downloadPinnedExecutable(root, asset, { download: async (_url, destination) => {
+    downloads += 1; started.resolve(); await release.promise; file(destination, bytes);
+  } });
+  await started.promise;
+  // The second finds the lock held and waits; its first wait lets the first one finish.
+  const second = downloadPinnedExecutable(root, asset, {
+    download: async () => { downloads += 1; throw new Error('a second download'); },
+    wait: async () => { release.resolve(); await new Promise((resolve) => setImmediate(resolve)); } });
+  assert.deepEqual(await Promise.all([first, second]), [downloadedExecutablePath(root, asset), downloadedExecutablePath(root, asset)]);
+  assert.equal(downloads, 1);
+
+  // A first download that ends without a copy leaves the second to download itself.
+  const other = { ...asset, version: '9.9.6' };
+  const failing = Promise.withResolvers();
+  const failed = Promise.withResolvers();
+  const broken = downloadPinnedExecutable(root, other, { download: async () => {
+    failing.resolve(); await failed.promise; throw new Error('fetch failed'); } });
+  await failing.promise;
+  const retried = downloadPinnedExecutable(root, other, { download: async (_url, destination) => file(destination, bytes),
+    wait: async () => { failed.resolve(); await broken.catch(() => {}); } });
+  await assert.rejects(broken, /fetch failed/);
+  assert.equal(await retried, downloadedExecutablePath(root, other));
+
+  // A lock older than any download may take is a crashed process's, and is taken over.
+  const crashed = { ...asset, version: '9.9.5' };
+  mkdirSync(`${downloadedExecutablePath(root, crashed)}.lock`, { recursive: true });
+  assert.equal(await downloadPinnedExecutable(root, crashed, { now: () => Date.now() + 11 * 60_000,
+    download: async (_url, destination) => file(destination, bytes),
+    wait: async () => { throw new Error('a stale lock is not waited for'); } }), downloadedExecutablePath(root, crashed));
+});
+
 test('ensure downloads on first need, refuses a bad checksum and reports an offline machine', async (t) => {
   const root = directory(t);
   const tampered = agentKitExecutables({ nativeRuntimeDir: join(root, 'a'), env: {}, platform: 'linux', arch: 'x64',
