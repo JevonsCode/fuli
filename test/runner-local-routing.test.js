@@ -380,9 +380,9 @@ test('the runner lists assess_agent_action as it behaves here, beside its outcom
 // projects: the projects the host knows, for the scope check a decision passes there.
 // A project's preferences as a busy one has them: many rules, each with the
 // reasoning and attributes a task entry carries beside its short instruction.
-function manyPreferences(count, { instructionChars = 60, project = 0 } = {}) {
+function manyPreferences(count, { instructionChars = 60 } = {}) {
   return Array.from({ length: count }, (_, index) => ({
-    preference_key: `habit-${index}`, preference_scope: index < project ? 'project' : 'global',
+    preference_key: `habit-${index}`, preference_scope: 'global',
     instruction: `Rule ${index}: ${'keep the change small and say what was checked. '.repeat(4)}`.slice(0, instructionChars),
     title: `Habit ${index}`, confirmation_status: 'confirmed', weight: 0.8,
     reason: `Why habit ${index} holds: ${'the person asked for it after a long review. '.repeat(4)}`,
@@ -406,23 +406,21 @@ test('a big project\'s preferences go as the host sends them, compact, and the m
   assert.doesNotMatch(sent, /size_limit/);
 });
 
-test('rules that do not fit even compact are counted, and the project\'s own go first', async (t) => {
-  // 400 long rules, the last 20 the project's own: far past one evidence item.
-  const preferences = manyPreferences(400, { instructionChars: 190 }).map((rule, index) =>
-    (index >= 380 ? { ...rule, preference_scope: 'project' } : rule));
+test('rules too many to give the model whole stop the judgment here, as on the host, with no model call', async (t) => {
+  // 400 long rules: far past one evidence item even compact, so some rule would be missing.
+  const preferences = manyPreferences(400, { instructionChars: 190 });
   const runner = await routingRunner(t, { preferences });
   await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { projectPath: runner.projectPath, taskPrompt: 'first' } });
 
   const answer = await runner.client.callTool({ name: 'assess_agent_action', arguments: ASK });
   assert.equal(answer.isError, undefined, answer.content[0].text);
-  const sent = runner.model.requests[0].messages.at(-1).content;
-  const evidence = JSON.parse(sent.slice(sent.indexOf('DATA: ') + 6)).evidence.find((item) => item.id === 'preferences');
-  const delivered = JSON.parse(evidence.text);
-  assert.ok(evidence.text.length <= 20_000);
-  assert.equal(delivered.status, 'partial');
-  assert.deepEqual(delivered.omitted.truncated, ['size_limit']);
-  assert.equal(delivered.omitted.not_sent, 400 - delivered.selected.length, 'how many did not go is said');
-  assert.ok(delivered.selected.slice(0, 20).every((rule) => rule.scope === 'project'), 'the project\'s own rules go first');
+  const decision = answer.structuredContent;
+  assert.equal(decision.disposition, 'ask_user', 'Tonborg does not recommend while a rule may be missing');
+  assert.equal(decision.selection, null);
+  assert.deepEqual(decision.evidence, ['preference_delivery:partial'], 'the host\'s own hold, not one of the runner\'s');
+  assert.match(decision.summary, /remove roles\.tonborg from model-backends\.json/, 'it says what the person can do');
+  assert.equal(decision.modelReceipt, undefined, 'nothing was spent');
+  assert.equal(runner.model.requests.length, 0, 'no model was called');
 });
 
 test('a request too large to send is refused here as what it is, and no model is called', async (t) => {

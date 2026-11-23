@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { FAILED_JUDGMENT_GUIDANCE, judgmentFailure, judgmentRequest } from '../judgment/backend.js';
-import { compactPreferences } from '../judgment/preference-receipt.js';
+import { compactPreferences, preferenceHold } from '../judgment/preference-receipt.js';
 import { parseRoutingRequest, ROUTING_SELECTION_SCHEMA, routingInstructions, verifiedSelection } from '../judgment/routing.js';
 import { parse, parseAnswer } from '../judgment/service.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
@@ -56,6 +56,9 @@ const EXECUTORS_FIX = 'Fix runner/executors.json. Deleting it does not hand this
 // MAX_EVIDENCE_CHARS (model-backends/request.js) before any model is called.
 // The budget leaves room for the item's own fields (answeredAt, omitted).
 const MAX_EVIDENCE_CHARS = 20_000;
+// What the person can do when this computer cannot judge with every rule.
+const HOLD_NEXT_STEP = 'This project has more preferences than this computer\'s model can be given whole. '
+  + 'To have the host judge with all of them, remove roles.tonborg from model-backends.json on this computer.';
 const EVIDENCE_BUDGET_CHARS = 16_000;
 
 // The items of list, in its order, whose JSON fits within maxChars together;
@@ -73,23 +76,15 @@ function fitting(list, maxChars) {
 }
 
 // The preferences the host last gave this project, in the host's own compact
-// receipt (judgment/preference-receipt.js), within one evidence item. A big
-// project's cache does not fit whole even so: conflicts go first (no side of
-// one may be applied), then the project's and Agent's own rules, then
-// confirmed ones, in the order the host gave them. What does not fit is
-// counted in omitted (truncated 'size_limit', not_sent), which the shared
-// instructions tell the model to weigh, never left out silently.
-function boundedPreferences({ answeredAt, entry }) {
-  const { selected, scope_unknown: scopeUnknown, conflicts } = compactPreferences(entry);
-  const rank = (rule) => (rule.scope === 'global' ? 2 : 0) + (rule.authority === 'confirmed' ? 0 : 1);
-  const ordered = selected.map((rule, index) => ({ rule, index }))
-    .sort((a, b) => rank(a.rule) - rank(b.rule) || a.index - b.index).map(({ rule }) => rule);
-  const keptConflicts = fitting(conflicts, EVIDENCE_BUDGET_CHARS);
-  const room = EVIDENCE_BUDGET_CHARS - JSON.stringify({ conflicts: keptConflicts, scope_unknown: scopeUnknown }).length;
-  const keptRules = fitting(ordered, room);
-  const notSent = selected.length - keptRules.length + conflicts.length - keptConflicts.length;
-  return { answeredAt, status: notSent ? 'partial' : 'complete', selected: keptRules, scope_unknown: scopeUnknown,
-    conflicts: keptConflicts, omitted: { truncated: notSent ? ['size_limit'] : [], ...(notSent ? { not_sent: notSent } : {}) } };
+// receipt (judgment/preference-receipt.js). A project with so many rules that
+// even that does not fit one evidence item is marked partial ('size_limit'),
+// and the host's own preferenceHold then stops the judgment before any model
+// is called, as it does on the host when a rule may be missing: Tonborg does
+// not recommend without rules that could change the choice.
+function deliveredPreferences({ answeredAt, entry }) {
+  const receipt = { answeredAt, status: 'complete', ...compactPreferences(entry), omitted: { truncated: [] } };
+  return JSON.stringify(receipt).length <= EVIDENCE_BUDGET_CHARS ? receipt
+    : { ...receipt, status: 'partial', omitted: { truncated: ['size_limit'] } };
 }
 
 // The model port refuses a request whose evidence it cannot take, before any
@@ -195,12 +190,18 @@ export function createLocalRouting({ dataDir, store, fetchImpl, now = () => new 
         spent);
   }
 
-  // The model's choice among the executors that passed preflight. Throws with
+  // The model's choice among the executors that passed preflight, or ask_user
+  // with no model call when preferences hold it as on the host. Throws with
   // its receipt when the model did not answer (a stop is never retried here).
   async function judge(request, eligible, leftOut) {
     const scope = { personalSpaceId: request.personalSpaceId, personalProjectId: request.personalProjectId };
     const cached = projectPreferences(store, scope);
-    const preferences = cached ? boundedPreferences(cached) : null;
+    const preferences = cached ? deliveredPreferences(cached) : null;
+    const hold = preferences ? preferenceHold(preferences) : null;
+    if (hold) {
+      return { selected: { executorId: null, model: null, disposition: 'ask_user', conversationId: null,
+        summary: `${hold.summary} ${HOLD_NEXT_STEP}`, evidence: hold.evidence }, modelReceipt: null };
+    }
     const recent = ledger.recent({ ...scope, limit: FEEDBACK_LIMIT }).filter((item) => item.outcome)
       .map(({ record, outcome }) => ({ id: record.id, workKind: record.workKind, objective: record.objective,
         disposition: record.disposition, selection: record.selection, summary: record.summary, outcome }));

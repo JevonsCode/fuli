@@ -361,14 +361,16 @@ routing rules and earlier conversations live on the host and are not read here.
 The preferences go as the host's own judgment sends them
 (`src/judgment/preference-receipt.js`): each rule's key, scope, short text and
 authority, never its reasoning or attributes. The model port takes at most
-20,000 characters per part, and a project with many rules can pass that even
-so: then conflicts go first, then the project's and Agent's own rules, then
-confirmed ones, and the rest are counted (`omitted.truncated: ["size_limit"]`,
-`omitted.not_sent`), which the instructions tell the model to weigh. Earlier
-decisions are sent newest first the same way (`feedbackNotSent`). A request
-still too large to send (an `executors.json` at its limits, say) is refused on
-the runner before any model is called: `judgment_failed` with category
-`request_rejected` and `rejected` naming the part, nothing spent.
+20,000 characters per part. A project with so many rules that even this does
+not fit is not judged here: as on the host when a rule may be missing, Tonborg
+answers `ask_user` without calling the model (evidence
+`preference_delivery:partial`), and says that removing `roles.tonborg` from
+`model-backends.json` on the runner has the host judge with all of them.
+Earlier decisions are only feedback, so they are sent newest first as many as
+fit, and the rest counted (`feedbackNotSent`). A request still too large to
+send (an `executors.json` at its limits, say) is refused on the runner before
+any model is called: `judgment_failed` with category `request_rejected` and
+`rejected` naming the part, nothing spent.
 
 **What it answers.** The same checks as on the host
 (`src/judgment/routing.js`): the choice must be an executor and model it was

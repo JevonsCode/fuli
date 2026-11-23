@@ -89,7 +89,8 @@ const FAILURE_RECOVERY = Object.freeze({
   invalid_answer: 'The answer did not match the eligible executors or conversations; ask again.',
   // Refused before any model was called, so nothing was spent; rejected names the part.
   request_rejected: 'The judgment request was too large to send, so no model was called and nothing was spent; '
-    + 'rejected names the part. Asking again sends the same request.',
+    + 'rejected names the part. Asking again sends the same request: shrink that part, or have the host judge it '
+    + '(remove roles.tonborg from model-backends.json on the runner).',
   unknown: 'Try again; if it repeats, report the error code and step.'
 });
 export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was selected or run, and this is no execution receipt. '
