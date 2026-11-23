@@ -7,7 +7,7 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
-  framePreferenceSnapshot, pendingScene, preferenceSnapshot, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
+  frameOmittedIndex, framePreferenceSnapshot, pendingScene, preferenceSnapshot, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
 import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
@@ -242,8 +242,11 @@ function acknowledgedSnapshot(value, current, state, proof) {
     const delivered = frame.confirms
       ? verifiedFrame(value, frame.value, pending.get(preferenceFrameHash(frame.value)), revision, shown) : null;
     const known = shown.get(revision) ?? delivered;
-    shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? { ...delivered, revision } : AMBIGUOUS);
-    if (delivered?.authorityHash === current.authorityHash) baseline = { ...delivered, revision };
+    // The omission index the model holds with this frame (preference-snapshot.js
+    // frameOmittedIndex): its own, or its base's where it said it was unchanged.
+    const held = delivered ? { ...delivered, revision, omittedIndex: frameOmittedIndex(frame.value, shown) } : null;
+    shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? held : AMBIGUOUS);
+    if (delivered?.authorityHash === current.authorityHash) baseline = held;
   }
   return { shown, baseline: baseline && shown.get(baseline.revision).snapshotHash === baseline.snapshotHash ? baseline : null };
 }
