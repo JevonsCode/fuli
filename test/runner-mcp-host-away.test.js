@@ -6,6 +6,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -258,6 +259,27 @@ test('a runner of an earlier version follows its host for every scope and answer
     arguments: { taskContextToken: `fuli-from-${'9'.repeat(16)}.host-token-1`, workLog: 'synthetic' } });
   assert.equal(JSON.parse(foreign.content[0].text).code, 'task_owner_not_paired');
   assert.equal(runner.calls.length, before);
+});
+
+// Review of #1075: a routes store this version cannot open stopped the whole MCP server from starting.
+test('routes this version cannot read leave the server up, and every call says why and what to do', async (t) => {
+  const runner = await pairedRunner(t, { serve: false });
+  const file = path.join(runner.dataDir, 'runner', 'routes.sqlite');
+  const newer = new DatabaseSync(file);
+  newer.exec('PRAGMA user_version = 99; CREATE TABLE IF NOT EXISTS routes(scope TEXT PRIMARY KEY);');
+  newer.close();
+  const client = new Client({ name: 'codex', version: 'test' });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  const served = await runRunnerMcp({ dataDir: runner.dataDir, sourceApplication: 'codex', transport: serverSide,
+    lookUp: async () => [], retryAfterMs: 0 });
+  await client.connect(clientSide);
+  t.after(async () => { await client.close(); await served.close(); });
+  const answer = await client.callTool({ name: 'search_current_project_knowledge', arguments: { query: 'synthetic' } });
+  assert.equal(answer.isError, true);
+  const failure = JSON.parse(answer.content[0].text);
+  assert.equal(failure.code, 'routes_unavailable');
+  assert.match(failure.message, /fuli update/);
+  assert.equal(runner.calls.length, 0, 'nothing was sent anywhere');
 });
 
 test('a scope routed to a computer this one is not paired with reaches nothing, and says where to fix it', async (t) => {

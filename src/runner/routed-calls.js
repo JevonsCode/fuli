@@ -47,3 +47,14 @@ export function rememberTaskOwner({ routes, store, tool, answer }) {
   const fingerprint = store.host()?.fingerprint;
   if (token && fingerprint) routes.rememberTaskOwner(token, hostOwner(fingerprint));
 }
+
+// The routes could not be read, so no call can be told where it goes: said as
+// it is, with what to do, instead of the server failing to start.
+export function routesUnavailableAnswer(error) {
+  const reason = typeof error?.code === 'string' ? error.code : 'routes_unreadable';
+  const detail = String(error?.message ?? error).slice(0, 400);
+  return failure('routes_unavailable', 'This computer cannot read which parts of your FULI it follows '
+    + `(runner/routes.sqlite: ${detail}), so no call is sent anywhere until that is fixed. If a newer FULI wrote it, `
+    + 'update FULI on this computer (`fuli update`); `fuli migrate status` says what the store needs; or end the '
+    + 'pairing and join again (`fuli runner leave`, then `fuli runner join`).', { reason });
+}

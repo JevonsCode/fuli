@@ -27,7 +27,7 @@ import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostR
   offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   rememberAnswer, repeatable, TASK_ENTRY_TOOLS, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
-import { routeRefusal, rememberTaskOwner } from './routed-calls.js';
+import { routeRefusal, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
 import { answerWithIssuer, withIssuedToken } from './task-issuer.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
@@ -87,7 +87,11 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   // Which scopes this computer reads and writes on the host; a data directory
   // paired by an earlier version gets `global → host` and `default → host` here.
-  const routes = openRoutes(dataDir);
+  // A routes store this version cannot open (newer, damaged, waiting for a
+  // migration) does not stop the server: every call says why and what to do.
+  let routes = null;
+  let routesProblem = null;
+  try { routes = openRoutes(dataDir); } catch (error) { routesProblem = error; }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
@@ -95,7 +99,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch });
   // What the host refused or failed when this process opened its session, for `fuli diagnostics` here.
   const record = diagnosticEventLog(dataDir).record;
-  const { server, endHostSession } = createRunnerServer({ store, routes, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const { server, endHostSession } = createRunnerServer({ store, routes, routesProblem, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -108,7 +112,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     connection.close();
     await server.close();
     await routing.close();
-    routes.close();
+    routes?.close();
     store.close();
   })();
   const served = transport ?? new StdioServerTransport();
@@ -121,7 +125,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   return { close, store, routes, connection };
 }
 
-function createRunnerServer({ store, routes = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ store, routes = null, routesProblem = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -351,6 +355,7 @@ function createRunnerServer({ store, routes = null, connection, routing, record 
       return answer;
     }
     // Where this call goes (docs/runner-roles-design.md §4), decided before anything is sent.
+    if (routesProblem) return routesUnavailableAnswer(routesProblem);
     const misrouted = routes ? routeRefusal({ routes, store, input: asked.input, issuer }) : null;
     if (misrouted) return misrouted;
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
