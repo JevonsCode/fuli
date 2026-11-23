@@ -121,7 +121,11 @@ class StoreProjectAgentContext(StoreAgentDelegations, StoreRemoteAgentOrigins):
         if owner and selected and owner == selected[0]['agent_id']:
             reason, basis = 'active_task_owner', ['reuse the owner of this host session task']
         execution_reason = execution_agent_id = None
-        if selected and selected[0]['agent_id'] == project_lead and not delegated and not request.agent_id:
+        # A small task (task_size, rec#146 item 2) is not routed for execution:
+        # "Execution is not staffed: use coordinate_project_agent_task" on a
+        # two-command task was only an extra round trip.
+        if (selected and selected[0]['agent_id'] == project_lead and not delegated and not request.agent_id
+                and request.task_size != 'small'):
             # Owning the conversation is not execution fitness. Report the
             # task router's choice so the lead can coordinate or recruit.
             executor, _, execution_reason, execution_basis = await self._select_agents(

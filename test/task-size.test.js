@@ -76,3 +76,19 @@ test('a task_guidance with a key of its own is delivered as it is, never as a re
   assert.equal(view.task_guidance.rules, undefined);
   assert.equal(view.task_guidance.synthetic_extra, own.synthetic_extra);
 });
+
+// rec#146 item 2, Provider side: a small task is not routed for execution, so
+// it never hears "Execution is not staffed: use coordinate_project_agent_task".
+// Only a small task's request carries task_size; a standard one is unchanged.
+test('the task entry asks the Provider not to route a small task for execution', async () => {
+  const { resolveTaskEntryAgent } = await import('../src/graphiti/project-agent-task-entry.js');
+  const sent = [];
+  const application = { config: { personal: { spaceId: 'synthetic-space' } },
+    personal: { resolveProjectAgentContext: async request => { sent.push(request); return { status: 'unassigned', reason: 'synthetic' }; } } };
+  const entry = taskPrompt => resolveTaskEntryAgent(application, { status: 'matched', personalProjectId: 'synthetic-project' },
+    { agentInvocation: true, agentToolName: 'begin_task_context', taskPrompt, sessionId: 'synthetic-session' }).catch(() => null);
+  await entry('跑一下 npm test');
+  await entry('实现合成导出接口');
+  assert.equal(sent[0].task_size, 'small');
+  assert.equal(Object.hasOwn(sent[1], 'task_size'), false);
+});
