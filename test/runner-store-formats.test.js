@@ -166,14 +166,15 @@ test('a beta runner data directory gets its routes to the host on first use, and
       VALUES('queued-1', 'checkpoint_task_knowledge', '{"workLog":"synthetic"}', 'codex', '2026-11-17T10:20:00.000Z', 'queued');`);
   assert.equal(existsSync(join(dataDir, ROUTES_FILE)), false, 'a beta has no routes');
 
+  // Closed in the test, not after it: the folder is removed after it, and Windows refuses to delete an open file.
   const routes = openRoutes(dataDir);
-  t.after(() => routes.close());
   assert.deepEqual(routes.all().map((row) => [row.scope, row.owner]),
     [['global', `host:${'f'.repeat(64)}`], ['default', `host:${'f'.repeat(64)}`]]);
   assert.equal(routes.owner('project:example.test/team/widgets'), `host:${'f'.repeat(64)}`);
+  routes.close();
   assert.equal(version(path), RUNNER_FORMAT.version, 'the runner store reached the current version on the way');
   const store = new RunnerStore(path);
-  t.after(() => store.close());
   assert.equal(store.outbox().queued, 1);
   assert.equal(store.claimNext().id, 'queued-1');
+  store.close();
 });

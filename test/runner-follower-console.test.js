@@ -645,12 +645,16 @@ const PAGE_STATUS = { paired: true, host: { name: 'Host A', reachable: null, rev
   outbox: { entries: [] }, capabilities: [] };
 
 // Review of #1075: a look that failed once left the page at 「正在找主机…」 for ever, with the next step hidden.
-test('this computer\'s own page keeps looking for a while, then says the host was not found and offers the next step', async () => {
+test('this computer\'s own page keeps looking for a while; a console that never answered is not taken for the host being away', async () => {
   const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/' });
-  const page = await runPageScript(html, [new Error('busy')]);
-  assert.equal(page.calls(), LOOK_TRIES, 'asked again, a bounded number of times');
-  assert.equal(page.element('[data-reach]').textContent, '现在不在线');
-  assert.equal(page.element('[data-away-step]').hidden, false, '「添加主机地址」 is offered');
+  const silent = await runPageScript(html, [new Error('busy')]);
+  assert.equal(silent.calls(), LOOK_TRIES, 'asked again, a bounded number of times');
+  assert.match(silent.element('[data-reach]').textContent, /本机控制台没有回答，请刷新页面/);
+  assert.equal(silent.element('[data-away-step]').hidden, true, 'no next step about the host, which nothing was learned of');
+
+  const away = await runPageScript(html, [new Error('busy'), { host: { reachable: false }, line: { zh: '跟随 Host A · 不在线' } }]);
+  assert.equal(away.element('[data-reach]').textContent, '现在不在线');
+  assert.equal(away.element('[data-away-step]').hidden, false, '「添加主机地址」 is offered when the host is said to be away');
 });
 
 test('once the host is found, the page says so and when it was last reached', async () => {

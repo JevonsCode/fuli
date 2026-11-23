@@ -95,10 +95,12 @@ ${addAddress(host, { hidden: host.reachable !== false })}`;
 export const LOOK_EVERY_MS = 3000;
 export const LOOK_TRIES = 10;
 
+// silent: this computer's own console did not answer the page, so nothing is known of the host.
 const REACH = {
   true: { zh: '现在在线', en: 'which answers now' },
   false: { zh: '现在不在线', en: 'which does not answer now' },
-  null: { zh: '正在找主机…', en: 'looking for it now…' }
+  null: { zh: '正在找主机…', en: 'looking for it now…' },
+  silent: { zh: '不知道在不在线：本机控制台没有回答，请刷新页面', en: 'not known: this computer\'s console did not answer; reload the page' }
 };
 
 function addAddress(host, { hidden = false } = {}) {
@@ -255,11 +257,12 @@ const PAGE_SCRIPT = [
   '// Drawn before the host was looked for: ask now, and say what was found.',
   'const REACH = ' + JSON.stringify(REACH) + ';',
   '// Asked again every LOOK_EVERY_MS while nothing could be learned (this computer\'s console was busy or',
-  '// restarting), at most LOOK_TRIES times; then the page says the host was not found, and offers the next step.',
+  '// restarting), at most LOOK_TRIES times; then the page says this computer\'s console did not answer.',
+  '// Only an answer that says the host does not answer shows that, with the next step.',
   `const LOOK_EVERY_MS = ${LOOK_EVERY_MS};`,
   `const LOOK_TRIES = ${LOOK_TRIES};`,
   'function show(reachable, state) {',
-  '  const now = REACH[String(reachable)];',
+  '  const now = REACH[reachable === "silent" ? "silent" : String(reachable)];',
   '  const values = [["[data-reach]", now.zh], ["[data-reach-en]", now.en]];',
   '  if (state?.line) values.push(["[data-line]", state.line.zh]);',
   '  const reached = state?.host?.lastSeenAt ?? state?.host?.answeredAt;',
@@ -269,7 +272,7 @@ const PAGE_SCRIPT = [
   '    if (element) element.textContent = value;',
   '  }',
   '  const dot = document.querySelector("#fuli-follower-band .dot");',
-  '  if (dot) dot.className = "dot " + (reachable ? "on" : "off");',
+  '  if (dot) dot.className = "dot " + (reachable === true ? "on" : reachable === false ? "off" : "");',
   '  const step = document.querySelector("[data-away-step]");',
   '  if (step) step.hidden = reachable !== false;',
   '}',
@@ -279,7 +282,8 @@ const PAGE_SCRIPT = [
   '    if (!state.host) return;',
   '    if (typeof state.host.reachable === "boolean") { show(state.host.reachable, state); return; }',
   '  } catch { /* this computer\'s console is busy or restarting: asked again below */ }',
-  '  if (tries >= LOOK_TRIES) { show(false, null); return; }',
+  '  // Nothing was learned of the host: said as that, never as the host being away.',
+  '  if (tries >= LOOK_TRIES) { show("silent", null); return; }',
   '  setTimeout(() => void look(tries + 1), LOOK_EVERY_MS);',
   '}',
   'void look();',

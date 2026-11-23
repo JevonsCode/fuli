@@ -152,7 +152,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
       nativeRuntime: selectedGraphRuntime,
-      endOrphanedServices: input.endOrphanedServices === true,
+      // Only when the person chose to end a lost graph service (orphan-services.js); a plain start passes nothing new.
+      ...(input.endOrphanedServices === true ? { endOrphanedServices: true } : {}),
       ...(input.env ? { env: input.env } : {})
     });
   } else {
