@@ -146,7 +146,8 @@ async def test_undecided_scope_stays_in_the_temporary_session_project_until_the_
             'personal_space_id': space_id, 'scope_key': scope_key, 'source_application': 'codex',
             'lifetime': 'session'}))
         assert temporary['scope_type'] == 'temporary'
-        assert temporary['profile']['name'].startswith('临时会话')
+        # No stored name (graph/23): each reader names it in its own language.
+        assert temporary['profile']['name'] == ''
         held = await commit(client, space_id, [preference('short', 'Prefer short status lines')],
                             project=temporary['project_id'], scope_status='undetermined')
         item_id = held['entity_ids'][0]
@@ -169,7 +170,7 @@ async def test_undecided_scope_stays_in_the_temporary_session_project_until_the_
         assert [project['id'] for project in after['scope']['projects']] == ['beta']
         [revision] = [item for item in after['revisions'] if item['action'] == 'scope_change']
         assert revision['previous']['scope'] == {'kind': 'temporary', 'status': 'undetermined', 'agent_id': None,
-            'projects': [{'id': temporary['project_id'], 'name': temporary['profile']['name'], 'temporary': True}]}
+            'projects': [{'id': temporary['project_id'], 'name': None, 'temporary': True}]}
         assert item_id in await applied(client, space_id, 'beta')
         assert item_id not in await applied(client, space_id, temporary['project_id'])
         assert item_id not in await applied(client, space_id, 'alpha')

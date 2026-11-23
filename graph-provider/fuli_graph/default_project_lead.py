@@ -12,6 +12,7 @@ from .models import SourceApplication
 from .project_agent_context_models import ProjectAgentContextResolution
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_task_models import ProjectAgentTaskActivityCreate, ProjectAgentTaskSubmit
+from .temporary_project_scope import project_reference
 
 
 class DefaultProjectLeadRequest(StrictModel):
@@ -58,7 +59,10 @@ class StoreDefaultProjectLead:
             staffing_intent='default_lead',
             source_application=request.source_application,
             routing_reason='Every task needs a FULI Agent; this project had no team lead.',
-            recruitment_profile=default_lead_profile(project.profile.name, request.responsibility),
+            # A temporary project has no name: its lead is named after its number,
+            # which every console shows next to the project too.
+            recruitment_profile=default_lead_profile(
+                project_reference(project.project_id, project.profile.name), request.responsibility),
         )
         routed = await self.submit_project_agent_task(actor, submit)
         lead = routed.assigned_agent

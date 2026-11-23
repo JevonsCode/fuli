@@ -67,6 +67,8 @@ export interface MigrationResult {
   status: 'applied' | 'already_applied' | 'failed'
   migrationId: string
   count?: number
+  // Records the step could not read and left as they were.
+  unreadable?: number
   code?: string
   message?: string
 }
@@ -137,8 +139,9 @@ const outcomeShape = shapeFor<ApplyOutcome>(z.looseObject({
   pruned: z.array(pruneEntrySchema).nullish(),
 }))
 const noticeResultShape = shapeFor<{ notice: MigrationNotice }>(z.looseObject({ notice: noticeSchema }))
-const undoShape = shapeFor<{ status: string; version: number; pruned?: PruneEntry[] }>(z.looseObject({
-  status: z.string(), version: z.number(), pruned: z.array(pruneEntrySchema).nullish(),
+// adapted: records written since the step that the undo brought into the earlier format.
+const undoShape = shapeFor<{ status: string; version: number; adapted?: number | null; pruned?: PruneEntry[] }>(z.looseObject({
+  status: z.string(), version: z.number(), adapted: z.number().nullish(), pruned: z.array(pruneEntrySchema).nullish(),
 }))
 const pruneShape = shapeFor<{ pruned: PruneEntry[] }>(z.looseObject({ pruned: z.array(pruneEntrySchema) }))
 

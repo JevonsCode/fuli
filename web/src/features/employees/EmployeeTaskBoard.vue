@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
 
 import { useNow } from '@vueuse/core'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
-import { projectSelectOptions } from './project-options'
+import { type ProjectChoice, projectSelectOptions } from './project-options'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 import { bindBoardScroller, bindDraggableCard, bindDropColumn, monitorBoardDrag, type BoardDropLocation } from './task-board-dnd'
 import { boardColumns, columnKeyOf, isColumnMove, ownColumnLabel } from './project-board-layout'
@@ -20,7 +21,7 @@ export type { BoardMoveTarget, EmployeeBoardItem, EmployeeBoardStatus, EmployeeP
 
 const props = defineProps<{
   boards: EmployeeProjectBoard[]
-  projects: { id: string; name: string }[]
+  projects: ProjectChoice[]
   visibleProjectIds: string[]
   failedProjects: number
   movingItemKeys?: string[]
@@ -410,6 +411,7 @@ onBeforeUnmount(() => {
           class="employee-all-projects-filter"
           :model-value="visibleProjectIds"
           :options="projectSelectOptions(projects)"
+          :fold-group="temporaryGroupLabel()"
           multiple
           :summary="t('employees.scope.count', { selected: visibleProjectCount, total: projects.length })"
           :label="t('employees.allProjects.projectFilter')"

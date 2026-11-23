@@ -60,14 +60,16 @@ describe('CaptureOnboardingDialog (rec#5 C10)', () => {
     wrapper.unmount()
   })
 
-  it('C10-1 saves only the ticked projects with an inline pending state', async () => {
+  it('C10-1 starts with every project ticked and saves only the ones left ticked, with an inline pending state', async () => {
     let respond!: (response: Response) => void
     const { wrapper, posts, store } = mountDialog({ answer: () => new Promise(resolve => { respond = resolve }) })
     await flushPromises()
     await click('[data-capture-scope="selected"] [role="radio"]')
-    const listed = [...document.body.querySelectorAll<HTMLElement>('[data-capture-scope-project]')].map(row => row.dataset.captureScopeProject)
-    expect(listed).toEqual(['thesis', 'novel'])
-    await click('[data-capture-scope-project="thesis"] [role="checkbox"]')
+    const rows = () => [...document.body.querySelectorAll<HTMLElement>('[data-project-scope-formal]')]
+    expect(rows().map(row => row.querySelector('label')?.textContent?.trim())).toEqual(['毕业论文', '小说连载'])
+    expect(rows().map(row => row.querySelector('[role="checkbox"]')?.getAttribute('aria-checked'))).toEqual(['true', 'true'])
+    rows()[1]!.querySelector<HTMLElement>('[role="checkbox"]')!.click()
+    await flushPromises()
     await click('[data-capture-scope-save]')
     expect(posts).toEqual([{ choice: 'selected', selectedProjectIds: ['thesis'] }])
     expect(find('[data-capture-scope-save]')!.getAttribute('aria-busy')).toBe('true')
@@ -79,6 +81,23 @@ describe('CaptureOnboardingDialog (rec#5 C10)', () => {
     expect(store.state?.captureOnboarding).toEqual({ ask: false })
     expect(store.feedback?.message).toBe('已设为只记录勾选的项目，可以在设置里随时改。')
     expect(dialog()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('C10-1 clears every project at once and keeps an empty choice as chosen', async () => {
+    const { wrapper } = mountDialog({ answer: async () => Response.json({}) })
+    await flushPromises()
+    await click('[data-capture-scope="selected"] [role="radio"]')
+    await click('[data-project-scope-clear]')
+    const states = () => [...document.body.querySelectorAll('[data-project-scope-formal] [role="checkbox"]')]
+      .map(box => box.getAttribute('aria-checked'))
+    expect(states()).toEqual(['false', 'false'])
+    await click('[data-capture-scope="all"] [role="radio"]')
+    await click('[data-capture-scope="selected"] [role="radio"]')
+    // A choice the person made is not ticked again.
+    expect(states()).toEqual(['false', 'false'])
+    await click('[data-project-scope-all]')
+    expect(states()).toEqual(['true', 'true'])
     wrapper.unmount()
   })
 

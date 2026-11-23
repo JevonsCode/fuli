@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -51,7 +52,10 @@ const boleEntries = computed(() => (props.entries ?? []).filter(entry => entry.r
 const agentSpace = computed(() => boleEntries.value[0]?.personalSpaceId ?? '')
 const agentIds = computed(() => boleEntries.value.map(entry => entry.subject.agentId!))
 const { records: agents } = useAgentRecords(agentSpace, agentIds)
-const agentName = (entry: RoleSuggestion) => agents.value[entry.subject.agentId!]?.profile.name ?? entry.subject.agentId!
+const agentName = (entry: RoleSuggestion) => {
+  const agent = agents.value[entry.subject.agentId!]
+  return agent ? agentDisplayName(agent) : entry.subject.agentId!
+}
 
 const TONES: Record<SuggestionState, 'default' | 'secondary' | 'warning' | 'outline'> = {
   suggested: 'default', newer: 'secondary', superseded: 'secondary', fallback: 'outline', stopped: 'warning',

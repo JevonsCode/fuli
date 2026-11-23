@@ -1,7 +1,8 @@
 import { agentDisplayName as agentName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
-import { nameableProjects, projectDisplayName, promptNamesProject } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
+import { nameableProjects, promptNamesProject } from './task-entry-project-mention.js';
 import { withRouteMarkers } from './task-agent-assignment.js';
 import { addressedAgentId } from './fla-mention.js';
 import { workstreamEntry, workstreamNoticeOf } from './task-entry-workstream.js';

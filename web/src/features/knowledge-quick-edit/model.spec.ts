@@ -29,8 +29,10 @@ describe('knowledge quick edit model', () => {
       .toBe('项目：Alpha、b')
     expect(scopeLabel({ kind: 'agent', projects: [{ id: 'a', name: 'Alpha' }], agent_id: 'r', agent_name: 'Nova', status: 'set' }))
       .toBe('FLA Nova（Alpha）')
-    expect(scopeLabel({ kind: 'temporary', projects: [{ id: 'temporary-x', temporary: true }], status: 'undetermined' }))
-      .toBe('临时会话项目')
+    // A temporary project has no name (graph/23): it reads by its number.
+    expect(scopeLabel({ kind: 'temporary', projects: [{ id: `temporary-${'a'.repeat(64)}`, temporary: true }], status: 'undetermined' }))
+      .toBe('临时项目 #aaaaaaaa')
+    expect(scopeLabel({ kind: 'temporary', projects: [], status: 'undetermined' })).toBe('临时项目')
   })
 
   it('shows what the weight rests on and says it is computed', () => {

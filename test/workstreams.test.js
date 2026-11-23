@@ -12,6 +12,7 @@ import { loadProjectTeamContext } from '../src/graphiti/project-agent-team-conte
 import { policyReader, projectLeadOf } from '../src/graphiti/project-policy-read.js';
 import { handoffWorkstream } from '../src/graphiti/task-entry-workstream.js';
 import { agentWorkstreamLedger, projectWorkstreamLedger } from '../src/graphiti/agent-workstream-ledger.js';
+import { applicationLanguage, projectDisplayName } from '../src/graphiti/project-display-name.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleStandingAssignmentRequest } from '../src/http/standing-assignment-api-router.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
@@ -355,6 +356,17 @@ test('one FLA\'s ledger: every line of a project it leads, its own line elsewher
   const former = await agentWorkstreamLedger(app, SPACE, 'fla-former');
   assert.deepEqual(former.projects.map(project => project.workstreams.map(line => line.name)), [['优惠券中心']]);
   assert.deepEqual((await agentWorkstreamLedger(app, SPACE, 'fla-stranger')).projects, []);
+});
+
+test('one FLA\'s ledger names a temporary project in the person\'s words, never by its ID', async () => {
+  const temporary = `temporary-${'a'.repeat(64)}`;
+  const { app } = fixture({ seed: [{ ...SPRING, projectId: temporary }] });
+  app.personal.listPersonalProjects = async () => [{ project_id: temporary, scope_type: 'temporary', profile: {} }];
+  const [project] = (await agentWorkstreamLedger(app, SPACE, 'fla-ember')).projects;
+  assert.equal(project.projectId, temporary);
+  assert.equal(project.projectName, projectDisplayName({ project_id: temporary, scope_type: 'temporary' },
+    applicationLanguage(app)));
+  assert.ok(!project.projectName.includes(temporary));
 });
 
 // The lead's own division of its project's work.

@@ -1,5 +1,5 @@
 import { loadProjectTeam } from './project-team-view.js';
-import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
+import { applicationLanguage, projectDisplayName } from './project-display-name.js';
 import { closedWorkstreams, withWorkstreamProgress } from './workstream-ledger.js';
 
 // The console's ledger reads (docs/workstreams.md), on this computer only.
@@ -27,14 +27,16 @@ export async function agentWorkstreamLedger(application, personalSpaceId, agentI
   const [teams, projects] = await Promise.all([
     Promise.all(projectIds.map(projectId => loadProjectTeam(application, personalSpaceId, projectId)
       .then(team => ({ projectId, team }), () => null))),
-    nameableProjects(application).catch(() => [])
+    // Every project, temporary ones included, so a line never shows a bare ID.
+    Promise.resolve().then(() => application.personal.listPersonalProjects(personalSpaceId)).catch(() => [])
   ]);
-  const names = new Map(projects.map(project => [project.project_id, projectDisplayName(project)]));
+  const language = applicationLanguage(application);
+  const names = new Map(projects.map(project => [project.project_id, projectDisplayName(project, language)]));
   const mine = teams.filter(Boolean).filter(({ team }) => team.lead?.agentId === agentId
     || team.workstreams.some(line => line.ownerAgentId === agentId));
   const read = await Promise.all(mine.map(async ({ projectId, team }) => ({
     projectId,
-    projectName: names.get(projectId) ?? projectId,
+    projectName: names.get(projectId) ?? projectDisplayName({ project_id: projectId }, language),
     // On the page of an FLA that is not this project's lead, only its own lines.
     leads: team.lead?.agentId === agentId,
     workstreams: await withWorkstreamProgress(application, personalSpaceId, projectId,

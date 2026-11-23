@@ -3,7 +3,8 @@ import { requiredString } from '../validation/values.js';
 import { activeTeamAgent, loadProjectTeam } from './project-team-view.js';
 import { assertPreviewed, leadName, personsConversation, previewOf, projectNamed, quoted,
   standingAssignmentsOf } from './standing-assignment-confirmation.js';
-import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
+import { nameableProjects } from './task-entry-project-mention.js';
 import { consoleCorrectionSource, isLeadsOwnLine } from './standing-assignment-workstream.js';
 import { ID_LIMIT, TERM_LIMIT } from '../standing-assignments/limits.js';
 

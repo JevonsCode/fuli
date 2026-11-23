@@ -1,4 +1,6 @@
 import { FIXED_ROLES } from '../employees/fixed-roles.js';
+import { agentDisplayName } from './agent-display-name.js';
+import { applicationLanguage } from './project-display-name.js';
 import { projectWorkstreams, withWorkstreamProgress } from './workstream-ledger.js';
 
 // One authoritative reading of a project's people. The coordination policy
@@ -16,14 +18,15 @@ export function isPeerRoleAgent({ agentId, agentType, capabilities = [] }) {
     || capabilities.some(value => PEER_CAPABILITIES.has(String(value).toLowerCase()));
 }
 
-export function buildProjectTeam({ policy, agents, projectId, standingAssignments = [] }) {
+// language: the one the person reads FULI in, for names FULI wrote by itself.
+export function buildProjectTeam({ policy, agents, projectId, language, standingAssignments = [] }) {
   const leadId = policy?.team_lead_agent_id ?? null;
   const memberIds = [...new Set(policy?.team_member_agent_ids ?? [])].filter(id => id !== leadId);
   const all = Array.isArray(agents) ? agents : [];
   const assigned = new Map();
   for (const agent of all) {
     const assignment = activeAssignment(agent, projectId);
-    if (assignment && isActive(agent)) assigned.set(agent.agent_id, person(agent, assignment));
+    if (assignment && isActive(agent)) assigned.set(agent.agent_id, person(agent, assignment, language));
   }
   const lead = leadId ? assigned.get(leadId) ?? null : null;
   const groups = policy?.sub_teams ?? [];
@@ -52,7 +55,7 @@ export function buildProjectTeam({ policy, agents, projectId, standingAssignment
     personalProjectId: projectId,
     status: !leadId ? 'no_lead' : lead ? 'ready' : 'lead_unavailable',
     lead,
-    unavailableLead: leadId && !lead ? { agentId: leadId, name: former ? displayName(former) : null } : null,
+    unavailableLead: leadId && !lead ? { agentId: leadId, name: former ? agentDisplayName(former, language) : null } : null,
     members,
     subTeams,
     subTeamSuggestion: { suggested: members.length > (policy?.sub_team_suggestion_threshold ?? 6) && !groups.length,
@@ -75,15 +78,11 @@ function isActive(agent) {
   return status === undefined || status === null || status === 'active';
 }
 
-function displayName(agent) {
-  return agent.profile?.display_name || agent.profile?.name || agent.agent_id;
-}
-
-function person(agent, assignment) {
+function person(agent, assignment, language) {
   const profile = agent.profile ?? {};
   return {
     agentId: agent.agent_id,
-    name: displayName(agent),
+    name: agentDisplayName(agent, language),
     employeeNumber: agent.employee_number ?? null,
     occupation: agent.occupation?.role ?? null,
     occupationEmoji: profile.occupation_emoji ?? profile.occupationEmoji ?? null,
@@ -107,7 +106,7 @@ export async function loadProjectTeam(application, personalSpaceId, projectId, {
     application.personal.listProjectAgents(personalSpaceId, projectId, { status: 'active' })
   ]);
   const list = Array.isArray(agents) ? agents : agents?.agents ?? agents?.items ?? [];
-  const team = buildProjectTeam({ policy: read, agents: list, projectId,
+  const team = buildProjectTeam({ policy: read, agents: list, projectId, language: applicationLanguage(application),
     standingAssignments: standingAssignmentsFor(application) });
   if (!withProgress) return team;
   return { ...team,

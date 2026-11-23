@@ -21,6 +21,7 @@ import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
 import GuestLinksCard from '@/features/guest-links/GuestLinksCard.vue'
 import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
 import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
+import { projectDisplayName } from './project-origin'
 
 const props = withDefaults(defineProps<{
   spaceId: string
@@ -44,7 +45,7 @@ const createdDate = computed(() =>
   <div class="project-overview">
     <header class="project-overview-header">
       <div class="project-overview-title">
-        <h2>{{ project.profile.name }}</h2>
+        <h2>{{ projectDisplayName(project) }}</h2>
         <p v-if="createdDate" class="ui-meta" data-project-created>{{ t('projects.overview.createdAt', { date: createdDate }) }}</p>
         <p v-if="project.profile.purpose" class="project-overview-purpose">{{ project.profile.purpose }}</p>
         <ProfileAuthorChip v-if="project.profile.purpose" class="project-overview-author" :author="project.profile.authors?.purpose" />
@@ -60,10 +61,10 @@ const createdDate = computed(() =>
         </Button>
       </div>
     </header>
-    <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
+    <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="projectDisplayName(project)" />
     <AdvancedOnly area="tonborg">
       <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
-        :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')">
+        :project-id="project.project_id" :project-name="projectDisplayName(project)" :heading="t('judgment.project.heading')">
         <template #heading-action>
           <RouterLink class="project-judgment-default-link" to="/employees/tonborg?view=standards" data-judgment-default-link>
             {{ t('judgment.project.defaultLink') }}
@@ -76,10 +77,10 @@ const createdDate = computed(() =>
     </AdvancedOnly>
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectWorkstreams :key="`workstreams-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" />
-    <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
+    <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="projectDisplayName(project)" />
     <AdvancedOnly area="lan"><GuestLinksCard :key="`guests-${project.project_id}`" :project-id="project.project_id" /></AdvancedOnly>
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"
-      :project-name="project.profile.name" :updated-at="project.updated_at" />
+      :project-name="projectDisplayName(project)" :updated-at="project.updated_at" />
     <section
       class="project-frequent-projects"
       data-frequent-projects

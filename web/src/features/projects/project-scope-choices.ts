@@ -5,16 +5,8 @@ import { shortUniqueIds } from '@/lib/short-ids'
 import type { PersonalProject } from '@/types'
 import { clientName } from '@/features/capture/capture-change'
 import { byLastUse, hasTemporaryOrigin, projectDisplayName } from './project-origin'
+import { NUMBER_LENGTH, givenProjectTitle, temporaryIdOrigin, temporaryNumberSource } from './temporary-project-name'
 import { temporaryProjectSource } from './temporary-project-sources'
-
-// The names FULI itself gives a temporary project. They say nothing about which
-// one it is, so they are never shown as its title: the Provider's
-// (graph-provider/fuli_graph/temporary_project_scope.py) and the session fallback's.
-const GENERATED_NAMES = new Set(['临时任务 / Temporary task', '临时会话 / Temporary session', '会话项目 / Conversation project'])
-// A generated temporary project ID: its origin word and the hex digest its number is cut from.
-const GENERATED_ID = /^(temporary|conversation)-([0-9a-f]{64})$/
-// A number is at least this long, and only as much longer as it takes to tell it apart.
-const NUMBER_LENGTH = 8
 
 export interface ProjectScopeChoice<T extends PersonalProject = PersonalProject> {
   key: string
@@ -98,8 +90,8 @@ const optionalMeta = (meta: string | undefined) => (meta ? { meta } : {})
  * personal spaces. Everything comes from the IDs, so order and language never change it.
  */
 function temporaryNumbers(projects: readonly PersonalProject[]) {
-  const digest = (project: PersonalProject) => numberSource(project.project_id)
-  const origin = (project: PersonalProject) => GENERATED_ID.exec(project.project_id)?.[1]?.[0] ?? 'x'
+  const digest = (project: PersonalProject) => temporaryNumberSource(project.project_id)
+  const origin = (project: PersonalProject) => temporaryIdOrigin(project.project_id)
   const prefixes = shortestUnique([...new Set(projects.map(digest))])
   const spaces = shortUniqueIds([...new Set(projects.map(project => project.personal_space_id))])
   const numbers = new Map<string, string>()
@@ -110,19 +102,6 @@ function temporaryNumbers(projects: readonly PersonalProject[]) {
     numbers.set(projectScopeKey(project), `${prefixes.get(digest(project))}${byOrigin}${bySpace}`)
   }
   return numbers
-}
-
-// The digest of a generated ID; any other ID (an older name, often with shared words)
-// by a stable code of the whole ID: the FNV-1a 32-bit hashes of it and of it reversed, 16 hex characters, so
-// anyone can recompute it from the full ID shown in the row's title.
-function numberSource(projectId: string) {
-  return GENERATED_ID.exec(projectId)?.[2] ?? fnv1a(projectId) + fnv1a([...projectId].reverse().join(''))
-}
-
-function fnv1a(text: string) {
-  let hash = 0x811c9dc5
-  for (const character of text) hash = Math.imul(hash ^ character.codePointAt(0)!, 0x01000193) >>> 0
-  return hash.toString(16).padStart(8, '0')
 }
 
 // Each value's shortest prefix of at least NUMBER_LENGTH characters that no other value starts with.
@@ -137,7 +116,5 @@ function shortestUnique(values: readonly string[]) {
 function temporaryDetail(project: PersonalProject) {
   const source = temporaryProjectSource(project.personal_space_id, project.project_id)
   const date = formatDateTime(project.updated_at ?? project.created_at, currentLocale(), DATE_ONLY, { missing: '', invalid: '' })
-  const name = project.profile.name?.trim() ?? ''
-  const title = name && !GENERATED_NAMES.has(name) ? name : ''
-  return [source ? clientName(source.client) : '', date, title].filter(Boolean).join(' · ')
+  return [source ? clientName(source.client) : '', date, givenProjectTitle(project)].filter(Boolean).join(' · ')
 }
