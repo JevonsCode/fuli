@@ -198,6 +198,124 @@ describe('ProjectWorkstreams', () => {
     panel.unmount()
   })
 
+  async function refuseOwnerChange(code: string) {
+    serve([line({ revision: 3 })])
+    postJson.mockRejectedValueOnce(refused(code))
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-workstream] select.project-workstreams-owner').setValue('fla-orin')
+    await flushPromises()
+    return panel
+  }
+
+  async function refuseNewLine(code: string) {
+    serve([line()])
+    postJson.mockRejectedValueOnce(refused(code))
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-open-workstream]').trigger('click')
+    await panel.get('[data-workstream-name]').setValue('Autumn sale')
+    await panel.get('[data-workstream-words]').setValue('autumn-sale')
+    await panel.get('.project-workstreams-form select').setValue('fla-orin')
+    await panel.get('.project-workstreams-form').trigger('submit')
+    await flushPromises()
+    return panel
+  }
+
+  it.each(['standing_assignment_term_taken', 'standing_assignment_term_too_broad'])(
+    'a refused word (%s) takes the person back to the draft\'s words', async (code) => {
+      const panel = await refuseNewLine(code)
+      const notice = panel.get('[data-workstreams-problem]')
+      expect(notice.text()).toContain(t(`projects.workstreams.problems.${code}`))
+      expect(notice.findAll('button').map(button => button.text())).toEqual([t('projects.workstreams.changeWords')])
+      await notice.get('[data-change-words]').trigger('click')
+      await flushPromises()
+      expect(panel.find('[data-workstreams-problem]').exists()).toBe(false)
+      // The draft is kept as typed, with the cursor in its words.
+      expect((panel.get('[data-workstream-name]').element as HTMLInputElement).value).toBe('Autumn sale')
+      expect(document.activeElement).toBe(panel.get('[data-workstream-words]').element)
+      panel.unmount()
+    })
+
+  it('an owner who is the lead is refused with a member to pick instead', async () => {
+    const panel = await refuseOwnerChange('workstream_owner_is_lead')
+    const notice = panel.get('[data-workstreams-problem]')
+    expect(notice.text()).toContain(t('projects.workstreams.problems.workstream_owner_is_lead'))
+    expect(notice.findAll('button').map(button => button.text())).toEqual([t('projects.workstreams.pickAnother')])
+    await notice.get('[data-pick-another]').trigger('click')
+    expect(panel.find('[data-workstreams-problem]').exists()).toBe(false)
+    expect(panel.find('[data-workstream] select.project-workstreams-owner').exists()).toBe(true)
+    panel.unmount()
+  })
+
+  it('an owner no longer on the project links to the team settings', async () => {
+    const panel = await refuseOwnerChange('workstream_owner_not_in_project')
+    const notice = panel.get('[data-workstreams-problem]')
+    expect(notice.text()).toContain(t('projects.workstreams.problems.workstream_owner_not_in_project'))
+    const link = notice.getComponent(RouterLinkStub)
+    expect(link.text()).toBe(t('projects.workstreams.openTeam'))
+    expect(link.props('to')).toEqual({ path: '/project-agents/manage', query: { project: 'project-a' } })
+    expect(notice.find('[data-try-again]').exists()).toBe(false)
+    panel.unmount()
+  })
+
+  it('a line changed elsewhere is retried at the revision read since', async () => {
+    serve([line({ revision: 3 })])
+    postJson.mockRejectedValueOnce(refused('standing_assignment_changed'))
+    const panel = mountPanel()
+    await flushPromises()
+    serve([line({ revision: 4 })])
+    await panel.get('[data-workstream] select.project-workstreams-owner').setValue('fla-orin')
+    await flushPromises()
+    const notice = panel.get('[data-workstreams-problem]')
+    expect(notice.text()).toContain(t('projects.workstreams.problems.standing_assignment_changed'))
+    await notice.get('[data-try-again]').trigger('click')
+    await flushPromises()
+    expect(postJson.mock.calls).toEqual([
+      ['/api/standing-assignments/line-spring/reassign', { expectedRevision: 3, projectId: 'project-a', leadAgentId: 'fla-orin' }],
+      ['/api/standing-assignments/line-spring/reassign', { expectedRevision: 4, projectId: 'project-a', leadAgentId: 'fla-orin' }],
+    ])
+    expect(panel.find('[data-workstreams-problem]').exists()).toBe(false)
+    panel.unmount()
+  })
+
+  it('any other refusal retries the same change: an end, once confirmed, is not asked again', async () => {
+    serve([line({ revision: 6 })])
+    postJson.mockRejectedValueOnce(new Error('offline'))
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get(`[aria-label="${t('projects.workstreams.end', { name: 'Spring sale page' })}"]`).trigger('click')
+    await panel.get('[data-confirm-change]').trigger('click')
+    await flushPromises()
+    const notice = panel.get('[data-workstreams-problem]')
+    expect(notice.text()).toContain(t('projects.workstreams.problems.failed'))
+    expect(notice.get('[data-try-again]').text()).toBe(t('projects.overview.retry'))
+    await notice.get('[data-try-again]').trigger('click')
+    await flushPromises()
+    expect(panel.find('[data-workstream-confirm]').exists()).toBe(false)
+    expect(postJson.mock.calls).toEqual([['/api/standing-assignments/line-spring/retire', { expectedRevision: 6 }],
+      ['/api/standing-assignments/line-spring/retire', { expectedRevision: 6 }]])
+    panel.unmount()
+  })
+
+  it('a refused split is sent again from the draft, at the line\'s revision read since', async () => {
+    serve([line({ terms: ['spring-sale', 'coupon'], revision: 4 })])
+    postJson.mockRejectedValueOnce(refused('standing_assignment_changed'))
+    const panel = mountPanel()
+    await flushPromises()
+    await panel.get('[data-split-workstream]').trigger('click')
+    await panel.get('[data-term-chip="coupon"]').trigger('click')
+    await panel.get('[data-workstream-name]').setValue('Coupon centre')
+    await panel.get('.project-workstreams-form select').setValue('fla-orin')
+    serve([line({ terms: ['spring-sale', 'coupon'], revision: 5 })])
+    await panel.get('.project-workstreams-form').trigger('submit')
+    await flushPromises()
+    await panel.get('[data-try-again]').trigger('click')
+    await flushPromises()
+    expect(postJson.mock.calls.map(([, body]) => body.expectedRevision)).toEqual([4, 5])
+    panel.unmount()
+  })
+
   it('says a project is undivided, and over the LAN that lines are read only here', async () => {
     serve([])
     const panel = mountPanel()
@@ -210,7 +328,10 @@ describe('ProjectWorkstreams', () => {
     })
     const remote = mountPanel()
     await flushPromises()
-    expect(remote.get('[data-workstreams-local-only]').text()).toBe(t('projects.workstreams.localOnly'))
+    const notice = remote.get('[data-workstreams-local-only]')
+    expect(notice.text()).toBe(t('projects.workstreams.localOnly'))
+    expect(notice.text()).toContain('运行 FULI 的那台电脑')
+    expect(notice.attributes('data-no-action')).toBeTruthy()
     expect(remote.find('[data-workstream]').exists()).toBe(false)
     remote.unmount()
   })

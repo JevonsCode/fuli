@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { ApiError } from '@/api/client'
@@ -35,7 +35,9 @@ import {
 
 const props = defineProps<{ spaceId: string; projectId: string }>()
 
-type Problem = { code: string; line?: { assignmentId: string; name: string; revision: number }; terms?: string[] }
+// again: the refused change once more, at the revision the page shows by then.
+type Problem = { code: string; line?: { assignmentId: string; name: string; revision: number }; terms?: string[];
+  again: () => void }
 type Draft = { from: ProjectWorkstream | null; name: string; picked: string[]; words: string; ownerAgentId: string }
 type Pending = { kind: 'merge'; line: ProjectWorkstream; into: ProjectWorkstream } | { kind: 'end'; line: ProjectWorkstream }
 
@@ -48,6 +50,7 @@ const failed = ref<'local_only' | 'failed' | null>(null)
 const busy = ref('')
 const problem = ref<Problem | null>(null)
 const draft = ref<Draft | null>(null)
+const form = ref<HTMLFormElement | null>(null)
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !team.value))
 let sequence = 0
 
@@ -109,8 +112,9 @@ function codeOf(error: unknown): string | null {
 
 // Every change reads the ledger again, so the next one uses the revision the
 // page shows. A refused change leaves the list as it was and says, in plain
-// words, why and what to do next.
-async function change(key: string, work: () => Promise<unknown>, context: Partial<Problem> = {}) {
+// words, why and what to do next; `again` tries it once more from what was read.
+async function change(key: string, work: () => Promise<unknown>, again: () => void,
+  context: Partial<Problem> = {}) {
   if (busy.value) return
   busy.value = key
   problem.value = null
@@ -120,17 +124,25 @@ async function change(key: string, work: () => Promise<unknown>, context: Partia
   } catch (error) {
     let detail: Partial<Problem> = {}
     try { detail = error instanceof ApiError ? JSON.parse(error.detail) : {} } catch { /* no detail */ }
-    problem.value = { code: codeOf(error) ?? 'failed', ...context, ...(detail.line ? { line: detail.line } : {}) }
+    problem.value = { code: codeOf(error) ?? 'failed', ...context, ...(detail.line ? { line: detail.line } : {}), again }
   } finally {
-    busy.value = ''
     await load()
+    busy.value = ''
   }
+}
+
+// The line as the page read it last; a line gone since is not changed again.
+const current = (line: ProjectWorkstream) => lines.value.find(item => item.assignmentId === line.assignmentId)
+const onCurrent = (line: ProjectWorkstream, act: (fresh: ProjectWorkstream) => void) => () => {
+  const fresh = current(line)
+  if (fresh) act(fresh)
 }
 
 function setOwner(line: ProjectWorkstream, leadAgentId: string) {
   if (!leadAgentId || leadAgentId === line.ownerAgentId) return
   void change(line.assignmentId, () => moveWorkstream(line.assignmentId,
-    { expectedRevision: line.revision, projectId: props.projectId, leadAgentId }))
+    { expectedRevision: line.revision, projectId: props.projectId, leadAgentId }),
+  onCurrent(line, fresh => setOwner(fresh, leadAgentId)))
 }
 
 // A merge or an end changes where later tasks go; it is asked once first.
@@ -147,11 +159,20 @@ function confirmPending() {
   const value = pending.value
   if (!value) return
   pending.value = null
+  apply(value)
+}
+
+function apply(value: Pending) {
   const { line } = value
   void change(line.assignmentId, () => value.kind === 'merge'
     ? mergeWorkstream(line.assignmentId, { into: value.into.assignmentId, expectedRevision: line.revision,
       targetRevision: value.into.revision })
-    : endWorkstream(line.assignmentId, line.revision))
+    : endWorkstream(line.assignmentId, line.revision),
+  onCurrent(line, fresh => {
+    if (value.kind === 'end') return apply({ kind: 'end', line: fresh })
+    const into = current(value.into)
+    if (into) apply({ kind: 'merge', line: fresh, into })
+  }))
 }
 
 const pendingText = computed(() => {
@@ -170,7 +191,7 @@ const pendingText = computed(() => {
 // One word less: later tasks that say only it no longer come to this line.
 function removeTerm(line: ProjectWorkstream, term: string) {
   void change(line.assignmentId, () => editWorkstreamTerms(line.assignmentId,
-    { expectedRevision: line.revision, removeTerms: [term] }))
+    { expectedRevision: line.revision, removeTerms: [term] }), onCurrent(line, fresh => removeTerm(fresh, term)))
 }
 
 function startDraft(from: ProjectWorkstream | null) {
@@ -184,26 +205,39 @@ function togglePicked(term: string) {
   draft.value.picked = picked.includes(term) ? picked.filter(item => item !== term) : [...picked, term]
 }
 
+// A refused draft stays open; sending it again splits the line as read since.
 function submit() {
   const value = draft.value
   if (!value || !canSubmit.value) return
+  const from = value.from ? current(value.from) ?? value.from : null
   const extra = words(value.words)
   const terms = [...value.picked, ...extra]
-  void change('draft', () => value.from && value.picked.length
-    ? splitWorkstream(value.from.assignmentId, { expectedRevision: value.from.revision, terms: value.picked,
+  void change('draft', () => from && value.picked.length
+    ? splitWorkstream(from.assignmentId, { expectedRevision: from.revision, terms: value.picked,
       extraTerms: extra, leadAgentId: value.ownerAgentId, responsibility: value.name.trim() })
     : openWorkstream(props.projectId, { leadAgentId: value.ownerAgentId, terms, responsibility: value.name.trim() }),
-  { terms })
+  submit, { terms })
 }
 
 // The refused new line's words go to the owner's existing line instead, in one click.
 function addToExistingLine() {
-  const target = problem.value?.line
+  const line = problem.value?.line
   const terms = problem.value?.terms ?? []
-  if (!target || !terms.length) return
+  if (!line || !terms.length) return
+  const target = lines.value.find(item => item.assignmentId === line.assignmentId) ?? line
   void change('add', () => editWorkstreamTerms(target.assignmentId,
-    { expectedRevision: target.revision, addTerms: terms }))
+    { expectedRevision: target.revision, addTerms: terms }), addToExistingLine, { line: target, terms })
 }
+
+// A word refused as taken or too broad is changed in the draft's words.
+async function changeWords() {
+  problem.value = null
+  if (!draft.value) startDraft(null)
+  await nextTick()
+  form.value?.querySelector<HTMLInputElement>('[data-workstream-words]')?.focus()
+}
+
+const TERM_PROBLEMS = ['standing_assignment_term_taken', 'standing_assignment_term_too_broad']
 
 function progress(line: ProjectWorkstream) {
   if (line.progressUnreadable) return t('projects.workstreams.progressUnreadable')
@@ -236,7 +270,8 @@ const problemText = computed(() => {
     </header>
 
     <GrowthLoading v-if="showLoading" variant="compact" :label="t('projects.workstreams.loading')" />
-    <UiNotice v-else-if="failed === 'local_only'" tone="info" data-workstreams-local-only>
+    <UiNotice v-else-if="failed === 'local_only'" tone="info" data-workstreams-local-only
+      data-no-action="lines are read and changed only on the computer that runs FULI; nothing on this console opens them there">
       {{ t('projects.workstreams.localOnly') }}
     </UiNotice>
     <UiNotice v-else-if="failed && !team" tone="error">
@@ -247,15 +282,30 @@ const problemText = computed(() => {
     <template v-else>
       <UiNotice v-if="problem" tone="warning" data-workstreams-problem>
         {{ problemText }}
-        <template v-if="problem.code === 'workstream_owner_has_line'" #actions>
-          <Button size="sm" variant="outline" data-add-to-line @click="addToExistingLine">
-            {{ t('projects.workstreams.addToLine', { line: problem.line?.name ?? '' }) }}
-          </Button>
-          <Button size="sm" variant="ghost" @click="problem = null">{{ t('projects.workstreams.pickAnother') }}</Button>
-          <Button size="sm" variant="ghost" as-child>
-            <RouterLink :to="{ path: '/project-agents/manage', query: { project: projectId } }">
-              {{ t('projects.workstreams.recruit') }}
+        <!-- One next step per reason: the words, the owner, the team, or the same change again. -->
+        <template #actions>
+          <template v-if="problem.code === 'workstream_owner_has_line'">
+            <Button size="sm" variant="outline" :disabled="Boolean(busy)" data-add-to-line @click="addToExistingLine">
+              {{ t('projects.workstreams.addToLine', { line: problem.line?.name ?? '' }) }}
+            </Button>
+            <Button size="sm" variant="ghost" @click="problem = null">{{ t('projects.workstreams.pickAnother') }}</Button>
+            <Button size="sm" variant="ghost" as-child>
+              <RouterLink :to="{ path: '/project-agents/manage', query: { project: projectId } }">
+                {{ t('projects.workstreams.recruit') }}
+              </RouterLink>
+            </Button>
+          </template>
+          <Button v-else-if="TERM_PROBLEMS.includes(problem.code)" size="sm" variant="outline" data-change-words
+            @click="changeWords">{{ t('projects.workstreams.changeWords') }}</Button>
+          <Button v-else-if="problem.code === 'workstream_owner_is_lead'" size="sm" variant="outline"
+            data-pick-another @click="problem = null">{{ t('projects.workstreams.pickAnother') }}</Button>
+          <Button v-else-if="problem.code === 'workstream_owner_not_in_project'" size="sm" variant="outline" as-child>
+            <RouterLink data-open-team :to="{ path: '/project-agents/manage', query: { project: projectId } }">
+              {{ t('projects.workstreams.openTeam') }}
             </RouterLink>
+          </Button>
+          <Button v-else size="sm" variant="outline" :disabled="Boolean(busy)" data-try-again @click="problem.again()">
+            {{ t('projects.overview.retry') }}
           </Button>
         </template>
       </UiNotice>
@@ -313,7 +363,7 @@ const problemText = computed(() => {
 
       <Button v-if="!draft && candidates.length" size="sm" variant="ghost" data-open-workstream
         @click="startDraft(null)">{{ t('projects.workstreams.open') }}</Button>
-      <form v-else-if="draft" class="project-workstreams-form" @submit.prevent="submit">
+      <form v-else-if="draft" ref="form" class="project-workstreams-form" @submit.prevent="submit">
         <p v-if="draft.from" class="ui-meta">{{ t('projects.workstreams.splitFrom', { line: draft.from.name }) }}</p>
         <div v-if="draft.from" class="project-workstreams-chips">
           <Button v-for="term in draft.from.terms" :key="term" type="button" size="xs"

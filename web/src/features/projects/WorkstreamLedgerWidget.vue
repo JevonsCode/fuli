@@ -74,7 +74,8 @@ function progress(line: ProjectWorkstream) {
     </header>
 
     <GrowthLoading v-if="showLoading" variant="compact" :label="t('projects.workstreams.loading')" />
-    <UiNotice v-else-if="failed === 'local_only'" tone="info" data-ledger-local-only>
+    <UiNotice v-else-if="failed === 'local_only'" tone="info" data-ledger-local-only
+      data-no-action="lines are read only on the computer that runs FULI; nothing on this console opens them there">
       {{ t('projects.workstreams.localOnly') }}
     </UiNotice>
     <UiNotice v-else-if="failed" tone="error">

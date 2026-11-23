@@ -77,7 +77,11 @@ describe('WorkstreamLedgerWidget', () => {
     getJson.mockRejectedValue(new ApiError('no', 403, JSON.stringify({ code: 'local_user_only' })))
     const widget = mountWidget()
     await flushPromises()
-    expect(widget.get('[data-ledger-local-only]').text()).toBe(t('projects.workstreams.localOnly'))
+    const notice = widget.get('[data-ledger-local-only]')
+    // Nothing here can open it: the notice names where to go, and says so on itself.
+    expect(notice.text()).toBe(t('projects.workstreams.localOnly'))
+    expect(notice.text()).toContain('运行 FULI 的那台电脑')
+    expect(notice.attributes('data-no-action')).toBeTruthy()
     expect(widget.find('button').exists()).toBe(false)
     widget.unmount()
   })
