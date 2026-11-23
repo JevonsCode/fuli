@@ -51,7 +51,8 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 
 <template>
   <div class="agent-workflow" :data-workflow="workflow.workflowId">
-    <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice>{{ notice.text }}</UiNotice>
+    <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice
+      data-no-action="what the person's own click on this card did; the same control tries again">{{ notice.text }}</UiNotice>
       <header class="agent-workflow-header">
         <h3>{{ displayed(workflow).name }}</h3>
         <Badge :variant="workflow.pending ? 'warning' : 'success'">{{ workflowState(workflow) }}</Badge>

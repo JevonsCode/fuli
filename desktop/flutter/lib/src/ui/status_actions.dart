@@ -103,6 +103,14 @@ class StatusActions extends StatelessWidget {
     if (!snapshot.installed) {
       return FilledButton(onPressed: () => opener.open(installPage), child: Text(strings.installPage));
     }
+    // The last start stopped at a graph service of this data FULI lost track of: the one way on, confirmed first.
+    if (!snapshot.running && controller.orphanedServices.isNotEmpty) {
+      return FilledButton(
+        key: const Key('end-orphans-start'),
+        onPressed: busy ? null : () => _confirmEndOrphans(context),
+        child: Text(strings.endOrphansAndStart),
+      );
+    }
     // The last start stopped at a maintenance lock a person may release: the
     // one way on, confirmed first; FULI's own checks decide (neo4j-lifecycle-lock.js).
     if (!snapshot.running && controller.releasableLock) {
@@ -119,6 +127,26 @@ class StatusActions extends StatelessWidget {
     return snapshot.running
         ? OutlinedButton(onPressed: busy ? null : controller.stop, child: Text(strings.stopFuli))
         : FilledButton(onPressed: busy ? null : controller.start, child: Text(strings.startFuli));
+  }
+
+  Future<void> _confirmEndOrphans(BuildContext context) async {
+    final services = controller.orphanedServices.map((service) => strings.orphanedService(service.port, service.command));
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.endOrphansTitle),
+        content: Text(strings.endOrphansBody(services.join(strings.chinese ? '、' : ', '))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('end-orphans-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.endOrphansAndStart),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.endOrphansAndStart();
   }
 
   Future<void> _confirmReleaseLock(BuildContext context) async {

@@ -55,6 +55,10 @@ function announcePortMove(answer: DoctorReport) {
   store.notify(notice.message)
 }
 
+// A repair's reason may end with the console page's whole address, written for an
+// Agent's chat; here the person is already in the console, so the address goes.
+const withoutAddress = (reason: string) => reason.replace(/\s+https?:\/\/\S+$/, '')
+
 // A full success is said in the shell's feedback line; what failed stays
 // beside the banner until the next repair.
 function announce(results: DoctorRepairResult[]) {
@@ -63,7 +67,7 @@ function announce(results: DoctorRepairResult[]) {
     store.notify(t('doctor.repaired', { count: results.filter(result => result.outcome === 'fixed').length }))
     return
   }
-  const reason = [...new Set(failed.map(result => result.error ?? ''))].filter(Boolean).join(' ')
+  const reason = [...new Set(failed.map(result => withoutAddress(result.error ?? '')))].filter(Boolean).join(' ')
   failure.value = t('doctor.repairFailed', { count: failed.length, reason })
 }
 

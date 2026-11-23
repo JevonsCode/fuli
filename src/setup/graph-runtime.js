@@ -166,6 +166,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
       nativeRuntime: selectedGraphRuntime,
+      // Only when the person chose to end a lost graph service (orphan-services.js); a plain start passes nothing new.
+      ...(input.endOrphanedServices === true ? { endOrphanedServices: true } : {}),
       // The native start waits for Neo4j and the Provider itself and says so.
       onStage: stage,
       ...(input.env ? { env: input.env } : {})
@@ -672,7 +674,7 @@ function graphDependencies(overrides) {
       personalOnly: options.personalOnly,
       env: options.env,
       onStage: options.onStage
-    }).start(),
+    }).start({ endOrphans: options.endOrphanedServices === true }),
     spawnWebRuntime,
     // Consoles are FULI's own processes (processes.js).
     isProcessAlive: isOwnProcessRunning,

@@ -267,7 +267,7 @@ describe('Jefa reads only the selected projects', () => {
     const wrapper = await setup(deepLink([kept, refused]))
     expect(board(wrapper).props('boards').map(entry => entry.project.id)).toEqual([kept])
     expect(wrapper.get('[role="alert"]').text()).toContain('部分项目暂不可用')
-    expect(wrapper.get('.jefa-read-details').text()).toContain('HTTP 401')
+    expect(wrapper.get('.jefa-read-details').text()).toContain('没有权限')
   })
 
   it('reads every project on select-all, finishing a slow but steady catalog without a timeout', async () => {

@@ -13,7 +13,7 @@ import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { BAND_SOURCE } from '../src/runner/follower-band.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
-import { ADDRESS_PATH, followerConsolePage, SYNC_PATH } from '../src/runner/follower-page.js';
+import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, SYNC_PATH } from '../src/runner/follower-page.js';
 import { capabilityLines } from '../src/runner/follower-runtime.js';
 import { CAPABILITIES } from '../src/runner/follower-status.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
@@ -71,12 +71,23 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const routes = createRunnerRoutes({ app: {}, store: hostStore, hostName: 'Host A', hostFingerprint: host.fingerprint,
     withLease: (_owner, operation) => operation(), consoleOrigin: () => consoleSide.origin });
   let away = false;
+  // helloUnanswered: how many hellos on the kept connection go unanswered while everything else is served.
+  const flaky = { helloUnanswered: 0 };
   const listener = await startRunnerListener({ identity: host, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
-    route: (request, response, context) => (away ? (request.socket.destroy(), true) : routes.handle(request, response, context)) });
+    route: (request, response, context) => {
+      if (away) return (request.socket.destroy(), true);
+      if (flaky.helloUnanswered > 0 && request.url === '/runner/1/hello') {
+        flaky.helloUnanswered -= 1;
+        return true;
+      }
+      return routes.handle(request, response, context);
+    } });
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
   const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
   store.saveHost({ name: 'Host A', fingerprint: host.fingerprint, certPem: host.certPem, port: listener.port, addresses: ['127.0.0.1'] });
-  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner, lookUp: async () => [] });
+  const looked = { mdns: 0 };
+  const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner,
+    lookUp: async () => { looked.mdns += 1; return []; } });
   const delivered = [];
   const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients,
     deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
@@ -89,7 +100,7 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
     hostStore.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { entry, consoleSide, hostStore, runner, store, delivered,
+  return { entry, consoleSide, hostStore, runner, store, delivered, hostFingerprint: host.fingerprint, flaky, looked,
     // The host goes off the network; nothing here is told so (review of #1069: a manual drop hid that the status
     // kept a dead connection).
     setAway: (value) => { away = value; } };
@@ -257,6 +268,66 @@ test('the entry answers only to this computer under its own name, and says when 
   assert.equal(awayApi.headers['x-fuli-source'], 'unavailable');
 });
 
+// Review of #1069: a hello that went unanswered ended the whole connection, and with it the host's
+// pages and live event streams the follower was carrying.
+test('a hello that goes unanswered once does not cut a live event stream from a host that is still there', async (t) => {
+  const { entry, flaky } = await pairedRunner(t);
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, true);
+  let closed = false;
+  const opened = await new Promise((resolve, reject) => {
+    const request = httpRequest(`${entry.url}/api/stream`, (response) => {
+      response.once('data', () => resolve(request));
+      response.on('close', () => { closed = true; });
+    });
+    request.on('error', (error) => (error.code === 'ECONNRESET' ? null : reject(error)));
+    request.end();
+  });
+  t.after(() => opened.destroy());
+  flaky.helloUnanswered = 1;
+  const status = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(status.host.reachable, true, 'found again on a fresh connection');
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(closed, false, 'the stream carried on the earlier connection is still open');
+});
+
+// Review of #1069: with the host away, `/local` waited for a whole search (up to about 8 seconds) before
+// it drew anything.
+test('this computer\'s own page is drawn at once while the host is away, and looks for it afterwards', async (t) => {
+  const { entry, setAway, looked } = await pairedRunner(t);
+  setAway(true);
+  const searches = looked.mdns;
+  const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.equal(looked.mdns, searches, 'drawn without looking for the host first');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /正在找主机…/);
+  assert.match(page.text, /void look\(\)/, 'and the page asks right away');
+});
+
+// Review of #1075: when looking again also failed, the old connection was ended at once, cutting what it
+// still carried, and the look skipped mDNS.
+test('when the host cannot be found again, what the old connection carries still finishes, after a full search', async (t) => {
+  const { entry, flaky, looked } = await pairedRunner(t);
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, true);
+  let closed = false;
+  const opened = await new Promise((resolve, reject) => {
+    const request = httpRequest(`${entry.url}/api/stream`, (response) => {
+      response.once('data', () => resolve(request));
+      response.on('close', () => { closed = true; });
+    });
+    request.on('error', (error) => (error.code === 'ECONNRESET' ? null : reject(error)));
+    request.end();
+  });
+  t.after(() => opened.destroy());
+  const searchesBefore = looked.mdns;
+  // Every hello goes unanswered (the search tries each address from each adapter) while the stream is served.
+  flaky.helloUnanswered = 1000;
+  const status = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
+  assert.equal(status.host.reachable, false, 'not found again: said as it is');
+  assert.equal(looked.mdns, searchesBefore + 1, 'the search looked over mDNS too');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, false, 'the stream on the old connection was not cut');
+});
+
 test('a host that went away after it was reached is shown as away, not as answering', async (t) => {
   const { entry, setAway, store } = await pairedRunner(t);
   const first = JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text);
@@ -314,12 +385,16 @@ test('where data comes from has three answers: the host, this computer, and a re
 });
 
 test('`/remote/<host>/` reaches only the paired host, and lands on its own path', async (t) => {
-  const { entry, consoleSide } = await pairedRunner(t);
+  const { entry, consoleSide, hostFingerprint } = await pairedRunner(t);
   const named = await get(`${entry.url}/remote/host-a/projects/synthetic`, { headers: { accept: 'text/html' } });
   assert.equal(named.status, 302);
   assert.equal(named.headers.location, '/projects/synthetic');
   const api = await get(`${entry.url}/remote/host-a/api/tasks`);
   assert.equal(JSON.parse(api.text).url, '/api/tasks');
+  // A receipt names the computer whose console its links open as `issued_by.fingerprint`: the first
+  // 16 hex characters of the identity the pairing pinned. That name reaches the same host.
+  const byFingerprint = await get(`${entry.url}/remote/${hostFingerprint.slice(0, 16)}/api/tasks`);
+  assert.equal(JSON.parse(byFingerprint.text).url, '/api/tasks');
   const seen = consoleSide.seen.length;
 
   for (const route of ['/remote/attacker.example/api/tasks', '/remote/127.0.0.1:9/api/tasks',
@@ -353,8 +428,10 @@ test('the named proxy and the console relay stay on the host\'s console, whateve
 test('「添加主机地址」 takes a private address from this computer\'s own page and nothing else', async (t) => {
   const { entry, store } = await pairedRunner(t, { nowhere: true });
   const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
-  assert.match(page.text, /添加主机地址/, 'the next step is offered while the host is away');
-  assert.match(page.text, /不在线/, 'the page says plainly that the host did not answer, never "not checked"');
+  assert.match(page.text, /添加主机地址/, 'the next step is there, shown once the page finds the host away');
+  assert.match(page.text, /正在找主机…/, 'drawn at once, saying it is looking for the host');
+  assert.equal(JSON.parse((await get(`${entry.url}${STATUS_PATH}`)).text).host.reachable, false,
+    'what the page then asks says plainly that the host did not answer');
   assert.match(page.text, /同一个 VPN/, 'how the two computers reach each other is said as it is');
   assert.doesNotMatch(page.text, /中继/, 'no relay is planned, so none is promised');
 
@@ -531,4 +608,60 @@ test('fuli setup on a runner sets up its clients only', async (t) => {
   assert.equal(result.status, 'runner');
   assert.equal(result.exitCode, 0);
   assert.match(written.join('\n'), /only its clients/);
+});
+
+// Runs the page's own script with a stub page: each element the script asks for, a fetch it is given and
+// timers that fire at once, so what the script does is checked without a browser or the wall clock.
+async function runPageScript(html, answers) {
+  const script = html.split('<script type="module">')[1].split('</script>')[0];
+  const elements = new Map();
+  const element = (selector) => {
+    if (!elements.has(selector)) {
+      elements.set(selector, { selector, textContent: '', hidden: selector === '[data-away-step]', className: 'dot',
+        dataset: {}, addEventListener() {}, append() {}, focus() {} });
+    }
+    return elements.get(selector);
+  };
+  const timers = [];
+  const document = { querySelector: element, body: { dataset: {} } };
+  let call = 0;
+  const fetch = async () => {
+    const next = answers[Math.min(call++, answers.length - 1)];
+    if (next instanceof Error) throw next;
+    return { json: async () => next };
+  };
+  new Function('document', 'fetch', 'setTimeout', 'setInterval', 'location', 'navigator', script)(
+    document, fetch, (run) => timers.push(run), () => {}, { reload() {} }, {});
+  for (let index = 0; index < 50; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    const next = timers.shift();
+    if (!next) break;
+    next();
+  }
+  return { element, calls: () => call };
+}
+
+const PAGE_STATUS = { paired: true, host: { name: 'Host A', reachable: null, revokedAt: null, lastSeenAt: '2026-11-01T00:00:00.000Z' },
+  outbox: { entries: [] }, capabilities: [] };
+
+// Review of #1075: a look that failed once left the page at 「正在找主机…」 for ever, with the next step hidden.
+test('this computer\'s own page keeps looking for a while; a console that never answered is not taken for the host being away', async () => {
+  const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/' });
+  const silent = await runPageScript(html, [new Error('busy')]);
+  assert.equal(silent.calls(), LOOK_TRIES, 'asked again, a bounded number of times');
+  assert.match(silent.element('[data-reach]').textContent, /本机控制台没有回答，请刷新页面/);
+  assert.equal(silent.element('[data-away-step]').hidden, true, 'no next step about the host, which nothing was learned of');
+
+  const away = await runPageScript(html, [new Error('busy'), { host: { reachable: false }, line: { zh: '跟随 Host A · 不在线' } }]);
+  assert.equal(away.element('[data-reach]').textContent, '现在不在线');
+  assert.equal(away.element('[data-away-step]').hidden, false, '「添加主机地址」 is offered when the host is said to be away');
+});
+
+test('once the host is found, the page says so and when it was last reached', async () => {
+  const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/' });
+  const found = { host: { reachable: true, lastSeenAt: '2026-11-23T09:00:00.000Z' }, line: { zh: '跟随 Host A · 在线' } };
+  const page = await runPageScript(html, [new Error('busy'), found]);
+  assert.equal(page.element('[data-reach]').textContent, '现在在线');
+  assert.equal(page.element('[data-reached]').textContent, '2026-11-23T09:00:00.000Z');
+  assert.equal(page.element('[data-away-step]').hidden, true);
 });

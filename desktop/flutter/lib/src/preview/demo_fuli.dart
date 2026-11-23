@@ -166,6 +166,9 @@ class DemoRuntime implements FuliRuntime {
 
   @override
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => start(onStage: onStage);
+
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => start(onStage: onStage);
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).

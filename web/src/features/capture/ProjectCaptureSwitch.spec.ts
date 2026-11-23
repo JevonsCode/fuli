@@ -33,7 +33,7 @@ function mountBoth(policy: CapturePolicy) {
   store.state = { mode: 'personal_only', personalSpaces: [{ id: 'space', name: '我' }], activePersonalSpaceId: 'space',
     projects: [], subscriptions: [], personalProjects: PROJECTS, capturePolicy: policy }
   const toggle = mount(ProjectCaptureSwitch, { props: { projectId: 'family-ledger', projectName: '家庭账本' },
-    global: { plugins: [pinia] } })
+    global: { plugins: [pinia], stubs: { RouterLink: true } } })
   const settings = mount(CaptureProjectSettings, { global: { plugins: [pinia] } })
   return { toggle, settings, store }
 }
@@ -143,5 +143,7 @@ describe('ProjectCaptureSwitch (rec#5 C4-1)', () => {
     const { toggle } = mountBoth({ enabled: false })
     await flushPromises()
     expect(toggle.find('[data-project-capture-global-off]').exists()).toBe(true)
+    // and says where to turn it on.
+    expect(toggle.find('[data-project-capture-global-off] [data-project-capture-open-settings]').exists()).toBe(true)
   })
 })

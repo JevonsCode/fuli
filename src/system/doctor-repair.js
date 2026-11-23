@@ -11,13 +11,17 @@ import { reconnectableClients } from './doctor.js';
 // with the doctor read again after the repair.
 
 const NOT_RECONNECTED = 'The client could not be reconnected; connect it again in Settings → Clients.';
+// The same, with the page's whole address where this console knows it: an Agent
+// can run this repair for the person (run_delegated_action) and relays the text.
+const notReconnected = (consoleUrl) => (consoleUrl ? `${NOT_RECONNECTED} ${consoleUrl}/settings?tab=clients` : NOT_RECONNECTED);
 const NOT_RESTRICTED = 'Access to the data directory could not be limited to your account and SYSTEM.';
 
 // check: the doctor's read (doctor.js). connectClient: the client installer
 // (client-connection-install.js). recordClientsReconnected: marks the console
 // update journal's clients reconnected (console-update.js). restrictDataDir:
 // limits the data directory to its owner and SYSTEM (windows-data-acl.js).
-export function createDoctorRepair({ check, connectClient, observeClients, recordClientsReconnected, restrictDataDir }) {
+// consoleUrl: reads this console's address, or null to name the page only.
+export function createDoctorRepair({ check, connectClient, observeClients, recordClientsReconnected, restrictDataDir, consoleUrl = () => null }) {
   let running = false;
   return async () => {
     if (running) throw new TypeError('A repair is already running. Please wait.');
@@ -27,7 +31,7 @@ export function createDoctorRepair({ check, connectClient, observeClients, recor
       // One reconnection per client, however many items name it.
       const reconnections = new Map();
       const reconnect = (clientId) => {
-        if (!reconnections.has(clientId)) reconnections.set(clientId, reconnectClient(connectClient, clientId));
+        if (!reconnections.has(clientId)) reconnections.set(clientId, reconnectClient(connectClient, clientId, consoleUrl));
         return reconnections.get(clientId);
       };
       const results = [];
@@ -62,14 +66,14 @@ async function restrictDataDirectory(restrictDataDir) {
   } catch { return { outcome: 'failed', error: NOT_RESTRICTED }; }
 }
 
-async function reconnectClient(connectClient, clientId) {
+async function reconnectClient(connectClient, clientId, consoleUrl) {
   try {
     const result = await connectClient({ clientId });
     if (result.status === 'connected') return { outcome: 'fixed' };
     // A running client that would write its old entry back is left to the person's 重启并更新 (rec#106).
-    return result.reason === 'client_running' ? { outcome: 'skipped', error: result.message } : { outcome: 'failed', error: NOT_RECONNECTED };
+    return result.reason === 'client_running' ? { outcome: 'skipped', error: result.message } : { outcome: 'failed', error: notReconnected(consoleUrl()) };
   } catch (error) {
     // The installer's own refusals name no path; anything else may, so it is not relayed.
-    return { outcome: 'failed', error: error instanceof TypeError ? error.message : NOT_RECONNECTED };
+    return { outcome: 'failed', error: error instanceof TypeError ? error.message : notReconnected(consoleUrl()) };
   }
 }

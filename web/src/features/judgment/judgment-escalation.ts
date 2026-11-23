@@ -1,3 +1,6 @@
+import type { RouteLocationRaw } from 'vue-router'
+
+import { modelDetailsLink, modelEditLink, modelProjectsLink } from '@/features/model-settings/details-link'
 import { t } from '@/i18n'
 
 import type { JudgmentDecisionRecord } from './judgment-types'
@@ -34,9 +37,28 @@ export function escalationReason(record: JudgmentDecisionRecord): string {
     || (!interceptions.length && typeof record.confidence === 'number' && record.confidence < CONFIDENCE_FLOOR)
   if (unsure) return reason('unsure', { confidence: record.confidence ?? 0 })
   if (!review || review.modelOutcome === 'escalate') return reason('refused')
-  if (interceptions.includes('gate_not_passed')) {
-    const gate = review.gate?.reason ?? ''
-    return gate in GATE_REASONS ? (GATE_REASONS[gate] ? reason(GATE_REASONS[gate]) : '') : reason('notTrusted')
-  }
+  if (interceptions.includes('gate_not_passed')) return gateReason(review.gate?.reason ?? '')
   return ''
+}
+
+const gateReason = (gate: string) => (gate in GATE_REASONS ? (GATE_REASONS[gate] ? reason(GATE_REASONS[gate]) : '') : reason('notTrusted'))
+
+// What the person can do about a reason that is a setting of theirs, so the line
+// never stops at 「交给你确认」 (docs/console-design.md): where to change it, one click.
+// The gate reasons are role-trust.js's refusals; any other opens Tonborg's trust settings.
+const SETTING_ACTIONS: Record<string, { to: RouteLocationRaw, label: string }> = {
+  session_answer: { to: modelEditLink('tonborg'), label: 'connectModel' },
+  not_configured: { to: modelEditLink('tonborg'), label: 'connectModel' },
+  egress_not_approved: { to: modelProjectsLink('tonborg'), label: 'chooseProjects' },
+  capture_off: { to: { path: '/settings', query: { tab: 'recording' } }, label: 'openRecording' },
+}
+
+/** Where to change what kept this record from Tonborg, or null when the reason is the item itself. */
+export function escalationAction(record: JudgmentDecisionRecord): { to: RouteLocationRaw, label: string } | null {
+  const shown = escalationReason(record)
+  const gate = record.aiReview?.gate?.reason ?? ''
+  // Only when the gate is the reason the card names: an injection or a doubt is about the item.
+  if (!shown || !record.aiReview?.interceptions?.includes('gate_not_passed') || shown !== gateReason(gate)) return null
+  const action = SETTING_ACTIONS[gate] ?? { to: modelDetailsLink('tonborg'), label: 'openTrust' }
+  return { to: action.to, label: t(`judgment.workbench.reasonAction.${action.label}`) }
 }

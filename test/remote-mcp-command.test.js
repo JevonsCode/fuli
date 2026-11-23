@@ -155,6 +155,8 @@ test('remote MCP CLI validates the bound project and closes resources in order',
       assert.deepEqual(options.allowedHosts, ['connector.example']);
       assert.equal(options.maxSessions, 12);
       assert.equal(options.sessionIdleTtlMs, 120_000);
+      // No device identity in this data directory: the server knows it cannot tell its own name (task-issuer.js).
+      assert.equal(options.taskIssuer, null);
       assert.equal(await options.withRuntimeLease('synthetic-tool', async () => 'leased'), 'leased');
       events.push('remote.start');
       return {
