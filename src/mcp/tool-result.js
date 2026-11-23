@@ -51,6 +51,13 @@ export function completePreferenceToolResult(value, limitBytes = TASK_PREFERENCE
     candidate = blockedPreferenceRecovery(value, 'unsafe_projection');
   }
   let result = envelope(entryFieldOrder(candidate));
+  // A read by key that does not fit is fixed by asking for fewer keys, not a
+  // blocked recovery that told the model to give up on the task's preferences
+  // (review of #1070).
+  if (jsonBytes(result) > limitBytes && candidate === value && value.preference_delivery?.status === 'keys') {
+    throw new ApplicationError('validation', `These ${value.preference_delivery.requested} preferences together do not fit `
+      + `one result (${Math.floor(limitBytes / 1024)} KB): read them with fewer keys at a time.`);
+  }
   if (jsonBytes(result) > limitBytes) {
     result = envelope(blockedPreferenceRecovery(value, 'delivery_budget'));
     if (jsonBytes(result) > limitBytes) throw new ApplicationError('validation', 'Cannot deliver the complete blocked preference recovery');

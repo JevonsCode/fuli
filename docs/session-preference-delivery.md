@@ -226,7 +226,11 @@ relying on it. No body and no source marker.
 preferences for the original owned task. With `keys` (up to 20, the keys an
 entry's `preferences_omitted.index` names) it returns those preferences whole
 in one result, with no page and no cursor, and names any key the task does not
-have in `preference_delivery.missing` (status `keys`, rec#137). It is never the
+have in `preference_delivery.missing` (status `keys`, rec#137). A key held by
+an unresolved conflict is named in `in_conflict` instead (apply no alternative
+until it is resolved), and one limited to a scope this task does not state in
+`scope_unknown`. Keys whose bodies do not fit one result together are refused
+with "read them with fewer keys at a time", never as a blocked recovery. It is never the
 complete set (`preferences_complete: false`), so no session takes it as a
 delta base. Without `keys` it reads the whole set, paged at the MCP budget.
 Its cursors are process-local and live 15 minutes, and every task entry issues
@@ -493,9 +497,14 @@ rec#146 item 6):
     FULI 习惯：这个新对话为你准备了 N 条习惯：直接带上 M 条，另外 K 条随时可读 · [看看是哪几条](...)
 
 M is `effective_preferences.length` of the delivered frame, K is
-`preferences_omitted.count` and N is their sum — the same N a later
-checkpoint, roundtable or pause receipt states from the stored row, so the
-two lines agree. One language, like every other receipt line. Until this, a receipt read “你的 70 条习惯” beside
+`preferences_omitted.count` and N is their sum: every preference the entry
+resolved for this task. A later checkpoint, roundtable or pause receipt states
+its N from the stored delivery row instead, which keeps each preference id
+once and at most 100 (`MAX_DELIVERED_PREFERENCES`); the two numbers are the
+same unless a preference has no id, two share one, or there are more than 100
+— then the later receipt's is the smaller. The bounded frame cannot count the
+stored way: it drops preference ids before it drops any preference (rec#75).
+One language, like every other receipt line. Until this, a receipt read “你的 70 条习惯” beside
 eight delivered ones. Only that one sentence changes; the link and every other
 receipt line stay as they were. The receipt paths off the entry
 (`storedHabitsLine`) do not know the split and say the prepared total. The link
