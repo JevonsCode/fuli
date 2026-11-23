@@ -16,7 +16,7 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
 import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
-  SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+  SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -68,9 +68,9 @@ const ONLINE_CHECKPOINT = 'mcp-tool:checkpoint_task_knowledge';
 // which no message about "this computer" would ever help them find. Short: the
 // runner shows it as the host's reason, and a bounded one (runner-mcp.js).
 const sessionLimitReason = (share) => ({ owned, open, max }) => (owned >= share
-  ? `Runner MCP session limit: this computer holds ${owned} of the host's ${max} sessions, its share. `
+  ? `${SESSION_LIMIT_REASON}this computer holds ${owned} of the host's ${max} sessions, its share. `
     + 'Close FULI clients and MCP processes here you no longer use (`fuli runner status` counts them).'
-  : `Runner MCP session limit: ${open} of the host's ${max} sessions are open, ${owned} of them this computer's. `
+  : `${SESSION_LIMIT_REASON}${open} of the host's ${max} sessions are open, ${owned} of them this computer's. `
     + 'The rest are other runners\': close unused FULI clients and MCP processes there.');
 
 // consoleOrigin(): the host console's own loopback origin, or null before it listens.
