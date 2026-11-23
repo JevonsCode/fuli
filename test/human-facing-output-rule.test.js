@@ -3,6 +3,7 @@ import test from 'node:test';
 import { entryRules, entryRulesSectionMarkdown } from '../src/conversations/entry-rules.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
+import { SMALL, taskGuidanceFor } from '../src/graphiti/task-size.js';
 
 // Jevons 11-23: how an Agent writes what a person reads is FULI's rule, not
 // each model's own taste. It is delivered the way every other entry rule is,
@@ -40,4 +41,14 @@ test('the rule names the clickable path for each place the person answers from',
   const markdown = entryRulesSectionMarkdown('task_guidance');
   assert.match(markdown, /\*\*human_facing_output\*\*/);
   assert.ok(markdown.includes(rule), 'the resource serves the rule an entry only points at');
+});
+
+// #1076: a small task leaves out the rules about dividing work; the rules about the person stay, behind the same pointer.
+test('a small task keeps the person-facing rules and still gets one pointer, not the full text', () => {
+  const small = taskGuidanceFor(taskKnowledgeGuidance(), SMALL);
+  for (const key of ['human_facing_output', 'repeat_signal', 'self_deposit']) assert.ok(key in small, key);
+  const view = compactTaskContext({ task_guidance: small });
+  assert.equal(view.task_guidance.rules, 'fuli://rules/task-entry/task_guidance');
+  assert.deepEqual(view.task_guidance.not_for_this_task, ['execution_plan', 'collaboration']);
+  assert.equal('human_facing_output' in view.task_guidance, false);
 });
