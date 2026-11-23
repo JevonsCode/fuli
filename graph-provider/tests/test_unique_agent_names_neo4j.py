@@ -250,3 +250,45 @@ async def test_two_agents_racing_for_one_name_cannot_both_have_it(graph):
                                   RETURN count(a) AS count''')
     assert keys == [{'count': 1}]
 
+
+@pytest.mark.asyncio
+async def test_the_name_rule_waits_behind_a_confirmed_step_and_stays_when_that_step_is_undone(graph):
+    """graph/24 runs by itself, but never ahead of graph/23 while that step
+    waits for the person: the graph stays at 22, read-only, without the rule.
+    Once the person confirms 23 the rule follows at once. Undoing 23 takes the
+    graph back to 22 and leaves the rule: it changed no record, a graph-22 FULI
+    never writes the fields it covers, and the next confirmation finds it in place."""
+    from test_graph_format_confirm_neo4j import REVIEW, TEMPORARY_NAME_SEED, _reviewed
+
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(TEMPORARY_NAME_SEED)
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 22")
+    rule = "SHOW CONSTRAINTS YIELD name WHERE name = 'fuli_project_agent_display_name' RETURN name"
+    step = {'migration_id': 'graph/23-temporary-project-names', 'entrypoint': 'cli'}
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        health = (await client.get('/health')).json()['data_format']
+        assert (health['state'], health['version'], health['pending']) == (
+            'pending_confirmation', 22, ['graph/23-temporary-project-names'])
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == 'graph/23-temporary-project-names' and plan['automatic'] == []
+        assert await _rows(driver, rule) == []
+
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+        assert applied.json()['data_format']['state'] == 'current'
+        assert await _version(driver) == 24 and len(await _rows(driver, rule)) == 1
+
+        undone = await client.post('/v1/data-format/rollback', headers=REVIEW, json=step)
+        assert undone.status_code == 200, undone.text
+        assert await _version(driver) == 22 and len(await _rows(driver, rule)) == 1
+        # The generated names are back, so 23 waits for the person again; the
+        # rule is already there when they confirm.
+        again = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert again['step']['id'] == 'graph/23-temporary-project-names'
+        reapplied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                      json={'digest': again['digest'], 'entrypoint': 'cli'})
+        assert reapplied.status_code == 200, reapplied.text
+        assert await _version(driver) == 24
