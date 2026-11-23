@@ -135,9 +135,22 @@ async function connectAll() {
 function formatTime(value: string) {
   return formatDateTime(value, currentLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: '—' })
 }
+// An unreadable configuration file, shown in Finder or Explorer for the person to fix.
+const revealFailed = ref<Record<string, boolean>>({})
+async function revealFile(client: ClientTile) {
+  revealFailed.value = { ...revealFailed.value, [client.id]: false }
+  try {
+    await postJson('/api/system/client-connection/reveal', { clientId: client.id })
+  } catch {
+    revealFailed.value = { ...revealFailed.value, [client.id]: true }
+  }
+}
 function explanation(client: ClientTile) {
   if (awaitsFirstConnection(client)) return t('settings.connection.custom.notConnected')
   if (client.inWsl && client.status === 'not_detected') return t('settings.connection.clients.explain.inWsl')
+  if (client.status === 'unknown' && client.entryFile) {
+    return t('settings.connection.clients.unreadable', { path: client.entryFile.path, problem: client.entryFile.problem })
+  }
   if (client.status === 'unknown' && client.lastKnownStatus) {
     return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
   }
@@ -228,6 +241,9 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
               </ul>
               <p v-if="withoutLifecycle(client)" class="client-row__meta client-row__note" data-client-no-lifecycle>{{ t('settings.connection.parts.noLifecycle') }}</p>
               <ClientFirstRun v-if="client.firstRun" :client-id="client.firstRun.id" :command="client.firstRun.command" />
+              <p v-if="revealFailed[client.id]" role="alert">{{ t('settings.connection.clients.revealFailed') }}</p>
+              <Button v-if="client.status === 'unknown' && client.entryFile" size="sm" variant="outline" class="client-row__action"
+                :data-reveal-client-file="client.id" @click="revealFile(client)">{{ t('settings.connection.clients.revealFile') }}</Button>
               <p v-for="path in client.custom?.mcpPaths" :key="path" class="client-row__meta" :title="path">{{ t('settings.connection.custom.where', { path }) }}</p>
               <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">

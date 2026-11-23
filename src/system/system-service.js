@@ -16,6 +16,7 @@ import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { createIssueReport } from '../diagnostics/issue-report.js';
+import { createClientFileReveal } from './client-file-reveal.js';
 import { createClientFirstRunAction } from './client-first-run-action.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createClientRestart } from './client-restart.js';
@@ -220,6 +221,7 @@ export function createSystemService({
     ])),
     clientConnectionStatus: (options) => clientObserver.observe(options),
     runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),
+    revealClientFile: createClientFileReveal({ installer: agentKits.clientInstaller }),
     issueReport: createIssueReport({ log: eventLog, observeClients, liveProcesses }),
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),

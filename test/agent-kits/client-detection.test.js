@@ -12,6 +12,8 @@ import { customClientStore } from '../../src/agent-kits/custom-clients.js';
 import { agentKitExecutables } from '../../src/agent-kits/executables.js';
 import { retireLegacyHooks } from '../../src/agent-kits/legacy-hook-cleanup.js';
 import { installAgent } from '../../src/setup/install-agent.js';
+import { createClientConnectionObserver } from '../../src/system/client-connection-status.js';
+import { createClientFileReveal } from '../../src/system/client-file-reveal.js';
 import { createCustomClients } from '../../src/system/custom-client-connection.js';
 import { isolateHomeEnvironment, realAgentKitExecutable } from '../../test-support/agent-kit-binaries.js';
 
@@ -295,4 +297,16 @@ test('an existing client file is backed up before FULI goes in, and one it canno
   assert.equal(openCode.status, 'partial');
   assert.match(openCode.message, /opencode\.json: Invalid JSON/);
   assert.equal(readFileSync(join(home, '.config', 'opencode', 'opencode.json'), 'utf8'), broken);
+  // Its other parts went in, so the page must not offer 「更新接入」, which would only fail again: it
+  // says the file has a problem, which file, and what agent-installer said, and offers to show it.
+  const observer = createClientConnectionObserver({ installer, customClients: { removable: () => new Set() },
+    historyPath: join(home, 'history.json'), homeDir: home });
+  const shown = (await observer.observe()).clients.find(({ id }) => id === 'opencode');
+  assert.equal(shown.status, 'unknown');
+  assert.deepEqual(shown.entryFile, { path: '~/.config/opencode/opencode.json', problem: 'Invalid JSON.' });
+  const revealed = [];
+  const reveal = createClientFileReveal({ installer, homeDir: home, reveal: async (path) => { revealed.push(path); return { revealed: true }; } });
+  assert.deepEqual(await reveal({ clientId: 'opencode' }), { id: 'opencode', revealed: true });
+  assert.deepEqual(revealed, [join(home, '.config', 'opencode', 'opencode.json')]);
+  await assert.rejects(() => reveal({ clientId: 'cursor' }), /no configuration file to show/);
 });

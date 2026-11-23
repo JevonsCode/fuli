@@ -8,6 +8,7 @@ import { sessionsAwaitingRestart } from '../mcp/process-registry.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from '../system/client-connection-status.js';
+import { createClientFileReveal } from '../system/client-file-reveal.js';
 import { createClientFirstRunAction } from '../system/client-first-run-action.js';
 import { createClientInstaller } from '../system/client-connection-install.js';
 import { createClientRestart } from '../system/client-restart.js';
@@ -52,6 +53,7 @@ export function createRunnerClients({ paths, apps = clientApps(), host = null,
     },
     connectClient,
     runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),
+    revealClientFile: createClientFileReveal({ installer: agentKits.clientInstaller }),
     restartClient: createClientRestart({ apps, connect: connectClient,
       inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
     ...createCustomClients({ installer: agentKits.clientInstaller, store: customClients })

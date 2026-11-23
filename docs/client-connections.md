@@ -72,7 +72,10 @@ writes it in full anyway — `~/.cursor/mcp.json`, `hooks.json` and the Skills; 
 Skills and the plugin under `~/.config/opencode/` — and then reads it back as connected; a file that
 was already there is copied to `backups/agents/<client>/` first and the person's own entries stay;
 a file it cannot parse is reported (the connection says partial) and left byte for byte as it was,
-though the client's other parts are still written. Because it writes for any client it is asked
+though the client's other parts are still written. Its tile then says **配置文件有问题** — which file and
+what agent-installer said about it (for example `Invalid JSON.`) — instead of an update that would
+only fail again, and offers 「在文件夹中显示」, which selects that file in Finder or Explorer (the
+path agent-installer reports for that client, never one a request names). Because it writes for any client it is asked
 for, FULI's check that the client is really here is what keeps it from creating a folder for a
 client that is not installed. agent-installer does not look for `cursor-agent`, only `cursor`; this
 should move upstream once it can find a client by its CLI name.

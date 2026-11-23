@@ -115,6 +115,9 @@ export const settingsMessages = {
           advice: '在这些客户端点「更新接入」，改到控制台这份；不用的那份可以卸载。',
         },
         unknownWithLast: '配置文件无法读取，先不判断。上次看到的是“{status}”。',
+        unreadable: '配置文件 {path} 有问题，FULI 没有改它（{problem}）。再点接入也会一样失败：先改好这个文件，再点重新检查。',
+        revealFile: '在文件夹中显示',
+        revealFailed: '没能打开文件夹，请自己找到上面这个文件。',
         status: { connected: '已接入', changed: '需要更新', skills_left: '只剩技能文件', removed: '已移除',
           not_connected: '未接入', not_detected: '未发现', probing: '检测中', unknown: '无法确认', inWsl: '在 WSL 里' },
         explain: {
@@ -637,6 +640,9 @@ export const settingsMessages = {
           advice: 'Choose Update connection in those clients to move them to the console’s; remove the unused copy.',
         },
         unknownWithLast: 'The configuration cannot be read, so nothing is concluded. Last seen as “{status}”.',
+        unreadable: 'The configuration file {path} has a problem, and FULI left it unchanged ({problem}). Connecting again would fail the same way: fix this file first, then check again.',
+        revealFile: 'Show in folder',
+        revealFailed: 'The folder could not be opened; find the file above yourself.',
         status: { connected: 'Connected', changed: 'Update needed', skills_left: 'Skills only', removed: 'Removed',
           not_connected: 'Not connected', not_detected: 'Not found', probing: 'Checking', unknown: 'Cannot confirm', inWsl: 'Inside WSL' },
         explain: {

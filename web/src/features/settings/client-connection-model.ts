@@ -16,6 +16,8 @@ export type ConfiguredInstall = FuliInstall & { exists: boolean, sameAsConsole: 
 // inWsl: installed only inside WSL on this Windows computer, where FULI cannot write it.
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
   firstRun?: { id: string, command: string }, inWsl?: boolean,
+  // A configuration file agent-installer could not use, and what it said: the person fixes the file.
+  entryFile?: { path: string, problem: string },
   restartSessions?: number,
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
   overwritten?: boolean, configuredInstall?: ConfiguredInstall,

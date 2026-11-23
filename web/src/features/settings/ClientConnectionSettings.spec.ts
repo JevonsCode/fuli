@@ -23,7 +23,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: { id: string, command: string }, inWsl?: boolean, components?: Record<string, string> }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number, firstRun?: { id: string, command: string }, inWsl?: boolean, entryFile?: { path: string, problem: string }, components?: Record<string, string> }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean, components?: Record<string, string> }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
@@ -154,6 +154,25 @@ it('a client being looked for is not counted as not installed', async () => {
   await flushPromises()
   expect(wrapper.get('[data-client-status="probing"]').text()).toContain('检测中')
   expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 1/2 个客户端')
+  wrapper.unmount()
+})
+
+it('says which configuration file has a problem instead of offering an update that would fail again, and shows it', async () => {
+  const posted: string[] = []
+  routed(() => Response.json(statusOf([{ id: 'opencode', label: 'OpenCode', status: 'unknown', lastKnownStatus: null,
+    entryFile: { path: '~/.config/opencode/opencode.json', problem: 'Invalid JSON.' } }])), (url) => {
+    posted.push(url)
+    return url.endsWith('/reveal') ? Response.json({ id: 'opencode', revealed: true }) : Response.json(configuration)
+  })
+  const wrapper = mount(ClientCards)
+  await flushPromises()
+  const tile = wrapper.get('[data-client-status="unknown"]')
+  expect(tile.text()).toContain('~/.config/opencode/opencode.json 有问题')
+  expect(tile.text()).toContain('Invalid JSON.')
+  expect(tile.find('[data-connect-client]').exists()).toBe(false)
+  await wrapper.get('[data-reveal-client-file="opencode"]').trigger('click')
+  await flushPromises()
+  expect(posted.filter((url) => url.endsWith('/reveal'))).toHaveLength(1)
   wrapper.unmount()
 })
 

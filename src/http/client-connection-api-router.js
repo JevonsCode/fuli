@@ -46,6 +46,17 @@ export async function handleClientConnectionRequest({ request, response, url, sy
     return true;
   }
 
+  // Shows a client's unreadable configuration file in the file manager, on this computer only.
+  if (url.pathname === '/api/system/client-connection/reveal' && request.method === 'POST') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'This step is only available on this computer' });
+      return true;
+    }
+    sendJson(response, 200, await system.revealClientFile(await readJson(request)));
+    return true;
+  }
+
   if (url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
     sendJson(response, 200, await system.clientConnectionStatus({ afterProbe: url.searchParams.get('afterProbe') === '1' }));

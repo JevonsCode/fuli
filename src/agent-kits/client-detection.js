@@ -53,11 +53,18 @@ export async function detectClients(installer, { presence = null, wait = true } 
 export const listedMcpFiles = (clients) => clients.flatMap((client) => (client.componentStates ?? [])
   .filter(({ component }) => component === 'mcp').flatMap(({ paths }) => paths ?? []));
 
+// What agent-installer says about an entry it cannot use (for example "Invalid
+// JSON."), bounded: shown to the person as it is, never interpreted.
+const MAX_PROBLEM = 200;
+
 function clientOf(client) {
   const states = client.componentStates.filter(({ state }) => state !== 'unsupported');
   const components = Object.fromEntries(states.map(({ component, state }) => [component, state]));
   const pathsOf = (name) => states.find(({ component }) => component === name)?.paths ?? [];
+  const entry = states.find(({ component }) => component === entryComponent(components));
+  const problem = entry?.state === 'conflict' && typeof entry.message === 'string' ? entry.message.slice(0, MAX_PROBLEM) : null;
   return {
+    ...(problem ? { entryProblem: problem } : {}),
     id: client.id,
     label: client.name,
     builtin: client.builtin,
