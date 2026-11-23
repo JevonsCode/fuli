@@ -72,7 +72,10 @@ command line (`ps -o command=`) is in this data directory's own instance folder,
 as is its process group's leader, which is where FULI starts every graph
 service. The start then stops and says so in both languages
 (`orphaned_graph_service`, with the port, process and command) and offers one
-action, 「结束它并启动」 in the desktop app or `fuli start --end-orphaned-services`:
+action, 「结束它并启动」 in the desktop app (the window's primary button after such a
+start; it names each port and program and asks before it acts; the controller's
+`end-orphans-start`, reported to the window as `orphanedServices`) or
+`fuli start --end-orphaned-services`:
 that ends the service's whole group gracefully first, records it in the data
 directory's diagnostics (`native.orphan`) and starts. Any other program on the
 port is left untouched and reported as before (`port_taken`, which Windows

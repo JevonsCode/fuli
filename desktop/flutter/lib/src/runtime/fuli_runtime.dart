@@ -4,8 +4,18 @@
 
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
+/// A graph service of this installation's data that FULI lost track of when an
+/// earlier start was interrupted, still holding one of its ports
+/// (src/native-runtime/orphan-services.js): the port and the program's name.
+class OrphanedService {
+  const OrphanedService(this.port, this.command);
+
+  final int port;
+  final String? command;
+}
+
 class RuntimeReport {
-  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false});
+  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false, this.orphanedServices = const []});
 
   final RuntimeState state;
   // The console port the runtime reported, when it did.
@@ -19,6 +29,8 @@ class RuntimeReport {
   final bool crashed;
   // No console process runs, whatever the graph does (rec issue 70).
   final bool consoleStopped;
+  // A start stopped at graph services FULI lost track of; [FuliRuntime.endOrphansAndStart] ends them and starts.
+  final List<OrphanedService> orphanedServices;
 
   bool get running => state == RuntimeState.running || state == RuntimeState.degraded;
 }
@@ -39,4 +51,8 @@ abstract interface class FuliRuntime {
 
   /// Moves the console to a free port Windows does not reserve and restarts FULI.
   Future<RuntimeReport> changePort();
+
+  /// Ends the graph services a failed start named ([RuntimeReport.orphanedServices]) and starts FULI:
+  /// the controller's `end-orphans-start`, or `fuli start --end-orphaned-services`.
+  Future<RuntimeReport> endOrphansAndStart();
 }

@@ -55,6 +55,9 @@ class MacosAppRuntime implements FuliRuntime {
   Future<RuntimeReport> changePort() async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
+  @override
+  Future<RuntimeReport> endOrphansAndStart() => _action('end-orphans-start');
+
   Future<RuntimeReport> _action(String action) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {

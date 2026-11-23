@@ -53,6 +53,9 @@ class WindowsTrayRuntime implements FuliRuntime {
   @override
   Future<RuntimeReport> changePort() => _action('change-port');
 
+  @override
+  Future<RuntimeReport> endOrphansAndStart() => _action('end-orphans-start');
+
   Future<RuntimeReport> _action(String action) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     return parseControllerReply(await _run(_root!, action));

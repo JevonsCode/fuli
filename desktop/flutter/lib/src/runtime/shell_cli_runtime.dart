@@ -57,6 +57,9 @@ class ShellCliRuntime implements FuliRuntime {
   Future<RuntimeReport> start() => _command('fuli start');
 
   @override
+  Future<RuntimeReport> endOrphansAndStart() => _command('fuli start --end-orphaned-services');
+
+  @override
   Future<RuntimeReport> stop() => _command('fuli stop');
 
   // The CLI has no port change; on macOS a reserved port is not a known problem.
@@ -73,11 +76,12 @@ class ShellCliRuntime implements FuliRuntime {
     final result = await _sh(_mode!, command, _commandTimeout);
     final after = await status();
     if (result != null && result.exitCode == 0) return after;
-    final stderr = '${result?.stderr ?? ''}'.trim();
+    final failure = readStartupFailure('${result?.stderr ?? ''}');
+    final stderr = failure.stderr.trim();
     final error = stderr.isEmpty
         ? '$command did not finish.'
         : stderr.substring(stderr.length > _errorTail ? stderr.length - _errorTail : 0);
-    return RuntimeReport(after.state, consolePort: after.consolePort, error: error);
+    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, orphanedServices: failure.orphanedServices);
   }
 
   Future<ProcessResult?> _sh(String mode, String command, Duration timeout) async {

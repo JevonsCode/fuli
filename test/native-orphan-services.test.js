@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
+import { startupFailureLine } from '../src/local-runtime/startup-failure-line.js';
 import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from '../src/native-runtime/orphan-services.js';
 
 // A killed start left this data directory's graph service on its port with
@@ -101,4 +102,25 @@ test('the desktop app\'s 「结束它并启动」 starts with the choice to end 
   assert.equal(result.ok, true, result.error);
   assert.ok(invoked.includes('start --end-orphaned-services'));
   assert.ok(invoked.includes('open'));
+});
+
+// Review of #1075: the button needs the reason as data, not as words in an error message.
+test('a start that stops at a lost service tells the window which ports and programs, and nothing more', async (t) => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-orphans-report-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  mkdirSync(path.join(dataDir, 'native'));
+  writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{}');
+  writeFileSync(path.join(dataDir, 'runtime-settings.json'), JSON.stringify({ version: 1, graphRuntimeMode: 'native' }));
+  const error = orphanedServicesError([{ port: 7687, pid: 501, group: 500, command: 'java' }]);
+  const stderr = `${error.message}\n${startupFailureLine(error)}\n`;
+  const result = await runTrayAction('start', { dataDir }, {
+    runCli: async (_context, args) => (args[0] === 'status'
+      ? { code: 1, stdout: JSON.stringify({ status: 'stopped' }) }
+      : { code: 1, stdout: '', stderr }),
+    portBlocked: async () => false, otherConsole: () => null, holdAdoption: () => null
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.orphanedServices, [{ port: 7687, command: 'java' }]);
+  assert.doesNotMatch(result.error, /FULI_STARTUP_FAILURE/, 'the reason line is not shown as words');
+  assert.match(result.error, /结束它并启动/);
 });

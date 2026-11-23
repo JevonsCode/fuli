@@ -123,6 +123,16 @@ class Strings {
   String startFailedPortBlocked(String reason) => _t('没有启动成功：Windows 保留了 FULI 的端口。在托盘菜单选「换一个端口」再试。$reason',
       'FULI did not start: Windows reserves its port. Choose Use another port in the tray menu and try again. $reason');
   String get portChanged => _t('已换端口并重启 FULI。', 'FULI moved to another port and restarted.');
+  // A start stopped at graph services of this data that FULI lost track of (src/native-runtime/orphan-services.js).
+  String get endOrphansAndStart => _t('结束它并启动', 'End it and start');
+  String get endingOrphans => _t('正在结束遗留的图服务并启动 FULI…', 'Ending the leftover graph service and starting FULI…');
+  String get endOrphansTitle => _t('结束遗留的图服务？', 'End the leftover graph service?');
+  String endOrphansBody(String services) => _t(
+      '上次启动被中断后，FULI 之前启动的图服务还在运行：$services。结束它不会删除任何数据，结束后 FULI 会重新启动它。',
+      'A graph service FULI started before an interrupted start is still running: $services. Ending it deletes no data; '
+          'FULI starts it again right after.');
+  String orphanedService(int port, String? command) =>
+      command == null ? _t('端口 $port', 'port $port') : _t('$command（端口 $port）', '$command (port $port)');
   String portChangeFailed(String reason) => _t('没有换成端口：$reason', 'The port did not change: $reason');
   String actionFailed(String reason) => _t('没有完成：$reason', 'Did not finish: $reason');
   String sentences(String first, String second) => chinese ? '$first$second' : '$first $second';

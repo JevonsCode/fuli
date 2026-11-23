@@ -4,7 +4,7 @@ import 'fuli_runtime.dart';
 
 // Reading what FULI's own entry points print:
 // - src/desktop/windows-controller.js prints one JSON line
-//   ({ok, status, state, error, notice, portBlocked} for an action,
+//   ({ok, status, state, error, notice, portBlocked, orphanedServices} for an action,
 //   {ok, dataDir, logDir, instanceKey} for `context`);
 // - `fuli status --json` prints one pretty JSON object; a login shell may add
 //   its own lines around it.
@@ -22,7 +22,38 @@ RuntimeReport parseControllerReply(String stdout) {
     notice: notice is String && notice.isNotEmpty ? notice : null,
     portBlocked: reply['portBlocked'] == true,
     consoleStopped: state is Map && _consoleStopped(state),
+    orphanedServices: _orphanedServices(reply['orphanedServices']),
   );
+}
+
+/// What a failed `fuli start` printed: its stderr without the reason line, and
+/// the graph services the reason names (src/local-runtime/startup-failure-line.js).
+({String stderr, List<OrphanedService> orphanedServices}) readStartupFailure(String stderr) {
+  const prefix = 'FULI_STARTUP_FAILURE ';
+  var services = const <OrphanedService>[];
+  final kept = <String>[];
+  for (final line in const LineSplitter().convert(stderr)) {
+    if (!line.startsWith(prefix)) {
+      kept.add(line);
+      continue;
+    }
+    try {
+      final failure = jsonDecode(line.substring(prefix.length));
+      if (failure is Map && failure['code'] == 'orphaned_graph_service') services = _orphanedServices(failure['services']);
+    } on FormatException {
+      // A reason line that does not read leaves the message as it is.
+    }
+  }
+  return (stderr: kept.join('\n'), orphanedServices: services);
+}
+
+// [{port, command}] of graph services a start stopped at; anything else is ignored.
+List<OrphanedService> _orphanedServices(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (item is Map && item['port'] is int) OrphanedService(item['port'] as int, item['command'] is String ? item['command'] as String : null),
+  ];
 }
 
 /// The installation's data directory and the key of its one-client lock.

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
 import { END_ORPHANS_ACTION, END_ORPHANS_FLAG } from '../native-runtime/orphan-services.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -151,10 +152,12 @@ export async function runTrayAction(action, context, {
     const state = await inspect().catch(() => null);
     // A start that failed on a port Windows reserves offers the port change.
     const blocked = starting && await portBlocked(context).catch(() => false);
+    // A start that stopped at a lost graph service offers to end it and start (END_ORPHANS_ACTION).
+    const orphaned = starting ? orphanedServicesOf(error) : null;
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
-      ...(blocked ? { portBlocked: true } : {}) };
+      ...(blocked ? { portBlocked: true } : {}), ...(orphaned ? { orphanedServices: orphaned } : {}) };
   }
 }
 
@@ -169,9 +172,23 @@ function adoptionHoldNotice(hold) {
 
 function cliError(result) {
   // CLI error details are written to stderr. Do not copy setup/start stdout:
-  // LAN output can contain a temporary access code.
-  return new Error(String(result.stderr ?? '').trim().slice(-4000)
-    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.');
+  // LAN output can contain a temporary access code. A reason a client can act
+  // on comes on a line of its own (startup-failure-line.js) and is kept apart.
+  const { failure, stderr } = readStartupFailure(result.stderr);
+  return Object.assign(new Error(stderr.trim().slice(-4000)
+    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.'),
+  failure ? { startupFailure: failure } : {});
+}
+
+// A start that stopped at a graph service of this data directory FULI lost
+// track of: what the window shows on its 「结束它并启动」 button and in the
+// confirmation, the port and the program's name of each, nothing more.
+function orphanedServicesOf(error) {
+  const failure = error?.startupFailure;
+  if (failure?.code !== 'orphaned_graph_service' || !Array.isArray(failure.services)) return null;
+  const services = failure.services.filter((service) => Number.isInteger(service?.port))
+    .map((service) => ({ port: service.port, command: typeof service.command === 'string' ? service.command : null }));
+  return services.length ? services : null;
 }
 
 function executeCli(context, args) {

@@ -157,6 +157,9 @@ class DemoRuntime implements FuliRuntime {
 
   @override
   Future<RuntimeReport> changePort() async => RuntimeReport(_state);
+
+  @override
+  Future<RuntimeReport> endOrphansAndStart() => start();
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).
