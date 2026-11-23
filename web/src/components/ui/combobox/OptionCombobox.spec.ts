@@ -323,6 +323,19 @@ describe('a folded group', () => {
     expect(input().value).toBe('Alpha 项目')
   })
 
+  it('remembers a group the person opened, for as long as the field is on the page', async () => {
+    mountCombobox('', { options: grouped, foldGroup: '临时项目' })
+    input().click()
+    await flushPromises()
+    fold()!.click()
+    await flushPromises()
+    await key(input(), 'Escape')
+    input().click()
+    await flushPromises()
+    expect(fold()?.getAttribute('aria-expanded')).toBe('true')
+    expect(options()).toHaveLength(3)
+  })
+
   it('says when its members come into view: opening the list folded does not, opening the row or typing does', async () => {
     let shown = 0
     mountCombobox('', { options: grouped, foldGroup: '临时项目', onFoldShown: () => { shown += 1 } })

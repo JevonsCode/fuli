@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { createModelBackendPort } from '../src/model-backends/port.js';
@@ -57,7 +58,7 @@ const answer = (overrides = {}) => JSON.stringify({ decision: 'propose', payload
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json', ...headers } });
 
-function harness(roles, { connections, responses = [], keys = KEYS, raw, ledger = new ModelUsageLedger(':memory:') } = {}) {
+function harness(roles, { connections, responses = [], keys = KEYS, raw, ledger = new ModelUsageLedger(':memory:'), stallMs } = {}) {
   const calls = [];
   const waits = [];
   let next = 0;
@@ -72,7 +73,8 @@ function harness(roles, { connections, responses = [], keys = KEYS, raw, ledger 
       return typeof response === 'function' ? response() : response;
     },
     wait: async ms => { waits.push(ms); },
-    now: () => NOW
+    now: () => NOW,
+    ...(stallMs ? { streamStallMs: stallMs } : {})
   });
   return { port, calls, waits, ledger };
 }
@@ -477,6 +479,23 @@ test('C8: an endpoint that ignores the schema is shown it in the repair, and in 
   assert.equal(calls[2].body.output_config, undefined);
 });
 
+test('C8: what the model reads of the schema carries the limits the reply is checked against', async () => {
+  // A long reason breaks maxLength, a limit a provider's structured output never receives.
+  const tooLong = answer({ reason: 'x'.repeat(3000) });
+  const { port, calls } = harness({ bole: role('claude', { budget: { ...role('claude').budget, maxInputTokens: 8000, maxOutputTokens: 2000 } }) },
+    { responses: [anthropicStream(tooLong), anthropicStream(answer()), anthropicStream(answer())] });
+  assert.equal((await port.decide(request())).modelReceipt.status, 'completed');
+  assert.doesNotMatch(JSON.stringify(calls[0].body.output_config), /maxLength/, 'the provider gets the shape only');
+  assert.match(calls[0].body.system, /\nLimits: reason: at most 240 characters; evidenceIds: at most 1 items; uncertainty: at most 240 characters\.$/,
+    'with structured output the counts and lengths come as one line');
+  const [echo, correction] = calls[1].body.messages.slice(-2);
+  assert.equal(echo.content, tooLong, 'the repair shows the whole reply, not its first 2000 characters');
+  assert.match(correction.content, /reason: Too big: expected string to have <=240 characters/);
+  assert.match(correction.content, /"maxLength":240/);
+  await port.decide(request({ requestId: 'request-next' }));
+  assert.match(calls[2].body.system, /must match this JSON schema: .*"maxLength":240/, 'prompt mode writes out the whole schema');
+});
+
 test('C8: broken JSON gets exactly one repair attempt and a second invalid reply is never acted on', async () => {
   const repaired = harness({ bole: role('local') }, { responses: [openAiStream('{"decision": "propose", '), openAiStream(answer())] });
   const ok = await repaired.port.decide(request());
@@ -492,8 +511,7 @@ test('C8: broken JSON gets exactly one repair attempt and a second invalid reply
     answer({ payload: { choice: 'zed' } }),
     JSON.stringify({ decision: 'propose' }),
     answer({ evidenceIds: ['e404'] }),
-    answer({ decision: 'apply_authorized' }),
-    answer({ extra: 'field' })
+    answer({ decision: 'apply_authorized' })
   ]) {
     const { port, calls } = harness({ bole: role('local') }, { responses: [openAiStream(invalid), openAiStream(invalid)] });
     const result = await port.decide(request());
@@ -689,4 +707,125 @@ test('a key tied to one origin is not sent when its connection points elsewhere'
   const { modelReceipt: checked } = await port.checkConnection('bole');
   assert.equal(checked.reason, 'key_endpoint_mismatch');
   assert.deepEqual(calls, []);
+});
+
+test('usage splits failed calls by why their last attempt ended, so a failure count says where to look', async () => {
+  const invalid = answer({ payload: { choice: 'zed' } });
+  const { port } = harness({ bole: role('local') }, { responses: [
+    openAiStream(invalid), openAiStream(invalid),
+    json(503, { error: { message: 'busy' } }), json(503, { error: { message: 'busy' } }),
+    openAiStream(invalid), openAiStream(invalid),
+    openAiStream(answer()),
+    json(503, { error: { message: 'busy' } }), openAiStream(answer())
+  ] });
+  for (const requestId of ['a', 'b', 'c', 'd', 'e']) await port.decide(request({ requestId }));
+  const [group] = usageFor(port, 'bole');
+  assert.equal(group.failedRequests, 3);
+  assert.deepEqual(group.failureReasons, [{ reason: 'invalid_output', requests: 2 }, { reason: 'server_error', requests: 1 }],
+    'a call answered after a retry is no failure');
+});
+
+// An OpenAI-compatible stream that sends `parts` (SSE data objects), each
+// after its own quiet in ms, then ends with [DONE] when `done`, or else stays
+// open with nothing more.
+function heldStream(parts, { done = false } = {}) {
+  const encoder = new TextEncoder();
+  let next = 0;
+  return new Response(new ReadableStream({ async pull(controller) {
+    const part = parts[next++];
+    if (!part) {
+      if (!done) return new Promise(() => {});
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      return controller.close();
+    }
+    await new Promise(resolve => setTimeout(resolve, part.quietMs ?? 0));
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(part.data)}\n\n`));
+  } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+}
+const delta = (content, quietMs = 0) => ({ quietMs, data: { model: 'qwen-test-actual',
+  choices: [{ index: 0, delta: content === null ? { role: 'assistant' } : { content } }] } });
+
+test('a stream whose answer began and then went quiet ends as stream_stalled, and the same call tries once more', async () => {
+  const { port, waits, ledger } = harness({ bole: role('local') }, { stallMs: 20,
+    responses: [heldStream([delta(null), delta('{"deci')]), openAiStream(answer())] });
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.status, 'completed');
+  assert.equal(result.modelReceipt.attempts, 2);
+  assert.deepEqual(waits, [1000], 'retried as a transient failure, after the usual pause');
+  assert.deepEqual(ledger.db.prepare('SELECT purpose, outcome, failure_class, failure_reason FROM model_attempts ORDER BY attempt_number').all()
+    .map(row => ({ ...row })), [
+    { purpose: 'initial', outcome: 'failed', failure_class: 'transient', failure_reason: 'stream_stalled' },
+    { purpose: 'retry', outcome: 'succeeded', failure_class: null, failure_reason: null }]);
+});
+
+test('a reasoning model quiet before its first word is not a stall: only the call\'s time limit bounds that wait', async () => {
+  const { port } = harness({ bole: role('local') }, { stallMs: 20, responses: [heldStream([delta(null), delta(answer(), 80),
+    { data: { model: 'qwen-test-actual', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } }], { done: true })] });
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.status, 'completed', 'the quiet after the role chunk outlasted the stall wait and was not cut');
+  assert.equal(result.modelReceipt.attempts, 1);
+});
+
+test('the call\'s time limit ends a stream that sent its headers and never a chunk', async (t) => {
+  const server = createServer((incoming, response) => { incoming.resume(); response.writeHead(200, { 'content-type': 'text/event-stream' }); response.flushHeaders(); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(done => { server.close(done); server.closeAllConnections(); }));
+  const port = createModelBackendPort({
+    readConfig: () => readModelBackendConfig('model-backends.json', { read: () => config({ bole: role('held', { budget: { ...role('local').budget, timeoutMs: 1500 } }) },
+      { held: { protocol: 'openai_chat', endpoint: `http://127.0.0.1:${server.address().port}/v1`, model: 'qwen-test', secretRef: null } }) }),
+    secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:') });
+  const started = Date.now();
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.reason, 'timeout');
+  assert.ok(Date.now() - started < 4000, 'ended at the time limit, not when the server gave up');
+});
+
+test('a batch answer keeps the items that pass, names the rest by key, and still counts as a failed call with the rules it broke', async () => {
+  const item = { type: 'object', additionalProperties: false, required: ['target', 'verdict'],
+    properties: { target: { type: 'string', enum: ['k1', 'k2', 'k3'] }, verdict: { type: 'string', enum: ['keep', 'drop'] } } };
+  const batch = { type: 'object', additionalProperties: false, required: ['decisions'],
+    properties: { decisions: { type: 'array', items: item, minItems: 3, maxItems: 3 } } };
+  const structured = { output: { type: 'structured', schema: batch, items: { field: 'decisions', key: 'target' } }, decisions: ['propose'] };
+  const reply = answer({ payload: { decisions: [{ target: 'k1', verdict: 'keep', note: 'extra' }, { target: 'k2', verdict: 'maybe' },
+    { target: 'k1', verdict: 'drop' }] } });
+  const { port, calls } = harness({ bole: role('local') }, { responses: [openAiStream(`Here it is: ${reply}`)] });
+  const result = await port.decide(request(structured));
+  assert.equal(calls.length, 1, 'no repair of the whole batch');
+  assert.equal(result.modelReceipt.status, 'completed');
+  assert.equal(result.modelReceipt.rejectedItems, 3);
+  assert.deepEqual(result.envelope.payload, { decisions: [] }, 'k1 answered twice is not used');
+  assert.deepEqual(result.envelope.rejectedItems.map(entry => entry.key), ['k1', 'k2', 'k3']);
+  assert.match(result.envelope.rejectedItems[1].issues[0], /^verdict: /);
+
+  const good = answer({ payload: { decisions: [{ target: 'k1', verdict: 'keep' }, { target: 'k2', verdict: 'maybe' }, { target: 'k3', verdict: 'drop', more: 1 }] } });
+  const partial = harness({ bole: role('local') }, { responses: [openAiStream(good)] });
+  const kept = await partial.port.decide(request(structured));
+  assert.deepEqual(kept.envelope.payload, { decisions: [{ target: 'k1', verdict: 'keep' }, { target: 'k3', verdict: 'drop' }] },
+    'the items that pass are used, an extra field dropped');
+  assert.deepEqual(kept.envelope.rejectedItems, [{ key: 'k2', issues: [kept.envelope.rejectedItems[0].issues[0]] }]);
+  const [group] = usageFor(partial.port, 'bole');
+  assert.equal(group.failedRequests, 1, 'an answer with a rejected item is no success, though its other items are used');
+  assert.deepEqual(group.failureReasons, [{ reason: 'invalid_items', requests: 1 }]);
+  assert.deepEqual(group.formatIssues, [{ issue: 'payload.decisions[].verdict:invalid_value', attempts: 1 }]);
+  assert.equal(JSON.stringify(group).includes('maybe'), false, 'the ledger keeps rule names, never a value');
+
+  const whole = harness({ bole: role('local') }, { responses: [openAiStream(answer({ payload: { decisions: [{ target: 'k1', verdict: 'keep' }, { target: 'k2', verdict: 'drop' },
+    { target: 'k3', verdict: 'keep' }] } }))] });
+  const complete = await whole.port.decide(request(structured));
+  assert.equal(complete.envelope.rejectedItems, undefined);
+  assert.equal(complete.modelReceipt.rejectedItems, undefined);
+  assert.equal(usageFor(whole.port, 'bole')[0].failedRequests, 0);
+});
+
+test('a reply\'s extra field is dropped and words around its one JSON object are read past; what a whole reply broke is kept as rules', async () => {
+  const { port } = harness({ bole: role('local') }, { responses: [openAiStream(`Sure.\n${answer({ extra: 'field' })}\nDone.`)] });
+  const result = await port.decide(request());
+  assert.equal(result.modelReceipt.status, 'completed');
+  assert.equal(result.envelope.payload.choice, 'ada');
+  assert.equal('extra' in result.envelope, false);
+
+  const broken = harness({ bole: role('local') }, { responses: [openAiStream(answer({ payload: { choice: 'zed' } })), openAiStream('not json')] });
+  await broken.port.decide(request());
+  assert.deepEqual(usageFor(broken.port, 'bole')[0].formatIssues, [
+    { issue: 'payload.choice:invalid_value', attempts: 1 }, { issue: 'reply:not_json', attempts: 1 }]);
 });

@@ -21,11 +21,14 @@ import { mcpHostSessionId } from '../mcp/session-id.js';
 import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { openRoutes } from './call-routes.js';
 import { createHostConnection } from './host-connection.js';
 import { deliveredAnswer, effectiveCall, hostAnsweredNote, hostOnlyAnswer, hostRefusedAnswer, isOfflineToken, offlineAnswer,
   offlineTaskAnswer, outcomeUnknownAnswer, QUEUED_TOOLS,
   isTaskEntry, rememberAnswer, repeatable, resultValue, unpairedAnswer, withoutOfflineToken } from './offline-calls.js';
 import { deliverOutbox } from './outbox-delivery.js';
+import { routeRefusal, rememberTaskOwner, routesUnavailableAnswer } from './routed-calls.js';
+import { answerWithIssuer, withIssuedToken } from './task-issuer.js';
 import { CALL_TIMEOUT_MS, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 import { ASSESS_ON_RUNNER, ASSESS_TOOL, OUTCOME_TOOL, OUTCOME_TOOL_DEFINITION, routingRoleState } from './routing-setup.js';
 import { RUNNER_FILE, RunnerStore } from './runner-store.js';
@@ -86,6 +89,13 @@ class HostRefusal {
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
   transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch, preferenceWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
+  // Which scopes this computer reads and writes on the host; a data directory
+  // paired by an earlier version gets `global → host` and `default → host` here.
+  // A routes store this version cannot open (newer, damaged, waiting for a
+  // migration) does not stop the server: every call says why and what to do.
+  let routes = null;
+  let routesProblem = null;
+  try { routes = openRoutes(dataDir); } catch (error) { routesProblem = error; }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   const connection = createHostConnection({ store, identity, ...(lookUp ? { lookUp } : {}) });
   const nativeSession = nativeSessionFromEnv(sourceApplication, env);
@@ -94,7 +104,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
   const record = diagnosticEventLog(dataDir).record;
   const routing = runnerRouting({ dataDir, store, fetchImpl: modelFetch, record,
     ...(preferenceWaitMs === undefined ? {} : { waitMs: preferenceWaitMs }) });
-  const { server, endHostSession } = createRunnerServer({ store, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
+  const { server, endHostSession } = createRunnerServer({ store, routes, routesProblem, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
     ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
   const stdio = !transport;
@@ -107,6 +117,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     connection.close();
     await server.close();
     await routing.close();
+    routes?.close();
     store.close();
   })();
   const served = transport ?? new StdioServerTransport();
@@ -116,10 +127,10 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, close);
   }
   await server.connect(served);
-  return { close, store, connection };
+  return { close, store, routes, connection };
 }
 
-function createRunnerServer({ store, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
+function createRunnerServer({ store, routes = null, routesProblem = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
   checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
@@ -339,7 +350,9 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
   }
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args = {} } = request.params;
+    const { name } = request.params;
+    // A token the host issued names it (task-issuer.js): the host gets its own token back.
+    const { args, issuer } = withIssuedToken(name, request.params.arguments ?? {});
     const asked = effectiveCall(name, args);
     const refused = hostOnlyAnswer(asked.tool);
     if (refused) return refused;
@@ -356,6 +369,10 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
       if (!answer.isError) void deliverSoon();
       return answer;
     }
+    // Where this call goes (docs/runner-roles-design.md §4), decided before anything is sent.
+    if (routesProblem) return routesUnavailableAnswer(routesProblem);
+    const misrouted = routes ? routeRefusal({ routes, store, input: asked.input, issuer }) : null;
+    if (misrouted) return misrouted;
     const offlineTask = isOfflineToken(asked.input.taskContextToken);
     if (offlineTask && QUEUED_TOOLS.has(asked.tool)) return checkpointOffline(asked);
     // A call that cannot go without a task token (resume_agent_conversation) needs a task the host
@@ -387,11 +404,20 @@ function createRunnerServer({ store, connection, routing, record = () => false, 
     if (answer instanceof HostRefusal) return hostRefusedAnswer(answer.status, answer.reason);
     if (!answer) return offlineAnswer(store, { ...call, sourceApplication, sessionId, entryId });
     rememberAnswer(store, call, answer);
+    // Both read the host's own answer, before its token is given its issuer below.
+    if (routes) rememberTaskOwner({ routes, store, tool: call.tool, answer });
     routing.completeEntry(call.tool, answer, readHostPreferences);
     if (store.outbox().queued) void deliverSoon();
     // Task entry says where it was answered, so the client's AI never takes a
     // follower for a computer without a FULI (rec#144).
-    return hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
+    const noted = hostAnsweredNote(call.tool, answer, { hostName: store.host()?.name ?? 'its FULI host' });
+    // The client sees the host's token only with the host's name on it: in a task entry, and in any
+    // answer that repeats the token a call was made under (read_task_preferences, resume_agent_conversation).
+    const hostFingerprint = store.host()?.fingerprint;
+    if (isTaskEntry(call.tool)) return answerWithIssuer(noted, hostFingerprint);
+    const madeUnder = call.input?.taskContextToken;
+    return typeof madeUnder === 'string' && madeUnder && !isOfflineToken(madeUnder)
+      ? answerWithIssuer(noted, hostFingerprint, madeUnder) : noted;
   });
 
   // read_task_preferences on the host, in this process's session (its reader

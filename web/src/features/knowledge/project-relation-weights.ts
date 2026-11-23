@@ -1,4 +1,4 @@
-import { isConversationFallback } from '@/features/projects/project-origin'
+import { isConversationFallback, projectDisplayName } from '@/features/projects/project-origin'
 import { t } from '@/i18n'
 import type {
   KnowledgeEdge,
@@ -6,6 +6,9 @@ import type {
   KnowledgeNode,
   PersonalProject,
 } from '@/types'
+
+/** What the console calls a project it holds a record for, or nothing where it holds none. */
+const projectName = (project: PersonalProject | undefined) => project && projectDisplayName(project)
 
 export type ProjectRelationWeightTier = 'related' | 'frequent' | 'close'
 
@@ -164,7 +167,7 @@ export function extractFrequentProjects(
     const name = String(
       item.name
       ?? targetNode?.name
-      ?? projectsById.get(projectId)?.profile.name
+      ?? projectName(projectsById.get(projectId))
       ?? projectId,
     ).trim() || projectId
 
@@ -200,7 +203,7 @@ export function extractFrequentProjects(
 
     summaries.set(projectId, {
       projectId,
-      name: targetNode.name || projectsById.get(projectId)?.profile.name || projectId,
+      name: targetNode.name || projectName(projectsById.get(projectId)) || projectId,
       totalCount,
       recent30dCount,
       lastUsedAt: typeof attrs.lastUsedAt === 'string' ? attrs.lastUsedAt : null,

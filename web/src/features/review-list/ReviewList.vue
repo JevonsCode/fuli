@@ -19,6 +19,7 @@ import { guessedAction, oneLine, rowChoices, type ReviewLine, type RowChoice } f
 import ReviewRows from './ReviewRows.vue'
 import TonborgExplain from './TonborgExplain.vue'
 import { useReviewList } from './review-store'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // The knowledge part of 待决策 (rec#96): earlier Agent replies kept by mistake
 // (11-08, dropped together), Tonborg's questions, every pending item, and what
@@ -41,7 +42,7 @@ const onVisible = () => { if (document.visibilityState === 'visible') void revie
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
-const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
+const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, projectDisplayName(project)])))
 const projectName = (line: ReviewLine) => line.projectId
   ? projectNames.value.get(line.projectId) ?? line.projectId : t('reviewList.everywhere')
 const meta = (line: ReviewLine) => [projectName(line), line.proposer, line.reason ? t(`reviewList.reasons.${line.reason}`) : '']

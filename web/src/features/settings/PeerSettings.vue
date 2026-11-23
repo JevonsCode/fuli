@@ -18,6 +18,7 @@ import { formatRelativeTime } from '@/lib/relative-time'
 import RequesterModeSelect from '@/features/visit-requests/RequesterModeSelect.vue'
 import { VISIT_REQUESTS_PATH } from '@/features/visit-requests/useVisitPeek'
 import { useConsoleStore } from '@/stores/console'
+import { personalProjectsPath } from '@/router/paths'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -87,6 +88,26 @@ function applyStatus(next: PeerStatus) {
     }
   }
 }
+
+// After it could not listen: open the listener again where it was. Paired
+// devices and shares stay; leaving the LAN roundtable is never the way to fix it.
+async function listenAgain() {
+  if (busy.value) return
+  busy.value = 'listen'
+  error.value = ''
+  try {
+    const next = await postJson('/api/peer/listen', {}, peerStatusShape)
+    applyStatus(next)
+    // Answered, yet still not listening: say so with what it ran into, not a silent repeat.
+    const still = next.coordinator?.listenFailure
+    if (still) error.value = t('settings.peer.listenStillFailed', { address: still.address, code: still.code })
+  }
+  catch (caught) { error.value = peerApiMessage(caught, t('settings.peer.listenAgainFailed')) }
+  finally { busy.value = '' }
+}
+
+// Where a project's lead is chosen: its page, which shows the team.
+const projectTeamPath = (projectId: string) => personalProjectsPath(store.activePersonalSpace?.id ?? '', 'overview', projectId)
 
 async function load() {
   if (loading.value) return
@@ -193,6 +214,15 @@ function toggleProject(project: Shareable, selected: boolean) {
   if (selected && !draft.folder && project.knownFolder) draft.folder = project.knownFolder
 }
 
+// 全选 takes every project that can be shared now (it has a lead); 清空 lets every
+// one go. Nothing is shared by default: this hands a project to another computer.
+const shareableRows = computed(() => rows.value.filter(project => project.lead))
+const allShared = computed(() => shareableRows.value.every(project => drafts[project.projectId]?.selected))
+const someShared = computed(() => rows.value.some(project => drafts[project.projectId]?.selected))
+function toggleAllProjects(selected: boolean) {
+  for (const project of selected ? shareableRows.value : rows.value) toggleProject(project, selected)
+}
+
 function toggleClient(projectId: string, client: ClientId, selected: boolean) {
   const draft = drafts[projectId]
   if (!draft) return
@@ -281,7 +311,10 @@ function shareState(projectId: string) {
         <p v-if="status.remoteRemovalPending" role="status">{{ t('settings.peer.removalPending') }}</p>
         <section class="peer-block">
           <h3 class="ui-group-label">{{ t('settings.peer.host') }}</h3>
-          <p v-if="!status.addresses.length">{{ t('settings.peer.noAddress') }}</p>
+          <p v-if="!status.addresses.length" data-no-address>
+            {{ t('settings.peer.noAddress') }}
+            <Button variant="link" size="sm" class="h-auto p-0" :disabled="loading" data-check-address @click="load">{{ t('settings.peer.checkAgain') }}</Button>
+          </p>
           <div v-else class="peer-fields">
             <OptionSelect control-id="peer-host-address" :model-value="hostAddress" :options="addressOptions"
               :label="t('settings.peer.hostAddress')" @update:model-value="hostAddress = $event" />
@@ -322,9 +355,14 @@ function shareState(projectId: string) {
       </template>
 
       <template v-if="status && paired">
-        <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure>
+        <UiNotice v-if="status.coordinator?.listenFailure" tone="warning" data-listen-failure
+          data-no-action="only an address that is away goes without 重新监听: it comes back by itself">
           {{ t(status.coordinator.listenFailure.addressAway ? 'settings.peer.listenAway' : 'settings.peer.listenFailure',
             { address: status.coordinator.listenFailure.address, code: status.coordinator.listenFailure.code }) }}
+          <template v-if="!status.coordinator.listenFailure.addressAway" #actions>
+            <Button size="sm" variant="outline" :loading="busy === 'listen'" :loading-label="t('settings.peer.listeningAgain')"
+              :disabled="Boolean(busy) && busy !== 'listen'" data-listen-again @click="listenAgain">{{ t('settings.peer.listenAgain') }}</Button>
+          </template>
         </UiNotice>
         <dl class="peer-identity">
           <div>
@@ -355,7 +393,7 @@ function shareState(projectId: string) {
         <section class="peer-block">
           <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
           <p>{{ t('settings.peer.sharesHint') }}</p>
-          <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared>
+          <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared data-no-action="says what pairing shared; the share list right below changes it">
             <span class="peer-notice-line">{{ t('settings.peer.autoShared', { projects: sharedAtPairing }) }}</span>
             <!-- A member cannot check the group: the coordinator says who else is in it. -->
             <span v-if="status.role === 'member'" class="peer-notice-line" data-member-group-limit>{{ t('settings.peer.memberGroupLimit') }}</span>
@@ -368,6 +406,12 @@ function shareState(projectId: string) {
             </Button>
             <p v-if="(status.groupSize ?? 0) > 2" data-group-shares>{{ t('settings.peer.groupShares') }}</p>
           </div>
+          <div v-if="rows.length" class="peer-share-bulk">
+            <Button variant="ghost" size="xs" data-share-all :disabled="Boolean(busy) || !shareableRows.length || allShared"
+              @click="toggleAllProjects(true)">{{ t('projects.scopePicker.selectAll') }}</Button>
+            <Button variant="ghost" size="xs" data-share-clear :disabled="Boolean(busy) || !someShared"
+              @click="toggleAllProjects(false)">{{ t('projects.scopePicker.clear') }}</Button>
+          </div>
           <ul v-if="rows.length" class="peer-shares">
             <li v-for="project in rows" :key="project.projectId" :data-share-row="project.projectId">
               <label class="peer-share-title" :title="project.lead ? `${project.projectName} · ${t('settings.peer.lead', { name: project.lead.name })}` : project.projectName">
@@ -376,12 +420,18 @@ function shareState(projectId: string) {
                   @change="toggleProject(project, ($event.target as HTMLInputElement).checked)" />
                 <strong>{{ project.projectName }}</strong>
                 <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
+                <RouterLink v-if="!project.lead" :to="projectTeamPath(project.projectId)" class="peer-share-team" data-choose-lead>
+                  {{ t('settings.peer.chooseLead') }}
+                </RouterLink>
               </label>
               <p v-if="project.sameProjectOn?.length && project.lead" data-same-project>
                 {{ t('settings.peer.sameProject', { devices: sameProjectNames(project) }) }}
               </p>
               <p v-if="shareState(project.projectId) === 'lead_changed'" class="peer-note">{{ t('settings.peer.leadChanged') }}</p>
-              <p v-if="shareState(project.projectId) === 'lead_unavailable'" class="peer-note">{{ t('settings.peer.leadUnavailable') }}</p>
+              <p v-if="shareState(project.projectId) === 'lead_unavailable'" class="peer-note">
+                {{ t('settings.peer.leadUnavailable') }}
+                <RouterLink :to="projectTeamPath(project.projectId)" data-choose-lead>{{ t('settings.peer.chooseLead') }}</RouterLink>
+              </p>
               <p v-if="shareState(project.projectId) === 'team_unreadable'" class="peer-note">{{ t('settings.peer.teamUnreadable') }}</p>
               <fieldset v-if="drafts[project.projectId]?.selected && project.lead" :disabled="Boolean(busy)">
                 <legend>{{ t('settings.peer.clients') }}</legend>
@@ -403,6 +453,9 @@ function shareState(projectId: string) {
           <PeerSharePicker :listed="rowIds" :disabled="Boolean(busy)" @pick="addProject" />
           <UiNotice v-if="status.lastPublish?.error" tone="warning" data-publish-error>
             {{ t('settings.peer.publishFailed', { reason: status.lastPublish.error }) }}
+            <template #actions>
+              <Button size="sm" variant="outline" :disabled="Boolean(busy)" data-publish-retry @click="saveShares()">{{ t('settings.peer.publishAgain') }}</Button>
+            </template>
           </UiNotice>
           <div v-if="rows.length" class="peer-actions">
             <Button size="sm" data-save-shares
@@ -412,7 +465,10 @@ function shareState(projectId: string) {
           </div>
           <template v-if="reads.length || readsFailed">
             <h3 class="ui-group-label">{{ t('settings.peer.recentReads') }}</h3>
-            <p v-if="readsFailed" data-reads-unavailable>{{ t('settings.peer.readsUnavailable') }}</p>
+            <p v-if="readsFailed" data-reads-unavailable>
+              {{ t('settings.peer.readsUnavailable') }}
+              <Button variant="link" size="sm" class="h-auto p-0" data-reads-retry @click="refreshReads">{{ t('common.actions.retry') }}</Button>
+            </p>
             <ul v-else class="peer-devices peer-reads" data-recent-reads>
               <li v-for="read in reads" :key="read.id">
                 <div>
@@ -482,6 +538,7 @@ function shareState(projectId: string) {
 }
 .peer-settings textarea { resize: vertical; font: 12px/1.65 var(--font-mono); }
 .peer-shares, .peer-devices { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.peer-share-bulk { display: flex; gap: 4px; }
 .peer-shares { gap: 0; }
 .peer-shares li, .peer-devices li {
   min-width: 0; padding: 12px 0; border-top: 1px solid var(--color-border);

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isTemporaryProject, projectDisplayName } from './project-display-name.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 
 const NEW_PROJECT = /^\s*(?:新项目|new project)\s*[:：]\s*([^\n\r,，。]{1,80})/i;
@@ -52,9 +53,6 @@ export async function nameableProjects(application) {
   return (await application.personal.listPersonalProjects(application.config.personal.spaceId)).filter(nameable);
 }
 
-export function projectDisplayName(project) {
-  return project.profile?.name || project.project_id;
-}
 
 // `writer` is who the purpose comes from: the person by default, an Agent for its own draft.
 export async function createProjectNamed(application, name, purpose, writer = PERSON_WRITER) {
@@ -65,7 +63,7 @@ export async function createProjectNamed(application, name, purpose, writer = PE
 
 // Display names only, for a compact triage candidate list.
 export async function projectNames(application, limit) {
-  return (await nameableProjects(application)).map(projectDisplayName).slice(0, limit);
+  return (await nameableProjects(application)).map(project => projectDisplayName(project)).slice(0, limit);
 }
 
 // Only the user's own description on the "新项目：" line is kept; other prompt
@@ -108,11 +106,11 @@ async function createNamedProject(application, spaceId, all, name, brief, writer
   throw Object.assign(new Error('No free project ID for this name'), { status: 409 });
 }
 
-// Legacy per-session fallbacks, task-scoped and archived projects are not
-// projects a person names now; they stay out of name matching.
+// Temporary projects (legacy per-session fallbacks included) and archived ones
+// are not projects a person names now; they stay out of name matching. A
+// readable ID such as 'conversation-notes' is a project a person named.
 function nameable(project) {
-  return project?.scope_type !== 'temporary' && project?.profile?.lifecycle !== 'archived'
-    && !String(project?.project_id ?? '').startsWith('conversation-');
+  return !isTemporaryProject(project) && project?.profile?.lifecycle !== 'archived';
 }
 
 function names(project) {

@@ -9,6 +9,8 @@ import { markerField as field, markerValue as unfield } from './task-agent-assig
 import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry.js';
 import { DEFAULT_ROUND_LIMIT } from '../../packages/roundtable/src/roundtable/group-discussion.js';
 import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
+import { agentDisplayName } from './agent-display-name.js';
+import { applicationLanguage } from './project-display-name.js';
 
 // `#FLG …` (Fuli Agents Group, rec#55): the person invites several of their
 // FLAs to discuss a question in this chat. The entry only prepares it:
@@ -330,7 +332,8 @@ async function joined(application, request, selection, personalProjectId, kept) 
   const agent = selection?.status === 'ready' ? selection.agent : null;
   if (!agent?.agentId) return said('unavailable', 'join_no_fla', kept, selection?.reason ? [selection.reason] : []);
   if (!request.source.sessionId) return said('unavailable', 'join_no_session', kept);
-  const name = agent.profile?.displayName || agent.profile?.display_name || agent.profile?.name
+  const name = (agent.profile?.displayName || agent.profile?.display_name || agent.profile?.name
+    ? agentDisplayName(agent, applicationLanguage(application)) : '')
     || (agent.agentId === ASSISTANT_AGENT_ID ? 'Astro' : agent.agentId);
   let result;
   try {

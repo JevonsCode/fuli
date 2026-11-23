@@ -181,7 +181,7 @@ test('Compose failures preserve useful diagnostics while redacting local and sec
       platform: 'darwin',
       homeDir: '/Users/example',
       run: () => failed(
-        'Bind for 127.0.0.1:8787 failed: port is already allocated\n' +
+        '2026-11-23T12:34:56Z Bind for 127.0.0.1:8787 failed: port is already allocated\n' +
         'config=/Users/example/Fuli password=do-not-print'
       )
     });
@@ -190,6 +190,9 @@ test('Compose failures preserve useful diagnostics while redacting local and sec
   }
 
   assert.match(error.message, /local port required by Fuli is already in use/);
+  // Said in Chinese too, with a reason a client can show.
+  assert.match(error.message, /端口 8787 已被别的程序占用/, 'the address\'s port, not a time\'s minutes');
+  assert.deepEqual(error.startupFailure, { code: 'port_taken', port: 8787, pid: null, command: null, runningSeconds: null });
   assert.match(error.message, /~\/Fuli/);
   assert.doesNotMatch(error.message, /do-not-print/);
   assert.match(error.message, /password=\[redacted\]/);

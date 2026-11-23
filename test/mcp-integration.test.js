@@ -97,9 +97,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
         entity_ids: ['entity-1'], relationship_ids: []
       };
     }
-    if (request.path === '/v1/workflow-candidates/search') {
-      return approvedWorkflowCandidatePage();
-    }
     return [];
   });
   const workspace = await provider((request) => {
@@ -242,7 +239,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_executor_routing_rule', 'delete_executor_routing_rule',
     'record_project_agent_task_outcome', 'list_project_agent_routing_learning',
     'ignore_project_agent_routing_learning', 'reset_project_agent_routing_learning',
-    'list_workflow_candidates',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'preview_personal_project_action', 'apply_personal_project_action',
     'get_graphiti_status',
@@ -326,29 +322,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.equal(actualExecutor.isError, undefined, JSON.stringify(actualExecutor));
 
-  const workflowCandidates = await connection.client.callTool({
-    name: 'list_workflow_candidates',
-    arguments: {
-      personalSpaceId: 'personal-1',
-      personalProjectId: 'hotel-b',
-      afterStepKey: 'step-x'
-    }
-  });
-  assert.equal(workflowCandidates.structuredContent.truncated, undefined);
-  assert.equal(
-    workflowCandidates.structuredContent.candidates[0].targetStepName,
-    'Check links · NETWORK-STEP-Y-707'
-  );
-  assert.equal(
-    workflowCandidates.structuredContent.candidates[0]
-      .authorization.highRiskPerCallApprovalRequired,
-    true
-  );
-  assert.deepEqual(
-    workflowCandidates.structuredContent.candidates[0]
-      .authorization.highRiskActionCategories,
-    ['send', 'delete', 'publish', 'payment', 'external_write']
-  );
 
   const taskContext = await connection.client.callTool({
     name: 'begin_task_context',
@@ -812,76 +785,6 @@ test('Agent 项目写入必须使用匹配且一次性的预览授权', async (t
   assert.equal(writes, 1);
 });
 
-function approvedWorkflowCandidatePage() {
-  return {
-    policy: {
-      minimum_occurrences: 3,
-      minimum_distinct_sessions: 3,
-      recommendation_threshold: 0.7,
-      weights: {
-        occurrences: 0.3,
-        distinct_sessions: 0.3,
-        recency: 0.2,
-        confirmation_authority: 0.2
-      },
-      decline_penalty: 0.1,
-      negative_evidence_penalty: 0.1
-    },
-    candidates: [{
-      candidate_id: 'candidate-1',
-      candidate_version: 1,
-      evidence_revision: 4,
-      decision_revision: 1,
-      rule_fingerprint: 'rule-fingerprint-1',
-      workflow_key: 'release-notes-link-check',
-      condition: { releaseChannel: 'final' },
-      personal_space_id: 'personal-1',
-      personal_project_id: 'hotel-b',
-      source_step_id: 'step-x-id',
-      source_step_key: 'step-x',
-      source_step_name: 'Generate release notes',
-      target_step_id: 'step-y-id',
-      target_step_key: 'step-y',
-      target_step_name: 'Check links · NETWORK-STEP-Y-707',
-      status: 'approved',
-      occurrence_count: 4,
-      distinct_session_count: 4,
-      recency: {
-        first_observed_at: '2026-08-01T08:00:00Z',
-        last_observed_at: '2026-08-03T08:00:00Z',
-        age_days: 0,
-        score: 1
-      },
-      confirmation_authority: 'human_review',
-      negative_evidence_count: 0,
-      decline_count: 0,
-      reviewed_at: '2026-08-03T08:10:00Z',
-      review_reason: 'Approved by the user.',
-      recommendation: {
-        recommended: true,
-        score: 1,
-        threshold: 0.7,
-        action: 'authorized_low_risk_only'
-      },
-      execution_authorized: true,
-      authorization: {
-        authorization_id: 'authorization-1',
-        candidate_id: 'candidate-1',
-        candidate_version: 1,
-        rule_id: 'rule-1',
-        rule_fingerprint: 'rule-fingerprint-1',
-        scope: { personalProjectId: 'hotel-b' },
-        active: true,
-        authority: { kind: 'user', label: 'Current user' },
-        created_at: '2026-08-03T08:10:00Z',
-        high_risk_per_call_approval_required: true,
-        high_risk_action_categories: [
-          'send', 'delete', 'publish', 'payment', 'external_write'
-        ]
-      }
-    }]
-  };
-}
 
 function personalCapture() {
   return {

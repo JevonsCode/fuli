@@ -54,7 +54,7 @@ or restoring it saves no style. Existing Agents are never renamed
 automatically: when an Agent's shown name reads as a job title, reading it returns
 `nameSuggestion`, a free nickname the profile page offers as a one-click rename.
 
-Uniqueness is held by the graph, not only by the check before a write (graph/23): every Agent of
+Uniqueness is held by the graph, not only by the check before a write (graph/24): every Agent of
 the person, FULI's own roles included, stores the identity key of its shown name with its space
 (`display_name_space_id`, `display_name_key`) under a uniqueness constraint, so two hires or renames
 racing for one name cannot both commit; the loser is named again or refused. A built-in role's
@@ -189,9 +189,9 @@ Workflows are the Agent's own repeated work as named, ordered steps, in
 `agent-workflows.sqlite` (format 1). The task's bound Agent, read from the current
 `taskContextToken`, is the only owner a tool acts for:
 
-- `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
-  repeated often enough across sessions, or from the Agent's own steps; with `workflowId` it
-  proposes a change. Every proposal is a new version and older versions are kept.
+- `propose_agent_workflow` proposes a workflow from the Agent's own steps; with `workflowId` it
+  proposes a change. (Learned X-then-Y candidates, `list_workflow_candidates`, were removed on
+  11-23: their only input was retired on 11-11, so the list stayed empty.) Every proposal is a new version and older versions are kept.
 - A project Skill draft (rec#78 step 4) is a proposal from three or more of the Agent's own kept
   experiences (`experienceIds`, checked against the project's current kept items). It must carry a
   `workMap` (inputs, outputs, dependencies, branches, acceptance; at most three questions, which FULI

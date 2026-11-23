@@ -112,7 +112,7 @@ export function followerLine(status) {
   if (!status.paired) return { zh: '这台电脑还没有跟随任何主机。', en: 'This computer follows no host yet.' };
   const { name, reachable, revokedAt } = status.host;
   if (revokedAt) return { zh: `${name} 已撤销这台电脑。`, en: `${name} revoked this computer.` };
-  const where = reachable === null ? { zh: '未检查', en: 'not checked' }
+  const where = reachable === null ? { zh: '正在找主机…', en: 'looking for it…' }
     : reachable ? { zh: '在线', en: 'answering' } : { zh: '不在线', en: 'not reachable' };
   // When the host last answered anything this computer asked: when it was last reached, not when
   // data was last exchanged, and named so.

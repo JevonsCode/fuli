@@ -21,6 +21,7 @@ import {
   type ConflictMode, type ConflictPolicyOverview,
 } from './conflict-policy'
 import { docsHelpUrl } from './docs-help'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const store = useConsoleStore()
 const overview = ref<ConflictPolicyOverview | null>(null)
@@ -112,7 +113,7 @@ function startAdding() {
 async function addException() {
   const project = projects.value.find(({ project_id }) => project_id === addProjectId.value)
   if (!project) return
-  if (await saveProject(project.project_id, project.profile.name, addMode.value, 'pages.connections.savingConflictProject')) {
+  if (await saveProject(project.project_id, projectDisplayName(project), addMode.value, 'pages.connections.savingConflictProject')) {
     adding.value = false
   }
 }

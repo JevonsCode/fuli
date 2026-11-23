@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BackToTop from '@/components/BackToTop.vue'
@@ -35,6 +36,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { hasTemporaryOrigin, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 
 // 编排: every Agent of the space on one canvas. A name opens that Agent's
 // management page; a quick look (Peek) answers a quick question in place.
@@ -48,8 +50,12 @@ const roster = useProjectAgentRoster(spaceId)
 const agents = roster.agents
 const projects = computed(() => store.state?.personalProjects ?? [])
 const projectById = computed(() => new Map(projects.value.map((project) => [project.project_id, project])))
-const projectOptions = computed(() => projects.value.map((project) => ({ id: project.project_id, name: project.profile.name })))
-const projectName = (projectId: string) => projectById.value.get(projectId)?.profile.name ?? projectId
+const projectOptions = computed(() => pickerOrder(projects.value).map((project) => ({
+  id: project.project_id, name: projectDisplayName(project), temporary: hasTemporaryOrigin(project) })))
+const projectName = (projectId: string) => {
+  const project = projectById.value.get(projectId)
+  return project ? projectDisplayName(project) : projectId
+}
 
 const pageLoading = computed(() => roster.loading.value || (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading')))
@@ -261,7 +267,7 @@ usePageRefresh(() => roster.load())
            in reach on tall screens and scrolls away on short ones. -->
       <div class="project-agents-toolbar">
         <div class="project-agents-filters">
-          <OptionCombobox v-model="filterProjectIds" class="project-agents-project-filter" multiple :options="projectSelectOptions(projectOptions)" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :placeholder="t('employees.filterEmpty')" />
+          <OptionCombobox v-model="filterProjectIds" class="project-agents-project-filter" multiple :options="projectSelectOptions(projectOptions)" :fold-group="temporaryGroupLabel()" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :placeholder="t('employees.filterEmpty')" />
           <label class="project-agents-search">
             <span class="ui-sr-only">{{ t('projectAgents.searchLabel') }}</span>
             <input v-model="search" type="search" maxlength="160" :placeholder="t('projectAgents.searchPlaceholder')" />

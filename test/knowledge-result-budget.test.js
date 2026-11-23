@@ -165,6 +165,62 @@ test('multiple focused queries page every record without starving later query gr
   assert.equal(seen.size, 48);
 });
 
+test('a delivered record spends no bytes on fields that are null', async () => {
+  const app = application([{ ...record(), valid_at: null, invalid_at: null, reasoning_summary: null,
+    profile_aspect: null, preference_scope: null, key: null, last_feedback_at: null,
+    source_uris: [], attributes: undefined }]);
+  const page = await searchCurrentProjectKnowledge(app, resolution,
+    { queries: ['Aurora 发布流程'], limitPerQuery: 3 });
+  const item = page.results[0].entities[0];
+
+  for (const key of ['valid_at', 'reasoning_summary', 'profile_aspect', 'preference_scope', 'last_feedback_at']) {
+    assert.equal(key in item, false, `${key} was null and says nothing`);
+  }
+  // What a reader must still be able to tell apart stays: an empty list is
+  // not a missing one, and a historical version keeps saying it ended.
+  assert.deepEqual(item.source_uris, []);
+  assert.equal(item.id, 'aurora-runbook');
+  const historical = application([{ ...record(), invalid_at: '2026-05-01T00:00:00Z', summary: 'Old command.' }]);
+  const old = await searchCurrentProjectKnowledge(historical, resolution,
+    { queries: ['Aurora 发布流程'], limitPerQuery: 3, includeHistorical: true });
+  assert.equal(old.results[0].entities[0].invalid_at, '2026-05-01T00:00:00Z');
+});
+
+// One call's queries, each with its own ranked results and score scale. Each
+// record is big enough to fill a page alone, so the pages show the order.
+function scoredApplication(scores, { text = '资料'.repeat(600) } = {}) {
+  const app = application();
+  app.searchKnowledge = async ({ query }) => ({ query, facts: [],
+    entities: scores[query].map((score, i) => ({ id: `${query}-${i}`, space_id: 'space', scope: 'personal',
+      score, summary: `Fact ${i} for ${query}. ${text}` })) });
+  return app;
+}
+
+const delivered = page => page.results.flatMap(group => (group.entities ?? []).map(item => item.id));
+
+async function everyPage(app, input) {
+  const pages = [await searchCurrentProjectKnowledge(app, resolution, input)];
+  while (pages.at(-1).next_cursor) {
+    assert.ok(pages.length < 12);
+    pages.push(await searchCurrentProjectKnowledge(app, resolution, { ...input, cursor: pages.at(-1).next_cursor }));
+  }
+  return pages;
+}
+
+test('queries take turns in the order asked, whatever their scores', async () => {
+  // A query fused with meaning scores in reciprocal ranks (about 0.016-0.033),
+  // a lexical one in relevance bands (4-12): raw scores say nothing across
+  // queries, and a share of each query's best depends on how its scores are
+  // spread (rec#111 review), so neither decides the order.
+  const scores = { fused: [0.0328, 0.0325, 0.0161], lexical: [12, 4, 3.9] };
+  for (const queries of [['fused', 'lexical'], ['lexical', 'fused']]) {
+    const pages = await everyPage(scoredApplication(scores), { queries, limitPerQuery: 3 });
+
+    assert.ok(pages.length > 1, 'the call needs more than one page');
+    assert.deepEqual(pages.flatMap(delivered), [0, 1, 2].flatMap(i => queries.map(query => `${query}-${i}`)));
+  }
+});
+
 // The real per-query result shape: every group carries the call's scope
 // fields, guidance and markers, as searchFederatedKnowledge returns them.
 function federatedApplication({ recordsPerQuery = 6, projectIds = [] } = {}) {

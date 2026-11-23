@@ -150,6 +150,7 @@ const ACTIONS = Object.freeze({
     const result = await held(maintenance.hold(paths.dataDir), () => rollbackMigration({ dataDir: paths.dataDir,
       label: options.store, migrationId: options.migration, actor: CLI_ACTOR, graph }));
     write([`Undone: ${result.migrationId} of ${result.label}; the store is at version ${result.version}.`,
+      ...(result.adapted ? [`${result.adapted} records written since were brought into the earlier format, so the earlier FULI reads them.`] : []),
       ...prunedLines(result.pruned ?? [])].join('\n'));
     return { exitCode: 0, ...result };
   },

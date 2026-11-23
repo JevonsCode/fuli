@@ -249,7 +249,10 @@ const BASELINE = Object.freeze({
   // no new tool, with that tool's own scope and checks: 192,651 -> 192,751 B (+100 B), measured on the
   // merge with the read_task_preferences keys above. Chat, instructions and entry are unchanged; the rules
   // for reading it travel in the answer's own guidance.
-  fullToolSchemaBytes: 192751,
+  // 11-23: list_workflow_candidates is retired (nothing fed it since 11-11), and submit_agent_app_version
+  // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
+  // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 191758,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -275,7 +278,9 @@ const BASELINE = Object.freeze({
   // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
   // rec#85: the same amend field; the chat description drops the field list the schema already
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7333,
+  // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
+  // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
+  chatToolSchemaBytes: 7330,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.

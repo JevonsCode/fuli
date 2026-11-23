@@ -1,5 +1,6 @@
 import { dreamingConnected, dreamingNewSessions, dreamingReadiness } from './run.js';
 import { dreamingRuns, dreamingSince } from './scheduler.js';
+import { applicationLanguage, isTemporaryProject, projectDisplayName } from '../graphiti/project-display-name.js';
 
 // The model page's Dreaming card in one read (11-06): each project Dreaming may
 // read, how many sessions its next run would read, and what its last run did.
@@ -11,10 +12,11 @@ export async function dreamingProjects(app) {
     app.listPersonalProjects({ personalSpaceId: app.config.personal.spaceId })
   ]);
   const latest = latestRuns(runs);
-  const listed = await Promise.all(projects.filter(project => project.scope_type !== 'temporary').map(async (project) => {
+  const language = applicationLanguage(app);
+  const listed = await Promise.all(projects.filter(project => !isTemporaryProject(project)).map(async (project) => {
     const id = project.project_id;
     const readiness = dreamingReadiness(app, id);
-    return { personalProjectId: id, name: project.profile?.name ?? id, readiness,
+    return { personalProjectId: id, name: projectDisplayName(project, language), readiness,
       // A project not approved for the model is not listed further.
       newSessions: readiness === 'ready' ? await dreamingNewSessions(app, id, dreamingSince(runs, id)) : null,
       lastRun: runView(latest.get(id)) };

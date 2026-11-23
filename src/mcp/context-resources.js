@@ -2,6 +2,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { ENTRY_RULES_SECTION_TEMPLATE, ENTRY_RULES_URI, entryRulesMarkdown, entryRulesSectionMarkdown }
   from '../conversations/entry-rules.js';
+import { isTemporaryProject, projectDisplayName } from '../graphiti/project-display-name.js';
 import { singleLine } from '../text/single-line.js';
 
 const PROJECT_RESOURCE_TEMPLATE = 'fuli://projects/{projectId}';
@@ -137,6 +138,9 @@ function renderPersonalProject(project) {
     `- personal_space_id: \`${project.personal_space_id ?? ''}\``,
     `- personal_project_id: \`${projectId}\``,
     `- project_name: ${projectName}`,
+    // Whether this is a temporary scope is a field, never the name: FULI writes
+    // the name of a project nobody named in the person's own language.
+    `- temporary: \`${isTemporaryProject(project)}\``,
     '- scope: `exact_local_personal_project`',
     '',
     'Use the exact `personal_project_id` for FULI project-scoped retrieval. RELATED_TO projects remain suggestions and never expand this selection automatically.',
@@ -182,7 +186,7 @@ function projectResourceUri(projectId) {
 }
 
 function displayProjectName(project) {
-  return singleLine(project.profile?.name) || project.project_id;
+  return singleLine(projectDisplayName(project)) || project.project_id;
 }
 
 function boundedResourceText(value) {

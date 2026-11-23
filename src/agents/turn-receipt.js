@@ -1,5 +1,6 @@
 import { receiptConsoleUrl, receiptSummary, receiptText, sessionRecordsUrl } from './identity-receipt.js';
 import { providerReaderFields } from '../graphiti/knowledge-reader.js';
+import { projectDisplayName } from '../graphiti/project-display-name.js';
 import { markdownLink } from '../text/markdown-link.js';
 
 // The per-turn receipt (rec#20): after a turn's checkpoint saved knowledge, the
@@ -128,12 +129,21 @@ function memoryLine(application, memory, agentName) {
 }
 
 function scopeLabel(scope) {
-  const projects = scope.projects.map(project => receiptText(project.name || project.id)).join('、');
+  const projects = scope.projects.map(scopeProjectName).join('、');
   const label = scope.kind === 'global' ? '个人全局'
     : scope.kind === 'agent' ? `FLA ${receiptText(scope.agent_name || scope.agent_id)}（${projects}）`
-      : scope.kind === 'temporary' ? '临时会话项目'
+      : scope.kind === 'temporary' ? projects || '临时项目'
         : scope.kind === 'projects' ? `项目 ${projects}` : '范围未知';
   return scope.status === 'undetermined' ? `${label}·范围待确定` : label;
+}
+
+// A scope project as the Provider sends it: no name where nobody named it, and
+// `temporary` saying so. The receipt is written in Chinese throughout.
+function scopeProjectName(project) {
+  return receiptText(projectDisplayName({
+    project_id: project.id, scope_type: project.temporary ? 'temporary' : undefined,
+    profile: { name: project.name }
+  }, 'zh-CN'));
 }
 
 // The weight FULI ranks by, and what it rests on; never a model's confidence.

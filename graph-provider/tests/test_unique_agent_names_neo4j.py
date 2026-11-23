@@ -34,7 +34,7 @@ CONVERSATION_PROJECT = 'conversation-' + 'c0' * 32
 
 def _agent(agent_id, display_name, *, status='active', test_source=None, work=0, last_turn=None, turns=0,
            hiring=False, created='2026-10-01T00:00:00Z', history=None, project='p-saturn'):
-    """One FLA as FULI 22 stored it: `work` tasks of its own, one turn at
+    """One FLA as FULI 23 stored it: `work` tasks of its own, one turn at
     `last_turn` or `turns` turns, and the hiring task of a lead FULI hired."""
     profile = {'name': '开发', 'display_name': display_name, 'responsibility': 'Synthetic work.',
                'status': status, **({'test_source': test_source} if test_source else {})}
@@ -89,7 +89,7 @@ async def _seed(settings, driver, agents=AGENTS):
         CREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {id: 'p-backup', project_id: 'p-backup',
                                                                    name: 'Station Backup'})
         CREATE (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject {id: $conversation, project_id: $conversation,
-                                                                   name: '会话项目 / Conversation project'})
+                                                                   scope_type: 'temporary'})
         CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent {id: $bole,
                  agent_id: 'employee.bole', name: 'Bole', status: 'active', agent_type: 'hr',
                  profile_json: '{"name":"Bole","responsibility":"Synthetic hiring."}',
@@ -122,7 +122,7 @@ async def _seed(settings, driver, agents=AGENTS):
         space=SPACE, agents=agents, conversation=CONVERSATION_PROJECT,
         bole=stable_uuid(settings.provider_id, SPACE, 'project-agent', 'employee.bole'),
     )
-    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 22")
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 23")
 
 
 async def _names(driver):
@@ -159,7 +159,7 @@ async def test_the_upgrade_needs_nobody_and_the_person_settles_shared_names_in_o
     async with provider_client(settings, ACCESS_TOKEN) as (client, _):
         health = (await client.get('/health')).json()['data_format']
         assert health['state'] == 'current' and health['access'] == 'write' and health['pending'] == []
-        assert await _version(driver) == 23
+        assert await _version(driver) == 24
         # Nobody was renamed, and the built-in role holds its name.
         assert {agent_id: item['name'] for agent_id, item in (await _names(driver)).items() if agent_id in before} \
             == {agent_id: item['name'] for agent_id, item in before.items()}
@@ -176,7 +176,8 @@ async def test_the_upgrade_needs_nobody_and_the_person_settles_shared_names_in_o
         plan = (await client.get('/v1/project-agent-name-fixes', params={'personal_space_id': SPACE})).json()
         assert _settled(plan) == GIVING_WAY and plan['renames'] == len(GIVING_WAY)
         quinn = next(group for group in plan['groups'] if group['name'] == 'Quinn Shaw')
-        assert [item['projects'] for item in quinn['members']] == [['Saturn'], ['会话项目 / Conversation project']]
+        # A temporary project stores no name: it is referred to by its number.
+        assert [item['projects'] for item in quinn['members']] == [['Saturn'], ['#c0c0c0c0']]
 
         # The person keeps Emery Fox for emery-b and leaves casey-b's rename out.
         chosen = (await client.get('/v1/project-agent-name-fixes', params={
@@ -246,3 +247,4 @@ async def test_two_agents_racing_for_one_name_cannot_both_have_it(graph):
     keys = await _rows(driver, '''MATCH (a:FuliProjectAgent) WHERE a.display_name_key = 'quinn shaw'
                                   RETURN count(a) AS count''')
     assert keys == [{'count': 1}]
+

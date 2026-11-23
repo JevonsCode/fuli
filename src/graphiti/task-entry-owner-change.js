@@ -1,6 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { receiptText } from '../agents/identity-receipt.js';
+import { agentDisplayName } from './agent-display-name.js';
+import { applicationLanguage } from './project-display-name.js';
 import { sessionTaskContext } from './task-entry-standing-owner.js';
 
 // rec#110 item 9: within one session the FLA that owns a task can change
@@ -60,7 +62,7 @@ export async function previousOwnerName(application, from) {
   if (!from) return null;
   const read = application.getProjectAgent({ personalSpaceId: application.config.personal.spaceId,
     personalProjectId: from.personalProjectId, agentId: from.agentId })
-    .then(agent => agent?.profile?.displayName || agent?.profile?.name || null, () => null);
+    .then(agent => (agent?.profile ? agentDisplayName(agent, applicationLanguage(application)) || null : null), () => null);
   return Promise.race([read, delay(NAME_WAIT_MS, null, { ref: false })]);
 }
 

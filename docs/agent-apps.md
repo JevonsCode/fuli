@@ -4,6 +4,11 @@ An Agent app is a small tool, page or resident service that a FULI Agent builds 
 only submit an immutable version (`submit_agent_app_version`) and read the list (`list_agent_apps`). Approving,
 rolling back, disabling and deleting belong to the local user, in a terminal (`fuli app`) or the local console.
 
+A submitted app belongs to the FLA whose task the call comes from: FULI reads it from the call's
+`taskContextToken`, as it does for workflows. An `agentId` the call still passes must name that FLA, or the
+submission is refused (`agent_not_owner`), so the person never confirms an app under the wrong submitter.
+Apps registered before this version keep the owner they were registered with; FULI does not rewrite them.
+
 ## Trusted mode: no sandbox in this version
 
 This version has no system sandbox. **An approved app runs in trusted mode: as an ordinary process of your own OS

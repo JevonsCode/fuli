@@ -728,11 +728,6 @@ export class GraphitiProviderClient {
       method: 'POST', body: input
     });
   }
-  searchWorkflowCandidates(input) {
-    return this.#request('/v1/workflow-candidates/search', {
-      method: 'POST', body: input
-    });
-  }
   reviseKnowledgeItem(itemId, input) {
     return this.#request(`/v1/knowledge/items/${encodeURIComponent(itemId)}`, {
       method: 'PATCH', body: input

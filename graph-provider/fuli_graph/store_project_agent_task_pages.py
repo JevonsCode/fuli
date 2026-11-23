@@ -19,6 +19,7 @@ from .personal_project_access import authorize_personal_project
 from .project_agent_task_models import ProjectAgentTaskRecord, ProjectAgentTaskStatus
 from .provider_values import native_datetime
 from .system_hr_identity import resolve_hr_alias
+from .temporary_project_scope import TASK_PROJECT_SCOPE_TYPE
 
 TaskPageOrder = Literal['updated', 'completed']
 TaskPageSort = Literal['newest', 'oldest']
@@ -109,7 +110,8 @@ def _page_query(order: TaskPageOrder, sort: TaskPageSort) -> tuple[str, str]:
           running_since: participant.running_since
         }}) AS participant_rows
         OPTIONAL MATCH (task)-[:ROUTED_BY]->(decision:FuliProjectAgentRoutingDecision)
-        RETURN task, at, participant_rows, [] AS event_rows, decision
+        RETURN task, at, participant_rows, [] AS event_rows, decision,
+               {TASK_PROJECT_SCOPE_TYPE} AS project_scope_type
         ORDER BY at {direction}, task.task_id
     '''
     return match, page

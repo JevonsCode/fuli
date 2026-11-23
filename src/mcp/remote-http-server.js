@@ -85,7 +85,9 @@ export async function createRemoteMcpHttpServer({
   now = Date.now,
   isBlockedPort = isFetchBlockedPort,
   withRuntimeLease = (_owner, operation) => operation(),
-  createMcp = createMcpServer
+  createMcp = createMcpServer,
+  // This installation's own name on the task tokens it issues (task-issuer.js ownIssuer).
+  taskIssuer = null
 }) {
   assertNonemptyObject(app, 'Remote MCP application');
   assertBoundedString(personalProjectId, 'Remote MCP personal project ID', 128);
@@ -132,7 +134,8 @@ export async function createRemoteMcpHttpServer({
       allowedAuthorities: configuredAuthorities,
       allowedOrigins: configuredOrigins,
       withRuntimeLease,
-      createMcp
+      createMcp,
+      taskIssuer
     }).catch(() => {
       if (!response.headersSent) sendJsonRpcError(response, 500, -32603, 'Internal server error');
       else if (!response.writableEnded) response.destroy();
@@ -193,7 +196,8 @@ async function handleRemoteRequest({
   allowedAuthorities,
   allowedOrigins,
   withRuntimeLease,
-  createMcp
+  createMcp,
+  taskIssuer = null
 }) {
   const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
   if (pathname !== '/mcp') {
@@ -220,7 +224,8 @@ async function handleRemoteRequest({
       personalSpaceId,
       sourceApplication,
       withRuntimeLease,
-      createMcp
+      createMcp,
+      taskIssuer
     })
   });
 }
@@ -233,7 +238,8 @@ function createSessionMcp({
   personalSpaceId,
   sourceApplication,
   withRuntimeLease,
-  createMcp
+  createMcp,
+  taskIssuer = null
 }) {
   const hostSessionId = `fuli-remote-${randomUUID()}`;
   const roleBinding = { personalProjectId, agentId: null };
@@ -241,6 +247,7 @@ function createSessionMcp({
   return createMcp(sessionApplication, {
     sourceApplication,
     hostSessionId,
+    taskIssuer,
     instructions: REMOTE_INSTRUCTIONS,
     toolNames: REMOTE_TOOL_NAMES,
     registerResources: false,

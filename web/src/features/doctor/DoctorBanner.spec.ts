@@ -247,6 +247,20 @@ describe('DoctorBanner', () => {
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(true)
   })
 
+  it('leaves out the page address an Agent gets, since the person is already in the console', async () => {
+    api.getJson.mockResolvedValue(report('needs_person', [OUTDATED]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    api.postJson.mockResolvedValueOnce({ results: [{ id: OUTDATED.id, outcome: 'failed',
+      error: 'The client could not be reconnected; connect it again in Settings → Clients. http://127.0.0.1:2799/settings?tab=clients' }],
+    doctor: report('needs_person', [OUTDATED]) })
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    await wrapper.get('[data-doctor-repair]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-doctor-failure]').text())
+      .toBe('有 1 件没能自动修复：The client could not be reconnected; connect it again in Settings → Clients.')
+  })
+
   it('is a chip whose panel floats over the page and closes on Escape or a click outside', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [OUTDATED, SESSIONS]))
     const { wrapper } = mountBanner()
