@@ -18,7 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
-import { WORKING_REPOSITORY, namedWorkstreamMarkers, workstreamHandoffEntry, workstreamPredecessor } from './task-entry-workstream.js';
+import { WORKING_REPOSITORY, handoffWorkstream, namedWorkstreamMarkers, workstreamHandoffEntry, workstreamPredecessor } from './task-entry-workstream.js';
 import { entryPolicyReader } from './project-policy-read.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { introductionEntry } from './task-entry-introduction.js';
@@ -53,7 +53,9 @@ export function beginTaskEntry(application, input) {
       entry = await beginTaskContext(application, input);
     } catch (error) {
       if (!isReadOnlyRefusal(error)) throw error;
-      return readOnlyTaskEntry(application, { ...input, workKind: input.workKind ?? input.promptScene });
+      // A lead's hand-off to a line (task-entry-workstream.js) is no kind of work to filter by.
+      const workKind = handoffWorkstream(input.workKind) === null ? input.workKind : undefined;
+      return readOnlyTaskEntry(application, { ...input, workKind: workKind ?? input.promptScene });
     }
     keepEntryPrompt(application, entry, input, input.taskPrompt);
     // Its task and opening writes are done: a hook deadline from here on

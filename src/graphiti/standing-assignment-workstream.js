@@ -1,5 +1,5 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
-import { ID_LIMIT, RESPONSIBILITY_LIMIT } from '../standing-assignments/limits.js';
+import { HANDOFF_PREFIX, ID_LIMIT, WORKSTREAM_NAME_LIMIT } from '../standing-assignments/limits.js';
 import { isBranchTerm } from '../standing-assignments/term-rules.js';
 import { identityKey } from '../text/name-identity.js';
 import { requiredString } from '../validation/values.js';
@@ -89,7 +89,7 @@ export async function splitWorkstreamInConsole(application, assignmentId, body, 
   if (call) await asLeadOf(application, source.projectId, call.actor.agentId);
   const owner = await lineOwner(application, source.projectId, requiredString(body.leadAgentId, 'leadAgentId', ID_LIMIT));
   return port.split(source.assignmentId, { terms: body.terms, extraTerms: body.extraTerms, leadAgentId: owner.agentId,
-    responsibility: requiredString(body.responsibility, 'responsibility', RESPONSIBILITY_LIMIT) },
+    responsibility: lineName(body.responsibility) },
   { ...consoleSource(call), expectedRevision: body.expectedRevision });
 }
 
@@ -144,8 +144,16 @@ function lineOf(port, assignmentId) {
 
 function lineRegistration(application, { projectId, owner, terms, responsibility, source, sourceConversationId }) {
   return { personalSpaceId: application.config.personal.spaceId, projectId, leadAgentId: owner.agentId, terms,
-    responsibility: requiredString(responsibility, 'responsibility', RESPONSIBILITY_LIMIT), source,
+    responsibility: lineName(responsibility), source,
     sourceConversationId };
+}
+
+// A line's name, short enough that its lead can hand it a task by name (begin_task_context workKind).
+function lineName(value) {
+  const name = requiredString(value, 'responsibility');
+  if ([...name].length <= WORKSTREAM_NAME_LIMIT) return name;
+  throw refusal('workstream_name_too_long', `A workstream's name is at most ${WORKSTREAM_NAME_LIMIT} characters, so `
+    + `its lead can hand it a task with workKind "${HANDOFF_PREFIX}<name>". Use a shorter name. Nothing was saved.`, 422);
 }
 
 function view(workstream, terms, owner) {

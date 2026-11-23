@@ -9,6 +9,7 @@ import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { recordAgentViews } from './agent-view-records.js';
 import { resolvePreferenceProject } from './preference-project-resolution.js';
+import { handoffWorkstream } from './task-entry-workstream.js';
 
 // A task entry reads the project list once (shared-project-list.js).
 export function collaborationPreferencesAtEntry(application, input) {
@@ -35,8 +36,16 @@ async function collaborationPreferences(application, {
   // The model a client's prompt hook reported (Codex), for a #FLG join (rec#129); hooks only.
   clientModel = null,
   // The lead's hand-off to a line of this project, by name (begin_task_context workKind; docs/workstreams.md).
-  workstream = null
+  workstream = null,
+  // The Agent of this turn's task, kept when that hand-off does not happen (task-context-entry.js).
+  sameTurnAgentId = null
 } = {}) {
+  // A hand-off is never a kind of work to store or filter preferences by, whichever entry it reaches.
+  const handoff = handoffWorkstream(workKind);
+  if (handoff !== null) {
+    workKind = null;
+    workstream ??= handoff;
+  }
   let projectResolution = await resolvePreferenceProject(application, { personalProjectId, projectPath });
   if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
     && (await captureDecision(application, { sourceApplication, projectPath, sessionId,
@@ -49,10 +58,12 @@ async function collaborationPreferences(application, {
   projectResolution = await resolveTaskEntryProject(application, projectResolution, {
     sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt, sessionTask,
     // A workstream's term may be a folder of the working directory (docs/workstreams.md).
-    projectPath, clientModel, turnId, workstream
+    projectPath, clientModel, turnId, workstream, sameTurnAgentId
   });
+  const handedOver = Boolean(projectResolution.workstreamHandoff && !projectResolution.workstreamHandoff.status);
   const preferences = await taskEntryPreferences(application, projectResolution, {
-    personalProjectId, projectAgentId, projectPath, taskPrompt, sourceApplication,
+    personalProjectId, projectAgentId: projectAgentId ?? (handedOver ? null : sameTurnAgentId), projectPath, taskPrompt,
+    sourceApplication,
     sourceSessionId, sessionId, turnId, workKind, workflow, requiredCapabilities,
     limit, agentInvocation, agentToolName
   }, (items, toolName) => recordAgentViews(application, items, toolName, { sourceApplication, projectPath,

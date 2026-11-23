@@ -3,6 +3,7 @@ import path from 'node:path';
 import { agentDisplayName } from '../agents/agent-label.js';
 import { receiptText } from '../agents/identity-receipt.js';
 import { workingRepository } from '../conversations/working-branch.js';
+import { HANDOFF_PREFIX } from '../standing-assignments/limits.js';
 import { BRANCH_PREFIX } from '../standing-assignments/term-rules.js';
 import { identityKey } from '../text/name-identity.js';
 import { addressedAgentId } from './fla-mention.js';
@@ -24,8 +25,9 @@ import { projectLeadOf } from './project-policy-read.js';
 // (project-policy-read.js).
 //
 // A hand-off that does not happen is always said (workstream_handoff), with
-// why, and the task stays with whoever had it: only the lead hands work over,
-// and the person's own #FLA, an explicit Agent or a group discussion outranks it.
+// why, and the turn is otherwise routed exactly as if it had not been asked
+// for: only the lead hands work over, and the person's own #FLA, an explicit
+// Agent or a group discussion outranks it.
 //
 // A task a line took keeps it in its Agent assignment's match basis,
 // "workstream:<assignmentId>[ <notice>]", read back by prefix and ID alone;
@@ -41,8 +43,9 @@ export const WORKING_REPOSITORY = Symbol('working_repository');
 
 const WORKSTREAM = /^workstream:(\S+)(?: (.+))?$/su;
 // The lead's hand-off rides on begin_task_context's workKind, so no client
-// pays for a parameter only a lead of a divided project uses.
-const HANDOFF = /^workstream:(.*)$/su;
+// pays for a parameter only a lead of a divided project uses. Any case of the
+// prefix is a hand-off, never a kind of work.
+const HANDOFF = new RegExp(`^${HANDOFF_PREFIX}(.*)$`, 'isu');
 // An explicit Agent says who; naming the project only says where, so its lines still apply.
 const EXPLICIT_AGENT_BASES = new Set(['explicit_agent', 'explicit_fla']);
 // Why a line took this turn, said in the notice; the first that applies.
@@ -59,15 +62,21 @@ const BECAUSE = Object.freeze({
 });
 // A hand-off that did not happen: the task is still the caller's.
 export const HANDOFF_HELD = 'workstream_handoff_held';
+const REFUSED = 'workstream_handoff_refused';
+// By reason first, then by status.
 const HANDOFF_GUIDANCE = Object.freeze({
   workstream_not_found: 'No active workstream of this project has this name, so the task is still yours: do it '
     + 'yourself, or use a name from team.workstreams.',
-  workstream_handoff_refused: 'Only the project lead hands a task to a workstream, so the task is still yours: do it '
+  [REFUSED]: 'Only the project lead hands a task to a workstream, so the task is still yours: do it '
     + 'yourself, or tell the lead.',
-  [HANDOFF_HELD]: 'The hand-off did not happen (reason), so the task is still yours: do it yourself.'
+  [HANDOFF_HELD]: 'The hand-off did not happen, so the task is still yours: do it yourself.',
+  lead_unreadable: 'FULI could not read who leads this project, so the hand-off did not happen and the task is '
+    + 'still yours: do it yourself, or hand it over again later.',
+  no_session_task: 'This session has no task yet, so FULI cannot tell who works this turn and the hand-off did not '
+    + 'happen: begin this task without the workstream hand-off first, then hand it over.'
 });
 
-/** The workstream a workKind hands the task to ("workstream:<name or ID>"), or null. */
+/** The workstream a workKind hands the task to ("workstream:<name or ID>", any case), or null. */
 export function handoffWorkstream(workKind) {
   const asked = typeof workKind === 'string' ? HANDOFF.exec(workKind)?.[1] : undefined;
   return asked === undefined ? null : asked.trim();
@@ -86,6 +95,9 @@ export function handoffNotDone(resolution, workstream, status, reason) {
 // sessionTask: the session's last task, or null when the person's own #FLA
 // bound it (task-entry-named-fla.js): a named FLA's turns never carry a line on.
 // readPolicy: this entry's policy reader (project-policy-read.js).
+// input.sameTurnAgentId: the Agent of this turn's task when the hand-off came
+// in a later entry of the same turn; without the hand-off it would have been
+// the explicit Agent, so a hand-off that does not happen leaves the turn to it.
 export async function withWorkstream(application, resolution, input, sessionTask, readPolicy) {
   const asked = typeof input.workstream === 'string' ? input.workstream.trim() : null;
   const projectId = resolution.status === 'matched' ? resolution.personalProjectId : null;
@@ -109,9 +121,20 @@ export async function withWorkstream(application, resolution, input, sessionTask
   if (input.projectAgentId || addressedAgentId(input.taskPrompt) !== null || EXPLICIT_AGENT_BASES.has(resolution.basis)
     || internal) return handoffNotDone(carried, asked, HANDOFF_HELD, internal ? 'internal_activity' : 'explicit_agent');
   const lastId = sessionTask?.personalProjectId === projectId ? taskWorkstreamId(sessionTask) : null;
-  const session = { application, carried, lines, lastId, sessionTask };
-  if (asked !== null) return handoff(session, asked, await projectLeadOf(readPolicy, projectId));
-  const matches = lineMatches(application, space, projectId, input, repository);
+  const session = { application, carried, lines, lastId, sessionTask, input, readPolicy };
+  if (asked === null) return route(session);
+  const attempt = await handoff(session, asked, await projectLeadOf(readPolicy, projectId));
+  if (attempt.resolution) return attempt.resolution;
+  const routed = input.sameTurnAgentId ? carried : attempt.routed ?? await route(session);
+  return handoffNotDone(routed, asked, attempt.status, attempt.reason);
+}
+
+// This turn's line by its words, folder or branch, or the one the session goes on with.
+async function route(session) {
+  const { application, carried, lastId, sessionTask, input, readPolicy } = session;
+  const projectId = carried.personalProjectId;
+  const space = application.config.personal.spaceId;
+  const matches = lineMatches(application, space, projectId, input, carried.workingRepository);
   if (!matches.length && !lastId) return carried;
   // Only a match can name the person's rule for the lead; a session going on
   // with its line needs no read (a line moved to the lead is then simply the
@@ -129,22 +152,32 @@ export async function withWorkstream(application, resolution, input, sessionTask
   return continuation(session, lead);
 }
 
-// The lead's hand-off by a line's name or ID. Anyone else's turn stays as it
-// was, the session's own line included, and says the hand-off was refused.
-function handoff(session, asked, lead) {
-  const { carried, lines, sessionTask } = session;
+// The lead's hand-off by a line's name or ID: { resolution } when it happens,
+// otherwise { status, reason } and, when it was already worked out, how the
+// turn routes without it (routed). Who asks is the Agent of the session's task
+// of this project; before the session has one, whoever this turn goes to
+// without the hand-off. Whether the caller is the lead is settled before the
+// name is looked up.
+async function handoff(session, asked, lead) {
+  const { carried, lines, sessionTask, input } = session;
+  if (lead === undefined) return { status: REFUSED, reason: 'lead_unreadable' };
   const key = identityKey(asked);
-  const target = asked ? lines.find(line => line.assignmentId === asked || identityKey(line.responsibility) === key) : null;
-  if (!target || target.leadAgentId === lead) {
-    return handoffNotDone(carried, asked, 'workstream_not_found', 'no_such_workstream');
+  const found = asked ? lines.find(line => line.assignmentId === asked || identityKey(line.responsibility) === key) : null;
+  const target = found && found.leadAgentId !== lead ? found : null;
+  let routed;
+  if (sessionTask?.personalProjectId === carried.personalProjectId) {
+    // The lead asking again in the turn its hand-off already gave this line.
+    const handedOver = target && input.turnId && sessionTask.turnId === input.turnId
+      && sessionTask.projectAgentId === target.leadAgentId && taskWorkstreamId(sessionTask) === target.assignmentId;
+    if (sessionTask.projectAgentId !== lead && !handedOver) return { status: REFUSED, reason: 'not_lead' };
+  } else {
+    routed = await route(session);
+    if (routed.standingCandidates) return { status: REFUSED, reason: 'no_session_task', routed };
+    if (routed.standingWorkstream) return { status: REFUSED, reason: 'not_lead', routed };
   }
-  const projectId = carried.personalProjectId;
-  if (lead === undefined || sessionTask?.projectAgentId !== lead || sessionTask?.personalProjectId !== projectId) {
-    return handoffNotDone(continuation(session, lead), asked, 'workstream_handoff_refused',
-      lead === undefined ? 'lead_unreadable' : 'not_lead');
-  }
-  return { ...onLine(carried, target, { matchedOn: ['handoff'] }, lead, sessionTask),
-    workstreamHandoff: { workstream: asked } };
+  if (!target) return { status: 'workstream_not_found', reason: 'no_such_workstream', routed };
+  return { resolution: { ...onLine(carried, target, { matchedOn: ['handoff'] }, lead, sessionTask),
+    workstreamHandoff: { workstream: asked } } };
 }
 
 // The session going on with the line its last task was on, or carried.
@@ -322,7 +355,7 @@ export function workstreamHandoffEntry(resolution, selection) {
   }
   const status = asked.status ?? HANDOFF_HELD;
   const reason = asked.reason ?? selection?.standingUnreachedReason ?? 'owner_unreachable';
-  return { status, workstream: asked.workstream, reason, guidance: HANDOFF_GUIDANCE[status] };
+  return { status, workstream: asked.workstream, reason, guidance: HANDOFF_GUIDANCE[reason] ?? HANDOFF_GUIDANCE[status] };
 }
 
 /** The notice a stored marker repeats in the checkpoint receipt, or null. */

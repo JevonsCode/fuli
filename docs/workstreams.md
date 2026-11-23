@@ -161,7 +161,12 @@ gets one short rule, delivered by reference
 Handing over is one call: `begin_task_context` with
 `workKind: "workstream:<line name or ID>"` and the request as `taskPrompt`.
 It rides on the existing `workKind`, so no client pays for a parameter only a
-lead of a divided project uses; that workKind scopes no preferences. The owner
+lead of a divided project uses. In any entry that takes a `workKind`
+(`get_collaboration_preferences` included) the prefix, in any case, is a
+hand-off and never a kind of work: it scopes, stores and filters no
+preferences. A line's name is therefore at most 117 characters (128 for
+`workKind` less the prefix); a longer one is refused when the line is opened
+or split off (`workstream_name_too_long`). The owner
 then works this turn as itself, as above, and the session goes on with the line
 like any matched one: the person's next words still decide. The lead never
 uses `#FLA` for this: that is the person's own choice of FLA and binds the
@@ -169,13 +174,25 @@ whole session.
 
 The entry always says what became of a hand-off (`workstream_handoff`). Only
 `status: "handed_over"` means the owner took it; the lead stops working on the
-task only then. Every other answer names why and says the task is still the
-caller's, to do itself:
+task only then, and asking again in that turn says `handed_over` again. Every
+other answer names why and says the task is still the caller's, to do itself.
+Apart from that answer, a hand-off that does not happen changes nothing: the
+turn is routed exactly as if the `workKind` had not been sent, by its words,
+folder and branch or the session's own line, and a later entry of the same
+turn keeps that turn's FLA.
+
+Who asks is the FLA of the session's task in this project. Before the session
+has one (an entry without a session ID, a hook that failed, a task in another
+project), it is whoever this turn goes to without the hand-off: with no line of
+its own that is the lead, which may hand over; a turn the request gives to a
+line is that owner's, which may not; one FLA cannot place (the request names
+several lines) is `no_session_task`, with the next step, never "not the lead".
+Whether the caller is the lead is settled before the name is looked up.
 
 | status | reason | when |
 |---|---|---|
 | `workstream_not_found` | `no_such_workstream`, `no_workstreams`, `no_project` | no active line of this project has that name or ID (an ended one included), the project has no lines, or the task is in no project |
-| `workstream_handoff_refused` | `not_lead`, `lead_unreadable` | the caller is not this turn's lead: the session's current task is not the lead's in this project. A line's owner or a worker cannot hand work around; its turn stays as it was (the session's own line included) |
+| `workstream_handoff_refused` | `not_lead`, `lead_unreadable`, `no_session_task` | the caller is not this turn's lead (a line's owner or a worker cannot hand work around), FULI could not read the project's lead, or the session has no task yet and this turn cannot be placed: begin it without the hand-off, then hand it over |
 | `workstream_handoff_held` | `named_fla`, `explicit_agent`, `group_discussion`, `person_rule`, `internal_activity`, `unavailable`, or the owner's own reason (`workstream_owner_not_on_project`, `client_not_allowed`, …) | the person's `#FLA` (this message or the session's binding), an explicit `projectAgentId`, a group discussion or the person's own rule outranks it; or the owner could not take the turn |
 
 ## Opening, correcting and ending one

@@ -14,7 +14,7 @@ lead opens one with `register_standing_assignment` `change: 'delegate'` (then te
 `tell_user`), and hands a task to a line's owner with `begin_task_context` `workKind: "workstream:<its name>"`
 and the request as taskPrompt, never with `#FLA`, which is the person's own choice and binds the
 session. Only `workstream_handoff.status: handed_over` means the owner took it; any other status
-says why the task is still yours. Only the lead may hand over, and the rule comes with the lead's
+says why the task is still yours, and the turn is otherwise routed as if you had not asked. Only the lead may hand over, and the rule comes with the lead's
 entry when the project has lines (`workstream_guidance`). Do not
 re-divide work that is already recorded, and do not open a workstream for a one-off request.
 

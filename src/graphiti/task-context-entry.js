@@ -74,7 +74,9 @@ export async function beginTaskContext(application, {
     turnId: existingTask?.turnId ?? turnId,
     taskPrompt,
     // A hand-off in the turn the lead entered gives the task to another Agent; it is no retry of the lead's.
+    // One that does not happen leaves the turn's Agent as it was (sameTurnAgentId).
     projectAgentId: resumed?.projectAgentId ?? (workstream === null ? scopeRetry?.projectAgentId : null) ?? projectAgentId,
+    ...(workstream !== null && scopeRetry?.projectAgentId ? { sameTurnAgentId: scopeRetry.projectAgentId } : {}),
     sourceApplication,
     sourceSessionId,
     workKind: preferenceScope.work_kind,

@@ -408,6 +408,11 @@ test('opening a line is refused for the lead, a stranger, another Agent, no proj
     { code: 'workstream_lead_only' });
   await assert.rejects(asLead(app, tasks, { personalProjectId: null })({ ...line, leadAgentId: 'fla-ember' }),
     { code: 'workstream_project_required' });
+  // A name the lead could not hand a task to (workKind "workstream:<name>" is at most 128 characters).
+  await assert.rejects(lead({ ...line, responsibility: '春'.repeat(118), leadAgentId: 'fla-ember' }),
+    error => error.code === 'workstream_name_too_long' && /at most 117 characters/.test(error.message));
+  assert.equal((await lead({ ...line, responsibility: '春'.repeat(117), leadAgentId: 'fla-ember',
+    action: 'preview' })).status, 'preview');
   assert.deepEqual(app.standingAssignments.list(SPACE), []);
 });
 
@@ -660,6 +665,125 @@ test('only the lead hands work over: an owner or a worker asking is refused and 
   assert.notEqual(refused.project_agent_context.project_agent_id, 'fla-ember');
   assert.deepEqual(worker.requested, [null], 'no owner was asked for');
   assert.equal(refused.workstream_handoff.status, 'workstream_handoff_refused');
+});
+
+// The same session twice, once with the hand-off and once without: a hand-off
+// that does not happen routes the turn exactly as if it had not been asked for.
+async function withAndWithout({ seed = [SPRING, COUPON], members, before = async () => {}, request, workstream }) {
+  const pair = [fixture({ seed, members }), fixture({ seed, members })];
+  for (const side of pair) await before(side);
+  const [asked, plain] = [await pair[0].run({ ...request, workstream }), await pair[1].run(request)];
+  // Each store gives its lines their own IDs; compared by name.
+  const routed = ([side, entry]) => JSON.parse(side.app.standingAssignments.list(SPACE).reduce(
+    (text, line) => text.replaceAll(line.assignmentId, line.responsibility),
+    JSON.stringify({ agent: entry.project_agent_context?.project_agent_id, owner: entry.standing_owner,
+      markers: lineMarkers(side.tasks.at(-1)), requested: side.requested })));
+  assert.deepEqual(routed([pair[0], asked]), routed([pair[1], plain]));
+  assert.equal(plain.workstream_handoff, undefined);
+  return asked;
+}
+
+test('a hand-off that does not happen routes the turn as if it had not been asked for', async () => {
+  const notDone = (entry, status, reason) =>
+    assert.deepEqual([entry.workstream_handoff.status, entry.workstream_handoff.reason], [status, reason]);
+  // A line's owner going on with its own line, with a name no line has: it is
+  // told it is not the lead, keeps its turn and stays on its line.
+  const going = await withAndWithout({ before: side => side.run({ taskPrompt: '春促页 的头图换一下' }),
+    request: { taskPrompt: '再亮一点' }, workstream: '秋促落地页' });
+  assert.equal(going.project_agent_context.project_agent_id, 'fla-ember');
+  assert.equal(going.standing_owner.status, 'workstream');
+  notDone(going, 'workstream_handoff_refused', 'not_lead');
+  // The lead with a wrong name: the request's own words still route it.
+  const words = await withAndWithout({ before: side => side.run(), request: { taskPrompt: '优惠券 列表空了' },
+    workstream: '秋促落地页' });
+  assert.equal(words.project_agent_context.project_agent_id, 'fla-orin');
+  notDone(words, 'workstream_not_found', 'no_such_workstream');
+  // A lead FULI cannot read: no line is handed anything, the words still route.
+  const unreadable = await withAndWithout({ before: async side => {
+    await side.run();
+    side.app.personal.getProjectAgentCoordinationPolicy = async () => { throw new Error('synthetic outage'); };
+  }, request: { taskPrompt: '优惠券 列表空了' }, workstream: '春促落地页' });
+  notDone(unreadable, 'workstream_handoff_refused', 'lead_unreadable');
+  assert.match(unreadable.workstream_handoff.guidance, /could not read who leads this project/);
+  // The person's #FLA binding and an explicit Agent: as before, nothing else changes.
+  notDone(await withAndWithout({ before: side => side.run({ taskPrompt: '#FLA Ember Vale 看看' }),
+    request: { taskPrompt: '列表空了' }, workstream: '优惠券中心' }), 'workstream_handoff_held', 'named_fla');
+  notDone(await withAndWithout({ before: side => side.run(), request: { taskPrompt: '优惠券', projectAgentId: LEAD },
+    workstream: '春促落地页' }), 'workstream_handoff_held', 'explicit_agent');
+  // A worker whose task the session holds, with its own words for a line.
+  const members = { ...MEMBERS, 'fla-wren': 'Wren Ash' };
+  const worker = side => side.tasks.push({ token: 'fuli-task-synthetic-worker', sessionId: 'synthetic-session',
+    personalProjectId: PROJECT, projectAgentId: 'fla-wren', sourceApplication: 'codex', agentAssignment: { match_basis: [] } });
+  notDone(await withAndWithout({ members, before: worker, request: { taskPrompt: '优惠券 列表空了' },
+    workstream: '春促落地页' }), 'workstream_handoff_refused', 'not_lead');
+  // HANDOFF_HELD names no placeholder; its reason is the field beside it.
+  const held = await withAndWithout({ before: side => side.run({ taskPrompt: '#FLA Ember Vale 看看' }),
+    request: { taskPrompt: '列表空了' }, workstream: '优惠券中心' });
+  assert.doesNotMatch(held.workstream_handoff.guidance, /\(reason\)/);
+});
+
+test('before the session has a task, the turn the hand-off would leave with the lead is the lead\'s', async () => {
+  // Nothing begun in this session (an entry without a session ID, a failed hook): the lead hands over.
+  const fresh = fixture({ seed: [SPRING, COUPON] });
+  const handed = await fresh.run({ taskPrompt: '头图换成春天的', workstream: '春促落地页' });
+  assert.equal(handed.project_agent_context.project_agent_id, 'fla-ember');
+  assert.equal(handed.workstream_handoff.status, 'handed_over');
+  // The session's task is in another project: the same.
+  const elsewhere = fixture({ seed: [SPRING, COUPON] });
+  elsewhere.tasks.push({ token: 'fuli-task-synthetic-other', sessionId: 'synthetic-session', personalProjectId: OTHER,
+    projectAgentId: 'fla-orin', sourceApplication: 'codex', agentAssignment: { match_basis: [] } });
+  assert.equal((await elsewhere.run({ taskPrompt: '头图', workstream: '春促落地页' })).workstream_handoff.status,
+    'handed_over');
+  // A turn whose words give it to a line is that line owner's, which is not the lead.
+  const owned = await withAndWithout({ request: { taskPrompt: '优惠券 列表空了' }, workstream: '春促落地页' });
+  assert.equal(owned.project_agent_context.project_agent_id, 'fla-orin');
+  assert.deepEqual([owned.workstream_handoff.status, owned.workstream_handoff.reason],
+    ['workstream_handoff_refused', 'not_lead']);
+  // A turn FULI cannot place is never called "not the lead": it says what to do next.
+  const unsure = await withAndWithout({ request: { taskPrompt: '春促页 和 优惠券 一起改' }, workstream: '春促落地页' });
+  assert.equal(unsure.standing_owner.status, 'clarification_required');
+  assert.deepEqual([unsure.workstream_handoff.status, unsure.workstream_handoff.reason],
+    ['workstream_handoff_refused', 'no_session_task']);
+  assert.match(unsure.workstream_handoff.guidance, /begin this task without the workstream hand-off first/);
+  assert.doesNotMatch(unsure.workstream_handoff.guidance, /Only the project lead/);
+});
+
+test('in one turn: a failed hand-off keeps the turn\'s Agent, and the lead asking again is told it is done', async () => {
+  const begin = (side, workKind) => side.app.beginTaskContext({ sessionId: 'synthetic-session', turnId: 'turn-1',
+    projectPath: '/synthetic/campaigns', sourceApplication: 'codex', taskPrompt: '头图换成春天的',
+    ...(workKind ? { workKind } : {}) });
+  // A worker's task of this turn, then the same turn again with a hand-off.
+  const members = { ...MEMBERS, 'fla-wren': 'Wren Ash' };
+  const pair = [fixture({ seed: [SPRING], members }), fixture({ seed: [SPRING], members })];
+  for (const side of pair) {
+    side.tasks.push({ token: 'fuli-task-synthetic-worker', sessionId: 'synthetic-session', turnId: 'turn-1',
+      personalProjectId: PROJECT, projectAgentId: 'fla-wren', sourceApplication: 'codex',
+      preferenceScope: { version: 1, work_kind: null, workflow: null }, agentAssignment: { match_basis: [] } });
+  }
+  const refused = await begin(pair[0], 'workstream:春促落地页');
+  await begin(pair[1]);
+  assert.deepEqual(pair[0].requested, pair[1].requested);
+  assert.ok(pair[0].requested.includes('fla-wren'), 'the worker stayed the requested Agent');
+  assert.equal(pair[0].tasks.at(-1).projectAgentId, pair[1].tasks.at(-1).projectAgentId);
+  assert.equal(refused.workstream_handoff.reason, 'not_lead');
+  // The lead's turn (as a hook begins it), its hand-off, then the same hand-off again.
+  const lead = fixture({ seed: [SPRING] });
+  await begin(lead);
+  assert.equal(lead.tasks.at(-1).projectAgentId, LEAD);
+  assert.equal((await begin(lead, 'workstream:春促落地页')).workstream_handoff.status, 'handed_over');
+  const again = await begin(lead, 'workstream:春促落地页');
+  assert.equal(again.workstream_handoff.status, 'handed_over');
+  assert.equal(lead.tasks.at(-1).projectAgentId, 'fla-ember');
+});
+
+test('workstream: in any entry\'s workKind is a hand-off, never a kind of work', async () => {
+  assert.equal(handoffWorkstream('Workstream:春促落地页'), '春促落地页');
+  assert.equal(handoffWorkstream('WORKSTREAM: 春促落地页'), '春促落地页');
+  const { run, tasks } = fixture({ seed: [SPRING] });
+  await run();
+  const entry = await run({ taskPrompt: '头图换成春天的', workKind: 'Workstream:春促落地页' });
+  assert.equal(entry.workstream_handoff.status, 'handed_over');
+  assert.equal(tasks.at(-1).preferenceScope.work_kind, null);
 });
 
 test('#FLA 结束 with a request releases the name and routes the request by its lines', async () => {

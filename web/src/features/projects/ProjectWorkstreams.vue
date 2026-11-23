@@ -322,7 +322,8 @@ const problemText = computed(() => {
             {{ term }}
           </Button>
         </div>
-        <Input v-model="draft.name" size="sm" maxlength="240" :aria-label="t('projects.workstreams.nameLabel')"
+        <!-- WORKSTREAM_NAME_LIMIT (src/standing-assignments/limits.js): the lead hands work to a line by name. -->
+        <Input v-model="draft.name" size="sm" maxlength="117" :aria-label="t('projects.workstreams.nameLabel')"
           :placeholder="t('projects.workstreams.nameLabel')" data-workstream-name />
         <Input v-model="draft.words" size="sm" :aria-label="t('projects.workstreams.termsLabel')"
           :placeholder="t('projects.workstreams.termsLabel')" data-workstream-words />
