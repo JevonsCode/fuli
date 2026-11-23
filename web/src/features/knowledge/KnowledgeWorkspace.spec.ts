@@ -145,6 +145,39 @@ describe('KnowledgeWorkspace', () => {
     vi.useRealTimers()
   })
 
+  it('borrows other projects with the shared picker: 全选 adds them all to the address, 清空 takes them out', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const projects = [
+      { project_id: 'current', personal_space_id: 'space-1', profile: { name: '当前项目' } },
+      { project_id: 'other', personal_space_id: 'space-1', profile: { name: '其他项目' } },
+      { project_id: `temporary-${'c'.repeat(64)}`, personal_space_id: 'space-1', scope_type: 'temporary' as const, profile: { name: '' } },
+    ]
+    useConsoleStore().state = {
+      mode: 'personal_only', activePersonalSpaceId: 'space-1',
+      personalSpaces: [{ id: 'space-1', name: '我' }], personalProjects: projects, projects: [], subscriptions: [],
+    }
+    getJson.mockResolvedValue({ nodes: [], edges: [] })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/personal/:spaceId/projects/:projectId/:mode', name: 'personal-project', component: { template: '<div />' } },
+    ] })
+    await router.push('/personal/space-1/projects/current/graph')
+    const wrapper = mount(KnowledgeWorkspace, { global: {
+      plugins: [pinia, router], stubs: { KnowledgeWorkspaceDialogs: true, CreateProjectEntry: true },
+    } })
+    await finishInitialLoading()
+    const picker = wrapper.get('[data-personal-context-picker]')
+    expect(picker.findAll('[data-project-scope-formal]').map(row => row.text())).toEqual(['其他项目'])
+    expect(picker.get('[data-project-scope-temporary-count]').text()).toBe('0/1')
+    await picker.get('[data-project-scope-all]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.context).toEqual(['other', `temporary-${'c'.repeat(64)}`])
+    await wrapper.get('[data-personal-context-picker] [data-project-scope-clear]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.context ?? []).toEqual([])
+    wrapper.unmount()
+  })
+
   it.each(['graph', 'directory'])('defaults to formal projects in the %s view and reveals temporary projects without writes', async (mode) => {
     const pinia = createPinia()
     setActivePinia(pinia)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectScopePicker from '@/features/projects/ProjectScopePicker.vue'
 import { directorySectionFor, useProfileEditLink, type DirectorySection } from './directory-section'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -59,7 +60,7 @@ import {
   knowledgeItemKey,
 } from './model'
 import { useSpaceChoices } from './space-choices'
-import { temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { projectScopeKey, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
 import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import {
    discoverPersonalProjectResults,
@@ -827,11 +828,16 @@ function selectDeepLinkedItem() {
   }
 }
 
-function toggleContext(event: Event) {
-  const input = event.currentTarget as HTMLInputElement
+// The picker speaks in space/project keys; the address keeps project IDs.
+const contextKeys = computed(() => availableContexts.value
+  .filter(project => contextIds.value.includes(project.project_id)).map(projectScopeKey))
+function toggleContexts(keys: string[], on: boolean) {
   const selected = new Set(contextIds.value)
-  if (input.checked) selected.add(input.value)
-  else selected.delete(input.value)
+  for (const project of availableContexts.value) {
+    if (!keys.includes(projectScopeKey(project))) continue
+    if (on) selected.add(project.project_id)
+    else selected.delete(project.project_id)
+  }
   void updateQuery('context', [...selected])
 }
 
@@ -1066,17 +1072,9 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
         <div class="personal-context-panel">
           <strong>{{ t('knowledge.workspace.workspace.view.currentContext') }}</strong>
           <p>{{ t('knowledge.workspace.workspace.view.contextCopy') }}</p>
-          <div class="personal-context-list">
-            <label v-for="project in availableContexts" :key="project.project_id" class="personal-context-option">
-              <input
-                type="checkbox"
-                :value="project.project_id"
-                :checked="contextIds.includes(project.project_id)"
-                @change="toggleContext"
-              />
-              <span><strong>{{ projectDisplayName(project) }}</strong><small>{{ t('knowledge.workspace.workspace.view.currentScopeOnly') }}</small></span>
-            </label>
-          </div>
+          <!-- The shared picker: named projects first, temporary ones folded, 全选 / 清空, a page at a time. -->
+          <ProjectScopePicker :projects="availableContexts" :selected="contextKeys" id-prefix="borrow-context"
+            data-personal-context-picker @toggle="toggleContexts" />
         </div>
       </details>
 
