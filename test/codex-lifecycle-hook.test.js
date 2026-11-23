@@ -76,8 +76,8 @@ test('a Codex isMeta turn of a session already given its context is one line and
   const delivery = { delivered: async origin => { origins.push(origin); return true; },
     deliver: async () => assert.fail('a host turn delivers nothing') };
   const context = (await f.submit({ isMeta: true }, { delivery })).hookSpecificOutput.additionalContext;
-  assert.equal(context, 'FULI：本轮是宿主系统消息，不是人发的消息；当前任务和本会话已下发的上下文仍然有效，未重新下发。 '
-    + 'FULI: this turn is a host system message, not a person\'s message; the current task and the context this session was given still apply.');
+  assert.equal(context, 'FULI：本轮是宿主系统消息，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 '
+    + 'FULI: a host system message, not a person\'s message; the current task and given context still apply: no get_collaboration_preferences call.');
   assert.deepEqual(f.calls.map(([name]) => name), ['current']);
   assert.deepEqual(origins, [{ sourceApplication: 'codex', nativeSessionId: input.session_id, transcriptPath: input.transcript_path }]);
 });

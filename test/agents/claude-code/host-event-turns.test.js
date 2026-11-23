@@ -10,8 +10,8 @@ import { copyPreferenceScope } from '../../../src/conversations/preference-snaps
 import { claudeEntrySession, claudeHostEventSession, hookFrame, syntheticLargeEntry, syntheticPreferences }
   from '../../../test-support/synthetic-large-entry.js';
 
-const HOST_LINE = 'FULI：本轮是宿主事件，不是人发的消息；当前任务和本会话已下发的上下文仍然有效，未重新下发。 '
-  + 'FULI: this turn is a host event, not a person\'s message; the current task and the context this session was given still apply.';
+const HOST_LINE = 'FULI：本轮是宿主事件，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 '
+  + 'FULI: a host event, not a person\'s message; the current task and given context still apply: no get_collaboration_preferences call.';
 const bodies = text => text.match(/SYNTHETIC_[A-Z]+_\d+: [^"]{20}/g) ?? [];
 
 test('host event turns of a session are one line each and no preference body is sent twice', async () => {
@@ -110,4 +110,24 @@ test('a prompt whose hook runs before the previous frame is recorded is an empty
     await session.host.say('assistant', 'SYNTHETIC reply.');
     const third = await session.turn(f.entry('task-3'));
     assert.equal(third.frame.preference_delivery.base_revision, frame.preference_delivery.revision);
+  }));
+
+// Review of #1087: a frame is lost and, before the model answers, another
+// prompt's hook runs. That one is built on the lost frame (an empty delta),
+// so two turns in a row lack the context. The third turn cannot verify that
+// base in the transcript and gets the whole context again.
+test('a lost frame followed by a prompt before any answer: the third turn is whole', () =>
+  claudeEntrySession(async session => {
+    const f = hostEventFixture(session);
+    const input = { session_id: session.sessionId, transcript_path: session.host.path, cwd: '/synthetic/project', prompt: 'next' };
+    const hook = async token => (await claudeLifecycleOutput('UserPromptSubmit', input, async () => f.entry(token),
+      { delivery: session.delivery })).hookSpecificOutput.additionalContext;
+    const lost = hookFrame(await hook('task-1'));
+    const second = await hook('task-2');
+    assert.equal(hookFrame(second).preference_delivery.base_revision, lost.revision, 'the window: built on the lost frame');
+    await session.host.inject(second);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const third = await session.turn(f.entry('task-3'));
+    assert.equal(third.frame.preference_delivery, undefined);
+    assert.equal(third.frame.effective_preferences.length, 20);
   }));

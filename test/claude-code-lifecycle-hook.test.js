@@ -110,6 +110,13 @@ test('Claude host-notification envelopes and system deliveries refresh the curre
     assert.match(context, /"taskContextToken":"fuli-task-a"/);
     assert.doesNotMatch(context, /fuli-task-new-entry/);
   }
+  // The host's own mark decides over the envelope's shape: an envelope it
+  // marks as not its own delivery is a person's prompt.
+  for (const mark of [{ isMeta: false }, { is_meta: false }]) {
+    const f = refreshFixture();
+    await f.submit(shellNotification, mark);
+    assert.deepEqual(f.calls.map(([name]) => name), ['begin_task_context'], JSON.stringify(mark));
+  }
   // Anything else is a prompt and enters as before.
   for (const prompt of ['Synthetic user task.', 'Please inspect ' + shellNotification, shellNotification + '\nNow do another task',
     shellNotification + shellNotification, '<task-notification><task-id> </task-id></task-notification>', '<task-notification><task-id>',

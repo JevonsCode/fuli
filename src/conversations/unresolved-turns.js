@@ -63,12 +63,14 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 
-// Bilingual: the person reads it in the transcript as well as the model.
+// Bilingual: the person reads it in the transcript as well as the model. It
+// names the entry call it makes unnecessary: the MCP instructions tell a model
+// whose hook supplied no task context to call it.
 const HOST_TURN = Object.freeze({ host_event: ['宿主事件', 'a host event'], host_system: ['宿主系统消息', 'a host system message'] });
 function hostTurnLine(turnOrigin) {
   const [zh, en] = HOST_TURN[turnOrigin];
-  return `FULI：本轮是${zh}，不是人发的消息；当前任务和本会话已下发的上下文仍然有效，未重新下发。 `
-    + `FULI: this turn is ${en}, not a person's message; the current task and the context this session was given still apply.`;
+  return `FULI：本轮是${zh}，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 `
+    + `FULI: ${en}, not a person's message; the current task and given context still apply: no get_collaboration_preferences call.`;
 }
 
 function noValidContext(refresh) {

@@ -4,15 +4,22 @@ const TASK_NOTIFICATION = /^\s*<task-notification>\s*<task-id>([^<>\r\n]+)<\/tas
 const CI_MONITOR_TAG = /<(\/?)ci-monitor-event>/g;
 
 // Where a prompt turn came from (unresolved-turns.js): 'host_system' for a
-// host system delivery (isMeta), 'host_event' for a prompt that is exactly
-// one host-notification envelope, whoever sent it, and 'person' for anything
-// else. Neither the hook input nor the transcript written before the hook
-// proves that the host started such a turn, and a notification must not begin
-// or switch a task, so host turns never enter; a person who pastes an envelope
-// is taken as a host event too. Any text around the envelope makes it a
-// person's prompt again.
+// host system delivery, 'host_event' for a background notification, and
+// 'person' for anything else. The host's own mark decides where the hook input
+// carries one (isMeta or is_meta, true or false); only an input without it is
+// read by its shape: a prompt that is exactly one host-notification envelope
+// is a host event, whoever sent it. A known misreading: a person who pastes a
+// whole envelope with no other text is taken as a host event, so that turn
+// begins no task, gets no recall and no checkpoint, and is told in one line
+// that the context already given still applies (the preferences it holds stay
+// in force; a change to them waits for the next prompt). Any text around the
+// envelope makes it a person's prompt again. Neither the hook input nor the
+// transcript written before the hook proves that the host started such a
+// turn, and a notification must not begin or switch a task, so host turns
+// never enter.
 export function claudeTurnOrigin(input) {
   if (isSystemPromptEntry(input)) return 'host_system';
+  if (typeof input?.isMeta === 'boolean' || typeof input?.is_meta === 'boolean') return 'person';
   return taskNotificationEnvelope(input?.prompt) || ciMonitorEnvelope(input?.prompt) ? 'host_event' : 'person';
 }
 
