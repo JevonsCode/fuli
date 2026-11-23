@@ -90,7 +90,13 @@ export async function readTaskPreferences(application, {
       ...(team?.guidance ? { team_guidance: team.guidance } : {}),
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
-    taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+    taskContextToken: task.token, task_context_token: task.token,
+    // A recovery read of an open task does not recompute what closes it: the
+    // entry that opened the task decided that, and this read says so instead
+    // of letting the two disagree without a word (rec#137).
+    checkpoint_required: task.checkpoint?.phase !== 'complete',
+    checkpoint_reason: task.checkpoint?.phase === 'complete' ? 'this task is already checkpointed'
+      : 'this is a recovery read; the entry that opened this task decided what closes it',
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance(),
     ...(judgment ? { judgment_context: judgment } : {}),

@@ -13,6 +13,7 @@ import { validationError } from '../app/application-error.js';
 import { withStandingRoute } from './task-entry-standing-owner.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { checkpointReason } from './checkpoint-reason.js';
 
 export async function beginTaskContext(application, {
   sessionId,
@@ -118,6 +119,7 @@ export async function beginTaskFromPreferences(application, preferences, {
   const updating = updateRequested(taskPrompt);
   const autoClosed = !remembering && !updating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  const checkpointRequired = !autoClosed && task.checkpoint?.phase !== 'complete';
   // A task the Stop hook closes by itself has no model checkpoint to keep
   // what the person stated as a project rule: the entry keeps it, pending
   // review (task-stated-rules.js). Never fails the entry.
@@ -141,7 +143,10 @@ export async function beginTaskFromPreferences(application, preferences, {
     conversation,
     taskContextToken: task.token,
     task_context_token: task.token,
-    checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
+    checkpoint_required: checkpointRequired,
+    // Why, in one short sentence: the flag flipped between turns with nothing
+    // to explain it (rec#137).
+    checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, updating, task, entryVia }),
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
