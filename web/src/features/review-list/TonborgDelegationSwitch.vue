@@ -7,12 +7,11 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { modelDetailsLink, modelProjectsLink } from '@/features/model-settings/details-link'
-import { hasTemporaryOrigin } from '@/features/projects/project-origin'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { UiNotice } from '@/ui'
 
-import { reachNotice } from './delegation-reach'
+import { reachNotice, reachTemporaryIds } from './delegation-reach'
 import { readDelegation, saveDelegation, type ReviewDelegation } from './review-api'
 
 // 「交给 Tonborg 确认」 (rec#96), the same switch on the 待决策 list and in
@@ -54,9 +53,7 @@ const connected = computed(() => state.value?.model?.connected === true)
 // A configured model that is off keeps the session's answers suggestions.
 const standsIn = computed(() => !connected.value && state.value?.model?.sessionStandsIn === true)
 // rec issue 124: on, it still confirms nothing its model may not read; then the line says so instead of 「正在替你确认」.
-const temporaryIds = computed(() => new Set((store.state?.personalProjects ?? [])
-  .filter(project => project.personal_space_id === props.personalSpaceId && hasTemporaryOrigin(project))
-  .map(project => project.project_id)))
+const temporaryIds = computed(() => reachTemporaryIds(store.state?.personalProjects ?? [], props.personalSpaceId))
 const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach, temporaryIds.value) : null))
 // The approved counts, named and temporary apart; temporary ones only where the space has any.
 const reachCounts = computed(() => {

@@ -1,3 +1,5 @@
+import { hasTemporaryOrigin, isArchivedProject } from '@/features/projects/project-origin'
+import type { PersonalProject } from '@/types'
 import type { ReviewDelegation } from './review-api'
 
 export type ReachNoticeKey = 'some' | 'someAndGeneral' | 'noProject' | 'nothing' | 'general'
@@ -39,4 +41,14 @@ export function reachNotice(reach: ReviewDelegation['reach'], temporaryIds: Read
   if (!blocked) return general ? notice(reach.projects ? 'general' : 'nothing') : null
   if (!approved) return notice(general ? 'nothing' : 'noProject')
   return notice(general ? 'someAndGeneral' : 'some')
+}
+
+/**
+ * The space's temporary projects as the server counts projects for `reach`:
+ * archived ones are left out there (src/judgment/service.js activeProjectIds),
+ * so they are here too, or the named and temporary counts would not add up.
+ */
+export function reachTemporaryIds(projects: readonly PersonalProject[], personalSpaceId: string): Set<string> {
+  return new Set(projects.filter(project => project.personal_space_id === personalSpaceId
+    && !isArchivedProject(project) && hasTemporaryOrigin(project)).map(project => project.project_id))
 }

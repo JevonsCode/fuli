@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { reachNotice } from './delegation-reach'
+import { reachNotice, reachTemporaryIds } from './delegation-reach'
 
 // rec issue 124, synthetic project ids only.
 const reach = (blockedProjectIds: string[], unassignedAllowed = true, projects = 3) => ({ projects, blockedProjectIds, unassignedAllowed })
@@ -30,5 +30,18 @@ describe('reachNotice', () => {
     expect(reachNotice(reach(['alpha', 'beta', 'gamma']))!.key).toBe('noProject')
     expect(reachNotice(reach(['alpha', 'beta', 'gamma'], false))!.key).toBe('nothing')
     expect(reachNotice(reach([], false, 0))!.key).toBe('nothing')
+  })
+
+  it('counts temporary projects as the server counts projects: archived ones are left out', () => {
+    const digest = (seed: string) => seed.repeat(64)
+    const project = (id: string, extra = {}) => ({ project_id: id, personal_space_id: 'space-a', profile: { name: '' }, ...extra })
+    const ids = reachTemporaryIds([
+      project(`temporary-${digest('a')}`, { scope_type: 'temporary' }),
+      project(`temporary-${digest('b')}`, { scope_type: 'temporary', status: 'archived' }),
+      project(`temporary-${digest('c')}`, { scope_type: 'temporary', profile: { name: '', lifecycle: 'archived' } }),
+      project('formal', { profile: { name: 'Synthetic formal' } }),
+      { ...project(`temporary-${digest('d')}`, { scope_type: 'temporary' }), personal_space_id: 'space-b' },
+    ] as never, 'space-a')
+    expect([...ids]).toEqual([`temporary-${digest('a')}`])
   })
 })
