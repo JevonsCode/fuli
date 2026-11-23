@@ -301,7 +301,7 @@ export const modelSettingsMessages = {
     saving: '正在保存 {name} 的模型设置…',
     saved: '已保存 {name} 的模型设置。',
     savedChecking: '已保存，正在测试 {name} 的模型',
-    changed: '模型设置在你编辑时有了变化，没有保存。下面是重新读取的设置。',
+    changed: '模型设置在你编辑时有了变化，没有保存。下面是重新读取的设置。', editAgain: '重新编辑', readAgain: '重新读取',
     invalidWhileEditing: '保存前 model-backends.json 变得无法通过校验，没有保存。修好文件前不能编辑：{error}',
     usage: {
       title: '用量',
@@ -699,7 +699,7 @@ export const modelSettingsMessages = {
     saving: 'Saving {name}\'s model settings…',
     saved: 'Saved {name}\'s model settings.',
     savedChecking: 'Saved; testing the model of {name}',
-    changed: 'The model settings changed while you were editing, so nothing was saved. These are the settings read again.',
+    changed: 'The model settings changed while you were editing, so nothing was saved. These are the settings read again.', editAgain: 'Edit again', readAgain: 'Read again',
     invalidWhileEditing: 'model-backends.json stopped validating before the save, so nothing was saved. Editing is off until the file is repaired: {error}',
     usage: {
       title: 'Usage',

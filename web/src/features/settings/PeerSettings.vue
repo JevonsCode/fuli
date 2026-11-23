@@ -431,6 +431,9 @@ function shareState(projectId: string) {
           <PeerSharePicker :listed="rowIds" :disabled="Boolean(busy)" @pick="addProject" />
           <UiNotice v-if="status.lastPublish?.error" tone="warning" data-publish-error>
             {{ t('settings.peer.publishFailed', { reason: status.lastPublish.error }) }}
+            <template v-if="rows.length" #actions>
+              <Button size="sm" variant="outline" :disabled="Boolean(busy)" data-publish-retry @click="saveShares()">{{ t('settings.peer.publishAgain') }}</Button>
+            </template>
           </UiNotice>
           <div v-if="rows.length" class="peer-actions">
             <Button size="sm" data-save-shares

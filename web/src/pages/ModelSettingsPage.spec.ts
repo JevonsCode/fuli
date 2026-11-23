@@ -455,6 +455,11 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
     expect(wrapper.get('[data-model-stale]').text()).toContain('没有保存')
     expect(api.getJson.mock.calls.length).toBeGreaterThan(reads)
+    // The edit that was not saved is one click away again.
+    await wrapper.get('[data-model-stale-edit]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
   })
 
   it('reads the settings again and locks the form when the file stopped validating during the edit', async () => {
@@ -472,6 +477,9 @@ describe('ModelSettingsPage', () => {
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
     expect(wrapper.get('[data-model-config-invalid]').text()).toContain('roles.nobody')
+    // A file that does not validate: the person's AI repairs it, then it is read again here.
+    expect(wrapper.find('[data-model-config-invalid] [data-ai-help="task.models"]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-config-invalid] [data-model-config-reload]').exists()).toBe(true)
     expect(wrapper.findAll('[data-model-role-edit]').every(button => button.attributes('disabled') !== undefined)).toBe(true)
     await dialog.get('form').trigger('submit')
     expect(api.putJson).toHaveBeenCalledTimes(1)

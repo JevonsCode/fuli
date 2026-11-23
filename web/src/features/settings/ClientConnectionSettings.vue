@@ -258,7 +258,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             </Button>
           </li>
         </ul>
-        <UiNotice v-if="removeError" tone="error">{{ t('settings.connection.custom.removeError') }}</UiNotice>
+        <UiNotice v-if="removeError" tone="error" data-no-action="the error of the person's own click; the same button tries again">{{ t('settings.connection.custom.removeError') }}</UiNotice>
         <p v-if="observation && observation.available !== false" class="client-row__meta" role="status">
           {{ t('settings.connection.clients.observedAt', { time: formatTime(observation.observedAt) }) }}
           {{ t('settings.connection.clients.boundary') }}
