@@ -67,12 +67,19 @@ FULI 里零件都有，链条断了三处：
 确定、可解释、不调模型。门槛就用现有的 `MIN_TASKS = 3` / `MIN_STEPS = 3`：少于 3 步的
 不算一串活，少于 3 次不算长期做。一次性任务、小任务因此不会命中。
 
-**提示放进入口，不多出待拍板。** 检测到重复时，除了现有那条给人的待拍板，再在
-`agent-workflows.sqlite` 里记一行待下发的提示。那位 FLA 在同一项目下一次进任务时，入口
-多一个 `fla_growth`：一句话说这类事做了几次、该调哪个工具、最小参数是什么，外加一个
-指向 `fuli://rules/task-entry/self_deposit` 的指针（全文在资源里）。下发一次就标记已发，
-不重复刷；没有重复时这个键根本不出现，入口字节数不变。只有真正开了任务的入口才会下发，
-没有 task token 的那种重复读取不消耗它。
+**提示放进入口，不多出待拍板。** 检测到重复时，除了现有那条给人的待拍板（选项改成人看得懂
+的「做成能跑的脚本 / 只记下这串步骤 / 不用」），再在 `agent-workflows.sqlite` 的
+`agent_growth_hints` 里记一行（格式 3，见下）。那位 FLA 在同一项目进任务时，入口多一个
+`fla_growth.repeated`：一句话说同样几步做了几次、调哪个工具、最小参数（约 240 字符）。最多
+出现两次（一次提醒、没沉淀再提醒一次）；它在这个项目提出任何工作流就不再出现；FULI 不替它
+建。没有重复时没有这个键，普通入口字节数不变。规则全文在 `task_guidance.self_deposit`，
+随 `task_guidance` 指针下发，每轮 0 字节。
+
+**下次真的被带上。** 一段对话的第一轮，入口在 `fla_growth.workflows` 里列这位 FLA 在这个
+项目里**已确认**的工作流（最多 3 个，只有名字和一句用途），步骤按需
+`read_agent_workflow`。待确认的提案不列，不会被说成「在用」。用完
+`record_agent_workflow_run`；走不通记 `stopped` / `failed` 并写原因。控制台工作流卡片显示
+「用过 N 次，跑通 M 次」，按运行记录数，没跑过就不显示。
 
 **沉淀成什么、放哪：**
 
@@ -82,8 +89,9 @@ FULI 里零件都有，链条断了三处：
 - 反复执行的命令或操作 → 这位 FLA 名下的 Agent 应用（`submit_agent_app_version`，
   `runtime.entry`、不常驻）。**不新造脚本存储**：Agent 应用已经是「FLA 名下、带说明、
   有版本、能跑、留运行记录」的那一件东西，安全边界也已经定死（见下）。
-- 工作台：这位 FLA 的工作流、应用和最近运行都在它的 FLA 页上；本轮只做数据和一个独立
-  widget（`web/src/widgets/registry.ts` 的 `fla.overview` 槽），由 FLA 页的负责人放进布局。
+- 工作台：这位 FLA 的工作流（含确认、不要、停用按钮和运行次数）在它的 FLA 页上；脚本
+  （Agent 应用）在 Agents → 应用总览。本轮没有新做 widget，两处的数据都已有接口
+  （`GET /api/agent-workflows`、`GET /api/work-surfaces`），由 FLA 页的负责人决定放法。
 
 **脚本的安全边界**（全部沿用现有机制，不放宽）：
 
@@ -101,6 +109,35 @@ FULI 里零件都有，链条断了三处：
 **留不留由人定**：工作流沿用「提出 → 人确认」；应用沿用「提交 → 人在终端确认」。都不
 改口径。控制台上看得到新沉淀了什么、用过几次；没用上的不显示成在用，没跑过的不显示
 结果。发现重复但 FLA 没去沉淀，只是下次再提示一次，FULI 不替它建一个。
+
+## 三、「我已经说过了」是沉淀信号
+
+Jevons 11-24：用户说「我已经…了，为什么你不…」「上次就说过」「不是讲过了吗」「怎么又…」，
+说明这件事本该被记住。和「记住」「以后都」同一处识别（任务入口，
+`src/graphiti/task-repeat-signal.js`，与 `task-remember.js` 并排），不调模型，只看人自己的
+原话（去掉宿主注入的提醒和粘贴的报告）。
+
+判据：句子里要有「是我之前说过/做过」或「你又这样了」的成分才算——
+「我已经说/讲/提/强调过（了）」「我早就/都/明明说了」「我说过」「上次/之前/刚才…说过/讲过」
+「不是说过了吗」「说了多少遍」「跟你说过」「我已经…了，为什么你还不/没…」（第二句必须是
+「你」）「怎么又忘/又用/又没」「又忘了」；英文「I already told/said/asked」「I've said this
+before」「as I said earlier」「didn't I tell you」「how many times do I」「I already X, why didn't
+you」「you keep forgetting」。单有「为什么」「已经」「上次」都不算。反例（测试里逐条）：
+「为什么这里不用 Redis？」「为什么你不用 Promise.all？」「我已经提交了代码，你看一下」
+「我已经装了 node，为什么还不能运行」「怎么又报错了？」「我写了一个函数」「我说了算」
+「Why don't you split this?」「I already pushed the branch」「Try again」。宁可少判。
+
+命中时：入口带 `remember_guidance`（这一条的版本，636 字符，只在命中的那一轮），任务不会被
+自动收尾。先查 FULI 里有没有同样的内容：有就不重复存，一句话说明这次为什么没生效（没下发 /
+范围不对 / 下发了但没照做），最后一种写进 checkpoint 的 `workLog`；没有且内容和范围清楚，就
+这一轮用 `checkpoint_task_knowledge` 的 `remember` 记下（原话作 `quote`），一句话告诉人记了
+什么、用在哪；拿不准就用可点选的选项问一次（这个项目 / 所有地方 / 不用记）。全文在
+`task_guidance.repeat_signal`，每轮 0 字节。
+
+## 数据格式
+
+`agent-workflows.sqlite` 从格式 2 升到 3：新表 `agent_growth_hints`（自动迁移，`add-table`，
+旧数据不动）。旧版 FULI 打开格式 3 的文件时按现有规矩只读。
 
 ## 相关记录
 

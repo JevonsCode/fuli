@@ -30,6 +30,11 @@ export const EXPERIENCE_SOURCE = 'experiences:';
 // Proposed and active workflows one Agent keeps; retired ones do not count.
 const MAX_OPEN_WORKFLOWS = 50;
 const RECENT_RUNS = 5;
+// A repeat is shown in the FLA's entry at most this often: once, and once more
+// if it still has not deposited it (Jevons 11-23: remind, never nag or invent).
+const HINT_SHOWINGS = 2;
+// Active workflows named in a conversation's first entry: names only, steps on demand.
+const ENTRY_WORKFLOWS = 3;
 const OUTCOMES = new Set(['done', 'stopped', 'failed']);
 const DECISIONS = new Set(['confirm', 'reject', 'retire']);
 
@@ -66,6 +71,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
         const next = { ...existing, status: existing.status === 'active' ? 'active' : 'proposed', latestVersion: version,
           pendingVersion: version, updatedAt: time };
         store.save(next);
+        store.markDeposited(owner, time);
         return { status: 'proposed', workflow: indexEntry(next) };
       }
       const open = store.listForAgent(owner.personalSpaceId, owner.agentId).filter(({ status }) => status !== 'retired');
@@ -77,6 +83,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
         pendingVersion: 1, createdAt: time, updatedAt: time };
       store.save(workflow);
       store.addVersion({ workflowId: workflow.workflowId, version: 1, ...proposal, createdBy: 'agent', createdAt: time });
+      store.markDeposited(owner, time);
       return { status: 'proposed', workflow: indexEntry(workflow) };
     });
   }
@@ -121,7 +128,7 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
       workflowId: workflow.workflowId, status: workflow.status, personalProjectId: workflow.personalProjectId,
       versionCount: workflow.latestVersion, active: store.version(workflow.workflowId, workflow.activeVersion),
       pending: store.version(workflow.workflowId, workflow.pendingVersion),
-      recentRuns: store.runs(workflow.workflowId, RECENT_RUNS), createdAt: workflow.createdAt,
+      recentRuns: store.runs(workflow.workflowId, RECENT_RUNS), ...store.runCounts(workflow.workflowId), createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt })) };
   }
 
@@ -165,7 +172,31 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
     });
   }
 
-  return { propose, index, read, recordRun, overview, listSpace, decide, close: () => store.close() };
+  // A repeat the hourly check found (fla-growth/tool-suggestions.js).
+  function noteRepeat(hint) {
+    store.transaction(() => store.noteRepeat({ ...hint, detectedAt: at() }));
+  }
+
+  // What one FLA's task entry in one project carries (fla-growth/entry-hint.js):
+  // the repeat it still owes, marked shown as it is handed out, and, when asked,
+  // the names of its confirmed workflows there. A store never written reads as nothing.
+  function entryGrowth(owner, { withWorkflows = false } = {}) {
+    if (!owner?.personalProjectId || !store.readable) return { hint: null, workflows: [] };
+    const hint = store.transaction(() => {
+      const next = store.nextHint(owner, HINT_SHOWINGS);
+      if (next) store.markShown(next.key, at());
+      return next;
+    });
+    const workflows = withWorkflows ? store.listForAgent(owner.personalSpaceId, owner.agentId)
+      .filter(workflow => workflow.status === 'active' && workflow.personalProjectId === owner.personalProjectId)
+      .slice(0, ENTRY_WORKFLOWS).map((workflow) => {
+        const active = store.version(workflow.workflowId, workflow.activeVersion);
+        return { workflowId: workflow.workflowId, name: active.name, purpose: active.purpose };
+      }) : [];
+    return { hint, workflows };
+  }
+
+  return { propose, index, read, recordRun, overview, listSpace, decide, noteRepeat, entryGrowth, close: () => store.close() };
 }
 
 function proposalFields(input) {

@@ -153,7 +153,7 @@ on the shared task board: one project shows that project's own columns, several 
 built-in five. Cards open the task; the board stores nothing and moves nothing.
 
 Workflows are the Agent's own repeated work as named, ordered steps, in
-`agent-workflows.sqlite` (format 1). The task's bound Agent, read from the current
+`agent-workflows.sqlite` (format 3). The task's bound Agent, read from the current
 `taskContextToken`, is the only owner a tool acts for:
 
 - `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
@@ -169,8 +169,14 @@ Workflows are the Agent's own repeated work as named, ordered steps, in
   `record_agent_workflow_run` records the outcome of a run the Agent did.
 
 Only the person confirms, rejects or retires a workflow, on the Agent's home page, at the
-version the page showed. Nothing is active until confirmed, nothing runs by itself, and
-workflows are never put into an entry or other context.
+version the page showed. Nothing is active until confirmed and nothing runs by itself. A task
+entry carries only names (Jevons 11-23, `fla_growth`, `src/fla-growth/entry-hint.js`): the first
+turn of a conversation names the Agent's confirmed workflows in that project (at most three,
+name and purpose), and a repeat the hourly check found (`src/fla-growth/tool-suggestions.js`)
+reaches that Agent's entry in that project at most twice, until it proposes a workflow there
+(`agent_growth_hints`, agent-workflows format 3). Steps are never put into an entry; an
+ordinary entry has no `fla_growth` key. The console shows how often each confirmed workflow
+was run and ran through, counted from its runs.
 
 ## Work surfaces: one table, pause all, resume (rec#11 D-85)
 

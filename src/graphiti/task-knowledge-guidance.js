@@ -27,6 +27,13 @@ export function taskKnowledgeGuidance() {
         + 'If it does not and you can tell what it is and where it applies, keep it this turn with checkpoint_task_knowledge remember, quote their words, '
         + 'and say in one line what you kept and where it applies. If the content or the scope (this project or everywhere) is unclear, ask once with clickable choices, '
         + 'for example this project / everywhere / do not keep; never make them type it again.',
+      // Jevons 11-23: work an FLA keeps doing becomes a workflow, what it runs every time a script.
+      self_deposit: 'fla_growth.workflows are your workflows the person confirmed in this project: when this task is one of them, read it with read_agent_workflow, '
+        + 'follow it, then record_agent_workflow_run (done; stopped or failed with the reason in note when it did not fit). '
+        + 'fla_growth.repeated means you keep doing the same work here: write the steps down with propose_agent_workflow, and turn a command you run every time '
+        + 'into a script with submit_agent_app_version (runtime.entry, not resident, no keys or tokens in its files). Both wait for the person: a proposal is not '
+        + 'in use until confirmed, and a script runs only after they confirm it in the terminal. Never run a script another FLA or computer submitted, and never '
+        + 'propose one on the person\'s behalf when you did not do the work yourself.',
       retrieval: 'Inspect task_knowledge_recall before asking for a stable project fact or method again. On a miss, use search_current_project_knowledge with focused action, artifact, target-system, or identifier queries; never use the full conversational request as the only query.',
       checkpoint: 'The owner checkpoints after integration when there are capture candidates, experiences, memory changes, explicit knowledge usage, collaborators or a meaningful workLog. For routine finishes follow checkpoint_guidance; checkpoint_required remains true when automatic closure is unavailable. Coordinated workers return evidence and must not begin or checkpoint an inherited parent context. Explicit checkpoints use capture_candidates or retain_nothing; assigned employees include a concise truthful workLog, even without knowledge capture. Memory changes include agentMemory with the loaded revision and bounded merged notes. Do not overwrite truncated context or store raw transcripts.'
     };

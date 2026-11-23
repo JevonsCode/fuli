@@ -70,6 +70,13 @@ async function suggestRepeatedTools(app) {
   }
   const asked = [];
   for (const repeat of [...repeatedPlans(tasks), ...repeatedWorkflows(workflows)]) {
+    // The FLA hears about it too, in its next task entry there (entry-hint.js):
+    // the person decides whether to build a tool, the FLA is the one to write it down.
+    try {
+      app.agentWorkflows?.noteRepeat({ key: repeat.key, personalSpaceId, agentId: repeat.agentId,
+        personalProjectId: repeat.personalProjectId, kind: repeat.workflowName ? 'workflow' : 'steps',
+        name: String(repeat.workflowName ?? repeat.steps[0]).slice(0, 120), stepCount: repeat.steps.length, taskCount: repeat.tasks.length });
+    } catch { /* noted again on a later tick */ }
     // One that cannot be asked now (its FLA left the project, say) keeps the others going.
     try {
       await app.requestAgentAttention(attentionFor(personalSpaceId, repeat));

@@ -6,6 +6,7 @@ import { workingRepository } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
 import { REPEAT_GUIDANCE, repeatComplaint } from './task-repeat-signal.js';
+import { flaGrowthEntry } from '../fla-growth/entry-hint.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
@@ -147,6 +148,8 @@ export async function beginTaskFromPreferences(application, preferences, {
   // The whole receipt line unless FULI knows this session already had its
   // conversation and nothing new is on the line (identity-receipt.js).
   const laterTurn = conversation.status === 'saved' && Boolean(conversation.recovered_from) && !continuation.show;
+  // The FLA's own workflows and the repeat it still owes (fla-growth/entry-hint.js); absent when there is none.
+  const flaGrowth = resumed ? null : flaGrowthEntry(application, task, { opensConversation });
   const receipt = preferences.agent_receipt ? signedReceipt(await entryAgentReceipt(application, task, preferences.agent_receipt,
     opensConversation ? delivered : null), { firstInConversation: !laterTurn }) : null;
   return withPreferenceScope({
@@ -166,6 +169,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, continuation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
+    ...(flaGrowth ? { fla_growth: flaGrowth } : {}),
     task_guidance: taskKnowledgeGuidance()
   }, taskPreferenceMetadata(task, application.config?.personal?.spaceId));
 }
