@@ -30,7 +30,7 @@ function fixture({ busy = new Set(), state = null, orphans = null } = {}) {
     readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
     readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
     waitForDatabase: async () => {}, verifyPortOwner: async () => {},
-    ...(orphans ? { stopOrphans: async ({ ports: asked, instanceDir }) => {
+    ...(orphans ? { findOrphans: async ({ ports: asked, instanceDir }) => {
       events.push(`orphans:${asked.join(',')}`);
       return orphans({ asked, instanceDir });
     } } : {}),
@@ -90,6 +90,9 @@ test('Windows port preflight reports a real listener on any local address with i
       await assert.rejects(assertWindowsNativePortFree(port), error => {
         assert.match(error.message, new RegExp(`already in use .*: ${port} \\(owner PIDs: ${process.pid} \\(node\\)\\)`));
         assert.match(error.message, /owning process was not touched and the service for this port was not started/);
+        assert.match(error.message, new RegExp(`端口 ${port} 已被别的程序占用`));
+        assert.equal(error.startupFailure.code, 'port_taken');
+        assert.equal(error.startupFailure.port, port);
         return true;
       });
     } finally { client.destroy(); await new Promise(resolve => server.close(resolve)); }
@@ -98,14 +101,20 @@ test('Windows port preflight reports a real listener on any local address with i
   await assert.rejects(assertWindowsNativePortFree(0), /Invalid native service port/);
 });
 
-// A killed start can leave this data directory's own graph service on its port: it is looked for and
-// ended (orphan-services.js) before the port is checked, and only then is anything spawned.
-test('a service this data directory lost track of is looked for on each port before the port is checked', async () => {
-  const seen = [];
-  const f = fixture({ orphans: ({ asked, instanceDir }) => { seen.push(instanceDir); return []; } });
-  await f.services.start();
-  assert.deepEqual(f.events, [`orphans:${ports.personalNeo4jBolt},${ports.personalNeo4jHttp}`,
-    `free:${ports.personalNeo4jBolt}`, `free:${ports.personalNeo4jHttp}`, 'spawn:database',
-    `orphans:${ports.personalProvider}`, `free:${ports.personalProvider}`, 'spawn:provider']);
-  assert.ok(seen.every((dir) => typeof dir === 'string' && dir.length > 0), 'it is asked about this data directory only');
+// A killed start can leave this data directory's own graph service on its port: it is looked for
+// before the port is checked. The start stops and says so; it is ended only when the person chose so.
+test('a service this data directory lost track of stops the start, and is ended only when asked to', async () => {
+  const orphan = [{ port: ports.personalNeo4jBolt, pid: 4900, group: 4900, command: 'java' }];
+  const stopped = fixture({ orphans: () => orphan });
+  await assert.rejects(stopped.services.start(), (error) => error.code === 'orphaned_graph_service'
+    && error.startupFailure.action === 'end-orphans-start');
+  assert.deepEqual(stopped.events, [`orphans:${ports.personalNeo4jBolt},${ports.personalNeo4jHttp}`],
+    'nothing is stopped, checked or spawned');
+
+  let left = orphan;
+  const ended = fixture({ orphans: () => { const found = left; left = []; return found; } });
+  await ended.services.start({ endOrphans: true });
+  assert.deepEqual(ended.events.slice(0, 4), [`orphans:${ports.personalNeo4jBolt},${ports.personalNeo4jHttp}`, 'stop:4900',
+    `free:${ports.personalNeo4jBolt}`, `free:${ports.personalNeo4jHttp}`]);
+  assert.ok(ended.events.includes('spawn:provider'));
 });

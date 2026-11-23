@@ -67,12 +67,17 @@ install uses the existing external data; removal does not imply data erasure.
 A start that was killed after it spawned Neo4j or the Provider can leave that
 service running with `processes.json` no longer naming it, so it keeps the data
 directory's port and every later start refuses the port. Before checking a port,
-a start ends such a service: only a sole listener whose working directory, and
-whose process group's leader's, is in this data directory's own instance folder,
-which is where FULI starts every graph service. Its whole group is stopped
-gracefully first, and the data directory's diagnostics record it
-(`native.orphan`, `orphaned_graph_service`). Any other program on the port is
-left untouched and reported as before (`src/native-runtime/orphan-services.js`).
+a start looks for such a service: a sole listener whose working directory or
+command line (`ps -o command=`) is in this data directory's own instance folder,
+as is its process group's leader, which is where FULI starts every graph
+service. The start then stops and says so in both languages
+(`orphaned_graph_service`, with the port, process and command) and offers one
+action, 「结束它并启动」 in the desktop app or `fuli start --end-orphaned-services`:
+that ends the service's whole group gracefully first, records it in the data
+directory's diagnostics (`native.orphan`) and starts. Any other program on the
+port is left untouched and reported as before (`port_taken`, which Windows
+native and container mode now also give, in both languages)
+(`src/native-runtime/orphan-services.js`).
 
 An interrupted operation leaves `.neo4j-lifecycle.lock` and/or
 `neo4j-transaction.json`. Ordinary setup/start refuses them. Inspect the recorded

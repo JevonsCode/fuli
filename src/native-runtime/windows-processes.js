@@ -64,8 +64,15 @@ export async function assertWindowsNativePortFree(port) {
   const owners = await listeningOwners(port);
   if (owners.length) {
     const observed = owners.map(owner => owner.pid + (owner.name ? ' (' + owner.name + ')' : '')).join(', ');
-    throw new Error('The native service port is already in use before Fuli starts its process: ' + port
-      + ' (owner PIDs: ' + observed + '). The owning process was not touched and the service for this port was not started; stop that process or choose another port.');
+    // Said in both languages, with a reason a client can show (the same code macOS gives).
+    throw Object.assign(new Error(`FULI 要用的端口 ${port} 已被别的程序占用（进程 ${observed}），FULI 没有动它，也没有启动这个服务。`
+      + '请结束那个程序，或在设置里换一个端口。 / The native service port is already in use before Fuli starts its process: '
+      + port + ' (owner PIDs: ' + observed + '). The owning process was not touched and the service for this port was not '
+      + 'started; stop that process or choose another port.'), {
+      code: 'port_taken',
+      startupFailure: { code: 'port_taken', port, pid: owners[0]?.pid ?? null, command: owners[0]?.name ?? null,
+        runningSeconds: null }
+    });
   }
 }
 

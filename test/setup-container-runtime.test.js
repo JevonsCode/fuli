@@ -190,6 +190,9 @@ test('Compose failures preserve useful diagnostics while redacting local and sec
   }
 
   assert.match(error.message, /local port required by Fuli is already in use/);
+  // Said in Chinese too, with a reason a client can show.
+  assert.match(error.message, /端口 8787 已被别的程序占用/);
+  assert.deepEqual(error.startupFailure, { code: 'port_taken', port: 8787, pid: null, command: null, runningSeconds: null });
   assert.match(error.message, /~\/Fuli/);
   assert.doesNotMatch(error.message, /do-not-print/);
   assert.match(error.message, /password=\[redacted\]/);

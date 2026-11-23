@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { END_ORPHANS_ACTION, END_ORPHANS_FLAG } from '../native-runtime/orphan-services.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
@@ -17,7 +18,9 @@ import { findNpmCopies } from './npm-copies.js';
 // and the macOS app (macos-controller.js) only differ in how they find the
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port']);
+// END_ORPHANS_ACTION (「结束它并启动」): a start that stopped at a graph service of this data
+// directory FULI lost track of (orphan-services.js) ends it, then starts and opens as start-open does.
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', END_ORPHANS_ACTION]);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -81,7 +84,7 @@ export async function runTrayAction(action, context, {
   let hold = null;
   let adopted = null;
   try {
-    if (['start', 'start-open', 'stop', 'change-port'].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
+    if (['start', 'start-open', 'stop', 'change-port', END_ORPHANS_ACTION].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
       assertNativeSelection(context);
     }
     if (action === 'change-port') {
@@ -95,6 +98,12 @@ export async function runTrayAction(action, context, {
       notice = `已改用端口 ${switched.port}（原 ${switched.previousPort}）。已打开的 Agent 会话里的 Fuli 链接仍指向旧地址，重开会话即可更新。`
         + ` / Fuli now uses port ${switched.port} (was ${switched.previousPort}). Fuli links in open Agent sessions point to the old address until those sessions restart.`;
       await command([before.status === 'running' ? 'restart' : 'start']);
+      const ready = await inspect();
+      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+    }
+    if (action === END_ORPHANS_ACTION) {
+      starting = true;
+      await command(['start', END_ORPHANS_FLAG]);
       const ready = await inspect();
       if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
     }
@@ -128,7 +137,7 @@ export async function runTrayAction(action, context, {
       // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
       try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
-    if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
+    if (['open', 'start-open', 'change-port', END_ORPHANS_ACTION].includes(action)) await command(['open']);
     if (action === 'stop') await command(['stop']);
     const state = await inspect();
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {

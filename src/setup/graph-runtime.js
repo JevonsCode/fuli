@@ -152,6 +152,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
       nativeRuntime: selectedGraphRuntime,
+      endOrphanedServices: input.endOrphanedServices === true,
       ...(input.env ? { env: input.env } : {})
     });
   } else {
@@ -640,7 +641,7 @@ function graphDependencies(overrides) {
       runtimeDescriptor: options.nativeRuntime,
       personalOnly: options.personalOnly,
       env: options.env
-    }).start(),
+    }).start({ endOrphans: options.endOrphanedServices === true }),
     spawnWebRuntime,
     isProcessAlive,
     stopProcess,

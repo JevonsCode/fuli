@@ -20,7 +20,7 @@ import { dirname, join, relative } from 'node:path';
 
 import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
-import { stopOrphanedServices } from './orphan-services.js';
+import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from './orphan-services.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
@@ -84,7 +84,7 @@ export function createNativeGraphServices({
   verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree
     : platform === 'darwin' ? assertMacNativePortFree : async () => {},
   // A graph service of this data directory that FULI lost track of, holding its port (orphan-services.js).
-  stopOrphans = platform === 'darwin' ? stopOrphanedServices : async () => [],
+  findOrphans = platform === 'darwin' ? findOrphanedServices : async () => [],
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date(),
@@ -99,7 +99,9 @@ export function createNativeGraphServices({
   const stopProviders = () => operation(() => stopProvidersUnlocked());
   const stopDatabases = () => operation(() => stopDatabasesUnlocked());
 
-  async function startUnlocked({ providers: startProviders = true } = {}) {
+  // endOrphans: the person chose to end a graph service of this data directory that FULI lost track of
+  // (`fuli start --end-orphaned-services`, 「结束它并启动」); without it the start stops and says so.
+  async function startUnlocked({ providers: startProviders = true, endOrphans = false } = {}) {
     const startedAt = Date.now();
     if (platform === 'darwin') {
       const selected = readJson(paths.nativeRuntimeManifestPath);
@@ -125,8 +127,7 @@ export function createNativeGraphServices({
         } else {
           // Nothing is spawned while another process holds either Neo4j port; one this data
           // directory started and lost track of is ended first (orphan-services.js).
-          await stopOrphans({ instanceDir: spec.instanceDir, ports: [spec.boltPort, spec.httpPort],
-            stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
+          await releaseOrphans(spec, [spec.boltPort, spec.httpPort], endOrphans);
           await verifyPortFree(spec.boltPort);
           await verifyPortFree(spec.httpPort);
           const child = await spawnDatabase(databaseSpec(spec));
@@ -162,8 +163,7 @@ export function createNativeGraphServices({
         ) {
           providers[spec.id] = existing;
         } else {
-          await stopOrphans({ instanceDir: spec.instanceDir, ports: [spec.providerPort],
-            stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
+          await releaseOrphans(spec, [spec.providerPort], endOrphans);
           await verifyPortFree(spec.providerPort);
           const child = await spawnProvider(providerSpec(spec));
           if (!Number.isInteger(child?.pid)) {
@@ -196,6 +196,15 @@ export function createNativeGraphServices({
       recordFailure(error, Date.now() - startedAt);
       throw error;
     }
+  }
+
+  // A graph service of this data directory on these ports that FULI lost track of:
+  // ended when the person chose so, else the start stops and says what holds them.
+  async function releaseOrphans(spec, ports, endOrphans) {
+    const found = await findOrphans({ instanceDir: spec.instanceDir, ports });
+    if (!found.length) return;
+    if (!endOrphans) throw orphanedServicesError(found);
+    await endOrphanedServices(found, { stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
   }
 
   async function stopProvidersUnlocked() {
