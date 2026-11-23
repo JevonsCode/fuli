@@ -20,6 +20,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ConversationSourceApplication } from '@/types'
 import { UiDialog, UiIcon } from '@/ui'
 import { usePageRefresh } from '@/layouts/page-refresh'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // 服务管理 (rec#11 D-71): every service an FLA started and each Agent's
 // workbench, with the state checked live on each read. Rows are grouped by
@@ -47,7 +48,11 @@ async function loadAgentNames() {
 }
 const names = {
   agent: (id: string | null) => (id ? agentNames.value.get(id) ?? id : t('agentServices.unknownAgent')),
-  project: (id: string | null) => (id ? projects.value.find(project => project.project_id === id)?.profile.name ?? id : t('agentServices.noProject')),
+  project: (id: string | null) => {
+    if (!id) return t('agentServices.noProject')
+    const project = projects.value.find(item => item.project_id === id)
+    return project ? projectDisplayName(project) : id
+  },
 }
 const clientLabel = (service: AgentService) => (service.client === 'fuli' ? t('agentServices.fuli')
   : sourceLabel(service.client as ConversationSourceApplication | null))

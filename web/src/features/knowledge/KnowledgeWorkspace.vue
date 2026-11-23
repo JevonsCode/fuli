@@ -78,6 +78,7 @@ import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { usePageRefresh } from '@/layouts/page-refresh'
 import { queryValue, queryValues } from './route-query'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const props = withDefaults(defineProps<{
   personalProjectsOnly?: boolean
@@ -320,6 +321,9 @@ const { confirm: confirmItem, confirming } = useKnowledgeConfirm({ personalSpace
   personalProjectId: knowledgeMutationProjectId, accessDenied: revokeKnowledgeAccess, reload: loadGraph })
 const activePersonalProject = computed(() =>
   personalProjects.value.find(({ project_id }) => project_id === projectId.value) ?? null,
+)
+const activeProjectName = computed(() =>
+  activePersonalProject.value ? projectDisplayName(activePersonalProject.value) : undefined,
 )
 // A form opened from the quick look takes its place until it closes.
 const peekSuspended = computed(() => Boolean(
@@ -932,7 +936,7 @@ async function completeProjectProfileUpdate(project: PersonalProject) {
   await store.refresh()
   await loadGraph()
   store.notify(t('knowledge.workspace.workspace.notices.materialUpdated', {
-    name: project.profile.name,
+    name: projectDisplayName(project),
   }))
 }
 
@@ -973,8 +977,8 @@ function sourceLabel(item: KnowledgeItem) {
   const evidenceProject = item.evidence.find(({ personal_project_id }) => personal_project_id)
     ?.personal_project_id
   const id = assignment?.project_id ?? evidenceProject
-  const name = personalProjects.value.find(({ project_id }) => project_id === id)
-    ?.profile.name
+  const scopeProject = personalProjects.value.find(({ project_id }) => project_id === id)
+  const name = scopeProject && projectDisplayName(scopeProject)
   const scopeLabel = name
     ? t('knowledge.workspace.workspace.source.primaryProject', { name })
     : t('knowledge.workspace.workspace.source.personalGlobal')
@@ -993,7 +997,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
     @scroll.passive="onDirectoryScroll"
   >
     <div class="knowledge-canvas">
-    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" :current="activePersonalProject?.profile.name" />
+    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" :current="activeProjectName" />
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
@@ -1070,7 +1074,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
                 :checked="contextIds.includes(project.project_id)"
                 @change="toggleContext"
               />
-              <span><strong>{{ project.profile.name }}</strong><small>{{ t('knowledge.workspace.workspace.view.currentScopeOnly') }}</small></span>
+              <span><strong>{{ projectDisplayName(project) }}</strong><small>{{ t('knowledge.workspace.workspace.view.currentScopeOnly') }}</small></span>
             </label>
           </div>
         </div>
@@ -1184,7 +1188,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
       >
         <ProjectHierarchyAside
           :parents="parentProjects"
-          :active-project-name="activePersonalProject?.profile.name"
+          :active-project-name="activeProjectName"
           :space-id="spaceId"
         />
 

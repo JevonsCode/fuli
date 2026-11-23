@@ -1,12 +1,11 @@
-import { currentLocale, t } from '@/i18n'
 import type { PersonalProject } from '@/types'
+import { type ProjectNaming, temporaryProjectName } from './temporary-project-name'
 
-// The identity task entry generates for an unmatched session. Every such
-// project shares one display name, so the name is never used as evidence.
+// The identity task entry generated for an unmatched session until 2026-10-18.
 const CONVERSATION_FALLBACK_ID = /^conversation-[0-9a-f]{64}$/
 
 /** Last use as a number; a missing or unreadable time sorts as oldest, never NaN. */
-function lastUsed(project: PersonalProject) {
+function lastUsed(project: ProjectNaming) {
   return Date.parse(project.updated_at ?? project.created_at ?? '') || 0
 }
 
@@ -24,29 +23,28 @@ export function isFormalProject(project: Pick<PersonalProject, 'project_id' | 's
 }
 
 /** Started temporary, archived or not: marked temporary, or a session fallback (its generated ID or recorded origin). */
-export function hasTemporaryOrigin(project: Pick<PersonalProject, 'project_id' | 'scope_type' | 'profile'>) {
+export function hasTemporaryOrigin(project: ProjectNaming) {
   return isConversationFallback(project) || project.scope_type === 'temporary' || project.profile?.origin === 'conversation_fallback'
 }
 
 /** Most recently used first; equal or unknown times fall back to ID order, the same way every time. */
-export function byLastUse(a: PersonalProject, b: PersonalProject) {
+export function byLastUse(a: ProjectNaming, b: ProjectNaming) {
   return lastUsed(b) - lastUsed(a) || a.project_id.localeCompare(b.project_id)
 }
 
-/** A name people can tell apart: fallback session projects show when they were last used. */
-export function projectDisplayName(project: PersonalProject) {
-  if (!isConversationFallback(project)) return project.profile.name
-  const at = lastUsed(project)
-  const time = !at ? '' : new Intl.DateTimeFormat(currentLocale(), {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  }).format(at)
-  return time ? t('projects.conversationFallback', { time }) : t('projects.conversationFallbackUndated')
+/**
+ * A name people can tell apart, in the console's own language. A project
+ * somebody named keeps their name. A temporary project has none stored, so it
+ * is named here: FULI's words for it, its short number and its last-use date.
+ */
+export function projectDisplayName(project: ProjectNaming, number?: string) {
+  if (!hasTemporaryOrigin(project)) return project.profile?.name ?? ''
+  return temporaryProjectName(project, number)
 }
 
-/** Projects a person set up first, in their given order; session fallbacks after, newest first. */
+/** Projects a person set up first, in their given order; temporary ones after, newest first. */
 export function pickerOrder<T extends PersonalProject>(projects: readonly T[]): T[] {
-  const formal = projects.filter(project => !isConversationFallback(project))
-  const fallback = projects.filter(isConversationFallback)
-    .sort(byLastUse)
-  return [...formal, ...fallback]
+  const formal = projects.filter(project => !hasTemporaryOrigin(project))
+  const temporary = projects.filter(hasTemporaryOrigin).sort(byLastUse)
+  return [...formal, ...temporary]
 }

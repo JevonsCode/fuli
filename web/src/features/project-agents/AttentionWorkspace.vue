@@ -14,6 +14,7 @@ import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { inboxLocation, useAgentAttention, type AgentAttention, type AttentionPeekState } from './attention-store'
 import UiNotice from '@/ui/UiNotice.vue'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 // The Agents' requests in the 待决策 list: one line each; a request opens in a
 // centred quick look (Peek) with its reply. The page keeps which request is
@@ -56,7 +57,7 @@ const draft = computed<AttentionReplyDraft>({
 const replyOutcome = computed(() => attention.lastReply && t(`attention.delivery.${attention.lastReply.status}`, {
   agent: names.value[attention.lastReply.agentId] || t('attention.agentFallback'), title: attention.lastReply.title,
 }))
-const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
+const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, projectDisplayName(project)])))
 const pendingCount = computed(() => attention.agentId ? attention.counts[attention.agentId] ?? attention.filteredTotal : attention.total)
 const agentName = (item: AgentAttention) => names.value[item.agentId] || t('attention.agentFallback')
 const projectName = (item: AgentAttention) => projectNames.value.get(item.personalProjectId) || t('attention.projectFallback')

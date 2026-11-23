@@ -2,6 +2,8 @@ import { z } from 'zod'
 
 import { getJson, patchJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
+import { projectDisplayName } from '@/features/projects/project-origin'
+import type { ProjectNaming } from '@/features/projects/temporary-project-name'
 
 // How Agents treat a conflict between external and graph knowledge: one
 // default for every personal project, and the projects that chose otherwise.
@@ -52,18 +54,16 @@ export function withProjectChoice(
   return { ...overview, projects: [...others, { personalProjectId, mode, updatedAt }] }
 }
 
-interface NamedProject { project_id: string; profile: { name: string } }
-
 /** The exceptions to show, in the person's project order; choices of projects not listed here stay hidden. */
-export function projectExceptions(overview: ConflictPolicyOverview, projects: readonly NamedProject[]) {
+export function projectExceptions(overview: ConflictPolicyOverview, projects: readonly ProjectNaming[]) {
   const modes = new Map(overview.projects.map(({ personalProjectId, mode }) => [personalProjectId, mode]))
-  return projects.flatMap(({ project_id: id, profile }) => {
-    const mode = modes.get(id)
-    return mode ? [{ id, name: profile.name, mode }] : []
+  return projects.flatMap((project) => {
+    const mode = modes.get(project.project_id)
+    return mode ? [{ id: project.project_id, name: projectDisplayName(project), mode }] : []
   })
 }
 
-export function projectsFollowingDefault<T extends NamedProject>(overview: ConflictPolicyOverview, projects: readonly T[]): T[] {
+export function projectsFollowingDefault<T extends ProjectNaming>(overview: ConflictPolicyOverview, projects: readonly T[]): T[] {
   const chosen = new Set(overview.projects.map(({ personalProjectId }) => personalProjectId))
   return projects.filter(({ project_id: id }) => !chosen.has(id))
 }

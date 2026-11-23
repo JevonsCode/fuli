@@ -14,7 +14,7 @@ import EmployeeTaskBoard, { type EmployeeBoardItem, type BoardMoveTarget, type E
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
-import { isFormalProject } from '@/features/projects/project-origin'
+import { isFormalProject, projectDisplayName } from '@/features/projects/project-origin'
 import BoardRecentActivity from '@/features/employees/BoardRecentActivity.vue'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
@@ -61,7 +61,7 @@ const jefaRead = reactive(useJefaBoardLoad({
   // An open task's project is read too, so its access and staleness stay authoritative.
   linkedProjectId: () => openTaskRef.value?.projectId,
   consoleError: computed(() => !store.state && store.runtimeStatus === 'error' ? store.feedback?.message || t('employees.loadError') : ''),
-  projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
+  projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, projectDisplayName(p)]))),
 }))
 const template = computed(() => isJefa.value ? jefaRead.template : employeeTemplates.value.find((entry) => entry.id === templateId.value))
 const nativeWorkbenchView = computed(() => {
@@ -74,6 +74,11 @@ const isNativeJudgment = computed(() => nativeWorkbenchView.value === 'judgment'
 const isNativeUnclaimed = computed(() => nativeWorkbenchView.value === 'unclaimed')
 const isNativeWorkbench = computed(() => isNativePeople.value || isNativeJudgment.value || isNativeUnclaimed.value)
 const spaceProjects = computed(() => (store.state?.personalProjects ?? []).filter(project => project.personal_space_id === personalSpaceId.value))
+/** What an assignment's project is called, or its ID where this space holds no record of it. */
+function assignmentProjectName(projectId: string) {
+  const project = store.state?.personalProjects?.find(entry => entry.project_id === projectId)
+  return project ? projectDisplayName(project) : projectId
+}
 const pageLoading = computed(() => isJefa.value ? jefaRead.loading && !jefaRead.hasContent : (!store.state
   && (store.runtimeStatus === 'idle' || store.runtimeStatus === 'loading'))
   || !catalogReady.value || loading.value)
@@ -89,7 +94,7 @@ const managedProjectOptions = computed(() => isJefa.value ? jefaRead.projects.ma
   ? template.value.managedProjects.map(project => ({ value: project.id, label: project.name }))
   : (template.value?.assignments ?? []).filter(assignment => assignment.status === 'active').map((assignment) => ({
   value: assignment.personalProjectId,
-  label: store.state?.personalProjects?.find((project) => project.project_id === assignment.personalProjectId)?.profile.name ?? assignment.personalProjectId,
+  label: assignmentProjectName(assignment.personalProjectId),
 })))
 const managedProjectSignature = computed(() => JSON.stringify(
   [...new Set(managedProjectOptions.value.map(project => project.value))].sort(),
