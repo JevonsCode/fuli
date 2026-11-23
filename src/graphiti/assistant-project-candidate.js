@@ -5,7 +5,8 @@ import { taskCaptureScope } from './capture-decision.js';
 import { readConversationTriage } from './conversation-triage.js';
 import { claimEntryHint } from './entry-hint-claim.js';
 import { prepareRoleSuggestionNote, suggestionDeletionGeneration, suggestionSessionGeneration } from './role-suggestion-note.js';
-import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
+import { nameableProjects } from './task-entry-project-mention.js';
 
 // Astro's project hint for a conversation no deterministic rule attributed
 // (rec#8, rec#10 D-26.2–.4). Astro's own model may say which approved project

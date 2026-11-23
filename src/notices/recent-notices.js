@@ -1,6 +1,6 @@
 import { dreamingRuns } from '../dreaming/scheduler.js';
 import { agentDisplayName } from '../graphiti/agent-display-name.js';
-import { applicationLanguage } from '../graphiti/project-display-name.js';
+import { applicationLanguage, projectDisplayName } from '../graphiti/project-display-name.js';
 import { PROMOTED_PURPOSE } from '../graphiti/topic-proposals.js';
 import { delegatedReviewList } from '../judgment/review-delegation.js';
 import { retrospectiveRuns } from '../retrospectives/runs.js';
@@ -28,9 +28,10 @@ export async function recentNotices({ app, delegation = null, system = null, now
   const days = query.days ?? NOTICE_WINDOW_DAYS;
   const since = now - days * DAY_MS;
   const projects = await read(() => app.listPersonalProjects({ personalSpaceId: space }), []);
-  const context = { app, delegation, system, space, projectName: nameLookup(projects) };
+  const language = applicationLanguage(app);
+  const context = { app, delegation, system, space, projectName: nameLookup(projects, language) };
   const lists = await Promise.all([
-    promotedTopics(projects),
+    promotedTopics(projects, language),
     read(() => dreamingResults(context), []),
     read(() => retrospectiveResults(context), []),
     read(() => tonborgConfirmations(context), []),
@@ -59,11 +60,11 @@ function matches(notice, { kinds = [], projectIds = [], agentIds = [], text = ''
 }
 
 // A topic Astro made into a project by itself; an undone one is archived and drops out.
-function promotedTopics(projects) {
+function promotedTopics(projects, language) {
   return projects
     .filter(project => project.profile?.purpose?.startsWith(PROMOTED_PURPOSE) && project.profile?.lifecycle !== 'archived')
     .map(project => {
-      const name = project.profile?.name ?? project.project_id;
+      const name = projectDisplayName(project, language);
       return notice('topic_promoted', project.project_id, project.created_at, { project: name },
         `/employees/assistant?${new URLSearchParams({ promoted: project.project_id, topic: name })}`, { projectId: project.project_id });
     });
@@ -172,8 +173,9 @@ function notice(kind, key, at, params, href, { projectId, agentId } = {}) {
     ...(projectId ? { projectId } : {}), ...(agentId ? { agentId } : {}) };
 }
 
-function nameLookup(projects) {
-  const names = new Map(projects.map(project => [project.project_id, project.profile?.name ?? project.project_id]));
+// Each project as the person reads it: a temporary one by its number, never a blank.
+function nameLookup(projects, language) {
+  const names = new Map(projects.map(project => [project.project_id, projectDisplayName(project, language)]));
   return id => (id ? names.get(id) ?? id : '');
 }
 

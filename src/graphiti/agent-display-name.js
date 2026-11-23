@@ -31,7 +31,7 @@ const WORDS = Object.freeze({
 });
 
 /** Whether FULI wrote this FLA name by itself, so it is shown in the person's words instead. */
-export function isGeneratedAgentName(name) {
+function isGeneratedAgentName(name) {
   const text = String(name ?? '').trim();
   return TEMPORARY_LEAD.test(text) || NUMBERED_LEAD.test(text) || WORK_KIND_AGENT.test(text);
 }
@@ -40,7 +40,7 @@ export function isGeneratedAgentName(name) {
  * An FLA's name as a person reads it. `occupationName`, where the caller has
  * the FLA's occupation in the person's language, names a recruited specialist.
  */
-export function shownAgentName(name, language = DEFAULT_CONSOLE_LANGUAGE, { occupationName = null } = {}) {
+function shownAgentName(name, language = DEFAULT_CONSOLE_LANGUAGE, { occupationName = null } = {}) {
   const text = String(name ?? '').trim();
   const words = WORDS[CONSOLE_LANGUAGES.includes(language) ? language : DEFAULT_CONSOLE_LANGUAGE];
   if (TEMPORARY_LEAD.test(text)) return words.temporaryLead;

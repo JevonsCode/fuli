@@ -2,6 +2,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { listSpaceWorkbenches } from '../graphiti/project-agent-task-sheets.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
+import { applicationLanguage, projectDisplayName } from '../graphiti/project-display-name.js';
 
 // Each kind of work surface, read from and switched through its own owner
 // (rec#11 D-85). Only a kind whose owner already has a safe off switch can be
@@ -89,10 +90,11 @@ export function workSurfaceSources(app) {
 export async function workSurfaceNames(app, personalSpaceId) {
   const [agents, projects] = await Promise.all([app.listProjectAgents({ personalSpaceId }),
     app.listPersonalProjects({ personalSpaceId })]);
+  const language = applicationLanguage(app);
   return {
     agents: new Map(agents.map((agent) => [agent.agentId,
       { name: agent.profile?.name ?? null, personalProjectId: agent.personalProjectId ?? null }])),
-    projects: new Map(projects.map((project) => [project.project_id, project.profile?.name ?? null]))
+    projects: new Map(projects.map((project) => [project.project_id, projectDisplayName(project, language) || null]))
   };
 }
 

@@ -4,7 +4,7 @@ import { identityKey } from '../text/name-identity.js';
 import { termIndex } from '../standing-assignments/term-match.js';
 import { agentUnavailableReason } from './agent-availability.js';
 import { isPeerRoleAgent } from './project-team-view.js';
-import { projectDisplayName } from './task-entry-project-mention.js';
+import { projectDisplayName } from './project-display-name.js';
 
 // The person's FLAs as choices (rec#54): one candidate per FLA and project it
 // works in, so the same name in two projects is two choices. Matching a typed

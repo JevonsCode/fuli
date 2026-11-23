@@ -7,6 +7,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { projectOff } from './capture-project-mode.js';
 import { coversClient, SOURCE_APPLICATIONS } from '../agents/source-applications.js';
+import { projectDisplayName } from './project-display-name.js';
 
 // An Agent never completes a long-term capture change (rec#5 C4-2, rec#11
 // D-16). Anything an Agent relays (a token, a "yes", a turn) is unverifiable,
@@ -52,7 +53,7 @@ export function createCaptureChanges(store, { listProjects, taskContext, console
 // Projects by the name the person knows, or by ID when the registry is unreachable.
 async function projectNames(listProjects) {
   try {
-    return new Map((await listProjects()).map(project => [project.project_id, project.profile?.name || project.project_id]));
+    return new Map((await listProjects()).map(project => [project.project_id, projectDisplayName(project)]));
   } catch {
     return new Map();
   }
