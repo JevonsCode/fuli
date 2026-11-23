@@ -142,7 +142,7 @@ test('an entry that fits is the same as without an inline budget, and other Agen
   assert.doesNotMatch(text, /preferences_omitted/);
 });
 
-test('a bounded frame is confirmed from its Claude transcript record and the next turn is a small delta', () =>
+test('a bounded frame is confirmed from its Claude transcript record and the next turn adds what now fits as a delta', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
     const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
@@ -150,13 +150,18 @@ test('a bounded frame is confirmed from its Claude transcript record and the nex
     assert.match(first.frame.revision, /^[0-9a-f]{12}$/);
     const second = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-2' }));
     const delivery = second.frame.preference_delivery;
+    assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
     assert.equal(delivery.status, 'delta');
     assert.equal(delivery.base_revision, first.frame.revision);
-    assert.deepEqual([second.frame.preference_updates, delivery.removed], [[], []]);
+    assert.deepEqual(delivery.removed, []);
     assert.equal(delivery.unchanged, first.frame.effective_preferences.length);
-    assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count);
+    // The delta does not resend the bodies the model holds, so it has room for
+    // bodies the first frame could only name; it spells them out once.
+    const added = keys(second.frame.preference_updates);
+    assert.ok(added.length > 0);
+    assert.deepEqual(added.filter(key => keys(first.frame.effective_preferences).includes(key)), []);
+    assert.equal(second.frame.preferences_omitted.count, first.frame.preferences_omitted.count - added.length);
     assert.equal(second.frame.preferences_omitted.read.arguments.taskContextToken, 'task-2');
-    assert.ok(second.text.length < 3000, `${second.text.length} chars`);
   }));
 
 test('an omitted preference is never delivered: a later whole frame lists every one of them as an update', () =>
@@ -192,13 +197,15 @@ test('a bounded frame never names a removal of a preference that is still in for
       .filter(key => key !== deleted && !keys(second.frame.effective_preferences).includes(key));
     assert.ok(demoted.length > 0);
     assert.equal(second.frame.preference_delivery, undefined, 'a complete frame, not a delta that removes them');
+    // It replaces the earlier set: what is gone is named, what it only leaves out is not.
+    assert.deepEqual(second.frame.preferences_withdrawn, [deleted]);
     assert.deepEqual(keys(hard).filter(key => !keys(second.frame.effective_preferences).includes(key)), []);
     assert.equal(second.frame.preferences_omitted.count, 32 - second.frame.effective_preferences.length);
     assert.notEqual(second.frame.revision, first.frame.revision);
   }));
 
-// Design T3: a later frame keeps the set its base listed while the frame it
-// delivers fits, so new hard rules arrive as a delta and push nothing out.
+// Design T3: a later frame never lists fewer than its base, so new hard rules
+// arrive as a delta and push nothing out.
 test('new preferences are added to the held set as a delta, never by leaving a held one out', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(30);
@@ -208,31 +215,55 @@ test('new preferences are added to the held set as a delta, never by leaving a h
     const second = await session.turn(syntheticLargeEntry({ items: [...items, ...hard], sessionId: session.sessionId, token: 'task-2' }));
     assert.ok(second.text.length <= INLINE_CHARS);
     assert.equal(second.frame.preference_delivery.status, 'delta');
-    assert.deepEqual(keys(second.frame.preference_updates).sort(), keys(hard).sort());
+    assert.deepEqual(keys(hard).filter(key => !keys(second.frame.preference_updates).includes(key)), []);
     assert.deepEqual(second.frame.preference_delivery.removed, []);
     assert.equal(second.frame.preference_delivery.unchanged, first.frame.effective_preferences.length);
   }));
 
-// Design T3: the generation's first frame chooses the set; a later one keeps
-// it while it fits, so a longer or shorter recall never moves it.
-test('a later frame keeps the set its base listed whatever the recall, so it stays a delta', () =>
+// Design T3: holding the set means never fewer, not never more. A first frame
+// beside a rich recall spells out about the preferences' floor; later turns
+// with a light recall spell out more as deltas, and a rich recall again takes
+// none of them back.
+test('a later frame never lists fewer than its base and spells out more as deltas when the recall leaves room', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
     const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
-      ...(recall ? { recall: syntheticRecall(recall, { length: 300 }), conversation: syntheticRecovery(4, { length: 300 }) } : {}) });
-    // The first frame fills the limit; later ones add a recall and a conversation.
-    const first = await session.turn(entry('task-1', 0));
-    const listed = first.frame.effective_preferences.length;
-    assert.ok(listed > 5, 'more than the hard rules are listed in full');
-    // A longer recall does not push one out, nor does no recall at all add one.
-    for (const [token, recall] of [['task-2', 6], ['task-3', 0]]) {
+      recall: syntheticRecall(recall, { length: 700 }), conversation: syntheticRecovery(recall ? 4 : 0, { length: 600 }) });
+    const first = await session.turn(entry('task-1', 6));
+    const alone = hookFrame(await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION })));
+    assert.ok(first.frame.effective_preferences.length < alone.effective_preferences.length, 'the rich recall took room');
+    let listed = new Set(keys(first.frame.effective_preferences));
+    for (const [token, recall] of [['task-2', 1], ['task-3', 1], ['task-4', 6]]) {
       const { text, frame } = await session.turn(entry(token, recall));
-      assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
-      assert.equal(frame.preference_delivery.status, 'delta', token);
-      assert.deepEqual([frame.preference_updates, frame.preference_delivery.removed], [[], []], token);
-      assert.equal(frame.preference_delivery.unchanged, listed, `${token}: the same set`);
-      assert.equal(frame.preferences_omitted.count, 60 - listed);
+      assert.ok(text.length <= INLINE_CHARS, `${token}: ${text.length} chars`);
+      assert.equal(frame.preference_delivery.status, 'delta', `${token}: never resent whole`);
+      assert.deepEqual(frame.preference_delivery.removed, [], token);
+      assert.equal(frame.preference_delivery.unchanged, listed.size, `${token}: none taken back`);
+      const added = keys(frame.preference_updates);
+      assert.deepEqual(added.filter(key => listed.has(key)), [], `${token}: only bodies not yet spelled out`);
+      if (recall === 1) assert.ok(added.length > 0, `${token}: more spelled out`);
+      listed = new Set([...listed, ...added]);
+      assert.equal(frame.preferences_omitted?.count ?? 0, 60 - listed.size, token);
     }
+    assert.ok(listed.size > alone.effective_preferences.length, 'past what one complete frame holds');
+  }));
+
+// A frame that spells out more names itself as the next base. While it is
+// still on its way (no answer since, not recorded), the next frame adds none
+// and builds on what is recorded, so a lost one leaves no base unfound.
+test('while a frame that spelled out more is on its way, the next one adds none and builds on the recorded base', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = token => syntheticLargeEntry({ items, sessionId: session.sessionId, token });
+    const first = await session.turn(entry('task-1'));
+    const lost = await session.turn(entry('task-2'), { record: false });
+    assert.ok(lost.frame.preference_updates.length > 0);
+    const next = await session.turn(entry('task-3'));
+    assert.equal(next.frame.preference_delivery.base_revision, first.frame.revision);
+    assert.deepEqual([next.frame.preference_updates, next.frame.preference_delivery.removed], [[], []]);
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const after = await session.turn(entry('task-4'));
+    assert.ok(after.frame.preference_updates.length > 0, 'once answered, it spells out more again');
   }));
 
 test('a preference added or changed since the base frame is delivered as a delta where it fits', () =>
@@ -247,9 +278,64 @@ test('a preference added or changed since the base frame is delivered as a delta
       ? { ...item, instruction: `${item.instruction} (changed)` } : item), added];
     const { frame } = await session.turn(entry('task-2', next));
     assert.equal(frame.preference_delivery.status, 'delta');
-    assert.deepEqual(keys(frame.preference_updates).sort(), [changedKey, 'synthetic-added'].sort());
+    const updates = keys(frame.preference_updates);
+    assert.deepEqual([changedKey, 'synthetic-added'].filter(key => !updates.includes(key)), []);
     assert.deepEqual(frame.preference_delivery.removed, []);
     assert.equal(frame.preference_delivery.unchanged, first.frame.effective_preferences.length - 1);
+  }));
+
+// Only where the held set no longer fits does a frame list fewer: here one is
+// deleted, so the frame must be complete, and another grew. The changed one
+// keeps its new body, so the model is not left with its old one and a line;
+// lower-ranked ones give way, and the hard rules stay.
+test('a held set that no longer fits gives way in a complete frame that keeps the changed preference', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
+    const listed = keys(first.frame.effective_preferences);
+    const number = key => Number(key.split('-')[1]);
+    const byKey = new Map(items.map(item => [item.preference_key, item]));
+    const hard = items.filter(item => kind(item.instruction) === 'HARD').map(item => item.preference_key);
+    // The lowest-ranked one listed: the scene items rank by the Provider's order.
+    const [grown] = listed.filter(key => kind(byKey.get(key).instruction) === 'SCENE').sort((a, b) => number(b) - number(a));
+    const [deleted] = listed.filter(key => kind(byKey.get(key).instruction) === 'SCENE' && key !== grown);
+    const next = items.filter(item => item.preference_key !== deleted).map(item => item.preference_key === grown
+      ? { ...item, instruction: `${item.instruction} ${'SYNTHETIC grown clause. '.repeat(80)}` } : item);
+    const { text, frame } = await session.turn(syntheticLargeEntry({ items: next, sessionId: session.sessionId, token: 'task-2' }));
+    assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
+    assert.equal(frame.preference_delivery, undefined, 'a complete frame');
+    const sent = keys(frame.effective_preferences);
+    assert.ok(sent.includes(grown), 'the changed one keeps its new body');
+    assert.deepEqual(hard.filter(key => !sent.includes(key)), []);
+    assert.ok(listed.some(key => key !== deleted && !sent.includes(key)), 'others gave way to it');
+    assert.deepEqual(frame.preferences_withdrawn, [deleted]);
+  }));
+
+// Another work kind in the same generation is another scope: the frame is
+// complete anyway, so it chooses afresh for the new scope, and the old scope's
+// own preferences are not taken as spelled out.
+test('a frame in another scope chooses afresh and names what the old scope had that no longer applies', () =>
+  claudeEntrySession(async session => {
+    const shared = syntheticPreferences(40);
+    const scoped = workKind => Array.from({ length: 6 }, (_, index) => syntheticPreference(`${workKind}-${index + 1}`,
+      `SYNTHETIC ${workKind} rule ${index + 1}: ${'Keep the scope of this rule narrow and say so. '.repeat(6)}`, { workKind }, 'taste'));
+    const turn = (token, workKind) => session.turn(syntheticLargeEntry({ items: [...scoped(workKind), ...shared],
+      sessionId: session.sessionId, token, workKind, recall: syntheticRecall(6, { length: 300 }) }));
+    const first = await turn('task-1', 'implementation');
+    const old = keys(first.frame.effective_preferences).filter(key => key.startsWith('implementation-'));
+    assert.ok(old.length > 0);
+    const second = await turn('task-2', 'architecture');
+    assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
+    assert.equal(second.frame.preference_delivery, undefined, 'a complete frame');
+    const sent = keys(second.frame.effective_preferences);
+    assert.deepEqual(sent.filter(key => key.startsWith('implementation-')), []);
+    assert.ok(sent.filter(key => key.startsWith('architecture-')).length >= old.length, 'the new scope ranks its own first');
+    assert.deepEqual(second.frame.preferences_withdrawn, scoped('implementation').map(item => item.preference_key)
+      .filter(key => old.includes(key)).sort());
+    // Fresh, as a new session's first frame in that scope would be.
+    const fresh = hookFrame(await claudeEntry(syntheticLargeEntry({ items: [...scoped('architecture'), ...shared], sessionId: SESSION,
+      workKind: 'architecture', recall: syntheticRecall(6, { length: 300 }) })));
+    assert.deepEqual(sent, keys(fresh.effective_preferences));
   }));
 
 // D-69 (revises D-54): past Claude Code's preview a hard rule is not seen

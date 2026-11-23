@@ -69,6 +69,16 @@ the transcript and gets the whole context again
 (`host-event-turns.test.js`). A session that ends inside the window is not
 given it again.
 
+A complete frame sent in place of a delta replaces the set of the frames
+before it, but the bodies they showed are still in the conversation, and a
+complete frame carries no rule reference saying so. So it names, in
+`preferences_withdrawn`, each preference of its base that the whole entry no
+longer has (deleted, disabled, or not of this scene), by key and layer as the
+index names them (`"rule-3"`, `"rule-3 (project)"`). One it only leaves out
+under an inline budget is still in force and is not named. The field is there
+only when something is gone: 27 bytes plus each name quoted (and a comma between names), nothing otherwise
+(`session-preference-delta.test.js`).
+
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the
@@ -121,20 +131,37 @@ until the preferences are complete (rec#110 item 6).
    characters; it lists 10 and the keys of 50 in 8,693, as before T3). The
    generation's first frame chooses the set: the recall and the conversation
    at the richest level that fits beside the floor, then more preferences.
-   Every later frame of the generation keeps the set its base frame listed
-   (the acknowledged base, `held`): the same bodies, any preference the base
-   never named (new, or with a changed scope) added, any it no longer has
-   dropped, as long as the frame this turn actually delivers fits. That frame
-   is most often a delta, which does not repeat a body the model already
-   holds, so a longer recall, a conversation or one more guidance sentence
-   never moves the set, and an entry that would now fit whole still lists
-   only that set. Before this the preferences took whatever the rest left, so
-   a longer recall or one more guidance sentence listed fewer of them, and a
-   bounded frame whose set shrank is complete: most prompts of a session were
-   whole frames. Only where the held set does not fit (a body grew, or this
-   turn must be complete, such as one whose base listed a preference that was
-   since deleted) are the lowest-ranked left out until the complete frame fits
-   beside the leanest context; that turn gets the complete frame, which says
+   A later frame of the generation in the same scope never lists fewer than
+   its base frame (the acknowledged base, `held`): dropping a body would make
+   the frame complete again (a bounded frame never names a removal), while
+   adding one only sends its body once in the delta. So the base's bodies and
+   the floor take the richest level where the frame this turn actually
+   delivers fits, and then the rest are added in rank order (one added since
+   the base, or now at another layer, first) while that frame still fits:
+   most often a delta, which does not repeat a body the model holds. A turn
+   with a lighter recall therefore spells out bodies an earlier one could only
+   name, and none is ever taken back while it fits; the synthetic
+   60-preference entry lists 10 bodies, then 12 more in its next turn's
+   8,942-character delta (main and the held-whole set sent a 1,403-character
+   empty delta and never listed more). Before the held set, the preferences
+   took whatever the rest left, so a longer recall or one more guidance
+   sentence listed fewer of them and most prompts of a session were whole
+   frames; while the set was held whole, a generation whose first frame came
+   beside a rich recall stayed near the floor for good. Whether a preference
+   is one the base indexed is told by its key and layer where the index has a
+   line (`key (project) — …`); a keys-only index names the key alone and
+   cannot tell two layers apart. While a frame produced earlier is still on
+   its way (below), a frame adds nothing: it builds on the recorded base, so a
+   lost frame that added bodies is never named as a base. In another scope
+   (another project or work kind; the snapshot's `scopeHash` differs) the
+   frame is complete anyway, so nothing is held: it chooses afresh, as a
+   generation's first frame does. Only where the base's bodies do not fit
+   (a body grew, or this turn must be complete, such as one whose base listed
+   a preference that was since deleted) do they give way, as a complete frame
+   beside the leanest context: a preference changed since the base first, so
+   the model is not left holding its old body and a line, then the base's
+   bodies, the floor and new ones by rank, then the rest; hard rules always
+   stay. That turn gets the complete frame, which says
    what it now leaves out. Where the floor does not apply (the hard rules and
    an index exceed it, or the details do not fit beside it), the search below
    decides. Closing fields, identity, role, authority, conflicts
@@ -389,10 +416,12 @@ still says true, and so does a task entered through a tool, whose routine
 fallback eligibility only its entry knows. The field is sent only for a prompt
 that asks to remember or update something. After an upgrade the hook runs the
 new code at once while the Provider already running is the older one until it
-restarts, and that Provider refuses a field it does not know; the entry then
+restarts, and that Provider refuses a field it does not know (pydantic's
+`extra_forbidden`); only for that refusal, of that field alone, the entry
 begins the task without it (`provider-task-context-registry.js`), so the task
 reads as one kept before the field and needs the checkpoint, rather than the
-prompt failing to enter.
+prompt failing to enter. A Provider that knows the field and refuses its value
+is not answered without it: that refusal stands.
 
 A hook that refreshes or restores its task in place reads through its own
 process, which holds the cursors. It joins every page of the revision into the

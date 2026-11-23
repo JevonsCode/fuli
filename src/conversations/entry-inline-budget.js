@@ -1,4 +1,4 @@
-import { copyPreferenceScope, entryWorkKind, preferenceUnitId } from './preference-snapshot.js';
+import { copyPreferenceScope, entryWorkKind, heldStatus } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
@@ -48,8 +48,7 @@ export function fitUncached(fit, value, render) {
 // get (a delta where one applies), and `complete(candidate)`, its complete
 // frame. The answer is always one `deliver` made.
 //
-// An entry that fits is unchanged (unless `held` keeps a preference out, see
-// 2). Otherwise, in this order:
+// An entry that fits is unchanged. Otherwise, in this order:
 // 1. the automatic recall becomes a pointer to its search, then the recent
 //    conversation drops its oldest messages, as the Provider's own window does;
 //    where that is not enough, the preferences lose their IDs first and step
@@ -63,11 +62,11 @@ export function fitUncached(fit, value, render) {
 //    Provider's order. The preferences always get at least half the limit
 //    (PREFERENCE_SHARE, a floor and never a cap): the recall and the
 //    conversation give way to that floor first, and the room they leave goes
-//    to more preferences (sharedFit). The generation's first frame chooses the
-//    set; each later frame (`held`, the set its base frame listed) keeps it
-//    while it fits beside the leanest context of step 1, so the recall and
-//    the conversation give way to it, and only a changed, removed or new
-//    preference changes it. What is left out is named in
+//    to more preferences (sharedFit). The first frame of a generation or a
+//    scope chooses the set; a later frame (`held`, what its base frame spelled
+//    out) never lists fewer while that fits beside the leanest context of
+//    step 1, and adds more while the frame it delivers fits (heldFit). What
+//    is left out is named in
 //    preferences_omitted.index where that fits, never at the cost of a hard
 //    rule's body;
 // 3. where even the hard rules do not fit beside the rest, the entry's details
@@ -99,10 +98,7 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     // so both conditions stay monotonic for the search below. Any other
     // blocked reason is kept as it is.
     const fits = attempt => !blockedByDeliveryBudget(attempt.result.structuredContent) && length(attempt.result) <= limit;
-    // A session whose base frame left out a preference it still has keeps it
-    // out, even where this turn's shorter recall would fit it whole.
-    const settled = held && heldLeavesOut(whole.effective_preferences, held);
-    for (const level of settled ? [] : contextLevels(whole)) {
+    for (const level of contextLevels(whole)) {
       const attempt = deliver(level);
       if (fits(attempt)) return attempt;
     }
@@ -110,7 +106,7 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     // one by its preference_key.
     const value = withoutPreferenceIds(whole);
     const levels = contextLevels(value);
-    for (const level of settled ? [] : levels) {
+    for (const level of levels) {
       const attempt = deliver(level);
       if (fits(attempt)) return attempt;
     }
@@ -121,7 +117,7 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
     const fitsAt = (level, selected, index) => fits(complete(withPreferences(level, selected, preferences.length, index)));
     // Step 1 and 2 above: the preferences' floor, the recall and the
-    // conversation, then more preferences while they fit (held keeps the set).
+    // conversation, then more preferences while they fit (never fewer than held).
     const shared = sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt,
       frameAt: frame => bestLevel(levels, levels.length, [], leanest, candidate => deliver(frame(candidate)), fits),
       delivers: frame => fits(deliver(frame)) });
@@ -262,53 +258,63 @@ function largestCount(low, high, accepts) {
 
 // The entry bounded around the preferences' floor, or null where the floor
 // does not fit beside the leanest context (the search then decides).
-// - The session's first frame of a generation (no `held`): the recall and the
-//   conversation take the richest level that fits beside the floor, and the
-//   ranked preferences after it are added while the complete frame still fits
-//   there.
-// - A later frame (`held`, the set its base frame listed): the same set again,
-//   with any preference the base never named added and any it no longer has
-//   dropped, as long as the frame this turn actually delivers fits. That is
-//   most often a delta, which does not repeat a body the model already holds,
-//   so a longer recall, a conversation or one more guidance sentence never
-//   moves the set and the next frame stays a delta. Only where it does not fit
-//   (a body grew, or the frame must be complete) are the lowest-ranked left
-//   out until the complete frame fits beside the leanest context (hard rules
-//   never: they are always listed); that frame is resent whole
-//   (preference-snapshot.js: a bounded frame never names a removal, since what
-//   it leaves out is still in force).
+// - The session's first frame of a generation or of a scope (no `held`): the
+//   recall and the conversation take the richest level that fits beside the
+//   floor, and the ranked preferences after it are added while the complete
+//   frame still fits there.
+// - A later frame (`held`, what its base frame spelled out) never lists fewer
+//   (heldFit).
 function sharedFit({ value, preferences, kept, ranked, limit, held, levels, leanest, fitsAt, frameAt, delivers }) {
   const floor = preferenceFloor(value, kept, ranked, limit);
   if (!floor) return null;
-  const order = held ? ranked.filter((index, rank) => rank < floor.count || heldOrNew(preferences[index], held)) : ranked;
-  const selection = count => new Set([...kept, ...order.slice(0, count)]);
-  const level = held ? leanest : levels.find(candidate => fitsAt(candidate, selection(floor.count), floor.indexed));
-  if (!level || !fitsAt(level, selection(floor.count), floor.indexed)) return null;
+  const listing = (selected, index) => candidate => selected.size === preferences.length ? candidate
+    : withPreferences(candidate, selected, preferences.length, index);
+  const selection = (order, count) => new Set([...kept, ...order.slice(0, count)]);
   // As in the floor, the best-ranked few come first (rec#111), then a line
   // for each left-out item before more bodies (rec#137): the lines are what
   // tell the model which ones to read.
-  const reserved = Math.max(floor.count, Math.min(RESERVED_RANKED, order.length));
-  const indexed = floor.indexed === 'keys' && fitsAt(level, selection(reserved), 'full') ? 'full' : floor.indexed;
-  const listing = (selected, index) => candidate => selected.size === preferences.length ? candidate
-    : withPreferences(candidate, selected, preferences.length, index);
-  if (held) {
-    const all = selection(order.length);
-    const index = [indexed, 'keys'].find(detail => delivers(listing(all, detail)(leanest)));
-    if (index) return frameAt(listing(all, index));
+  const richerIndex = (level, order) => floor.indexed === 'keys'
+    && fitsAt(level, selection(order, Math.max(floor.count, Math.min(RESERVED_RANKED, order.length))), 'full') ? 'full' : floor.indexed;
+  if (held) return heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex });
+  const level = levels.find(candidate => fitsAt(candidate, selection(ranked, floor.count), floor.indexed));
+  if (!level) return null;
+  const indexed = richerIndex(level, ranked);
+  const count = largestCount(floor.count, ranked.length, middle => fitsAt(level, selection(ranked, middle), indexed));
+  return frameAt(listing(selection(ranked, count), indexed));
+}
+
+// A later frame of the same generation and scope. What its base spelled out
+// stays spelled out: dropping one would make the frame complete again (a
+// bounded frame never names a removal, preference-snapshot.js), while adding
+// one only sends its body once in the delta. So the base's set, with the floor,
+// takes the richest level where the frame this turn actually delivers fits,
+// and then the rest are added in rank order (one added or moved to another
+// layer since the base first) while it still fits: a turn with a lighter
+// recall spells out more of what the base only named, and a body the limit
+// can hold is never left out to keep room empty. While an earlier frame is
+// still on its way (preference-session.js) it adds none.
+// Only where the base's set does not fit even so (a body grew, or this frame
+// must be complete) does it give way, as a complete frame beside the leanest
+// context: a preference changed since the base first, so the model is not left
+// with its old body and a line, then the base's set, the floor and new ones by
+// rank, then the rest; hard rules are always listed.
+function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex }) {
+  const status = new Map(ranked.map(index => [index, heldStatus(preferences[index], held)]));
+  const of = (...kinds) => ranked.filter(index => kinds.includes(status.get(index)));
+  const floorItems = ranked.slice(0, floor.count);
+  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...of('new'), ...ranked])];
+  const base = new Set([...of('listed', 'changed'), ...floorItems]).size;
+  const indexed = richerIndex(leanest, growing);
+  for (const index of new Set([indexed, 'keys'])) {
+    const at = count => listing(selection(growing, count), index);
+    const level = levels.find(candidate => delivers(at(base)(candidate)));
+    if (level) return frameAt(at(held.grow ? largestCount(base, growing.length, count => delivers(at(count)(level))) : base));
   }
-  const count = largestCount(floor.count, order.length, middle => fitsAt(level, selection(middle), indexed));
-  return frameAt(listing(selection(count), indexed));
-}
-
-// Whether the base frame listed this preference, or never named it at all (a
-// new one, or one whose scope changed): not one the base left in its index.
-function heldOrNew(item, held) {
-  return held.listed.has(preferenceUnitId(item)) || !held.indexed?.has(item.preference_key);
-}
-
-// Whether the base frame left out a preference this entry still has.
-function heldLeavesOut(preferences, held) {
-  return Array.isArray(preferences) && preferences.some(item => !preferenceAlwaysInline(item) && !heldOrNew(item, held));
+  const giving = [...new Set([...of('changed'), ...ranked.filter((index, rank) => rank < floor.count || status.get(index) !== 'indexed'),
+    ...ranked])];
+  if (!fitsAt(leanest, selection(giving, 0), indexed)) return null;
+  return frameAt(listing(selection(giving, largestCount(0, giving.length, count => fitsAt(leanest, selection(giving, count), indexed))),
+    indexed));
 }
 
 // The richest index tier the caller accepts, or false when none is taken.

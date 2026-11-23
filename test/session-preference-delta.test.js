@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { preferenceSnapshot, projectPreferenceDelta, withPreferenceScope } from '../src/conversations/preference-snapshot.js';
+import { heldPreferences, heldStatus, preferenceSnapshot, projectPreferenceDelta, withPreferenceScope }
+  from '../src/conversations/preference-snapshot.js';
 
 const scope = { personal_space_id: 'space', personal_project_id: 'project', project_agent_id: 'lead',
   source_application: 'codex', session_id: 'native-session',
@@ -118,4 +119,40 @@ test('rec#15 D-29.9: a revision another set already shows in the generation is e
   assert.equal(projectPreferenceDelta(entry('empty', { effective_preferences: [] }), null, new Map()).revision, undefined);
   const every = new Map(Array.from({ length: 14 }, (_, i) => [snapshotHash.slice(0, 12 + 4 * i), { snapshotHash: null }]));
   assert.equal(projectPreferenceDelta(value, null, every).revision, undefined, 'still colliding: complete, and never a base');
+});
+
+// Design T3: what a later bounded frame keeps of its base. A preference is
+// held where the base spelled it out, changed where its body differs since,
+// indexed where the base's index named it at its own layer, and new otherwise:
+// a project-layer rule is not the global one its base indexed under that key.
+test('a held base tells each preference listed, changed, indexed or new, by key and layer', () => {
+  const base = acknowledged(preferenceSnapshot(entry()));
+  const held = heldPreferences({ ...base, omittedIndex: ['rule-40 — Synthetic global rule', 'rule-41 (project) — Synthetic'] });
+  const [listed, changed] = entry().effective_preferences;
+  const item = (key, layer) => ({ ...listed, preference_key: key, preference_scope: layer,
+    ...(layer === 'project' ? {} : { preference_project_id: undefined }) });
+  assert.equal(heldStatus(listed, held), 'listed');
+  assert.equal(heldStatus({ ...changed, instruction: 'Changed rule' }, held), 'changed');
+  assert.equal(heldStatus(item('rule-40', 'global'), held), 'indexed');
+  assert.equal(heldStatus(item('rule-40', 'project'), held), 'new');
+  assert.equal(heldStatus(item('rule-41', 'project'), held), 'indexed');
+  assert.equal(heldStatus(item('rule-42', 'project'), held), 'new');
+});
+
+// A complete frame in place of a delta replaces the earlier set, so it names
+// what its base had that the whole entry no longer has; not what an inline
+// budget only leaves out of it.
+test('a complete frame names the preferences its base had that are gone, not ones it only leaves out', () => {
+  const base = acknowledged(preferenceSnapshot(entry()));
+  const whole = entry('task-b');
+  whole.effective_preferences.splice(3, 1);
+  const bounded = entry('task-b', { effective_preferences: whole.effective_preferences.slice(0, 10),
+    preferences_omitted: { count: 9 } });
+  const frame = projectPreferenceDelta(bounded, base, new Map(), null, preferenceSnapshot(whole));
+  assert.equal(frame.preference_delivery, undefined);
+  assert.deepEqual(frame.preferences_withdrawn, ['rule-3 (project)']);
+  // An unbounded change is a delta, which names removals itself.
+  const delta = projectPreferenceDelta(whole, base, new Map());
+  assert.equal(delta.preferences_withdrawn, undefined);
+  assert.equal(delta.preference_delivery.removed.length, 1);
 });

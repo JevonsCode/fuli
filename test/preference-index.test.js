@@ -3,7 +3,7 @@
 // to in prose carries that scope in its line. Synthetic preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { preferenceIndex, preferenceIndexKey, preferenceIndexLine, statedPreferenceScope, statedScopeMeetsProject }
+import { preferenceIndex, preferenceIndexLine, preferenceIndexNames, statedPreferenceScope, statedScopeMeetsProject }
   from '../src/conversations/preference-index.js';
 
 const item = (key, instruction, scope = 'global') => ({ preference_key: key, preference_scope: scope, instruction });
@@ -96,10 +96,18 @@ test('nothing FULI cannot place is pushed out on a guess', () => {
 });
 
 // Design T3: a later frame tells a preference its base named in the index from
-// a new one by the key each index entry starts with.
-test('each index entry, a line or a key alone, names its key back', () => {
+// a new one by what each index entry names. A line names the key and layer, so
+// a new project-layer rule is not taken for the global one of the same key; a
+// keys-tier entry is the key alone and cannot tell the layers apart.
+test('each index entry names its preference back, a line by key and layer', () => {
   const items = [item('synthetic-a', '仅适用于合成结算需求：地区只按 locale 判断。', 'project'), item('synthetic-b', 'Keep it short.')];
-  for (const detail of ['full', 'keys']) {
-    assert.deepEqual(preferenceIndex(items, new Set(), detail).map(preferenceIndexKey), ['synthetic-a', 'synthetic-b'], detail);
-  }
+  const project = item('synthetic-b', 'Project layer of the same key.', 'project');
+  const [lineA, lineB] = preferenceIndex(items, new Set(), 'full');
+  assert.equal(preferenceIndexNames(lineA, items[0]), true);
+  assert.equal(preferenceIndexNames(lineB, items[1]), true);
+  assert.equal(preferenceIndexNames(lineB, project), false);
+  assert.equal(preferenceIndexNames(lineA, item('synthetic-a', 'Global layer.')), false);
+  const [keyA, keyB] = preferenceIndex(items, new Set(), 'keys');
+  assert.equal(preferenceIndexNames(keyA, items[0]), true);
+  assert.equal(preferenceIndexNames(keyB, project), true);
 });

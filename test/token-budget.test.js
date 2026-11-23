@@ -371,17 +371,23 @@ const BASELINE = Object.freeze({
   // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
   // Design T3: the preferences of an entry that does not fit whole are given at least half the
   // inline limit (a floor, not a cap); the room the recall and the conversation leave goes to more
-  // of them, and a later frame keeps the set its base listed. This entry has no recall, so it lists
-  // what it did before T3 (10 of 60 in full, the keys of the rest): 8,693 and 1,403 chars as on main.
+  // of them. This entry has no recall, so it lists what it did before T3 (10 of 60 in full, the
+  // keys of the rest): 8,693 chars as on main. A later frame never lists fewer than its base, and
+  // no longer stops there: its delta does not resend the 10 bodies, so it spells out 12 more the
+  // first frame could only name, each once, where main and the held set sent an empty delta
+  // (index_unchanged): 1,403 -> 8,942 chars. Turns after it add the rest the same way until all
+  // fit; a body named by key alone cannot be judged to apply.
   claudeBoundedEntryChars: 8693,
-  claudeBoundedNextTurnChars: 1403,
+  claudeBoundedNextTurnChars: 8942,
   // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
   // five background-task notifications (two queued), and a prompt with another recall that asks
   // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
   // prompt a whole frame again (30,374 chars in all); each notification is now one 171-char line
-  // that also says no entry call is needed, and the second prompt an empty delta. The first prompt
-  // lists 16 bodies beside its recall (11 while the share was a cap): 13,085 chars.
-  claudeHostEventSessionChars: 13085,
+  // that also says no entry call is needed. The first prompt lists 16 bodies beside its recall (11
+  // while the share was a cap). The second prompt, with a lighter recall, keeps those 16 and spells
+  // out 17 more as a delta (it was an empty 3,497-char delta while the set was held whole): 13,085
+  // -> 18,384 chars.
+  claudeHostEventSessionChars: 18384,
   claudeHostEventLineChars: 171,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing

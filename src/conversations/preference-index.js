@@ -67,20 +67,27 @@ export function statedPreferenceScope(instruction) {
 export function preferenceIndexLine(item) {
   const instruction = typeof item?.instruction === 'string' ? item.instruction : '';
   const scope = statedPreferenceScope(instruction);
-  const layer = item?.preference_scope && item.preference_scope !== 'global' ? ` (${item.preference_scope})` : '';
   const gist = singleLineExcerpt(instruction, GIST_CHARS);
   const cut = gist.endsWith('…') && gist.length < instruction.length;
   // Any exception word the cut does not keep whole, including one it splits.
   const kept = GIST_CHARS - 1;
   const dropped = cut && [...instruction.matchAll(EXCEPTION)].some(match => match.index + match[0].length > kept);
-  return `${item?.preference_key ?? ''}${layer}${SEPARATOR}${gist}${dropped ? EXCEPTION_MARK : ''}`
+  return `${preferenceName(item)}${SEPARATOR}${gist}${dropped ? EXCEPTION_MARK : ''}`
     + (scope ? `${SCOPE_MARK}${scope}` : '');
 }
 
-// The key an index entry names: a keys-tier entry is the key itself, a line
-// starts with it, then its layer where that is not global.
-export function preferenceIndexKey(entry) {
-  return String(entry).split(SEPARATOR)[0].replace(/ \((?:agent|project)\)$/, '');
+// What a line calls one preference: its key, then its layer where that is
+// not global (a key may exist at two layers).
+export function preferenceName(item) {
+  const layer = item?.preference_scope && item.preference_scope !== 'global' ? ` (${item.preference_scope})` : '';
+  return `${item?.preference_key ?? ''}${layer}`;
+}
+
+// Whether an index entry names this preference: a line by its key and layer,
+// a keys-tier entry by the key alone, which cannot tell two layers apart.
+export function preferenceIndexNames(entry, item) {
+  const text = String(entry);
+  return text.includes(SEPARATOR) ? text.split(SEPARATOR)[0] === preferenceName(item) : text === item?.preference_key;
 }
 
 // The index of the items an entry does not list, in the order they were

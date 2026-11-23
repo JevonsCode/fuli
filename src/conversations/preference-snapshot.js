@@ -4,7 +4,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { TASK_SCENE_VERSION } from '../graphiti/task-scene.js';
 import { preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
-import { preferenceIndexKey } from './preference-index.js';
+import { preferenceIndexNames, preferenceName } from './preference-index.js';
 
 const SCOPE = Symbol('fuli.authoritativePreferenceScope');
 const IDENTITY = ['preference_key', 'preference_scope', 'preference_project_id',
@@ -107,8 +107,10 @@ export function completePreferenceFrame(value, shown) {
 // `shown` maps each revision the generation shows to the one set it names.
 // `provisional`: the hashes of the frame the session was just given that the
 // transcript does not record yet. It is the base only of this same set, which
-// it then names by the revision that frame showed.
-export function projectPreferenceDelta(value, baseline, shown, provisional = null) {
+// it then names by the revision that frame showed. `whole`: the snapshot of
+// the whole entry, before an inline budget bounded it to `value`, so a
+// complete frame can tell what is gone from what it only leaves out.
+export function projectPreferenceDelta(value, baseline, shown, provisional = null, whole = null) {
   const snapshot = preferenceSnapshot(value);
   if (!snapshot) return value;
   const plain = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences }, value[SCOPE]);
@@ -118,6 +120,7 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
     baseline = { ...snapshot, revision, omittedIndex: null };
   }
   if (!revision || !baseline?.revision || baseline.authorityHash !== snapshot.authorityHash) return full;
+  const complete = withWithdrawn(full, baseline, whole ?? snapshot);
   // A frame bounded to an inline budget (entry-inline-budget.js, D-54) lists
   // only the set it delivers; what it leaves out may still be in force. So it
   // never names a removal or takes back a scene's items: it is a delta that
@@ -128,16 +131,16 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
   // constraints stay as delivered; if one of them changed too, a complete
   // frame is sent instead.
   if (baseline.scopeHash !== snapshot.scopeHash) {
-    if (bounded || contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return full;
+    if (bounded || contentHash(boundaryUnits(baseline.units)) !== contentHash(boundaryUnits(snapshot.units))) return complete;
     return smaller(withPreferenceScope({ ...plain,
       effective_preferences: snapshot.preferences.filter(item => snapshot.units[unitId(item)].scene),
       preference_delivery: { status: 'scene_switch', supersedes: baseline.revision, revision, scene: sceneName(snapshot.scene),
-        replaces: sceneKeys(baseline.units), ...DELIVERY_RULES() } }, value[SCOPE]), plain) ?? full;
+        replaces: sceneKeys(baseline.units), ...DELIVERY_RULES() } }, value[SCOPE]), plain) ?? complete;
   }
   const updates = snapshot.preferences.filter(item => baseline.units[unitId(item)]?.hash !== snapshot.units[unitId(item)].hash);
   const removed = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(snapshot.units,id))
     .map(([,unit]) => unit.identity);
-  if (bounded && removed.length) return full;
+  if (bounded && removed.length) return complete;
   // A delta stays in its base's scene, so it does not repeat it. Nor does it
   // repeat an omission index the base already showed word for word (review of
   // #1070: at 60 preferences the second turn grew from 1329 to 1883 chars by
@@ -149,7 +152,19 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
   }
   return smaller({ ...current, preference_updates: updates, preference_delivery: {
     status: 'delta', base_revision: baseline.revision, revision, removed, unchanged: snapshot.preferences.length - updates.length,
-    ...DELIVERY_RULES() } }, plain) ?? full;
+    ...DELIVERY_RULES() } }, plain) ?? complete;
+}
+
+// A complete frame replaces the set of the frames before it, but a body they
+// showed is still in the conversation, and nothing else tells the model to
+// stop following it. So a complete frame in place of a delta names, by key
+// and layer, each preference of its base the whole entry no longer has:
+// deleted, disabled, or not of this scene. One it only leaves out under an
+// inline budget is still in force and is not named.
+function withWithdrawn(full, baseline, current) {
+  const withdrawn = Object.entries(baseline.units).filter(([id]) => !Object.hasOwn(current.units, id))
+    .map(([, item]) => preferenceName(item.identity)).sort();
+  return withdrawn.length ? copyPreferenceScope(full, { ...full, preferences_withdrawn: withdrawn }) : full;
 }
 
 // Reconstruct only instruction fingerprints from an actually delivered delta
@@ -234,16 +249,23 @@ function identity(item) {
 
 function unitId(item) { return canonicalJson(identity(item)); }
 
-// A preference's identity as a frame's set names it: its key, layer and owner.
-export const preferenceUnitId = unitId;
-
 // What a session's base frame (preference-session.js) left the model holding,
-// for an inline budget to keep (entry-inline-budget.js): `listed`, the
-// identities it spelled out, and `indexed`, the keys its omission index named,
-// or null where it named none.
-export function heldPreferences(baseline) {
-  return { listed: new Set(Object.keys(baseline.units)),
-    indexed: Array.isArray(baseline.omittedIndex) ? new Set(baseline.omittedIndex.map(preferenceIndexKey)) : null };
+// for an inline budget to keep (entry-inline-budget.js): `units`, what it
+// spelled out, `index`, its omission index, or null where it named none, and
+// `grow`, whether this frame may spell out more than that.
+export function heldPreferences(baseline, { grow = true } = {}) {
+  return { units: baseline.units, index: Array.isArray(baseline.omittedIndex) ? baseline.omittedIndex : null, grow };
+}
+
+// Where a preference of this entry stood in the held base frame: 'listed'
+// (spelled out as it is now), 'changed' (spelled out, changed since), 'indexed'
+// (named in its omission index) or 'new' (never named: added, or now at
+// another layer).
+export function heldStatus(item, held) {
+  const view = JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true }));
+  const base = held.units[unitId(view)];
+  if (base) return base.hash === unit(view).hash ? 'listed' : 'changed';
+  return held.index?.some(entry => preferenceIndexNames(entry, item)) ? 'indexed' : 'new';
 }
 
 // The omission index a recorded frame left the model holding: the one it

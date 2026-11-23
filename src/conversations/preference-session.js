@@ -124,7 +124,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
               { floor, tasks: state.tasks, prompt: origin.taskPrompt });
           const project = candidate => {
             const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
-              : projectPreferenceDelta(candidate, baseline, shown, provisional);
+              : projectPreferenceDelta(candidate, baseline, shown, provisional, snapshot);
             const recent = projectRecentContext(preferences, evidence);
             const value = projectSkeleton(recent.value, skeleton, origin.label);
             const result = output(value);
@@ -139,10 +139,15 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // sizes the bytes it would really send.
           const complete = candidate => ({ candidate, result: output(projectSkeleton(completePreferenceFrame(candidate, shown),
             skeleton && { bases: [] }, origin.label)) });
-          // The set the base frame listed, which a bounded entry keeps while it
-          // fits (entry-inline-budget.js, design T3): only the generation's
-          // first frame chooses one, so each later frame can be a delta.
-          const held = baseline && !origin.forceFull ? heldPreferences(baseline) : null;
+          // What the base frame listed, which a bounded entry never lists less
+          // of while it fits (entry-inline-budget.js, design T3), so each later
+          // frame can be a delta. In another scope (a project or work kind)
+          // this frame is complete anyway and chooses afresh. While a frame is
+          // still on its way (provisional) it adds none: one that adds would
+          // name that frame as its base, and if it was lost the model could
+          // not find it; one that adds none builds on what is recorded.
+          const held = baseline && !origin.forceFull && baseline.scopeHash === snapshot.scopeHash
+            ? heldPreferences(baseline, { grow: !provisional }) : null;
           const chosen = fit(value, { deliver: project, complete, held });
           const { recent } = chosen;
           const projected = recent.value;

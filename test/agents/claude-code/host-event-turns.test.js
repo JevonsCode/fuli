@@ -24,12 +24,17 @@ test('host event turns of a session are one line each and no preference body is 
   const sent = frames.flatMap(frame => bodies(frame.text));
   assert.ok(sent.length > 0);
   assert.deepEqual(sent.filter((body, index) => sent.indexOf(body) !== index), [], 'every body is sent once');
-  // The person's next turn lists the same preferences, so it is an empty
-  // delta although its recall and guidance differ (design T3).
+  // The person's next turn keeps every preference the first one spelled out,
+  // so it is a delta although its recall and guidance differ; its lighter
+  // recall leaves room for bodies the first could only name, each sent once
+  // (design T3).
+  const first = hookFrame(frames[0].text);
   const next = hookFrame(frames.at(-1).text);
   assert.equal(next.preference_delivery.status, 'delta');
-  assert.equal(next.preference_delivery.base_revision, hookFrame(frames[0].text).revision);
-  assert.deepEqual(next.preference_updates, []);
+  assert.equal(next.preference_delivery.base_revision, first.revision);
+  assert.deepEqual(next.preference_delivery.removed, []);
+  assert.equal(next.preference_delivery.unchanged, first.effective_preferences.length);
+  assert.ok(next.preference_updates.length > 0);
   // The checkpoint decision is the entry's alone: no host event turn restates it.
   assert.ok(frames.filter(frame => frame.origin === 'host_event').every(frame => !frame.text.includes('checkpoint_required')));
 });

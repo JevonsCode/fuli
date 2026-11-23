@@ -282,7 +282,8 @@ export function claudeHostEventSession() {
 // One synthetic Claude Code session through the real UserPromptSubmit entry
 // and session delivery cache. `turn(entry)` delivers the entry (built with
 // `session.sessionId`) and records what the host would: the whole context, or
-// only a preview when it is longer than Claude Code keeps inline.
+// only a preview when it is longer than Claude Code keeps inline; nothing with
+// `record: false` (not written yet, or lost).
 export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-entry-'));
   try {
@@ -292,10 +293,10 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
     const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
       locate: async () => ({ path: host.path, adapter: claudePreferenceEvidence }) });
     const input = { session_id: sessionId, transcript_path: host.path, cwd: directory, prompt };
-    const turn = async entry => {
+    const turn = async (entry, { record = true } = {}) => {
       const output = await claudeLifecycleOutput('UserPromptSubmit', input, async () => entry, { delivery });
       const text = output.hookSpecificOutput.additionalContext;
-      await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
+      if (record) await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
       return { text, frame: hookFrame(text) };
     };
     // A host event turn (a background task's notification) while `task` is
