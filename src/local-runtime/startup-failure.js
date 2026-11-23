@@ -46,10 +46,17 @@ const FAILURES = Object.freeze({
   // An import into a runtime with no lifecycle lock (containers; native outside
   // macOS) that never finished: its marker stays (backup/unfinished-import.js)
   // and nothing starts on a graph it may have left half written. The way back
-  // is an import, which the marker does not hold back.
+  // is an import, which the marker does not hold back; when that does not
+  // work, giving the import up. A marker that cannot be read is named with its
+  // path, and the way to move it away by hand. The commands come from the
+  // error, written for this platform.
   graph_import_unfinished: {
     what: f => {
       const [at, atEn] = f.since ? [`（${since(f)} 开始）`, ` (begun ${f.since})`] : ['', ''];
+      if (f.readable === false) {
+        return [`记录上次向${modeZh(f.mode)}图谱导入数据的文件 ${f.markerPath} 坏了，读不出来：那次导入没有完成，FULI 不知道哪个图谱可能只写了一半，所以不敢启动，这次没有启动任何东西。`,
+          `The file recording an earlier graph import into the ${f.mode} runtime, ${f.markerPath}, is damaged and cannot be read: that import did not finish, and FULI cannot tell which graph may be half written, so nothing was started.`];
+      }
       return f.graphs?.length
         ? [`上次向${modeZh(f.mode)}图谱导入数据${at}没有完成，图谱 ${f.graphs.join('、')} 可能只写入了一半，这次没有启动任何东西。`,
           `An earlier graph import into the ${f.mode} runtime${atEn} did not finish, so ${graphsEn(f)} may be only half written; nothing was started.`]
@@ -57,19 +64,30 @@ const FAILURES = Object.freeze({
           `An earlier graph import into the ${f.mode} runtime${atEn} wrote all of its new data but did not finish its last step (reconciling the graph identity); nothing was started.`];
     },
     next: f => {
-      const command = f.wayPath ? graphImportCommand(f.wayPath, f.mode) : null;
+      if (f.readable === false) {
+        const [back, backEn] = f.command
+          ? [`先用最近一份导入前的副本导回（${f.latestCopy}）：${f.command}，导回成功后这条记录会清掉。`, `First bring back the newest copy taken before an import (${f.latestCopy}): \`${f.command}\`; once it is back, the record is cleared. `]
+          : ['', ''];
+        return [`${back}最后的办法是把这个文件挪走：${f.moveMarkerCommand}。这样 FULI 会启动，但不保证图谱完整，所以能导回的话先导回。`,
+          `${backEn}The last way out is to move that file away: \`${f.moveMarkerCommand}\`. FULI then starts, but the graph is not known to be whole, so bring a copy back first if you can.`];
+      }
+      const command = f.command ?? (f.wayPath ? graphImportCommand(f.wayPath, f.mode) : null);
+      const abandon = f.abandonCommand ?? `fuli graph abandon-import --target-mode ${f.mode}`;
+      const graphs = f.graphs?.length ? f.graphs.join('、') : null;
+      const [giveUp, giveUpEn] = [`导回走不通时（比如那份备份本身读不了），放弃这次导入：${abandon}，FULI 把${graphs ? `图谱 ${graphs} ` : '可能只写了一半的图谱'}挪开（不删除）、清掉这条记录，之后${graphs ? '它是空的' : '图谱保持现在的数据'}。`,
+        ` If that does not work (the backup itself cannot be read, say), give the import up: \`${abandon}\`; FULI moves ${f.graphs?.length ? graphsEn(f) : 'the graph that may be half written'} aside (not deleted) and clears this record, ${f.graphs?.length ? 'leaving it empty' : 'and the graph keeps the data it has now'}.`];
       if (f.way === 'copy') {
-        return [`把图谱导回到导入前（导入前的副本在 ${f.wayPath}）：${command}。导回成功后再启动。`,
-          `Bring the graph back to before the import (the copy from before it is at ${f.wayPath}): \`${command}\`. Start again once it is back.`];
+        return [`把图谱导回到导入前（导入前的副本在 ${f.wayPath}）：${command}。导回成功后再启动。${giveUp}`,
+          `Bring the graph back to before the import (the copy from before it is at ${f.wayPath}): \`${command}\`. Start again once it is back.${giveUpEn}`];
       }
       if (f.way === 'input') {
         return f.graphs?.length
-          ? [`导入前的副本里没有图谱 ${f.graphs.join('、')}（导入前它是空的，或者没有副本），重新运行那次导入让它完整：${command}。成功后再启动。`,
-            `No copy from before the import holds ${graphsEn(f)} (it was empty then, or there is no copy); run that import again to make it whole: \`${command}\`. Start again once it succeeds.`]
-          : [`重新运行那次导入，把收尾做完：${command}。成功后再启动。`, `Run that import again to finish it: \`${command}\`. Start again once it succeeds.`];
+          ? [`导入前的副本里没有图谱 ${f.graphs.join('、')}（导入前它是空的，或者没有副本），重新运行那次导入让它完整：${command}。成功后再启动。${giveUp}`,
+            `No copy from before the import holds ${graphsEn(f)} (it was empty then, or there is no copy); run that import again to make it whole: \`${command}\`. Start again once it succeeds.${giveUpEn}`]
+          : [`重新运行那次导入，把收尾做完：${command}。成功后再启动。${giveUp}`, `Run that import again to finish it: \`${command}\`. Start again once it succeeds.${giveUpEn}`];
       }
-      return [`用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回：fuli graph import --input <副本> --target-mode ${f.mode} --yes，成功后再启动。`,
-        `Bring back a copy taken before an import (before-import-… in the FULI data folder's backups/graph): \`fuli graph import --input <copy> --target-mode ${f.mode} --yes\`, then start again.`];
+      return [`用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回：fuli graph import --input <副本> --target-mode ${f.mode} --yes，成功后再启动。${giveUp}`,
+        `Bring back a copy taken before an import (before-import-… in the FULI data folder's backups/graph): \`fuli graph import --input <copy> --target-mode ${f.mode} --yes\`, then start again.${giveUpEn}`];
     }
   },
   // A graph service this data directory started earlier, which FULI lost track

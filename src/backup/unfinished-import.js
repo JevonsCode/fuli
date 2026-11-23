@@ -1,8 +1,9 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { graphStateHolds, recordedGraphStates } from './graph-import-states.js';
+import { moveCommand, quoteTerminalArgument } from '../text/terminal-command.js';
+import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from './graph-import-states.js';
 
 // A runtime with no lifecycle lock (containers anywhere, native outside
 // macOS) must still never start on a graph an import left half written. While
@@ -17,7 +18,14 @@ import { graphStateHolds, recordedGraphStates } from './graph-import-states.js';
 // null when every graph was empty then), what that import was loading
 // (`inputDir`), when it began, and each graph's state. An import that starts
 // while a marker is there keeps the first import's copy and input: the data
-// from before that one is what a person goes back to.
+// from before that one is what a person goes back to. It keeps the graphs the
+// marker says may be half written that way too, until it writes them whole
+// (imported): a new import that fails before it gets to one never makes it
+// look whole, so the marker stays and the start stays refused.
+//
+// When even the way back does not work (the backup cannot be read, a file is
+// held), giving the import up is the last way out (abandon-import.js): the
+// graphs that may be half written move aside, not deleted, and the marker goes.
 //
 // This is not the macOS recovery: nothing is brought back by itself. It only
 // keeps a start from running and says how to get back to before the import.
@@ -36,8 +44,12 @@ export function readUnfinishedImport(paths, mode) {
   try { marker = readJsonFile(path, null); } catch { /* unreadable: still unfinished */ }
   const states = recordedGraphStates(marker?.graphStates) ?? {};
   const partial = marker ? INSTANCES.filter(id => graphStateHolds(states[id]) === 'partial') : INSTANCES;
-  return { mode, startedAt: text(marker?.startedAt), copy: text(marker?.copy), inputDir: text(marker?.inputDir),
+  return { mode, path, startedAt: text(marker?.startedAt), copy: text(marker?.copy), inputDir: text(marker?.inputDir),
     graphStates: states, partial, readable: Boolean(marker) };
+}
+
+export function clearUnfinishedImport(paths, mode) {
+  rmSync(markerPath(paths, mode), { force: true });
 }
 
 // Writes the marker for an import into [mode] and answers a lease shaped like
@@ -49,7 +61,16 @@ export function markUnfinishedImport(paths, mode, { restorePoint, graphStates, i
   const first = earlier?.readable
     ? { startedAt: earlier.startedAt, copy: earlier.copy, inputDir: earlier.inputDir }
     : { startedAt: now().toISOString(), copy: restorePoint?.path ?? null, inputDir: inputDir ?? null };
-  let states = { ...graphStates };
+  // A graph the earlier marker says may be half written stays so until this import writes it whole.
+  const halfWritten = earlier?.partial ?? [];
+  const carried = next => {
+    const out = { ...next };
+    for (const id of halfWritten) {
+      if (out[id] === undefined || graphStateHolds(out[id]) === 'before') out[id] = earlier.graphStates[id] ?? GRAPH_STATE.importFailed;
+    }
+    return out;
+  };
+  let states = carried(graphStates);
   const write = () => writeJsonFileAtomic(path, { mode, ...first, graphStates: states }, { durable: true });
   write();
   return {
@@ -57,18 +78,26 @@ export function markUnfinishedImport(paths, mode, { restorePoint, graphStates, i
     marked: true,
     async record(patch) {
       if (!patch?.graphStates) return;
-      states = { ...patch.graphStates };
+      states = carried(patch.graphStates);
       write();
     },
     async release() { rmSync(path, { force: true }); }
   };
 }
 
-// The import that takes [mode]'s graph from [path]: a POSIX shell's quoting,
-// or PowerShell's on Windows, where a double-quoted path would expand `$`.
+// The import that takes [mode]'s graph from [path], for a POSIX shell or
+// PowerShell on Windows (terminal-command.js).
 export function graphImportCommand(path, mode, platform = process.platform) {
-  const quoted = platform === 'win32' ? `'${path.replaceAll("'", "''")}'` : `"${path}"`;
-  return `fuli graph import --input ${quoted} --target-mode ${mode} --yes`;
+  return `fuli graph import --input ${quoteTerminalArgument(path, platform)} --target-mode ${mode} --yes`;
+}
+
+// Giving up the unfinished import into [mode] (abandon-import.js); it asks before it does anything.
+export const abandonImportCommand = mode => `fuli graph abandon-import --target-mode ${mode}`;
+
+// The last way out when FULI cannot give the import up itself: the person
+// moves the marker away by hand, to beside it, never deleting it.
+export function markerMoveCommand(marker, platform = process.platform) {
+  return moveCommand(marker.path, `${marker.path}.abandoned`, platform);
 }
 
 // The way back from an unfinished import: the copy from before it, when that
@@ -91,15 +120,31 @@ function copyInstances(copy) {
   } catch { return null; }
 }
 
-// Why a start into [mode] is refused, with the facts a person needs
-// (src/local-runtime/startup-failure.js); null when no marker is there.
+// The newest copy an import took before it (backups/graph/before-import-*)
+// that names its graphs, or null: the way back when the marker cannot be read.
+export function latestImportCopy(paths) {
+  let names = [];
+  try { names = readdirSync(paths.graphBackupDir).filter(name => name.startsWith('before-import-')).sort().reverse(); } catch { /* none */ }
+  return names.map(name => join(paths.graphBackupDir, name)).find(copy => copyInstances(copy)) ?? null;
+}
+
+// Why a start into [mode] is refused, with the facts a person needs: the
+// way back and its command, giving the import up, and for a marker that
+// cannot be read, where it is and how to move it away by hand
+// (src/local-runtime/startup-failure.js, and the desktop window's words);
+// null when no marker is there. The commands are written for this platform.
 export function unfinishedImportError(paths, mode) {
   const marker = readUnfinishedImport(paths, mode);
   if (!marker) return null;
-  const back = unfinishedImportWayBack(marker);
+  const back = marker.readable ? unfinishedImportWayBack(marker) : null;
+  const latest = marker.readable ? null : latestImportCopy(paths);
   const facts = { code: 'graph_import_unfinished', mode, since: marker.startedAt, graphs: marker.partial,
     way: back?.kind ?? null, copyName: marker.copy ? basename(marker.copy) : null,
-    copyPath: marker.copy, wayPath: back?.path ?? null };
+    copyPath: marker.copy, wayPath: back?.path ?? null,
+    command: back ? graphImportCommand(back.path, mode) : latest ? graphImportCommand(latest, mode) : null,
+    abandonCommand: marker.readable ? abandonImportCommand(mode) : null,
+    readable: marker.readable, markerPath: marker.path, latestCopy: latest,
+    moveMarkerCommand: marker.readable ? null : markerMoveCommand(marker) };
   return Object.assign(new Error(`An earlier graph import into the ${mode} runtime did not finish; nothing was started.`),
     { code: 'graph_import_unfinished', startupFailure: facts });
 }

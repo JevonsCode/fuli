@@ -5,14 +5,15 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { restoreFailure } from '../native-runtime/load-recovery.js';
+import { graphHolders, restoreFailure } from '../native-runtime/load-recovery.js';
 import { lockStartedAt, readLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { instanceGraphStores, recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
 import { createNativeGraphServices } from '../native-runtime/runtime.js';
 import { ensureContainerRuntime } from '../setup/container-runtime.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { moveCommand, quoteTerminalArgument } from '../text/terminal-command.js';
 import { CENSUS_QUERIES, censusFromRows, parsePlainCensusRows } from './graph-census.js';
-import { markUnfinishedImport, readUnfinishedImport } from './unfinished-import.js';
+import { clearUnfinishedImport, markUnfinishedImport, readUnfinishedImport } from './unfinished-import.js';
 import {
   graphBackupSelection,
   reconcileImportedGraphIdentity
@@ -103,14 +104,26 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     return { ...lease, restoreFailed: async (from, error) => lease.record({ restoreFailed: await restoreFailure(paths, from, error) }) };
   }
 
-  // Empties an instance that was empty before the import: its half-written
-  // database and transaction logs move into the recovery folder of the
-  // import's lock, where a recovery would put them (load-recovery.js), never deleted.
+  // Empties an instance (one that was empty before the import, or one an
+  // import given up may have left half written): its database and transaction
+  // logs move into the recovery folder of the import's lock, where a recovery
+  // would put them (load-recovery.js), never deleted. Answers where they went
+  // and the commands that move them back; a move that fails (on Windows, a
+  // file in use) says which processes name a graph's directory.
   async function setAside(instance) {
     const root = paths.nativeRuntimeDir;
     const lock = readLock(root);
     const folder = recoveryFolder(root, recoveryStamp(lock ? lockStartedAt(lock) : Date.now()));
-    for (const store of instanceGraphStores(paths, instance)) await setAsideInto(root, folder, store);
+    const moveBack = [];
+    try {
+      for (const store of instanceGraphStores(paths, instance)) {
+        const to = await setAsideInto(root, folder, store);
+        if (to) moveBack.push(moveCommand(to, store));
+      }
+    } catch (error) {
+      throw Object.assign(error, { holders: await graphHolders(paths) });
+    }
+    return { where: moveBack.length ? folder : null, moveBack, volume: false };
   }
 
   function hasData(instance) {
@@ -147,6 +160,7 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
     announcesWrites: true,
     holdImport,
     unfinishedImport: () => readUnfinishedImport(paths, 'native'),
+    clearUnfinishedImport: () => clearUnfinishedImport(paths, 'native'),
     setAside,
     hasData,
     census,
@@ -206,6 +220,23 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
         '--from-path=/backup', '--overwrite-destination=true'
       ]);
     });
+  }
+
+  // Empties an instance as the native runtime does (setAside there): a
+  // helper container moves its database and transaction logs, inside the
+  // instance's volume, into /data/recovered-<time>/, never deleting them.
+  // Answers where they went and the command that moves them back.
+  async function setAside(instance) {
+    const folder = `/data/recovered-${recoveryStamp(Date.now())}`;
+    const moved = String(await withBackupHelper(instance, helper => docker(['exec', helper, 'sh', '-c', SET_ASIDE_SCRIPT, 'sh', folder])))
+      .split(/\r?\n/).map(line => line.trim()).filter(store => CONTAINER_STORES.includes(store));
+    const back = moved.map(store => `mv ${folder}/${store} /data/${store}`).join(' && ');
+    return {
+      where: moved.length ? folder : null,
+      volume: true,
+      moveBack: back ? [`docker ${[...composePrefix.map(arg => arg.startsWith('-') || arg === 'compose' ? arg : quoteTerminalArgument(arg)),
+        'run', '--rm', '--no-deps', '-T', `${instance}-neo4j`, 'sh', '-c', `'${back}'`].join(' ')}`] : []
+    };
   }
 
   async function hasData(instance) {
@@ -292,12 +323,19 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
     // Containers have no lifecycle lock: a marker keeps a start off a graph an import may have left half written.
     holdImport: details => markUnfinishedImport(paths, 'container', details),
     unfinishedImport: () => readUnfinishedImport(paths, 'container'),
+    clearUnfinishedImport: () => clearUnfinishedImport(paths, 'container'),
+    setAside,
     hasData,
     census,
     selection: () => graphBackupSelection(paths),
     reconcile
   };
 }
+
+// A container graph's database and transaction logs, relative to its /data
+// volume, and the script that moves the ones there into the folder $1 (printing each).
+const CONTAINER_STORES = ['databases/neo4j', 'transactions/neo4j'];
+const SET_ASIDE_SCRIPT = `set -e; for store in ${CONTAINER_STORES.join(' ')}; do if [ -e "/data/$store" ]; then mkdir -p "$1/$(dirname "$store")"; mv "/data/$store" "$1/$store"; echo "$store"; fi; done`;
 
 function nativeInstanceDir(paths, instance) {
   if (instance === 'personal') return paths.nativePersonalDir;

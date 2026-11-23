@@ -247,30 +247,59 @@ class Strings {
 
   // An import into a runtime with no lifecycle lock that never finished
   // (src/backup/unfinished-import.js): nothing starts until an import brings
-  // the graph back. There is no button for that: the command is for Terminal,
-  // with the copy named by its folder in the FULI data folder (no paths cross).
+  // the graph back, or the import is given up. There is no button for either
+  // yet: the words name the way, and 「查看命令」 beside them shows the
+  // commands with their real paths, written by the CLI for this computer's
+  // terminal (PowerShell on Windows), to copy (unfinishedImportCommands).
   String _unfinishedImport(StartupFailure failure, String since) {
     final mode = failure.text('mode') ?? 'native';
     final modeZh = mode == 'container' ? '容器模式' : '原生模式';
     final graphs = failure.facts['graphs'] is List ? failure.facts['graphs'] as List : const [];
     final at = failure.text('since') == null ? '' : _t('（$since 开始）', ' (begun $since)');
+    const commands = '点「查看命令」复制到终端里运行，成功后再点「启动 FULI」。';
+    const commandsEn = 'Choose Show commands to copy it into Terminal, then choose Start FULI once it succeeds.';
+    if (failure.facts['readable'] == false) {
+      final marker = failure.text('markerPath') ?? 'graph-import-unfinished-$mode.json';
+      return _t(
+          '没有启动：记录上次向$modeZh图谱导入数据的文件 $marker 坏了，读不出来，FULI 不知道哪个图谱可能只写了一半，所以不敢启动。'
+              '${failure.text('latestCopy') == null ? '' : '先用最近一份导入前的副本导回。'}最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整。$commands',
+          'FULI did not start: the file recording an earlier graph import into the $mode runtime, $marker, is damaged and cannot be read, so FULI cannot tell which graph may be half written. '
+              '${failure.text('latestCopy') == null ? '' : 'Bring the newest copy from before an import back first. '}The last way out is to move that file away: FULI then starts, but the graph is not known to be whole. $commandsEn');
+    }
     final what = graphs.isEmpty
         ? _t('没有启动：上次向$modeZh的图谱导入数据$at，新数据已经写完，但没有做完收尾（核对图谱身份）。',
             'FULI did not start: an earlier graph import into the $mode runtime$at wrote all of its new data but did not finish its last step (reconciling the graph identity).')
         : _t('没有启动：上次向$modeZh的图谱导入数据$at没有完成，${_names(graphs)}可能只写入了一半。',
             'FULI did not start: an earlier graph import into the $mode runtime$at did not finish, so ${_names(graphs)} may be only half written.');
-    final copy = failure.text('copyName');
+    final path = failure.text('wayPath');
     final next = switch (failure.text('way')) {
-      'copy' when copy != null => _t(
-          '导入前的副本在 FULI 数据文件夹的 backups/graph/$copy。在终端运行 fuli graph import --input <FULI 数据文件夹>/backups/graph/$copy --target-mode $mode --yes 把它导回，然后再点「启动 FULI」。',
-          'The copy from before the import is backups/graph/$copy in the FULI data folder. In Terminal, run fuli graph import --input <FULI data folder>/backups/graph/$copy --target-mode $mode --yes to bring it back, then choose Start FULI.'),
-      'input' => _t('在终端重新运行那次导入（fuli graph import --input <那次导入的备份> --target-mode $mode --yes），成功后再点「启动 FULI」。',
-          'In Terminal, run that import again (fuli graph import --input <the backup it imported> --target-mode $mode --yes), then choose Start FULI once it succeeds.'),
-      _ => _t('在终端用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回：fuli graph import --input <副本> --target-mode $mode --yes，然后再点「启动 FULI」。',
-          'In Terminal, bring back a copy taken before an import (before-import-… in the FULI data folder\'s backups/graph): fuli graph import --input <copy> --target-mode $mode --yes, then choose Start FULI.'),
+      'copy' => _t('把导入前的副本（$path）导回。', 'Bring back the copy from before the import ($path).'),
+      'input' => _t('重新运行那次导入（$path）。', 'Run that import again ($path).'),
+      _ => _t('用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回。', 'Bring back a copy from before an import (before-import-… in the FULI data folder\'s backups/graph).'),
     };
-    return _t('$what$next', '$what $next');
+    final giveUp = _t('导回走不通时，可以放弃这次导入：可能只写了一半的图谱会被挪开（不删除），之后它是空的。',
+        'If that does not work, give the import up: the graph that may be half written moves aside (not deleted) and is empty afterwards.');
+    return _t('$what$next$giveUp$commands', '$what $next $giveUp $commandsEn');
   }
+
+  /// The commands for an unfinished import's way out, as the CLI wrote them
+  /// for this computer's terminal: the way back, then giving the import up
+  /// (or, for a marker that cannot be read, moving it away by hand). Empty
+  /// for any other failure.
+  List<({String label, String command})> unfinishedImportCommands(StartupFailure failure) {
+    if (failure.code != 'graph_import_unfinished') return const [];
+    final way = failure.text('way');
+    return [
+      if (failure.text('command') case final command?)
+        (label: way == 'input' ? _t('重新运行那次导入', 'Run that import again') : _t('导回导入前的副本', 'Bring the copy from before the import back'), command: command),
+      if (failure.text('abandonCommand') case final command?) (label: _t('放弃这次导入', 'Give the import up'), command: command),
+      if (failure.text('moveMarkerCommand') case final command?)
+        (label: _t('最后的办法：挪走这条记录（之后不保证图谱完整）', 'Last way out: move the record away (the graph is not known to be whole then)'), command: command),
+    ];
+  }
+
+  String get showCommands => _t('查看命令', 'Show commands');
+  String get unfinishedImportTitle => _t('在终端里运行', 'Run this in Terminal');
 
   // The operation a lock or journal names, in a Chinese sentence.
   String _operation(String? operation) =>
@@ -451,7 +480,7 @@ class Strings {
       if (plan.kind == 'keep_newer') ...[
         if (backup != null) ...[
           _t('升级前的图备份在 $backup，在终端里这样导回：', 'The graph backup from before the upgrade is at $backup; import it in Terminal with:'),
-          'fuli graph import --input "$backup" --yes',
+          'fuli graph import --input ${_sh(backup)} --yes',
         ],
       ],
       if (plan.kind == 'restore_load' && plan.facts['restored'] == true)
@@ -528,14 +557,14 @@ class Strings {
         _t('想把挪走的库搬回原位：先退出 FULI，原位置已经有 FULI 新建的空库时先把它改名挪开，再在终端里运行：',
             'To move a database back where it was: quit FULI first; if FULI already made a new empty database there, rename it out of the way; then run in Terminal:'),
         for (final move in moveBack)
-          if (move is Map) 'mv "${move['from']}" "${move['to']}"',
+          if (move is Map) 'mv ${_sh(move['from'])} ${_sh(move['to'])}',
       ],
       if (copies is List && copies.isNotEmpty) ...[
         _t('之后也可以在终端里从一份导入前的副本整库导回（会覆盖当时的图谱）：', 'Afterwards, a whole copy from before an import can also be brought back in Terminal (it replaces the graph then):'),
         for (final copy in copies)
           if (copy is Map)
             '${_clock(copy['createdAt'] as String?)} · ${copy['bytes'] is int ? _size(copy['bytes'] as int) : '?'} · ${_names(copy['instances'])}\n'
-                'fuli graph import --input "${copy['path']}" --data-dir "$dataDir" --yes',
+                'fuli graph import --input ${_sh(copy['path'])} --data-dir ${_sh(dataDir)} --yes',
       ] else
         _t('$dataDir/backups/graph 里没有可以导回的导入前副本；有自己的导出时，在终端里用 fuli graph import --input <导出目录> 导回。',
             '$dataDir/backups/graph holds no copy from before an import to bring back; with an export of your own, bring it back in Terminal with fuli graph import --input <export folder>.'),
@@ -571,10 +600,15 @@ class Strings {
         for (final folder in folders)
           if (folder['stores'] is List)
             for (final store in folder['stores'] as List)
-              if (store is Map) 'mv "${store['from']}" "${store['to']}"',
+              if (store is Map) 'mv ${_sh(store['from'])} ${_sh(store['to'])}',
       ];
 
   int _count(Object? ids) => ids is List ? ids.length : 0;
+
+  // A path in a macOS Terminal command (only the macOS recovery words build
+  // commands here): single quotes, so nothing in it expands; a ' is written '\''
+  // (src/text/terminal-command.js does the same for the CLI).
+  static String _sh(Object? path) => "'${'$path'.replaceAll("'", "'\\''")}'";
 
   String _names(Object? ids) => [
         if (ids is List)

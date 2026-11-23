@@ -36,13 +36,13 @@ export function recoveryRecordPath(root, stamp) {
   return join(root, RECOVERED, `recovery-${stamp}.json`);
 }
 
-// Bytes under [path] (a file or a directory), without following links; 0 when it is gone.
 // Bytes free on the disk that holds [path].
 export async function diskFree(path) {
   const { bavail, bsize } = await statfs(path);
   return bavail * bsize;
 }
 
+// Bytes under [path] (a file or a directory), without following links; 0 when it is gone.
 export function diskSize(path) {
   let stat;
   try { stat = lstatSync(path); } catch { return 0; }
@@ -75,12 +75,15 @@ export function instanceGraphStores(paths, id) {
 
 // Sets [path], inside the native runtime [root], aside into the recovery
 // [folder] at the same path relative to the runtime — beside, never over,
-// what an earlier run already put there. Nothing to do when it is gone.
+// what an earlier run already put there. Answers where it went, or null when
+// it is gone (nothing to do).
 export async function setAsideInto(root, folder, path) {
-  if (!existsSync(path)) return;
+  if (!existsSync(path)) return null;
   const to = join(folder, relative(root, path));
   await mkdir(dirname(to), { recursive: true, mode: 0o700 });
-  await rename(path, existsSync(to) ? `${to}-${Date.now()}` : to);
+  const target = existsSync(to) ? `${to}-${Date.now()}` : to;
+  await rename(path, target);
+  return target;
 }
 
 // The graph data a recovery moved into [folder]: each store under an instance

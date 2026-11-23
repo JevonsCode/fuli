@@ -4,7 +4,8 @@
 // prints the reason on one more stderr line after the message, and the desktop
 // controller (desktop-controller.js) reads it back from there, never by
 // matching the message's words. Only these fields cross, nothing else of the
-// error (no paths, no addresses).
+// error: no addresses, and no paths except the ones a failure needs the
+// person to type (an unfinished import's commands, unfinished-import.js).
 const PREFIX = 'FULI_STARTUP_FAILURE ';
 const MAX_LINE = 4096;
 

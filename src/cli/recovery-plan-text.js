@@ -2,6 +2,7 @@ import { basename, dirname, join } from 'node:path';
 
 import { byteSize } from '../text/byte-size.js';
 import { localClockTime } from '../text/clock-time.js';
+import { killCommand, moveCommand, moveIntoCommand, quoteTerminalArgument } from '../text/terminal-command.js';
 
 // What `fuli graph runtime recover` says it will do, and why it will not, in
 // both languages (src/native-runtime/neo4j-recovery.js plans it). The desktop
@@ -10,20 +11,6 @@ import { localClockTime } from '../text/clock-time.js';
 const RECOVER = 'fuli graph runtime recover';
 const ABANDON = `${RECOVER} --abandon-import`;
 const KEEP_NEWER = `${RECOVER} --keep-newer`;
-
-// The commands a person types by hand: a POSIX shell, or PowerShell on
-// Windows, where Windows PowerShell 5.1 has neither `&&` nor `mkdir -p`, and
-// stops several processes only as one comma-separated list. (Its `mv` alias
-// moves "from" to "to" as the POSIX one does, so those lines stay as they are.)
-export function moveIntoCommand(folder, path, platform = process.platform) {
-  return platform === 'win32'
-    ? `New-Item -ItemType Directory -Force -Path "${folder}" | Out-Null; Move-Item -LiteralPath "${path}" -Destination "${folder}"`
-    : `mkdir -p "${folder}" && mv "${path}" "${folder}/"`;
-}
-
-export function killCommand(pids, platform = process.platform) {
-  return platform === 'win32' ? `Stop-Process -Id ${pids.join(',')}` : `kill ${pids.join(' ')}`;
-}
 
 // An unfinished update or rollback is worded by what it was and the versions
 // on each side (neo4j-recovery.js fromVersion / toVersion), never "newer" and
@@ -240,13 +227,13 @@ function abandonFacts(plan) {
   if (plan.moveBack?.length) {
     lines.push(['想把挪走的库搬回原位：先退出 FULI（fuli stop），如果原位置已经有 FULI 新建的空库，先把它改名挪开，再运行：',
       'To move a database back where it was: first quit FULI (`fuli stop`); if FULI already made a new empty database there, rename it out of the way; then run:']);
-    for (const { from, to } of plan.moveBack) lines.push(`  mv "${from}" "${to}"`);
+    for (const { from, to } of plan.moveBack) lines.push(`  ${moveCommand(from, to)}`);
   }
   if (plan.copies?.length) {
     lines.push(['之后也可以用下面的命令从一份导入前的副本整库导回（会覆盖当时的图谱）：', 'Afterwards, an import can also bring back a whole copy taken before an import (it replaces the graph then):']);
     for (const copy of plan.copies) {
       const at = localClockTime(copy.createdAt, { date: true }) ?? copy.createdAt ?? '?';
-      const command = `fuli graph import --input "${copy.path}" --data-dir "${plan.dataDir}" --yes`;
+      const command = `fuli graph import --input ${quoteTerminalArgument(copy.path)} --data-dir ${quoteTerminalArgument(plan.dataDir)} --yes`;
       lines.push(`  ${at} · ${byteSize(copy.bytes)} · ${copy.instances.join(', ')}: ${command}`);
     }
   } else {
@@ -310,7 +297,7 @@ export function graphDataLines(folders) {
     lines.push(`  ${folder.path} · ${byteSize(folder.bytes)} · ${folder.instances.join(', ')}`);
   }
   lines.push('要搬回原位：先退出 FULI（fuli stop），原位置已有新建的空库时先把它改名挪开，再运行： / To move one back: quit FULI first (`fuli stop`); if a new empty database is already there, rename it out of the way; then run:');
-  for (const folder of folders) for (const { from, to } of folder.stores) lines.push(`  mv "${from}" "${to}"`);
+  for (const folder of folders) for (const { from, to } of folder.stores) lines.push(`  ${moveCommand(from, to)}`);
   return lines;
 }
 
@@ -331,8 +318,8 @@ function refusalWords(plan) {
   // The exit when neither finishing nor going back gets Neo4j to start: only
   // when going back is not possible, or was tried ([keepable]).
   const failedBack = plan.backOutFailed ? backOutWords(plan.backOutFailed, from, fromEn) : null;
-  const keep = plan.keepable ? [`${failedBack ? `取消${verb}没有走通：${failedBack[0]}` : ''}如果 ${to} 就是起不来、也回不到 ${from}，可以完成${verb}并解除这把锁、不做启动检查：${KEEP_NEWER}（它先说明会怎样，要你确认；之后不能再回到 ${from}）。解锁后起不来就是一次普通的启动失败${plan.backupPath ? `；升级前的图备份可以这样导回：fuli graph import --input "${plan.backupPath}" --yes` : ''}。`,
-    `${failedBack ? ` Cancelling the ${verbEn} did not work: ${failedBack[1]}` : ''} If ${toEn} will not start and going back to ${fromEn} does not work either, finish the ${verbEn} and release this lock without a start check: \`${KEEP_NEWER}\` (it says what it does first and asks you to confirm; ${fromEn} is out of reach afterwards). A start that fails then is an ordinary failed start${plan.backupPath ? `; the graph backup from before the upgrade imports with \`fuli graph import --input "${plan.backupPath}" --yes\`` : ''}.`] : ['', ''];
+  const keep = plan.keepable ? [`${failedBack ? `取消${verb}没有走通：${failedBack[0]}` : ''}如果 ${to} 就是起不来、也回不到 ${from}，可以完成${verb}并解除这把锁、不做启动检查：${KEEP_NEWER}（它先说明会怎样，要你确认；之后不能再回到 ${from}）。解锁后起不来就是一次普通的启动失败${plan.backupPath ? `；升级前的图备份可以这样导回：fuli graph import --input ${quoteTerminalArgument(plan.backupPath)} --yes` : ''}。`,
+    `${failedBack ? ` Cancelling the ${verbEn} did not work: ${failedBack[1]}` : ''} If ${toEn} will not start and going back to ${fromEn} does not work either, finish the ${verbEn} and release this lock without a start check: \`${KEEP_NEWER}\` (it says what it does first and asks you to confirm; ${fromEn} is out of reach afterwards). A start that fails then is an ordinary failed start${plan.backupPath ? `; the graph backup from before the upgrade imports with \`fuli graph import --input ${quoteTerminalArgument(plan.backupPath)} --yes\`` : ''}.`] : ['', ''];
   const why = plan.startFailure ? startFailureWords(plan.startFailure) : ['', ''];
   // The other way out of the same switch, only when it is there.
   const other = plan.alternative === 'back_out_switch'

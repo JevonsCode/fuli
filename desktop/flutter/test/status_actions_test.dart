@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' show OutlinedButton;
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/app/app_services.dart';
@@ -39,6 +40,39 @@ void main() {
     expect(find.descendant(of: primary, matching: find.text('启动 FULI')), findsOneWidget);
     await tester.tap(action);
     expect(opener.opened.single.toFilePath(), '/fuli-data/logs/');
+  });
+
+  testWidgets('an unfinished import offers 查看命令 where 打开控制台 sits: the real commands, each to copy, and 启动 FULI stays', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    const command = "fuli graph import --input '/fuli-data/backups/graph/before-import-1' --target-mode container --yes";
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished',
+        failure: StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': ['personal'], 'way': 'copy',
+          'wayPath': '/fuli-data/backups/graph/before-import-1', 'command': command, 'abandonCommand': 'fuli graph abandon-import --target-mode container'})));
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
+      return null;
+    });
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await tester.pump();
+    final place = tester.getRect(openConsole);
+    await controller.start();
+    await tester.pump();
+    final show = find.byKey(const Key('unfinished-import-commands'));
+    expect(find.descendant(of: show, matching: find.text('查看命令')), findsOneWidget);
+    expect(tester.getRect(show).left, place.left);
+    expect(find.descendant(of: primary, matching: find.text('启动 FULI')), findsOneWidget);
+    await tester.tap(show);
+    await tester.pumpAndSettle();
+    expect(find.text('在终端里运行'), findsOneWidget);
+    expect(find.byKey(const ValueKey('unfinished-import-command 0')), findsOneWidget);
+    expect(find.text(command), findsOneWidget);
+    expect(find.text('fuli graph abandon-import --target-mode container'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('copy-unfinished-import-command 1')));
+    await tester.tap(find.byKey(const ValueKey('copy-unfinished-import-command 0')));
+    expect(copied, ['fuli graph abandon-import --target-mode container', command]);
   });
 
   testWidgets('a lock nobody holds puts 解除这把锁并启动 in the primary place, and nothing happens without the confirmation',
@@ -184,7 +218,7 @@ void main() {
     await tester.tap(keep);
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('keep-newer-preview'));
-    expect(find.textContaining('fuli graph import --input "/x/before-neo4j" --yes'), findsOneWidget);
+    expect(find.textContaining("fuli graph import --input '/x/before-neo4j' --yes"), findsOneWidget);
     expect(find.text('完成更新，留在 5.26.28，并解除这把锁？'), findsOneWidget);
     expect(find.textContaining('不能再取消这次更新回到 5.26.0'), findsOneWidget);
     expect(find.textContaining('没能启动或没有应答'), findsNWidgets(2), reason: 'why it does not start comes first in the confirmation too');
@@ -237,7 +271,7 @@ void main() {
     await tester.tap(find.byKey(const Key('recover-confirm')));
     await tester.pumpAndSettle();
     expect(find.text('挪开的图谱数据还在'), findsOneWidget);
-    expect(find.textContaining('mv "/x/recovered/t/workspace/data/databases/neo4j" "/x/workspace/data/databases/neo4j"'), findsOneWidget);
+    expect(find.textContaining("mv '/x/recovered/t/workspace/data/databases/neo4j' '/x/workspace/data/databases/neo4j'"), findsOneWidget);
   });
 
   testWidgets('a window running the fuli CLI shows the plan with the terminal command, and no button that would do nothing', (tester) async {

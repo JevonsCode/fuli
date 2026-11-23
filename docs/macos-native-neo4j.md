@@ -139,6 +139,20 @@ import).
   with the import that is the way back; the import is not refused, does not copy
   a graph the marker says may be half written, keeps the first unfinished
   import's copy as the way back, and refuses a backup that lacks such a graph.
+  Such a graph keeps its half-written state in the marker (`importFailed`)
+  until this import has written it whole, so a second import that fails, or is
+  killed, before writing it keeps the marker and the refused start; its words
+  name the marker's way back, not its own copy. A graph empty before a failed
+  import is emptied by `setAside`: native moves its stores into
+  `native-runtime/recovered/<time>/`, containers move `databases/neo4j` and
+  `transactions/neo4j` inside the volume into `/data/recovered-<time>/`
+  through a helper container. `fuli graph abandon-import --target-mode <mode>`
+  (`src/backup/abandon-import.js`) gives the import up the same way: it sets
+  aside each graph the marker says may be half written and clears the marker;
+  one it cannot move keeps the marker, and the words name its holders (by the
+  processes naming a graph directory) and, as the last way out, the marker's
+  path and how to move it away by hand. A marker that cannot be read is
+  named by its path with that move and the newest copy's import.
   It does none of the recovery above: it only keeps a start off a half-written
   graph and says how to get back to before the import.
 - A lock that names no holder (taken before FULI recorded one) is released only

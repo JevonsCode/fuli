@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { moveCommand, quoteTerminalArgument } from '../src/text/terminal-command.js';
+
 import { withNativeAssetOperation } from '../src/native-runtime/neo4j-asset-state.js';
 import { createHash } from 'node:crypto';
 import { acquireNeo4jLifecycleLock, lockTooRecent, readLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
@@ -348,11 +350,14 @@ test('the programs in use stay when the descriptor spells their directory anothe
 });
 
 test('the commands a person types by hand work in PowerShell on Windows', async () => {
-  const { killCommand, moveIntoCommand } = await import('../src/cli/recovery-plan-text.js');
+  const { killCommand, moveCommand, moveIntoCommand } = await import('../src/text/terminal-command.js');
   assert.equal(moveIntoCommand('/x/recovered/by-hand', '/x/.neo4j-lifecycle.lock', 'darwin'),
-    'mkdir -p "/x/recovered/by-hand" && mv "/x/.neo4j-lifecycle.lock" "/x/recovered/by-hand/"');
-  const windows = moveIntoCommand('C:\\x\\recovered\\by-hand', 'C:\\x\\.neo4j-lifecycle.lock', 'win32');
-  assert.equal(windows, 'New-Item -ItemType Directory -Force -Path "C:\\x\\recovered\\by-hand" | Out-Null; Move-Item -LiteralPath "C:\\x\\.neo4j-lifecycle.lock" -Destination "C:\\x\\recovered\\by-hand"');
+    "mkdir -p '/x/recovered/by-hand' && mv '/x/.neo4j-lifecycle.lock' '/x/recovered/by-hand'/");
+  // Nothing in a path expands: $, a backtick, a double quote; a single quote is written out.
+  assert.equal(moveCommand('/x/a $HOME `id` "q"', "/x/it's", 'linux'), `mv '/x/a $HOME \`id\` "q"' '/x/it'\\''s'`);
+  const windows = moveIntoCommand('C:\\x\\recovered\\by-hand', "C:\\x\\it's $env:TEMP", 'win32');
+  assert.equal(windows, "New-Item -ItemType Directory -Force -Path 'C:\\x\\recovered\\by-hand' | Out-Null; Move-Item -LiteralPath 'C:\\x\\it''s $env:TEMP' -Destination 'C:\\x\\recovered\\by-hand'");
+  assert.equal(moveCommand('C:\\a', 'C:\\b', 'win32'), "Move-Item -LiteralPath 'C:\\a' -Destination 'C:\\b'");
   assert.doesNotMatch(windows, /&&|mkdir -p/, 'Windows PowerShell 5.1 has neither');
   assert.equal(killCommand([66, 67], 'linux'), 'kill 66 67');
   assert.equal(killCommand([66, 67], 'win32'), 'Stop-Process -Id 66,67');
@@ -727,13 +732,14 @@ test('every reason a recovery gives is said in both languages, with a next step'
       { do: 'prune', path: '/x/fuli-data/native-runtime/recovered/2026-09-01T00-00-00-000Z', bytes: 1024, keepRuns: 4, keepDays: 40 }] });
   assert.match(abandon, /已损坏（读不出或校验和不对）：\/x\/b\/before-import-1/);
   assert.match(abandon, /没有记下导入的是哪些图谱，所以每个图谱都按文件的修改时间判断/);
-  assert.match(abandon, /fuli graph import --input "\/x\/fuli-data\/backups\/graph\/before-import-0" --data-dir "\/x\/fuli-data" --yes/);
+  assert.match(abandon, /fuli graph import --input '\/x\/fuli-data\/backups\/graph\/before-import-0' --data-dir '\/x\/fuli-data' --yes/);
   assert.match(abandon, /永久删除旧的恢复文件夹 .+超过 40 天，之后又有至少 4 次恢复/, 'the clean-up says it deletes, by the rule the plan carries');
   assert.match(abandon, /personal：看文件的修改时间，导入开始后它的库被写过，可能只写了一半/);
   assert.match(abandon, /workspace：判断不了它有没有被这次导入写过.+为安全起见一起挪开，不删除.+怎么搬回来见下面/);
   assert.match(abandon, /确认之后，再运行恢复只会接着把放弃做完，不会再自动导回；想回到导入前，请用下面列出的导回命令/);
   assert.match(abandon, /Abandon .+whether this import wrote it cannot be told/s);
-  assert.match(abandon, /先退出 FULI（fuli stop）.+\n  mv "\/x\/fuli-data\/native-runtime\/recovered\/2026-11-22T00-00-00-000Z\/personal\/data\/databases\/neo4j" "\/x\/fuli-data\/native-runtime\/personal\/data\/databases\/neo4j"/s,
+  assert.match(abandon, /先退出 FULI（fuli stop）/);
+  assert.ok(abandon.includes(`\n  ${moveCommand('/x/fuli-data/native-runtime/recovered/2026-11-22T00-00-00-000Z/personal/data/databases/neo4j', '/x/fuli-data/native-runtime/personal/data/databases/neo4j')}`),
     'how to move it back, with the paths filled in');
   assert.match(formatRecoveryPlan({ ...JSON.parse(JSON.stringify({ kind: 'abandon_load', copyProblem: 'missing', backupPath: '/x/b', instances: ['personal'], dataDir: '/x/d', copies: [], steps: [] })) }),
     /里没有可以导回的导入前副本/);
@@ -811,7 +817,7 @@ test('a switch whose newer version does not start and cannot be backed out offer
   assert.doesNotMatch(words, /--back-out|另一种做法|other choice/, 'going back is not there, so it is not offered');
   assert.match(words, /--keep-newer/);
   // A plain substring: a Windows path's backslashes would be escapes in a pattern.
-  assert.ok(words.includes(`fuli graph import --input "${stuck.next.previousNeo4jAsset.graphBackup}" --yes`), 'the backup and the command that imports it');
+  assert.ok(words.includes(`fuli graph import --input ${quoteTerminalArgument(stuck.next.previousNeo4jAsset.graphBackup)} --yes`), 'the backup and the command that imports it');
   // With going back possible, both are named.
   const both = await newerInPlace(t);
   const other = await stoppedAt(recover(both.paths, failing));

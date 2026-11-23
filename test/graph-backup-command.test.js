@@ -110,6 +110,60 @@ test('graph copy stops a running console first and starts it again even after a 
     }
   }), /runtime recover/);
   assert.deepEqual(events, ['inspect', 'stop', 'import']);
+
+  // One refused because an earlier import left a graph half written starts nothing either: a start would only be refused.
+  events.length = 0;
+  await assert.rejects(runGraphDataCommand('import', ['--input', '/portable', '--yes'], {
+    ...common,
+    createAdapter: async () => ({ instances: ['personal'] }),
+    importData: async () => { events.push('import'); throw Object.assign(new Error('not imported: half written'), { code: 'graph_import_unfinished' }); }
+  }), /half written/);
+  assert.deepEqual(events, ['inspect', 'stop', 'import']);
+});
+
+test('a start that fails after a failed import does not hide why the import failed', async () => {
+  await assert.rejects(runGraphDataCommand('import', ['--input', '/portable', '--yes'], {
+    resolvePaths: () => ({ runtimeSettingsPath: '/data/runtime-settings.json' }),
+    readSettings: () => ({ graphRuntimeMode: 'container' }),
+    runtime: { consoleRunning: async () => true, stop: async () => ({ status: 'stopped' }), start: async () => { throw new Error('start refused'); } },
+    createAdapter: async () => ({ instances: ['personal'] }),
+    importData: async () => { throw new Error('synthetic load failure'); },
+    write: () => {}
+  }), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.message, /^synthetic load failure \/ Fuli did not start again either: start refused$/);
+    assert.deepEqual(error.errors.map(({ message }) => message), ['synthetic load failure', 'start refused']);
+    return true;
+  });
+});
+
+test('graph abandon-import asks first, gives the import up through the adapter, and says where the graph went', async () => {
+  assert.deepEqual(parseGraphDataOptions('abandon-import', ['--target-mode', 'container', '--yes']),
+    { action: 'abandon-import', outputDir: null, inputDir: null, mode: 'container', dataDir: null, yes: true });
+  assert.throws(() => parseGraphDataOptions('abandon-import', ['--input', '/portable']), /Unknown graph abandon-import option: --input/);
+  const common = { resolvePaths: () => ({ runtimeSettingsPath: '/data/runtime-settings.json' }), readSettings: () => ({ graphRuntimeMode: 'native' }),
+    runtime: { consoleRunning: async () => false }, createAdapter: async () => ({ instances: ['personal'] }) };
+  let asked = 0;
+  const cancelled = await runGraphDataCommand('abandon-import', [], { ...common, confirm: async () => { asked += 1; return false; },
+    abandonImport: async () => assert.fail('nothing is given up without a yes'), write: () => {} });
+  assert.deepEqual([cancelled.status, asked], ['cancelled', 1]);
+  const output = [];
+  const result = await runGraphDataCommand('abandon-import', ['--yes'], { ...common, write: line => output.push(line),
+    abandonImport: async ({ targetMode }) => ({ status: 'abandoned', targetMode, words: `given up in ${targetMode}` }) });
+  assert.deepEqual([result.status, output], ['abandoned', ['given up in native']]);
+});
+
+test('an import that succeeds after an unfinished one names the copy that one left', async () => {
+  const output = [];
+  await runGraphDataCommand('import', ['--input', '/portable', '--yes'], {
+    resolvePaths: () => ({ runtimeSettingsPath: '/data/runtime-settings.json', graphBackupDir: '/data/backups/graph' }),
+    readSettings: () => ({ graphRuntimeMode: 'container' }),
+    runtime: { consoleRunning: async () => false },
+    createAdapter: async () => ({ instances: ['personal'] }),
+    importData: async () => ({ status: 'imported', rollbackDir: '/data/backups/graph/before-import-2', earlierCopy: '/data/backups/graph/before-import-1' }),
+    write: line => output.push(line)
+  });
+  assert.match(output.at(-1), /上次没完成的那次导入之前的副本还留着：\/data\/backups\/graph\/before-import-1/);
 });
 
 test('graph copy refuses to touch data when the running console cannot be confirmed stopped', async () => {

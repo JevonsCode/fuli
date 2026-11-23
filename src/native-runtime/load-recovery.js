@@ -217,9 +217,15 @@ function importCopies(paths, unusable) {
 export async function restoreFailure(paths, from, error, { diskFree: free = diskFree, listProcesses = processList } = {}) {
   let freeBytes = null;
   try { freeBytes = await free(paths.dataDir); } catch { /* unknown */ }
+  return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders: await graphHolders(paths, listProcesses) };
+}
+
+// The processes (other than this one) whose command line names a graph
+// instance's directory, by PID and program name only: what may hold a store
+// FULI could not move or write (an orphaned Neo4j; on Windows, a file in use).
+export async function graphHolders(paths, listProcesses = processList) {
   const dirs = [paths.nativePersonalDir, paths.nativeWorkspaceDir].filter(Boolean);
   const processes = await listProcesses().catch(() => null) ?? [];
-  const holders = processes.filter(({ pid, command }) => pid !== process.pid && dirs.some(dir => command.includes(dir)))
+  return processes.filter(({ pid, command }) => pid !== process.pid && dirs.some(dir => command.includes(dir)))
     .map(({ pid, command }) => ({ pid, name: commandName(command) }));
-  return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders };
 }
