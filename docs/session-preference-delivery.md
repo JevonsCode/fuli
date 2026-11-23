@@ -59,7 +59,15 @@ generation, the next frame with the same snapshot is an empty delta on it,
 named by the revision it showed. Once the model has answered after it and it is
 still missing, or it was written on a branch a rewind left behind, it was lost:
 it is no base, and the next frame builds on what the transcript records, or is
-complete. Any changed set still needs a recorded base.
+complete. Any changed set still needs a recorded base. One window is left: a
+frame is lost and, before the model answers, another prompt's hook runs (a
+queued prompt). That one cannot tell a lost frame from one still on its way, so
+it is built on the lost one (an empty delta, or one line for a host event), and
+two turns in a row lack the context; a delta whose base the model cannot find
+tells it to read the preferences. The turn after that cannot verify the base in
+the transcript and gets the whole context again
+(`host-event-turns.test.js`). A session that ends inside the window is not
+given it again.
 
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
@@ -101,26 +109,43 @@ until the preferences are complete (rec#110 item 6).
    then the recent conversation window drops its oldest messages, marked as
    the Provider marks its own window (`truncated`, the latest
    `omitted_sequence`; `read_agent_conversation` reads it whole).
-2. Then preferences go. First they take their share, half the limit
+2. Then preferences go. They always get at least half the limit
    (`PREFERENCE_SHARE`, design T3), measured as the JSON of what they deliver:
    every hard rule, the index of the rest and the largest ranked prefix that
-   fit in it, chosen as below. When that complete frame fits with the leanest
-   context, the frame is the richest recall and conversation level that fits
-   beside it; the details are not reduced for it. Before this the preferences
-   took whatever the rest left, so a longer recall or one more guidance
-   sentence listed fewer of them, and a bounded frame whose set shrank is
-   complete: most prompts of a session were whole frames. Where the share
-   does not apply (the hard rules and an index exceed it, or the details do
-   not fit beside it), the search below decides. Closing fields, identity, role, authority, conflicts
+   fit in it, chosen as below. That half is a floor, not a cap. The recall and
+   the conversation give way down to it; the room they leave goes to more
+   preferences, until the complete frame no longer fits. A preference named
+   only by its key cannot be judged to apply, so a body the limit can hold is
+   never left out to keep room free (with the half as a cap, the synthetic
+   60-preference entry listed 6 bodies and the keys of 54 others in 6,299
+   characters; it lists 10 and the keys of 50 in 8,693, as before T3). The
+   generation's first frame chooses the set: the recall and the conversation
+   at the richest level that fits beside the floor, then more preferences.
+   Every later frame of the generation keeps the set its base frame listed
+   (the acknowledged base, `held`): the same bodies, any preference the base
+   never named (new, or with a changed scope) added, any it no longer has
+   dropped, as long as the frame this turn actually delivers fits. That frame
+   is most often a delta, which does not repeat a body the model already
+   holds, so a longer recall, a conversation or one more guidance sentence
+   never moves the set, and an entry that would now fit whole still lists
+   only that set. Before this the preferences took whatever the rest left, so
+   a longer recall or one more guidance sentence listed fewer of them, and a
+   bounded frame whose set shrank is complete: most prompts of a session were
+   whole frames. Only where the held set does not fit (a body grew, or this
+   turn must be complete, such as one whose base listed a preference that was
+   since deleted) are the lowest-ranked left out until the complete frame fits
+   beside the leanest context; that turn gets the complete frame, which says
+   what it now leaves out. Where the floor does not apply (the hard rules and
+   an index exceed it, or the details do not fit beside it), the search below
+   decides. Closing fields, identity, role, authority, conflicts
    and every field outside `effective_preferences` always stay, and so do hard
    rules. The rest rank by kind and task scene, using the scene table in
    `task-scene.js`: a boundary first (an item a scene switch never revokes,
    `preferenceSceneReplaceable` false), then an item whose own scene key names
    the task's work kind (`preferenceNamesWorkKind`), then human-confirmed
-   before agent-confirmed, then the Provider's order. The delivered set is the
-   largest ranked prefix whose *complete* frame fits with the leanest context,
-   so it depends on the preferences alone, not on the conversation or the
-   cached base: the same preferences select the same set next turn.
+   before agent-confirmed, then the Provider's order. In that search the
+   delivered set is the largest ranked prefix whose *complete* frame fits with
+   the leanest context, so it depends on the preferences alone.
 3. Then as much recall and conversation as still fits comes back.
 
 What is left out last (`preferenceAlwaysInline` in
@@ -211,28 +236,52 @@ A bounded entry is still a complete, confirmable frame:
   `read_task_preferences` result the model read) that fits is sent with
   nothing left out.
 - A pending item keeps its scope, snapshot, frame hash and scene, and since
-  design T1 an optional `producedAt` (the record stays version 4: a FULI that
-  predates it ignores the field and never takes the frame as a provisional base).
+  design T1 an optional `producedAt`. The record stays version 4: it is a
+  private cache of this computer only, a FULI that predates the field ignores
+  it and never takes the frame as a provisional base (it can only send more,
+  never less), and this FULI reads a record without it as having no
+  provisional base.
 
 ## Host turns (design T1)
 
 Each Agent's adapter names where a prompt turn came from (`turnOrigin`):
-`person`, `host_event` (Claude Code: a prompt that is exactly one
-`<task-notification>` or `<ci-monitor-event>` envelope) or `host_system`
-(an `isMeta` delivery; Codex marks no other). An Agent that cannot tell takes
-every turn as the person's. The shared layer reads only that value
+`person`, `host_event` or `host_system`. The host's own mark decides where the
+hook input carries one: `isMeta` or `is_meta` true is `host_system`, false is
+the person's. Only an input without the mark is read by its shape: in Claude
+Code a prompt that is exactly one `<task-notification>` or
+`<ci-monitor-event>` envelope is `host_event`; any text around it makes it the
+person's. Codex reads only the mark. An Agent that cannot tell takes every turn
+as the person's. The shared layer reads only that value
 (`refreshCurrentTaskInPlace` in `src/conversations/unresolved-turns.js`). A
 host turn never begins or switches a task. When this context generation has
 already given the session a frame (recorded, or provisional as above), it gets
-one line saying the turn is not the person's and the current task and the
-context already given still apply: no preference read, scope check, budget fit,
-delta or pending record, and no `checkpoint_required`. One session of 155
+one line saying the turn is not the person's, that the current task and the
+context already given still apply, and that no `get_collaboration_preferences`
+call is needed (the MCP instructions otherwise tell a model whose hook gave no
+context to make one): no preference read, scope check, budget fit, delta or
+pending record, and no `checkpoint_required`. One session of 155
 notifications had been given 123k characters this way. Only a generation that
 has given nothing (a compaction whose restore failed, an unreadable record, a
 lost frame, no delivery at all) re-reads the current task in place and gets it
-whole: a missed preference costs more than a resent one. A preference changed
-in the middle of a run of notifications reaches the model at the person's next
-prompt.
+whole: a missed preference costs more than a resent one.
+
+A preference changed in the middle of a run of notifications reaches the model
+at the person's next prompt, though the model may act during those
+notifications (fix a failed build, push). Telling a change apart without the
+Provider would need a local mark of the preference set's revision, and there is
+none: the preferences live in the Provider, and finding out whether they
+changed is the same read the line saves. So the line stays one line.
+
+Known misreadings, and what they cost:
+
+- A person who pastes a whole notification envelope into Claude Code with no
+  other text, or a hook input the host marks `isMeta` for a person's message
+  (a slash command or Skill expansion, a wrapper that passes the mark on), is
+  taken as a host turn. That turn begins no task, gets no recall and no
+  checkpoint, and gets no preference change made since the last frame; the
+  preferences already in the conversation stay in force.
+- Cursor and OpenCode give no such signal, so every turn of theirs is the
+  person's, as before.
 
 ## Coding-task knowledge index
 
@@ -337,7 +386,13 @@ Provider's task record), and the reader applies the entry's own rule
 Stop hook closes says so instead of turning `checkpoint_required` to true on a
 SessionStart restore or a host turn's refresh. A task kept before the field
 still says true, and so does a task entered through a tool, whose routine
-fallback eligibility only its entry knows.
+fallback eligibility only its entry knows. The field is sent only for a prompt
+that asks to remember or update something. After an upgrade the hook runs the
+new code at once while the Provider already running is the older one until it
+restarts, and that Provider refuses a field it does not know; the entry then
+begins the task without it (`provider-task-context-registry.js`), so the task
+reads as one kept before the field and needs the checkpoint, rather than the
+prompt failing to enter.
 
 A hook that refreshes or restores its task in place reads through its own
 process, which holds the cursors. It joins every page of the revision into the
