@@ -900,6 +900,19 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (address) await rebindCoordinator(address);
   }
 
+  // The person's 「重新监听」: the coordinator's listener on its saved address once
+  // more, after it could not listen (a port taken, say): paired devices, shares
+  // and trust all stay. Leaving and pairing again is never needed for it. An
+  // address that is only away comes back by itself (listenAgain above).
+  async function reopenListener() {
+    const settings = store().setting('coordinator');
+    if (store().setting('membership')?.role !== 'coordinator' || !settings) {
+      throw new PeerError('not_coordinator', 'Only the coordinating computer listens', 409);
+    }
+    if (!coordinator) await rebindCoordinator(settings.host);
+    return status();
+  }
+
   // Moves the listener to another address on the same port. When that fails it
   // tries the address it had; when that fails too nothing listens and the
   // card and `fuli peer status` say why (an address that is only away is
@@ -1046,7 +1059,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     } finally { ending -= 1; }
   }
 
-  return { resume, status, searchShareable, shareableProject, enableCoordinator, createInvitation, previewInvitation, join, setShares, revokeDevice, disable,
+  return { resume, status, searchShareable, shareableProject, enableCoordinator, reopenListener, createInvitation, previewInvitation, join, setShares, revokeDevice, disable,
     nearbyOn, nearbyOff, pairNearby, confirmPairing, cancelPairing, clearPairingAttempts, publish, close, runnerActive: () => Boolean(runner) };
 }
 

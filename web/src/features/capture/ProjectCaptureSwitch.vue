@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
@@ -53,7 +54,10 @@ async function setRecorded(value: boolean) {
       :label="t(requested ? 'capture.project.turningOn' : 'capture.project.turningOff', { name: projectName })" />
     <p v-else-if="failure" class="project-capture-failure" role="alert" data-project-capture-error>{{ failure }}</p>
     <p v-else class="project-capture-state">{{ state }}</p>
-    <p v-if="captureOff" class="project-capture-state" data-project-capture-global-off>{{ t('capture.project.globalOff') }}</p>
+    <p v-if="captureOff" class="project-capture-state" data-project-capture-global-off>
+      {{ t('capture.project.globalOff') }}
+      <RouterLink to="/settings?tab=recording" data-project-capture-open-settings>{{ t('capture.project.openSettings') }}</RouterLink>
+    </p>
   </section>
 </template>
 

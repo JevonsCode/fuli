@@ -136,7 +136,10 @@ async function revoke(linkId: string) {
       <p v-if="listed?.refusedToday" class="ui-meta" data-guest-links-refused>
         {{ t('guestLinks.refusedToday', { count: listed.refusedToday }) }}
       </p>
-      <UiNotice v-if="problem" tone="warning" data-guest-links-problem>{{ t(`guestLinks.problems.${problem}`) }}</UiNotice>
+      <UiNotice v-if="problem" tone="warning" data-guest-links-problem>
+        {{ t(`guestLinks.problems.${problem}`) }}
+        <template #actions><Button size="sm" variant="outline" data-guest-links-retry @click="load()">{{ t('settings.connection.clients.refresh') }}</Button></template>
+      </UiNotice>
       <ul v-if="links.length" class="guest-link-list">
         <li v-for="link in links" :key="link.id" class="guest-link-row" :data-guest-link="link.id">
           <span class="guest-link-times">
@@ -157,7 +160,10 @@ async function revoke(linkId: string) {
           <DialogTitle>{{ t('guestLinks.createdTitle') }}</DialogTitle>
           <DialogDescription>{{ t('guestLinks.createdOnce') }}</DialogDescription>
         </DialogHeader>
-        <UiNotice v-if="created?.problem" tone="warning">{{ t(`guestLinks.problems.${created.problem}`) }}</UiNotice>
+        <!-- The same problem shows on the card, with 重新检查, once this dialog closes. -->
+        <UiNotice v-if="created?.problem" tone="warning" data-no-action="shown again on the card with its check, after this one-time link view">
+          {{ t(`guestLinks.problems.${created.problem}`) }}
+        </UiNotice>
         <section v-for="way in ways" :key="way.key" class="guest-link-way" :data-guest-link-way="way.key">
           <pre class="guest-link-copy-text">{{ way.text }}</pre>
           <div class="guest-link-copy-row">

@@ -398,7 +398,7 @@ describe('交给 Tonborg 确认', () => {
     expect(wrapper.text()).toContain('Tonborg 正在替你确认')
   })
 
-  it('rec#124: says how many projects Tonborg can confirm in, and links to where projects are approved', async () => {
+  it('rec#124: says how many projects Tonborg can confirm in, and every notice opens the project choice in one step', async () => {
     const reach = { projects: 3, blockedProjectIds: ['beta', 'gamma'], unassignedAllowed: true }
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach,
       model: { connected: true, status: 'automatic', reason: null } })
@@ -406,18 +406,20 @@ describe('交给 Tonborg 确认', () => {
     await flushPromises()
     const notice = onList.get('[data-tonborg-reach]')
     expect(notice.attributes('data-tone')).toBe('warning')
-    expect(notice.text()).toContain('3 个项目里只有 1 个批准发给 Tonborg 的模型，其余仍等你确认。')
+    expect(notice.text()).toContain('批准发给 Tonborg 的模型的：正式项目 1/3 个。没批准的仍等你确认。')
     expect(onList.text()).not.toContain('正在替你确认')
     const links = onList.findAllComponents(RouterLinkStub)
-    expect(links.map(link => [link.text(), link.props('to')])).toEqual([['去批准', { path: '/models', query: { details: 'tonborg' } }]])
+    const choose = { path: '/models', query: { edit: 'tonborg', focus: 'projects' } }
+    expect(links.map(link => [link.text(), link.props('to')])).toEqual([['去选项目', choose]])
 
-    // None approved: said plainly. In Tonborg's own details the 编辑 button is right there, so no link.
+    // None approved: said plainly. In Tonborg's own details too the notice carries its action (11-23).
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach: { ...reach, blockedProjectIds: ['alpha', 'beta', 'gamma'], unassignedAllowed: false },
       model: { connected: true, status: 'automatic', reason: null } })
     const inSettings = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
-    expect(inSettings.get('[data-tonborg-reach]').text()).toBe('没有内容批准发给 Tonborg 的模型，它什么都确认不了，都等你确认。')
-    expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
+    expect(inSettings.get('[data-tonborg-reach]').text()).toContain('没有内容批准发给 Tonborg 的模型，它什么都确认不了，都等你确认。')
+    expect(inSettings.find('[data-tonborg-approve-link]').exists()).toBe(true)
+    expect(inSettings.findComponent(RouterLinkStub).props('to')).toEqual(choose)
   })
 
   it('rec#124: off, it keeps its usual hint whatever the model may read', async () => {
