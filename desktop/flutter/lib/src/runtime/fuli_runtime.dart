@@ -8,13 +8,32 @@ enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound
 /// (src/local-runtime/startup-stage.js). The ids are that module's.
 typedef StageListener = void Function(String stage);
 
+/// Why a start did not finish, as the start reported it
+/// (src/local-runtime/startup-failure.js): its code and the facts behind it.
+/// The client words what happened and offers its own next step.
+class StartupFailure {
+  const StartupFailure(this.code, this.facts);
+
+  final String code;
+  final Map<String, Object?> facts;
+
+  String? text(String key) => facts[key] is String ? facts[key] as String : null;
+  int? number(String key) => facts[key] is int ? facts[key] as int : null;
+}
+
 class RuntimeReport {
   const RuntimeReport(this.state,
-      {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false, this.stage});
+      {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
+      this.stage, this.failure, this.autostartGaveUpAt});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
   final String? stage;
+  /// What a failed start ran into, when it was one the start can name.
+  final StartupFailure? failure;
+  /// When client sessions stopped starting FULI by themselves, after repeated
+  /// starts did not keep it running; null while they still would.
+  final String? autostartGaveUpAt;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -36,6 +55,9 @@ abstract interface class FuliRuntime {
 
   /// The console port from the data directory's runtime settings (default 2727).
   Future<int> consolePort();
+
+  /// The folder that holds the start's logs, for 「查看启动日志」.
+  Future<String> logDirectory();
 
   Future<RuntimeReport> status();
 

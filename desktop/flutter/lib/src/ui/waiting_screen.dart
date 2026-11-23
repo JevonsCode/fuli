@@ -8,12 +8,16 @@ import 'top_line.dart';
 /// mark where the status page keeps it, and the loading mark with what is
 /// really happening now. Never a blank window.
 class WaitingScreen extends StatelessWidget {
-  const WaitingScreen({super.key, required this.label, this.detail});
+  const WaitingScreen({super.key, required this.label, this.detail, this.actionLabel, this.onAction});
 
   final String label;
 
   /// One small line under the mark when the step is taking long.
   final String? detail;
+
+  /// One quiet button under that line (「查看启动日志」); never a cancel.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +30,13 @@ class WaitingScreen extends StatelessWidget {
             child: Center(
               child: Padding(
                 padding: EdgeInsets.only(bottom: topLineExtent(context)),
-                child: GrowthLoading(label: label, detail: detail, variant: GrowthLoadingVariant.page),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  GrowthLoading(label: label, detail: detail, variant: GrowthLoadingVariant.page),
+                  if (actionLabel != null && onAction != null) ...[
+                    const SizedBox(height: FuliSpace.space2),
+                    TextButton(key: const Key('waiting-action'), onPressed: onAction, child: Text(actionLabel!)),
+                  ],
+                ]),
               ),
             ),
           ),

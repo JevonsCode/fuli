@@ -143,6 +143,23 @@ void main() {
     expect(status.label, contains('已经等了 1 分 35 秒。'));
   });
 
+  testWidgets('a slow step offers 查看启动日志 under its line, and nothing to cancel', (tester) async {
+    var opened = 0;
+    await tester.pumpWidget(FuliBrandScope(
+      brand: testBrand,
+      child: MaterialApp(
+        home: WaitingScreen(
+            label: zh.startupStage('provider_wait')!,
+            detail: zh.startupStageSlow('provider_wait', const Duration(seconds: 40)),
+            actionLabel: zh.viewStartupLog,
+            onAction: () => opened++),
+      ),
+    ));
+    await tester.tap(find.text('查看启动日志'));
+    expect(opened, 1);
+    expect(find.textContaining('取消'), findsNothing);
+  });
+
   testWidgets('without a slow step the waiting screen keeps its single line', (tester) async {
     await tester.pumpWidget(FuliBrandScope(
       brand: testBrand,

@@ -43,7 +43,16 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
-          if (snapshot.running && !snapshot.reached)
+          // After a start that failed, its next step is a click here: the
+          // start's log, or the folder of a lock nobody holds.
+          if (_noticeAction case final action?)
+            TextButton.icon(
+              key: const Key('notice-action'),
+              onPressed: () => opener.open(Uri.directory(controller.notice!.path!)),
+              icon: Icon(action == NoticeAction.openLockFolder ? Icons.folder_open_rounded : Icons.article_outlined, size: 16),
+              label: Text(action == NoticeAction.openLockFolder ? strings.openLockFolder : strings.viewStartupLog),
+            )
+          else if (snapshot.running && !snapshot.reached)
             TextButton.icon(
               key: const Key('recheck'),
               onPressed: controller.pending != null ? null : controller.recheck,
@@ -67,6 +76,11 @@ class StatusActions extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  NoticeAction? get _noticeAction {
+    final notice = controller.notice;
+    return controller.pending == null && notice?.path != null ? notice!.action : null;
   }
 
   Widget _statusLine() {

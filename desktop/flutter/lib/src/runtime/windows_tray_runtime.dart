@@ -38,6 +38,11 @@ class WindowsTrayRuntime implements FuliRuntime {
   @override
   Future<int> consolePort() => readConsolePort(_context?.dataDir ?? defaultDataDir(os: 'windows', env: env));
 
+  // The installation names its log folder (windows-controller.js `context`).
+  @override
+  Future<String> logDirectory() async =>
+      (await context())?.logDir ?? '${defaultDataDir(os: 'windows', env: env)}\\logs';
+
   @override
   Future<RuntimeReport> status() => _action('status');
 

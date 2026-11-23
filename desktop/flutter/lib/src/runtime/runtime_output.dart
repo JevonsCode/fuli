@@ -17,15 +17,49 @@ RuntimeReport parseControllerReply(String stdout) {
   final error = reply['error'];
   final notice = reply['notice'];
   final stage = reply['stage'];
+  final failed = reply['ok'] != true;
   return RuntimeReport(
     _state(reply['status']),
     consolePort: state is Map ? _consolePort(state) : null,
-    error: reply['ok'] == true ? null : (error is String ? error : null),
+    error: failed ? (error is String ? error : null) : null,
     notice: notice is String && notice.isNotEmpty ? notice : null,
     portBlocked: reply['portBlocked'] == true,
     consoleStopped: state is Map && _consoleStopped(state),
-    stage: reply['ok'] == true || stage is! String || stage.isEmpty ? null : stage,
+    stage: !failed || stage is! String || stage.isEmpty ? null : stage,
+    failure: failed ? _failure(reply['failure']) : null,
+    autostartGaveUpAt: state is Map ? _gaveUpAt(state) : null,
   );
+}
+
+/// The failure a start reports on a line of its own (src/local-runtime/startup-failure.js),
+/// or null for any other line.
+StartupFailure? parseFailureLine(String line) {
+  final value = _jsonObject(line);
+  if (value == null || value.containsKey('ok')) return null;
+  return _failure(value['failure']);
+}
+
+StartupFailure? _failure(Object? value) {
+  if (value is! Map || value['code'] is! String) return null;
+  return StartupFailure(value['code'] as String, Map<String, Object?>.from(value));
+}
+
+// `autostart` of the status report (src/local-runtime/lifecycle.js), present
+// only while automatic restarts have given up.
+String? _gaveUpAt(Map status) {
+  final autostart = status['autostart'];
+  return autostart is Map && autostart['gaveUp'] == true && autostart['at'] is String ? autostart['at'] as String : null;
+}
+
+Map? _jsonObject(String line) {
+  final text = line.trim();
+  if (!text.startsWith('{')) return null;
+  try {
+    final value = jsonDecode(text);
+    return value is Map ? value : null;
+  } on FormatException {
+    return null;
+  }
 }
 
 /// Asks a controller or the CLI for its startup steps as lines
@@ -37,15 +71,8 @@ const stageMarkersEnvironment = {'FULI_STAGE_MARKERS': '1'};
 /// its own (src/desktop/desktop-controller.js `stageReporter`). The result
 /// line carries `ok`, so it is never mistaken for one of these.
 String? parseStageLine(String line) {
-  final text = line.trim();
-  if (!text.startsWith('{')) return null;
-  final Object? value;
-  try {
-    value = jsonDecode(text);
-  } on FormatException {
-    return null;
-  }
-  if (value is! Map || value.containsKey('ok')) return null;
+  final value = _jsonObject(line);
+  if (value == null || value.containsKey('ok')) return null;
   final stage = value['stage'];
   return stage is String && stage.isNotEmpty ? stage : null;
 }
@@ -54,9 +81,10 @@ String? parseStageLine(String line) {
 /// [currentPackageRoot] is set when this client runs from a version the
 /// installation replaced (`status: superseded`): the version to open instead.
 class ControllerContext {
-  const ControllerContext({required this.dataDir, required this.instanceKey, this.currentPackageRoot});
+  const ControllerContext({required this.dataDir, required this.instanceKey, this.currentPackageRoot, this.logDir});
 
   final String dataDir;
+  final String? logDir;
   final String instanceKey;
   final String? currentPackageRoot;
 }
@@ -70,7 +98,9 @@ ControllerContext? parseControllerContext(String stdout) {
   if ((reply?['ok'] != true && !superseded) || dataDir is! String || dataDir.isEmpty) return null;
   // windows-controller.js: the first 32 hex digits of the data directory's SHA-256.
   if (instanceKey is! String || !RegExp(r'^[0-9a-f]{32}$').hasMatch(instanceKey)) return null;
-  return ControllerContext(dataDir: dataDir, instanceKey: instanceKey, currentPackageRoot: superseded ? current : null);
+  final logDir = reply?['logDir'];
+  return ControllerContext(dataDir: dataDir, instanceKey: instanceKey, currentPackageRoot: superseded ? current : null,
+      logDir: logDir is String && logDir.isNotEmpty ? logDir : null);
 }
 
 RuntimeReport parseCliStatus(String stdout) {
@@ -88,7 +118,8 @@ RuntimeReport parseCliStatus(String stdout) {
   if (status is! Map) return const RuntimeReport(RuntimeState.unknown, error: 'fuli status printed invalid JSON.');
   final console = status['console'];
   return RuntimeReport(_state(status['status']), consolePort: _consolePort(status),
-      crashed: console is Map && console['crashed'] == true, consoleStopped: _consoleStopped(status));
+      crashed: console is Map && console['crashed'] == true, consoleStopped: _consoleStopped(status),
+      autostartGaveUpAt: _gaveUpAt(status));
 }
 
 // `console.status` of the status report (src/local-runtime/lifecycle.js): ready, unverified or stopped.

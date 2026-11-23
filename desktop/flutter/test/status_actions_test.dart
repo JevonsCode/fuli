@@ -18,6 +18,28 @@ void main() {
   final openConsole = find.byKey(const Key('open-console'));
   final primary = find.byKey(const Key('primary-action'));
 
+  testWidgets('a start that failed offers 查看启动日志 where 打开控制台 sits, and it opens the log folder', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'no answer',
+        failure: StartupFailure('console_not_answering', {'seconds': 60})));
+    final opener = RecordingOpener();
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: opener)));
+    await controller.refresh();
+    await tester.pump();
+    final place = tester.getRect(openConsole);
+    await controller.start();
+    await tester.pump();
+    expect(find.textContaining('没有启动：控制台 60 秒内没有应答'), findsOneWidget);
+    final action = find.byKey(const Key('notice-action'));
+    expect(find.descendant(of: action, matching: find.text('查看启动日志')), findsOneWidget);
+    // It takes the left slot; the start button keeps its place.
+    expect(tester.getRect(action).left, place.left);
+    expect(find.descendant(of: primary, matching: find.text('启动 FULI')), findsOneWidget);
+    await tester.tap(action);
+    expect(opener.opened.single.toFilePath(), '/fuli-data/logs/');
+  });
+
   testWidgets('打开控制台 and 启动 / 停止 keep their places while work runs, ends, stops and starts', (tester) async {
     final updateStep = Completer<void>();
     final (api, runtime) = demoScenario('needs');

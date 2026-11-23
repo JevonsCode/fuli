@@ -117,10 +117,14 @@ class _WindowState extends State<_Window> {
           // has run longer than usual — what it is waiting on.
           final step = strings.startupStage(controller.startupStage);
           final waited = controller.startupWaited;
+          final slow = waited != null && waited >= FuliController.stageSlowAfter;
           return WaitingScreen(
             label: step ?? controller.pending ?? bringingUp,
-            detail: waited != null && waited >= FuliController.stageSlowAfter
-                ? strings.startupStageSlow(controller.startupStage, waited)
+            detail: slow ? strings.startupStageSlow(controller.startupStage, waited) : null,
+            // A step that takes long can be looked into while it runs; it is not cancelled.
+            actionLabel: slow ? strings.viewStartupLog : null,
+            onAction: slow
+                ? () async => _services.opener.open(Uri.directory(await controller.runtime.logDirectory()))
                 : null,
           );
         }

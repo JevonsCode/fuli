@@ -1,4 +1,5 @@
 import '../doctor/doctor_report.dart';
+import '../runtime/fuli_runtime.dart';
 
 // Every sentence the client shows, in Chinese and English, chosen once from
 // the system locale. Each entry keeps both languages side by side.
@@ -120,9 +121,11 @@ class Strings {
     return '$waiting${chinese ? '' : ' '}$why${chinese ? '可以先去忙别的，好了会自己进去。' : ' You can leave it; the window goes in by itself when it is ready.'}';
   }
 
-  // "1 分 20 秒" / "1 min 20 s", from whole seconds only.
+  // "1 分 20 秒" / "1 min 20 s", from whole seconds only; hours and days alone.
   String _spell(Duration waited) {
     final seconds = waited.inSeconds;
+    if (waited.inDays > 0) return _t(' ${waited.inDays} 天', '${waited.inDays} d');
+    if (waited.inHours > 0) return _t(' ${waited.inHours} 小时', '${waited.inHours} h');
     if (seconds < 60) return _t(' $seconds 秒', '$seconds seconds');
     final minutes = seconds ~/ 60, rest = seconds % 60;
     if (rest == 0) return _t(' $minutes 分钟', '$minutes min');
@@ -152,6 +155,60 @@ class Strings {
   String get updateNotBack =>
       _t('FULI 还没有重新应答，稍后会再检查。', 'FULI has not answered again yet; it is checked again shortly.');
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
+  // A start that failed for a reason it named (src/local-runtime/startup-failure.js):
+  // what happened, then the next step as the button beside it; never a command
+  // to type. Null for a code this version does not know.
+  String? startFailedBecause(StartupFailure failure) {
+    final since = _clock(failure.text('since'));
+    final pid = failure.number('pid');
+    return switch (failure.code) {
+      'native_lifecycle_lock' when failure.facts['holderRunning'] == true => _t(
+          '没有启动：数据库维护锁从 $since 起被进程 $pid 占着。等它结束后再点「启动 FULI」。',
+          'FULI did not start: process $pid has held the database maintenance lock since $since. Choose Start FULI once it has ended.'),
+      'native_lifecycle_lock' => _t(
+          '没有启动：数据库维护锁从 $since 起一直没放开，没有记录是谁加的。确认没有 FULI 在更新数据库后，点「打开所在文件夹」删掉隐藏的 .neo4j-lifecycle.lock，再启动。',
+          'FULI did not start: the database maintenance lock has been held since $since with no record of who took it. '
+              'If no FULI is updating the database, choose Open its folder, delete the hidden .neo4j-lifecycle.lock, then start again.'),
+      'port_taken' => _portTaken(failure),
+      'console_not_answering' => _t(
+          '没有启动：控制台 ${failure.number('seconds') ?? 60} 秒内没有应答。图数据库和 Provider 还在运行，数据都在。可以再点「启动 FULI」重试。',
+          'FULI did not start: the console did not answer within ${failure.number('seconds') ?? 60} s. The graph database and Provider still run and your data is kept. Choose Start FULI to retry.'),
+      'console_exited' => _t('没有启动：控制台启动时退出了。图数据库和 Provider 还在运行，数据都在。可以再点「启动 FULI」重试。',
+          'FULI did not start: the console exited while starting. The graph database and Provider still run and your data is kept. Choose Start FULI to retry.'),
+      'provider_not_ready' => _t('没有启动：Provider 启动后一直没有就绪。可以再点「启动 FULI」重试。',
+          'FULI did not start: the Provider started but never became ready. Choose Start FULI to retry.'),
+      'provider_exited' => _t('没有启动：Provider 在启动时退出了。可以再点「启动 FULI」重试。',
+          'FULI did not start: the Provider exited while starting. Choose Start FULI to retry.'),
+      _ => null,
+    };
+  }
+
+  String _portTaken(StartupFailure failure) {
+    final port = failure.number('port'), pid = failure.number('pid'), command = failure.text('command');
+    final running = failure.number('runningSeconds');
+    final who = ['进程 $pid', ?command].join(' · ');
+    final whoEn = ['process $pid', ?command].join(' · ');
+    return _t(
+        '没有启动：端口 $port 被另一个程序占着（$who${running == null ? '' : '，已运行${_spell(Duration(seconds: running))}'}），FULI 没有动它。如果它是之前没停干净的 FULI 图数据库，结束它后再点「启动 FULI」。',
+        'FULI did not start: another program holds port $port ($whoEn${running == null ? '' : ', running for ${_spell(Duration(seconds: running))}'}); FULI left it alone. If it is a FULI graph database that did not stop cleanly, end it, then choose Start FULI.');
+  }
+
+  // Client sessions stopped starting FULI after repeated starts did not keep it up.
+  String autostartGaveUp(String at) => _t('自动重启已经停了：$at 起 FULI 自己启动了几次都没能保持运行，不会再自己起来。点「启动 FULI」再试。',
+      'Automatic restarts have stopped: since $at FULI started itself several times without staying up, and will not start by itself again. Choose Start FULI to try again.');
+  String get viewStartupLog => _t('查看启动日志', 'View the startup log');
+  String get openLockFolder => _t('打开所在文件夹', 'Open its folder');
+
+  // "11-23 01:24" in this computer's time, from an ISO time; the text itself when it is none.
+  String _clock(String? iso) {
+    final at = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+    if (at == null) return iso ?? '?';
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(at.month)}-${two(at.day)} ${two(at.hour)}:${two(at.minute)}';
+  }
+
+  /// [autostartGaveUp]'s time, from the status report's ISO time.
+  String clockOf(String iso) => _clock(iso);
   // Which step of the start did not finish. [step] is a startupStage sentence.
   String startFailedAtStep(String step, String reason) => _t(
       '没有启动成功，卡在「${step.replaceAll('…', '')}」：$reason',

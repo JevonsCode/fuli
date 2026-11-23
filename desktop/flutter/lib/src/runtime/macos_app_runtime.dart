@@ -38,6 +38,10 @@ class MacosAppRuntime implements FuliRuntime {
   @override
   Future<int> consolePort() => readConsolePort(defaultDataDir(os: 'macos', env: env));
 
+  // src/setup/paths.js: <data>/logs holds runtime.log and the services' logs.
+  @override
+  Future<String> logDirectory() async => '${defaultDataDir(os: 'macos', env: env)}/logs';
+
   @override
   Future<RuntimeReport> status() => _action('status');
 

@@ -137,6 +137,9 @@ class DemoRuntime implements FuliRuntime {
   Future<int> consolePort() async => port;
 
   @override
+  Future<String> logDirectory() async => '/fuli-data/logs';
+
+  @override
   Future<RuntimeReport> status() async => RuntimeReport(_state);
 
   @override

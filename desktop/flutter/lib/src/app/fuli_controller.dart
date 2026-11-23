@@ -31,10 +31,16 @@ Duration pollDelay({required bool visible, required int failures}) {
   return base * factor;
 }
 
+/// What the person can click next to an outcome, instead of a command to type.
+enum NoticeAction { viewStartupLog, openLockFolder }
+
 class Notice {
-  const Notice(this.text, {this.error = false});
+  const Notice(this.text, {this.error = false, this.action, this.path});
   final String text;
   final bool error;
+  final NoticeAction? action;
+  // The folder [action] opens.
+  final String? path;
 }
 
 typedef ApiFactory = FuliApi Function(int port);
@@ -293,7 +299,11 @@ class FuliController extends ChangeNotifier {
         port: port,
         installed: report.state != RuntimeState.notFound,
         running: report.running,
-        problem: report.running ? strings.noAnswer : null,
+        problem: report.running
+            ? strings.noAnswer
+            : report.autostartGaveUpAt != null
+                ? strings.autostartGaveUp(strings.clockOf(report.autostartGaveUpAt!))
+                : null,
         reached: false,
         crashed: report.crashed,
       );
@@ -377,14 +387,25 @@ class FuliController extends ChangeNotifier {
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
       final report = await _call(() => runtime.start(onStage: _enterStage));
-      _notice = _startFailure(report) ?? _notice;
+      _notice = await _startFailure(report) ?? _notice;
     });
   }
 
   // Why a start did not work, in the person's words where the cause is known; null when it worked.
-  Notice? _startFailure(RuntimeReport report) {
+  Future<Notice?> _startFailure(RuntimeReport report) async {
     final error = report.error;
     if (error == null) return null;
+    final failure = report.failure;
+    final because = failure == null ? null : strings.startFailedBecause(failure);
+    if (because != null) {
+      // A lock nobody holds is cleared by the person in its folder; anything else
+      // is looked into through the start's log.
+      final lock = failure!.code == 'native_lifecycle_lock' && failure.facts['holderRunning'] != true
+          ? failure.text('lockPath') : null;
+      return lock != null
+          ? Notice(because, error: true, action: NoticeAction.openLockFolder, path: _parentOf(lock))
+          : Notice(because, error: true, action: NoticeAction.viewStartupLog, path: await runtime.logDirectory());
+    }
     final shown = ProviderConflict.parse(error)?.shown;
     // Which step did not finish, when the start named one: a failure in the
     // middle of a long start otherwise reads as if nothing had happened.
@@ -397,7 +418,14 @@ class FuliController extends ChangeNotifier {
                 : step != null
                     ? strings.startFailedAtStep(step, error)
                     : strings.startFailed(error),
-        error: true);
+        error: true,
+        action: NoticeAction.viewStartupLog,
+        path: await runtime.logDirectory());
+  }
+
+  static String _parentOf(String path) {
+    final cut = path.lastIndexOf(RegExp(r'[\\/]'));
+    return cut > 0 ? path.substring(0, cut) : path;
   }
 
   // The start says it has begun another step; the window follows it.
@@ -450,7 +478,7 @@ class FuliController extends ChangeNotifier {
         return;
       }
       _runtimePort = null;
-      _notice = _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
+      _notice = await _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
     });
   }
 

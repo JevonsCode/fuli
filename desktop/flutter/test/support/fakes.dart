@@ -35,6 +35,9 @@ class FixedRuntime implements FuliRuntime {
   Future<int> consolePort() async => port;
 
   @override
+  Future<String> logDirectory() async => '/fuli-data/logs';
+
+  @override
   Future<RuntimeReport> status() async {
     calls.add('status');
     return report;

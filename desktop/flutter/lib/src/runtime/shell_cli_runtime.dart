@@ -43,6 +43,9 @@ class ShellCliRuntime implements FuliRuntime {
   Future<int> consolePort() => readConsolePort(defaultDataDir(os: os, env: env));
 
   @override
+  Future<String> logDirectory() async => '${defaultDataDir(os: os, env: env)}/logs';
+
+  @override
   Future<RuntimeReport> status() async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     final result = await _sh(_mode!, 'fuli status --json', _commandTimeout);
@@ -74,21 +77,24 @@ class ShellCliRuntime implements FuliRuntime {
   // they are read as they arrive.
   Future<RuntimeReport> _command(String command, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
+    StartupFailure? failure;
     final result = onStage == null
         ? await _sh(_mode!, command, _commandTimeout)
-        : await _shFollowing(_mode!, command, _commandTimeout, onStage);
+        : await _shFollowing(_mode!, command, _commandTimeout, onStage, (reported) => failure = reported);
     final after = await status();
     if (result != null && result.exitCode == 0) return after;
     final stderr = '${result?.stderr ?? ''}'.trim();
     final error = stderr.isEmpty
         ? '$command did not finish.'
         : stderr.substring(stderr.length > _errorTail ? stderr.length - _errorTail : 0);
-    return RuntimeReport(after.state, consolePort: after.consolePort, error: error);
+    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, failure: failure,
+        autostartGaveUpAt: after.autostartGaveUpAt);
   }
 
   // Runs the command with FULI_STAGE_MARKERS set, so each startup step arrives
   // as its own line while the command is still running.
-  Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage) async {
+  Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage,
+      void Function(StartupFailure) onFailure) async {
     try {
       final process = await Process.start(_shell, [mode, command],
           environment: {...env, ...stageMarkersEnvironment});
@@ -97,6 +103,8 @@ class ShellCliRuntime implements FuliRuntime {
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
         final stage = parseStageLine(line);
         if (stage != null) onStage(stage);
+        final failure = parseFailureLine(line);
+        if (failure != null) onFailure(failure);
       }).timeout(timeout);
       await reading;
       return ProcessResult(process.pid, await process.exitCode.timeout(timeout), '', errors.toString());

@@ -72,6 +72,65 @@ void main() {
     expect(controller.startupWaited, isNull);
   });
 
+  test('a failed start that names its cause is read with the facts behind it', () {
+    final reply = parseControllerReply(
+        '{"ok":false,"status":"stopped","failure":{"code":"port_taken","port":7687,"pid":4321,"command":"java","runningSeconds":28800}}');
+    expect(reply.failure?.code, 'port_taken');
+    expect(reply.failure?.number('pid'), 4321);
+    expect(parseFailureLine('{"failure":{"code":"console_exited","logPath":"/x"}}')?.code, 'console_exited');
+    expect(parseFailureLine('{"ok":false,"failure":{"code":"console_exited"}}'), isNull);
+    expect(parseFailureLine('没有启动：…'), isNull);
+    // A start that worked carries no failure, whatever else it says.
+    expect(parseControllerReply('{"ok":true,"status":"running","failure":{"code":"port_taken"}}').failure, isNull);
+  });
+
+  test('every cause has a sentence in both languages that ends on something to click, never a command', () {
+    const facts = <String, Object?>{'since': '2026-11-22T17:24:35.000Z', 'pid': 4321, 'lockPath': '/d/native-runtime/.neo4j-lifecycle.lock',
+      'port': 7687, 'command': 'java', 'runningSeconds': 28800, 'seconds': 60, 'logPath': '/d/logs/runtime.log'};
+    for (final code in ['native_lifecycle_lock', 'port_taken', 'console_not_answering', 'console_exited', 'provider_not_ready', 'provider_exited']) {
+      for (final strings in [zh, en]) {
+        final text = strings.startFailedBecause(StartupFailure(code, {...facts, 'code': code}))!;
+        expect(text, isNot(contains('fuli ')), reason: '$code asks for no command');
+        expect(text, isNot(contains('`')), reason: code);
+      }
+    }
+    expect(zh.startFailedBecause(const StartupFailure('port_taken', {'port': 7687, 'pid': 4321, 'command': 'java', 'runningSeconds': 28800})),
+        startsWith('没有启动：端口 7687 被另一个程序占着（进程 4321 · java，已运行 8 小时）'));
+    expect(zh.startFailedBecause(const StartupFailure('made_up', {})), isNull);
+  });
+
+  test('a start stopped by a lock nobody holds offers its folder; any other cause, the startup log', () async {
+    final lockRuntime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'lock',
+        failure: StartupFailure('native_lifecycle_lock',
+            {'since': '2026-11-22T17:24:35.000Z', 'pid': null, 'holderRunning': false, 'lockPath': '/d/native-runtime/.neo4j-lifecycle.lock'})));
+    final lock = FuliController(apiFor: (_) => DemoFuliApi(), runtime: lockRuntime, notifier: RecordingNotifier(), strings: zh);
+    addTearDown(lock.dispose);
+    await lock.start();
+    expect(lock.notice?.action, NoticeAction.openLockFolder);
+    expect(lock.notice?.path, '/d/native-runtime');
+    expect(lock.notice?.text, contains('没有记录是谁加的'));
+
+    final portRuntime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'port',
+        failure: StartupFailure('port_taken', {'port': 7687, 'pid': 4321})));
+    final port = FuliController(apiFor: (_) => DemoFuliApi(), runtime: portRuntime, notifier: RecordingNotifier(), strings: zh);
+    addTearDown(port.dispose);
+    await port.start();
+    expect(port.notice?.action, NoticeAction.viewStartupLog);
+    expect(port.notice?.path, '/fuli-data/logs');
+  });
+
+  test('a stopped FULI whose automatic restarts gave up says so', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, autostartGaveUpAt: '2026-11-22T18:05:25.972Z'));
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    addTearDown(controller.dispose);
+    await controller.refresh();
+    expect(controller.snapshot?.problem, startsWith('自动重启已经停了：'));
+    expect(controller.snapshot?.problem, contains('点「启动 FULI」再试'));
+    expect(parseCliStatus('{"status":"stopped","console":{"status":"stopped"},"autostart":{"gaveUp":true,"at":"2026-11-22T18:05:25.972Z"}}')
+        .autostartGaveUpAt, '2026-11-22T18:05:25.972Z');
+  });
+
   test('a start that fails names the step it stopped at', () async {
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, stage: 'provider_wait', error: 'no answer'))
       ..stages = ['graph_start', 'provider_wait'];
