@@ -1,3 +1,4 @@
+import { withCheckpointSaveStatus } from '../src/graphiti/checkpoint-save-status.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
@@ -30,8 +31,11 @@ function scenario() {
 test('a changed second checkpoint is still refused, and the refusal names amend', async () => {
   const { app, task, early, corrected } = scenario();
   await checkpointTaskKnowledge(app, early);
-  await assert.rejects(checkpointTaskKnowledge(app, corrected), error =>
-    /different input/.test(error.message) && /amend: true/.test(error.message));
+  // Refused before any write, as the status an Agent acts on: nothing saved,
+  // amend: true to correct it, or a new token to keep this turn.
+  const refused = await withCheckpointSaveStatus(checkpointTaskKnowledge(app, corrected));
+  assert.deepEqual([refused.status, refused.reason], ['checkpoint_not_saved', 'task_closed']);
+  assert.match(refused.guidance, /amend: true/);
   assert.equal(app.taskContextRegistry.context(task.token, 'codex').checkpoint.amendments, undefined);
 });
 

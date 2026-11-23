@@ -207,6 +207,8 @@ function harness({ roles = {}, replies = [], model = true, connection = FAKE_CON
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
   app.roleSuggestions = new RoleSuggestionLog();
+  // These tests are about the hint itself, so the entry waits for it (task-entry-preferences.js afterGrace).
+  app.entryHintGraceMs ??= Infinity;
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: GARDEN_PATH, sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
   const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total, caller_deadline AS callerDeadline FROM model_attempts ORDER BY attempt_number')
@@ -391,16 +393,24 @@ test('once per session: the second entry and a concurrent entry make zero calls,
   assert.deepEqual(Object.keys(run.contexts.hintClaims()[0]), ['operation', 'at'], 'only the operation and time are kept');
 });
 
+// An outcome the session cannot act on stays out of the entry (rec#139) and
+// is kept only as the console note: the entry has no suggested_match, and
+// the note carries the status, reason, gate and receipt.
+async function keptOutcome(run) {
+  assert.equal(jefaOf(await run.entry()).suggested_match, undefined, 'not in the entry');
+  const [noted] = run.suggestions();
+  return noted;
+}
+
 test('one logical decision within 3 s: a hung model is really aborted, attempts are settled, unknown usage stays unknown', async () => {
   const run = harness({ roles: { jefa: jefaRole() }, replies: [hang, hang] });
   const started = Date.now();
-  const match = jefaOf(await run.entry()).suggested_match;
+  const match = await keptOutcome(run);
   const elapsed = Date.now() - started;
   assert.ok(elapsed >= 2900 && elapsed < 4000, `the role's 30 s timeout is cut to the 3 s hot path (${elapsed} ms)`);
   assert.equal(run.modelCalls[0].signal.aborted, true, 'the request was aborted, not just abandoned');
   assert.equal(run.modelCalls.length, 1, 'no retry without a second left');
   assert.deepEqual([match.status, match.reason, match.modelReceipt.fallbackReason], ['inline', 'timeout', 'timeout']);
-  assert.match(match.guidance, /Match the board yourself as usual/);
   assert.equal(match.modelReceipt.usage.totalTokens, null, 'unknown usage is not 0');
   assert.deepEqual(run.attempts().map(({ purpose, outcome, total }) => [purpose, outcome, total]), [['initial', 'failed', null]]);
   assert.equal(run.reservations(), 0);
@@ -415,19 +425,18 @@ test('one logical decision within 3 s: a hung model is really aborted, attempts 
   assert.equal(recovered.reservations(), 0);
 });
 
-test('fallbacks keep their reason and receipt; stops keep theirs and get no guidance', async () => {
+test('fallbacks and stops keep their reason and receipt in the console note, never in the entry', async () => {
   const cases = [
-    { name: '503 with fallback', role: jefaRole(), replies: [unavailable, unavailable], expect: ['inline', 'server_error'], guidance: true },
+    { name: '503 with fallback', role: jefaRole(), replies: [unavailable, unavailable], expect: ['inline', 'server_error'] },
     { name: '503 without fallback', role: jefaRole({ fallbackToSession: false }), replies: [unavailable, unavailable], expect: ['failed', 'server_error'] },
     { name: 'budget', role: jefaRole({ budget: { ...BUDGET, maxInputTokens: 50 } }), replies: [], expect: ['paused', 'per_call_input'] },
     { name: 'refusal', role: jefaRole(), replies: [() => new Response(JSON.stringify({ error: { message: 'Request flagged by content_policy' } }),
       { status: 400, headers: { 'content-type': 'application/json' } })], expect: ['stopped', 'content_policy'] }
   ];
-  for (const { name, role, replies, expect, guidance = false } of cases) {
+  for (const { name, role, replies, expect } of cases) {
     const run = harness({ roles: { jefa: role }, replies });
-    const match = jefaOf(await run.entry()).suggested_match;
+    const match = await keptOutcome(run);
     assert.deepEqual([match.status, match.reason], expect, name);
-    assert.equal(Boolean(match.guidance), guidance, name);
     assert.equal(match.hint, undefined, name);
     assert.deepEqual(match.gate, GATE, name);
     assert.deepEqual(Object.keys(match.modelReceipt), RECEIPT_KEYS, name);
@@ -442,7 +451,7 @@ test('malicious answers: an invented task, a forged gate or an attempted write n
   // An invented task ID, then a forged gate: both fail the contract after one repair.
   const forged = harness({ roles: { jefa: jefaRole() }, replies: [answer({ payload: { choice: 'task-budget' } }),
     answer({ gate: { status: 'unlocked' }, execution: { status: 'applied' } })] });
-  const match = jefaOf(await forged.entry()).suggested_match;
+  const match = await keptOutcome(forged);
   assert.deepEqual([match.status, match.reason, match.gate], ['inline', 'invalid_output', GATE]);
   assert.deepEqual(forged.attempts().map(({ purpose, outcome }) => [purpose, outcome]), [['initial', 'invalid_output'], ['repair', 'invalid_output']]);
   forged.assertNoWrites();
@@ -451,7 +460,7 @@ test('malicious answers: an invented task, a forged gate or an attempted write n
   const actions = harness({ roles: { jefa: jefaRole() }, replies: [
     answer({ actions: [{ tool: 'update_tasks', arguments: { items: [{ id: 'task-reminder', status: 'done' }] } }] }),
     answer({ decision: 'apply', payload: { choice: 'task_1', tool: 'create_tasks' } })] });
-  assert.equal(jefaOf(await actions.entry()).suggested_match.reason, 'invalid_output');
+  assert.equal((await keptOutcome(actions)).reason, 'invalid_output');
   actions.assertNoWrites();
 
   // A valid shape whose reason demands a write stays a hint with the host's gate.
@@ -692,4 +701,25 @@ test('local Ollama smoke: Jefa matches synthetic prompts to synthetic board task
     if (match) assert.deepEqual(match.gate, GATE);
     run.assertNoWrites();
   }
+});
+
+// rec#139: the entry is the person's turn starting and never waits on Jefa's
+// model. A hung model leaves the entry going out at the grace window with no
+// suggested_match; the call still runs to its own 3 s deadline and keeps its
+// note, so the work is not thrown away and the role is not blamed.
+test('a hung model never holds the task entry: it goes out at the grace window without a hint', async () => {
+  const { ENTRY_HINT_GRACE_MS } = await import('../src/graphiti/task-entry-preferences.js');
+  const run = harness({ roles: { jefa: jefaRole() }, replies: [hang, hang] });
+  run.app.entryHintGraceMs = ENTRY_HINT_GRACE_MS;
+  const started = Date.now();
+  const entry = await run.entry();
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 1500, `the entry took ${elapsed} ms`);
+  assert.equal(jefaOf(entry).suggested_match, undefined);
+  // The model call keeps running under its own deadline and is aborted there.
+  await new Promise(resolve => setTimeout(resolve, 3300));
+  assert.equal(run.modelCalls[0].signal.aborted, true);
+  assert.deepEqual(run.attempts().map(({ outcome, callerDeadline }) => [outcome, callerDeadline]), [['failed', 1]],
+    'a timeout under the tightened deadline stays the caller\'s, so the top bar stays green');
+  run.assertNoWrites();
 });

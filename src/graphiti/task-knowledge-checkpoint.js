@@ -25,7 +25,7 @@ import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
-import { admittedTask } from './checkpoint-save-status.js';
+import { admittedTask, closedTaskRefusal } from './checkpoint-save-status.js';
 import { roundtableTurn } from '../agent-roundtable/turn-receipt.js';
 
 export async function checkpointTaskKnowledge(application, {
@@ -97,6 +97,10 @@ export async function checkpointTaskKnowledge(application, {
       ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (!amend && task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
+    // A closed task is not a conflict to resolve but a token to replace: the
+    // call saved nothing and says how to keep this turn's knowledge
+    // (checkpoint-save-status.js checkpointOnClosedTask).
+    if (task.checkpoint.phase === 'complete') throw closedTaskRefusal();
     throw validationError(checkpointConflictMessage(task.checkpoint));
   }
   // An amendment finishes from its stored entry: its log, decision and event (rec#85).

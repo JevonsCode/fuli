@@ -37,6 +37,16 @@ const STATED_SCOPE = [
   /^Only\s+applies\s+to\s+([^,.:;]{2,60})/iu
 ];
 
+// What follows such a word when it names a time or a condition rather than
+// what the rule applies to: 「仅限周五发布，其他时间不要发版」 is a rule about
+// releasing, for every task, not one limited to "周五发布" (review of #1070).
+// Where the words could be either, they are not a scope: a rule FULI wrongly
+// ranks last costs more than a scope it leaves to the model.
+const NOT_A_SCOPE = new RegExp('(?:会话|周[一二三四五六日天末]|星期|礼拜|工作日|节假日|上午|下午|中午|晚上|夜里|夜间|白天|凌晨'
+  + '|早上|今天|明天|每天|每周|每月|\\d+\\s*[点时:：]|之前|之后|以前|以后|时候|期间|确认|同意|批准|允许|通过后|完成后'
+  + '|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekday|weekend|morning|afternoon|evening|night'
+  + '|today|tomorrow|daily|weekly|before|after|until|unless|once|approv|confirm)', 'iu');
+
 // The scope an instruction states in prose, or null. A session clause is
 // already structured (preference-task-scope.js legacyPreferenceSession), so it
 // is left to that reader rather than repeated here.
@@ -45,7 +55,7 @@ export function statedPreferenceScope(instruction) {
   const text = instruction.trim();
   for (const pattern of STATED_SCOPE) {
     const scope = pattern.exec(text)?.[1]?.trim();
-    if (scope && !/会话/u.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
+    if (scope && !NOT_A_SCOPE.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
   }
   return null;
 }
