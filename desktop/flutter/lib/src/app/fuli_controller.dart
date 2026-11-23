@@ -151,16 +151,26 @@ class FuliController extends ChangeNotifier {
   /// be used, so 「放弃这次导入…」 is the way on.
   bool get abandonableImport => _lastFailure != null && strings.abandonableImport(_lastFailure!);
 
+  /// Whether a switch's newer version neither finished nor went back to a
+  /// start, so 「保留新版本并解除这把锁…」 is offered beside trying again.
+  bool get keepableSwitch => _lastFailure != null && strings.keepableSwitch(_lastFailure!);
+
+  /// The recovered folders holding graph data the last recovery reported, for
+  /// the person to see where it is and how to move it back.
+  List<Map<String, Object?>> get keptGraphData => _keptGraphData;
+  List<Map<String, Object?>> _keptGraphData = const [];
+
   /// Whether the person confirms a recovery in a terminal, not in this window.
   bool get recoversInTerminal => runtime.recoversInTerminal;
 
   /// What a recovery would do (or, with [abandonImport], giving up the
-  /// interrupted import), for the person to confirm; null when it would do
-  /// nothing or refuses: the notice then says why, and the refusal becomes
-  /// what the primary action follows. Changes nothing.
-  Future<RecoveryPlan?> previewRecovery({bool abandonImport = false}) async {
-    if (!(abandonImport ? abandonableImport : recoverable) || _pending != null) return null;
-    final report = await runtime.previewRecovery(abandonImport: abandonImport);
+  /// interrupted import; with [keepNewer], keeping the newer version of the
+  /// switch), for the person to confirm; null when it would do nothing or
+  /// refuses: the notice then says why, and the refusal becomes what the
+  /// primary action follows. Changes nothing.
+  Future<RecoveryPlan?> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
+    if (!(abandonImport ? abandonableImport : keepNewer ? keepableSwitch : recoverable) || _pending != null) return null;
+    final report = await runtime.previewRecovery(abandonImport: abandonImport, keepNewer: keepNewer);
     final plan = report.recoveryPlan;
     if (plan == null || plan.kind == 'refused' || plan.kind == 'nothing' || plan.digest == null) {
       if (plan?.kind == 'refused') _lastFailure = StartupFailure('recovery_refused', plan!.facts);
@@ -173,15 +183,17 @@ class FuliController extends ChangeNotifier {
   }
 
   /// Recovers with the plan the person chose (the one shown, or the
-  /// alternative beside it; [abandonImport] for giving up the import), then
-  /// starts FULI; says where the record is.
-  Future<void> recoverAndStart(RecoveryPlan plan, {bool abandonImport = false}) {
+  /// alternative beside it; [abandonImport] for giving up the import,
+  /// [keepNewer] for keeping the newer version), then starts FULI; says where
+  /// the record is, and keeps the graph data it reports moved aside.
+  Future<void> recoverAndStart(RecoveryPlan plan, {bool abandonImport = false, bool keepNewer = false}) {
     final digest = plan.digest;
     if (digest == null) return Future.value();
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
-      final report = await _call(() => runtime.recoverAndStart(digest, abandonImport: abandonImport, onStage: _enterStage));
+      final report = await _call(() => runtime.recoverAndStart(digest, abandonImport: abandonImport, keepNewer: keepNewer, onStage: _enterStage));
       final record = report.recoveryRecord;
+      _keptGraphData = report.keptGraphData;
       _notice = await _startFailure(report) ?? (record != null ? Notice(strings.recovered(record)) : _notice);
     });
   }

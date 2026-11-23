@@ -125,6 +125,24 @@ test('failed graph import restores the target from an automatic rollback dump', 
   assert.deepEqual((await readGraphBackupManifest(point.path)).instances.map(({ id }) => id), ['personal', 'workspace']);
 });
 
+test('an import whose automatic rollback did not finish names the copy it kept and the command that brings it back', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-graph-rollback-incomplete-'));
+  await exportGraphData({ outputDir: join(root, 'source'), sourceMode: 'container', instances: ['personal'],
+    adapter: { async stop() { return { resume: false }; }, async dump(instance, destination) { await writeFile(destination, `new:${instance}`); }, async start() {} } });
+  const adapter = {
+    async stop() { return { resume: false }; },
+    async dump(instance, destination) { await writeFile(destination, `old:${instance}`); },
+    async load(_instance, _source, options = {}) { throw new Error(options.rollback ? 'rollback load failed' : 'load failed'); },
+    async start() {}
+  };
+  await assert.rejects(importGraphData({ inputDir: join(root, 'source'), targetMode: 'native', rollbackDir: join(root, 'rollback'), adapter }), (error) => {
+    const copy = /kept at (\S+);/.exec(error.message)?.[1];
+    assert.match(copy ?? '', /[\\/]rollback[\\/]before-import-/);
+    assert.ok(error.message.includes(`fuli graph import --input "${copy}" --yes`));
+    return true;
+  });
+});
+
 test('graph import does not claim an empty rollback bundle for a fresh target', async () => {
   const root = await mkdtemp(join(tmpdir(), 'fuli-graph-fresh-target-'));
   const inputDir = join(root, 'source');

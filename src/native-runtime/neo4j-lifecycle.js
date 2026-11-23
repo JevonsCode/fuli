@@ -119,7 +119,8 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
     const kept = graphBackup ? ` The graph backup taken before the upgrade is kept at ${graphBackup}.` : '';
     const nextBytes = Buffer.from(`${JSON.stringify(target, null, 2)}\n`);
     const targetServices = service(target);
-    writeJsonFileAtomic(journal, { action, phase: 'switching', previous: current, next: target, storeFormats: before });
+    const switching = { action, phase: 'switching', previous: current, next: target, storeFormats: before };
+    writeJsonFileAtomic(journal, switching);
     let switched = false, consoleStartAttempted = false;
     try {
       await lock.assertHeld(); await unchanged(paths.nativeRuntimeManifestPath, plan.bytes);
@@ -143,7 +144,14 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
         if (JSON.stringify(await formats(target)) !== JSON.stringify(before)) throw new Error('Neo4j storage format changed; unsafe rollback blocked.');
       } catch (recoveryError) { throw new AggregateError([error, recoveryError], 'Neo4j rollback needs attention. The candidate was not replaced and recovery evidence was kept.' + kept); }
       if (await neo4jAssetFingerprint(current.neo4jHome) !== plan.fingerprint) throw new Error('Previous assets changed; recovery needs attention.' + kept);
-      if (switched) writeTextFileAtomic(paths.nativeRuntimeManifestPath, plan.bytes);
+      if (switched) {
+        // The newer Neo4j already opened the store: recorded before the older
+        // descriptor goes back, so a recovery after this continues the back-out
+        // (and checks the older version starts) instead of undoing a switch
+        // that never took effect (neo4j-recovery.js).
+        writeJsonFileAtomic(journal, { ...switching, backingOut: true });
+        writeTextFileAtomic(paths.nativeRuntimeManifestPath, plan.bytes);
+      }
       const old = service(current);
       try {
         await old.start({ providers: wasProviderRunning });

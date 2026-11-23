@@ -197,9 +197,10 @@ void main() {
     expect(zh.recoveryAlternativeWords(const RecoveryPlan('finish_switch', [], 'd', {'alternativeRefused': 'no_fingerprint'})), contains('不能撤回'));
     for (final reason in ['holder_running', 'fuli_running', 'cannot_inspect', 'no_holder', 'too_recent', 'cannot_stop_services', 'manifest_changed',
       'unknown_journal', 'unmanaged_path', 'assets_changed', 'unknown_assets', 'no_fingerprint', 'format_changed', 'format_unreadable', 'start_failed',
-      'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'restore_point_usable', 'no_import', 'lock_changed', 'step_failed', 'plan_changed']) {
+      'restore_failed', 'restore_point_unknown', 'restore_point_damaged', 'restore_point_usable', 'no_import', 'lock_changed', 'step_failed', 'plan_changed',
+      'recovery_running', 'keep_newer_unavailable']) {
       final said = zh.recoveryRefused(reason, const {'pid': 7, 'directory': 'neo4j-assets/jvs-a-1', 'step': 'restore'});
-      expect(said, matches(RegExp('^没有(恢复|放弃)：')), reason: reason);
+      expect(said, matches(RegExp('^没有(恢复|放弃|解锁)：')), reason: reason);
       expect(said, isNot(contains(reason)), reason: reason);
       expect(said, isNot(contains('fuli ')), reason: '$reason: never a command to type');
     }
@@ -215,17 +216,42 @@ void main() {
     // Abandoning says why the copy cannot be used, what ends up empty, and the copies an import can bring back.
     final abandon = zh.recoveryPlanWords(const RecoveryPlan('abandon_load', [], 'd', {
       'copyProblem': 'damaged', 'backupPath': '/x/b', 'instances': ['personal', 'workspace'], 'allInstances': true, 'dataDir': '/x',
+      'written': ['personal'], 'unsure': ['workspace'], 'untouched': [], 'folder': '/x/native-runtime/recovered/t',
+      'moveBack': [{'from': '/x/native-runtime/recovered/t/personal/data/databases/neo4j', 'to': '/x/native-runtime/personal/data/databases/neo4j'}],
       'copies': [{'path': '/x/backups/graph/before-import-0', 'createdAt': '2026-11-20T00:00:00.000Z', 'bytes': 2048, 'instances': ['personal']}],
     })).join('\n');
     expect(abandon, contains('已损坏（读不出或校验和不对）：/x/b'));
-    expect(abandon, contains('按全部图谱处理'));
-    expect(abandon, contains('个人图谱、工作区图谱会变成空的'));
+    expect(abandon, contains('每个图谱都按文件的修改时间判断'));
+    expect(abandon, contains('个人图谱：导入开始后它的库被写过，可能只写了一半'));
+    expect(abandon, contains('工作区图谱：判断不了它有没有被这次导入写过，所以一起挪开；它的库是完好的可能性很大'));
+    expect(abandon, contains('mv "/x/native-runtime/recovered/t/personal/data/databases/neo4j" "/x/native-runtime/personal/data/databases/neo4j"'));
     expect(abandon, contains('fuli graph import --input "/x/backups/graph/before-import-0" --data-dir "/x" --yes'));
     // Clearing old recovery folders says it deletes them, by the rule the plan carries.
     expect(zh.recoveryPlanWords(const RecoveryPlan('release_dump', [{'do': 'prune', 'path': '/x/recovered/a', 'bytes': 1024, 'keepDays': 40, 'keepRuns': 4}], 'd', {}))[1],
-        contains('永久删除一个旧的恢复文件夹（a，1.0 KB：超过 40 天，之后又有至少 4 次恢复'));
-    // A restored load that does not start says so, not the switch's two choices.
-    expect(zh.recoveryRefused('start_failed', const {'planKind': 'restore_load'}), contains('已经从导入前的副本恢复'));
+        contains('永久删除一个旧的恢复文件夹（a，1.0 KB：只有数据库程序和记录，没有图谱数据；超过 40 天，之后又有至少 4 次恢复'));
+    // A newer version that did not start: the other way only when it is there, and always the way out of keeping it.
+    final alone = zh.recoveryRefused('start_failed', const {'planKind': 'finish_switch', 'alternativeRefused': 'no_fingerprint', 'toVersion': '5.26.28',
+      'startFailure': {'message': 'no answer', 'failure': {'code': 'port_taken', 'port': 7687, 'pid': 55}, 'logs': ['/x/personal/logs']}});
+    expect(alone, isNot(contains('撤回')));
+    expect(alone, contains('保留新版本并解除这把锁'));
+    expect(alone, contains('端口 7687 被进程 55 占着'));
+    expect(alone, contains('日志在 /x/personal/logs'));
+    expect(zh.recoveryRefused('start_failed', const {'planKind': 'finish_switch', 'alternative': 'back_out_switch', 'fromVersion': '5.26.0'}), contains('撤回到 5.26.0'));
+    expect(zh.keepableSwitch(const StartupFailure('recovery_refused', {'reason': 'start_failed', 'planKind': 'finish_switch'})), isTrue);
+    expect(zh.keepableSwitch(const StartupFailure('recovery_refused', {'reason': 'format_changed', 'planKind': 'back_out_switch'})), isTrue);
+    expect(zh.keepableSwitch(const StartupFailure('recovery_refused', {'reason': 'restore_failed', 'planKind': 'restore_load'})), isFalse);
+    expect(zh.recoverable(const StartupFailure('recovery_refused', {'reason': 'format_changed', 'planKind': 'finish_switch'})), isTrue,
+        reason: 'trying again and keeping the newer version both sit behind 恢复并启动');
+    // Keeping the newer version says what is open afterwards, with the backup and the command that imports it.
+    final keep = zh.recoveryPlanWords(const RecoveryPlan('keep_newer', [{'do': 'archive-journal'}, {'do': 'release-lock'}], 'd', {'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j'})).join('\n');
+    expect(keep, contains('保留新版本5.26.28并解除这把锁'));
+    expect(keep, contains('fuli graph import --input "/x/before-neo4j" --yes'));
+    // Graph data a recovery moved aside: where, how big, which graphs, how to move it back.
+    final kept = zh.keptGraphDataWords(const [{'path': '/x/recovered/t', 'bytes': 2048, 'instances': ['workspace'],
+      'stores': [{'from': '/x/recovered/t/workspace/data/databases/neo4j', 'to': '/x/workspace/data/databases/neo4j'}]}]).join('\n');
+    expect(kept, contains('/x/recovered/t · 2.0 KB · 工作区图谱'));
+    expect(kept, contains('mv "/x/recovered/t/workspace/data/databases/neo4j" "/x/workspace/data/databases/neo4j"'));
+    expect(kept, contains('自动清理不会删它们'));
   });
 
   test('a start stopped at a lock an update left offers no release', () async {

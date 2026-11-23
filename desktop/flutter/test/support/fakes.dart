@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:fuli_desktop/src/platform/caption_controls.dart';
 import 'package:fuli_desktop/src/platform/ports.dart';
 import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
+import 'package:fuli_desktop/src/runtime/runtime_output.dart';
 
 class RecordingNotifier implements Notifier {
   final List<String> bodies = [];
@@ -79,14 +80,14 @@ class FixedRuntime implements FuliRuntime {
   bool recoversInTerminal = false;
 
   @override
-  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) async {
-    calls.add(abandonImport ? 'abandon-import-preview' : 'recover-preview');
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
+    calls.add('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
     return RuntimeReport(RuntimeState.stopped, recoveryPlan: recoveryPlan);
   }
 
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) async {
-    calls.add('${abandonImport ? 'abandon-import-start' : 'recover-start'} $digest');
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) async {
+    calls.add('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start $digest');
     return recoverReport ?? report;
   }
 

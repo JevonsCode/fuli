@@ -158,8 +158,12 @@ export async function importGraphData({
         }
       }
       if (rollbackError) {
+        // The copy taken before is kept (rollbackReady): say where, and how to bring it back.
+        const back = rollbackReady
+          ? ` The graph from before the import is kept at ${rollbackRoot}; bring it back with: fuli graph import --input "${rollbackRoot}" --yes`
+          : '';
         throw new AggregateError([error, rollbackError],
-          'Graph import failed and its automatic rollback was incomplete.');
+          `Graph import failed and its automatic rollback was incomplete.${back}`);
       }
       throw error;
     }

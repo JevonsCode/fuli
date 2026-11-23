@@ -272,18 +272,26 @@ class Strings {
   bool recoverable(StartupFailure failure) =>
       failure.code == 'native_recovery_needed' ||
       (failure.code == 'native_lifecycle_lock' && failure.text('holder') == 'gone') ||
-      (failure.code == 'recovery_refused' && _retryable.contains(failure.text('reason')));
+      (failure.code == 'recovery_refused' && _retryable.contains(failure.text('reason'))) ||
+      keepableSwitch(failure);
 
   // An interrupted import whose own copy cannot be used: 「放弃这次导入…」 is the
   // way on, and it is the person's own choice (its graphs end up empty).
   bool abandonableImport(StartupFailure failure) =>
       failure.code == 'recovery_refused' && const {'restore_point_unknown', 'restore_point_damaged'}.contains(failure.text('reason'));
 
+  // A switch whose newer version neither finished nor went back to a start:
+  // 「保留新版本并解除这把锁…」 is offered beside trying again.
+  bool keepableSwitch(StartupFailure failure) =>
+      failure.code == 'recovery_refused' &&
+      const {'start_failed', 'format_changed'}.contains(failure.text('reason')) &&
+      const {'finish_switch', 'back_out_switch', 'continue_back_out'}.contains(failure.text('planKind'));
+
   static const _retryable = {
     'holder_running', 'fuli_running', 'cannot_inspect', 'too_recent', 'cannot_stop_services', 'unknown_assets',
     'format_unreadable', 'start_failed', 'restore_failed', 'lock_changed', 'step_failed', 'plan_changed',
     // Asked to abandon an import there is no reason (or no import) to abandon: the ordinary recovery is the way.
-    'restore_point_usable', 'no_import',
+    'restore_point_usable', 'no_import', 'recovery_running', 'keep_newer_unavailable',
   };
 
   // Fits the status bar's primary place (status_actions.dart `_primaryWidth`).
@@ -297,6 +305,12 @@ class Strings {
   String get abandonImport => _t('放弃这次导入…', 'Abandon the import…');
   String get abandonImportTitle => _t('放弃这次没做完的导入？', 'Abandon the unfinished import?');
   String get abandonImportConfirm => _t('放弃导入，清空这些图谱', 'Abandon and empty these graphs');
+  // Keeping the newer version of a switch that neither finishing nor backing out got to start: its own button and words.
+  String get keepNewer => _t('保留新版本并解除这把锁…', 'Keep the newer version and unlock…');
+  String get keepNewerTitle => _t('保留新版本并解除这把锁？', 'Keep the newer version and release the lock?');
+  String get keepNewerConfirm => _t('保留新版本并解锁', 'Keep it and unlock');
+  // After a recovery that left graph data in the recovered folder.
+  String get keptGraphDataTitle => _t('挪开的图谱数据还在', 'The graph data that was moved aside is kept');
   // A window running the `fuli` CLI: the CLI acts only at a terminal, so the plan comes with the command to run there.
   String get recoveryInTerminalTitle => _t('在终端里完成', 'Finish this in Terminal');
   String get recoveryInTerminal =>
@@ -325,8 +339,10 @@ class Strings {
       'continue_back_out' => _t('接着做中途停下的撤回：描述文件已经写回${from ?? '旧版本'}，但${to ?? '新版本'}之前已经打开过这个库；先确认${from ?? '旧版本'}还能启动，不行就写回${to ?? '新版本'}。',
           'Continue the back-out that stopped part way: the descriptor is ${from ?? 'the older version'}\'s again, but ${to ?? 'the newer version'} had already opened the store; ${from ?? 'the older version'} must start on it, otherwise ${to ?? 'the newer version'} is written back.'),
       'finish_recovery' => _t('上一次恢复的步骤都做完了，只剩解除它加的锁。', 'The last recovery\'s steps are done; only the lock it took is left.'),
-      'abandon_load' => _t('放弃这次中途停下的导入：导入前留下的副本用不了，没法撤回到导入前。',
-          'Abandon the interrupted import: the copy taken before it cannot be used, so the graph cannot go back to before the import.'),
+      'abandon_load' => _t('放弃这次中途停下的导入：导入前留下的副本用不了，没法撤回到导入前。只把这次导入写过的库挪开，没写过的原地不动。',
+          'Abandon the interrupted import: the copy taken before it cannot be used, so the graph cannot go back to before the import. Only the databases this import wrote move aside; the others stay as they are.'),
+      'keep_newer' => _t('保留新版本${to ?? ''}并解除这把锁：不再做启动检查，切换记录移到 recovered 文件夹，解除数据库维护锁。之后起不来就是一次普通的启动失败，会说明原因和下一步。',
+          'Keep the newer version${to == null ? '' : ' $to'} and release the lock: no start check; the switch journal moves to the recovered folder and the maintenance lock is released. If it does not start afterwards, that is an ordinary failed start, which says why and what to do next.'),
       _ => plan.kind,
     };
     return [what, ..._recoveryFacts(plan), for (final step in plan.steps) '· ${_recoveryStep(step)}'];
@@ -340,6 +356,15 @@ class Strings {
     return [
       if (backup != null && (plan.kind == 'finish_switch' || plan.kind == 'back_out_switch'))
         _t('升级前的图备份在 $backup。', 'The graph backup from before the upgrade is at $backup.'),
+      if (plan.kind == 'keep_newer') ...[
+        _t('解锁之后可以重新更新一次，或用升级前的备份整库导回。', 'Afterwards you can update again, or import the backup from before the upgrade whole.'),
+        if (backup != null) ...[
+          _t('升级前的图备份在 $backup，在终端里这样导回：', 'The graph backup from before the upgrade is at $backup; import it in Terminal with:'),
+          'fuli graph import --input "$backup" --yes',
+        ],
+      ],
+      if (plan.kind == 'restore_load' && plan.facts['restored'] == true)
+        _t('图已经从导入前的副本导回，这次不再导一遍。', 'The graph is already back from the copy taken before the import; it is not imported again.'),
       if (plan.kind == 'restore_load' && copy is Map)
         _t('用这次导入开始前（${_clock('${copy['createdAt']}')}）自动留下的备份恢复 ${_names(copy['instances'])}。',
             '${_names(copy['instances'])} ${_count(copy['instances']) == 1 ? 'goes' : 'go'} back to the copy this import took before it started (${_clock('${copy['createdAt']}')}).'),
@@ -350,13 +375,16 @@ class Strings {
     ];
   }
 
-  // Why the import's copy cannot be used, which graphs end up empty, where the
-  // half-written databases go, and which copies an import can bring back.
+  // Why the import's copy cannot be used, which graphs it wrote (they end up
+  // empty), which it may have written (moved too, said as such), which stay,
+  // how to move a store back, and which copies an import can bring back.
   List<String> _abandonFacts(RecoveryPlan plan) {
     final backup = plan.text('backupPath') ?? '';
-    final instances = plan.facts['instances'];
     final dataDir = plan.text('dataDir') ?? '';
+    final folder = plan.text('folder') ?? _t('$dataDir/native-runtime/recovered/<时间>', '$dataDir/native-runtime/recovered/<time>');
     final copies = plan.facts['copies'];
+    final moveBack = plan.facts['moveBack'];
+    List<Object?> ids(String key) => plan.facts[key] is List ? plan.facts[key] as List : const [];
     return [
       switch (plan.text('copyProblem')) {
         'missing' => _t('这次导入在导入前留的副本找不到了：$backup。', 'The copy this import took before it started is gone: $backup.'),
@@ -364,11 +392,24 @@ class Strings {
         _ => _t('这次导入没有记下它在导入前留的是哪一份副本，或记下的认不出。', 'This import did not record which copy it took before it started, or recorded one FULI cannot recognise.'),
       },
       if (plan.facts['allInstances'] == true)
-        _t('这把锁是旧版本 FULI 留下的，没有记下导入的是哪些图谱，所以按全部图谱处理。', 'An older FULI took this lock and did not record which graphs it was importing, so every graph is treated as affected.'),
-      _t('继续的话，${_names(instances)}会变成空的；写了一半的库移到 $dataDir/native-runtime/recovered/<时间>/，不删除。',
-          'If you go on, ${_names(instances)} will be empty; the half-written databases move to $dataDir/native-runtime/recovered/<time>/, not deleted.'),
+        _t('这把锁是旧版本 FULI 留下的，没有记下导入的是哪些图谱，所以每个图谱都按文件的修改时间判断。',
+            'An older FULI took this lock and did not record which graphs it was importing, so every graph is judged by when its files last changed.'),
+      if (ids('written').isNotEmpty)
+        _t('${_names(ids('written'))}：导入开始后它的库被写过，可能只写了一半。继续的话会变成空的，写过的库移到 $folder，不删除。',
+            '${_names(ids('written'))}: its database was written after the import began and may be half written. If you go on, it will be empty; the database moves to $folder, not deleted.'),
+      if (ids('unsure').isNotEmpty)
+        _t('${_names(ids('unsure'))}：判断不了它有没有被这次导入写过，所以一起挪开；它的库是完好的可能性很大。继续的话会变成空的，库移到 $folder，不删除。',
+            '${_names(ids('unsure'))}: whether this import wrote it cannot be told, so it moves aside too; its database is quite likely intact. If you go on, it will be empty; the database moves to $folder, not deleted.'),
+      if (ids('untouched').isNotEmpty)
+        _t('${_names(ids('untouched'))}：导入开始后没有被写过，原地不动。', '${_names(ids('untouched'))}: not written since the import began; it stays as it is.'),
+      if (moveBack is List && moveBack.isNotEmpty) ...[
+        _t('想把挪走的库搬回原位：先退出 FULI，原位置已经有 FULI 新建的空库时先把它改名挪开，再在终端里运行：',
+            'To move a database back where it was: quit FULI first; if FULI already made a new empty database there, rename it out of the way; then run in Terminal:'),
+        for (final move in moveBack)
+          if (move is Map) 'mv "${move['from']}" "${move['to']}"',
+      ],
       if (copies is List && copies.isNotEmpty) ...[
-        _t('之后可以在终端里从一份导入前的副本整库导回（会覆盖当时的图谱）：', 'Afterwards, a whole copy from before an earlier import can be brought back in Terminal (it replaces the graph then):'),
+        _t('之后也可以在终端里从一份导入前的副本整库导回（会覆盖当时的图谱）：', 'Afterwards, a whole copy from before an earlier import can also be brought back in Terminal (it replaces the graph then):'),
         for (final copy in copies)
           if (copy is Map)
             '${_clock(copy['createdAt'] as String?)} · ${copy['bytes'] is int ? _size(copy['bytes'] as int) : '?'} · ${_names(copy['instances'])}\n'
@@ -378,6 +419,22 @@ class Strings {
             '$dataDir/backups/graph holds no copy from before an import to bring back; with an export of your own, bring it back in Terminal with fuli graph import --input <export folder>.'),
     ];
   }
+
+  /// The recovered folders that hold graph data a recovery moved aside: where,
+  /// how big, which graphs, and how to move each store back. The clean-up never
+  /// deletes them (src/native-runtime/recovered-dir.js).
+  List<String> keptGraphDataWords(List<Map<String, Object?>> folders) => [
+        _t('recovered 文件夹里有挪开的图谱数据，自动清理不会删它们；确认不需要后由你自己删除。',
+            'The recovered folder holds graph data that was moved aside; the clean-up never deletes it, so delete it yourself once you are sure it is not needed.'),
+        for (final folder in folders)
+          '${folder['path']} · ${folder['bytes'] is int ? _size(folder['bytes'] as int) : '?'} · ${_names(folder['instances'])}',
+        _t('要搬回原位：先退出 FULI，原位置已经有新建的空库时先把它改名挪开，再在终端里运行：',
+            'To move one back: quit FULI first; if a new empty database is already there, rename it out of the way; then run in Terminal:'),
+        for (final folder in folders)
+          if (folder['stores'] is List)
+            for (final store in folder['stores'] as List)
+              if (store is Map) 'mv "${store['from']}" "${store['to']}"',
+      ];
 
   int _count(Object? ids) => ids is List ? ids.length : 0;
 
@@ -416,7 +473,11 @@ class Strings {
       'stop-services' => _t('停止 FULI 记录的图数据库和 Provider', 'Stop the graph database and Provider FULI recorded'),
       'check-start' => step['revert'] != null
           ? _t('用 ${step['version']} 启动一次，确认能应答，再停下；起不来就写回新版本', 'Start ${step['version']} once, check it answers and stop it; if it does not, the newer version is written back')
-          : _t('用 ${step['version'] ?? '数据库'} 启动一次，确认能应答，再停下', 'Start ${step['version'] ?? 'the database'} once, check it answers and stop it'),
+          : step['afterRestore'] == true
+              ? _t('用 ${step['version'] ?? '数据库'} 启动一次，确认能应答，再停下；图已经导回，起不来也照样解除锁，并说明起不来的原因',
+                  'Start ${step['version'] ?? 'the database'} once, check it answers and stop it; the graph is already back, so the lock is released even if it does not start, and why is said')
+              : _t('用 ${step['version'] ?? '数据库'} 启动一次，确认能应答，再停下', 'Start ${step['version'] ?? 'the database'} once, check it answers and stop it'),
+      'mark-restored' => _t('在锁里记下「已导回」，之后重跑不会再导一遍', 'Record in the lock that the graph is back, so running again does not import it again'),
       'mark-backing-out' => _t('在切换记录里记下「正在撤回」', 'Record in the switch journal that it is being backed out'),
       'check-formats' => _t('确认存储格式和切换前一样', 'Check the store format is the one from before the switch'),
       'check-fingerprint' => _t('确认旧版本的数据库程序没有变', 'Check the older database programs did not change'),
@@ -426,8 +487,8 @@ class Strings {
       'rename' => _t('把没写完的备份改名为 ${last(step['to'])}', 'Rename the unfinished backup to ${last(step['to'])}'),
       'archive-journal' => _t('把切换记录移到 recovered 文件夹', 'Move the switch journal to the recovered folder'),
       'restore' => _t('从导入前的备份整库恢复 ${_names(step['instances'])}', 'Restore ${_names(step['instances'])} whole from the copy taken before the import'),
-      'prune' => _t('解除锁之后永久删除一个旧的恢复文件夹（${last(path)}$size：超过 ${step['keepDays']} 天，之后又有至少 ${step['keepRuns']} 次恢复；删不掉不影响恢复）',
-          'After the lock is released, permanently delete an old recovery folder (${last(path)}$size: over ${step['keepDays']} days old, with at least ${step['keepRuns']} newer recoveries; if it cannot be deleted, the recovery still counts)'),
+      'prune' => _t('解除锁之后永久删除一个旧的恢复文件夹（${last(path)}$size：只有数据库程序和记录，没有图谱数据；超过 ${step['keepDays']} 天，之后又有至少 ${step['keepRuns']} 次恢复；删不掉不影响恢复）',
+          'After the lock is released, permanently delete an old recovery folder (${last(path)}$size: only database programs and records, no graph data; over ${step['keepDays']} days old, with at least ${step['keepRuns']} newer recoveries; if it cannot be deleted, the recovery still counts)'),
       'release-lock' => _t('解除数据库维护锁', 'Release the database maintenance lock'),
       _ => '${step['do']}',
     };
@@ -435,8 +496,8 @@ class Strings {
 
   // What a moved directory is, in words.
   List<String> _movedWhat(String path) {
-    if (RegExp(r'[\\/]data[\\/]databases[\\/]neo4j$').hasMatch(path)) return ['写了一半的图数据库', 'the half-written graph database'];
-    if (RegExp(r'[\\/]data[\\/]transactions[\\/]neo4j$').hasMatch(path)) return ['它的事务日志', 'its transaction logs'];
+    if (RegExp(r'[\\/]data[\\/]databases[\\/]neo4j$').hasMatch(path)) return ['一个图谱的数据库', 'a graph database'];
+    if (RegExp(r'[\\/]transactions[\\/]neo4j$').hasMatch(path)) return ['它的事务日志', 'its transaction logs'];
     if (RegExp(r'[\\/]jvs-a-[^\\/]+$').hasMatch(path)) return ['一份数据库程序', 'a copy of the database programs'];
     return ['数据库程序', 'the database programs'];
   }
@@ -458,8 +519,27 @@ class Strings {
   String recoveryRefused(String? reason, Map<String, Object?> facts) {
     final pid = facts['pid'];
     final retry = _t('再点「恢复并启动」。', 'then choose Recover and start again.');
-    final look = _t('数据库维护锁和记录都留着，FULI 不再往下做。在托盘菜单选「导出诊断包…」，交给帮你看的人。',
-        'The maintenance lock and the records stay and FULI goes no further. Choose Export diagnostics… in the tray menu and give it to whoever helps you.');
+    final root = facts['runtimeDir'] is String ? facts['runtimeDir'] as String : 'native-runtime';
+    final backup = facts['backupPath'] is String ? facts['backupPath'] as String : null;
+    // What FULI no longer decides by itself: the way out by hand, with the paths filled in.
+    final look = _t(
+        '数据库维护锁和记录都留着，FULI 不再往下做。要自己解开：先退出 FULI，在访达里把 $root 里的 neo4j-transaction.json（如果有）和 .neo4j-lifecycle.lock 移到 $root/recovered 里（不要删除），再启动 FULI；图谱打不开时用备份整库导回${backup == null ? '' : '（升级前的备份是 $backup）'}。也可以在托盘菜单选「导出诊断包…」，交给帮你看的人。',
+        'The maintenance lock and the records stay and FULI goes no further. To get out by hand: quit FULI, move neo4j-transaction.json (if there) and .neo4j-lifecycle.lock in $root into $root/recovered in Finder (do not delete them), then start FULI; if the graph does not open, import a backup whole${backup == null ? '' : ' (the backup from before the upgrade is $backup)'}. Export diagnostics… in the tray menu also helps whoever looks.');
+    final planKind = facts['planKind'];
+    final switching = const {'finish_switch', 'back_out_switch', 'continue_back_out'}.contains(planKind);
+    final backingOut = planKind == 'back_out_switch' || planKind == 'continue_back_out';
+    final from = facts['fromVersion'] is String ? facts['fromVersion'] as String : null;
+    final to = facts['toVersion'] is String ? facts['toVersion'] as String : null;
+    // The other way out of the same switch, only when it is there.
+    final other = facts['alternative'] == 'back_out_switch'
+        ? _t('可以点「恢复并启动」选撤回到 ${from ?? '旧版本'}。', 'You can choose Recover and start and go back to ${from ?? 'the older version'}.')
+        : backingOut || facts['alternative'] == 'finish_switch'
+            ? _t('可以点「恢复并启动」完成切换、保留 ${to ?? '新版本'}。', 'You can choose Recover and start and keep ${to ?? 'the newer version'}.')
+            : '';
+    final keep = _t('如果新版本就是起不来、也回不去，可以在「恢复并启动」里点「保留新版本并解除这把锁…」，解锁后可以重新更新一次，或用升级前的备份导回。',
+        'If the newer version will not start and going back does not work, choose Keep the newer version and unlock… under Recover and start; afterwards you can update again, or import the backup from before the upgrade.');
+    final startFailure = facts['startFailure'] is Map ? facts['startFailure'] as Map : null;
+    final why = startFailure == null ? '' : _startFailureWords(startFailure);
     final record = facts['record'] is String ? _t('做了的步骤记在 ${facts['record']}。', ' The steps done are recorded in ${facts['record']}.') : '';
     return switch (reason) {
       'holder_running' => _t('没有恢复：进程 $pid 还在用数据库维护锁。等它结束后$retry', 'Not recovered: process $pid still holds the maintenance lock. Wait for it to end, $retry'),
@@ -480,15 +560,18 @@ class Strings {
       'unknown_assets' => _t('没有恢复：数据库程序文件夹里有一个认不出的目录（${facts['directory']}）：名字像 FULI 的，但里面没有 FULI 的记录，FULI 没有动它。确认不需要后，在访达里把它移出 neo4j-assets（不要删除），$retry',
           'Not recovered: the database programs folder holds a directory FULI cannot recognise (${facts['directory']}): its name looks like FULI\'s but it carries no FULI record, so FULI left it alone. Once you are sure it is not needed, move it out of neo4j-assets in Finder (do not delete it), $retry'),
       'no_fingerprint' => _t('没有恢复：没法确认旧版本的程序完好，所以不能撤回；可以保留新版本。', 'Not recovered: the older programs cannot be checked, so going back is not possible; the newer version can be kept.'),
-      'format_changed' => _t('没有恢复：存储格式和切换前记下的不一样，继续不安全。$look', 'Not recovered: the store format is not the one recorded before the switch, so going on is unsafe. $look'),
+      'format_changed' => switching
+          ? _t('没有恢复：存储格式和切换前记下的不一样，所以没有往下做，描述文件保持原样，锁和切换记录留着。$other$keep$record',
+              'Not recovered: the store format is not the one recorded before the switch, so it went no further; the descriptor was left as it was, and the lock and journal stay. $other $keep$record')
+          : _t('没有恢复：存储格式和切换前记下的不一样，继续不安全。$look', 'Not recovered: the store format is not the one recorded before the switch, so going on is unsafe. $look'),
       'format_unreadable' => _t('没有恢复：读不出存储格式。稍后$retry', 'Not recovered: the store format could not be read. Wait a moment, $retry'),
-      'start_failed' => facts['planKind'] == 'restore_load'
-          ? _t('没有恢复：图已经从导入前的副本恢复，但数据库没能启动或没有应答。锁留着，不会在这样的图上启动；$retry还不行就需要人来看。$record',
-              'Not recovered: the graph was restored from the copy taken before the import, but the database did not start or did not answer. The lock stays, so nothing starts on it; choose Recover and start again, and if it still fails, a person needs to look.$record')
-          : _t('没有恢复：这个版本的数据库没能启动或没有应答，描述文件保持原样，锁和记录都留着。可以换另一种做法，或稍后$retry$record',
-              'Not recovered: that database version did not start or did not answer; the descriptor was left as it was, and the lock and records stay. Try the other choice, or wait a moment, $retry$record'),
-      'restore_failed' => _t('没有恢复：没能从导入前的备份恢复，锁留着，所以不会在写了一半的图上启动。$retry还不行就需要人来看。$record',
-          'Not recovered: restoring from the copy taken before the import did not finish; the lock stays, so nothing starts on a half-written graph. Choose Recover and start again; if it fails again, a person needs to look.$record'),
+      'start_failed' => backingOut
+          ? _t('没有恢复：旧版本${from ?? ''}没能启动或没有应答，描述文件已经写回新版本，锁和切换记录都留着。$why$other原因解决后$retry$keep$record',
+              'Not recovered: the older version${from == null ? '' : ' $from'} did not start or did not answer; the newer descriptor was written back, and the lock and journal stay. $why$other Once the cause is fixed, $retry $keep$record')
+          : _t('没有恢复：新版本${to ?? ''}没能启动或没有应答，描述文件保持原样，锁和切换记录都留着。$why$other原因解决后$retry$keep$record',
+              'Not recovered: the newer version${to == null ? '' : ' $to'} did not start or did not answer; the descriptor was left as it was, and the lock and journal stay. $why$other Once the cause is fixed, $retry $keep$record'),
+      'restore_failed' => _t('没有恢复：没能从导入前的备份恢复${facts['detail'] is String ? '（${facts['detail']}）' : ''}，锁留着，所以不会在写了一半的图上启动。原因解决后（例如腾出磁盘空间）$retry还不行就在托盘菜单选「导出诊断包…」，交给帮你看的人。$record',
+          'Not recovered: restoring from the copy taken before the import did not finish${facts['detail'] is String ? ' (${facts['detail']})' : ''}; the lock stays, so nothing starts on a half-written graph. Once the cause is fixed (free disk space, say), $retry If it fails again, Export diagnostics… in the tray menu helps whoever looks.$record'),
       'restore_point_unknown' => _t('没有恢复：这次导入没有记下它在导入前留的是哪一份副本，FULI 不猜。可以点「放弃这次导入…」：先说明会怎样，你确认后才做。',
           'Not recovered: this import did not record which copy it took before it started, and FULI does not guess. You can choose Abandon the import…: it says what that means first, and acts only once you confirm.'),
       'restore_point_damaged' => _t('没有恢复：这次导入在导入前留下的副本${facts['why'] == 'missing' ? '找不到了' : '已损坏'}，FULI 不改用别的副本。可以点「放弃这次导入…」：先说明会怎样，你确认后才做。$record',
@@ -496,12 +579,26 @@ class Strings {
       'restore_point_usable' => _t('没有放弃：这次导入在导入前留下的副本还能用，点「恢复并启动」把图撤回到导入前。',
           'Not abandoned: the copy this import took before it started can still be used; choose Recover and start to take the graph back to before the import.'),
       'no_import' => _t('没有放弃：现在没有中途停下的导入。', 'Not abandoned: there is no interrupted import now.'),
-      'lock_changed' => _t('没有恢复：解除锁的时候锁变了。$retry', 'Not recovered: the lock changed while it was being released; $retry'),
+      'lock_changed' => _t('没有恢复：锁在恢复途中变了。$retry', 'Not recovered: the lock changed during the recovery; $retry'),
+      'recovery_running' => _t('没有恢复：另一个恢复（进程 $pid）正在进行，这次什么都没做。等它结束后$retry',
+          'Not recovered: another recovery (process $pid) is in progress, so nothing was done. Wait for it to end, $retry'),
+      'keep_newer_unavailable' => _t('没有解锁：现在没有新版本已经生效、还没做完的切换，不需要保留新版本。点「恢复并启动」看要做什么。',
+          'Not unlocked: there is no unfinished switch whose newer version took effect, so there is nothing to keep. Choose Recover and start to see what is needed.'),
       'step_failed' => _t('没有恢复：在“${facts['step']}”这一步停下了，锁留着。$retry会接着做。$record',
           'Not recovered: it stopped at the step "${facts['step']}" and the lock stays. Choose Recover and start again to continue.$record'),
       'plan_changed' => _t('没有恢复：情况在你确认之后变了，什么都没做。$retry看新的计划。', 'Not recovered: things changed after you confirmed, so nothing was done; $retry'),
       _ => _t('没有恢复：$reason。$look', 'Not recovered: $reason. $look'),
     };
+  }
+
+  // Why a start check failed (neo4j-recovery.js startFailureOf): who holds the port, the message, where the logs are.
+  String _startFailureWords(Map<Object?, Object?> failure) {
+    final start = failure['failure'];
+    final port = start is Map && start['code'] == 'port_taken'
+        ? _t('端口 ${start['port']} 被${start['pid'] != null ? '进程 ${start['pid']} ' : '别的程序'}占着。', 'Port ${start['port']} is in use${start['pid'] != null ? ' by process ${start['pid']}' : ''}. ')
+        : '';
+    final logs = failure['logs'] is List ? (failure['logs'] as List).join(_t('、', ', ')) : null;
+    return '$port${failure['message'] ?? ''}${_t('。', '. ')}${logs == null ? '' : _t('日志在 $logs。', 'Logs are in $logs. ')}';
   }
 
   /// After a recovery: where what it did is recorded.

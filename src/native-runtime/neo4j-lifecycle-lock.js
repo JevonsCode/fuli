@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { basename, join, sep } from 'node:path';
 
 import { processState } from '../local-runtime/processes.js';
-import { readJsonFile } from '../storage/json-file.js';
+import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { processCommand, processMatchesCommand, processStartTime } from './process-identity.js';
 import { NATIVE_DOWNLOAD_TIMEOUT_MS } from './resumable-download.js';
 
@@ -62,7 +62,7 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = ow
 }
 
 // This process as `ps` shows it, so a later reader can tell it from a stranger with its PID.
-async function ownIdentity() {
+export async function ownIdentity() {
   const [command, startedAt] = await Promise.all([processCommand(process.pid), processStartTime(process.pid)]);
   return { pid: process.pid, command, startedAt };
 }
@@ -78,6 +78,32 @@ export function readLock(root) {
   try { owner = readFileSync(join(path, 'owner'), 'utf8'); } catch { /* an incomplete older lock */ }
   try { holder = JSON.parse(readFileSync(join(path, 'holder.json'), 'utf8')); } catch { /* an older lock names no holder */ }
   return { path, since, owner, holder: Number.isInteger(holder?.pid) && holder.pid > 0 ? holder : null };
+}
+
+// When the operation that holds [lock] took it (ms): what its holder recorded,
+// which stays when a recovery claims the lock, or else when the lock appeared.
+export function lockStartedAt(lock) {
+  const at = Date.parse(lock?.holder?.at ?? '');
+  return Number.isFinite(at) ? at : lock?.since?.getTime() ?? Number.NaN;
+}
+
+// Makes this process the lock's recorded holder — a recovery about to work
+// under the lock's own token [owner] — keeping what the holder recorded about
+// its operation (and when it took the lock) and adding [patch]. Done under the
+// take-over directory, so two recoveries never both claim it: answers false
+// when the lock changed, or its holder is another process that still runs.
+export async function claimLock(root, owner, { identity = IDENTITY, identify = ownIdentity, patch = {} } = {}) {
+  const me = await identify();
+  return withTakeover(root, identity, async () => {
+    const lock = readLock(root);
+    if (!lock || lock.owner !== owner) return false;
+    let recorded = {};
+    try { recorded = JSON.parse(readFileSync(join(lock.path, 'holder.json'), 'utf8')) ?? {}; } catch { /* an older lock names no holder */ }
+    const self = lock.holder && lock.holder.pid === me.pid && lock.holder.startedAt === me.startedAt;
+    if (lock.holder && !self && await holderState(lock.holder, identity) === 'running') return false;
+    writeJsonFileAtomic(join(lock.path, 'holder.json'), { ...recorded, at: recorded.at ?? lock.since.toISOString(), ...me, ...patch });
+    return true;
+  });
 }
 
 // 'running', 'gone' (ended, or its PID is now another program) or 'unknown' (no holder recorded).

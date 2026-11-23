@@ -13,7 +13,7 @@ import { writeLine } from './terminal-io.js';
 export function parseNativeRuntimeOptions(args = []) {
   const [action, ...flags] = args;
   if (!['install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall, unlock or recover.');
-  const result = { action, preview: false, yes: false, dataDir: null, expect: null, backOut: false, abandonImport: false, json: false }, seen = new Set();
+  const result = { action, preview: false, yes: false, dataDir: null, expect: null, backOut: false, abandonImport: false, keepNewer: false, json: false }, seen = new Set();
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i];
     if (seen.has(flag)) throw new Error(`Duplicate ${flag}`);
@@ -24,10 +24,13 @@ export function parseNativeRuntimeOptions(args = []) {
     else if (action === 'recover' && flag === '--expect' && /^[0-9a-f]{16}$/.test(flags[i + 1] ?? '')) result.expect = flags[++i];
     else if (action === 'recover' && flag === '--back-out') result.backOut = true;
     else if (action === 'recover' && flag === '--abandon-import') result.abandonImport = true;
+    else if (action === 'recover' && flag === '--keep-newer') result.keepNewer = true;
     else if (action === 'recover' && flag === '--json') result.json = true;
     else throw new Error(`Invalid graph runtime option: ${flag}`);
   }
-  if (result.backOut && result.abandonImport) throw new Error('--back-out and --abandon-import are different recoveries; choose one.');
+  if ([result.backOut, result.abandonImport, result.keepNewer].filter(Boolean).length > 1) {
+    throw new Error('--back-out, --abandon-import and --keep-newer are different recoveries; choose one.');
+  }
   return result;
 }
 
@@ -74,13 +77,15 @@ async function unlock(paths, options, write, dependencies) {
 // Brings the runtime back from an operation killed part way (neo4j-recovery.js):
 // shows the plan, and does it only when confirmed in a terminal (the prompt, or
 // --yes --expect <the plan's digest>). Abandoning an import (--abandon-import)
-// takes typing `abandon` at the prompt; --yes is refused. Without a terminal
+// takes typing `abandon` at the prompt; --yes is refused. Keeping the newer
+// version of an unfinished switch without a start check (--keep-newer) is its
+// own plan, confirmed the same way as any other. Without a terminal
 // only the preview runs: an Agent's non-interactive shell cannot recover, and
 // no MCP tool reaches it. The desktop window recovers through its controller
 // after the person confirmed there.
 async function recover(paths, options, write, dependencies) {
   const recovery = { ...nativeRecoveryServices({ paths, env: dependencies.env }), ...dependencies.recovery };
-  const choice = { backOut: options.backOut, abandonImport: options.abandonImport };
+  const choice = { backOut: options.backOut, abandonImport: options.abandonImport, keepNewer: options.keepNewer };
   const plan = await (dependencies.planRecovery ?? planNativeRecovery)({ paths, ...choice, dependencies: recovery });
   if (options.json && options.preview) {
     write(JSON.stringify(plan));
@@ -107,7 +112,7 @@ async function recover(paths, options, write, dependencies) {
   }
   if (result.kind === 'refused') throw refusal(result);
   write(recoveredLine(result));
-  return { status: 'recovered', kind: result.kind, record: result.record ?? null, exitCode: 0 };
+  return { status: 'recovered', kind: result.kind, record: result.record ?? null, ...(result.startFailure ? { startFailure: result.startFailure } : {}), exitCode: 0 };
 }
 
 // Giving up an import empties graphs, so it takes the word, not a y.

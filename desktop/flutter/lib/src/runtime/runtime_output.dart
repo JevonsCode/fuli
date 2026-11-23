@@ -31,8 +31,16 @@ RuntimeReport parseControllerReply(String stdout) {
     lockKept: failed ? _failure(reply['lockRelease'], code: 'reason') : null,
     recoveryPlan: parseRecoveryPlan(reply['recoveryPlan']),
     recoveryRecord: reply['recoveryRecord'] is String ? reply['recoveryRecord'] as String : null,
+    keptGraphData: [
+      if (reply['keptGraphData'] is List)
+        for (final folder in reply['keptGraphData'] as List) if (folder is Map) Map<String, Object?>.from(folder),
+    ],
   );
 }
+
+/// The controller action a recovery choice runs (src/desktop/desktop-controller.js), without its -preview / -start.
+String recoveryAction({bool abandonImport = false, bool keepNewer = false}) =>
+    abandonImport ? 'abandon-import' : keepNewer ? 'keep-newer' : 'recover';
 
 /// A recovery plan as the CLI or a controller wrote it; null for anything else.
 RecoveryPlan? parseRecoveryPlan(Object? value) => RecoveryPlan.parse(value is String ? _jsonObject(value) : value);

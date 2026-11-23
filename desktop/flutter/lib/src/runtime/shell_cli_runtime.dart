@@ -72,9 +72,10 @@ class ShellCliRuntime implements FuliRuntime {
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
   @override
-  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) async {
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    final result = await _sh(_mode!, 'fuli graph runtime recover --preview --json${abandonImport ? ' --abandon-import' : ''}', _commandTimeout);
+    final choice = abandonImport ? ' --abandon-import' : keepNewer ? ' --keep-newer' : '';
+    final result = await _sh(_mode!, 'fuli graph runtime recover --preview --json$choice', _commandTimeout);
     final plan = parseRecoveryPlan('${result?.stdout ?? ''}'.trim().split('\n').last);
     final after = await status();
     return RuntimeReport(after.state, consolePort: after.consolePort, recoveryPlan: plan,
@@ -89,7 +90,7 @@ class ShellCliRuntime implements FuliRuntime {
   bool get recoversInTerminal => true;
 
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) async =>
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'The fuli CLI recovers only in Terminal.');
 
   // The CLI's own checked release (`fuli graph runtime unlock`), then a start.

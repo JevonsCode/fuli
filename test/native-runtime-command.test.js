@@ -3,9 +3,9 @@ import test from 'node:test';
 import { parseNativeRuntimeOptions, runNativeRuntimeCommand } from '../src/cli/native-runtime-command.js';
 test('CLI validates actions and requires explicit values without duplicate flags', () => {
   assert.deepEqual(parseNativeRuntimeOptions(['update', '--preview', '--data-dir', '/synthetic']),
-    { action: 'update', preview: true, yes: false, dataDir: '/synthetic', expect: null, backOut: false, abandonImport: false, json: false });
+    { action: 'update', preview: true, yes: false, dataDir: '/synthetic', expect: null, backOut: false, abandonImport: false, keepNewer: false, json: false });
   assert.deepEqual(parseNativeRuntimeOptions(['recover', '--yes', '--expect', '0123456789abcdef', '--back-out']),
-    { action: 'recover', preview: false, yes: true, dataDir: null, expect: '0123456789abcdef', backOut: true, abandonImport: false, json: false });
+    { action: 'recover', preview: false, yes: true, dataDir: null, expect: '0123456789abcdef', backOut: true, abandonImport: false, keepNewer: false, json: false });
   for (const args of [['unknown'], ['update', '--data-dir'], ['update', '--yes', '--yes'], ['update', '--back-out'],
     ['recover', '--expect', 'not-a-digest']]) assert.throws(() => parseNativeRuntimeOptions(args));
 });

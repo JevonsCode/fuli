@@ -117,7 +117,7 @@ class StatusActions extends StatelessWidget {
     // The import's own copy cannot be used: giving the import up is the way on,
     // a choice of its own, never 「恢复并启动」.
     if (!snapshot.running && controller.abandonableImport) {
-      return FilledButton(
+      return OutlinedButton(
         key: const Key('abandon-import'),
         onPressed: busy ? null : () => _confirmAbandon(context),
         child: Text(strings.abandonImport),
@@ -167,11 +167,15 @@ class StatusActions extends StatelessWidget {
     if (plan == null || !context.mounted) return;
     final alternative = plan.alternative;
     if (controller.recoversInTerminal) {
-      return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative)]);
+      return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative),
+        if (controller.keepableSwitch && plan.kind == 'finish_switch') 'fuli graph runtime recover --keep-newer']);
     }
     final other = strings.recoveryAlternativeWords(plan);
     final words = [...strings.recoveryPlanWords(plan), if (other != null) ...['', other]];
     final switching = plan.kind == 'finish_switch' || plan.kind == 'back_out_switch';
+    // After finishing or backing out did not get Neo4j to start: keeping the
+    // newer version and releasing the lock, a choice of its own.
+    final keepable = controller.keepableSwitch && plan.kind == 'finish_switch';
     final chosen = await showDialog<RecoveryPlan>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -179,6 +183,12 @@ class StatusActions extends StatelessWidget {
         content: SingleChildScrollView(child: Text(words.join('\n'))),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.cancel)),
+          if (keepable)
+            OutlinedButton(
+              key: const Key('keep-newer'),
+              onPressed: () => Navigator.of(dialogContext).pop(const RecoveryPlan('keep_newer', [], null, {})),
+              child: Text(strings.keepNewer),
+            ),
           if (alternative != null)
             OutlinedButton(
               key: const Key('recover-alternative'),
@@ -195,7 +205,57 @@ class StatusActions extends StatelessWidget {
         ],
       ),
     );
-    if (chosen != null) await controller.recoverAndStart(chosen);
+    if (chosen == null || !context.mounted) return;
+    if (chosen.kind == 'keep_newer') return _confirmKeepNewer(context);
+    await controller.recoverAndStart(chosen);
+    if (context.mounted) await _showKeptGraphData(context);
+  }
+
+  // Keeping the newer version: what it does, why it did not start and what is
+  // open afterwards come first; then its own confirmation.
+  Future<void> _confirmKeepNewer(BuildContext context) async {
+    final plan = await controller.previewRecovery(keepNewer: true);
+    if (plan == null || !context.mounted) return;
+    final why = controller.lastFailure;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.keepNewerTitle),
+        content: SingleChildScrollView(
+            child: SelectableText([
+          if (why != null) strings.recoveryRefused(why.text('reason'), why.facts),
+          ...strings.recoveryPlanWords(plan),
+        ].join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('keep-newer-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.keepNewerConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.recoverAndStart(plan, keepNewer: true);
+  }
+
+  // Graph data a recovery moved aside stays until the person deletes it: where
+  // it is, how big, which graphs, and the commands that move it back (copyable).
+  Future<void> _showKeptGraphData(BuildContext context) async {
+    final folders = controller.keptGraphData;
+    if (folders.isEmpty) return;
+    final words = strings.keptGraphDataWords(folders).join('\n');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.keptGraphDataTitle),
+        content: SingleChildScrollView(child: SelectableText(words, key: const Key('kept-graph-data'))),
+        actions: [
+          TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: words)), child: Text(strings.copyCommand)),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.close)),
+        ],
+      ),
+    );
   }
 
   // Giving up the import: what happens to which graphs and how to import back
@@ -221,6 +281,7 @@ class StatusActions extends StatelessWidget {
       ),
     );
     if (confirmed == true) await controller.recoverAndStart(plan, abandonImport: true);
+    if (confirmed == true && context.mounted) await _showKeptGraphData(context);
   }
 
   // The `fuli` CLI recovers only at a terminal: the plan, and the command to

@@ -17,6 +17,9 @@ void main() {
     expect([preview.recoveryPlan?.digest, preview.recoveryPlan?.alternative?.digest], ['a', 'b']);
     final started = parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'recoveryRecord': '/x/recovered/recovery-1.json'})}\n');
     expect(started.recoveryRecord, '/x/recovered/recovery-1.json');
+    final kept = parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'keptGraphData': [{'path': '/x/recovered/t', 'bytes': 1, 'instances': ['personal'], 'stores': []}]})}\n');
+    expect(kept.keptGraphData.single['path'], '/x/recovered/t');
+    expect([recoveryAction(), recoveryAction(abandonImport: true), recoveryAction(keepNewer: true)], ['recover', 'abandon-import', 'keep-newer']);
   });
 
   late Directory temp;

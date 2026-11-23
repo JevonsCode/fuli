@@ -63,16 +63,16 @@ class MacosAppRuntime implements FuliRuntime {
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
   @override
-  Future<RuntimeReport> previewRecovery({bool abandonImport = false}) =>
-      _action(abandonImport ? 'abandon-import-preview' : 'recover-preview');
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
 
   // The controller recovers in its own process, after the confirmation here.
   @override
   bool get recoversInTerminal => false;
 
   @override
-  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage}) =>
-      _action(abandonImport ? 'abandon-import-start' : 'recover-start', onStage: onStage, extra: [digest]);
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
 
   // The controller's lines are read as they arrive: the steps it reports while
   // it works, then the one result line at the end.

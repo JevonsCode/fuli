@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart' show OutlinedButton;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/app/app_services.dart';
@@ -135,14 +136,15 @@ void main() {
     expect(controller.notice?.text, contains('找不到了'));
     final abandon = find.byKey(const Key('abandon-import'));
     expect(find.descendant(of: primary, matching: abandon), findsOneWidget);
+    expect(tester.widget(abandon), isA<OutlinedButton>(), reason: 'the entry is a secondary button; the red one is in the confirmation');
     expect(find.byKey(const Key('recover-start')), findsNothing);
 
     runtime.recoveryPlan = const RecoveryPlan('abandon_load', [{'do': 'move-aside', 'path': '/x/native-runtime/personal/data/databases/neo4j', 'bytes': 1024}, {'do': 'release-lock'}],
-        'aaaaaaaaaaaaaaaa', {'copyProblem': 'missing', 'backupPath': '/x/b', 'instances': ['personal'], 'dataDir': '/x', 'copies': []});
+        'aaaaaaaaaaaaaaaa', {'copyProblem': 'missing', 'backupPath': '/x/b', 'instances': ['personal'], 'written': ['personal'], 'dataDir': '/x', 'copies': []});
     await tester.tap(abandon);
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('abandon-import-preview'));
-    expect(find.textContaining('个人图谱会变成空的'), findsOneWidget);
+    expect(find.textContaining('个人图谱：导入开始后它的库被写过'), findsOneWidget);
     expect(find.textContaining('没有可以导回的导入前副本'), findsOneWidget);
     expect(find.text('放弃导入，清空这些图谱'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -153,6 +155,57 @@ void main() {
     await tester.tap(find.byKey(const Key('abandon-import-confirm')));
     await tester.pumpAndSettle();
     expect(runtime.calls, contains('abandon-import-start aaaaaaaaaaaaaaaa'));
+  });
+
+  testWidgets('a switch that neither finished nor went back offers keeping the newer version, confirmed on its own; moved graph data is shown after', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'refused',
+        failure: StartupFailure('recovery_refused', {'reason': 'start_failed', 'planKind': 'finish_switch', 'alternativeRefused': 'no_fingerprint',
+          'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j', 'startFailure': {'message': 'no answer'}})))
+      ..recoveryPlan = const RecoveryPlan('finish_switch', [{'do': 'release-lock'}], '0123456789abcdef', {'alternativeRefused': 'no_fingerprint', 'toVersion': '5.26.28'})
+      ..recoverReport = const RuntimeReport(RuntimeState.stopped, keptGraphData: [{'path': '/x/recovered/t', 'bytes': 2048, 'instances': ['workspace'],
+        'stores': [{'from': '/x/recovered/t/workspace/data/databases/neo4j', 'to': '/x/workspace/data/databases/neo4j'}]}]);
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('recover-alternative')), findsNothing, reason: 'going back is not there');
+    final keep = find.byKey(const Key('keep-newer'));
+    expect(tester.widget(keep), isA<OutlinedButton>());
+    runtime.recoveryPlan = const RecoveryPlan('keep_newer', [{'do': 'archive-journal'}, {'do': 'release-lock'}], 'bbbbbbbbbbbbbbbb',
+        {'toVersion': '5.26.28', 'backupPath': '/x/before-neo4j'});
+    await tester.tap(keep);
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('keep-newer-preview'));
+    expect(find.textContaining('fuli graph import --input "/x/before-neo4j" --yes'), findsOneWidget);
+    expect(find.textContaining('没能启动或没有应答'), findsNWidgets(2), reason: 'why it does not start comes first in the confirmation too');
+    expect(runtime.calls.where((call) => call.startsWith('keep-newer-start')), isEmpty);
+    await tester.tap(find.byKey(const Key('keep-newer-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('keep-newer-start bbbbbbbbbbbbbbbb'));
+  });
+
+  testWidgets('after a recovery that left graph data in the recovered folder, the window says where it is and how to move it back', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',
+        failure: StartupFailure('native_lifecycle_lock', {'holder': 'gone', 'operation': 'load'})))
+      ..recoveryPlan = const RecoveryPlan('restore_load', [{'do': 'release-lock'}], '0123456789abcdef', {})
+      ..recoverReport = const RuntimeReport(RuntimeState.running, consolePort: 2727, keptGraphData: [{'path': '/x/recovered/t', 'bytes': 2048,
+        'instances': ['workspace'], 'stores': [{'from': '/x/recovered/t/workspace/data/databases/neo4j', 'to': '/x/workspace/data/databases/neo4j'}]}]);
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recover-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('挪开的图谱数据还在'), findsOneWidget);
+    expect(find.textContaining('mv "/x/recovered/t/workspace/data/databases/neo4j" "/x/workspace/data/databases/neo4j"'), findsOneWidget);
   });
 
   testWidgets('a window running the fuli CLI shows the plan with the terminal command, and no button that would do nothing', (tester) async {

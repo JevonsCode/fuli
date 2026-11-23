@@ -24,7 +24,7 @@ import { findNpmCopies } from './npm-copies.js';
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
 const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start', 'recover-preview', 'recover-start',
-  'abandon-import-preview', 'abandon-import-start']);
+  'abandon-import-preview', 'abandon-import-start', 'keep-newer-preview', 'keep-newer-start']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -61,7 +61,8 @@ async function consolePortBlocked(context) {
 }
 
 // The recovery the window confirms (neo4j-recovery.js), through the native
-// runtime's own services; [choice]: { abandonImport } for 「放弃这次导入…」.
+// runtime's own services; [choice]: { abandonImport } for 「放弃这次导入…」,
+// { keepNewer } for 「保留新版本并解除这把锁…」.
 const nativeRecovery = {
   plan: (paths, choice = {}) => planNativeRecovery({ paths, ...choice, dependencies: nativeRecoveryServices({ paths }) }),
   apply: (paths, digest, choice = {}) => applyNativeRecovery({ paths, digest, ...choice, dependencies: nativeRecoveryServices({ paths }) })
@@ -106,17 +107,19 @@ export async function runTrayAction(action, context, {
       throw new Error('启动命令都结束了，但 FULI 没有进入运行状态。 / The start finished, but FULI did not reach its running state.');
     }
   };
-  // 「恢复并启动」 (and 「放弃这次导入…」, abandon-import-*): first the plan the
+  // 「恢复并启动」 (and 「放弃这次导入…」, abandon-import-*, and 「保留新版本并解除这把锁…」,
+  // keep-newer-*): first the plan the
   // window shows in the confirmation, then — with the digest of the plan the
   // person chose (it may be the alternative shown beside it) — the recovery
   // itself (neo4j-recovery.js, which refuses when anything changed since), and
   // an ordinary start. Done here, not through the CLI: the CLI recovers only
   // at a terminal. The window words a refusal from its reason itself.
-  let recoveryRecord = null;
-  const recovering = { 'recover-preview': 'preview', 'recover-start': 'start', 'abandon-import-preview': 'preview', 'abandon-import-start': 'start' }[action];
+  let recoveryRecord = null, recoveryResult = null;
+  const recovering = { 'recover-preview': 'preview', 'recover-start': 'start', 'abandon-import-preview': 'preview', 'abandon-import-start': 'start',
+    'keep-newer-preview': 'preview', 'keep-newer-start': 'start' }[action];
   if (recovering) {
     const paths = resolveSetupPaths({ dataDir: context.dataDir });
-    const choice = action.startsWith('abandon-import') ? { abandonImport: true } : {};
+    const choice = action.startsWith('abandon-import') ? { abandonImport: true } : action.startsWith('keep-newer') ? { keepNewer: true } : {};
     const reply = async (ok, fields) => {
       const state = await inspect({ step: false }).catch(() => null);
       return { ok, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown', state, ...fields };
@@ -135,6 +138,10 @@ export async function runTrayAction(action, context, {
     }
     if (recovered.kind === 'refused') return unknown(new Error(`The recovery was refused (${recovered.reason}).`), { code: 'recovery_refused', ...recovered });
     recoveryRecord = recovered.record ?? null;
+    // Graph data the recovery moved aside, and why Neo4j did not start after
+    // an import was taken back: the window says both beside the start's own result.
+    recoveryResult = { ...(recovered.keptGraphData ? { keptGraphData: recovered.keptGraphData } : {}),
+      ...(recovered.startFailure ? { recoveryStartFailure: recovered.startFailure } : {}) };
     action = 'start';
   }
   // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
@@ -211,7 +218,7 @@ export async function runTrayAction(action, context, {
     }
     return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
       ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}),
-      ...(recoveryRecord ? { recoveryRecord } : {}) };
+      ...(recoveryRecord ? { recoveryRecord } : {}), ...recoveryResult };
   } catch (error) {
     // The step that did not finish, read before the check below moves on, and
     // what the start said it ran into (startup-failure-line.js), for the client
@@ -226,7 +233,7 @@ export async function runTrayAction(action, context, {
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
-      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}), ...(recoveryRecord ? { recoveryRecord } : {}),
+      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}), ...(recoveryRecord ? { recoveryRecord } : {}), ...recoveryResult,
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }

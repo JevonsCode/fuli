@@ -52,7 +52,8 @@ class RecoveryPlan {
 class RuntimeReport {
   const RuntimeReport(this.state,
       {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
-      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan, this.recoveryRecord});
+      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan, this.recoveryRecord,
+      this.keptGraphData = const []});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
@@ -69,6 +70,9 @@ class RuntimeReport {
   final RecoveryPlan? recoveryPlan;
   /// Where a recovery recorded what it did (native-runtime/recovered/recovery-*.json).
   final String? recoveryRecord;
+  /// The recovered folders that hold graph data a recovery moved aside (path,
+  /// bytes, instances, stores with from/to), which only a person deletes.
+  final List<Map<String, Object?>> keptGraphData;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -113,8 +117,9 @@ abstract interface class FuliRuntime {
 
   /// What a recovery of an interrupted database operation would do; changes
   /// nothing. [abandonImport]: the plan for giving up an interrupted import
-  /// whose own copy cannot be used instead.
-  Future<RuntimeReport> previewRecovery({bool abandonImport = false});
+  /// whose own copy cannot be used instead; [keepNewer]: the plan for keeping
+  /// the newer version of an unfinished switch and releasing its lock.
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false});
 
   /// Whether a recovery is confirmed in a terminal rather than in this window:
   /// the `fuli` CLI recovers only there (src/cli/native-runtime-command.js).
@@ -122,5 +127,5 @@ abstract interface class FuliRuntime {
 
   /// Recovers with the plan the person confirmed ([digest]), then starts FULI.
   /// Nothing is done when the plan changed since it was shown.
-  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, StageListener? onStage});
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage});
 }

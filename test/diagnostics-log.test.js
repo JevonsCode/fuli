@@ -308,6 +308,15 @@ test('fuli diagnostics reads the data directory without the console', async (t) 
   printed = '';
   await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
   assert.match(printed, /Graph runtime recoveries: 2; the latest is recorded in .*recovery-2026-11-02T00-00-00-000Z\.json/);
+  assert.doesNotMatch(printed, /图谱数据/);
+  // Graph data a recovery moved aside: where, which graph, and how to move it back.
+  const moved = join(directory, 'native-runtime', 'recovered', '2026-11-02T00-00-00-000Z', 'workspace', 'data', 'databases', 'neo4j');
+  await mkdir(moved, { recursive: true });
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /recovered 文件夹里有挪开的图谱数据，自动清理不会删它们/);
+  assert.match(printed, /2026-11-02T00-00-00-000Z · 0 KB · workspace/);
+  assert.ok(printed.includes(`mv "${moved}" "${join(directory, 'native-runtime', 'workspace', 'data', 'databases', 'neo4j')}"`));
 });
 
 test('migrate status lists the diagnostics log as absent until a failure is recorded', async (t) => {

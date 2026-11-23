@@ -26,7 +26,7 @@ export function loadMacosAppContext({ packageRoot = PACKAGE_ROOT, env = process.
 if (isMainModule(import.meta.url)) {
   try {
     // One action; `recover-start` and `abandon-import-start` also take the digest of the plan the person confirmed.
-    if (process.argv.length !== (/^(?:recover|abandon-import)-start$/.test(process.argv[2]) ? 4 : 3)) throw new Error('Expected exactly one action.');
+    if (process.argv.length !== (/^(?:recover|abandon-import|keep-newer)-start$/.test(process.argv[2]) ? 4 : 3)) throw new Error('Expected exactly one action.');
     const result = await runTrayAction(process.argv[2], loadMacosAppContext(),
       { onStage: stageReporter(process.env),
         recoveryDigest: process.argv[3] ?? null });
