@@ -29,8 +29,11 @@ test('chat discovers one complete management schema and runs it through fuli_cal
     // The schema shows the tool's own arguments; the answer says where they go
     // and shows the exact call, so a first call cannot fail validation (rec#137).
     assert.match(catalog.structuredContent.invocation, /call\.arguments\.input, never at the top level/);
-    assert.deepEqual(catalog.structuredContent.call,
-      { name: 'fuli_call', arguments: { toolName: 'get_project_agent_memory', input: {} } });
+    // Every required argument is there to fill in, so the copy is not empty (review of #1070).
+    const required = listAgentTools().find(t => t.name === 'get_project_agent_memory').inputSchema.required;
+    assert.deepEqual(catalog.structuredContent.call, { name: 'fuli_call', arguments: { toolName: 'get_project_agent_memory',
+      input: Object.fromEntries(required.map(name => [name, `<${name}>`])) } });
+    assert.ok(required.length > 0);
     assert.deepEqual((await client.listTools()).tools.map(t => t.name), names);
     const result = await client.callTool({ name: 'fuli_call', arguments: { toolName: 'get_project_agent_memory',
       input: { personalSpaceId: 'synthetic-space', personalProjectId: 'synthetic-project', agentId: 'synthetic-agent' } } });

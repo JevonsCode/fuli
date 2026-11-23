@@ -122,7 +122,10 @@ alone, and past that to the count. `read.call` is the short formula
 `fuli_call(toolName=tool, input=arguments)`: `read_task_preferences` is not a
 listed tool in the chat profile, and `fuli_call` takes the tool's arguments
 under `input` while `list_agent_interfaces` shows them at the top level, so
-following the schema alone failed validation on the first call. If the hard
+following the schema alone failed validation on the first call. A
+single-tool `list_agent_interfaces` answer now carries `call`, the exact
+`fuli_call` envelope with each required argument as a `<placeholder>`.
+The label tells the model to read what may apply by key (`keys` below). If the hard
 rules alone are longer than the budget (D-69, revising D-54), they are bounded
 the same way: the largest prefix whose complete frame fits, with nothing
 ranked after them. That prefix keeps the most specific rules first (Agent,
@@ -212,8 +215,17 @@ relying on it. No body and no source marker.
 
 ## Same-task reader pages
 
-`read_task_preferences({ taskContextToken, cursor? })` reads current preferences
-for the original owned task. The session it reads for is never the caller's:
+`read_task_preferences({ taskContextToken, keys? , cursor? })` reads current
+preferences for the original owned task. With `keys` (up to 20, the keys an
+entry's `preferences_omitted.index` names) it returns those preferences whole
+in one result, with no page and no cursor, and names any key the task does not
+have in `preference_delivery.missing` (status `keys`, rec#137). It is never the
+complete set (`preferences_complete: false`), so no session takes it as a
+delta base. Without `keys` it reads the whole set, paged at the MCP budget.
+Its cursors are process-local and live 15 minutes, and every task entry issues
+a new token, so a whole-set read begun in one turn cannot be resumed in the
+next: start it again with the current token. Reading by key is what the index
+is for, and avoids that. The session it reads for is never the caller's:
 a host that names a session (Codex's thread, Claude Code's
 `CLAUDE_CODE_SESSION_ID`, a sealed worker) binds it, and a token of another
 session is refused; a process started before `/clear` or an in-app resume
