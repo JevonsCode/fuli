@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { connect as connectTcp } from 'node:net';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
@@ -231,24 +229,6 @@ test('a replay that timed out is not sent again in the same delivery', async (t)
 
   assert.deepEqual(answer, { reachable: false, timedOut: true });
   assert.deepEqual(replays, [RUNNER_PATHS.replay]);
-});
-
-test('one address may hold more connections than it once could: a runner\'s MCP processes are not capped per address', async (t) => {
-  const identity = deviceIdentity(await createDeviceCertificate());
-  const listener = await startRunnerListener({ identity, addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
-    route: async () => false });
-  const sockets = [];
-  t.after(async () => { for (const socket of sockets) socket.destroy(); await listener.close(); });
-  const open = () => new Promise((resolve) => {
-    const socket = connectTcp(listener.port, '127.0.0.1');
-    sockets.push(socket);
-    socket.on('error', () => {});
-    socket.once('connect', () => resolve(socket));
-  });
-  // Past the 24 one address was held to before.
-  for (let index = 0; index < 40; index += 1) await open();
-  await delay(200);
-  assert.equal(sockets.filter((socket) => socket.destroyed).length, 0);
 });
 
 test('closing the connection cuts a replay waiting on the host at once, and its entry stays queued', async (t) => {

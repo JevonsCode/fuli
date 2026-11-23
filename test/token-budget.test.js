@@ -243,7 +243,9 @@ const BASELINE = Object.freeze({
   // 192,212 -> 192,290 B (+78 B), measured. Chat, instructions and entry are unchanged.
   // list_agent_conversations gains topic (one open unclaimed topic's chats, so a later conversation about it
   // finds the earlier ones), no new tool: 192,290 -> 192,435 B (+145 B), measured.
-  fullToolSchemaBytes: 192435,
+  // read_task_preferences takes keys, so an entry's preference index is expanded by key in one result
+  // instead of paging the whole revision (rec#137): 192,435 -> 192,651 B (+216 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 192651,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -356,8 +358,11 @@ const BASELINE = Object.freeze({
   // 11 preferences plus the omitted count; turn 2 was again 37,509 and is now a delta. A frame
   // that leaves preferences out adds one label sentence (with its space). Entries that fit, and
   // every other Agent, are unchanged.
-  claudeBoundedEntryChars: 8775,
-  claudeBoundedNextTurnChars: 2191,
+  // rec#137: the frame names every omitted preference (keys alone at this size) in place of
+  // the body it would otherwise not fit, and a delta whose index is the one its base showed
+  // says index_unchanged instead of resending it: 8,775 -> 8,693 and 2,191 -> 1,403 chars.
+  claudeBoundedEntryChars: 8693,
+  claudeBoundedNextTurnChars: 1403,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that

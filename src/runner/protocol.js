@@ -42,6 +42,10 @@ export const REPLAY_WAIT_MS = 3 * 60_000;
 // The longest a runner waits for one MCP call (roundtable asks wait up to 15 minutes on the host).
 export const CALL_TIMEOUT_MS = 16 * 60_000;
 export const INVITATION_TTL_MS = 10 * 60 * 1000;
+// How a host of this version begins its refusal at the MCP session limit, which
+// already says whose sessions are open and what to do (host-routes.js); a
+// runner adds a next step of its own to any other refusal (offline-calls.js).
+export const SESSION_LIMIT_REASON = 'Runner MCP session limit: ';
 const INVITATION_PREFIX = 'fuli-runner-invite:1:';
 const MAX_NAME = 64;
 const MAX_ADDRESSES = 8;

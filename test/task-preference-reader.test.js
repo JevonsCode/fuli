@@ -336,3 +336,29 @@ test('a continuation reauthorizes before reading cached cursor metadata', async 
   assert.equal(result.structuredContent.effective_preferences, undefined);
   assert.doesNotMatch(result.content[0].text, /END_PREF_/);
 });
+
+// rec#137, review of #1070: the entry's index names what it left out, and the
+// reader expands the ones that may apply by key — whole bodies, one result, no
+// page or cursor that a new token on the next turn would invalidate.
+test('keys read those preferences whole in one result, never as a complete baseline', async () => {
+  const f = fixture(100);
+  const result = await call(f, { extra: { keys: ['rule-7', 'rule-42', 'rule-missing'] } });
+  assert.notEqual(result.isError, true, JSON.stringify(result));
+  const value = result.structuredContent;
+  assert.deepEqual(value.effective_preferences.map(item => item.preference_key), ['rule-7', 'rule-42']);
+  assert.ok(value.effective_preferences.every(item => item.instruction.endsWith(`END_PREF_${item.preference_key.slice(5)}`)),
+    'each body is whole');
+  assert.equal(value.preference_delivery.status, 'keys');
+  assert.deepEqual(value.preference_delivery.missing, ['rule-missing']);
+  assert.equal(value.preference_delivery.next_cursor, undefined, 'no page to follow');
+  // A subset never claims to be the whole set, so no session takes it as a delta base.
+  assert.equal(value.preferences_complete, false);
+  assert.equal(f.reads(), 1);
+});
+
+test('keys still read only the owned task of this session', async () => {
+  const f = fixture(3);
+  f.supersede();
+  const result = await call(f, { extra: { keys: ['rule-1'] } });
+  assert.equal(result.isError, true);
+});
