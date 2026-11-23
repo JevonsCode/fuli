@@ -7,9 +7,8 @@ import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
-import { FULI_VERSION } from '../package-metadata.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
-import { versionSkew, versionSkewLine } from '../runner/version-skew.js';
+import { runningRunnerVersions, versionSkew, versionSkewLine } from '../runner/version-skew.js';
 import { PROJECT_IDENTITY_CACHE_FILE } from '../system/project-identity-cache.js';
 import { RUNNER_FILE, RunnerStore } from '../runner/runner-store.js';
 import { parseSetupOptions } from '../setup/options.js';
@@ -121,9 +120,13 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
         }
         const hello = reached ? await connection.hello() : null;
         if (hello?.mcpSessions) write(mcpSessionsLine(hello.mcpSessions));
-        // Neither side is blocked; the person is only told which copy is older (rec#144).
-        const skew = versionSkew({ hostVersion: hello?.version ?? null, runnerVersion: FULI_VERSION });
-        if (skew) write(versionSkewLine(skew, host.name));
+        // Neither side is blocked; the person is only told which copy is older (rec#144). What
+        // talks to the host is the FULI the open client sessions here run, which can be older than
+        // the one just installed until they restart; with none open, the installed one.
+        for (const runnerVersion of runningRunnerVersions(paths().graphRuntimeConfigPath)) {
+          const skew = versionSkew({ hostVersion: hello?.version ?? null, runnerVersion });
+          if (skew) write(versionSkewLine(skew, host.name));
+        }
         if (!reached && connection.pinFailed) {
           write(`Something answered at ${host.name}'s address with another certificate than the paired one. `
             + `If the host was reinstalled, join again. ${JOIN_AGAIN}`);

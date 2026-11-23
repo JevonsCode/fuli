@@ -228,8 +228,13 @@ shared network, or a mesh tool that does not rely on the local network.
 A runner and its host each have their own FULI, and nothing keeps them on the same version: a runner
 left in an office stays on the version it joined with (rec#144). The host's version comes with the
 hello the runner already exchanges with it, so `fuli status` and `fuli runner status` on a runner,
-and the runner's 客户端接入 page, say which copy is older and that it should be updated. It is only
-said: a call both versions understand goes through as before, and nothing here refuses anything. The
+and the runner's 客户端接入 page, say which copy is older. The runner's side is what its open client
+sessions run (their MCP servers keep the version they started with until restarted), or the
+installed copy when none is open; the same release spelled differently (`v0.29.0`, build metadata)
+is not a difference. It is only said: a call both versions understand goes through as before, and
+nothing here refuses anything. When the runner is older the page offers 「复制给 AI 去更新」, a
+prompt for the person's own AI on this computer; when the host is older it says to update from the
+host's console, because a runner's page cannot run the host's update (the relay refuses it). The
 host does not learn a runner's version — nothing in the pairing carries it — so the notice is on the
 runner's side only.
 

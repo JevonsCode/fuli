@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
+import { runningRunnerVersions, versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 
 test('a runner and its host on different FULI versions: which one is older', () => {
@@ -12,6 +12,21 @@ test('a runner and its host on different FULI versions: which one is older', () 
     { older: 'runner', hostVersion: '0.29.0', runnerVersion: '0.28.1' });
   assert.deepEqual(versionSkew({ hostVersion: '0.28.1', runnerVersion: '0.29.0' }),
     { older: 'host', hostVersion: '0.28.1', runnerVersion: '0.29.0' });
+});
+
+test('the same release spelled differently is not a difference', () => {
+  assert.equal(versionSkew({ hostVersion: 'v0.29.0', runnerVersion: '0.29.0' }), null);
+  assert.equal(versionSkew({ hostVersion: '0.29.0+build.7', runnerVersion: '0.29.0' }), null);
+  assert.deepEqual(versionSkew({ hostVersion: 'v0.29.0', runnerVersion: '0.29.0-beta.9' })?.older, 'runner');
+});
+
+test('the runner\'s version is what its open sessions run, not only what is installed', () => {
+  const at = '/runner-data/graph-runtime.json';
+  // Two sessions still on the version they started with, one restarted onto the new one.
+  const live = () => [{ version: '0.29.0-beta.9' }, { version: '0.29.0' }, { version: '0.29.0-beta.9' }];
+  assert.deepEqual(runningRunnerVersions(at, { live, installed: '0.29.0' }), ['0.29.0', '0.29.0-beta.9']);
+  // With no session open, the installed copy is what the next one runs.
+  assert.deepEqual(runningRunnerVersions(at, { live: () => [], installed: '0.29.0' }), ['0.29.0']);
 });
 
 test('the line says which copy is older and never claims a call is blocked', () => {
