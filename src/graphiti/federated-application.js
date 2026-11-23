@@ -67,9 +67,6 @@ import {
   preflightPersonalKnowledgeCaptures,
   validateCaptureSessionKnowledge
 } from './session-knowledge-capture.js';
-import {
-  listWorkflowCandidates
-} from './workflow-learning.js';
 import { collaborationPreferencesAtEntry, getUserTasteSkill } from './collaboration-preference-entry.js';
 import {
   getKnowledgeGraph,
@@ -326,9 +323,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return finishKnowledgeReviewWorkflow(this, input);
   }
 
-  async listWorkflowCandidates(input) {
-    return listWorkflowCandidates(this, input);
-  }
 
   async recordKnowledgeUsage(input) {
     return recordKnowledgeUsage(this, input);
