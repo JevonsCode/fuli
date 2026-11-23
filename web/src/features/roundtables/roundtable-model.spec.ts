@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RoundtableMessage, RoundtablePerson } from './roundtable-api'
-import { chatBubbles, deliveryInFlight, postRecipients, tableSeats } from './roundtable-model'
+import { chatBubbles, chatRoomName, deliveryInFlight, isInjectedTitle, postRecipients, tableSeats, threadName } from './roundtable-model'
 
 const agent = (agentId: string): RoundtablePerson => ({ agentId, name: agentId.toUpperCase(), client: 'codex' })
 const you: RoundtablePerson = { agentId: null, name: null, client: 'person' }
@@ -75,5 +75,26 @@ describe('roundtable model', () => {
     expect(postRecipients({ messages })).toEqual([{ agentId: 'lead', name: 'LEAD' }])
     expect(postRecipients({ messages, subscribers: [{ agentId: 'a', name: null, delivery: 'board', instantBlocked: null }] }))
       .toEqual([{ agentId: 'a', name: 'a' }])
+  })
+})
+
+describe('a thread titled by injected prompt text', () => {
+  it('shows a plain line in the console\'s language instead, and leaves anyone\'s own words as written', () => {
+    const people = [{ name: 'Synthetic lead' }, { name: 'Synthetic reviewer' }, { name: 'Synthetic lead' }]
+    for (const subject of ['<system-reminder>', 'FULI_CHECKPOINT_REQUIRED: record the turn', 'UserPromptSubmit hook additional context: synthetic']) {
+      expect(isInjectedTitle(subject)).toBe(true)
+      expect(threadName({ subject, participants: people })).toBe('Synthetic lead、Synthetic reviewer 的对话')
+      expect(threadName({ subject })).toBe('Agent 之间的对话')
+    }
+    for (const subject of ['Check the synthetic deploy gate', '帮我看一下 <这个> 写法', 'FULI 的看板']) {
+      expect(isInjectedTitle(subject)).toBe(false)
+      expect(threadName({ subject, participants: people })).toBe(subject)
+    }
+  })
+
+  it('names a chat room titled by injected text by its members', () => {
+    const members = [{ name: 'Synthetic lead', address: 'a' }, { name: null, address: 'b' }]
+    expect(chatRoomName({ title: '<task-notification>', members })).toBe('Synthetic lead · b')
+    expect(chatRoomName({ title: 'Synthetic room', members })).toBe('Synthetic room')
   })
 })

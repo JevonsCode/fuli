@@ -5,6 +5,7 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
+import { ROUTES_FILE } from '../runner/routes-store.js';
 import { RUNNER_EXECUTORS_FILE } from '../runner/routing-executors.js';
 import { ROUTING_LEDGER_FILE, RoutingLedger } from '../runner/routing-ledger.js';
 import { MODEL_BACKENDS_FILE } from '../runner/routing-setup.js';
@@ -188,7 +189,9 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
   if (!storeGone) writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
   const stayed = [
     storeGone ? null : `${RUNNER_FILE}: emptied, so it holds nothing of the pairing any more`,
-    removed(join(dataDir, ROUTING_LEDGER_FILE), remove) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE))
+    removed(join(dataDir, ROUTING_LEDGER_FILE), remove) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE)),
+    // Its routes named that host: with the pairing gone, this computer owns everything it has again.
+    removed(join(dataDir, ROUTES_FILE), remove) ? null : `${ROUTES_FILE}: still holds the routes to that host`
   ].filter(Boolean);
   // The host's last `fuli whoami` answers belonged to its knowledge too. A JSON
   // file no process keeps open: if it stays anyway, a new pairing overwrites it.
@@ -196,7 +199,7 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
   write(stayed.length
     ? `Left ${host.name}. A FULI process of a client here still has these files open, so they could not be deleted:`
-    : `Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
+    : `Left ${host.name}. The pairing, the answers kept here, the outbox, the executor decisions made here and the routes to it are deleted.`);
   for (const line of stayed) write(`  ${line}`);
   if (stayed.length) write('Close the clients here, then delete those files yourself if you want them gone.');
   // The person wrote these two; FULI never does, so it does not delete them either.

@@ -194,8 +194,16 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
       <section class="connection-section" aria-labelledby="client-connection-detected">
         <h3 id="client-connection-detected" class="ui-group-label">{{ t('settings.connection.clients.title') }}</h3>
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
-        <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
-        <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
+        <UiNotice v-if="checkError" tone="warning" data-check-error>
+          {{ t('settings.connection.clients.checkError') }}
+          <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
+            data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
+        </UiNotice>
+        <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>
+          {{ t('settings.connection.clients.unavailable') }}
+          <template #actions><Button size="sm" variant="outline" :loading="checking" :loading-label="t('settings.connection.clients.checking')"
+            data-check-again @click="check">{{ t('settings.connection.clients.refresh') }}</Button></template>
+        </UiNotice>
         <UiNotice v-if="runner" tone="info" data-runner-clients>
           {{ runner.hostName ? t('settings.connection.clients.runner.note', { host: runner.hostName }) : t('settings.connection.clients.runner.notPaired') }}
           <template v-if="runnerSkew && runner"> {{ t(`settings.connection.clients.runner.${runnerSkew.older === 'runner' ? 'runnerOlder' : 'hostOlder'}`,
@@ -285,7 +293,7 @@ const restartOutcome = (client: ClientObservation) => restartOutcomeText(restart
             </Button>
           </li>
         </ul>
-        <UiNotice v-if="removeError" tone="error">{{ t('settings.connection.custom.removeError') }}</UiNotice>
+        <UiNotice v-if="removeError" tone="error" data-no-action="the error of the person's own click; the same button tries again">{{ t('settings.connection.custom.removeError') }}</UiNotice>
         <p v-if="observation && observation.available !== false" class="client-row__meta" role="status">
           {{ t('settings.connection.clients.observedAt', { time: formatTime(observation.observedAt) }) }}
           {{ t('settings.connection.clients.boundary') }}

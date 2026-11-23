@@ -178,7 +178,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [60, 16, 19, 41]);
+    catalog.coverage.localUserOnly], [60, 17, 19, 41]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -274,7 +274,7 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   assert.equal(byRoute.get('POST /api/roundtable/messages/:messageId/cancel')?.toolName, 'cancel_agent_message');
   assert.equal(byRoute.get('POST /api/roundtable/chats')?.toolName, 'agent_chat');
   // rec#11 D-81: an FLA pairs and shares only after the person turns lan_roundtable on.
-  for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
+  for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/listen', 'POST /api/peer/invitations', 'POST /api/peer/join',
     'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable',
     'POST /api/peer/nearby', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel',
     // Test phase (Jevons 11-14, rec issue 135): an FLA may confirm the code for the person.
