@@ -33,6 +33,16 @@ const HITS = [
   '不是跟你说了吗',
   '讲了好几次了',
   '我前面已经说清楚了，你怎么还这样',
+  // Jevons's own words, both word orders (the second review)
+  '我已经把端口改了，为什么你不用新端口',
+  '我已经装好依赖了，为什么你不直接跑',
+  '我已经给了你文档链接了，你为什么不看',
+  '我已经在 CLAUDE.md 里写了用 pnpm，你为什么还用 npm',
+  // Said without 我, with a number, or more loosely
+  '早就跟你讲过，别动 lockfile',
+  '我都说了三遍了',
+  '咋又用 npm 了',
+  '上次不是说好了',
   // English
   'I already told you to keep the commit messages in English.',
   "I've said this before: never touch the lockfile.",
@@ -80,6 +90,24 @@ const MISSES = [
   '我刚才说了，你继续',
   '如果我已经说了要回滚，那流程应该是什么？',
   '我明明说了要改成 3000，结果还是 8080，是不是配置缓存了？',
+  // The second review's false hits: a silence, a joke, someone else again, the person unsure, a suggestion
+  '你怎么还没回复',
+  '你怎么又不说话了，卡住了吗',
+  '你又不是人，别客气',
+  '老板又来了，还是那个需求，帮我拆一下',
+  '我说过别用 any 吗？记不清了',
+  "I already pushed the branch, why don't you open the PR now?",
+  // Near the new patterns, and still not a complaint
+  '我提了两次 PR，都被拒了',
+  '咋又没网了',
+  '我已经把端口改了，为什么你的页面还是打不开？',
+  '早就想跟你说一件事',
+  '之前不是说好的价格吗，商家怎么涨了',
+  '咋还在加载',
+  '我讲了两遍课',
+  '你怎么还没睡',
+  '你又没错，别道歉',
+  '我已经发了，你为什么没收到？',
   'I already said in the PR description why this is needed, can you review?',
   'You keep using the word "simply" in the docs, please grep for it.',
   // System failures, not the Agent
@@ -125,8 +153,9 @@ test('the guidance says how to keep it, how to avoid a duplicate and how to ask 
     assert.match(text, /never (?:say )?that it is remembered|never say it is remembered/);
     assert.match(text, /scope unsure/);
   }
-  // Sent only on a matching turn.
-  assert.ok(REPEAT_GUIDANCE.length < 800, String(REPEAT_GUIDANCE.length));
+  // Sent only on a matching turn, as the actions alone; the reasons live in the rule it names.
+  assert.match(REPEAT_GUIDANCE, /full rule: task_guidance\.repeat_signal/);
+  assert.ok(REPEAT_GUIDANCE.length < 560, String(REPEAT_GUIDANCE.length));
 });
 
 test('a repeat complaint is never auto-closed and carries the guidance; an ordinary turn carries nothing', async () => {

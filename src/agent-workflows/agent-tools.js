@@ -42,23 +42,29 @@ export const AGENT_WORKFLOW_HANDLERS = Object.freeze({
 // A proposal that answers a repeat FULI asked the person about (fla-growth/tool-suggestions.js):
 // the person is not asked twice. An unanswered request is withdrawn, since the proposal
 // itself now waits for them; a person who already chose 「只记下这串步骤」 made the
-// decision, so the proposal is confirmed as theirs and needs no second click.
+// decision, so a NEW workflow (version 1, nothing active before) is confirmed as
+// theirs and needs no second click. A change of an existing workflow is never
+// confirmed this way: it waits on the FLA's page, which shows the old steps next
+// to the new ones, since the person chose to keep these steps, not to replace others.
 async function settleRepeats(app, owner, result, deposited, pendingVersion) {
   for (const hint of deposited.filter(item => !item.answer)) {
     await cancelIfOpen(app, { personalSpaceId: owner.personalSpaceId, requestId: hint.requestId,
       reason: 'The FLA proposed these steps as a workflow; confirm it on its page.' });
   }
-  if (result.status !== 'proposed' || !deposited.some(item => item.answer === 'steps')) return null;
+  if (result.status !== 'proposed' || pendingVersion !== 1 || !deposited.some(item => item.answer === 'steps')) return null;
   const decided = workflows(app).decide({ personalSpaceId: owner.personalSpaceId, workflowId: result.workflow.workflowId,
     decision: 'confirm', version: pendingVersion });
-  return { status: 'active', workflow: decided.workflow, confirmedBy: 'person_choice' };
+  return { status: 'active', workflow: decided.workflow, confirmedBy: 'person_choice',
+    note: 'Confirmed by the person\'s choice 「只记下这串步骤」 in 待决策; tell them: 按你在待决策里的选择确认。' };
 }
 
 // An Agent app its FLA submitted is the script the person chose for a repeat:
 // that repeat is deposited, so neither the FLA nor the person hears of it again.
-export function appSubmitted(app, { personalSpaceId, agentId }, result) {
-  if (!result?.appId || !app.agentWorkflows?.depositApp) return result;
-  try { app.agentWorkflows.depositApp({ personalSpaceId, agentId }, result.appId); } catch { /* the app is submitted either way */ }
+// Whose repeats, and in which project, is the calling task's (taskContextToken),
+// never the agentId the caller passed: a call without a token deposits nothing.
+export async function appSubmitted(app, input, result) {
+  if (!result?.appId || !app.agentWorkflows?.depositApp || !input?.taskContextToken) return result;
+  try { app.agentWorkflows.depositApp(await boundAgent(app, input), result.appId); } catch { /* the app is submitted either way */ }
   return result;
 }
 

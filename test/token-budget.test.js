@@ -425,12 +425,13 @@ const BASELINE = Object.freeze({
   // - fla_growth, only on the first turn of a conversation of an FLA with something to say: none 0;
   //   one repeat 258 (its line with the key); the most workflows it ever names, three with the longest
   //   names (80) and one-sentence purposes (cut at 120) the store takes and UUID ids: 888;
-  // - remember_guidance on a turn whose words say "I already told you": 787, only on that turn.
+  // - remember_guidance on a turn whose words say "I already told you": 787, only on that turn;
+  //   then only what to do and the rule's name, the reasons left to task_guidance.repeat_signal: 513.
   workerTaskGuidanceChars: 5359,
   flaGrowthNoneChars: 0,
   flaGrowthRepeatedChars: 258,
   flaGrowthWorkflowsMaxChars: 888,
-  repeatGuidanceChars: 787
+  repeatGuidanceChars: 513
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>

@@ -26,7 +26,9 @@ const ANSWER_PAGE = 200;
 const SCRIPT = '做成能跑的脚本';
 const STEPS = '只记下这串步骤';
 const NO = '不用';
-const ANSWERS = Object.freeze({ [SCRIPT]: 'script', [STEPS]: 'steps', [NO]: 'no' });
+// 0.29 betas offered 「做成脚本」 and 「做成 Agent App」: both are what SCRIPT makes now, so an answer
+// the person gave in that wording is kept, never asked again.
+const ANSWERS = Object.freeze({ [SCRIPT]: 'script', [STEPS]: 'steps', [NO]: 'no', 做成脚本: 'script', '做成 Agent App': 'script' });
 // The wording 0.29 betas asked in: an open request in it is cancelled once, as it offered "Agent App".
 const LEGACY_TITLE = /这串步骤已重复 \d+ 次以上，要做成工具吗？$/u;
 
@@ -94,7 +96,7 @@ function repeatedWorkflows(workflows) {
 // once, and read back the answers given since. A repeat the FLA already
 // deposited, or the person answered, is not asked about again; a request
 // already open in this wording is not sent again (no Provider call at all).
-export async function suggestRepeatedTools(app, state = { legacyCleared: false }) {
+export async function suggestRepeatedTools(app, state = { legacyCleared: false, legacyAnswers: [] }) {
   const personalSpaceId = app.config.personal.spaceId;
   const workflows = app.agentWorkflows ?? null;
   const tasks = await completedTasks(app, personalSpaceId);
@@ -105,19 +107,20 @@ export async function suggestRepeatedTools(app, state = { legacyCleared: false }
       .find(entry => entry.workflowId === row.workflowId);
     if (workflow) active.push({ agentId: row.agentId, workflow });
   }
-  if (!state.legacyCleared) state.legacyCleared = await cancelLegacy(app, personalSpaceId);
+  if (!state.legacyCleared) state.legacyCleared = await cancelLegacy(app, personalSpaceId, state);
+  // Answers first, so a request the person just answered is not asked again in new words.
+  await readAnswers(app, personalSpaceId);
   const asked = [];
   for (const repeat of [...repeatedPlans(tasks), ...repeatedWorkflows(active)]) {
     // One that cannot be asked now (its FLA left the project, say) keeps the others going.
     try {
-      if (await askOnce(app, personalSpaceId, repeat)) asked.push({ agentId: repeat.agentId, personalProjectId: repeat.personalProjectId, tasks: repeat.tasks.length });
+      if (await askOnce(app, personalSpaceId, repeat, state.legacyAnswers ?? [])) asked.push({ agentId: repeat.agentId, personalProjectId: repeat.personalProjectId, tasks: repeat.tasks.length });
     } catch { /* asked again on a later tick */ }
   }
-  await readAnswers(app, personalSpaceId);
   return { asked };
 }
 
-async function askOnce(app, personalSpaceId, repeat) {
+async function askOnce(app, personalSpaceId, repeat, legacyAnswers) {
   const request = attentionFor(personalSpaceId, repeat);
   const wording = contentHash({ title: request.title, detail: request.detail, requestedAction: request.requestedAction,
     options: request.options }).slice(0, 12);
@@ -125,9 +128,22 @@ async function askOnce(app, personalSpaceId, repeat) {
     personalProjectId: repeat.personalProjectId, kind: repeat.workflowName ? 'workflow' : 'steps',
     name: String(repeat.workflowName ?? repeat.steps[0]).slice(0, 120), steps: repeat.steps, taskCount: repeat.tasks.length });
   if (hint && (hint.depositedAt || hint.answer || hint.requestWording === wording)) return false;
+  // Answered in the 0.29 beta wording: that answer stands.
+  const earlier = hint && !hint.requestId ? legacyAnswers.find(item => item.agentId === repeat.agentId
+    && item.personalProjectId === repeat.personalProjectId && plansAlike(listedSteps(item.detail), repeat.steps)) : null;
+  if (earlier) {
+    app.agentWorkflows.repeatRequested(hint.key, earlier.requestId, wording);
+    app.agentWorkflows.repeatAnswered(hint.key, answerOf(earlier));
+    return false;
+  }
   // The wording changed since the person was asked: the old request goes, unanswered ones only.
-  if (hint?.requestId) await cancelIfOpen(app, { personalSpaceId, requestId: hint.requestId,
-    reason: 'FULI asks this again in clearer words.' });
+  // One no longer open was answered or closed by the person (in words FULI cannot read as a
+  // choice, or it would be recorded already): it is not asked again.
+  if (hint?.requestId && await cancelIfOpen(app, { personalSpaceId, requestId: hint.requestId,
+    reason: 'FULI asks this again in clearer words.' }) === 'not_open') {
+    app.agentWorkflows.repeatRequested(hint.key, hint.requestId, wording);
+    return false;
+  }
   const record = await app.requestAgentAttention({ ...request, idempotencyKey: `tool-suggestion:${repeat.key}:${wording}` });
   if (hint) app.agentWorkflows.repeatRequested(hint.key, record?.requestId ?? null, wording);
   return true;
@@ -142,19 +158,26 @@ async function readAnswers(app, personalSpaceId) {
   catch { return; }
   for (const hint of awaiting) {
     const reply = resolved.find(item => item.requestId === hint.requestId);
-    const answer = ANSWERS[String(reply?.response ?? '').split('\n')[0].trim()];
+    const answer = answerOf(reply);
     if (answer) app.agentWorkflows.repeatAnswered(hint.key, answer);
   }
 }
 
-// Requests asked in the 0.29 beta wording that nobody answered yet are cancelled once.
-async function cancelLegacy(app, personalSpaceId) {
+const answerOf = reply => ANSWERS[String(reply?.response ?? '').split('\n')[0].trim()];
+// The steps a request listed, one per numbered line.
+const listedSteps = detail => String(detail ?? '').split('\n').map(line => /^\d+\. (.+)$/u.exec(line)?.[1]).filter(Boolean);
+
+// Requests asked in the 0.29 beta wording that nobody answered yet are cancelled
+// once; the ones the person answered are kept for their repeats (askOnce).
+async function cancelLegacy(app, personalSpaceId, state) {
   if (!app.listAgentAttention) return true;
   try {
     const { items = [] } = await app.listAgentAttention({ personalSpaceId, status: 'open', limit: ANSWER_PAGE });
     for (const item of items.filter(entry => LEGACY_TITLE.test(entry.title ?? ''))) {
       await cancelIfOpen(app, { personalSpaceId, requestId: item.requestId, reason: 'FULI asks this again in clearer words.' });
     }
+    const { items: resolved = [] } = await app.listAgentAttention({ personalSpaceId, status: 'resolved', limit: ANSWER_PAGE });
+    state.legacyAnswers = resolved.filter(entry => LEGACY_TITLE.test(entry.title ?? '') && answerOf(entry));
     return true;
   } catch { return false; }
 }
@@ -181,7 +204,7 @@ function attentionFor(personalSpaceId, repeat) {
 // repeats nothing; a failed tick is tried on the next.
 export function startToolSuggestionScheduler({ app, withLease = (_owner, run) => run(), intervalMs = 3_600_000 }) {
   let running = false, active = null, stopped = false;
-  const state = { legacyCleared: false };
+  const state = { legacyCleared: false, legacyAnswers: [] };
   const tick = async () => {
     if (stopped || running || app.getAgentAccessPolicy?.().enabled === false) return;
     running = true;

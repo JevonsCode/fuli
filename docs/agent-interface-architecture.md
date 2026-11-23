@@ -176,7 +176,8 @@ three, name and the first sentence of the purpose), and a repeat the hourly chec
 (`src/fla-growth/tool-suggestions.js`, "the same kind of work" per `step-similarity.js`) with the
 person's answer once given, in at most two conversations per answer. A proposal of the same kind
 of work deposits the repeat (a rejection gives it back); the person's open 待决策 about it is then
-withdrawn, and a person who chose 「只记下这串步骤」 has the proposal confirmed by that choice. State
+withdrawn, and a person who chose 「只记下这串步骤」 has a new workflow (version 1, never active)
+confirmed by that choice; a change of an existing workflow still waits on the Agent's page. State
 is `agent_growth_hints` (agent-workflows format 3); an entry never migrates the store. Steps are
 never put into an entry; an ordinary entry has no `fla_growth` key. The console shows how often
 each confirmed workflow was run and ran through, counted from its runs.

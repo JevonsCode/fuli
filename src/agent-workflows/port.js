@@ -202,11 +202,12 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
 
   const awaitingAnswer = ({ personalSpaceId }) => store.awaitingAnswer(personalSpaceId);
 
-  // An Agent app the FLA submitted deposits the repeats the person asked it to make a script of.
+  // An Agent app the FLA submitted deposits the repeats the person asked it to
+  // make a script of, in the project of the task that submitted it only.
   function depositApp(owner, appId) {
+    if (!owner?.personalProjectId) return [];
     return store.transaction(() => {
-      const matched = store.openHints({ ...owner, personalProjectId: owner.personalProjectId ?? null })
-        .filter(hint => hint.answer === 'script');
+      const matched = store.openHints(owner).filter(hint => hint.answer === 'script');
       for (const hint of matched) store.deposit(hint.key, `app:${appId}`, at());
       return matched;
     });

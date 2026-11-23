@@ -184,12 +184,34 @@ test('a person who chose 「只记下这串步骤」 is not asked to confirm aga
   assert.match(flaGrowthEntry(app(workflows), task, opening).repeated, /The person chose to keep .* as steps: propose them with propose_agent_workflow/);
   const proposed = await propose(application_);
   assert.deepEqual([proposed.status, proposed.confirmedBy, proposed.workflow.status], ['active', 'person_choice', 'active']);
+  assert.match(proposed.note, /按你在待决策里的选择确认/);
   assert.equal(request.status, 'resolved', 'the answered request is the person\'s and stays as it is');
   assert.deepEqual(flaGrowthEntry(app(workflows), task, opening).workflows.map(item => item.name), ['Weekly release']);
 });
 
-test('a person who chose a script: the FLA is told to submit an Agent app, and submitting it settles the repeat', async (t) => {
+test('「只记下这串步骤」 never replaces a confirmed workflow: the change waits for the person on its page', async (t) => {
   const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+  const earlier = [{ title: 'Read the synthetic changelog' }, { title: 'Tag the synthetic build' }];
+  const { workflow } = workflows.propose(OWNER, { name: 'Weekly release', purpose: 'Ship', steps: earlier, source: 'agent' });
+  workflows.decide({ personalSpaceId: SPACE, workflowId: workflow.workflowId, decision: 'confirm', version: 1 });
+  await suggestRepeatedTools(application_);
+  const [request] = inbox.requests.values();
+  inbox.answer(request.requestId, '只记下这串步骤');
+  await suggestRepeatedTools(application_, { legacyCleared: true });
+  const proposed = await propose(application_, { workflowId: workflow.workflowId });
+  assert.deepEqual([proposed.status, proposed.workflow.status, 'confirmedBy' in proposed], ['proposed', 'active', false]);
+  assert.deepEqual(workflows.read(OWNER, { workflowId: workflow.workflowId }), { workflowId: workflow.workflowId, version: 1,
+    name: 'Weekly release', purpose: 'Ship', steps: earlier }, 'the confirmed version is still the one in use');
+  const shown = workflows.overview({ personalSpaceId: SPACE, agentId: 'fla-1' }).workflows[0];
+  assert.deepEqual([shown.active.version, shown.pending.version], [1, 2], 'the page shows the old steps next to the new');
+});
+
+test('a person who chose a script: the FLA is told to submit an Agent app, and submitting it settles the repeat', async (t) => {
+  const { workflows, path } = workflowsAt(t);
+  const depositedBy = () => { const db = new DatabaseSync(path, { readOnly: true });
+    try { return db.prepare('SELECT deposited_by FROM agent_growth_hints').all().map(row => row.deposited_by); } finally { db.close(); } };
   const inbox = attention();
   const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
   await suggestRepeatedTools(application_);
@@ -198,8 +220,15 @@ test('a person who chose a script: the FLA is told to submit an Agent app, and s
   await suggestRepeatedTools(application_, { legacyCleared: true });
   assert.match(flaGrowthEntry(app(workflows), task, opening).repeated,
     /The person chose a script .* submit_agent_app_version .* confirm it in the terminal from Agents → Apps/);
-  appSubmitted(application_, { personalSpaceId: SPACE, agentId: 'fla-1' }, { appId: 'app-synthetic', status: 'pending' });
-  assert.equal(flaGrowthEntry(app(workflows), task, opening), null);
+  // Whose repeat it settles is the calling task's FLA and project, never the agentId passed.
+  await appSubmitted(application_, { personalSpaceId: SPACE, agentId: 'fla-1' }, { appId: 'app-no-token', status: 'pending' });
+  const elsewhere = { ...application_, taskContextRegistry: { context: async () => ({ projectAgentId: 'fla-1', personalProjectId: 'orchard' }) } };
+  await appSubmitted(elsewhere, { taskContextToken: 'fuli-task-synthetic', agentId: 'fla-1' }, { appId: 'app-orchard', status: 'pending' });
+  const other = { ...application_, taskContextRegistry: { context: async () => ({ projectAgentId: 'fla-2', personalProjectId: 'garden' }) } };
+  await appSubmitted(other, { taskContextToken: 'fuli-task-synthetic', agentId: 'fla-1' }, { appId: 'app-other', status: 'pending' });
+  assert.deepEqual(depositedBy(), [null], 'no token, another project, another FLA: still owed');
+  await appSubmitted(application_, { taskContextToken: 'fuli-task-synthetic' }, { appId: 'app-synthetic', status: 'pending' });
+  assert.deepEqual(depositedBy(), ['app:app-synthetic']);
 });
 
 test('a request asked in other words is withdrawn before the new one, and an answered one is left alone', async (t) => {
@@ -226,6 +255,34 @@ test('a request asked in other words is withdrawn before the new one, and an ans
   const open = [...inbox.requests.values()].filter(item => item.status === 'open');
   assert.equal(open.length, 1);
   assert.notEqual(open[0].requestId, earlier.requestId);
+});
+
+test('a person who just answered a request in earlier words is not asked again in the new ones', async (t) => {
+  for (const reply of ['只记下这串步骤', '我自己写个脚本就行']) {
+    const { workflows } = workflowsAt(t);
+    const inbox = attention();
+    const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+    await suggestRepeatedTools(application_);
+    const [request] = inbox.requests.values();
+    const key = repeatedPlans(['t1', 't2', 't3'].map(id => finished(id, RELEASE)))[0].key;
+    workflows.repeatRequested(key, request.requestId, 'earlier');
+    inbox.answer(request.requestId, reply);
+    await suggestRepeatedTools(application_, { legacyCleared: true });
+    assert.equal(inbox.requests.size, 1, reply);
+  }
+});
+
+test('an answer the person gave to the 0.29 beta question is kept, not asked again', async (t) => {
+  const { workflows } = workflowsAt(t);
+  const inbox = attention();
+  const application_ = application(workflows, inbox, ['t1', 't2', 't3'].map(id => finished(id, RELEASE)));
+  const beta = await inbox.requestAgentAttention({ idempotencyKey: 'tool-suggestion:beta', agentId: 'fla-1', personalProjectId: 'garden',
+    title: '「Bump the version」这串步骤已重复 3 次以上，要做成工具吗？', detail: ['同样的 3 步，在 3 个以上任务里一模一样：',
+      ...RELEASE.map((title, index) => `${index + 1}. ${title}`)].join('\n'), options: ['做成脚本', '做成 Agent App', '不用'] });
+  inbox.answer(beta.requestId, '做成脚本');
+  await suggestRepeatedTools(application_);
+  assert.equal(inbox.requests.size, 1, 'nothing asked in the new words');
+  assert.match(flaGrowthEntry(app(workflows), task, opening).repeated, /The person chose a script/);
 });
 
 test('a confirmed workflow is named on a conversation\'s first turn by name and one sentence; a proposal is not', (t) => {

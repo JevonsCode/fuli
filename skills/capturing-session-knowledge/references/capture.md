@@ -95,21 +95,9 @@ Broader talk ("I always", "I prefer", 我喜欢, 我总是) adds no guidance.
 
 When the person complains they already asked for it ("I already told you", "as I said",
 "didn't I say", 我已经说过了, 上次就讲过, 不是说过了吗, 说了多少遍, 你又…, or "I already did X,
-why didn't you Y" / 我已经…了，为什么你还…), that is a keep signal too: task entry adds
-`remember_guidance` with the repeat rule (`task_guidance.repeat_signal`) and the task is never
-auto-closed. A plain question ("why not use X here?"), someone else's quoted words, a pasted log
-or a request to write such a phrase is not one.
-- If the message is not actually about something they said or did before, treat it as ordinary:
-  keep nothing, ask nothing.
-- Check whether FULI already holds it (`effective_preferences`, `task_knowledge_recall`, a search).
-  If it does, store nothing new: say in one line why it did not apply this time (not delivered, its
-  scope did not cover this, or it was delivered and not followed), and put the last case in the
-  checkpoint `workLog`.
-- Otherwise keep it this turn with `remember`, the person's words as `quote`; when this project
-  versus everywhere is unclear, use scope `unsure` rather than asking.
-- Say in one line that it is kept as an item waiting for their confirmation and where it would
-  apply; never that it is remembered or in effect (`remember` items are pending).
-- Ask, with clickable choices, only when what to keep is itself unclear.
+why didn't you Y" / 我已经…了，为什么你不/还…, 你为什么不…), that is a keep signal too: task entry
+adds `remember_guidance` and the task is never auto-closed. Follow the rule it names,
+`task_guidance.repeat_signal` (fuli://rules/task-entry/task_guidance); it is not repeated here.
 
 ## Route by Ownership
 

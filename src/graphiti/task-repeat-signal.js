@@ -26,6 +26,11 @@ const ABOUT_THE_WORDS = /如果|假如|假设|帮我写|写个|写一个|匹配|
 const SENTENCES = /(?<=[。！？!?])|(?<=\.)\s+|\r?\n/u;
 
 const IMPERATIVE = '(?:别|不要|不许|不准|一定要|要用|用|改成)';
+// After 没/不: a piece of work the Agent skipped, not it being slow or silent
+// (「你怎么还没回复」), a life question (「你怎么还没睡」) or 「你又不是…」.
+const SKIPPED_WORK = '(?:没|不)(?:直接|先|再|去)?(?:用|写|改|加|删|跑|测|看|读|按|照|听|记|提交|更新|装|修|跟|遵|带|问|查)';
+// 「我说过别用 any 吗？」: the person asking themselves, not complaining (「我不是说过…吗」 still is).
+const ASKING_THEMSELVES = /^我(?!.*不是).*吗[？?]?$/u;
 const REPEAT_PATTERNS = [
   // 「我已经说过了」「我早就讲过了」: said before, and said so
   /我(?:都|早就?|明明|之前|前面|刚才)?(?:已经)?(?:说|讲|强调|交代)过了/u,
@@ -34,13 +39,20 @@ const REPEAT_PATTERNS = [
   new RegExp(`我(?:都|早就?|明明|已经|之前|前面|上次|刚才)*(?:说|讲|强调|交代|要求)(?:过|了)?(?:[，,]\\s*${IMPERATIVE}|别|不要|不许|不准)`, 'u'),
   // 「我跟你说过这个接口要带分页」, not 「上次跟你说过的那个方案」
   /我(?:都|早就?|明明|已经|之前|前面|上次|刚才)*(?:跟|和)你(?:说|讲|提)(?:过|了)(?!的)/u,
+  // 「早就跟你讲过，别动 lockfile」 (no 我, still the person)
+  /早就?(?:跟|和)你(?:说|讲|提)(?:过|了)(?!的)/u,
   // 「我之前让你别动配置」
   /我(?:之前|上次|刚才|前面|早就|都|已经|明明)+(?:让|叫|要)你(?:别|不要|不许|用|改|加|先)/u,
-  // 「我已经把端口改了，为什么你还不用」「我前面已经把端口改了你怎么还在用 3000」
-  /我[^。！？!?\n]{0,6}已经[^。！？!?\n]{1,40}?了[，,]?\s*(?:为什么|为啥)?你(?:怎么)?(?:还|又|就|都)(?:在|是)?(?:不|没|用|这样|写|改)/u,
+  // Jevons's own words 「我已经xxx了，为什么你不xxx」, in both word orders:
+  // 「我已经把端口改了，为什么你不用新端口」「我已经给了你文档链接了，你为什么不看」
+  // 「我已经在 CLAUDE.md 里写了用 pnpm，你为什么还用 npm」「我前面已经把端口改了你怎么还在用 3000」
+  // (「…，为什么你的脚本还是报错」 asks about a failure, not the Agent: no match)
+  new RegExp(`我[^。！？!?\\n]{0,6}已经[^。！？!?\\n]{1,40}?(?:了[，,]?|[，,])\\s*(?:(?:为什么|为啥)?你(?:怎么)?(?:还|又|就|都)(?:在|是)?(?:不|没|用|这样|写|改)|(?:为什么|为啥)你(?:还|又)?${SKIPPED_WORK}|你(?:为什么|为啥)(?:还|又)?(?:${SKIPPED_WORK}|用|在用))`, 'u'),
   // 「都说了别用 any」「说好的不要加注释呢」
   new RegExp(`都说了[，,]?\\s*(?:${IMPERATIVE.slice(3, -1)}|让你|多少)`, 'u'),
   /说好的[^。！？!?\n]{1,30}呢/u,
+  // 「上次不是说好了」
+  /(?:上次|上回|之前|前面|刚才|昨天)不是说好了/u,
   // 「之前不是让你用 pnpm 吗」「不是跟你说过了」
   /不是(?:让你|叫你|跟你说|跟你讲|和你说|说过|讲过|说了|讲了)[^。！？!?\n]{0,30}吗/u,
   /不是(?:跟你|和你)(?:说|讲)(?:过|了)/u,
@@ -48,13 +60,19 @@ const REPEAT_PATTERNS = [
   /(?:上次|上回|之前|刚才|前面)就(?:跟你)?(?:说|讲|提|强调)(?:过|了)/u,
   // 「说了多少遍」「跟你讲了多少回了」
   /(?:说|讲|提|强调)(?:了|过)(?:多少|好几|很多|几|N)(?:遍|次|回)/u,
+  // 「我都说了三遍了」: a number only with 遍 (「提了两次 PR」 is not a complaint)
+  /(?:说|讲|强调)(?:了|过)[两二三四五六七八九十\d]+遍(?:了|[，,。！!]|$)/u,
   // The Agent doing it again: 「你又把测试删了」「又忘了」「老是忘记」「上次你就是这么改坏的」
-  /你(?:又|老是|总是)(?:把|忘|没|不|用|在用|改|删|加)/u,
-  /你怎么(?:又|还)(?:在)?(?:用|写|改|加|删|忘|没|不)/u,
+  // (not 「你又不是人」, nor a silence: 「你怎么还没回复」「你怎么又不说话了」)
+  new RegExp(`你(?:又|老是|总是)(?:把|忘|用|在用|改|删|加|${SKIPPED_WORK})`, 'u'),
+  new RegExp(`你怎么(?:又|还)(?:在)?(?:用|写|改|加|删|忘|${SKIPPED_WORK})`, 'u'),
+  // 「咋又用 npm 了」 (not 「咋又没网了」)
+  /咋又(?:在)?(?:用|写|改|删|忘|加(?!载))/u,
   /又忘了|怎么又忘|(?:老是|总是)忘/u,
   /上次你就是这么/u,
   /第[二三四五六七八九十几\d]+次了[，,]?\s*(?:别|不要|还|你)/u,
-  /又来了[，,]\s*(?:还是|又)/u,
+  // 「又来了，还是 npm」, said to the Agent; not 「老板又来了，还是那个需求」
+  /(?:^|你)又来了[，,]\s*(?:还是|又)/u,
   // English
   /\bI(?:'ve| have)? (?:already )?told you\b/iu,
   /\bI said no\b/iu,
@@ -64,7 +82,10 @@ const REPEAT_PATTERNS = [
   /\b(?:as|like) I (?:said|mentioned|told you)(?: (?:before|earlier|last time|already))?[,:]/iu,
   /\bdidn'?t I (?:say|tell you|ask you|mention)\b/iu,
   /\bhow many times (?:do|have|must|did) (?:I|you)\b/iu,
-  /\bI(?:'ve)? already [^.!?\n]{1,60}?\bwhy (?:didn'?t|don'?t|did not|do not|won'?t|aren'?t|haven'?t) you\b/iu,
+  // "why don't you …" after any "already" is often a suggestion ("I already pushed the branch, why
+  // don't you open the PR now?"); it counts only after something said to the Agent.
+  /\bI(?:'ve)? already [^.!?\n]{1,60}?\bwhy (?:didn'?t|did not|won'?t|aren'?t|haven'?t) you\b/iu,
+  /\bI(?:'ve)? already (?:told|said|asked|gave|showed|sent) (?:you|it)\b[^.!?\n]{0,60}?\bwhy (?:don'?t|do not) you\b/iu,
   /\byou (?:keep|kept) (?:forgetting|ignoring)\b/iu,
   /\byou forgot\b[^.!?\n]{0,40}\bagain\b/iu,
   /\bwe(?:'ve| have)? (?:already )?(?:talked|discussed|been over) (?:about )?(?:this|that)\b/iu,
@@ -89,15 +110,14 @@ function cutAt(line, pattern, applies = () => true) {
 
 // True when the person says they already asked for this; the sentence is the evidence.
 export function repeatComplaint(prompt) {
-  return ownSentences(prompt).some(sentence => !ABOUT_THE_WORDS.test(sentence)
+  return ownSentences(prompt).some(sentence => !ABOUT_THE_WORDS.test(sentence) && !ASKING_THEMSELVES.test(sentence)
     && REPEAT_PATTERNS.some(pattern => pattern.test(sentence)));
 }
 
 // Sent only on a turn that matched, so an ordinary entry pays nothing for it.
-// The full rule is task_guidance.repeat_signal (fuli://rules/task-entry/task_guidance).
-export const REPEAT_GUIDANCE = 'The user may be saying they already asked for this (task_guidance.repeat_signal). '
-  + 'If the message is not actually about something they said or did before, treat it as an ordinary message: keep nothing, ask nothing. '
-  + 'Otherwise check whether FULI already holds it (effective_preferences, task_knowledge_recall): if so store nothing new and say in one line why it did not apply '
-  + '(not delivered, wrong scope, or delivered and not followed; the last also in the checkpoint workLog). '
-  + 'If not, keep it this turn with checkpoint_task_knowledge remember, quoting their words (scope unsure when this project vs everywhere is unclear), '
-  + 'and say in one line it is kept as an item waiting for their confirmation, never that it is remembered. Ask, with clickable choices, only when what to keep is unclear.';
+// Only what to do; why, and the wording, are the rule's alone: task_guidance.repeat_signal.
+export const REPEAT_GUIDANCE = 'They may be saying they asked for this before (full rule: task_guidance.repeat_signal). '
+  + 'If not, keep nothing, ask nothing. If FULI already holds it, store nothing; '
+  + 'say in one line why it did not apply (not delivered, wrong scope, or not followed: that one also in the checkpoint workLog). '
+  + 'Else checkpoint_task_knowledge remember, their words as quote, scope unsure if unclear, and say it is waiting for their confirmation, '
+  + 'never that it is remembered. Ask, with clickable choices, only if what to keep is unclear.';
