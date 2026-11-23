@@ -167,6 +167,8 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       const env = request.headers[NATIVE_SESSION_HEADER] === '1' ? nativeSessionEnv(sourceApplication, sessionId) : {};
       await sessions.handle(request, response, { owner: fingerprint, createMcp: () => createMcp(app, {
         sourceApplication, hostSessionId: sessionId, toolProfile, flaMenu: true, env,
+        // A runner sends the host its own tokens back; one that still names this host is taken as its own.
+        taskIssuer: hostFingerprint?.slice(0, 16) ?? null,
         withRuntimeLease: inWorkspace(fingerprint) }) });
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);

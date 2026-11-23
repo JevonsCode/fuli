@@ -192,7 +192,7 @@ scope local.
 
 1. **Follower console and safe desktop start** (fixes §1.1 and §1.2 for today's runners), with the
    follower's own state visible and its cache no longer expiring. — **done** (this version).
-2. Routes store, router in the MCP entry, tokens with issuer; `default → host` reproduces today.
+2. Routes store, router in the MCP entry, tokens with issuer; `default → host` reproduces today. — **done**: `runner/routes.sqlite`, `fuli routes`, per-call routing in the follower's MCP server and task owners. `fuli routes local` is refused until step 3 for every scope, and `global` is never local on a follower (D1, D2).
 3. Local projects on a follower (`project:Y → local`), global from the host (D1, D2).
 4. Owner-side grants; console listing.
 5. Moving a scope (D3), FLA split (D4).

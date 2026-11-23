@@ -68,6 +68,56 @@ the hook tells the model to enter the task through FULI's MCP tools instead.
 store (the host, the cached answers, offline task tokens and the outbox). The
 host lists the runner until the person revokes it there.
 
+## Routes: what this computer follows
+
+Which parts of the person's FULI this computer reads and writes on another one is a short table,
+`runner/routes.sqlite` (docs/runner-roles-design.md §3). A scope is `global` (habits, profile, the
+FLA roster, Jefa), `default` (whatever has no route of its own) or `project:<id>`, and each has
+one owner: this computer or the paired host. A computer with no routes owns everything it has.
+
+- `fuli runner join` is 「follow everything」 on the joined host: `global` and `default` go there,
+  and so does any scope that followed another host. A runner paired by an earlier version gets
+  `global → host` and `default → host` on its first start and behaves exactly as before, outbox
+  included. `fuli runner leave` deletes the routes.
+- `fuli routes list` shows them; `fuli routes follow SCOPE HOST` points one scope at the paired
+  host (its name, or 8 or more characters of its fingerprint); `fuli routes scope-of PATH` prints
+  the scope of a folder (a relative path from where it is run). Which project a folder is, is the
+  host's answer by the host's own rules: what the host last resolved for this very folder (kept from
+  its task entries), else the host's resolver itself (`resolvePersonalProjectPath`: repository root,
+  a worktree's original repository, the folder's name, a child project's marker) over the projects
+  this computer knows. A folder of no known project is `default`.
+- `fuli routes follow` first checks that this computer has no data of that scope already (design
+  §7.1): on a computer with a FULI of its own, `global` and `default` are refused, and a project is
+  refused when that FULI has it (`scope_has_local_data`). It asks the running FULI for the projects of
+  this data directory's personal space and says apart a FULI it cannot reach
+  (`local_fuli_not_running`), one that answered with an error (`local_fuli_refused`) and settings it
+  cannot read (`local_fuli_unreadable`). Moving a scope between computers is a later step.
+- `fuli routes local SCOPE` is refused (`local_route_not_yet`) until owning a scope on a computer
+  that follows a host is built (the next step), whatever this computer has: a FULI of its own beside
+  a pairing is normal, and a route written now would give that scope a second owner once the next
+  step arrives. `global` is never routed to a follower (`global_has_one_owner`): habits, profile and
+  the FLA roster have one owner, the computer it follows (D1, D2).
+- Each call is routed before anything is sent: by the scope of the folder it names (`global`
+  without one), or by the computer that entered the task its token names, so a checkpoint goes
+  back to the computer that entered the task whatever the routes became. A call whose owner this
+  computer cannot reach is refused with the command that fixes it, never sent to another computer:
+  `scope_owner_not_paired`, `task_owner_not_paired`, and `scope_owned_here` (a scope routed to this
+  computer, which nothing writes yet). When the routes themselves cannot be read (a newer FULI wrote
+  them, the file is damaged, or it waits for a migration), the follower's MCP server still starts and
+  every call answers `routes_unavailable` with the reason and what to do; nothing is sent anywhere.
+- A task token says which FULI issued it (design §4.4): a token the host issues reaches the client
+  as `fuli-from-<the host's fingerprint, 16 characters>.<the host's own token>`, and the host gets its
+  own token back. A token passed as the host wrote it goes by the owner remembered for it here: only
+  its SHA-256, kept 30 days from its last use, never the token. Every mention of the token in a task
+  entry's answer has the prefix (the recovery calls it suggests, such as `read_task_preferences`,
+  included), and so does every mention of a call's own task token in the answer to that call (for
+  example `read_task_preferences` or `resume_agent_conversation`). An error answer is passed on as the
+  host wrote it. The FULI that issued a token takes it back with its own name on it (a conversation
+  begun on a follower and continued on the host), refuses one that names another FULI
+  (`task_issued_elsewhere`), and says so when it cannot tell its own name, having no device identity
+  where it looks (`task_issuer_unknown`), never that the token is another FULI's.
+- A computer that follows nothing loads none of the router's modules.
+
 ## The console on a runner
 
 A runner has no knowledge of its own yet, but it has a console of its own: `fuli start` (and
@@ -565,10 +615,12 @@ The cache has a size instead of an age: at most 5000 answers or 64 MB. Past eith
 used longest ago go first; an answer used lately stays however old it is. `/local` and
 `fuli runner status` say how much is kept against those bounds.
 
-A task token given out while the host is away lasts 30 days. It is not cached content: it names a
+A task token given out while the host is away lasts 30 days from its last use. It is not cached content: it names a
 task in progress that the host never saw, and a task not continued for a month is not one anyone
 continues, so a checkpoint under it would be replayed into a task context long gone. A checkpoint
-queued under such a token keeps its folder in the outbox and is delivered as before.
+under a token that is no longer valid is refused at once (`offline_task_expired`, enter the task
+again), not queued for the host to refuse later; one queued while the token was valid keeps its
+folder in the outbox and is delivered as before.
 
 When the host answers that it does not know the runner (revoked, or a host
 that lost its records), the runner deletes the answers and tokens, stops
@@ -614,7 +666,8 @@ still waiting on a runner is delivered again under its id); `runner` 1 → 2
 adds `host.revoked_at`, 2 → 3 adds `host.last_seen_at` (when the host last
 answered anything this computer asked, shown as 「上次连上」) and 3 → 4 adds
 `answers.used_at` (when a kept answer was last used, so the cache lets go of the
-answers used longest ago). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
+answers used longest ago), and 4 → 5 adds `offline_tasks.used_at` (an offline task
+token's 30 days count from its last use). Runners, pairings, invitations, answers and the outbox are kept. Every host's roundtable
 store (`agent-roundtable.sqlite`) migrates from version 11 to 12 on the first
 start of this version, whether or not it ever invites a runner: messages gain
 `from_runner` (the runner that sent an ask) and `origin` (`runner` or

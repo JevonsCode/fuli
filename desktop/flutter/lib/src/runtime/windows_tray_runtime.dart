@@ -61,6 +61,9 @@ class WindowsTrayRuntime implements FuliRuntime {
   @override
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
+
   Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     return parseControllerReply(await _run(_root!, action, onStage));
