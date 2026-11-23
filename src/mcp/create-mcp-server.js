@@ -32,6 +32,7 @@ import {
   completePreferenceToolResult,
   completeToolResult
 } from './tool-result.js';
+import { DISPATCH_TOOL } from './dispatch-call.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { hostNamesSessions, nativeSessionFromEnv } from '../agents/native-session-env.js';
@@ -197,7 +198,6 @@ export function createMcpServer(
 // tools never change during a session: a client caches its prompt up to and
 // after the tool list, so adding a discovered tool to it would make every
 // later request pay for the whole prompt again (rec#76).
-const DISPATCH_TOOL = 'fuli_call';
 function registerDispatchTool(server) {
   server.registerTool(DISPATCH_TOOL, {
     title: 'CALL · Run a discovered Fuli tool',
