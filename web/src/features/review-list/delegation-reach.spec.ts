@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { reachNotice } from './delegation-reach'
+import { reachNotice, reachTemporaryIds } from './delegation-reach'
 
 // rec issue 124, synthetic project ids only.
 const reach = (blockedProjectIds: string[], unassignedAllowed = true, projects = 3) => ({ projects, blockedProjectIds, unassignedAllowed })
@@ -13,14 +13,35 @@ describe('reachNotice', () => {
   })
 
   it('counts the projects it can confirm in, and names general knowledge when that waits too', () => {
-    expect(reachNotice(reach(['beta', 'gamma']))).toEqual({ key: 'some', approved: 1, total: 3 })
-    expect(reachNotice(reach(['beta'], false))).toEqual({ key: 'someAndGeneral', approved: 2, total: 3 })
-    expect(reachNotice(reach([], false))).toEqual({ key: 'general', approved: 3, total: 3 })
+    const none = { approved: 0, total: 0 }
+    expect(reachNotice(reach(['beta', 'gamma']))).toEqual({ key: 'some', formal: { approved: 1, total: 3 }, temporary: none })
+    expect(reachNotice(reach(['beta'], false))).toEqual({ key: 'someAndGeneral', formal: { approved: 2, total: 3 }, temporary: none })
+    expect(reachNotice(reach([], false))).toEqual({ key: 'general', formal: { approved: 3, total: 3 }, temporary: none })
+  })
+
+  it('counts named and temporary projects apart, so a long list of temporary ones does not read as missing projects', () => {
+    // 288 projects: 3 named (1 approved) and 285 temporary (none approved).
+    const temporary = Array.from({ length: 285 }, (_, index) => `temporary-${index}`)
+    const notice = reachNotice(reach(['beta', 'gamma', ...temporary], false, 288), new Set(temporary))
+    expect(notice).toEqual({ key: 'someAndGeneral', formal: { approved: 1, total: 3 }, temporary: { approved: 0, total: 285 } })
   })
 
   it('says plainly when no project is approved', () => {
     expect(reachNotice(reach(['alpha', 'beta', 'gamma']))!.key).toBe('noProject')
     expect(reachNotice(reach(['alpha', 'beta', 'gamma'], false))!.key).toBe('nothing')
     expect(reachNotice(reach([], false, 0))!.key).toBe('nothing')
+  })
+
+  it('counts temporary projects as the server counts projects: archived ones are left out', () => {
+    const digest = (seed: string) => seed.repeat(64)
+    const project = (id: string, extra = {}) => ({ project_id: id, personal_space_id: 'space-a', profile: { name: '' }, ...extra })
+    const ids = reachTemporaryIds([
+      project(`temporary-${digest('a')}`, { scope_type: 'temporary' }),
+      project(`temporary-${digest('b')}`, { scope_type: 'temporary', status: 'archived' }),
+      project(`temporary-${digest('c')}`, { scope_type: 'temporary', profile: { name: '', lifecycle: 'archived' } }),
+      project('formal', { profile: { name: 'Synthetic formal' } }),
+      { ...project(`temporary-${digest('d')}`, { scope_type: 'temporary' }), personal_space_id: 'space-b' },
+    ] as never, 'space-a')
+    expect([...ids]).toEqual([`temporary-${digest('a')}`])
   })
 })

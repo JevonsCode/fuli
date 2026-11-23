@@ -63,6 +63,7 @@ import { createEmbeddingModelStore, embeddingModelsDirectory } from './embedding
 import { createAgentDelegation } from './agent-delegation/port.js';
 import { createCodexFlaPromptSync } from './agents/codex/fla-prompts.js';
 import { readFlaMenuEntries } from './graphiti/fla-menu-reader.js';
+import { liveSourceConsoleUrl } from './graphiti/source-marker.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -166,7 +167,7 @@ export async function createServer(options = {}) {
     : null);
   // What the person lets FLAs change for them, and each change made (rec#11 D-81).
   const agentDelegation = options.agentDelegation ?? (localOptions.runtimeConfigPath
-    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
+    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath), { consoleUrl: liveSourceConsoleUrl(localOptions.runtimeConfigPath) }) : null);
   // Installed hooks of this data directory hand their calls to this console (lifecycle-hooks-api-router.js).
   const lifecycleHooks = options.lifecycleHooks ?? (localOptions.runtimeConfigPath
     ? createLifecycleHookCalls({ runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env }) : null);

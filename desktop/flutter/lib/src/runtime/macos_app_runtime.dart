@@ -60,6 +60,9 @@ class MacosAppRuntime implements FuliRuntime {
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
   @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
+
+  @override
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
   // The controller's lines are read as they arrive: the steps it reports while

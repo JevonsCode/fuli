@@ -70,10 +70,13 @@ void main() {
 
   test('every cause has a sentence in both languages, and none asks for a command or a hidden folder', () {
     const facts = <String, Object?>{'since': '2026-11-22T17:24:35.000Z', 'pid': 4321, 'port': 7687, 'command': 'java',
-      'runningSeconds': 28800, 'seconds': 60, 'operation': 'update', 'phase': 'switching'};
+      'runningSeconds': 28800, 'seconds': 60, 'operation': 'update', 'phase': 'switching',
+      'services': [
+        {'port': 7687, 'command': 'java'}
+      ]};
     final cases = [
       for (final holder in ['running', 'gone', 'unknown']) StartupFailure('native_lifecycle_lock', {...facts, 'holder': holder}),
-      for (final code in ['native_recovery_needed', 'port_taken', 'console_not_answering', 'console_exited',
+      for (final code in ['native_recovery_needed', 'orphaned_graph_service', 'port_taken', 'console_not_answering', 'console_exited',
         'console_port_reserved', 'provider_not_ready', 'provider_exited'])
         StartupFailure(code, facts),
       StartupFailure('console_not_answering', {...facts, 'stillRunningPid': 99}),

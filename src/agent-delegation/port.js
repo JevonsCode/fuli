@@ -13,7 +13,9 @@ const DELEGATION_POLICY_FILE = 'agent-delegation-policy.json';
 const RECENT_LIMIT = 20;
 
 // dataDir: the data directory; null keeps both in memory.
-export function createAgentDelegation(dataDir, { now = () => new Date().toISOString() } = {}) {
+// consoleUrl: reads this console's address when a refusal is made, so it links
+// the page that turns a category on; null leaves the link out.
+export function createAgentDelegation(dataDir, { now = () => new Date().toISOString(), consoleUrl = () => null } = {}) {
   const policy = createDelegationPolicyStore(dataDir ? join(dataDir, DELEGATION_POLICY_FILE) : null, { now });
   const log = new DelegatedOperationLog(dataDir ? join(dataDir, DELEGATION_LOG_FILE) : ':memory:');
 
@@ -36,10 +38,10 @@ export function createAgentDelegation(dataDir, { now = () => new Date().toISOStr
     // local-user-only change, and the person's own decision runs only with
     // the words run_delegated_action found in their messages (rec#80).
     authorize(method, pathname, { agentAccessEnabled, call }) {
-      if (!agentAccessEnabled) throw agentAccessOffRefusal();
+      if (!agentAccessEnabled) throw agentAccessOffRefusal(consoleUrl());
       const entry = delegableEntry(interfaceForRequest(method, pathname));
       if (!policy.read().categories.find((category) => category.id === entry.category)?.enabled) {
-        throw categoryOffRefusal(entry.category);
+        throw categoryOffRefusal(entry.category, consoleUrl());
       }
       if (entry.access === 'agent_relayed' && !call.relayed) throw personWordsRequiredRefusal();
       return entry;

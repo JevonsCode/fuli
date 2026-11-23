@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setLocale } from '@/i18n'
 
-import { escalationReason } from './judgment-escalation'
+import { escalationAction, escalationReason } from './judgment-escalation'
 import type { JudgmentAiReview, JudgmentDecisionRecord } from './judgment-types'
 
 const autonomous = { mode: 'autonomous', quality: 'quality', client: 'claude_code' } as const
@@ -47,5 +47,25 @@ describe('escalationReason', () => {
     expect(escalationReason(record({ policy: { ...autonomous, mode: 'manual' } }))).toBe('')
     expect(escalationReason(record({ outcome: 'approve', confidence: 0.95 }))).toBe('')
     expect(escalationReason(record({ execution: { status: 'stale' } }))).toBe('')
+  })
+})
+
+describe('escalationAction', () => {
+  beforeEach(() => setLocale('zh-CN', { persist: false }))
+  const sure = { confidence: 0.95 }
+  const gated = (reason: string) => record({ ...sure, aiReview: review(['gate_not_passed'], { gate: gate(reason) }) })
+
+  it('gives every reason that is a setting of the person\'s the one place to change it', () => {
+    expect(escalationAction(gated('session_answer'))).toEqual({ to: { path: '/models', query: { edit: 'tonborg' } }, label: '给 Tonborg 接模型' })
+    expect(escalationAction(gated('egress_not_approved'))).toEqual({
+      to: { path: '/models', query: { edit: 'tonborg', focus: 'projects' } }, label: '去选项目' })
+    expect(escalationAction(gated('capture_off'))).toEqual({ to: { path: '/settings', query: { tab: 'recording' } }, label: '打开记录设置' })
+    expect(escalationAction(gated('suggestions_only'))).toEqual({ to: { path: '/models', query: { details: 'tonborg' } }, label: '查看信任设置' })
+  })
+
+  it('has no action where the reason is the item itself, or the card already links the warning', () => {
+    expect(escalationAction(record())).toBeNull()
+    expect(escalationAction(record({ ...sure, aiReview: review(['injection_suspected', 'gate_not_passed']) }))).toBeNull()
+    expect(escalationAction(gated('warning_not_seen'))).toBeNull()
   })
 })

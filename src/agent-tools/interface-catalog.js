@@ -28,6 +28,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('projects', 'POST /api/topic-proposals/undo', 'Accept the proposal again.'),
   delegable('projects', 'POST /api/conversation-triage/record', 'Record the earlier project again.'),
   delegable('lan_roundtable', 'POST /api/peer/coordinator', 'POST /api/peer/disable.'),
+  delegable('lan_roundtable', 'POST /api/peer/listen', 'Nothing to undo; it only opens the listener the coordinator already had.'),
   delegable('lan_roundtable', 'POST /api/peer/invitations', 'Revoke the paired device.'),
   delegable('lan_roundtable', 'POST /api/peer/invitations/preview', 'Nothing to undo; it only reads the invitation.'),
   delegable('lan_roundtable', 'POST /api/peer/join', 'POST /api/peer/disable.'),
