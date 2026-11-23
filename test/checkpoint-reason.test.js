@@ -16,8 +16,6 @@ test('a turn that asks FULI to keep or change something says so first', () => {
   assert.equal(required({ updating: true }), 'this turn says something FULI keeps may have changed');
   // Keeping outranks updating, as the entry decides them.
   assert.equal(required({ remembering: true, updating: true }), 'this turn asks FULI to keep something');
-  // "I already told you" (task-repeat-signal.js) is the reason the turn stays open, not a guess at something else.
-  assert.equal(required({ repeating: true }), 'the person says they asked for this before');
 });
 
 test('a task with collaborators or another activity behind it names that', () => {

@@ -122,9 +122,11 @@ export async function beginTaskFromPreferences(application, preferences, {
   // A request to keep something is never a routine auto-closed task.
   const remembering = rememberRequested(taskPrompt);
   const updating = updateRequested(taskPrompt);
-  // "I already told you …": something that should have been kept (task-repeat-signal.js).
+  // "I already told you …": maybe something that should have been kept (task-repeat-signal.js).
+  // Only a candidate the Agent judges, so it never costs the turn its automatic close: an
+  // Agent that does keep it calls checkpoint_task_knowledge itself, which closes the turn.
   const repeating = !remembering && repeatComplaint(taskPrompt);
-  const autoClosed = !remembering && !updating && !repeating
+  const autoClosed = !remembering && !updating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const checkpointRequired = !autoClosed && task.checkpoint?.phase !== 'complete';
   // A task the Stop hook closes by itself has no model checkpoint to keep
@@ -165,7 +167,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     checkpoint_required: checkpointRequired,
     // Why, in one short sentence: the flag flipped between turns with nothing
     // to explain it (rec#137).
-    checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, repeating, updating, task, entryVia }),
+    checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, updating, task, entryVia }),
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : repeating ? { remember_guidance: REPEAT_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),

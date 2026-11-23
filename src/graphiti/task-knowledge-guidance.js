@@ -21,8 +21,8 @@ export function taskKnowledgeGuidance() {
         + 'A summary an FLA writes for the person in a roundtable follows the same rule.',
       // Jevons 11-24: "I already did X, why don't you Y" means the person wants it kept.
       repeat_signal: 'When the person says they already asked for something ("I already told you", "as I said", 我已经说过了, 上次就讲过, 不是说过了吗, 你又…), '
-        + 'that is a signal to keep it, not only to apologise and comply. A plain question ("why not use X here?"), a quote of someone else, or a message that only '
-        + 'mentions such words is not one: treat it as ordinary, keep nothing, ask nothing. '
+        + 'that is a signal to keep it, not only to apologise and comply. FULI flags such a turn by the sentence\'s shape only; you judge it. A plain question '
+        + '("why not use X here?"), a quote of someone else, or a message that only mentions such words is not one: ignore it, keep nothing, ask nothing. '
         + 'First check whether FULI already holds it (effective_preferences, task_knowledge_recall, search). If it does, store nothing new: tell the person in one line '
         + 'why it did not apply this time (it was not delivered, its scope did not cover this, or it was delivered and you did not follow it) and record the last case in the checkpoint workLog. '
         + 'If it does not, keep it this turn with checkpoint_task_knowledge remember and their words as quote; when this project versus everywhere is unclear use scope unsure rather than asking. '

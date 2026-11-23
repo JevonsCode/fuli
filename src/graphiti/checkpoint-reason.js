@@ -11,7 +11,6 @@
 // The first of these that holds, in the order a reader would ask.
 const REQUIRED = [
   [({ remembering }) => remembering, 'this turn asks FULI to keep something'],
-  [({ repeating }) => repeating, 'the person says they asked for this before'],
   [({ updating }) => updating, 'this turn says something FULI keeps may have changed'],
   [({ task }) => (task.coordinationTaskIds ?? []).length > 0 || task.coordinationTaskId,
     'this task coordinates other Agents'],
@@ -29,7 +28,7 @@ const NOT_REQUIRED = [
   [() => true, 'a routine fallback closes this task at the next entry of this session']
 ];
 
-export function checkpointReason({ required, remembering, repeating = false, updating, task, entryVia }) {
-  const facts = { remembering, repeating, updating, task, entryVia };
+export function checkpointReason({ required, remembering, updating, task, entryVia }) {
+  const facts = { remembering, updating, task, entryVia };
   return (required ? REQUIRED : NOT_REQUIRED).find(([holds]) => holds(facts))[1];
 }
