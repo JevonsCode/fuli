@@ -1,5 +1,4 @@
 import { waitForChatChange } from './chat-wait.js';
-import { CHAT_WAKE_LEAD, chatWakeOf } from './chat-snapshot.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -364,7 +363,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
-    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null,
+    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWakeThrough = null, chatWake = null,
     // wakeMode: read_only for a group discussion turn, woken where it can change nothing (wake adapters).
     wakeMode = 'answer',
     // The host's runner (another computer of the person) that sent it, or null (host.callerRunner).
@@ -413,6 +412,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
         client: from.client, session: from.session, runner: callerRunner }, origin,
       to: { agentId: target.agentId, name: label(target) }, targetProjectId,
+      ...(chatWakeChatId && Number.isInteger(chatWakeThrough) ? { chatWake: { chatId: chatWakeChatId, through: chatWakeThrough } } : {}),
       sourceContextHash: taskContextToken ? taskContextHash(taskContextToken) : null });
     // The source token never enters the communication log.
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
@@ -978,9 +978,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // and every entry still pushed it with "Other Agents are waiting"). Read at
   // listing time too, so a settle that could not write never shows it again.
   const chatWakeRead = message => {
-    const wake = chatWakeOf(message?.body);
-    if (!wake) return false;
-    try { return store.chat.readCursor(wake.chatId, `local:${message.to_agent}`) >= wake.nextAfter; } catch { return false; }
+    if (!message?.chat_wake_chat_id || !Number.isInteger(message.chat_wake_through)) return false;
+    try { return store.chat.readCursor(message.chat_wake_chat_id, `local:${message.to_agent}`) >= message.chat_wake_through; }
+    catch { return false; }
   };
   // The instant a question has to be newer than to count as waiting at a task entry.
   const pendingSince = () => new Date(now() - PENDING_ASK_DAYS * DAY_MS).toISOString();
@@ -992,12 +992,12 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // Returns what changed; a store that cannot be written changes nothing and
   // is tried again later.
   let settledAt = -Infinity;
-  function settleStaleAsks({ force = false } = {}) {
-    if (!force && now() - settledAt < SETTLE_INTERVAL_MS) return { answered: 0, expired: 0 };
+  function settleStaleAsks() {
+    if (now() - settledAt < SETTLE_INTERVAL_MS) return { answered: 0, expired: 0 };
     settledAt = now();
     try {
       let answered = 0;
-      for (const ask of store.queuedChatWakes(spaceId(), CHAT_WAKE_LEAD)) {
+      for (const ask of store.queuedChatWakes(spaceId())) {
         if (!chatWakeRead(ask)) continue;
         store.updateMessage(ask.id, { status: 'answered', via: 'chat:read' });
         answered += 1;
@@ -1076,7 +1076,6 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       return store.pendingFor(spaceId(), agentId, 5, viewer, { since: pendingSince() })
         .filter(message => mine(message, projectId, viewer) && !chatWakeRead(message)).map(inboxItem);
     },
-    settleStaleAsks,
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     agentReplies: replyInbox.announce,

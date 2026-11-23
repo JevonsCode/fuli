@@ -94,6 +94,15 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/13-message-target-session', to: 13, kind: 'add-columns', table: 'messages',
     summary: 'the client and native session an ask named, apart from where it was delivered and who answered',
     columns: { target_client: 'TEXT', target_session: 'TEXT' }
+  }, {
+    // A chat wake's ask is answered in its chat, never with reply_agent_message
+    // (chat-wake.js): the chat it woke for and the last message it was about,
+    // so it stops waiting once its recipient has read that far (rec#146 item 1).
+    // Set only by FULI's own chat wake, never read from a body any Agent can
+    // write (review of #1076). Null for every other ask and for older ones.
+    id: 'roundtable/14-message-chat-wake', to: 14, kind: 'add-columns', table: 'messages',
+    summary: 'the chat and the last chat message each chat-wake ask was about, so it stops waiting once that chat is read',
+    columns: { chat_wake_chat_id: 'TEXT', chat_wake_through: 'INTEGER' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -154,14 +163,15 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
           via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status, from_runner, origin,
-          target_client, target_session)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          target_client, target_session, chat_wake_chat_id, chat_wake_through)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
           message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
           message.delivery ?? null, message.from?.runner ?? null, message.origin ?? null,
-          message.target?.client ?? null, message.target?.session ?? null);
+          message.target?.client ?? null, message.target?.session ?? null,
+          message.chatWake?.chatId ?? null, message.chatWake?.through ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
@@ -283,19 +293,22 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     // A queued ask nobody answered before `before` (an ISO instant) and no wake
     // is running for: it becomes `expired`, with the reason kept beside it
     // (rec#146 item 1). The row, its body and its thread stay; a late reply
-    // still answers it, and get_agent_message_status says what happened.
+    // still answers it, and get_agent_message_status says what happened. An
+    // ask to or from another device (via peer) keeps its own deadline and its
+    // device's status, so it is never expired here (review of #1076).
     // Returns how many changed.
     expireQueuedAsks(spaceId, before, reason) {
       return database.prepare(`UPDATE messages SET status = 'expired', error = ?, updated_at = ?
         WHERE kind = 'ask' AND status = 'queued' AND execution_claim IS NULL AND created_at < ?
+          AND (via IS NULL OR via != 'peer')
           AND thread_id IN (SELECT id FROM threads WHERE space_id = ?)`).run(reason, now(), before, spaceId).changes;
     },
-    // The queued asks that carry a chat wake's own lead, for the caller to
-    // check against the chat it woke for (chat-snapshot.js chatWakeOf).
-    queuedChatWakes(spaceId, lead) {
-      return database.prepare(`SELECT m.id, m.to_agent, m.body FROM messages m JOIN threads t ON t.id = m.thread_id
+    // The queued chat-wake asks, for the caller to check against the chat each
+    // woke for (chat_wake_chat_id, set only by FULI's chat wake).
+    queuedChatWakes(spaceId) {
+      return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
         WHERE t.space_id = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in') AND m.execution_claim IS NULL
-          AND substr(m.body, 1, ?) = ?`).all(spaceId, lead.length, lead);
+          AND m.chat_wake_chat_id IS NOT NULL`).all(spaceId);
     },
     // `since` (an ISO instant, created_at is one): a task entry reads only the
     // questions newer than this, so one nobody answered for weeks never takes
