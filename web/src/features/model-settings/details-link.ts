@@ -14,6 +14,8 @@ export const modelDetailsLink = (role: ModelRoleId, part?: ModelDetailsPart): Ro
 // opens that role's settings form at 「可以发给服务的项目」, one step from wherever it is.
 export const modelProjectsLink = (role: ModelRoleId): RouteLocationRaw =>
   ({ path: '/models', query: { edit: role, focus: 'projects' } })
+/** The same form opened at its top: to connect the role's model. */
+export const modelEditLink = (role: ModelRoleId): RouteLocationRaw => ({ path: '/models', query: { edit: role } })
 
 /** The role whose settings a link opens, and at which part, or null when it names none. */
 export function linkedModelEdit(query: LocationQuery): { role: ModelRoleId; focus: 'projects' | null } | null {
