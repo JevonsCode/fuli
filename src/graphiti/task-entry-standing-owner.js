@@ -3,6 +3,7 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects, projectDisplayName, promptNamesProject } from './task-entry-project-mention.js';
 import { withRouteMarkers } from './task-agent-assignment.js';
 import { addressedAgentId } from './fla-mention.js';
+import { workstreamEntry, workstreamMarker, workstreamNoticeOf } from './task-entry-workstream.js';
 
 // A standing assignment routes one task (rec#29 D-41 D3, option b): when the
 // task prompt carries a term the person confirmed for a project, this task is
@@ -19,6 +20,11 @@ import { addressedAgentId } from './fla-mention.js';
 // an explicit project or Agent, a #FLA mention, or a project the prompt names.
 // Where the folder or the session would put the task does not. When terms of
 // several assignments match, the entry asks instead of choosing one.
+//
+// Only the person's own assignments move a task into another project, and
+// only by their words (docs/workstreams.md): a line a lead opened, a folder
+// and a branch never do. Lines of the project the task is already in are
+// task-entry-workstream.js's.
 
 const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent', 'named_in_prompt',
   'created_from_prompt']);
@@ -32,45 +38,28 @@ const EXPLICIT_BASES = new Set(['explicit_personal_project_id', 'explicit_agent'
 const ROUTE = /^standing_assignment:(\S+) (.+)$/su;
 const SESSION_PROJECT = /^standing_session_project:(\S+)$/u;
 const SESSION_AGENT = /^standing_session_agent:(\S+)$/u;
-// A task a workstream of its own project took, "workstream:<assignmentId>
-// <notice>": the durable record of which line of work it was, which an owner
-// change later never rewrites. It moves no session, so it carries no session
-// markers and is read by a different prefix than a routed task's.
-const WORKSTREAM = /^workstream:(\S+) (.+)$/su;
 const CLARIFY_GUIDANCE = 'Terms of several standing assignments match this task, so it stays where it was. Ask the '
   + 'user once which one this task belongs to, then begin the task again naming that project, or that FLA when the '
   + 'candidates are workstreams of one project.';
 
 export async function withStandingOwner(application, resolution, input) {
-  const matches = standingMatches(application, input.taskPrompt, workingFolders(input.projectPath));
+  const matches = standingMatches(application, input.taskPrompt)
+    .filter(({ assignment, matchedOn }) => assignment.source === 'user' && matchedOn.includes('words')
+      && assignment.projectId !== resolution.personalProjectId);
   if (!matches.length || !routable(resolution, input) || hostInternalActivity(application, input)
     || await promptNamesProject(application, input.taskPrompt)) return resolution;
   const projects = new Map((await nameableProjects(application)).map(project => [project.project_id, project]));
   const owners = matches.filter(({ assignment }) => projects.has(assignment.projectId))
-    .map(({ assignment, matchedTerms, matchedOn }) => ({ assignmentId: assignment.assignmentId,
+    .map(({ assignment, matchedTerms }) => ({ assignmentId: assignment.assignmentId,
       projectId: assignment.projectId, projectName: projectDisplayName(projects.get(assignment.projectId)),
-      leadAgentId: assignment.leadAgentId, workstream: assignment.responsibility, matchedTerms, matchedOn }));
+      leadAgentId: assignment.leadAgentId, workstream: assignment.responsibility, matchedTerms }));
   if (owners.length > 1) return { ...resolution, standingCandidates: owners };
   const [owner] = owners;
   if (!owner) return resolution;
-  // Already in the assignment's project: a workstream of this project. The
-  // task stays as it is and only the Agent selection starts from its owner,
-  // who is named in the entry like any other routed owner.
-  if (owner.projectId === resolution.personalProjectId) {
-    return { ...resolution, standingAgentId: owner.leadAgentId, standingWorkstream: owner };
-  }
   return { status: 'matched', basis: 'standing_assignment', personalProjectId: owner.projectId,
     standingOwner: { ...owner, sessionProjectId: resolution.status === 'matched' ? resolution.personalProjectId : null,
       sessionAgentId: resolution.status === 'global' && resolution.basis === 'host_session_context'
         ? resolution.globalAgentId : null } };
-}
-
-// The folders of the task's working directory, nearest last. A term that is
-// one of them names its workstream (port.match); the path is not read from
-// disk and nothing outside what the client already sent is used.
-export function workingFolders(projectPath) {
-  if (typeof projectPath !== 'string' || !projectPath.trim()) return [];
-  return projectPath.split(/[\\/]+/u).filter(Boolean);
 }
 
 // What the entry says about a standing assignment: the routed owner with its
@@ -106,43 +95,16 @@ export function standingOwnerEntry(resolution, selection) {
       notice } };
 }
 
-// A workstream of the project the task is already in: who is continuing which
-// line of work, said plainly. The task's project does not move, so the line
-// names the workstream and its owner rather than the project.
-function workstreamEntry(owner, selection) {
-  // The owner the ordinary selection had already chosen changed nothing here,
-  // so a small task gains no line about a workstream it never left.
-  if (!selection?.standingAgentApplied && !selection?.standingAgentUnreached) return null;
-  const selected = selection?.agent ?? null;
-  const name = agentName(selected) ?? selected?.agentId ?? owner.leadAgentId;
-  const held = Boolean(selected) && selection.requested_agent_id === owner.leadAgentId;
-  const unreached = Boolean(selection?.standingAgentUnreached);
-  const line = `工作线「${owner.workstream}」`;
-  const notice = unreached ? `${line}的负责人 ${owner.leadAgentId} 暂时联系不上，由 ${name} 接着做`
-    : held ? `${line}由负责人 ${name} 持有，请求 ${owner.leadAgentId} 接着做`
-      : `${line}由 ${name} 接着做`;
-  return { notice, receiptNotice: receiptText(notice),
-    field: { status: 'workstream', assignment_id: owner.assignmentId, ...workstreamView(owner),
-      ...(unreached ? { owner_resolved: false } : {}), notice } };
-}
-
 // The Agent assignment a routed task stores: the selected Agent's, or one
 // without an Agent, with the route appended within the Provider's bound. A
 // task a workstream took keeps its line of work instead, without moving the
 // session, so the record still says which line it was after an owner change.
 export function withStandingRoute(assignment, standingOwner) {
-  if (standingOwner?.status === 'workstream') {
-    return withRouteMarkers(assignment, [`workstream:${standingOwner.assignment_id} ${standingOwner.notice}`]);
-  }
+  if (standingOwner?.status === 'workstream') return withRouteMarkers(assignment, [workstreamMarker(standingOwner)]);
   if (standingOwner?.status !== 'routed') return assignment;
   return withRouteMarkers(assignment, [`standing_assignment:${standingOwner.assignment_id} ${standingOwner.notice}`,
     ...sessionMarkers({ personalProjectId: standingOwner.session_project_id,
       projectAgentId: standingOwner.session_agent_id })]);
-}
-
-/** The workstream a stored task belonged to, or null: its ID alone, never the wording. */
-export function taskWorkstreamId(task) {
-  return (task?.agentAssignment?.match_basis ?? []).map(item => WORKSTREAM.exec(item)?.[1]).find(Boolean) ?? null;
 }
 
 // The session's own state stored on a task that does not keep the session
@@ -168,14 +130,14 @@ export function sessionTaskContext(task) {
 // the task moved project or stayed in a workstream of its own.
 export function standingReceiptNotices(task) {
   return (task?.agentAssignment?.match_basis ?? [])
-    .map(item => (ROUTE.exec(item) ?? WORKSTREAM.exec(item))?.[2]).filter(Boolean).map(receiptText);
+    .map(item => ROUTE.exec(item)?.[2] ?? workstreamNoticeOf(item)).filter(Boolean).map(receiptText);
 }
 
 // A store this FULI cannot read routes nothing; the entry continues as before.
-function standingMatches(application, taskPrompt, folders) {
+function standingMatches(application, taskPrompt) {
   if (!application.standingAssignments || typeof taskPrompt !== 'string' || !taskPrompt.trim()) return [];
   try {
-    return application.standingAssignments.match(application.config.personal.spaceId, taskPrompt, folders);
+    return application.standingAssignments.match(application.config.personal.spaceId, taskPrompt);
   } catch {
     return [];
   }
@@ -195,11 +157,4 @@ function agentName(agent) {
 function ownerView(owner) {
   return { project_id: owner.projectId, project_name: owner.projectName, lead_agent_id: owner.leadAgentId,
     matched_terms: owner.matchedTerms };
-}
-
-// A workstream stays in its project, so its view names the line of work and
-// why it matched instead of repeating the project.
-function workstreamView(owner) {
-  return { workstream: owner.workstream, owner_agent_id: owner.leadAgentId, matched_terms: owner.matchedTerms,
-    matched_on: owner.matchedOn ?? [] };
 }

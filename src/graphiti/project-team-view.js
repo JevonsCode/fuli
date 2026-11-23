@@ -93,6 +93,11 @@ function person(agent, assignment) {
   };
 }
 
+// The lead, a member or a collaborator of the project, active on it, or null.
+export function activeTeamAgent(team, agentId) {
+  return [team.lead, ...team.members, ...team.collaborators].find(person => person?.agentId === agentId) ?? null;
+}
+
 // `withProgress` adds each workstream's latest task: one bounded read per
 // line, so only an explicit read asks for it. Task entry never does.
 export async function loadProjectTeam(application, personalSpaceId, projectId, { withProgress = false } = {}) {

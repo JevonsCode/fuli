@@ -18,6 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
+import { workingBranchMarkers } from './task-entry-workstream.js';
 import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { introductionEntry } from './task-entry-introduction.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
@@ -213,6 +214,8 @@ async function entryPreferences(application, projectResolution, {
     context, input: { projectAgentId, sessionId, sourceSessionId, agentInvocation, agentToolName, taskPrompt },
     sessionOwnerFrom: ownerChange ? ownerFrom.agentId : null }) : null;
   const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection),
+    // The session's branch, when it can name a line, so opening one records it (docs/workstreams.md).
+    ...workingBranchMarkers(projectResolution),
     ...(ownerChange ? [ownerChange.marker] : []), ...(introduction ? [introduction.marker] : [])];
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable

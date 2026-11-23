@@ -7,6 +7,7 @@ import { FederatedGraphApplication } from '../src/graphiti/federated-application
 import { listAgentTools } from '../src/agent-tools.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from '../src/mcp/instructions.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../src/graphiti/project-agent-team-context.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
@@ -246,6 +247,10 @@ const BASELINE = Object.freeze({
   // read_task_preferences takes keys, so an entry's preference index is expanded by key in one result
   // instead of paging the whole revision (rec#137): 192,435 -> 192,651 B (+216 B), measured. Chat is unchanged.
   fullToolSchemaBytes: 192651,
+  // docs/workstreams.md: a divided project's entry names its lines and owners
+  // and refers to the dividing rule (two lines: +169 chars, measured); a
+  // project without lines adds nothing.
+  workstreamEntryChars: 169,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -513,7 +518,20 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars() };
+}
+
+// docs/workstreams.md: what a divided project's entry adds to its team block,
+// two lines named with their owners and the dividing rule by reference, over
+// the same team without lines (which adds nothing).
+function workstreamEntryChars() {
+  const team = lines => ({ roster: [{ agent_id: 'lead', name: 'Mara Quill', role: 'lead' },
+    { agent_id: 'member', name: 'Ember Vale', role: 'member' }], guidance: TEAM_GUIDANCE,
+  ...(lines ? { workstreams: [{ workstream: '春促落地页', owner_agent_id: 'member', owner_name: 'Ember Vale' },
+    { workstream: '优惠券中心', owner_agent_id: 'other', owner_name: 'Orin Pike' }],
+  workstream_guidance: WORKSTREAM_GUIDANCE } : {}) });
+  const size = lines => JSON.stringify(compactTaskContext({ project_agent_context: { team: team(lines) } })).length;
+  return { workstreamEntryChars: size(true) - size(false) };
 }
 
 // rec#82: the entry receipt's growth for a session with and without a confirmed migration,

@@ -2,10 +2,19 @@ import { loadProjectTeam } from './project-team-view.js';
 import { nameableProjects, projectDisplayName } from './task-entry-project-mention.js';
 import { withWorkstreamProgress } from './workstream-ledger.js';
 
+// The console's ledger reads (docs/workstreams.md), on this computer only.
+
+/** One project's lines with how far each got, for its project page. */
+export async function projectWorkstreamLedger(application, personalSpaceId, projectId) {
+  const team = await loadProjectTeam(application, personalSpaceId, projectId, { withProgress: true });
+  return { personalProjectId: projectId, workstreams: team.workstreams };
+}
+
 /**
  * One FLA's ledger across projects, for the console widget: every line of a
- * project it leads, and every line it owns itself. A line says which project
- * and who, so the widget needs nothing of where it sits but the FLA.
+ * project it leads, and every line it owns itself, whether or not it is still
+ * on that project. A line says which project and who, so the widget needs
+ * nothing of where it sits but the FLA.
  */
 export async function agentWorkstreamLedger(application, personalSpaceId, agentId) {
   const assignments = application.standingAssignments?.list(personalSpaceId) ?? [];

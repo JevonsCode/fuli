@@ -58,10 +58,9 @@ flowchart TD
 
 Decided at task entry, deterministically, with no model:
 
-1. **The person named someone.** A named FLA (`#FLA`), an explicit Agent or an
-   explicit project id. A workstream never overrides it. Naming the FLA that
-   owns a line of this project makes that FLA this turn's FLA, exactly as a
-   matched line does.
+1. **The person named someone.** A named FLA (`#FLA`) or an explicit Agent. A
+   workstream never overrides it. Naming the FLA that owns a line of this
+   project makes that FLA this turn's FLA, exactly as a matched line does.
 2. **A line of this task's project matches.** Only lines of the project the
    task is already in apply, by three signals:
    - **Its words** occur in the request, as a whole term
@@ -73,8 +72,8 @@ Decided at task entry, deterministically, with no model:
      exactly, and `branch:<prefix>/` matches every branch under that prefix.
      The branch is read from the repository's files within 250 ms
      (`src/conversations/working-branch.js`); a slow drive leaves it unknown.
-   A request that names this project keeps its lines; naming the project says
-   where, not who.
+   A request that names this project, or an explicit project id, keeps its
+   lines: naming the project says where, not who.
 3. **More than one line matches** → the task stays with the lead, and the
    entry asks the person once which line it is.
 4. **None matches, but this session's last task belonged to a line** → the
@@ -148,7 +147,8 @@ one, that branch is recorded as a term too.
 The lead corrects its own lines the same way, in one call, and they stay the
 lead's. A line the person opened or confirmed is the person's: the lead
 cannot change it, and the person changes it through preview and their yes,
-or in the console.
+or in the console. The person's own reassignment may move their rule to the
+lead or another project; its sentence then says the line leaves the ledger.
 
 - **「这个还是让 X 做」** — `change: "reassign"` naming the member. A line is
   never reassigned to the lead by default.

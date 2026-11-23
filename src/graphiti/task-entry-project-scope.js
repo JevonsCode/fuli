@@ -2,6 +2,7 @@ import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
+import { withWorkstream } from './task-entry-workstream.js';
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
@@ -32,7 +33,10 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   const named = fla && namedFlaResolution(fla);
   if (named) return { ...named, ...(group ? { group } : {}), ...carried };
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
-  const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
+  // The person's own rules may move the task to its project; a line of the
+  // project it is then in may give it to that line's owner (docs/workstreams.md).
+  const routed = group?.holdsProject ? home
+    : await withWorkstream(application, await withStandingOwner(application, home, input), input, sessionTask);
   // Whose the session's last task was, so the entry can say when that changes (task-entry-owner-change.js).
   const sessionOwner = sessionOwnerOf(sessionTask);
   return fla || group || sessionOwner || turnIntroduction ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),

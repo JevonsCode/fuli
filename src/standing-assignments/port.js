@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { displayName, identityKey } from '../text/name-identity.js';
 import { requiredBinding, requiredString, uniqueTextArray } from '../validation/values.js';
+import { ID_LIMIT, MAX_TERMS, RESPONSIBILITY_LIMIT, TERM_LIMIT } from './limits.js';
 import { StandingAssignmentStore } from './store.js';
 import { termOccurs, termsOverlap } from './term-match.js';
+import { assertUsableTerm, branchMatches, isBranchTerm } from './term-rules.js';
 
 // The standing assignments of a personal space (rec#29 D-41, D-41.1): the
 // person's confirmed names for a kind of work, each pointing at one project
@@ -22,10 +24,6 @@ import { termOccurs, termsOverlap } from './term-match.js';
 // preferences are only referenced by ID (D-5). The personal space is always
 // FULI's own (config), never an argument a caller sent.
 
-const ID_LIMIT = 200;
-const MAX_TERMS = 20;
-const TERM_LIMIT = 80;
-const RESPONSIBILITY_LIMIT = 240;
 const MAX_PREFERENCES = 50;
 // Deep paths are bounded rather than refused: a working directory below this
 // many folders matches on its nearest ones, never on an unbounded scan.
@@ -44,6 +42,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       ? store.activeFor(request.personalSpaceId, request.projectId, request.leadAgentId) : null;
     const known = new Set(current?.terms.map(identityKey));
     const added = request.terms.filter(({ key }) => !known.has(key));
+    for (const { term, key } of added) assertUsableTerm(term, key);
     for (const { term, key } of added) refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
     const preferenceIds = request.preferenceIds.filter((id) => !current?.preferenceIds.includes(id));
     const confirms = current?.source === 'host' && request.source === 'user';
@@ -104,12 +103,8 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       throw new ApplicationError('standing_assignment_retired', 'This standing assignment is already retired.', { status: 409 });
     }
     if (current.source === 'user' && source === 'host') throw userConfirmed(current);
-    const confirms = current.source === 'host' && source === 'user';
-    const at = now().toISOString();
-    const base = { ...current, source: confirms ? 'user' : current.source,
-      sourceConversationId: confirms ? sourceConversationId : current.sourceConversationId,
-      revision: current.revision + 1, updatedAt: at };
-    if (correction.action === 'retire') return { change: 'retired', next: { ...base, retiredAt: at } };
+    const base = advanced(current, { source, sourceConversationId });
+    if (correction.action === 'retire') return { change: 'retired', next: { ...base, retiredAt: base.updatedAt } };
     if (correction.action === 'reassign') {
       const { projectId, leadAgentId } = correction;
       const occupied = store.activeFor(current.personalSpaceId, projectId, leadAgentId);
@@ -129,6 +124,7 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
     const kept = current.terms.filter((term) => !removed.has(identityKey(term)));
     const keptKeys = new Set(kept.map(identityKey));
     const added = correction.addTerms.filter(({ key }) => !keptKeys.has(key));
+    for (const { term, key } of added) assertUsableTerm(term, key);
     for (const { term, key } of added) {
       const owner = store.termOwner(current.personalSpaceId, key);
       if (owner?.assignmentId !== current.assignmentId) refuseTakenTerm(owner, term);
@@ -139,6 +135,14 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
         + 'Nothing was saved; retire it to end it.', { status: 422 });
     }
     return { change: 'terms_edited', next: { ...base, terms } };
+  }
+
+  // The next revision of an assignment: the person's change makes a host one theirs.
+  function advanced(current, { source, sourceConversationId }) {
+    const confirms = current.source === 'host' && source === 'user';
+    return { ...current, source: confirms ? 'user' : current.source,
+      sourceConversationId: confirms ? sourceConversationId : current.sourceConversationId,
+      revision: current.revision + 1, updatedAt: now().toISOString() };
   }
 
   // Saves nothing: the change a correction would record (null when none) and the assignment it would leave.
@@ -169,18 +173,20 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   }
 
   // Every active assignment this task names, with the terms that named it and
-  // how. A term occurs in the request's words, or is a whole folder of the
-  // task's working directory: a task run in apps/checkout-page/ reaches the
-  // workstream whose term is "checkout-page" without being told. Both are
-  // deterministic; neither reads a model or the Provider.
-  function match(personalSpaceId, text, folders = []) {
+  // how (docs/workstreams.md): a term occurs in the request's words, is a whole
+  // folder below the repository root of the working directory, or, as a
+  // `branch:` term, names the current branch. A branch term never matches
+  // words or folders. All deterministic; none reads a model or the Provider.
+  // Which of them may route a task, and to which project, is the caller's.
+  function match(personalSpaceId, text, { folders = [], branch = null } = {}) {
     const prompt = identityKey(requiredString(text, 'text'));
     const space = requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT);
     const segments = new Set((Array.isArray(folders) ? folders : []).filter((item) => typeof item === 'string')
       .slice(-MAX_FOLDERS).map(identityKey).filter(Boolean));
     const matched = new Map();
     for (const { termKey, assignmentId } of store.activeTerms(space)) {
-      const on = termOccurs(prompt, termKey) ? 'words' : segments.has(termKey) ? 'folder' : null;
+      const on = isBranchTerm(termKey) ? (branchMatches(termKey, branch) ? 'branch' : null)
+        : termOccurs(prompt, termKey) ? 'words' : segments.has(termKey) ? 'folder' : null;
       if (!on) continue;
       const found = matched.get(assignmentId) ?? { keys: [], on: new Set() };
       found.keys.push(termKey);
@@ -193,6 +199,129 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
         return { assignment, matchedOn: [...found.on],
           matchedTerms: assignment.terms.filter((term) => found.keys.includes(identityKey(term))) };
       });
+  }
+
+  // A new workstream (docs/workstreams.md): registered only when its Agent has
+  // no active assignment in that project yet. One FLA holds one line per
+  // project, so a second is refused with that line named, never merged into
+  // it under the first line's name.
+  function open(input) {
+    requiredBinding(input?.projectId, 'projectId', ID_LIMIT);
+    requiredBinding(input?.leadAgentId, 'leadAgentId', ID_LIMIT);
+    const request = registration(input);
+    return store.transaction(() => {
+      refuseSecondLine(request);
+      return { status: 'created', assignment: created(request, 'registered') };
+    });
+  }
+
+  // Saves nothing: what open would refuse now, or the line it would store.
+  function previewOpen(input) {
+    const request = registration(input);
+    refuseSecondLine(request);
+    for (const { term, key } of request.terms) {
+      assertUsableTerm(term, key);
+      refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
+    }
+    return { status: 'created', terms: request.terms.map(({ term }) => term), responsibility: request.responsibility };
+  }
+
+  // One line's terms move into another of the same project and the first
+  // ends, as one change: either both are saved or neither.
+  function merge(sourceId, targetId, meta) {
+    const options = metaOf(meta);
+    return store.transaction(() => {
+      const source = activeAt(sourceId, meta.expectedRevision);
+      const target = activeAt(targetId, meta.targetRevision);
+      if (source.assignmentId === target.assignmentId || source.projectId !== target.projectId) {
+        throw new ApplicationError('standing_assignment_merge_invalid', 'Only two different lines of one project '
+          + 'merge. Nothing was saved.', { status: 422 });
+      }
+      refuseHostOverUser([source, target], options.source);
+      const ended = advanced(source, options);
+      const retired = { ...ended, retiredAt: ended.updatedAt };
+      store.save(retired, { change: 'retired', ...savedMeta(options), termKeys: [] });
+      const known = new Set(target.terms.map(identityKey));
+      const terms = [...target.terms, ...source.terms.filter((term) => !known.has(identityKey(term)))];
+      const next = { ...advanced(target, options), terms };
+      store.save(next, { change: 'terms_edited', ...savedMeta(options), termKeys: terms.map(identityKey) });
+      return { status: 'merged', assignment: next, retired };
+    });
+  }
+
+  // Some terms leave a line and open a new one for another Agent of the same
+  // project, with any new words it brings (extraTerms), as one change: if the
+  // new line cannot be opened, the old one keeps its terms. Moving every term
+  // away ends the old line.
+  function split(sourceId, input, meta) {
+    const options = metaOf(meta);
+    const moving = termsOf(input?.terms, 'terms');
+    if (!moving.length) throw new TypeError('terms is required');
+    return store.transaction(() => {
+      const source = activeAt(sourceId, meta.expectedRevision);
+      refuseHostOverUser([source], options.source);
+      const keys = new Set(source.terms.map(identityKey));
+      const absent = moving.find(({ key }) => !keys.has(key));
+      if (absent) {
+        throw new ApplicationError('standing_assignment_term_absent', `"${absent.term}" is not a term of this line. `
+          + 'Nothing was saved.', { status: 422 });
+      }
+      const leaving = new Set(moving.map(({ key }) => key));
+      const kept = source.terms.filter((term) => !leaving.has(identityKey(term)));
+      const after = advanced(source, options);
+      const left = kept.length ? { ...after, terms: kept } : { ...after, retiredAt: after.updatedAt };
+      store.save(left, { change: kept.length ? 'terms_edited' : 'retired', ...savedMeta(options),
+        termKeys: kept.map(identityKey) });
+      const extra = termsOf(input.extraTerms, 'extraTerms').filter(({ key }) => !leaving.has(key));
+      const request = registration({ personalSpaceId: source.personalSpaceId, projectId: source.projectId,
+        leadAgentId: input.leadAgentId, terms: [...moving, ...extra].map(({ term }) => term),
+        responsibility: input.responsibility,
+        source: options.source, sourceConversationId: options.sourceConversationId });
+      refuseSecondLine(request);
+      return { status: 'split', assignment: created(request, 'registered'), source: left };
+    });
+  }
+
+  function activeAt(assignmentId, expectedRevision) {
+    const current = store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT));
+    if (!current) {
+      throw new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'No standing assignment has this ID.', { status: 404 });
+    }
+    if (current.retiredAt) {
+      throw new ApplicationError('standing_assignment_retired', 'This standing assignment is already retired.', { status: 409 });
+    }
+    if (current.revision !== expectedRevision) {
+      throw new ApplicationError('standing_assignment_changed',
+        'This standing assignment changed since it was read. Nothing was saved; read it again.', { status: 409 });
+    }
+    return current;
+  }
+
+  function refuseSecondLine(request) {
+    const current = store.activeFor(request.personalSpaceId, request.projectId, request.leadAgentId);
+    if (!current) return;
+    throw Object.assign(new ApplicationError('workstream_owner_has_line', `This FLA already does the line `
+      + `"${current.responsibility}" in this project, and one FLA does one line per project. Nothing was saved. `
+      + 'Add these terms to its line (edit_terms), pick another member, or have Bole recruit one '
+      + '(coordinate_project_agent_task with a new_durable staffing intent).', { status: 409 }),
+    { details: { line: { assignmentId: current.assignmentId, name: current.responsibility,
+      revision: current.revision } } });
+  }
+
+  function created(request, change) {
+    for (const { term, key } of request.terms) {
+      assertUsableTerm(term, key);
+      refuseTakenTerm(store.termOwner(request.personalSpaceId, key), term);
+    }
+    const at = now().toISOString();
+    const next = { assignmentId: newId(), personalSpaceId: request.personalSpaceId, projectId: request.projectId,
+      leadAgentId: request.leadAgentId, terms: request.terms.map(({ term }) => term),
+      responsibility: request.responsibility, source: request.source,
+      sourceConversationId: request.sourceConversationId, preferenceIds: request.preferenceIds, revision: 1,
+      createdAt: at, updatedAt: at, retiredAt: null };
+    store.save(next, { change, source: request.source, sourceConversationId: request.sourceConversationId,
+      termKeys: next.terms.map(identityKey) });
+    return next;
   }
 
   // Every active assignment whose terms or responsibility a search for who
@@ -209,6 +338,10 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
   return {
     register,
     preview,
+    open,
+    previewOpen,
+    merge,
+    split,
     previewCorrection,
     correct,
     match,
@@ -226,6 +359,8 @@ export function createStandingAssignments({ path = ':memory:', now = () => new D
       return null;
     },
     list: (personalSpaceId) => store.listActive(requiredBinding(personalSpaceId, 'personalSpaceId', ID_LIMIT)),
+    // One assignment as it is now, retired or not, or null.
+    get: (assignmentId) => store.get(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
     // Each change in order, with the state it produced.
     history: (assignmentId) => store.revisions(requiredString(assignmentId, 'assignmentId', ID_LIMIT)),
     close: () => store.close()
@@ -264,6 +399,16 @@ function correctionOf(input) {
       removeTerms: termsOf(input.removeTerms, 'removeTerms') };
   }
   throw new TypeError('action must be retire, reassign or edit_terms');
+}
+
+function savedMeta({ source, sourceConversationId }) {
+  return { source, sourceConversationId };
+}
+
+// What the person confirmed outranks what an Agent decided (rec#29 D-41.1).
+function refuseHostOverUser(assignments, source) {
+  const confirmed = assignments.find((item) => item.source === 'user');
+  if (confirmed && source === 'host') throw userConfirmed(confirmed);
 }
 
 function metaOf(meta) {
