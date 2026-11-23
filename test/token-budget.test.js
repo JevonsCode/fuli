@@ -22,6 +22,10 @@ import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-bud
 import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
+import { taskKnowledgeGuidance } from '../src/graphiti/task-knowledge-guidance.js';
+import { createAgentWorkflows } from '../src/agent-workflows/port.js';
+import { flaGrowthEntry } from '../src/fla-growth/entry-hint.js';
+import { REPEAT_GUIDANCE } from '../src/graphiti/task-repeat-signal.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -410,7 +414,20 @@ const BASELINE = Object.freeze({
   // plain line with its separator (what moved and what still waits; no link, no instruction),
   // once per confirm. A session with none reads no file and adds nothing.
   sessionMigrationConfirmedNoneChars: 0,
-  sessionMigrationConfirmedChars: 35
+  sessionMigrationConfirmedChars: 35,
+  // Jevons 11-23/24, #1071. An ordinary entry adds nothing (projectEntryChars and noMatchEntryChars
+  // above are unchanged): the three new task_guidance rules ride its one pointer. What else, measured:
+  // - a sealed worker inlines task_guidance; it gets none of the three (they are about talking to the
+  //   person and depositing the FLA's own work), so its rules are the same 7 as on main: 5,359 chars (+0);
+  // - fla_growth, only on the first turn of a conversation of an FLA with something to say: none 0;
+  //   one repeat 258 (its line with the key); the most workflows it ever names, three with the longest
+  //   names (80) and one-sentence purposes (cut at 120) the store takes and UUID ids: 888;
+  // - remember_guidance on a turn whose words say "I already told you": 787, only on that turn.
+  workerTaskGuidanceChars: 5359,
+  flaGrowthNoneChars: 0,
+  flaGrowthRepeatedChars: 258,
+  flaGrowthWorkflowsMaxChars: 888,
+  repeatGuidanceChars: 787
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -525,7 +542,35 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...flaGrowthChars() };
+}
+
+// #1071: what a worker inlines, and what an FLA's first turn of a conversation may add.
+function flaGrowthChars() {
+  const worker = compactTaskContext({ worker_run: { run_id: 'budget' }, task_guidance: taskKnowledgeGuidance() });
+  const root = mkdtempSync(join(tmpdir(), 'fuli-growth-budget-'));
+  const workflows = createAgentWorkflows({ path: join(root, 'agent-workflows.sqlite'), newId: (() => {
+    let n = 0; return () => `workflow-0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b8${n++}`; })() });
+  try {
+    const app = { config: { personal: { spaceId: 'space' } }, agentWorkflows: workflows };
+    const task = { projectAgentId: 'lead-sample', personalProjectId: 'sample' };
+    const owner = { personalSpaceId: 'space', agentId: 'lead-sample', personalProjectId: 'sample' };
+    const chars = value => value ? JSON.stringify({ fla_growth: value }).length : 0;
+    const none = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'Bump the version', taskCount: 3,
+      steps: ['Bump the version', 'Build the tray zip', 'Upload the release asset'] });
+    const repeated = chars(flaGrowthEntry(app, task, { opensConversation: true }));
+    workflows.noteRepeat({ key: 'budget', ...owner, kind: 'steps', name: 'x', taskCount: 3, steps: ['a', 'b', 'c'] });
+    flaGrowthEntry(app, task, { opensConversation: true });
+    for (let i = 0; i < 3; i += 1) {
+      const { workflow } = workflows.propose(owner, { name: 'N'.repeat(80), purpose: 'P'.repeat(300),
+        steps: [{ title: 'Step' }], source: `budget-${i}` });
+      workflows.decide({ personalSpaceId: 'space', workflowId: workflow.workflowId, decision: 'confirm', version: 1 });
+    }
+    return { workerTaskGuidanceChars: JSON.stringify(worker.task_guidance).length, flaGrowthNoneChars: none,
+      flaGrowthRepeatedChars: repeated, flaGrowthWorkflowsMaxChars: chars(flaGrowthEntry(app, task, { opensConversation: true })),
+      repeatGuidanceChars: REPEAT_GUIDANCE.length };
+  } finally { workflows.close(); rmSync(root, { recursive: true, force: true }); }
 }
 
 // rec#82: the entry receipt's growth for a session with and without a confirmed migration,

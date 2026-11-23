@@ -5,6 +5,7 @@ import { RouterLink } from 'vue-router'
 import { t, currentLocale } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import type { JefaReadFailure, JefaReadStage } from './useJefaBoardLoad'
+import { jefaReadFailureReason } from './jefa-read-failure'
 
 const props = defineProps<{
   loading: boolean; longWait: boolean; stage: JefaReadStage; timedOut: boolean
@@ -19,15 +20,6 @@ const props = defineProps<{
 }>()
 defineEmits<{ reload: []; 'clear-filter': [] }>()
 const projectName = (projectId: string) => props.projects.find(project => project.id === projectId)?.name ?? projectId
-/** Why a project could not be read, in the person's words: `category` stays the machine value. */
-const failureReason = (category: string) => {
-  const status = Number(category.replace('HTTP ', ''))
-  if (status === 401 || status === 403) return t('employees.read.reasons.notAllowed')
-  if (status === 404) return t('employees.read.reasons.notFound')
-  if (status >= 500) return t('employees.read.reasons.unavailable')
-  if (category === 'TimeoutError' || category === 'AbortError') return t('employees.read.reasons.timeout')
-  return t('employees.read.reasons.failed')
-}
 </script>
 
 <template>
@@ -58,7 +50,7 @@ const failureReason = (category: string) => {
     </div>
     <details v-if="!loading && failures.length" class="jefa-read-details">
       <summary>{{ t('employees.read.details') }}</summary>
-      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ failureReason(item.category) }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
+      <p v-for="(item, index) in failures" :key="index"><template v-if="item.projectId">{{ projectName(item.projectId) }} · </template>{{ t(`employees.read.${item.stage}`) }} · {{ jefaReadFailureReason(item.category) }} · {{ formatDateTime(item.at, currentLocale(), { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' }) }}</p>
     </details>
   </div>
 </template>

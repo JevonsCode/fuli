@@ -4,6 +4,7 @@ import { ApplicationError, InvalidInputError } from '../app/application-error.js
 import { approxTokens } from '../text/token-estimate.js';
 import { positiveInteger, requiredString } from '../validation/values.js';
 import { AgentWorkflowStore } from './store.js';
+import { plansAlike } from '../fla-growth/step-similarity.js';
 
 // The workflows port (rec#60 D-78): an Agent's repeated work, grown by the
 // Agent and confirmed by the person.
@@ -30,11 +31,13 @@ export const EXPERIENCE_SOURCE = 'experiences:';
 // Proposed and active workflows one Agent keeps; retired ones do not count.
 const MAX_OPEN_WORKFLOWS = 50;
 const RECENT_RUNS = 5;
-// A repeat is shown in the FLA's entry at most this often: once, and once more
-// if it still has not deposited it (Jevons 11-23: remind, never nag or invent).
+// A repeat is shown in the FLA's entry at most this often, on the first turn of
+// a conversation only: once, and once more in a later conversation if it still
+// has not deposited it (Jevons 11-23: remind, never nag or invent).
 const HINT_SHOWINGS = 2;
 // Active workflows named in a conversation's first entry: names only, steps on demand.
 const ENTRY_WORKFLOWS = 3;
+const ENTRY_PURPOSE = 120;
 const OUTCOMES = new Set(['done', 'stopped', 'failed']);
 const DECISIONS = new Set(['confirm', 'reject', 'retire']);
 
@@ -71,8 +74,8 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
         const next = { ...existing, status: existing.status === 'active' ? 'active' : 'proposed', latestVersion: version,
           pendingVersion: version, updatedAt: time };
         store.save(next);
-        store.markDeposited(owner, time);
-        return { status: 'proposed', workflow: indexEntry(next) };
+        return { status: 'proposed', workflow: indexEntry(next), pendingVersion: version,
+          deposited: depositSteps(owner, proposal.steps, next.workflowId, time) };
       }
       const open = store.listForAgent(owner.personalSpaceId, owner.agentId).filter(({ status }) => status !== 'retired');
       if (open.length >= MAX_OPEN_WORKFLOWS) {
@@ -83,8 +86,8 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
         pendingVersion: 1, createdAt: time, updatedAt: time };
       store.save(workflow);
       store.addVersion({ workflowId: workflow.workflowId, version: 1, ...proposal, createdBy: 'agent', createdAt: time });
-      store.markDeposited(owner, time);
-      return { status: 'proposed', workflow: indexEntry(workflow) };
+      return { status: 'proposed', workflow: indexEntry(workflow), pendingVersion: 1,
+        deposited: depositSteps(owner, proposal.steps, workflow.workflowId, time) };
     });
   }
 
@@ -167,36 +170,74 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
         ...(decision === 'confirm' ? { status: 'active', activeVersion: shown } : {}),
         ...(retiring ? { status: 'retired', activeVersion: null } : {}) };
       store.save(next);
+      // A proposal the person turned down did not deposit the repeat it answered: it is owed again.
+      if (decision === 'reject' && retiring) store.undeposit(next.workflowId);
       return { status: decision === 'confirm' ? 'confirmed' : decision === 'reject' ? 'rejected' : 'retired',
         workflow: { workflowId: next.workflowId, status: next.status, activeVersion: next.activeVersion } };
     });
   }
 
-  // A repeat the hourly check found (fla-growth/tool-suggestions.js).
-  function noteRepeat(hint) {
-    store.transaction(() => store.noteRepeat({ ...hint, detectedAt: at() }));
+  // A proposal whose steps are the same kind of work as a repeat the FLA owes
+  // in this project deposits that repeat, and only that one (step-similarity.js).
+  function depositSteps(owner, steps, workflowId, time) {
+    if (!owner.personalProjectId) return [];
+    const titles = steps.map(step => step.title);
+    const matched = store.openHints(owner).filter(hint => plansAlike(hint.steps, titles));
+    for (const hint of matched) store.deposit(hint.key, workflowId, time);
+    return matched;
   }
 
-  // What one FLA's task entry in one project carries (fla-growth/entry-hint.js):
-  // the repeat it still owes, marked shown as it is handed out, and, when asked,
-  // the names of its confirmed workflows there. A store never written reads as nothing.
-  function entryGrowth(owner, { withWorkflows = false } = {}) {
-    if (!owner?.personalProjectId || !store.readable) return { hint: null, workflows: [] };
-    const hint = store.transaction(() => {
-      const next = store.nextHint(owner, HINT_SHOWINGS);
-      if (next) store.markShown(next.key, at());
-      return next;
+  // A repeat the hourly check found (fla-growth/tool-suggestions.js): the row as it now stands.
+  function noteRepeat(hint) {
+    return store.transaction(() => store.noteRepeat({ ...hint, detectedAt: at() }));
+  }
+
+  function repeatRequested(hintKey, requestId, wording) {
+    store.transaction(() => store.recordRequest(hintKey, requestId, wording));
+  }
+
+  function repeatAnswered(hintKey, answer) {
+    store.transaction(() => store.recordAnswer(hintKey, answer));
+  }
+
+  const awaitingAnswer = ({ personalSpaceId }) => store.awaitingAnswer(personalSpaceId);
+
+  // An Agent app the FLA submitted deposits the repeats the person asked it to make a script of.
+  function depositApp(owner, appId) {
+    return store.transaction(() => {
+      const matched = store.openHints({ ...owner, personalProjectId: owner.personalProjectId ?? null })
+        .filter(hint => hint.answer === 'script');
+      for (const hint of matched) store.deposit(hint.key, `app:${appId}`, at());
+      return matched;
     });
-    const workflows = withWorkflows ? store.listForAgent(owner.personalSpaceId, owner.agentId)
+  }
+
+  // What one FLA's task entry carries on the first turn of a conversation
+  // (fla-growth/entry-hint.js): the repeat it still owes, marked shown, and
+  // the names of its confirmed workflows in this project. Reads first and
+  // writes only to mark a hint shown; a store an upgrade has not migrated yet
+  // reads as nothing, so no entry ever runs a format step.
+  function entryGrowth(owner) {
+    if (!owner?.personalProjectId || !store.current) return { hint: null, workflows: [] };
+    const hint = store.nextHint(owner, HINT_SHOWINGS);
+    if (hint) store.transaction(() => store.markShown(hint.key, at()));
+    const workflows = store.listForAgent(owner.personalSpaceId, owner.agentId)
       .filter(workflow => workflow.status === 'active' && workflow.personalProjectId === owner.personalProjectId)
       .slice(0, ENTRY_WORKFLOWS).map((workflow) => {
         const active = store.version(workflow.workflowId, workflow.activeVersion);
-        return { workflowId: workflow.workflowId, name: active.name, purpose: active.purpose };
-      }) : [];
+        return { workflowId: workflow.workflowId, name: active.name, purpose: oneSentence(active.purpose) };
+      });
     return { hint, workflows };
   }
 
-  return { propose, index, read, recordRun, overview, listSpace, decide, noteRepeat, entryGrowth, close: () => store.close() };
+  return { propose, index, read, recordRun, overview, listSpace, decide, noteRepeat, repeatRequested, repeatAnswered,
+    awaitingAnswer, depositApp, entryGrowth, close: () => store.close() };
+}
+
+// "A title and one sentence" (the entry): the purpose up to its first full stop, at most ENTRY_PURPOSE characters.
+function oneSentence(text) {
+  const first = String(text).split(/(?<=[.!?。！？])\s*/u)[0];
+  return first.length > ENTRY_PURPOSE ? `${first.slice(0, ENTRY_PURPOSE - 1)}…` : first;
 }
 
 function proposalFields(input) {

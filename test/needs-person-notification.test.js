@@ -53,6 +53,9 @@ test('the event is versioned, keyed by request and kept apart from completion so
   assert.equal(event.kind, 'question');
   assert.equal(event.kindLabel, '需要答复');
   assert.equal(needsPersonEvent({ ...open, kind: 'something_new' }).kindLabel, null);
+  // The console's words for the same kinds (one file for both).
+  assert.equal(needsPersonEvent({ ...open, kind: 'permission' }).kindLabel, '需要权限');
+  assert.equal(needsPersonEvent({ ...open, kind: 'blocked' }).kindLabel, '需要协助');
 });
 
 test('an open request is posted once; closed requests and an empty address send nothing', async () => {

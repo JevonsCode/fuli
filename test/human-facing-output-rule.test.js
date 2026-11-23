@@ -16,9 +16,11 @@ test('the human-facing output rule travels as part of task_guidance, not as extr
   assert.ok(Buffer.byteLength(JSON.stringify(view)) < Buffer.byteLength(rule),
     'the whole compacted entry stays smaller than the rule it references');
 
-  // A sealed worker cannot read MCP resources, so its entry keeps the text.
+  // A sealed worker cannot read MCP resources, so its entry keeps the text, but only what a
+  // worker reporting to its lead acts on: the person-facing and self-deposit rules are left out.
   const worker = compactTaskContext({ worker_run: true, task_guidance: { ...taskKnowledgeGuidance() } });
-  assert.equal(worker.task_guidance.human_facing_output, rule);
+  for (const key of ['human_facing_output', 'repeat_signal', 'self_deposit']) assert.equal(key in worker.task_guidance, false, key);
+  assert.equal(worker.task_guidance.checkpoint, taskKnowledgeGuidance().checkpoint);
 });
 
 test('the rule names the clickable path for each place the person answers from', () => {
