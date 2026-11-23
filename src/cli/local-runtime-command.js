@@ -216,6 +216,10 @@ function formatStatus(result, copy) {
     lines.push(`Adaptive memory: ${stages[result.adaptiveRuntime.stage] ??
       result.adaptiveRuntime.stage}`);
   }
+  if (result.autostart?.gaveUp) {
+    lines.push(`Automatic restart: stopped since ${result.autostart.at}, after ${result.autostart.starts} automatic starts did not keep FULI running; `
+      + 'it waits for fuli start. / 自动重启：已停止，自动启动多次仍没有保持运行，等你运行 fuli start。');
+  }
   if (result.version) lines.push(versionLine(result.version, result.console.status === 'ready'));
   return lines.join('\n');
 }

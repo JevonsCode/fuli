@@ -164,3 +164,19 @@ test('a port another program holds is reported with that program, and nothing is
     return true;
   });
 });
+
+test('a stopped FULI whose automatic restarts gave up says so in its status', async () => {
+  const { inspectLocalRuntime } = await import('../src/local-runtime/lifecycle.js');
+  const paths = { dataDir: '/x/data', graphRuntimeConfigPath: '/x/data/graph-runtime.json',
+    graphRuntimeStatePath: '/x/data/graph-runtime-state.json' };
+  const deps = (held, stoppedAt = null) => ({
+    readConfig: () => ({ personal: { providerUrl: 'http://127.0.0.1:8787' }, workspaces: [] }), readState: () => null,
+    isProcessAlive: () => false, consoleHealth: async () => false, providerHealth: async url => ({ url, status: 'ready' }),
+    readAutostart: () => ({ stoppedAt, starts: ['a', 'b', 'c'], held })
+  });
+  const gaveUp = await inspectLocalRuntime({ paths, port: 2727 }, deps({ reason: 'gave_up', at: '2026-11-22T18:05:25.972Z' }));
+  assert.deepEqual(gaveUp.autostart, { gaveUp: true, at: '2026-11-22T18:05:25.972Z', starts: 3 });
+  // Stopped on purpose, or not held: nothing to say.
+  assert.equal((await inspectLocalRuntime({ paths, port: 2727 }, deps({ reason: 'gave_up', at: 'x' }, 'y'))).autostart, undefined);
+  assert.equal((await inspectLocalRuntime({ paths, port: 2727 }, deps(null))).autostart, undefined);
+});

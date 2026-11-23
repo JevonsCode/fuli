@@ -207,8 +207,20 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
       enabled: adaptiveSettings.enabled,
       stage: adaptiveSettings.enabled ? adaptiveState?.stage ?? 'unknown' : 'always-on'
     },
+    ...autostartGaveUp(deps, dataDirOf(input.paths), consoleReady),
     version: installedVersionStatus(latest)
   };
+}
+
+// Client sessions start a console that went away, but stop after 3 starts in
+// 10 minutes did not keep it up (console-autostart.js). That is said where the
+// stopped FULI is shown, so a person knows it will not come back by itself.
+function autostartGaveUp(deps, dataDir, consoleReady) {
+  if (consoleReady || !dataDir) return {};
+  let record;
+  try { record = deps.readAutostart(dataDir); } catch { return {}; }
+  if (record?.stoppedAt || record?.held?.reason !== 'gave_up') return {};
+  return { autostart: { gaveUp: true, at: record.held.at, starts: record.starts?.length ?? 0 } };
 }
 
 // The installed version beside the newest one the running console last heard
