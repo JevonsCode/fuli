@@ -40,10 +40,12 @@ export function mapHttpError(error) {
   if (isControlledError(error) && error.status >= 400 && error.status <= 499) {
     // An old link to hard-deleted knowledge says when it was deleted (rec#5 C9).
     // A refused scope batch names its items, so the page marks them (rec#20 part 2).
+    // A refused Agent name says who has it and offers free names (provider-client.js nameTakenFields).
     const deletedAt = error.details?.deletedAt;
     const items = error.details?.items;
+    const nameTaken = error.details?.nameTaken;
     return { status: error.status, body: { error: error.message, code: error.code, ...(deletedAt ? { deletedAt } : {}),
-      ...(Array.isArray(items) ? { items } : {}) } };
+      ...(Array.isArray(items) ? { items } : {}), ...(nameTaken ?? {}) } };
   }
 
   if (isControlledError(error) && BAD_REQUEST_CODES.has(error.code)) {

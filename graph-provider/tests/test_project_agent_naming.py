@@ -40,8 +40,8 @@ class NamesStore:
             self.calls += 1
             assert parameters['personal_space_id'] == 'space'
             if 'ASSIGNED_AGENT' in query:
-                return [{'agent_id': agent_id, 'projects': names} for agent_id, names in (projects or {}).items()
-                        if agent_id in parameters['agent_ids']], None, None
+                return [{'agent_id': agent_id, 'projects': [{'project_id': f'p-{name}', 'name': name} for name in names]}
+                        for agent_id, names in (projects or {}).items() if agent_id in parameters['agent_ids']], None, None
             assert 'HAS_PROJECT_AGENT_IDENTITY' in query
             return rows, None, None
         self.runtime = SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query))
@@ -127,8 +127,8 @@ async def test_an_update_keeps_the_stored_nickname_and_refuses_another_agents_na
     assert renamed.profile.display_name == 'Cleo Park'
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra north'))
-    assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
-    assert 'free names' in refused.value.detail
+    assert refused.value.status_code == 409 and refused.value.detail['code'] == 'agent_name_taken'
+    assert 'free names' in refused.value.detail['message']
 
 
 @pytest.mark.asyncio
@@ -137,8 +137,8 @@ async def test_a_new_agent_given_a_taken_name_is_refused_with_free_alternatives(
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra NORTH'))
     detail = refused.value.detail
-    assert refused.value.status_code == 409 and detail.startswith('agent_name_taken')
-    assert all(name in detail for name in free_nicknames('agent-ppt', {'lyra north'}))
+    assert refused.value.status_code == 409 and detail['message'].startswith('agent_name_taken')
+    assert detail['free_names'] == free_nicknames('agent-ppt', {'lyra north'})
     # A free name in the person's style is kept as given.
     kept = await with_person_name(store, upsert('agent-ppt', 'PPT 专责', '青禾'))
     assert kept.profile.display_name == '青禾'
@@ -157,7 +157,7 @@ async def test_a_recruitment_proposing_a_taken_name_is_refused_before_anything_i
     with pytest.raises(HTTPException) as refused:
         await require_free_proposed_name(store, 'space', 'task-1', ProjectAgentProfile(
             name='PPT 专责', display_name='青禾', responsibility='制作 PPT。'))
-    assert refused.value.status_code == 409 and 'agent_name_taken' in refused.value.detail
+    assert refused.value.status_code == 409 and refused.value.detail['code'] == 'agent_name_taken'
     for display_name in ('松风', 'PPT 专责'):
         await require_free_proposed_name(store, 'space', 'task-1', ProjectAgentProfile(
             name='PPT 专责', display_name=display_name, responsibility='制作 PPT。'))
@@ -269,18 +269,20 @@ class RenameStore(StoreProjectAgentRename):
                         agent_id: self.profile_json}
                 return [{'agent_id': key, 'profile_json': value} for key, value in rows.items()], None, None
             if 'ASSIGNED_AGENT' in query:
-                return [{'agent_id': other, 'projects': ['Saturn']} for other in parameters['agent_ids']], None, None
+                return [{'agent_id': other, 'projects': [{'project_id': 'p-saturn', 'name': 'Saturn'}]}
+                        for other in parameters['agent_ids']], None, None
             if 'SET agent.profile_json' in query:
+                [row] = parameters['rows']
                 if taken_meanwhile:
                     self.others['racer'] = {'name': 'x', 'display_name': taken_meanwhile}
                     raise ConstraintError('Node(7) already exists with label `FuliProjectAgent` and properties '
                                           '`display_name_space_id` = \'space\', `display_name_key` = \'nova park\'')
-                if changed_meanwhile or parameters['stored'] != self.profile_json:
-                    return [], None, None
-                self.writes.append({**json.loads(parameters['profile_json']),
-                                    'history': json.loads(parameters['name_history_json'] or '[]'),
-                                    'key': parameters['display_name_key']})
-                return [{'agent_id': parameters['agent_id']}], None, None
+                if changed_meanwhile or row['stored'] != self.profile_json:
+                    return [{'written': 0}], None, None
+                self.writes.append({**json.loads(row['profile_json']),
+                                    'history': json.loads(row['name_history_json'] or '[]'),
+                                    'key': row['display_name_key']})
+                return [{'written': 1}], None, None
             return [{'profile_json': self.profile_json, 'name_history_json': None}], None, None
         self.runtime = SimpleNamespace(driver=SimpleNamespace(execute_query=execute_query))
 
@@ -320,11 +322,11 @@ async def test_a_rename_keeps_the_old_name_in_the_history_and_stores_the_new_nam
     written = store.writes[0]
     assert written['display_name'] == 'Nova  Park' and written['key'] == 'nova park'
     assert [(item['name'], item['reason']) for item in written['history']] == [('Iris Vale', 'renamed')]
-    # A role keeps no identity of its own: its names are reserved by the check.
+    # A role holds the name it is shown by too, so no concurrent write can take it.
     roles = RenameStore({'name': 'Jefa', 'responsibility': '项目经理'})
     await roles.rename_project_agent({}, 'employee.jefa', ProjectAgentRename(personal_space_id='space',
                                                                             display_name='小J'))
-    assert roles.writes[0]['key'] is None and roles.writes[0]['history'][0]['name'] == 'Jefa'
+    assert roles.writes[0]['key'] == '小j' and roles.writes[0]['history'][0]['name'] == 'Jefa'
 
 
 @pytest.mark.asyncio
@@ -334,10 +336,12 @@ async def test_a_taken_name_is_refused_with_who_uses_it_where_and_free_names():
     with pytest.raises(HTTPException) as refused:
         await store.rename_project_agent({}, 'agent-ppt', ProjectAgentRename(personal_space_id='space',
                                                                              display_name='morgan vale'))
-    # The console reads both lists from this exact wording (web agent-rename.ts).
-    match = re.fullmatch(r'agent_name_taken: .*; used by: Morgan Vale \(agent-other\) in Saturn; '
-                         r'free names: (.+)\. Choose one or propose another\.', refused.value.detail)
-    assert match and all(is_generated(free) for free in match.group(1).split(', '))
+    # The console reads the fields; an Agent reads the sentence.
+    detail = refused.value.detail
+    assert detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Morgan Vale', 'projects': ['Saturn']}]
+    assert detail['free_names'] and all(is_generated(free) for free in detail['free_names'])
+    assert re.fullmatch(r'agent_name_taken: .*; used by: Morgan Vale \(agent-other\) in Saturn; '
+                        r'free names: .+\. Choose one or propose another\.', detail['message'])
     assert not store.writes
 
 
@@ -349,7 +353,7 @@ async def test_a_rename_that_loses_its_name_to_a_concurrent_write_is_refused_the
         await store.rename_project_agent({}, 'agent-ppt', ProjectAgentRename(personal_space_id='space',
                                                                              display_name='Nova Park'))
     assert refused.value.status_code == 409
-    assert 'used by: Nova Park (racer) in Saturn; free names: ' in refused.value.detail
+    assert refused.value.detail['used_by'][0]['agent_id'] == 'racer'
 
 
 @pytest.mark.asyncio
@@ -358,22 +362,23 @@ async def test_a_refused_new_name_says_who_has_it():
                        projects={'agent-other': ['Alpha', 'Beta']})
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-ppt', 'PPT 专责', 'lyra north'))
-    assert 'used by: Lyra North (agent-other) in Alpha, Beta; free names: ' in refused.value.detail
+    assert refused.value.detail['used_by'] == [{'agent_id': 'agent-other', 'name': 'Lyra North',
+                                                'projects': ['Alpha', 'Beta']}]
     # A role's built-in name is held by the role.
     roles = NamesStore({})
     with pytest.raises(HTTPException) as role:
         await require_free_proposed_name(roles, 'space', 'task-1', ProjectAgentProfile(
             name='PPT 专责', display_name='Tonborg', responsibility='制作 PPT。'))
-    assert role.value.status_code == 409 and 'used by: Tonborg (employee.tonborg)' in role.value.detail
+    assert role.value.status_code == 409 and 'used by: Tonborg (employee.tonborg)' in role.value.detail['message']
 
 
-def test_the_stored_name_identity_is_the_shown_names_key_and_none_for_roles():
+def test_the_stored_name_identity_is_the_shown_names_key_roles_included():
     profile = ProjectAgentProfile(name='PPT 专责', display_name='Ｍorgan  VALE', responsibility='制作 PPT。')
     assert name_identity('space', 'agent-ppt', profile) == {'display_name_space_id': 'space',
                                                             'display_name_key': 'morgan vale'}
     legacy = ProjectAgentProfile(name='design Agent', responsibility='设计。')
     assert name_identity('space', 'agent-old', legacy)['display_name_key'] == identity_key(
         agent_display_name('agent-old', 'design Agent'))
-    assert name_identity('space', 'employee.bole', profile) == {'display_name_space_id': None,
-                                                               'display_name_key': None}
+    assert name_identity('space', 'employee.bole', ProjectAgentProfile(name='Bole', responsibility='招聘。')) == {
+        'display_name_space_id': 'space', 'display_name_key': 'bole'}
 

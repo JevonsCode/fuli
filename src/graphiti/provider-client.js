@@ -210,6 +210,17 @@ export class GraphitiProviderClient {
   listAgentNameChanges(personalSpaceId) {
     return this.#request(`/v1/project-agent-name-changes?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
   }
+  markAgentNameChangesSeen(input) {
+    return this.#request('/v1/project-agent-name-changes/seen', { method: 'PUT', body: input });
+  }
+  agentNameFixPlan(personalSpaceId, keep = []) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const agentId of keep) query.append('keep', agentId);
+    return this.#request(`/v1/project-agent-name-fixes?${query}`);
+  }
+  applyAgentNameFixes(input) {
+    return this.#request('/v1/project-agent-name-fixes/apply', { method: 'POST', body: input });
+  }
   getProjectAgent(personalSpaceId, personalProjectId, agentId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
@@ -1067,8 +1078,21 @@ function providerErrorDiagnostic(status, payload) {
     detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
     validationErrors,
     // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
-    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {})
+    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {}),
+    ...nameTakenFields(payload?.detail)
   };
+}
+
+// A refused Agent name says who has it, where, and free names (graph-provider
+// store_project_agent_naming.py name_taken), as fields the console shows as they are.
+function nameTakenFields(detail) {
+  if (detail?.code !== 'agent_name_taken' || !Array.isArray(detail.free_names)) return {};
+  const text = value => String(value ?? '').slice(0, 160);
+  return { nameTaken: {
+    usedBy: (Array.isArray(detail.used_by) ? detail.used_by : []).slice(0, 8).map(item => ({
+      agentId: text(item?.agent_id), name: text(item?.name),
+      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(text) })),
+    freeNames: detail.free_names.slice(0, 8).map(text) } };
 }
 
 // What a refusal says, for the human-review channel too (human-review-channel.js):

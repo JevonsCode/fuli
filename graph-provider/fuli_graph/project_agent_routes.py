@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_dismissal_routes import register_project_agent_dismissal_routes
+from .project_agent_name_routes import register_project_agent_name_routes
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
@@ -23,7 +24,6 @@ from .project_agent_models import (
     ProjectAgentAssignmentReplaceResult,
     ProjectAgentRecord,
     ProjectAgentRename,
-    ProjectAgentRenamed,
     ProjectAgentStatus,
     ProjectAgentUpsert,
 )
@@ -77,6 +77,7 @@ def register_project_agent_routes(
 
     register_project_agent_memory_routes(application, store, Actor)
     register_project_agent_dismissal_routes(application, store, Actor)
+    register_project_agent_name_routes(application, store, Actor)
     register_occupation_routes(application, store, Actor)
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)
@@ -190,13 +191,6 @@ def register_project_agent_routes(
         actor: Actor,
     ) -> ProjectAgentRecord:
         return await store.rename_project_agent(actor, agent_id, request)
-
-    @application.get('/v1/project-agent-name-changes', response_model=list[ProjectAgentRenamed])
-    async def list_agent_name_changes(
-        actor: Actor,
-        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
-    ) -> list[ProjectAgentRenamed]:
-        return await store.list_agent_name_changes(actor, personal_space_id)
 
     @application.post(
         '/v1/project-agents/system-coordinator',

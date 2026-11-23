@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 from fastapi import HTTPException
 from typing import Literal
@@ -22,6 +23,17 @@ _SESSION_PROFILE = ProjectProfile(name='临时会话 / Temporary session', lifec
     purpose='Holds what a session saved before anyone chose where it applies.',
     boundaries=['Scope pending: nothing here applies to other projects or FLAs.',
                 'Items move only when the person chooses their scope.'])
+# Every name FULI ever generated for a project it opened by itself. graph/23
+# clears them; until a person confirms that step a graph still holds them.
+GENERATED_NAMES = (
+    '临时任务 / Temporary task',
+    '临时会话 / Temporary session',
+    '会话项目 / Conversation project',
+)
+# A generated temporary project ID: a session or task scope this module derives,
+# or the conversation fallback task entry wrote until 2026-10-18. A name a person
+# typed can make a readable ID such as 'temporary-fix'; that is never this.
+_GENERATED_ID = re.compile(r'^(?:temporary|conversation)-([0-9a-f]{64})$')
 
 
 class TemporaryProjectEnsure(StrictModel):
@@ -44,6 +56,28 @@ def conversation_fallback_project_id(space_id: str, source_application: str, ses
     """The project task entry created for an unmatched session until 2026-10-18
     (removed in e50b04c2; its projects remain): the same key that code asked for."""
     return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
+
+
+def is_temporary_project(project_id: str, scope_type: str | None, name: str | None) -> bool:
+    """Whether a project is one FULI opened by itself. Its scope_type says so
+    first. A generated ID still holding no name or a generated one counts too:
+    that is a conversation fallback a graph waiting for graph/23 has not marked
+    yet. A conversation project a person named stays theirs."""
+    if scope_type == 'temporary':
+        return True
+    return bool(_GENERATED_ID.match(project_id)) and (name or '').strip() in ('', *GENERATED_NAMES)
+
+# As long as the console's own short number (web temporary-project-name.ts).
+_NUMBER_LENGTH = 8
+
+
+def project_reference(project_id: str, name: str) -> str:
+    """How text FULI writes about a project refers to it: its name, or, for a
+    project nobody named, '#' and the same short number the console shows."""
+    if name:
+        return name
+    digest = _GENERATED_ID.match(project_id)
+    return f'#{digest.group(1)[:_NUMBER_LENGTH] if digest else project_id}'
 
 
 def _scope_key(parts: list) -> str:

@@ -25,7 +25,10 @@ from .provider_values import native_datetime, now_utc, stable_uuid
 from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
 from .store_transactions import query_store_transaction
-from .store_project_agent_naming import lost_name_race, name_identity, with_person_name, with_rename_suggestion
+from .store_project_agent_naming import (
+    UNKEYED, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
+    with_rename_suggestion,
+)
 from .store_project_agent_occupation import occupation_from_agent_node
 from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
@@ -40,7 +43,7 @@ from .system_hr_identity import LEGACY_HR_AGENT_ID, merge_legacy_hr, resolve_hr_
 
 
 # How often an identity write is named again after losing its name to a
-# concurrent write (graph/24's uniqueness rule) before it gives up.
+# concurrent write (the graph's name uniqueness rule) before it gives up.
 NAME_RACE_ATTEMPTS = 3
 
 
@@ -141,17 +144,26 @@ class StoreProjectAgents:
                 request.personal_project_id,
             )
         given = request
-        for attempt in range(NAME_RACE_ATTEMPTS):
+        identity = None
+        races = 0
+        while True:
             request = await with_person_name(self, given, recruitment_id=recruitment_id)
             try:
-                records, updated_at = await self._write_project_agent(request, recruitment_id)
+                records, updated_at = await self._write_project_agent(request, recruitment_id, identity)
                 break
             except ConstraintError as error:
-                # Another write took this name between the check and the commit:
-                # name again from what is stored now (a given name is refused then).
                 if not lost_name_race(error):
                     raise
-                if attempt == NAME_RACE_ATTEMPTS - 1:
+                names = await space_agent_names(self, request.personal_space_id)
+                if identity is None and keeps_its_name(names, request.agent_id, request.profile.display_name):
+                    # An FLA that already shared its name: this write (an
+                    # occupation, a profile edit) goes through without a key.
+                    identity = UNKEYED
+                    continue
+                # Another write took this name between the check and the commit:
+                # name again from what is stored now (a given name is refused then).
+                races += 1
+                if races == NAME_RACE_ATTEMPTS:
                     raise HTTPException(409, 'agent_name_taken: another Agent took this name at the same '
                                              'time; try again') from None
         if not records:
@@ -182,8 +194,10 @@ class StoreProjectAgents:
             ),
         )
 
-    async def _write_project_agent(self, request: ProjectAgentUpsert, recruitment_id: str | None):
-        """The identity write itself, with its shown name's identity (graph/24)."""
+    async def _write_project_agent(self, request: ProjectAgentUpsert, recruitment_id: str | None,
+                                   identity: dict | None = None):
+        """The identity write itself, with its shown name's identity
+        (name_identity), or the one given (UNKEYED)."""
         node_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -270,7 +284,7 @@ class StoreProjectAgents:
             cleanup_eligible=request.profile.cleanup_eligible,
             recruitment_id=recruitment_id,
             updated_at=updated_at,
-            **name_identity(request.personal_space_id, request.agent_id, request.profile),
+            **(identity or name_identity(request.personal_space_id, request.agent_id, request.profile)),
         )
         return records, updated_at
 

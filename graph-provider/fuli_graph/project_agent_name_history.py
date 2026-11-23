@@ -3,8 +3,8 @@
 A rename only changes what people call an Agent: its identity, records and
 signatures stay with its agent_id, and what was already said or signed under
 the old name is never rewritten. The old name is kept here, with when it
-ended and why: a person renamed it, or FULI gave it a new one because another
-Agent of the space was called the same (graph/23). For FORMER_NAME_DAYS after
+ended and why: a person renamed it, or the person settled a name it shared with
+another Agent of the space (store_project_agent_name_fixes.py). For FORMER_NAME_DAYS after
 a rename the record also carries the old name as ``former_name``, so pages
 and receipts can say 「原名 …」 while people still know it by that name.
 """

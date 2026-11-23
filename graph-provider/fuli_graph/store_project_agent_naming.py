@@ -9,10 +9,12 @@ the time the Agent is provisioned falls back to a generated name. The naming
 rules themselves live in project_agent_names.py.
 
 The check reads the space's names before the write; the graph holds the rule
-itself (graph/24): every Agent of the person stores the identity key of its
-shown name, unique per space (name_identity), so two writes racing for one
-name cannot both commit. FULI's own roles store none: their names, built-in
-ones included, are reserved by the check (renamed_profile).
+itself (AGENT_NAME_RULES): every Agent of the person, FULI's own roles
+included, stores the identity key of its shown name, unique per space
+(name_identity), so two writes racing for one name cannot both commit. A
+role's built-in name is reserved by the check (renamed_profile). An FLA that
+already shared its name before this rule writes without a key (UNKEYED) until
+the person settles the name (store_project_agent_name_fixes.py).
 
 A refusal names who is called that and where they work, and offers free names.
 """
@@ -27,6 +29,7 @@ from .project_agent_names import (
 )
 from .system_agents import SYSTEM_PROFILES
 from .system_hr_identity import LEGACY_HR_AGENT_ID
+from .temporary_project_scope import project_reference
 
 # FULI's own roles keep the names the Provider gives them.
 SYSTEM_NAMED = frozenset({*SYSTEM_PROFILES, LEGACY_HR_AGENT_ID})
@@ -59,38 +62,57 @@ def _taken(names, agent_id):
 
 
 def name_identity(personal_space_id: str, agent_id: str, profile) -> dict:
-    """The stored identity of the Agent's shown name, which graph/24 keeps
-    unique per space; none for FULI's own roles."""
-    if agent_id in SYSTEM_NAMED:
-        return {'display_name_space_id': None, 'display_name_key': None}
+    """The stored identity of the Agent's shown name, which the graph keeps
+    unique per space (AGENT_NAME_RULES). A built-in role stores the name it is
+    shown by now too; its built-in one stays reserved by the check."""
     shown = agent_display_name(agent_id, profile.name, profile.display_name)
     return {'display_name_space_id': personal_space_id, 'display_name_key': identity_key(shown)}
 
 
+# An FLA that shared its name with another before names were unique stores no
+# identity on its writes until the person settles the name on the FLAs page
+# (store_project_agent_name_fixes.py): the write itself goes through.
+UNKEYED = {'display_name_space_id': None, 'display_name_key': None}
+
+
 def lost_name_race(error: Exception) -> bool:
-    """Whether a write failed because another Agent took the same name meanwhile."""
+    """Whether a write failed because another Agent holds the same name identity."""
     return isinstance(error, ConstraintError) and 'display_name_key' in str(error)
+
+
+def keeps_its_name(names, agent_id: str, display_name: str | None) -> bool:
+    """Whether a write leaves an existing Agent called what it was: a clash on
+    its identity then means an Agent that already shared the name, never a race."""
+    if agent_id not in names:
+        return False
+    current = agent_display_name(agent_id, *names[agent_id])
+    return identity_key(display_name or current) == identity_key(current)
 
 
 async def name_taken(store, personal_space_id, names, agent_id, name, alternatives) -> HTTPException:
     """The refusal of a name someone else is called by: who, the projects they
-    work in, and free names. The console reads both lists from this exact
-    wording (web agent-rename.ts)."""
+    work in, and free names, as fields (the console reads them) and in one
+    sentence (what an Agent reads)."""
     key = identity_key(name)
     holders = [other for other, (role, nickname) in names.items()
                if other != agent_id and identity_key(agent_display_name(other, role, nickname)) == key]
     holders += [other for other in SYSTEM_PROFILES if other != agent_id and other not in holders
                 and identity_key(SYSTEM_PROFILES[other]().name) == key]
     projects = await _working_projects(store, personal_space_id, holders) if holders else {}
-    used_by = ' | '.join(
-        f'{_shown(names, other)} ({other})' + (f' in {", ".join(projects[other])}' if projects.get(other) else '')
-        for other in holders)
-    return HTTPException(409, 'agent_name_taken: another Agent in this personal space already uses this name; '
-                              + (f'used by: {used_by}; ' if used_by else '')
-                              + f'free names: {", ".join(alternatives)}. Choose one or propose another.')
+    used_by = [{'agent_id': other, 'name': _called(names, other), 'projects': projects.get(other, [])}
+               for other in holders]
+    said = ' | '.join(f'{item["name"]} ({item["agent_id"]})'
+                      + (f' in {", ".join(item["projects"])}' if item['projects'] else '') for item in used_by)
+    return HTTPException(409, {
+        'code': 'agent_name_taken',
+        'message': 'agent_name_taken: another Agent in this personal space already uses this name; '
+                   + (f'used by: {said}; ' if said else '')
+                   + f'free names: {", ".join(alternatives)}. Choose one or propose another.',
+        'used_by': used_by, 'free_names': list(alternatives),
+    })
 
 
-def _shown(names, agent_id):
+def _called(names, agent_id):
     if agent_id in names:
         return agent_display_name(agent_id, *names[agent_id])
     return SYSTEM_PROFILES[agent_id]().name
@@ -104,11 +126,12 @@ async def _working_projects(store, personal_space_id, agent_ids) -> dict[str, li
               (:FuliProjectAgentAssignment {status: 'active'})-[:ASSIGNED_AGENT]->(agent:FuliProjectAgent)
         WHERE agent.agent_id IN $agent_ids
         RETURN agent.agent_id AS agent_id,
-               collect(DISTINCT coalesce(project.name, project.project_id)) AS projects
+               collect(DISTINCT {project_id: project.project_id, name: project.name}) AS projects
         ''',
         personal_space_id=personal_space_id, agent_ids=agent_ids, routing_='r',
     )
-    return {row['agent_id']: sorted(row['projects']) for row in records}
+    return {row['agent_id']: sorted(project_reference(item['project_id'], item['name'] or '')
+                                    for item in row['projects']) for row in records}
 
 
 async def with_person_name(store, request, *, recruitment_id=None):

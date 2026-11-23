@@ -284,26 +284,72 @@ class ProjectAgentAssignmentReplaceResult(StrictModel):
     replacement: ProjectAgentAssignmentRecord
 
 
+# Why an FLA gave a name it shared up, by the first rule it lost on
+# (project_agent_name_fixes.py), or because the person chose the other one.
+NameGaveWay = Literal['built_in_role', 'dismissed', 'test', 'person_named', 'temporary_lead', 'less_work',
+                      'less_recent', 'later', 'person_chose']
+
+
 class ProjectAgentNameChange(StrictModel):
     """One name an Agent was called until ``until`` (project_agent_name_history.py)."""
     name: str = Field(min_length=1, max_length=160)
     until: datetime
-    # A person renamed it, or FULI did because another Agent had the same name.
+    # A person renamed it, or the person settled a name it shared with another.
     reason: Literal['renamed', 'duplicate_name']
     # For duplicate_name: who kept the name, and why this Agent gave it up.
     kept_by_agent_id: str | None = Field(default=None, max_length=128)
-    gave_way: Literal['built_in_role', 'dismissed', 'test', 'person_named', 'less_work', 'less_recent',
-                      'later'] | None = None
+    gave_way: NameGaveWay | None = None
 
 
 class ProjectAgentRenamed(StrictModel):
-    """One Agent FULI renamed because another had its name, while that is recent:
-    what the console lists in one place after graph/23."""
+    """One rename of one Agent, for the list of every rename in a space."""
     agent_id: str
     display_name: str
     status: ProjectAgentStatus
     change: ProjectAgentNameChange
     kept_by_name: str | None = None
+
+
+class ProjectAgentNameChanges(StrictModel):
+    """Every rename in a space, newest first, and up to when the person has seen
+    the ones FULI offered for shared names (the FLAs page notice)."""
+    items: list[ProjectAgentRenamed]
+    seen_until: datetime | None = None
+
+
+class ProjectAgentNameChangesSeen(StrictModel):
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    until: datetime
+
+
+class NameFixMember(StrictModel):
+    """One FLA of a shared name: whether it keeps it, and if not what it becomes and why."""
+    agent_id: str
+    name: str
+    status: ProjectAgentStatus
+    projects: list[str] = Field(default_factory=list)
+    keeps: bool
+    new_name: str | None = None
+    gave_way: NameGaveWay | None = None
+
+
+class NameFixGroup(StrictModel):
+    name: str
+    members: list[NameFixMember]
+
+
+class NameFixPlan(StrictModel):
+    """The names FLAs of a space share and how each would be settled; nothing changes until applied."""
+    groups: list[NameFixGroup]
+    renames: int
+
+
+class NameFixApply(StrictModel):
+    """The person's settling of shared names: who keeps each name they changed
+    from the plan, and every rename they agreed to, with the name they saw."""
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    keep: list[str] = Field(default_factory=list, max_length=500)
+    renames: dict[str, str] = Field(min_length=1, max_length=500)
 
 
 class ProjectAgentRecord(StrictModel):

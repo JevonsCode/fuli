@@ -190,8 +190,10 @@ CONVERSATION_SESSION_RULES = (
 )
 CONVERSATION_SESSION_LABELS = frozenset({'FuliConversationSession'})
 
-# graph/24: no two Agents of a personal space are called by one name; each
-# stores the identity key of its shown name (FULI's own roles store none).
+# graph/23: no two Agents of a personal space are called by one name; each
+# stores the identity key of its shown name. Every key starts empty, so the
+# constraint never needs a person: an FLA that already shared a name stores
+# none until the person settles the name (store_project_agent_name_fixes.py).
 AGENT_NAME_RULES = (
     _unique('fuli_project_agent_display_name', 'FuliProjectAgent', 'display_name_space_id', 'display_name_key'),
 )

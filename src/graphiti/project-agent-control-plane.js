@@ -16,6 +16,12 @@ import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToA
 import { loadProjectTeam } from './project-team-view.js';
 import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';
 import {
+  agentNameFixPlan as agentNameFixPlanWorkflow,
+  applyAgentNameFixes as applyAgentNameFixesWorkflow,
+  listAgentNameChanges as listAgentNameChangesWorkflow,
+  markAgentNameChangesSeen as markAgentNameChangesSeenWorkflow,
+} from './agent-name-workflows.js';
+import {
   getProjectAgentMemory,
   inspectProjectAgentMemory,
   checkpointProjectAgentMemory,
@@ -33,7 +39,6 @@ import {
   archiveTestProjectAgent as archiveTestProjectAgentWorkflow,
   updateProjectAgentOccupation as updateProjectAgentOccupationWorkflow,
   renameProjectAgent as renameProjectAgentWorkflow,
-  listAgentNameChanges as listAgentNameChangesWorkflow,
   endProjectAgentAssignment as endProjectAgentAssignmentWorkflow,
   getExecutor as getExecutorWorkflow,
   getExecutorRoutingRule as getExecutorRoutingRuleWorkflow,
@@ -238,6 +243,21 @@ export class ProjectAgentControlPlaneApplication {
   async listAgentNameChanges(input) {
     this.#assertSpace(input.personalSpaceId);
     return listAgentNameChangesWorkflow(this, input);
+  }
+
+  async markAgentNameChangesSeen(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return markAgentNameChangesSeenWorkflow(this, input);
+  }
+
+  async agentNameFixPlan(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return agentNameFixPlanWorkflow(this, input);
+  }
+
+  async applyAgentNameFixes(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return applyAgentNameFixesWorkflow(this, input);
   }
 
   async updateProjectAgentOccupation(input) {

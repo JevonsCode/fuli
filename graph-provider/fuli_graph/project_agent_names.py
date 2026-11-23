@@ -70,6 +70,25 @@ def agent_display_name(agent_id: str, name: str, display_name: str | None = None
     return f'{FIRST_NAMES[digest[0] % len(FIRST_NAMES)]} {LAST_NAMES[digest[1] % len(LAST_NAMES)]}'
 
 
+def profile_shown_name(agent_id: str, profile: dict) -> str:
+    """The name an Agent is shown and called by, from its stored profile
+    (profile_json read as a dict): every reader of a stored profile derives
+    the shown name here, through agent_display_name."""
+    return agent_display_name(agent_id, profile.get('name') or '', profile.get('display_name'))
+
+
+_GENERATED = re.compile(r'(\S+) ([^\s-]+)(?:-([^\s-]+))?(?: \d+)?')
+
+
+def is_generated_nickname(name: str) -> bool:
+    """Whether a name is one FULI generated (unique_nickname, free_nicknames,
+    or derived from an Agent ID before nicknames were stored) rather than one
+    a person or a role gave."""
+    match = _GENERATED.fullmatch(name.strip())
+    return bool(match) and match[1] in FIRST_NAMES and match[2] in LAST_NAMES \
+        and (match[3] is None or match[3] in LAST_NAMES)
+
+
 def title_like(name: str) -> bool:
     """Whether a name reads as a job title ("PPT 专责", "design Agent") rather than a person."""
     return bool(ROLE_NAME.search(name) or JOB_TITLE.search(name))

@@ -147,9 +147,6 @@ NODE_FIELDS = {
         'after_degree': 'integer?', 'after_hash': 'string?', 'apply_id': 'string',
         'b_agent_id': 'string?', 'b_agent_type': 'string?', 'b_aggregate_id': 'string?',
         'b_confirmation_authority': 'string?', 'b_decision_revision': 'integer?',
-        # graph/23-unique-agent-names
-        'b_display_name_key': 'string?', 'b_display_name_space_id': 'string?',
-        'b_name_history_json': 'string?', 'b_profile_json': 'string?',
         # graph/12-builtin-occupations
         'b_description_en': 'string?', 'b_description_zh': 'string?', 'b_name_en': 'string?',
         'b_name_zh': 'string?', 'b_occupation_role': 'string?', 'b_occupation_updated_at': 'datetime?',
@@ -564,7 +561,7 @@ NODE_FIELDS = {
         'public_key': 'string', 'space_id': 'string',
     },
     'FuliSpace': {
-        'created_at': 'datetime?', 'description': 'string?', 'fla_employee_sequence': 'integer?',
+        'agent_renames_seen_at': 'datetime?', 'created_at': 'datetime?', 'description': 'string?', 'fla_employee_sequence': 'integer?',
         'group_id': 'string?', 'id': 'string', 'kind': 'space_kind', 'name': 'string?',
         'profile_json': 'string?', 'publication_key': 'string?', 'release_id': 'string?',
         'release_publisher_id': 'string?', 'release_publisher_name': 'string?',

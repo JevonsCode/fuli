@@ -34,7 +34,6 @@ import {
   providerProjectAgentTaskActivity,
   providerProjectAgentTaskOutcome,
   providerProjectAgentTaskSubmit,
-  agentRenamed,
   projectAgentRecord,
   providerProjectAgentProfile,
   routingLearningRecord
@@ -140,12 +139,6 @@ export async function renameProjectAgent(application, input) {
     personal_space_id: input.personalSpaceId,
     display_name: input.displayName ?? null
   }));
-}
-
-// The Agents FULI renamed because another had their name (graph/23), while
-// the rename is recent: one list, each with who kept the name and why.
-export async function listAgentNameChanges(application, input) {
-  return (await application.personal.listAgentNameChanges(input.personalSpaceId)).map(agentRenamed);
 }
 
 // Only an explicit person edit sets the occupation; it is never inferred.
