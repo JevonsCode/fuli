@@ -20,7 +20,7 @@ from .project_agent_task_models import (
 )
 from .provider_values import native_datetime
 from .task_blocker import blocker_clear_note, current_blocker
-from .temporary_project_scope import TEMPORARY_SCOPE
+from .temporary_project_scope import TASK_PROJECT_SCOPE_TYPE, TEMPORARY_SCOPE
 from .task_activity_origin import read_activity_origin
 
 
@@ -181,9 +181,7 @@ class StoreProjectAgentTaskReads:
         OPTIONAL MATCH (task)-[:ROUTED_BY]->
                        (decision:FuliProjectAgentRoutingDecision)
         RETURN task, participant_rows, event_rows, decision,
-               head([(task)<-[:HAS_PROJECT_AGENT_TASK]-(:FuliSpace)-[:CONTAINS_PROJECT]->
-                    (scope_project:FuliPersonalProject {{project_id: task.personal_project_id}})
-                    | scope_project.scope_type]) AS project_scope_type
+               {TASK_PROJECT_SCOPE_TYPE} AS project_scope_type
         '''
 
     @classmethod

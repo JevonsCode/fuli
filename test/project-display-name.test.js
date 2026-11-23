@@ -45,6 +45,13 @@ test('a name FULI generated before graph/23 is never shown as a title', () => {
   }
 });
 
+test('a readable-ID project whose name happens to be a generated one shows that name, as the Provider and the console do', () => {
+  // A person's project before graph/23 marks nothing: it is not temporary, so its stored name stands.
+  const readable = project('synthetic-notes', '临时任务 / Temporary task', { scope_type: 'registered' });
+  assert.equal(isTemporaryProject(readable), false);
+  assert.equal(projectDisplayName(readable, 'en-US'), '临时任务 / Temporary task');
+});
+
 test('a name someone gave stays, temporary or not, and a nameless registered project shows its ID', () => {
   assert.equal(projectDisplayName(project(temporaryId('e'), 'Synthetic garden notes'), 'en-US'), 'Synthetic garden notes');
   assert.equal(projectDisplayName(project('synthetic-formal', 'Synthetic formal'), 'en-US'), 'Synthetic formal');

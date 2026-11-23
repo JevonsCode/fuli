@@ -257,3 +257,17 @@ def test_a_task_reads_its_projects_scope_as_it_is_now_not_as_it_was_when_created
     assert scope({'project_scope_type': 'temporary'}, {'scope_type': 'registered'}) == 'temporary'
     assert scope({'project_scope_type': None}, {'scope_type': 'temporary'}) == 'temporary'
     assert StoreProjectAgentTaskReads._task_read_query('').count('project_scope_type') == 1
+
+
+def test_task_lists_read_the_project_scope_over_the_tasks_own_edge_first():
+    from fuli_graph.store_project_agent_task_pages import _page_query
+    from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
+    from fuli_graph.temporary_project_scope import TASK_PROJECT_SCOPE_TYPE
+    direct = '(task)<-[:HAS_PROJECT_AGENT_TASK]-(direct:FuliPersonalProject {project_id: task.personal_project_id})'
+    assert direct in TASK_PROJECT_SCOPE_TYPE
+    # The space-wide lookup is only the ELSE branch, for a task without that edge.
+    assert TASK_PROJECT_SCOPE_TYPE.index('THEN') < TASK_PROJECT_SCOPE_TYPE.index(direct) \
+        < TASK_PROJECT_SCOPE_TYPE.index('ELSE') < TASK_PROJECT_SCOPE_TYPE.index('[:CONTAINS_PROJECT]')
+    _, page = _page_query('updated', 'newest')
+    for query in (StoreProjectAgentTaskReads._task_read_query(''), page):
+        assert f'{TASK_PROJECT_SCOPE_TYPE} AS project_scope_type' in query

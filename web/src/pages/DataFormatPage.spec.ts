@@ -135,6 +135,30 @@ describe('DataFormatPage', () => {
     expect(wrapper.text()).toContain('不能单独撤销，只能整库恢复')
   })
 
+  it('offers a graph export command to copy before the confirm control, only when a graph step waits', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = await mountPage()
+    const confirm = wrapper.get('.data-format-confirm')
+    const backup = confirm.get('[data-graph-backup]')
+    expect(backup.text()).toContain('确认前图谱只读')
+    expect(backup.get('[data-graph-backup-command]').text()).toBe('fuli graph export --output fuli-graph-format-8')
+    const order = backup.element.compareDocumentPosition(confirm.get('[data-apply]').element)
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await backup.get('[data-copy-graph-backup]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('fuli graph export --output fuli-graph-format-8')
+    expect(backup.get('[data-copy-graph-backup]').text()).toBe('已复制')
+    wrapper.unmount()
+
+    const sqliteOnly = plan()
+    sqliteOnly.stores = [sqliteOnly.stores[0]]
+    api.getJson.mockResolvedValue(sqliteOnly)
+    const other = await mountPage()
+    expect(other.find('[data-graph-backup]').exists()).toBe(false)
+    other.unmount()
+  })
+
   it('says who must be stopped before the apply and undo controls', async () => {
     const wrapper = await mountPage()
     const notices = wrapper.findAll('[data-external-writers]')
@@ -275,7 +299,9 @@ describe('DataFormatPage', () => {
     vi.useFakeTimers()
     try {
       const wrapper = await mountPage()
-      expect(wrapper.text()).not.toMatch(/fuli migrate|终端/)
+      // Only the graph's pre-confirm export is a terminal command; no restore is.
+      const outsideGraphBackup = wrapper.text().replace(wrapper.get('[data-graph-backup]').text(), '')
+      expect(outsideGraphBackup).not.toMatch(/fuli migrate|终端/)
       api.getJson.mockResolvedValueOnce({ restore: null, stores: [{ label: 'task-schedules.sqlite', store: 'task-schedules',
         kind: 'sqlite', backups: [{ ref: 'format-backups/b1', version: 2, takenAt: '2026-10-01T08:00:00.000Z' }] }] })
       await wrapper.get('[data-restore-open]').trigger('click')

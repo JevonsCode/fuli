@@ -45,13 +45,15 @@ export function isTemporaryProject(project) {
 /**
  * What to call this project. `language` is the one the person reads FULI in
  * (console-language.js); without one, FULI's default. A project with no name
- * and no usable ID falls back to its ID, so a line is never blank.
+ * and no usable ID falls back to its ID, so a line is never blank. A project
+ * that is not temporary keeps whatever name it holds, even one that reads like
+ * FULI's (a readable ID before graph/23), as the Provider and the console show it.
  */
 export function projectDisplayName(project, language = DEFAULT_CONSOLE_LANGUAGE) {
   const title = givenProjectTitle(project);
   if (title) return title;
   const id = project?.project_id ?? project?.id ?? '';
-  if (!isTemporaryProject(project)) return id;
+  if (!isTemporaryProject(project)) return storedProjectName(project) || id;
   const words = WORDS[CONSOLE_LANGUAGES.includes(language) ? language : DEFAULT_CONSOLE_LANGUAGE];
   const digest = TEMPORARY_ID.exec(id)?.[1];
   return digest ? `${words} #${digest.slice(0, NUMBER_LENGTH)}` : words;
@@ -65,6 +67,10 @@ export function applicationLanguage(application) {
 
 // The title a person or an Agent gave this project, or '' where only FULI named it.
 function givenProjectTitle(project) {
-  const name = String(project?.profile?.name ?? project?.name ?? '').trim();
+  const name = storedProjectName(project);
   return GENERATED_NAMES.has(name) ? '' : name;
+}
+
+function storedProjectName(project) {
+  return String(project?.profile?.name ?? project?.name ?? '').trim();
 }
