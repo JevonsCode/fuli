@@ -6,7 +6,7 @@ from .models import (
 )
 from .provider_values import now_utc, stable_uuid
 from .project_brief import legacy_project_brief
-from .temporary_project_scope import is_temporary_project
+from .temporary_project_scope import is_temporary_project, stored_project_name
 
 
 class StoreProjects:
@@ -114,6 +114,7 @@ class StoreProjects:
             '''
             MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:CONTAINS_PROJECT]->
                   (project:FuliPersonalProject {project_id: $project_id})
-            RETURN project.scope_type AS scope_type, project.name AS name
+            RETURN project.scope_type AS scope_type, project.name AS name, project.profile_json AS profile_json
             ''', space_id=personal_space_id, project_id=project_id, routing_='r')
-        return bool(records) and is_temporary_project(project_id, records[0]['scope_type'], records[0]['name'])
+        return bool(records) and is_temporary_project(project_id, records[0]['scope_type'], stored_project_name(
+            records[0]['name'], records[0].get('profile_json')))

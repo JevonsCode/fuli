@@ -14,13 +14,13 @@ const temporary = (seed: string, extra: Partial<PersonalProject> = {}) =>
 afterEach(() => setLocale('zh-CN', { persist: false }))
 
 describe('project scope groups', () => {
-  it('sorts by origin: marked temporary, a fallback ID or a recorded origin; names never decide', () => {
+  it('sorts by origin: marked temporary or an unnamed fallback ID; names never decide', () => {
     const groups = projectScopeGroups([
       project('alpha', 'Alpha'),
       project('named-like-temporary', '临时会话 / Temporary session'),
       temporary('a'),
       project(`conversation-${hex('b')}`, '会话项目 / Conversation project'),
-      project('old-fallback', 'Old', { profile: { name: 'Old', origin: 'conversation_fallback' } }),
+      project('old-fallback', 'Old', { scope_type: 'temporary' }),
     ])
     expect(groups.formal.map(choice => choice.label)).toEqual(['Alpha', '临时会话 / Temporary session'])
     expect(groups.temporary.map(choice => choice.project.project_id).sort())
@@ -60,7 +60,7 @@ describe('project scope groups', () => {
     const near = ['ab12cd34ef56' + '7' + '0'.repeat(51), 'ab12cd34ef56' + '8' + '0'.repeat(51)]
       .map(digest => temporary('', { project_id: `temporary-${digest}` }))
     const legacy = ['legacy-fallback-session-alpha', 'legacy-fallback-session-beta']
-      .map(id => project(id, 'x', { profile: { name: 'x', origin: 'conversation_fallback' } }))
+      .map(id => project(id, 'x', { scope_type: 'temporary' }))
     const labels = new Map(projectScopeGroups([...near, ...legacy]).temporary.map(choice => [choice.project.project_id, choice.label]))
     expect(labels.get(near[0]!.project_id)).toBe('#ab12cd34ef567')
     expect(labels.get(near[1]!.project_id)).toBe('#ab12cd34ef568')

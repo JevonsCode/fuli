@@ -22,6 +22,13 @@ describe('project origin', () => {
     expect(isFormalProject({ ...project('old', 'Old'), profile: { name: 'Old', lifecycle: 'archived' } })).toBe(false)
   })
 
+  it('reads the profile name, so a column holding FULI\'s name decides nothing (the Provider and Node agree)', () => {
+    // The Provider's `mismatched` seed: FULI's name in the column, a person's in the profile.
+    const mismatched = { ...project(fallbackId('9'), 'Synthetic own words'), name: '会话项目 / Conversation project' } as PersonalProject
+    expect(isFormalProject(mismatched)).toBe(true)
+    expect(projectDisplayName(mismatched)).toBe('Synthetic own words')
+  })
+
   it('names a temporary project in the console\'s words, by its number and last use, never by a generated name', () => {
     const name = projectDisplayName(project(fallbackId('b'), '会话项目 / Conversation project', '2026-10-17T07:20:00Z'))
     expect(name).toMatch(/^临时项目 #bbbbbbbb · /)

@@ -24,13 +24,16 @@ export function isFormalProject(project: Pick<PersonalProject, 'project_id' | 's
 
 /**
  * Started temporary, archived or not. Its scope_type says so first, as the
- * Provider stores it, and a recorded fallback origin. A generated ID with no
- * name of its own counts too: a conversation fallback a graph waiting for
- * graph/23 has not marked yet. One a person named is theirs (Node's
- * isTemporaryProject and the Provider's is_temporary_project use this rule).
+ * Provider stores it. One a person named is theirs (Node's isTemporaryProject
+ * and the Provider's is_temporary_project use this rule).
+ *
+ * Compatibility: a generated ID with no name of its own counts too, for a
+ * conversation fallback a graph waiting for graph/23 has not marked yet.
+ * graph/23 marks every one of them temporary; remove the ID check with
+ * GENERATED_NAMES once no supported FULI opens a graph below 23.
  */
 export function hasTemporaryOrigin(project: ProjectNaming) {
-  if (project.scope_type === 'temporary' || project.profile?.origin === 'conversation_fallback') return true
+  if (project.scope_type === 'temporary') return true
   return isGeneratedTemporaryId(project.project_id) && !givenProjectTitle(project)
 }
 
