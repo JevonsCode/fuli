@@ -23,7 +23,7 @@ export async function runClientsCommand(args, { env = process.env, write = conso
   clientInstaller = (paths) => agentKitPorts(paths, { env, homeDir }).clientInstaller } = {}) {
   const [action, ...rest] = args;
   if (!action || ['--help', '-h'].includes(action)) {
-    write('fuli clients trust <https-url|local-path> --sha256 DIGEST [--data-dir DIR]\nfuli clients update [--check | --apply id@version] [--data-dir DIR]\nfuli clients status | rollback ID [--data-dir DIR]\nUpdates only preview unless --apply is given. Installation and each client file require separate default-no terminal confirmation; --yes never authorizes them.');
+    write('fuli clients trust <https-url|local-path> --sha256 DIGEST [--data-dir DIR]\nfuli clients update [--check | --apply id@version] [--data-dir DIR]\nfuli clients status | rollback ID [--data-dir DIR]  (status lists the descriptor packs, not connected clients)\nUpdates only preview unless --apply is given. Installation and each client file require separate default-no terminal confirmation; --yes never authorizes them.');
     return;
   }
   const options = new Map(); const positional = [];
@@ -59,6 +59,11 @@ export async function runClientsCommand(args, { env = process.env, write = conso
     const status = active.map(pack => ({ id: pack.id, version: pack.version,
       retired: Boolean(state.active[pack.id] && compareSemanticVersions(state.packages[state.active[pack.id]].version,
         builtins.find(builtin => builtin.id === pack.id).version) <= 0) }));
+    // What this lists is the client packs FULI ships, not which clients are on
+    // this computer or connected: `fuli clients status` was read as the second
+    // on a computer where none of them was connected (rec#145).
+    write('The client descriptor packs installed here, not which clients are connected: '
+      + 'the console\'s 客户端接入 and the preview of `fuli setup` say that.');
     write(JSON.stringify(status, null, 2)); return status;
   }
   let pack;

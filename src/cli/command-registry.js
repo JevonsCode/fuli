@@ -19,10 +19,11 @@ Local service:
   open [--data-dir DIR]
 
 Install and Agent connection:
-  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs; update previews; apply asks separately for each file)
+  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs, not connected clients; update previews; apply asks separately for each file)
   connect [--format standard|vscode|server] [--data-dir DIR | --runtime-config FILE]  (print generic MCP configuration)
   mcp [--runtime-config FILE] [--source-application codex|claude|claude_code|cursor|kiro|opencode|antigravity|dsh|other]  (stdio server)
   setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--runtime-mode container|native] [--memory-profile low|balanced] [--adaptive-memory|--no-adaptive-memory] [--skip-agents] [--no-start] [--allow-provider-downgrade] [--personal-only|--with-dev-public]
+  whoami [--project ID_OR_FOLDER] [--json] [--data-dir DIR]  (read only: this folder's space, project and lead FLA, and whether this computer is the host or a runner)
   connect-workspace --url URL --token-file FILE [--data-dir DIR]
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
   runner invite|list|revoke|join|status|sync [--data-dir DIR]  (runners: another computer's clients use this FULI)
