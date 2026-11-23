@@ -7,6 +7,7 @@ import pytest
 from fuli_graph.knowledge_search import (
     _dedupe_ranked_edges,
     _dedupe_ranked_entities,
+    _edge_matches,
     _edge_record,
     _edge_relevance,
     _entity_search_result,
@@ -535,29 +536,54 @@ def _synthetic_project_edges():
             for name, fact in facts]
 
 
-def test_naming_the_project_does_not_match_every_fact_in_it():
+def _matches(query, edges, names=None):
+    """{name: relevance} of every candidate, as search_knowledge scores them."""
+    return {edge.name: score for score, edge in _edge_matches(query, edges, names or {}, {})}
+
+
+def _distinctive(scores):
+    return [name for name, score in sorted(scores.items(), key=lambda item: -item[1]) if score >= 1]
+
+
+def test_naming_the_project_does_not_outrank_the_fact_the_query_names():
     """rec#111: a relationship's terms are weighed like an entity's. Before, a
-    query carrying the project's name matched every fact the project stores."""
+    query carrying the project's name matched every fact the project stores
+    about as well as the one it asked about."""
     edges = _synthetic_project_edges()
 
-    def found(query):
-        weights = _term_weights(query, [_edge_record(edge, {}) for edge in edges])
-        scored = [(edge.name, _edge_relevance(query, edge, {}, position, len(edges), None, weights))
-                  for position, edge in enumerate(edges)]
-        return [name for name, score in sorted(scored, key=lambda item: -item[1]) if score > 0]
-
     # The project's own name says nothing about which of its facts answers
-    # this, so it alone no longer carries a query that names something else.
-    assert found('潮池账本 发布流程 打 tag') == ['RELEASE_RUNBOOK']
-    assert found('潮池账本 错误码 约定') == ['ERROR_CODE']
-    assert found('潮池账本 值班 频道') == ['ONCALL_CHANNEL']
+    # this: only the fact the rest of the query names matches distinctively.
+    assert _distinctive(_matches('潮池账本 发布流程 打 tag', edges)) == ['RELEASE_RUNBOOK']
+    assert _distinctive(_matches('潮池账本 错误码 约定', edges)) == ['ERROR_CODE']
+    assert _distinctive(_matches('潮池账本 值班 频道', edges)) == ['ONCALL_CHANNEL']
     # A word that does tell them apart still matches on its own.
-    assert found('值班频道') == ['ONCALL_CHANNEL']
+    assert _distinctive(_matches('值班频道', edges)) == ['ONCALL_CHANNEL']
     # A query that is only the project's name still matches every fact in it:
     # the whole query is written in each one, and there is nothing better.
-    assert len(found('潮池账本')) == len(edges)
+    assert len(_distinctive(_matches('潮池账本', edges))) == len(edges)
     # Too few candidates to weigh: every term counts the same, as before.
     assert _term_weights('潮池账本', [_edge_record(edge, {}) for edge in edges[:7]]) == {}
+
+
+def test_a_fact_sharing_only_the_project_name_is_still_found_below_every_distinctive_match():
+    """Weighing orders, it does not exclude. A question in other words than
+    the answer's (上线 for 发布) shares only the project's name with it; the
+    unweighed threshold found it before the weighing, and it still does, as
+    a weak match ranked under any match on a word that tells facts apart."""
+    edges = _synthetic_project_edges()
+
+    nothing_distinctive = _matches('潮池账本 上线 步骤', edges)
+    assert all(0 < score < 0.25 for score in nothing_distinctive.values()), nothing_distinctive
+    assert len(nothing_distinctive) == len(edges)
+
+    one_distinctive = _matches('潮池账本 线上 步骤', edges)
+    assert _distinctive(one_distinctive) == ['ONCALL_CHANNEL'], 'the fact that carries 线上'
+    weak = {name: score for name, score in one_distinctive.items() if name != 'ONCALL_CHANNEL'}
+    assert weak['RELEASE_RUNBOOK'] > 0, 'the answer asked in other words is still a match'
+    assert max(weak.values()) < 0.25 < one_distinctive['ONCALL_CHANNEL']
+
+    # Not a match before the weighing is not one after it either.
+    assert _matches('上线 步骤', edges) == {name: 0.0 for name in nothing_distinctive}
 
 
 def test_an_endpoint_name_is_weighed_with_the_fact_it_belongs_to():
@@ -569,9 +595,7 @@ def test_an_endpoint_name_is_weighed_with_the_fact_it_belongs_to():
     weights = _term_weights('潮池账本 值班频道', records)
 
     assert weights['值班'] > weights['潮池'], 'the shared endpoint name weighs least'
-    scored = [(edge.name, _edge_relevance('潮池账本 值班频道', edge, names, position, len(edges), None, weights))
-              for position, edge in enumerate(edges)]
-    assert [name for name, score in scored if score > 0] == ['ONCALL_CHANNEL']
+    assert _distinctive(_matches('潮池账本 值班频道', edges, names)) == ['ONCALL_CHANNEL']
 
 
 @pytest.mark.asyncio

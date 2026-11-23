@@ -49,6 +49,10 @@ MIN_WEIGHED_CANDIDATES = 8
 # characters that only meet across a word boundary (按钮设计 -> 钮设): it
 # counts against a match, at half the weight of the rarest real term.
 UNSEEN_TERM_FACTOR = 0.5
+# A relationship that shares only common words with the query keeps this share
+# of its unweighed relevance (at most about 4.5): under 0.25, below the lowest
+# a distinctive match ranks at (band 1, half weight, the farthest scope).
+COMMON_TERMS_SHARE = 0.05
 # How many items with a vector of the query's model one search compares (rec#88).
 SEMANTIC_CANDIDATE_LIMIT = 5000
 # A preference key's separators, so `reply-language` is also the words "reply language".
@@ -132,19 +136,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     in_scope_scores = {edge.uuid: meaning_scores[edge.uuid] for edge in edges if edge.uuid in meaning_scores}
     edges = [edge for edge in edges if edge.uuid in lexical_ids]
-    # A relationship's terms are weighed by how few of this search's own
-    # relationships carry them, exactly as an entity's are (rec#111). Without
-    # it, a query that names the project matches every fact in the project:
-    # the project's name is in all of them, so it tells them apart not at all.
-    edge_term_weights = _term_weights(
-        request.query,
-        [_edge_record(edge, names, edge_terms.get(edge.uuid)) for edge in edges],
-    )
-    matched_edges = [
-        (_edge_relevance(request.query, edge, names, position, len(edges),
-                         edge_terms.get(edge.uuid), edge_term_weights), edge)
-        for position, edge in enumerate(edges)
-    ]
+    matched_edges = _edge_matches(request.query, edges, names, edge_terms)
     # Same score and weight: the closer match first (a band holds unequal matches).
     ranked_edges = [
         (score, edge) for score, _, edge in sorted(
@@ -1098,6 +1090,25 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
         return 0.0
     semantic_order = max(0.0, (total - position) / max(total, 1)) * 0.5
     return round(lexical + semantic_order, 4)
+
+
+def _edge_matches(query: str, edges, names: dict[str, str], edge_terms: dict) -> list:
+    """[(relevance, edge)] in candidate order. A relationship's terms are
+    weighed by how few of these candidates carry them, as an entity's are
+    (rec#111), so one that matches on a word telling it apart ranks above one
+    that shares only words most of them carry (the project's name). Weighing
+    orders, it does not exclude: a match on common words alone is what a
+    question asked in other words than the answer's still has, so it stays a
+    match as it was before the weighing, below every distinctive one."""
+    def scored(term_weights):
+        return [(_edge_relevance(query, edge, names, position, len(edges), edge_terms.get(edge.uuid), term_weights),
+                 edge) for position, edge in enumerate(edges)]
+
+    term_weights = _term_weights(query, [_edge_record(edge, names, edge_terms.get(edge.uuid)) for edge in edges])
+    weighed = scored(term_weights)
+    if not term_weights:
+        return weighed
+    return [(score or plain * COMMON_TERMS_SHARE, edge) for (score, edge), (plain, _) in zip(weighed, scored(None))]
 
 
 # 的 and 之 between two Chinese characters only link them: 控制台的端口 is the
