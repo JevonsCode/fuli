@@ -5,6 +5,8 @@ import { entryContinuation } from './conversation-continuation.js';
 import { workingRepository } from '../conversations/working-branch.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
 import { keepStatedRules } from './task-stated-rules.js';
+import { REPEAT_GUIDANCE, repeatComplaint } from './task-repeat-signal.js';
+import { flaGrowthEntry } from '../fla-growth/entry-hint.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
@@ -120,6 +122,10 @@ export async function beginTaskFromPreferences(application, preferences, {
   // A request to keep something is never a routine auto-closed task.
   const remembering = rememberRequested(taskPrompt);
   const updating = updateRequested(taskPrompt);
+  // "I already told you …": maybe something that should have been kept (task-repeat-signal.js).
+  // Only a candidate the Agent judges, so it never costs the turn its automatic close: an
+  // Agent that does keep it calls checkpoint_task_knowledge itself, which closes the turn.
+  const repeating = !remembering && repeatComplaint(taskPrompt);
   const autoClosed = !remembering && !updating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const checkpointRequired = !autoClosed && task.checkpoint?.phase !== 'complete';
@@ -147,6 +153,8 @@ export async function beginTaskFromPreferences(application, preferences, {
   // The whole receipt line unless FULI knows this session already had its
   // conversation and nothing new is on the line (identity-receipt.js).
   const laterTurn = conversation.status === 'saved' && Boolean(conversation.recovered_from) && !continuation.show;
+  // The FLA's own workflows and the repeat it still owes (fla-growth/entry-hint.js); absent when there is none.
+  const flaGrowth = resumed ? null : flaGrowthEntry(application, task, { opensConversation });
   const receipt = preferences.agent_receipt ? signedReceipt(await entryAgentReceipt(application, task, preferences.agent_receipt,
     opensConversation ? delivered : null), { firstInConversation: !laterTurn }) : null;
   return withPreferenceScope({
@@ -161,7 +169,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     // to explain it (rec#137).
     checkpoint_reason: checkpointReason({ required: checkpointRequired, remembering, updating, task, entryVia }),
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
-    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
+    ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : repeating ? { remember_guidance: REPEAT_GUIDANCE } : {}),
     ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
@@ -169,6 +177,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     ...(preferences.task_knowledge_recall ? { task_knowledge_recall: withRecoveredSource(preferences.task_knowledge_recall, continuation, {
       consoleUrl: application.consoleUrl, spaceId: preferences.context?.personal_space_id, agentId: preferences.context?.project_agent_id }) } : {}),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
+    ...(flaGrowth ? { fla_growth: flaGrowth } : {}),
     // A task of two commands is not told how to divide work between Agents
     // (rec#146 item 2); the rules keep that text and the entry names it as not
     // applying here (task-context-view.js).

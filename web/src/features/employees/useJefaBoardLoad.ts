@@ -22,7 +22,7 @@ export interface JefaReadFailure { projectId: string; stage: JefaReadStage; cate
 type ManagedProject = { id: string; name: string }
 type BoardRead = { controller: AbortController; timer?: ReturnType<typeof setTimeout> }
 
-const DENIED_STATUSES = [401, 403, 404]
+export const DENIED_STATUSES = [401, 403, 404]
 const timeoutError = () => new DOMException('Timed out', 'TimeoutError')
 
 export function useJefaBoardLoad(input: {
