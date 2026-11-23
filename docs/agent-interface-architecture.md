@@ -33,9 +33,12 @@ Reading a legacy profile does not rewrite its stored history.
 
 Every new Agent (Bole's recruitment or a direct write) gets a nickname no other Agent in the
 personal space uses: one that reads as a job title ("PPT 专责", "design Agent"), or none at all,
-is replaced by a generated name such as "Lyra North"; a person-like role name another Agent
-already has gets a number ("Lyra North 2"). A `displayName` given on purpose that another Agent
-already has is refused with `agent_name_taken` and three free generated names, before anything
+is replaced by a generated name such as "Lyra North", and so is a person-like role name another
+Agent already has. When every first-and-last name is taken, generation goes on with a double
+surname ("Lyra North-Vale"); a number is the last resort and is not reached before 32,768 names.
+A built-in role's own name (Jefa, Bole, Tonborg, Astro) counts as taken. A `displayName` given on
+purpose that another Agent already has is refused with `agent_name_taken`, who uses it and in which
+projects (`used by: …`) and three free generated names, before anything
 is written (a recruitment checks its proposed name when the task is submitted; one taken by the
 time the Agent is provisioned falls back to a generated name). The job stays in `profile.name`,
 the occupation and the responsibility. An update that omits `displayName` keeps the stored one;
@@ -50,6 +53,25 @@ generated names above; the field shows that rule as editable starting text, and 
 or restoring it saves no style. Existing Agents are never renamed
 automatically: when an Agent's shown name reads as a job title, reading it returns
 `nameSuggestion`, a free nickname the profile page offers as a one-click rename.
+
+Uniqueness is held by the graph, not only by the check before a write (graph/24): every Agent of
+the person stores the identity key of its shown name with its space (`display_name_space_id`,
+`display_name_key`) under a uniqueness constraint, so two hires or renames racing for one name
+cannot both commit; the loser is named again or refused. FULI's own roles store no key; their names
+are reserved by the check. A rename keeps the old name in the Agent's name history
+(`name_history_json`: name, until, `renamed` or `duplicate_name`, who kept it and why); records
+carry `nameHistory` and, for 30 days, `formerName`, which pages, the FLAs list and the `#FLA`
+notice show as 「原名 …」. Nothing said or signed under the old name is rewritten.
+
+Spaces from before this rule can hold FLAs that share a name (names derived from the Agent ID,
+or a write that raced the check). graph/23 is a record step: it waits for the person's single
+confirmation for the whole space (`fuli migrate` or the console's 数据格式 page), keeps an undo
+journal, and leaves a space without shared names alone. In each group the name stays with, in
+order: a built-in role; an FLA not dismissed; one that is not a test FLA; one whose name the person
+gave in a rename; the one with more work (tasks it took part in plus task entries it worked); the
+one active more recently; the one hired first. The others get a free generated name and record the
+old one with who kept it and the rule they lost on. The FLAs page then lists every rename in one
+place (`GET /api/project-agent-name-changes`), each a link to the FLA.
 
 Use `request_agent_attention` only for an explicit human action, with the exact space,
 project and Agent, optional task ID, request kind, context and `requestedAction`.
