@@ -2,7 +2,9 @@ import { parseArgs } from 'node:util';
 
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { diagnosticEventsAnswer } from '../diagnostics/query.js';
+import { graphDataFolders, recoveryRecords } from '../native-runtime/recovered-dir.js';
 import { resolveSetupPaths } from '../setup/paths.js';
+import { graphDataLines } from './recovery-plan-text.js';
 import { writeLine } from './terminal-io.js';
 
 // `fuli diagnostics` (rec#73): FULI's runtime failures read straight from the
@@ -20,11 +22,20 @@ export async function runDiagnosticsCommand(args, dependencies = {}) {
   const options = parseDiagnosticsOptions(args);
   const env = dependencies.env ?? process.env;
   const write = dependencies.write ?? writeLine;
-  const { dataDir } = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
+  const { dataDir, nativeRuntimeDir } = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
   const answer = diagnosticEventsAnswer(diagnosticEventLog(dataDir),
     Object.fromEntries(FILTERS.filter((name) => options[name] !== undefined).map((name) => [name, options[name]])));
-  write(options.json ? JSON.stringify(answer, null, 2) : formatDiagnostics(answer));
+  // The log keeps only what failed; what each graph runtime recovery did is in
+  // its own record, and graph data a recovery moved aside stays until a person deletes it.
+  const recoveries = nativeRuntimeDir ? recoveryRecords(nativeRuntimeDir) : null;
+  const moved = nativeRuntimeDir ? graphDataFolders(nativeRuntimeDir) : [];
+  write(options.json ? JSON.stringify(answer, null, 2) : [formatDiagnostics(answer), ...recoveryLine(recoveries), ...graphDataLines(moved)].join('\n'));
   return { exitCode: answer.sourcesUnavailable.length ? UNREADABLE_EXIT_CODE : 0, answer };
+}
+
+function recoveryLine(recoveries) {
+  if (!recoveries) return [];
+  return [`Graph runtime recoveries: ${recoveries.count}; the latest is recorded in ${recoveries.latest}.`];
 }
 
 function parseDiagnosticsOptions(args) {

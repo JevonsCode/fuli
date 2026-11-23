@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/fuli_condition.dart';
 import '../app/fuli_controller.dart';
 import '../l10n/strings.dart';
 import '../platform/ports.dart';
+import '../runtime/fuli_runtime.dart';
 import 'glass_bar.dart';
 import 'growth_loading.dart';
 import 'theme.dart';
@@ -103,6 +105,24 @@ class StatusActions extends StatelessWidget {
     if (!snapshot.installed) {
       return FilledButton(onPressed: () => opener.open(installPage), child: Text(strings.installPage));
     }
+    // The last start stopped at an interrupted database operation: recovering
+    // it is the one way on, after the person saw the plan and confirmed it.
+    if (!snapshot.running && controller.recoverable) {
+      return FilledButton(
+        key: const Key('recover-start'),
+        onPressed: busy ? null : () => _confirmRecovery(context),
+        child: Text(strings.recoverAndStart),
+      );
+    }
+    // The import's own copy cannot be used: giving the import up is the way on,
+    // a choice of its own, never 「恢复并启动」.
+    if (!snapshot.running && controller.abandonableImport) {
+      return OutlinedButton(
+        key: const Key('abandon-import'),
+        onPressed: busy ? null : () => _confirmAbandon(context),
+        child: Text(strings.abandonImport),
+      );
+    }
     // The last start stopped at a graph service of this data FULI lost track of: the one way on, confirmed first.
     if (!snapshot.running && controller.orphanedServices.isNotEmpty) {
       return FilledButton(
@@ -167,4 +187,172 @@ class StatusActions extends StatelessWidget {
     );
     if (confirmed == true) await controller.releaseLockAndStart();
   }
+
+  // The plan in the window's words; a switch that can also be backed out
+  // offers both, each with its own button, and says how they differ.
+  Future<void> _confirmRecovery(BuildContext context) async {
+    final plan = await controller.previewRecovery();
+    if (plan == null || !context.mounted) return;
+    final alternative = plan.alternative;
+    // Finishing without a start check: only when the plan says going back is
+    // not possible or was tried (neo4j-recovery.js `keepable`), a choice of its own.
+    final keepable = plan.kind == 'finish_switch' && plan.facts['keepable'] == true;
+    // A good copy that would not go back: abandoning the import is open beside trying again.
+    final abandonable = plan.kind == 'restore_load' && plan.facts['restoreFailed'] is Map;
+    if (controller.recoversInTerminal) {
+      return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative),
+        if (keepable) 'fuli graph runtime recover --keep-newer', if (abandonable) 'fuli graph runtime recover --abandon-import']);
+    }
+    final other = strings.recoveryAlternativeWords(plan);
+    final words = [...strings.recoveryPlanWords(plan), if (other != null) ...['', other]];
+    final switching = plan.kind == 'finish_switch' || plan.kind == 'back_out_switch';
+    final chosen = await showDialog<RecoveryPlan>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.recoveryTitle),
+        content: SingleChildScrollView(child: Text(words.join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.cancel)),
+          if (keepable)
+            OutlinedButton(
+              key: const Key('keep-newer'),
+              onPressed: () => Navigator.of(dialogContext).pop(const RecoveryPlan('keep_newer', [], null, {})),
+              child: Text(strings.keepNewer(plan.facts)),
+            ),
+          if (abandonable)
+            OutlinedButton(
+              key: const Key('abandon-import'),
+              onPressed: () => Navigator.of(dialogContext).pop(const RecoveryPlan('abandon_load', [], null, {})),
+              child: Text(strings.abandonImport),
+            ),
+          if (alternative != null)
+            OutlinedButton(
+              key: const Key('recover-alternative'),
+              onPressed: () => Navigator.of(dialogContext).pop(alternative),
+              child: Text(alternative.kind == 'back_out_switch' ? strings.cancelSwitch(plan.facts) : strings.finishSwitchTo(plan.facts)),
+            ),
+          FilledButton(
+            key: const Key('recover-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(plan),
+            child: Text(switching && alternative != null
+                ? (plan.kind == 'finish_switch' ? strings.finishSwitchTo(plan.facts) : strings.cancelSwitch(plan.facts))
+                : strings.recoveryConfirm),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null || !context.mounted) return;
+    if (chosen.kind == 'keep_newer') return _confirmKeepNewer(context);
+    if (chosen.kind == 'abandon_load' && chosen.digest == null) return _confirmAbandon(context);
+    await controller.recoverAndStart(chosen);
+    if (context.mounted) await _showKeptGraphData(context);
+  }
+
+  // Keeping the newer version: what it does, why it did not start and what is
+  // open afterwards come first; then its own confirmation.
+  Future<void> _confirmKeepNewer(BuildContext context) async {
+    final plan = await controller.previewRecovery(keepNewer: true);
+    if (plan == null || !context.mounted) return;
+    final why = controller.lastFailure;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.keepNewerTitle(plan.facts)),
+        content: SingleChildScrollView(
+            child: SelectableText([
+          if (why != null) strings.recoveryRefused(why.text('reason'), why.facts),
+          ...strings.recoveryPlanWords(plan),
+        ].join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('keep-newer-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.keepNewerConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.recoverAndStart(plan, keepNewer: true);
+  }
+
+  // Graph data a recovery moved aside stays until the person deletes it: where
+  // it is, how big, which graphs, and the commands that move it back (copyable).
+  Future<void> _showKeptGraphData(BuildContext context) async {
+    final folders = controller.keptGraphData;
+    if (folders.isEmpty) return;
+    final words = strings.keptGraphDataWords(folders).join('\n');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.keptGraphDataTitle),
+        content: SingleChildScrollView(child: SelectableText(words, key: const Key('kept-graph-data'))),
+        actions: [
+          TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: words)), child: Text(strings.copyCommand)),
+          FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.close)),
+        ],
+      ),
+    );
+  }
+
+  // Giving up the import: what happens to which graphs and how to import back
+  // come first; its button says it empties them.
+  Future<void> _confirmAbandon(BuildContext context) async {
+    final plan = await controller.previewRecovery(abandonImport: true);
+    if (plan == null || !context.mounted) return;
+    if (controller.recoversInTerminal) return _showInTerminal(context, plan, [_command(plan)]);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.abandonImportTitle),
+        content: SingleChildScrollView(child: SelectableText(strings.recoveryPlanWords(plan).join('\n'))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('abandon-import-confirm'),
+            style: FilledButton.styleFrom(backgroundColor: FuliColors.danger),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.abandonImportConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.recoverAndStart(plan, abandonImport: true);
+    if (confirmed == true && context.mounted) await _showKeptGraphData(context);
+  }
+
+  // The `fuli` CLI recovers only at a terminal: the plan, and the command to
+  // run there (copyable), with no button that would do nothing.
+  Future<void> _showInTerminal(BuildContext context, RecoveryPlan plan, List<String> commands) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(strings.recoveryInTerminalTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text([...strings.recoveryPlanWords(plan), '', strings.recoveryInTerminal].join('\n')),
+                const SizedBox(height: FuliSpace.space4),
+                for (final command in commands) SelectableText(command, key: ValueKey('recovery-command $command')),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              key: const Key('copy-recovery-command'),
+              onPressed: () => Clipboard.setData(ClipboardData(text: commands.first)),
+              child: Text(strings.copyCommand),
+            ),
+            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.close)),
+          ],
+        ),
+      );
+
+  // The terminal command that does [plan] (src/cli/native-runtime-command.js).
+  String _command(RecoveryPlan plan) => switch (plan.kind) {
+        'abandon_load' => 'fuli graph runtime recover --abandon-import',
+        'back_out_switch' => 'fuli graph runtime recover --back-out',
+        _ => 'fuli graph runtime recover',
+      };
 }

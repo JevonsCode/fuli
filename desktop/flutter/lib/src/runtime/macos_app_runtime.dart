@@ -65,12 +65,24 @@ class MacosAppRuntime implements FuliRuntime {
   @override
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
 
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
+
+  // The controller recovers in its own process, after the confirmation here.
+  @override
+  bool get recoversInTerminal => false;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
+
   // The controller's lines are read as they arrive: the steps it reports while
   // it works, then the one result line at the end.
-  Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
+  Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {
-      final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action],
+      final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action, ...extra],
           workingDirectory: root, environment: onStage == null ? null : stageMarkersEnvironment);
       unawaited(process.stderr.drain<void>());
       final output = StringBuffer();

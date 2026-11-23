@@ -4,7 +4,7 @@ import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/
 import { execFile } from 'node:child_process';
 import { basename, join, sep } from 'node:path';
 
-import { readJsonFile } from '../storage/json-file.js';
+import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { currentProcessIdentity, PROCESS_IDENTITY, recordedProcessState } from './process-identity.js';
 import { NATIVE_DOWNLOAD_TIMEOUT_MS } from './resumable-download.js';
 
@@ -32,7 +32,9 @@ const journalPath = root => join(root, JOURNAL);
 // The holder is written beside the token before the lock appears: a directory
 // is prepared under a unique name and renamed into place, so a lock is never
 // seen without its owner and holder, and two takers cannot both succeed.
-export async function acquireNeo4jLifecycleLock(root, { operation, identify = currentProcessIdentity } = {}) {
+// [details]: what else a later recovery needs to know about this operation
+// (a load records the copy its import took first: neo4j-recovery.js).
+export async function acquireNeo4jLifecycleLock(root, { operation, identify = currentProcessIdentity, details = {} } = {}) {
   const path = lockPath(root), token = randomUUID();
   await mkdir(root, { recursive: true, mode: 0o700 });
   if (!(await lstat(root)).isDirectory()) throw new Error('Neo4j runtime must not be a symbolic link.');
@@ -40,7 +42,7 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = cu
   await mkdir(prepared, { mode: 0o700 });
   try {
     await writeFile(join(prepared, 'owner'), token, { flag: 'wx', mode: 0o600 });
-    await writeFile(join(prepared, 'holder.json'), JSON.stringify({ ...await identify(), operation, at: new Date().toISOString() }),
+    await writeFile(join(prepared, 'holder.json'), JSON.stringify({ ...details, ...await identify(), operation, at: new Date().toISOString() }),
       { flag: 'wx', mode: 0o600 });
     try { await rename(prepared, path); }
     catch (error) {
@@ -58,9 +60,10 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = cu
   return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
 }
 
-// The lock as it stands, or null when there is none. [holder] is null for a
-// lock taken before FULI recorded its holder.
-function readLock(root) {
+// The lock as it stands, or null when there is none: since when, its token and
+// what it recorded about its holder. [holder] is null for a lock taken before
+// FULI recorded its holder.
+export function readLock(root) {
   const path = lockPath(root);
   let since;
   try { since = statSync(path).mtime; } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
@@ -68,6 +71,32 @@ function readLock(root) {
   try { owner = readFileSync(join(path, 'owner'), 'utf8'); } catch { /* an incomplete older lock */ }
   try { holder = JSON.parse(readFileSync(join(path, 'holder.json'), 'utf8')); } catch { /* an older lock names no holder */ }
   return { path, since, owner, holder: Number.isInteger(holder?.pid) && holder.pid > 0 ? holder : null };
+}
+
+// When the operation that holds [lock] took it (ms): what its holder recorded,
+// which stays when a recovery claims the lock, or else when the lock appeared.
+export function lockStartedAt(lock) {
+  const at = Date.parse(lock?.holder?.at ?? '');
+  return Number.isFinite(at) ? at : lock?.since?.getTime() ?? Number.NaN;
+}
+
+// Makes this process the lock's recorded holder — a recovery about to work
+// under the lock's own token [owner] — keeping what the holder recorded about
+// its operation (and when it took the lock) and adding [patch]. Done under the
+// take-over directory, so two recoveries never both claim it: answers false
+// when the lock changed, or its holder is another process that still runs.
+export async function claimLock(root, owner, { identity = PROCESS_IDENTITY, identify = currentProcessIdentity, patch = {} } = {}) {
+  const me = await identify();
+  return withTakeover(root, identity, async () => {
+    const lock = readLock(root);
+    if (!lock || lock.owner !== owner) return false;
+    let recorded = {};
+    try { recorded = JSON.parse(readFileSync(join(lock.path, 'holder.json'), 'utf8')) ?? {}; } catch { /* an older lock names no holder */ }
+    const self = lock.holder && lock.holder.pid === me.pid && lock.holder.startedAt === me.startedAt;
+    if (lock.holder && !self && await recordedProcessState(lock.holder, identity) === 'running') return false;
+    writeJsonFileAtomic(join(lock.path, 'holder.json'), { ...recorded, at: recorded.at ?? lock.since.toISOString(), ...me, ...patch });
+    return true;
+  });
 }
 
 // A process killed while preparing a lock or taking one over leaves its
@@ -116,8 +145,8 @@ async function withTakeover(root, identity, action) {
 // Moves the lock aside under a unique name, checks it is the one judged, then
 // removes it. Under the take-over directory the lock is read once more right
 // before it is moved: one replaced since it was judged is left where it is.
-// Answers whether it was removed.
-async function takeOver(root, owner, identity) {
+// Answers whether it was removed. A recovery releases a lock it dealt with this way.
+export async function takeOver(root, owner, identity = PROCESS_IDENTITY) {
   return withTakeover(root, identity, () => moveAside(root, owner));
 }
 
@@ -179,7 +208,7 @@ export async function neo4jLifecycleLockError(root, identity = PROCESS_IDENTITY)
 const text = value => typeof value === 'string' && value ? value : null;
 
 // The program's own name from a command line ("java", "node").
-function commandName(command) {
+export function commandName(command) {
   const first = String(command ?? '').trim().split(/\s+/)[0];
   return first ? first.split('/').pop() : null;
 }
@@ -197,31 +226,58 @@ export async function releaseStaleNeo4jLifecycleLock({ paths, now = Date.now, id
   if (lock.holder && !SERVICE_OPERATIONS.has(lock.holder.operation)) {
     return { released: false, reason: 'asset_operation', operation: lock.holder.operation ?? null };
   }
-  if (await recordedProcessState(lock.holder, identity) === 'running') return { released: false, reason: 'holder_running', pid: lock.holder.pid };
-  const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
-  for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
-    if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
-      && await identity.matches(entry.pid, entry.command)) {
-      return { released: false, reason: 'services_running', pid: entry.pid };
-    }
-  }
+  const busy = await runtimeInUse({ paths, lock, identity, listProcesses });
+  if (busy) return { released: false, ...busy };
   // An old-format lock may be an interrupted update's: its half-installed
   // candidate sits in neo4j-assets, named by neither the manifest's Neo4j nor
   // the one it keeps for a rollback.
   const unfinished = unreferencedAssets(paths);
   if (unfinished) return { released: false, reason: 'unfinished_assets', directory: unfinished };
-  // Another FULI command for this data: its CLI or a desktop controller. The
-  // console server, MCP processes and hooks name the data too but take no lock.
+  const young = lockTooRecent(lock, now());
+  if (young) return { released: false, ...young };
+  return await takeOver(root, lock.owner, identity) ? { released: true } : { released: false, reason: 'changed' };
+}
+
+// A lock that names no holder may still be in use by whoever took it: it is
+// released (or recovered) only once it is older than the longest operation
+// could take. Its age counts from when the operation took it (lockStartedAt),
+// which a recovery's claim keeps, not from the lock directory's own time,
+// which rewriting the holder moves. The refusal, or null when it is old enough.
+export function lockTooRecent(lock, now) {
+  const since = lockStartedAt(lock);
+  if (now - since >= RELEASE_AFTER_MS) return null;
+  return { reason: 'too_recent', since: new Date(since).toISOString(), releasableAt: new Date(since + RELEASE_AFTER_MS).toISOString() };
+}
+
+// Why something may still be using this native runtime, or null: the lock's
+// holder still runs, a graph service processes.json records still runs as
+// itself, or another FULI CLI or desktop controller works on this data. A
+// release and a recovery both ask this before they touch the lock.
+// [services]: false when the caller stops the recorded services itself.
+export async function runtimeInUse({ paths, lock = readLock(paths.nativeRuntimeDir), identity = PROCESS_IDENTITY, listProcesses = processList,
+  services = true }) {
+  if (lock && await recordedProcessState(lock.holder, identity) === 'running') return { reason: 'holder_running', pid: lock.holder.pid };
+  if (services) {
+    const [pid] = await runningGraphServices(paths, identity);
+    if (pid) return { reason: 'services_running', pid };
+  }
+  // The console server, MCP processes and hooks name the data too but take no lock.
   const processes = await listProcesses();
-  if (!processes) return { released: false, reason: 'cannot_inspect' };
+  if (!processes) return { reason: 'cannot_inspect' };
   const other = processes.find(({ pid, command }) => pid !== process.pid && pid !== process.ppid
     && command.includes(paths.dataDir) && /(?:\/src\/cli\.js|-controller\.js|\/(?:fuli|fl))(?:\s|$)/.test(command));
-  if (other) return { released: false, reason: 'fuli_running', pid: other.pid };
-  const ageMs = now() - lock.since.getTime();
-  if (ageMs < RELEASE_AFTER_MS) {
-    return { released: false, reason: 'too_recent', since: lock.since.toISOString(), releasableAt: new Date(lock.since.getTime() + RELEASE_AFTER_MS).toISOString() };
+  return other ? { reason: 'fuli_running', pid: other.pid } : null;
+}
+
+// The graph services processes.json records that still run as themselves (their PIDs).
+export async function runningGraphServices(paths, identity = PROCESS_IDENTITY) {
+  const recorded = readJsonFile(paths.nativeProcessStatePath, {}) ?? {};
+  const running = [];
+  for (const entry of [...Object.values(recorded.databases ?? {}), ...Object.values(recorded.providers ?? {})]) {
+    if (Number.isInteger(entry?.pid) && typeof entry.command === 'string' && identity.state(entry.pid) !== 'gone'
+      && await identity.matches(entry.pid, entry.command)) running.push(entry.pid);
   }
-  return await takeOver(root, lock.owner, identity) ? { released: true } : { released: false, reason: 'changed' };
+  return running;
 }
 
 // The first neo4j-assets/jvs-a-* directory the manifest does not use, or null.
@@ -235,7 +291,8 @@ function unreferencedAssets(paths) {
   return unused ? join('neo4j-assets', unused) : null;
 }
 
-function processList() {
+// Every running process as `ps` shows it ({ pid, command }), or null when it cannot be listed.
+export function processList() {
   return new Promise((resolve) => {
     execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', timeout: 10_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
       resolve(error ? null : stdout.split('\n').map(line => /^\s*(\d+)\s+(.*)$/.exec(line))

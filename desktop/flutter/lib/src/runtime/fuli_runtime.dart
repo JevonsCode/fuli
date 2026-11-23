@@ -43,10 +43,38 @@ class StartupFailure {
   }
 }
 
+/// What `fuli graph runtime recover` would do (src/native-runtime/neo4j-recovery.js):
+/// its kind and steps, the digest the person confirms, and the facts behind it.
+class RecoveryPlan {
+  const RecoveryPlan(this.kind, this.steps, this.digest, this.facts);
+
+  final String kind;
+  final List<Map<String, Object?>> steps;
+  final String? digest;
+  final Map<String, Object?> facts;
+
+  String? text(String key) => facts[key] is String ? facts[key] as String : null;
+
+  /// The other way out of the same unfinished switch (finish or back out),
+  /// when the plan offers one; the person confirms either by its own digest.
+  RecoveryPlan? get alternative => parse(facts['alternative']);
+
+  /// A plan as the recovery wrote it (a JSON object); null for anything else.
+  static RecoveryPlan? parse(Object? value) {
+    if (value is! Map || value['kind'] is! String) return null;
+    final steps = value['steps'];
+    final digest = value['digest'];
+    return RecoveryPlan(value['kind'] as String,
+        [if (steps is List) for (final step in steps) if (step is Map) Map<String, Object?>.from(step)],
+        digest is String ? digest : null, Map<String, Object?>.from(value));
+  }
+}
+
 class RuntimeReport {
   const RuntimeReport(this.state,
       {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false,
-      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept});
+      this.stage, this.failure, this.autostartGaveUpAt, this.lockKept, this.recoveryPlan, this.recoveryRecord,
+      this.keptGraphData = const []});
 
   final RuntimeState state;
   /// The step that did not finish, when a failed start named one.
@@ -59,6 +87,13 @@ class RuntimeReport {
   /// Why a confirmed 「解除这把锁并启动」 kept the lock, when it did
   /// (src/native-runtime/neo4j-lifecycle-lock.js): its reason and facts.
   final StartupFailure? lockKept;
+  /// The plan a recovery preview answered with.
+  final RecoveryPlan? recoveryPlan;
+  /// Where a recovery recorded what it did (native-runtime/recovered/recovery-*.json).
+  final String? recoveryRecord;
+  /// The recovered folders that hold graph data a recovery moved aside (path,
+  /// bytes, instances, stores with from/to), which only a person deletes.
+  final List<Map<String, Object?>> keptGraphData;
   // The console port the runtime reported, when it did.
   final int? consolePort;
   final String? error;
@@ -100,6 +135,20 @@ abstract interface class FuliRuntime {
   /// Releases a database maintenance lock no start takes over by itself, after
   /// FULI's own checks, then starts FULI. The person confirmed it first.
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage});
+
+  /// What a recovery of an interrupted database operation would do; changes
+  /// nothing. [abandonImport]: the plan for giving up an interrupted import
+  /// whose own copy cannot be used instead; [keepNewer]: the plan for keeping
+  /// the newer version of an unfinished switch and releasing its lock.
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false});
+
+  /// Whether a recovery is confirmed in a terminal rather than in this window:
+  /// the `fuli` CLI recovers only there (src/cli/native-runtime-command.js).
+  bool get recoversInTerminal;
+
+  /// Recovers with the plan the person confirmed ([digest]), then starts FULI.
+  /// Nothing is done when the plan changed since it was shown.
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage});
 
   /// Ends the graph services a failed start named ([StartupFailure.orphanedServices]) and starts FULI:
   /// the controller's `end-orphans-start`, or `fuli start --end-orphaned-services`.

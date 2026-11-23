@@ -168,6 +168,15 @@ class DemoRuntime implements FuliRuntime {
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => start(onStage: onStage);
 
   @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async => RuntimeReport(_state);
+
+  @override
+  bool get recoversInTerminal => false;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) => start(onStage: onStage);
+
+  @override
   Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => start(onStage: onStage);
 }
 

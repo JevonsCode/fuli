@@ -11,6 +11,17 @@ import 'package:fuli_desktop/src/runtime/tray_install.dart';
 // Synthetic directories under the system temp folder only; never the real
 // data directory, never the real ports.
 void main() {
+  test('a controller reply carries the recovery plan with its alternative, and where a recovery recorded what it did', () {
+    final preview = parseControllerReply('${jsonEncode({'ok': true, 'status': 'stopped', 'recoveryPlan': {'kind': 'finish_switch', 'steps': [], 'digest': 'a',
+      'alternative': {'kind': 'back_out_switch', 'steps': [], 'digest': 'b'}}})}\n');
+    expect([preview.recoveryPlan?.digest, preview.recoveryPlan?.alternative?.digest], ['a', 'b']);
+    final started = parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'recoveryRecord': '/x/recovered/recovery-1.json'})}\n');
+    expect(started.recoveryRecord, '/x/recovered/recovery-1.json');
+    final kept = parseControllerReply('${jsonEncode({'ok': true, 'status': 'running', 'keptGraphData': [{'path': '/x/recovered/t', 'bytes': 1, 'instances': ['personal'], 'stores': []}]})}\n');
+    expect(kept.keptGraphData.single['path'], '/x/recovered/t');
+    expect([recoveryAction(), recoveryAction(abandonImport: true), recoveryAction(keepNewer: true)], ['recover', 'abandon-import', 'keep-newer']);
+  });
+
   late Directory temp;
 
   setUp(() => temp = Directory.systemTemp.createTempSync('fuli-desktop-test-'));
