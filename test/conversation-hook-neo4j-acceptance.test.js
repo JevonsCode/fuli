@@ -119,6 +119,11 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   assert.equal(first.conversation.recovery, undefined);
   const initialized = await query({ mode: 'session', session_id: session });
   assert.equal(initialized.initialized, true);
+  // The conversation this session is bound to, as the Provider keeps it. The entry names it only when its
+  // begin fit the hook's capture budget (750 ms here); a slower one says deferred, and the next hook saves it.
+  const firstConversationId = initialized.conversation_id;
+  assert.ok(first.conversation.conversation_id === firstConversationId || first.conversation.status === 'deferred',
+    JSON.stringify(first.conversation));
   assert.equal(initialized.cursor, Buffer.byteLength(old));
   const marker = 'VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER';
   await appendFile(transcript, claudeRow(session, 'assistant', [
@@ -160,7 +165,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
   try {
     const resumed = await callAgentTool(historyApplication, 'resume_agent_conversation', {
-      taskContextToken: next.taskContextToken, conversationId: first.conversation.conversation_id,
+      taskContextToken: next.taskContextToken, conversationId: firstConversationId,
       sourceApplication: 'codex', sourceSessionId: codexSession
     });
     assert.equal(resumed.context.latest_checkpoint.summary, 'Synthetic Hook flow verified.');
@@ -169,7 +174,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
     assert.doesNotMatch(JSON.stringify(resumed.context), /PRIVATE_THINKING_NOT_CAPTURED|OLD_SCOPE_DO_NOT_IMPORT/);
     const history = await callAgentTool(historyApplication, 'read_agent_conversation', {
       personalSpaceId: space.id, personalProjectId: projectId, agentId: 'engineer',
-      conversationId: first.conversation.conversation_id, sourceApplication: 'codex',
+      conversationId: firstConversationId, sourceApplication: 'codex',
       sourceSessionId: codexSession, after: resumed.context.messages.at(-1).sequence - 1, limit: 1
     });
     assert.deepEqual(history.events.map(message => message.content), [marker]);
