@@ -11,6 +11,20 @@ const RECOVER = 'fuli graph runtime recover';
 const ABANDON = `${RECOVER} --abandon-import`;
 const KEEP_NEWER = `${RECOVER} --keep-newer`;
 
+// The commands a person types by hand: a POSIX shell, or PowerShell on
+// Windows, where Windows PowerShell 5.1 has neither `&&` nor `mkdir -p`, and
+// stops several processes only as one comma-separated list. (Its `mv` alias
+// moves "from" to "to" as the POSIX one does, so those lines stay as they are.)
+export function moveIntoCommand(folder, path, platform = process.platform) {
+  return platform === 'win32'
+    ? `New-Item -ItemType Directory -Force -Path "${folder}" | Out-Null; Move-Item -LiteralPath "${path}" -Destination "${folder}"`
+    : `mkdir -p "${folder}" && mv "${path}" "${folder}/"`;
+}
+
+export function killCommand(pids, platform = process.platform) {
+  return platform === 'win32' ? `Stop-Process -Id ${pids.join(',')}` : `kill ${pids.join(' ')}`;
+}
+
 // An unfinished update or rollback is worded by what it was and the versions
 // on each side (neo4j-recovery.js fromVersion / toVersion), never "newer" and
 // "older": a rollback switches to the kept older programs, so its target is
@@ -244,8 +258,8 @@ function restoreFailureWords(failure) {
     : ['', ''];
   // An orphaned Neo4j holding the store: the start that offers to end it is held back by the lock, so the words say how.
   const holders = failure.holders?.length
-    ? [`还有进程在用图谱的目录：${failure.holders.map(({ pid, name }) => `${pid}（${name ?? '?'}）`).join('、')}，可能是 FULI 之前没关掉的数据库；先结束它（kill ${failure.holders.map(({ pid }) => pid).join(' ')}）。`,
-      ` Processes still use a graph's directory: ${failure.holders.map(({ pid, name }) => `${pid} (${name ?? '?'})`).join(', ')}, likely a database FULI did not stop; end it first (\`kill ${failure.holders.map(({ pid }) => pid).join(' ')}\`).`]
+    ? [`还有进程在用图谱的目录：${failure.holders.map(({ pid, name }) => `${pid}（${name ?? '?'}）`).join('、')}，可能是 FULI 之前没关掉的数据库；先结束它（${killCommand(failure.holders.map(({ pid }) => pid))}）。`,
+      ` Processes still use a graph's directory: ${failure.holders.map(({ pid, name }) => `${pid} (${name ?? '?'})`).join(', ')}, likely a database FULI did not stop; end it first (\`${killCommand(failure.holders.map(({ pid }) => pid))}\`).`]
     : ['', ''];
   return [`${failure.detail ?? '?'}。${space[0]}${holders[0]}`, `${failure.detail ?? '?'}.${space[1]}${holders[1]}`];
 }
@@ -302,8 +316,8 @@ function refusalWords(plan) {
   // What FULI no longer decides by itself: the manual way out, with the paths filled in.
   const root = plan.runtimeDir ?? 'native-runtime';
   const aside = join(root, 'recovered', 'by-hand');
-  const moves = `mkdir -p "${aside}" && mv "${join(root, '.neo4j-lifecycle.lock')}" "${aside}/"`;
-  const journalMove = `mv "${join(root, 'neo4j-transaction.json')}" "${aside}/"`;
+  const moves = moveIntoCommand(aside, join(root, '.neo4j-lifecycle.lock'));
+  const journalMove = moveIntoCommand(aside, join(root, 'neo4j-transaction.json'));
   const look = [`数据库维护锁和切换记录都留着，FULI 不再往下做。要自己解开：先退出 FULI（fuli stop），在终端里运行 ${moves}，有 ${join(root, 'neo4j-transaction.json')} 时再运行 ${journalMove}（都是移开，不要删除），再启动 FULI；图谱打不开时用备份整库导回：fuli graph import --input <备份目录> --yes${plan.backupPath ? `（升级前的备份是 ${plan.backupPath}）` : ''}。也可以把 fuli diagnostics 的输出交给帮你看的人。`,
     `The maintenance lock and the switch journal stay and FULI goes no further. To get out by hand: quit FULI (\`fuli stop\`), run \`${moves}\` in a terminal, and when ${join(root, 'neo4j-transaction.json')} is there, \`${journalMove}\` too (moved, not deleted), then start FULI; if the graph does not open, import a backup whole: \`fuli graph import --input <backup folder> --yes\`${plan.backupPath ? ` (the backup from before the upgrade is ${plan.backupPath})` : ''}. The output of \`fuli diagnostics\` also helps whoever looks.`];
   const { verb, verbEn, from, to, fromEn, toEn } = switchWords(plan);
@@ -327,15 +341,15 @@ function refusalWords(plan) {
     no_holder: ['这把锁没有记录是谁加的。用 fuli graph runtime unlock 解除它，它会先做同样的检查。', 'This lock records no holder. Release it with `fuli graph runtime unlock`, which makes the same checks first.'],
     too_recent: [`这把锁没有记录是谁加的，加上还不到 90 分钟，可能还有人在用。${localClockTime(plan.releasableAt, { date: true }) ?? plan.releasableAt} 之后再运行 ${RECOVER}。`,
       `This lock records no holder and is less than 90 minutes old, so it may still be in use. Run \`${RECOVER}\` again after ${plan.releasableAt}.`],
-    cannot_stop_services: [`图服务（进程 ${plan.pid}）还在运行，又没有锁的令牌能停它。先结束它：kill ${plan.pid}，再运行 ${RECOVER}。`,
-      `A graph service (process ${plan.pid}) still runs and there is no lock token to stop it with. End it first: \`kill ${plan.pid}\`, then run \`${RECOVER}\` again.`],
+    cannot_stop_services: [`图服务（进程 ${plan.pid}）还在运行，又没有锁的令牌能停它。先结束它：${killCommand([plan.pid])}，再运行 ${RECOVER}。`,
+      `A graph service (process ${plan.pid}) still runs and there is no lock token to stop it with. End it first: \`${killCommand([plan.pid])}\`, then run \`${RECOVER}\` again.`],
     manifest_changed: [`数据库描述文件 manifest.json 既不是操作前也不是操作后的样子，可能有人改过或重装过。${look[0]}`,
       `The database descriptor manifest.json is neither the one from before nor after the operation; it may have been changed or reinstalled. ${look[1]}`],
     unknown_journal: [`切换记录 neo4j-transaction.json 是空的、坏了或看不懂。${look[0]}`, `The switch journal neo4j-transaction.json is empty, damaged or unreadable. ${look[1]}`],
     unmanaged_path: [`记录里的数据库程序目录不在 FULI 管理的位置，FULI 不动它。${look[0]}`, `The records name database programs outside the places FULI manages, so FULI leaves them alone. ${look[1]}`],
     assets_changed: [`数据库程序在操作中途被改过。${look[0]}`, `The database programs changed during the operation. ${look[1]}`],
-    unknown_assets: [`neo4j-assets 里有一个认不出的目录（${plan.directory}）：名字像 FULI 的，但里面没有 FULI 的记录，可能是一次更新在写记录前就停了，也可能是别的东西。FULI 没有动它。看过确认不需要后，把它移开（不要删除）：mkdir -p "${recovered}" && mv "${plan.path}" "${recovered}/"，再运行 ${RECOVER}。`,
-      `neo4j-assets holds a directory FULI cannot recognise (${plan.directory}): its name looks like FULI's but it carries no FULI record; an update may have stopped before writing one, or it is something else. FULI left it alone. Once you are sure it is not needed, move it away (do not delete it): \`mkdir -p "${recovered}" && mv "${plan.path}" "${recovered}/"\`, then run \`${RECOVER}\` again.`],
+    unknown_assets: [`neo4j-assets 里有一个认不出的目录（${plan.directory}）：名字像 FULI 的，但里面没有 FULI 的记录，可能是一次更新在写记录前就停了，也可能是别的东西。FULI 没有动它。看过确认不需要后，把它移开（不要删除）：${moveIntoCommand(recovered, plan.path)}，再运行 ${RECOVER}。`,
+      `neo4j-assets holds a directory FULI cannot recognise (${plan.directory}): its name looks like FULI's but it carries no FULI record; an update may have stopped before writing one, or it is something else. FULI left it alone. Once you are sure it is not needed, move it away (do not delete it): \`${moveIntoCommand(recovered, plan.path)}\`, then run \`${RECOVER}\` again.`],
     no_fingerprint: [`切换记录里没有 ${from} 程序的指纹，没法确认它完好，所以不能取消${verb}；只能完成${verb}：${RECOVER}。`,
       `The switch journal has no fingerprint of ${fromEn}'s programs, so they cannot be checked and the ${verbEn} cannot be cancelled; it can only be finished: \`${RECOVER}\`.`],
     back_out_available: [`现在还能取消${verb}、留在 ${from}，所以不跳过启动检查直接完成${verb}（那样之后就回不到 ${from}）。先试：${RECOVER} --back-out；${from} 也起不来时，才可以用 ${KEEP_NEWER}。`,
