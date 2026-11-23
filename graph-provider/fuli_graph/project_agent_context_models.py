@@ -20,6 +20,9 @@ class ProjectAgentContextRequest(StrictModel):
     work_kind: str = Field(default='project_context', min_length=1, max_length=128)
     required_capabilities: list[MemoryNote] = Field(default_factory=list, max_length=16)
     source_application: SourceApplication = 'other'
+    # The host's entry names agent_id as the owner of a workstream of this
+    # project (docs/workstreams.md): that member runs this turn as itself.
+    workstream_owner: bool = False
 
 
 class ProjectAgentContextResolution(StrictModel):
