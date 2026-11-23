@@ -40,6 +40,7 @@ import {
 } from './project-agent-mapping.js';
 import { coversClient } from '../agents/source-applications.js';
 import { remoteConflictAction } from './agent-project-resolution.js';
+import { checkCapabilityNames } from '../judgment/executor-capabilities.js';
 
 const CHARACTER_FIELDS = Object.freeze(['judgment', 'taste', 'personality']);
 
@@ -221,6 +222,11 @@ export async function replaceProjectAgentAssignment(application, input) {
 
 export async function submitProjectAgentTask(application, input) {
   await requireGroupedAgentTaskContext(application, input);
+  // What the task's executor must offer is checked against what executors list, as Tonborg's routing checks it.
+  if (input.executorCapabilityHints?.length) {
+    checkCapabilityNames(input.executorCapabilityHints, await listExecutors(application, { personalSpaceId: input.personalSpaceId }),
+      'executorCapabilityHints');
+  }
   const value = await application.personal.submitProjectAgentTask(
     providerProjectAgentTaskSubmit(input)
   );

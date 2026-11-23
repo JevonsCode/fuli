@@ -28,7 +28,7 @@ export const anthropicMessagesAdapter = Object.freeze({
   outputMode: 'json_schema',
   repairable: true,
   supports: () => true,
-  async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl }) {
+  async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl, stallMs }) {
     const counts = { input: null, cacheRead: null, cacheWrite: null, output: null };
     const state = { text: '', stop: null, actualModel: null };
     const progress = () => ({ actualModel: state.actualModel, usage: usageOf(counts) });
@@ -49,7 +49,7 @@ export const anthropicMessagesAdapter = Object.freeze({
         { retryAfterMs: retryAfterMs(response.headers), structuredOutput: mode === 'json_schema' }), progress());
     }
     try {
-      for await (const { data } of serverSentEvents(response)) {
+      for await (const { data } of serverSentEvents(response, { stallMs, answering: () => state.text.length > 0 })) {
         const event = JSON.parse(data);
         if (event.type === 'error') {
           const [failureClass, reason] = STREAM_ERRORS[event.error?.type] ?? ['transient', 'server_error'];
