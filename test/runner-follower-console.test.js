@@ -13,7 +13,7 @@ import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { BAND_SOURCE } from '../src/runner/follower-band.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
-import { ADDRESS_PATH, followerConsolePage, SYNC_PATH } from '../src/runner/follower-page.js';
+import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, SYNC_PATH } from '../src/runner/follower-page.js';
 import { capabilityLines } from '../src/runner/follower-runtime.js';
 import { CAPABILITIES } from '../src/runner/follower-status.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
@@ -293,11 +293,11 @@ test('a hello that goes unanswered once does not cut a live event stream from a 
 // Review of #1069: with the host away, `/local` waited for a whole search (up to about 8 seconds) before
 // it drew anything.
 test('this computer\'s own page is drawn at once while the host is away, and looks for it afterwards', async (t) => {
-  const { entry, setAway } = await pairedRunner(t);
+  const { entry, setAway, looked } = await pairedRunner(t);
   setAway(true);
-  const started = Date.now();
+  const searches = looked.mdns;
   const page = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
-  assert.ok(Date.now() - started < 1500, `drawn in ${Date.now() - started} ms`);
+  assert.equal(looked.mdns, searches, 'drawn without looking for the host first');
   assert.equal(page.status, 200);
   assert.match(page.text, /正在找主机…/);
   assert.match(page.text, /void look\(\)/, 'and the page asks right away');
@@ -608,4 +608,56 @@ test('fuli setup on a runner sets up its clients only', async (t) => {
   assert.equal(result.status, 'runner');
   assert.equal(result.exitCode, 0);
   assert.match(written.join('\n'), /only its clients/);
+});
+
+// Runs the page's own script with a stub page: each element the script asks for, a fetch it is given and
+// timers that fire at once, so what the script does is checked without a browser or the wall clock.
+async function runPageScript(html, answers) {
+  const script = html.split('<script type="module">')[1].split('</script>')[0];
+  const elements = new Map();
+  const element = (selector) => {
+    if (!elements.has(selector)) {
+      elements.set(selector, { selector, textContent: '', hidden: selector === '[data-away-step]', className: 'dot',
+        dataset: {}, addEventListener() {}, append() {}, focus() {} });
+    }
+    return elements.get(selector);
+  };
+  const timers = [];
+  const document = { querySelector: element, body: { dataset: {} } };
+  let call = 0;
+  const fetch = async () => {
+    const next = answers[Math.min(call++, answers.length - 1)];
+    if (next instanceof Error) throw next;
+    return { json: async () => next };
+  };
+  new Function('document', 'fetch', 'setTimeout', 'setInterval', 'location', 'navigator', script)(
+    document, fetch, (run) => timers.push(run), () => {}, { reload() {} }, {});
+  for (let index = 0; index < 50; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    const next = timers.shift();
+    if (!next) break;
+    next();
+  }
+  return { element, calls: () => call };
+}
+
+const PAGE_STATUS = { paired: true, host: { name: 'Host A', reachable: null, revokedAt: null, lastSeenAt: '2026-11-01T00:00:00.000Z' },
+  outbox: { entries: [] }, capabilities: [] };
+
+// Review of #1075: a look that failed once left the page at 「正在找主机…」 for ever, with the next step hidden.
+test('this computer\'s own page keeps looking for a while, then says the host was not found and offers the next step', async () => {
+  const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/' });
+  const page = await runPageScript(html, [new Error('busy')]);
+  assert.equal(page.calls(), LOOK_TRIES, 'asked again, a bounded number of times');
+  assert.equal(page.element('[data-reach]').textContent, '现在不在线');
+  assert.equal(page.element('[data-away-step]').hidden, false, '「添加主机地址」 is offered');
+});
+
+test('once the host is found, the page says so and when it was last reached', async () => {
+  const html = followerConsolePage({ status: PAGE_STATUS, hostPath: '/remote/host-a/' });
+  const found = { host: { reachable: true, lastSeenAt: '2026-11-23T09:00:00.000Z' }, line: { zh: '跟随 Host A · 在线' } };
+  const page = await runPageScript(html, [new Error('busy'), found]);
+  assert.equal(page.element('[data-reach]').textContent, '现在在线');
+  assert.equal(page.element('[data-reached]').textContent, '2026-11-23T09:00:00.000Z');
+  assert.equal(page.element('[data-away-step]').hidden, true);
 });

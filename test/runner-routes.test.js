@@ -12,7 +12,7 @@ import { issuedToken, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
 // docs/runner-roles-design.md §3, §4, §10. Synthetic computers and folders only.
-const HOST = { name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['10.0.0.20'] };
+const HOST = { name: 'Host A', fingerprint: 'a'.repeat(64), certPem: 'synthetic', port: 2730, addresses: ['192.0.2.20'] };
 
 function dataDirectory(t, { paired = true } = {}) {
   const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-routes-')));

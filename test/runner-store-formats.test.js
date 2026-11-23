@@ -161,7 +161,7 @@ test('a beta runner data directory gets its routes to the host on first use, and
   mkdirSync(join(dataDir, 'runner'));
   const path = join(dataDir, 'runner', 'runner.sqlite');
   beta1Store(path, BETA1_RUNNER, `
-    INSERT INTO host VALUES(1, 'Host A', '${'f'.repeat(64)}', 'synthetic-pem', 2730, '["10.0.0.20"]', '10.0.0.20', '2026-11-17T10:00:00.000Z');
+    INSERT INTO host VALUES(1, 'Host A', '${'f'.repeat(64)}', 'synthetic-pem', 2730, '["192.0.2.20"]', '192.0.2.20', '2026-11-17T10:00:00.000Z');
     INSERT INTO outbox(id, tool, input, source_application, queued_at, state)
       VALUES('queued-1', 'checkpoint_task_knowledge', '{"workLog":"synthetic"}', 'codex', '2026-11-17T10:20:00.000Z', 'queued');`);
   assert.equal(existsSync(join(dataDir, ROUTES_FILE)), false, 'a beta has no routes');
