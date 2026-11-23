@@ -65,11 +65,45 @@ outside those directories and are retained. The runtime stays stopped. A later
 install uses the existing external data; removal does not imply data erasure.
 
 An interrupted operation leaves `.neo4j-lifecycle.lock` and/or
-`neo4j-transaction.json`. Ordinary setup/start refuses them. Inspect the recorded
-old/new descriptors, actual process groups, listeners and offline store formats
-before manually completing recovery. Do not delete a lock merely because it is
-old. Recovery never copies or overwrites a database. Crash/power-loss recovery is
-an explicit operator step; there is no automatic database rollback.
+`neo4j-transaction.json` (`src/native-runtime/neo4j-lifecycle-lock.js`). The lock
+is prepared under a temporary name and renamed into place, so it never appears
+without its token and `holder.json`: the process that took it (PID, its start
+time and command as `ps` shows them) and the operation (`start`, `stop`,
+`update`, `rollback`, `uninstall`, and `dump` / `load` for an offline export or
+import).
+
+- A start or stop lock whose holder has ended, or whose PID now runs another
+  program, is taken over by the next start when no `neo4j-transaction.json`
+  exists: the lock is renamed aside, its token checked, then removed.
+- A holder that still runs, including another user's process, keeps the lock.
+- An update, rollback, uninstall, dump or load lock is never taken over, nor
+  released from the window or by `unlock`. An update, rollback or uninstall stops
+  before it changes knowledge data but may leave a half-installed
+  `neo4j-assets/jvs-a-*` directory; a dump only reads; a load overwrites the
+  database and may leave it half written. The start's message says which, and
+  the exact manual steps: there is no command for these yet.
+- A lock that names no holder (taken before FULI recorded one) is released only
+  on request: 「解除这把锁并启动」 in the desktop window, or
+  `fuli graph runtime unlock`. Both run the same checks and keep the lock, saying
+  which check failed, unless no `neo4j-transaction.json` exists, the processes in
+  `processes.json` have ended, `neo4j-assets` holds no `jvs-a-*` directory the
+  manifest does not use, no other FULI CLI or controller for this data directory
+  runs, and the lock is older than 3 × the 30-minute asset download timeout.
+  These are for the person only; no Agent tool reaches them.
+- Take-overs run one at a time (`.neo4j-lifecycle.takeover`), and the lock is read
+  again right before it is moved, so a lock replaced since it was judged stays.
+  A process killed mid-way leaves `.neo4j-lifecycle.lock.new-*` or `.stale-*`;
+  the next lock clears those older than 10 minutes.
+- `neo4j-transaction.json` means a switch did not finish. No FULI command
+  finishes or undoes it: every start, stop and asset operation refuses to run
+  until a person recovers it. During `switching` the newer Neo4j may already have
+  opened the store, which the older one may then not open; an upgrade's graph
+  backup is in `backups/graph/before-neo4j-<version>-<time>`, named in the
+  journal (`next.previousNeo4jAsset.graphBackup`). During `removing-assets` only
+  program files are removed. Inspect the recorded old/new descriptors, actual
+  process groups, listeners and offline store formats before manually completing
+  recovery. Recovery never copies or overwrites a database. Crash/power-loss
+  recovery is an explicit operator step; there is no automatic database rollback.
 
 ## Verification
 

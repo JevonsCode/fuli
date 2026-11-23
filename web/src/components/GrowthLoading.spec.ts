@@ -71,6 +71,29 @@ describe('GrowthLoading', () => {
     expect(wrapper.findAll('div, button, a')).toHaveLength(0)
   })
 
+  it('says under the label what a long wait is waiting on, in the same live status', async () => {
+    const wrapper = mount(GrowthLoading, {
+      props: { label: '正在读取工作台范围…', detail: '比平时慢。控制台最多等 30 秒，然后会说哪里读不到。' },
+    })
+
+    expect(wrapper.get('.growth-loading__detail').text()).toBe('比平时慢。控制台最多等 30 秒，然后会说哪里读不到。')
+    // One status, so a screen reader reads the step and the note together.
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.attributes('aria-label')).toBe('正在读取工作台范围… 比平时慢。控制台最多等 30 秒，然后会说哪里读不到。')
+
+    await wrapper.setProps({ detail: undefined })
+    expect(wrapper.find('.growth-loading__detail').exists()).toBe(false)
+    expect(wrapper.attributes('aria-label')).toBe('正在读取工作台范围…')
+  })
+
+  it('leaves the note out of the inline variant, which sits beside an action', () => {
+    const wrapper = mount(GrowthLoading, {
+      props: { label: '正在保存…', detail: '比平时慢。', variant: 'inline' },
+    })
+    expect(wrapper.find('.growth-loading__detail').exists()).toBe(false)
+    expect(wrapper.attributes('aria-label')).toBe('正在保存…')
+  })
+
   it('stands the mark still under the system and the in-app reduced-motion setting', () => {
     const still = /animation: none !important;[\s\S]*transform: none !important;[\s\S]*opacity: 1 !important;/
     const system = motionCss.match(/@media \(prefers-reduced-motion: reduce\) {([\s\S]*?)\n}/)?.[1] ?? ''
