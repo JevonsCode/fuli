@@ -1,11 +1,13 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
-import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
+import { RUNNER_EXECUTORS_FILE } from '../runner/routing-executors.js';
+import { ROUTING_LEDGER_FILE, RoutingLedger } from '../runner/routing-ledger.js';
+import { MODEL_BACKENDS_FILE } from '../runner/routing-setup.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
 import { LEFT_MARKER } from '../runner/runner-mode.js';
@@ -171,20 +173,57 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
     write('This computer is not a runner; there is nothing to leave.');
     return { exitCode: 0 };
   }
-  try {
-    remove(file, { force: true });
-    remove(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
-  } catch {
-    // A client's FULI process has it open (Windows): the store is empty now, and the marker says the
-    // pairing ended, so this computer is not taken for a follower while the file stays.
-    writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
-  }
+  // Each file on its own: on Windows one a client's FULI MCP process still has
+  // open cannot be deleted, and that must not stop the other or be said as done.
+  // The store was emptied above, so what is left of it holds nothing; while it
+  // stays, the marker says the pairing ended, so this computer is not taken for
+  // a follower. A ledger that stays needs none: the store decides that.
+  const storeGone = removed(file, remove);
+  if (!storeGone) writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
+  const stayed = [
+    storeGone ? null : `${RUNNER_FILE}: emptied, so it holds nothing of the pairing any more`,
+    removed(join(dataDir, ROUTING_LEDGER_FILE), remove) ? null : emptiedLedger(join(dataDir, ROUTING_LEDGER_FILE))
+  ].filter(Boolean);
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
-  write(`Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
+  write(stayed.length
+    ? `Left ${host.name}. A FULI process of a client here still has these files open, so they could not be deleted:`
+    : `Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
+  for (const line of stayed) write(`  ${line}`);
+  if (stayed.length) write('Close the clients here, then delete those files yourself if you want them gone.');
+  // The person wrote these two; FULI never does, so it does not delete them either.
+  const own = [MODEL_BACKENDS_FILE, RUNNER_EXECUTORS_FILE].filter((file) => existsSync(join(dataDir, file)));
+  if (own.length) {
+    write(`${own.join(' and ')} stay as you wrote them. They do nothing now (every call answers that this computer `
+      + 'is not paired); delete them yourself if this computer should no longer judge executors.');
+  }
   write(`On ${host.name}, \`fuli runner revoke ${identity.fingerprint.slice(0, 16)}\` removes this computer from its list.`);
   write('The clients set up here keep their FULI MCP entry (it now answers that this computer is not paired); '
     + '`fuli uninstall` removes those entries.');
   return { exitCode: 0 };
+}
+
+// Whether the file is gone now (or never was). remove: rmSync, or a test's stand-in.
+function removed(path, remove) {
+  try {
+    remove(path, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The decision ledger emptied in place, for when the file itself could not be
+// deleted; what the person reads about it either way.
+function emptiedLedger(path) {
+  const ledger = new RoutingLedger(path);
+  try {
+    ledger.clear();
+    return `${ROUTING_LEDGER_FILE}: emptied, so the executor decisions made here are gone`;
+  } catch {
+    return `${ROUTING_LEDGER_FILE}: still holds the executor decisions made here; delete it once the clients are closed`;
+  } finally {
+    ledger.close();
+  }
 }
 
 // Delivers what waits in the outbox once, right after a join: the number still

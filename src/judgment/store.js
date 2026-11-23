@@ -16,10 +16,13 @@ const LATEST_STATUS = `COALESCE((SELECT e.status ${LATEST_EXECUTION}), 'not_appl
 const HUMAN_NEEDED = `(json_extract(r.body,'$.outcome') IN ('escalate','failed') OR ${LATEST_STATUS} IN ('stale','failed')
   OR (${LATEST_STATUS} = 'not_applied' AND json_extract(r.body,'$.policy.mode') = 'manual'))`;
 // The words a person searches records by: title, objective, conclusion,
-// evidence, source, project id, and the latest feedback and receipt reasons.
+// evidence, source, project id, the reason of the feedback a record stands on
+// (the person's latest, else the latest report: standingFeedback below) and
+// the latest receipt reason.
 const SEARCHED_TEXT = ["json_extract(r.body,'$.title')", "json_extract(r.body,'$.objective')", "json_extract(r.body,'$.summary')",
   "json_extract(r.body,'$.evidence')", "json_extract(r.body,'$.client')", "json_extract(r.body,'$.model')", 'r.project',
-  '(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id ORDER BY f.revision DESC LIMIT 1)',
+  `(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id
+    ORDER BY (f.relayed_by IS NULL OR f.person_words IS NOT NULL) DESC, f.revision DESC LIMIT 1)`,
   `json_extract((SELECT e.receipt ${LATEST_EXECUTION}), '$.reason')`];
 const DELEGATION_KEY = 'review-delegation';
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
@@ -126,7 +129,7 @@ export class JudgmentStore {
     const executionHistory = this.db.prepare('SELECT status,receipt,created_at AS createdAt FROM judgment_execution WHERE decision=? ORDER BY id').all(id)
       .map(value => ({ ...value, receipt: this.#clean(space, JSON.parse(value.receipt)) }));
     return { ...body, id, createdAt: row.created_at, feedbackHistory, executionHistory,
-      feedback: feedbackHistory.at(-1) ?? { revision: 0, vote: null, reason: '' },
+      feedback: standingFeedback(feedbackHistory),
       execution: executionHistory.at(-1) ?? { status: 'not_applied' } };
   }
   // One page of records, newest first. after: the id of the previous page's
@@ -325,4 +328,16 @@ export class JudgmentStore {
     });
   }
   close() { if (!this.closed) { this.closed = true; this.db.close(); } }
+}
+
+// The feedback a record stands on, with the revision the next one writes over.
+// The person's own vote is that feedback: a machine's report of how its choice
+// did (a runner's, runner-routing.js) is kept in the history and shown there,
+// but never takes the person's place as what Tonborg reads next time. Without
+// a vote of theirs the latest report stands, which is all there is.
+function standingFeedback(history) {
+  const latest = history.at(-1);
+  if (!latest) return { revision: 0, vote: null, reason: '' };
+  const person = history.findLast(entry => !entry.reportedBy);
+  return person ? { ...person, revision: latest.revision } : latest;
 }

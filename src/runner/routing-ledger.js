@@ -50,11 +50,15 @@ export class RoutingLedger {
     return row ? decision(row) : null;
   }
 
-  // record: the decision as it is answered and sent; requestFingerprint tells a repeated request from another one.
+  // record: the decision as it is answered and sent; requestFingerprint tells a
+  // repeated request from another one. False when another MCP process of this
+  // computer saved a decision for the same request first (the lookup and the
+  // save are not one transaction, since the model answers between them): that
+  // one is the decision this request has, as a repeated requestId gets.
   save(record, requestFingerprint) {
-    this.db.prepare(`INSERT INTO decisions(id, space, project, request_id, request_fingerprint, body, created_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId, record.requestId,
-      requestFingerprint, JSON.stringify(record), record.createdAt);
+    return this.db.prepare(`INSERT OR IGNORE INTO decisions(id, space, project, request_id, request_fingerprint,
+      body, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)`).run(record.id, record.personalSpaceId, record.personalProjectId,
+      record.requestId, requestFingerprint, JSON.stringify(record), record.createdAt).changes === 1;
   }
 
   // How the chosen executor did, once per decision: false when it was reported already.
@@ -68,6 +72,13 @@ export class RoutingLedger {
     if (this.#missing()) return [];
     return this.db.prepare('SELECT * FROM decisions WHERE space = ? AND project = ? ORDER BY created_at DESC LIMIT ?')
       .all(personalSpaceId, personalProjectId, limit).map(decision);
+  }
+
+  // Every decision gone, for `fuli runner leave` when the file itself cannot be
+  // deleted (on Windows, while a client's FULI process still has it open).
+  clear() {
+    if (this.#missing()) return;
+    this.db.prepare('DELETE FROM decisions').run();
   }
 
   #missing() {

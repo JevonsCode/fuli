@@ -78,9 +78,8 @@ export function hostAnsweredNote(tool, result, { hostName }) {
 
 // entryId: the id a checkpoint already carried online, whose outcome is unknown; it is queued under that id.
 export function offlineAnswer(store, { tool, input, sourceApplication, sessionId, entryId = null }) {
-  const host = store.host();
-  if (!host || host.revokedAt) return notPaired(host);
-  // Read here, not from the pairing check above: that check changes with other work on this file.
+  const unpaired = unpairedAnswer(store);
+  if (unpaired) return unpaired;
   const hostName = store.host()?.name ?? 'your FULI host';
   if (TASK_ENTRY_TOOLS.has(tool)) {
     const token = `${OFFLINE_TOKEN_PREFIX}${randomUUID()}`;
@@ -112,6 +111,15 @@ export function offlineAnswer(store, { tool, input, sourceApplication, sessionId
   }
   return failure('host_unreachable',
     'Your FULI host is unreachable from this runner; this call needs it. Try again once both computers share a network.');
+}
+
+// The pairing every call needs: null while this computer is paired, else the
+// refusal. A judgment made here needs it too (local-routing.js): its decision
+// is the host's to keep, and nothing of this runner's own survives a revoke.
+// details: what else the refusal carries (a model answer this computer paid for and does not use).
+export function unpairedAnswer(store, details = {}) {
+  const host = store.host();
+  return !host || host.revokedAt ? notPaired(host, details) : null;
 }
 
 // Continuing a conversation while the host is away (rec#144: 「主机每天带回家、
@@ -178,12 +186,13 @@ function checkpointSummary(input) {
 }
 
 // No pairing, or the host said it does not know this runner (revoked): nothing kept is shown.
-function notPaired(host) {
+function notPaired(host, details = {}) {
   return host?.revokedAt
     ? failure('runner_revoked', 'This computer\'s pairing was revoked on its FULI host or is not known there. '
-      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.')
+      + 'Nothing is kept here any more. To use FULI again, run `fuli runner invite` on the host and `fuli runner join` here.',
+      details)
     : failure('runner_not_paired', 'This computer is not paired with a FULI host. '
-      + 'Run `fuli runner invite` on the host and `fuli runner join` here.');
+      + 'Run `fuli runner invite` on the host and `fuli runner join` here.', details);
 }
 
 // details: what else the caller needs to act on the failure, beside code and message.
@@ -237,17 +246,61 @@ export function deliveredAnswer(outboxId) {
 }
 
 // The preferences the host last gave a task entry in this project, from any
-// of its folders, for Tonborg's judgment on this runner (local-routing.js):
-// { answeredAt, effective_preferences, active_conflicts } or null.
+// of its folders, for Tonborg's judgment on this runner (local-routing.js,
+// which makes them compact as the host does): { answeredAt, context, whole,
+// entry } or null. context carries what the host's read said it did not read
+// in full. An entry the host could not deliver whole (isWholeEntry) is made
+// whole by the rest this computer read after it with the host's reader
+// (local-routing.js completeEntry), when it did; else whole is false.
 export function projectPreferences(store, { personalSpaceId, personalProjectId }) {
   for (const { at, body } of store.taskEntries()) {
     const value = resultValue(body);
     const context = value?.context;
     if (context?.personal_space_id !== personalSpaceId || context?.personal_project_id !== personalProjectId) continue;
-    return { answeredAt: at, effective_preferences: value.effective_preferences ?? [],
-      active_conflicts: value.active_conflicts ?? [] };
+    if (isWholeEntry(value)) return { answeredAt: at, context, whole: true, entry: entryPreferences(value) };
+    // Only the read made for this very entry: an earlier one, or one of another Agent's or scope's entry, is not its set.
+    const read = store.answer(wholePreferencesKey({ personalSpaceId, personalProjectId, token: entryToken(value) }));
+    const rest = read ? resultValue(read.body) : null;
+    return rest && isWholeEntry(rest)
+      ? { answeredAt: read.at, context: rest.context ?? context, whole: true, entry: entryPreferences(rest) }
+      : { answeredAt: at, context, whole: false, entry: entryPreferences(value) };
   }
   return null;
+}
+
+// Whether a task entry, or a read of its preferences, holds every rule and
+// conflict. The host sends one over its delivery limit, or held back as
+// unsafe, blocked: preference_delivery.status 'blocked', preferences_complete
+// false, with only part of the rules (possibly none) and the rest counted in
+// preferences_omitted / active_conflicts_omitted — while its context may still
+// say nothing was cut.
+// A delta or scene_switch frame names only what changed since an earlier one
+// of the same session, so it is not the whole set either.
+const NOT_WHOLE_DELIVERY = new Set(['blocked', 'delta', 'scene_switch']);
+export function isWholeEntry(value) {
+  return Boolean(value) && Array.isArray(value.effective_preferences)
+    && !NOT_WHOLE_DELIVERY.has(value.preference_delivery?.status) && value.preferences_complete !== false
+    && value.preferences_omitted === undefined && value.active_conflicts_omitted === undefined;
+}
+
+// Where this computer keeps the whole read of one task entry's preferences
+// (local-routing.js completeEntry): per project and that entry's task token.
+export function wholePreferencesKey({ personalSpaceId, personalProjectId, token }) {
+  return `preferences:${personalSpaceId}:${personalProjectId}:${token ?? ''}`;
+}
+
+// The task token a task entry was answered with.
+export function entryToken(value) {
+  return value?.taskContextToken ?? value?.task_context_token ?? null;
+}
+
+export function isTaskEntry(tool) {
+  return TASK_ENTRY_TOOLS.has(tool);
+}
+
+function entryPreferences(value) {
+  return { effective_preferences: value.effective_preferences ?? [], active_conflicts: value.active_conflicts ?? [],
+    scope_unknown: value.scope_unknown ?? [] };
 }
 
 function folderEntry(value) {
@@ -277,7 +330,7 @@ function readOnly(tool) {
   try { return annotationsFor(tool).readOnlyHint; } catch { return false; }
 }
 
-function resultValue(result) {
+export function resultValue(result) {
   if (result?.structuredContent !== undefined) return result.structuredContent;
   try { return JSON.parse(result?.content?.find((item) => item.type === 'text')?.text ?? 'null'); } catch { return null; }
 }
