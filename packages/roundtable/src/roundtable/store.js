@@ -280,15 +280,37 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     // (one a sender's session stands in for still waits: the Agent may answer first).
     // viewer ({ client, session }): an ask that named another native session is
     // left out before the limit, so others' named asks never crowd this one's out.
-    pendingFor(spaceId, agentId, limit = 5, viewer = null) {
+    // A queued ask nobody answered before `before` (an ISO instant) and no wake
+    // is running for: it becomes `expired`, with the reason kept beside it
+    // (rec#146 item 1). The row, its body and its thread stay; a late reply
+    // still answers it, and get_agent_message_status says what happened.
+    // Returns how many changed.
+    expireQueuedAsks(spaceId, before, reason) {
+      return database.prepare(`UPDATE messages SET status = 'expired', error = ?, updated_at = ?
+        WHERE kind = 'ask' AND status = 'queued' AND execution_claim IS NULL AND created_at < ?
+          AND thread_id IN (SELECT id FROM threads WHERE space_id = ?)`).run(reason, now(), before, spaceId).changes;
+    },
+    // The queued asks that carry a chat wake's own lead, for the caller to
+    // check against the chat it woke for (chat-snapshot.js chatWakeOf).
+    queuedChatWakes(spaceId, lead) {
+      return database.prepare(`SELECT m.id, m.to_agent, m.body FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in') AND m.execution_claim IS NULL
+          AND substr(m.body, 1, ?) = ?`).all(spaceId, lead.length, lead);
+    },
+    // `since` (an ISO instant, created_at is one): a task entry reads only the
+    // questions newer than this, so one nobody answered for weeks never takes
+    // one of the five slots from a live one even before it is expired
+    // (rec#146 item 1). An explicit read passes none.
+    pendingFor(spaceId, agentId, limit = 5, viewer = null, { since = null } = {}) {
       const client = viewer?.client ?? null;
       const session = viewer?.session ?? null;
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
-        WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
-          AND (m.target_session IS NULL OR (? IS NOT NULL AND (
-            (m.target_session = ? AND (m.target_client IS NULL OR m.target_client = ?))
-            OR (m.to_session = ? AND m.to_client = ?))))
-        ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, session, session, client, session, client, limit);
+        WHERE t.space_id = ?1 AND m.to_agent = ?2 AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
+          AND (?9 IS NULL OR m.created_at >= ?9)
+          AND (m.target_session IS NULL OR (?3 IS NOT NULL AND (
+            (m.target_session = ?4 AND (m.target_client IS NULL OR m.target_client = ?5))
+            OR (m.to_session = ?6 AND m.to_client = ?7))))
+        ORDER BY m.created_at LIMIT ?8`).all(spaceId, agentId, session, session, client, session, client, limit, since);
     },
     // Replies (or stand-in handbacks) addressed to this Agent in one project, in
     // one of the given delivery states. A handback names its project itself.

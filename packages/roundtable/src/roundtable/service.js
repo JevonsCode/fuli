@@ -1,4 +1,5 @@
 import { waitForChatChange } from './chat-wait.js';
+import { CHAT_WAKE_LEAD, chatWakeOf } from './chat-snapshot.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -34,6 +35,16 @@ const RECORDED_REFUSALS = new Set(['execution_claimed', 'cleanup_unconfirmed']);
 // A later wake of a remote ask starts only with this much of its deadline left
 // (the shortest grant lifetime the Provider issues).
 const MIN_REMOTE_WAKE_MS = 30_000;
+// How long an unanswered question keeps being announced at a task entry as
+// one an Agent is waiting on (rec#146 item 1): a roundtable test message from
+// 2026-10-27 was still saying "Other Agents are waiting for your answers" a
+// month later, and taking one of the five slots from live ones. Past this a
+// queued ask is expired; nothing is deleted.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PENDING_ASK_DAYS = 7;
+const STALE_ASK_REASON = 'unanswered_7_days';
+// How often a running FULI settles asks nobody can still be waiting on.
+const SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 
 // Where a fresh session for an ask from another computer starts when the host
 // names no folder of its own: a new empty folder only this user can write to
@@ -811,6 +822,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const attentionReplies = me.projectId ? attentionInbox.read(me.agent.agentId, me.projectId) : [];
     const { replies, more } = me.projectId ? replyInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
+    settleStaleAsks();
     return { messages: store.pendingFor(spaceId(), me.agent.agentId, 5, me)
       .filter(message => messageProject(message) === me.projectId && forViewer(message, me)).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
@@ -957,6 +969,35 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // A task with no project (a global assistant) reaches the messages of no project.
   const sameProject = (left, right) => (left ?? null) === (right ?? null);
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
+  // One rule for "this Agent's question, in this project, for this session".
+  const mine = (message, projectId, viewer) =>
+    (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer);
+  // The instant a question has to be newer than to count as waiting at a task entry.
+  const pendingSince = () => new Date(now() - PENDING_ASK_DAYS * DAY_MS).toISOString();
+  // Asks nobody can still be waiting on stop looking unanswered (rec#146
+  // item 1), at most once per SETTLE_INTERVAL_MS: a chat wake whose recipient
+  // has since read its chat past the snapshot is answered there (via
+  // chat:read), and a queued ask older than PENDING_ASK_DAYS is expired. Every
+  // row, body and thread stays; a late reply still answers an expired ask.
+  // Returns what changed; a store that cannot be written changes nothing and
+  // is tried again later.
+  let settledAt = -Infinity;
+  function settleStaleAsks({ force = false } = {}) {
+    if (!force && now() - settledAt < SETTLE_INTERVAL_MS) return { answered: 0, expired: 0 };
+    settledAt = now();
+    try {
+      let answered = 0;
+      for (const ask of store.queuedChatWakes(spaceId(), CHAT_WAKE_LEAD)) {
+        const wake = chatWakeOf(ask.body);
+        if (!wake || store.chat.readCursor(wake.chatId, `local:${ask.to_agent}`) < wake.nextAfter) continue;
+        store.updateMessage(ask.id, { status: 'answered', via: 'chat:read' });
+        answered += 1;
+      }
+      return { answered, expired: store.expireQueuedAsks(spaceId(), pendingSince(), STALE_ASK_REASON) };
+    } catch {
+      return { answered: 0, expired: 0 };
+    }
+  }
   const attentionInbox = createAttentionInbox({ store, spaceId });
   const replyInbox = createReplyInbox({ store, spaceId });
   const handbackInbox = createReplyInbox({ store, spaceId, kind: 'handback' });
@@ -1018,8 +1059,15 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     // viewer: the entering session ({ client, session }); an ask that named another session is not its.
-    pending: (agentId, projectId = undefined, viewer = null) => store.pendingFor(spaceId(), agentId, 5, viewer)
-      .filter(message => (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer)).map(inboxItem),
+    // Only questions someone can still be waiting on: newer than
+    // PENDING_ASK_DAYS, and not a chat wake the recipient already read and
+    // answered in its chat (rec#146 item 1).
+    pending: (agentId, projectId = undefined, viewer = null) => {
+      settleStaleAsks();
+      return store.pendingFor(spaceId(), agentId, 5, viewer, { since: pendingSince() })
+        .filter(message => mine(message, projectId, viewer)).map(inboxItem);
+    },
+    settleStaleAsks,
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     agentReplies: replyInbox.announce,
