@@ -496,9 +496,13 @@ describe('ModelSettingsPage', () => {
     expect(issues.attributes('open')).toBeUndefined()
     expect(issues.get('summary').text()).toBe('格式检查明细')
     expect(issues.get('li').text()).toBe('payload.decisions[].doubt:invalid_value · 1 次')
-    const test = wrapper.get('[data-model-connection-id="local-qwen"] [data-model-connection-check]')
-    const focus = vi.spyOn(test.element as HTMLElement, 'focus')
+    const row = wrapper.get('[data-model-connection-id="local-qwen"]').element as HTMLElement
+    // jsdom has no layout: the row's scroll is a stub here, whatever another spec did to the prototype.
+    const scroll = vi.fn()
+    Object.defineProperty(row, 'scrollIntoView', { configurable: true, value: scroll })
+    const focus = vi.spyOn(row.querySelector('[data-model-connection-check]') as HTMLElement, 'focus')
     await model.get('[data-usage-failure-check]').trigger('click')
+    expect(scroll).toHaveBeenCalledWith({ block: 'center' })
     expect(focus).toHaveBeenCalled()
     expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
 
