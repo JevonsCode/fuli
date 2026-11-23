@@ -160,7 +160,7 @@ test('the share search and the picked project read answer only on the loopback c
 
 test('「重新监听」 opens the listener again on the loopback console only, and never leaves the LAN roundtable', async () => {
   const calls = [];
-  const peer = { listenAgain: async () => { calls.push('listen'); return { role: 'coordinator' }; },
+  const peer = { reopenListener: async () => { calls.push('listen'); return { role: 'coordinator' }; },
     disable: async () => { calls.push('disable'); return { role: null }; } };
   const remote = await call(peer, { method: 'POST', path: '/api/peer/listen', body: {}, remoteAddress: '192.0.2.20' });
   assert.equal(remote.status, 403);
@@ -174,13 +174,13 @@ test('only the coordinating computer listens again; a listening one is left as i
   const { device, pair } = await import('./fixtures/peer-devices.js');
   const [laptop, desk] = await Promise.all([device('laptop'), device('desk')]);
   try {
-    await assert.rejects(laptop.runtime.listenAgain(), { code: 'not_coordinator' });
+    await assert.rejects(laptop.runtime.reopenListener(), { code: 'not_coordinator' });
     await pair(laptop, desk);
     const before = await laptop.runtime.status();
-    const after = await laptop.runtime.listenAgain();
+    const after = await laptop.runtime.reopenListener();
     assert.equal(after.coordinator.listening, true);
     assert.equal(after.coordinator.url, before.coordinator.url, 'the same address and port');
     assert.deepEqual(after.devices.map(entry => entry.nodeId), before.devices.map(entry => entry.nodeId));
-    await assert.rejects(desk.runtime.listenAgain(), { code: 'not_coordinator' }, 'a member does not listen');
+    await assert.rejects(desk.runtime.reopenListener(), { code: 'not_coordinator' }, 'a member does not listen');
   } finally { await desk.close(); await laptop.close(); }
 });
