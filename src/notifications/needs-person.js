@@ -7,6 +7,13 @@ const SENT_LIMIT = 500;
 
 export const NEEDS_PERSON_EVENT = 'fuli.needs_person';
 
+// What a notifier shows the person. `kind` stays the machine field; a notifier
+// that prints it raw would show the person an English enum (Jevons 11-23).
+const KIND_LABELS = Object.freeze({
+  question: '需要答复', approval: '需要决定', review: '需要验收',
+  permission: '需要授权', blocked: '被挡住了'
+});
+
 // '' turns notifications off. Only loopback http(s) is accepted: the payload
 // carries project and request text, which never leaves this machine.
 export function normalizeNeedsPersonUrl(value) {
@@ -31,6 +38,7 @@ export function needsPersonEvent(record, { consoleUrl = '' } = {}) {
     sound: 'decision',
     source: { kind: 'agent_attention', id: record.requestId, revision: record.revision ?? 0 },
     kind: record.kind,
+    kindLabel: KIND_LABELS[record.kind] ?? null,
     title: record.title,
     question: record.requestedAction,
     detail: typeof record.detail === 'string' ? record.detail.slice(0, DETAIL_LIMIT) : '',

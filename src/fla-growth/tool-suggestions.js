@@ -13,7 +13,11 @@ const MIN_TASKS = 3;
 const MIN_STEPS = 3;
 const TASK_PAGE = 100;
 const SHOWN_STEPS = 8;
-const TOOL_CHOICES = Object.freeze(['做成脚本', '做成 Agent App', '不用']);
+// Three choices the person can tell apart, in their own words: a thing that
+// runs (an Agent app, which they confirm once in the terminal), a thing that is
+// only written down (a workflow, which they confirm in the console), or no.
+// "Agent App" is FULI's name for the first one, not a word the person chose.
+const TOOL_CHOICES = Object.freeze(['做成能跑的脚本', '只记下这串步骤', '不用']);
 
 const normalized = title => String(title ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -82,10 +86,11 @@ function attentionFor(personalSpaceId, repeat) {
   const steps = repeat.steps.slice(0, SHOWN_STEPS).map((title, index) => `${index + 1}. ${title}`);
   return { personalSpaceId, personalProjectId: repeat.personalProjectId, agentId: repeat.agentId,
     idempotencyKey: `tool-suggestion:${repeat.key}`, kind: 'approval',
-    title: `「${name}」这串步骤已重复 ${MIN_TASKS} 次以上，要做成工具吗？`.slice(0, 160),
+    title: `「${name}」这串步骤已重复 ${MIN_TASKS} 次以上，要沉淀下来吗？`.slice(0, 160),
     detail: [`同样的 ${repeat.steps.length} 步，在 ${MIN_TASKS} 个以上任务里一模一样：`, ...steps,
       ...(repeat.steps.length > SHOWN_STEPS ? [`……共 ${repeat.steps.length} 步`] : [])].join('\n').slice(0, 4096),
-    requestedAction: '选「做成脚本」或「做成 Agent App」，这个 FLA 才会去做；选「不用」就照旧。不经你同意什么都不做。',
+    requestedAction: '点一个就行：「做成能跑的脚本」以后一条命令跑完，第一次要你在终端确认一次；'
+      + '「只记下这串步骤」只写成一份步骤清单，不会自己跑，你在控制台确认；「不用」就照旧。不经你同意什么都不做。',
     options: [...TOOL_CHOICES] };
 }
 

@@ -115,7 +115,9 @@ async function askQuestions(app, owner, workflow, name, questions) {
       agentId: owner.agentId, idempotencyKey: `workflow-questions:${workflow.workflowId}:${contentHash(questions).slice(0, 16)}`,
       kind: 'question', title: `起草「${name}」前想确认 ${questions.length} 件事`.slice(0, 160),
       detail: questions.map((question, index) => `${index + 1}. ${question}`).join('\n'),
-      requestedAction: '回答这几个问题；文档和历史里已有答案的不会问你。' });
+      // Two answers that need no typing; the console's 「其他」 still takes the written one.
+      requestedAction: '要么点「按你的判断来」让它自己定，要么点「先别起草」；想逐条回答就写在下面。文档和历史里已有答案的不会问你。',
+      options: ['按你的判断来', '先别起草'] });
     return 'asked';
   } catch {
     return 'not_asked';

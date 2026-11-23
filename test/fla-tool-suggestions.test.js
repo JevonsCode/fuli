@@ -40,9 +40,13 @@ test('the same FLA repeating the same steps in three tasks is asked about once, 
   assert.equal(app.requests.length, 1);
   const [request] = app.requests;
   assert.deepEqual([request.kind, request.agentId, request.personalProjectId], ['approval', 'lead-1', 'app']);
-  assert.deepEqual(request.options, ['做成脚本', '做成 Agent App', '不用']);
+  // Three outcomes the person can tell apart, in their own words: no English product name to decode.
+  assert.deepEqual(request.options, ['做成能跑的脚本', '只记下这串步骤', '不用']);
+  assert.equal(/Agent App|script|workflow/i.test([request.title, request.detail.split('\n')[0], request.requestedAction].join(' ')), false);
   assert.match(request.detail, /1\. Bump the version\n2\. Build the tray zip\n3\. Upload the release asset/);
   assert.match(request.requestedAction, /不经你同意什么都不做/);
+  // Every option is explained where it is answered, so nothing has to be typed or looked up.
+  for (const option of request.options) assert.ok(request.requestedAction.includes(option), option);
   assert.match(request.idempotencyKey, /^tool-suggestion:/);
 });
 

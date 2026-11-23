@@ -131,8 +131,17 @@ export function withReceiptLines(receipt, lines) {
   return lines?.length ? { ...receipt, markdown: [receipt.markdown, ...lines].join('\n') } : receipt;
 }
 
+// What the person reads where an Agent gave no label of its own. The scene
+// FULI inferred (task-scene.js) is an internal name, so a kind it has no word
+// for says nothing rather than printing the name (Jevons 11-23).
+const WORK_KIND_LABELS = Object.freeze({
+  code_review: '代码审查', architecture: '架构', design: '设计', frontend: '前端',
+  implementation: '开发', test_validation: '测试验证', project_management: '项目管理',
+  chat: '闲聊', project_context: '项目工作'
+});
+
 function collaboratorLink(application, item) {
-  const duties = [...new Set((item.runs ?? []).map(run => run.worker_label || run.work_kind).filter(Boolean))];
+  const duties = [...new Set((item.runs ?? []).map(run => run.worker_label || WORK_KIND_LABELS[run.work_kind]).filter(Boolean))];
   const sessions = new Map();
   for (const run of item.runs ?? []) {
     const url = receiptSessionUrl(run.session_url);
@@ -186,7 +195,7 @@ function unassignedReceipt(status, reason) {
     agent_selection_conflict: '分配待确认（FLA 选择冲突）',
     manual_selection: '分配待确认（需要选择负责人）'
   };
-  return `FULI Agent：${labels[status] ?? '分配未完成（AR 尚未返回负责人）'}`;
+  return `FULI Agent：${labels[status] ?? '分配未完成（还没有返回负责人）'}`;
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {
