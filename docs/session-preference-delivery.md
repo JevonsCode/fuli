@@ -478,6 +478,10 @@ reaches. The revision covers the frame's fields, its label and its own
 uses the same evidence rules for preferences and recovery instead of a forced
 full frame.
 
+## Scope counts
+
+`context.task_scope_excluded_count` counts the preference items this task does not apply because of their scope: `task_scope_mismatch_count` of them name a work kind, workflow or session this task does not meet (present only when there are any), and the rest are the items whose scope this task does not state. `scope_unknown` lists the distinct keys of those, so several items can share one listed key and it can be shorter than the difference.
+
 ## First-reply habits line
 
 The receipt of the first task of a new conversation ends with one more line:

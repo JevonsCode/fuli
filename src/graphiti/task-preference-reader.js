@@ -19,6 +19,11 @@ import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
 
+// Why a recovery read requires a checkpoint: it does not recompute what closes
+// the task, the entry that opened it did (rec#137). Short on purpose: the
+// reader's whole result shares one 32 KiB envelope with the role and receipt.
+const RECOVERY_REASON = 'set by the entry that opened this task';
+
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
 const WORKER_ASSIGNMENT = Object.freeze({ selection_reason: 'worker_run_admitted', match_basis: ['sealed_worker_run'] });
 const PAGERS = new WeakMap();
@@ -96,7 +101,7 @@ export async function readTaskPreferences(application, {
     // of letting the two disagree without a word (rec#137).
     checkpoint_required: task.checkpoint?.phase !== 'complete',
     checkpoint_reason: task.checkpoint?.phase === 'complete' ? 'this task is already checkpointed'
-      : 'this is a recovery read; the entry that opened this task decided what closes it',
+      : RECOVERY_REASON,
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
     task_guidance: taskKnowledgeGuidance(),
     ...(judgment ? { judgment_context: judgment } : {}),
@@ -192,7 +197,7 @@ function keyedPreferences(task, projection, keys) {
     taskContextToken: task.token, task_context_token: task.token,
     checkpoint_required: !done,
     checkpoint_reason: done ? 'this task is already checkpointed'
-      : 'this is a recovery read; the entry that opened this task decided what closes it',
+      : RECOVERY_REASON,
     context: projection.context,
     effective_preferences: effective,
     preference_delivery: { status: 'keys', requested: wanted.size,

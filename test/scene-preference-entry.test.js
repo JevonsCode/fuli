@@ -179,5 +179,4 @@ test('the excluded count is the mismatches plus the scope-unknown items, and say
   assert.equal(result.context.task_scope_excluded_count, 3);
   assert.equal(result.context.task_scope_mismatch_count, 1);
   assert.equal(result.context.task_scope_excluded_count - result.context.task_scope_mismatch_count, 2, 'the scope-unknown items');
-  assert.match(result.application_guidance.scope_unknown, /task_scope_excluded_count = task_scope_mismatch_count/);
 });

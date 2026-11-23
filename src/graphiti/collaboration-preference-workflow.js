@@ -95,7 +95,7 @@ export const STATIC_APPLICATION_GUIDANCE = Object.freeze({
   deferred_conflicts: 'If the current task would use a deferred_conflict, call resolve_deferred_preference_conflict before applying either side. Ignore unrelated deferred conflicts. The resolution must preserve the AI audit marker.',
   authority: 'Human or authoritative-source confirmed preferences outrank agent-confirmed preferences. Agent-confirmed preferences are usable but lower priority and remain explicitly marked.',
   pending: 'Pending preferences are available only through on-demand knowledge search; invalid and unrelated-project preferences are excluded. Automatic preference injection does not count as usage evidence.',
-  scope_unknown: 'scope_unknown lists keys of preferences limited to a work kind, workflow or session this task does not state. Do not apply them or treat them as absent; one may replace a broader rule with the same key. Ask or search when the task turns out to need one. context.task_scope_excluded_count = task_scope_mismatch_count (scope this task does not meet) + the scope_unknown items; several items can share one listed key.',
+  scope_unknown: 'scope_unknown lists keys of preferences limited to a work kind, workflow or session this task does not state. Do not apply them or treat them as absent; one may replace a broader rule with the same key. Ask or search when the task turns out to need one.',
   knowledge_retrieval: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE
 });
 
@@ -178,7 +178,8 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
       // + the scope_unknown items; scope_unknown lists their distinct keys,
       // so it can be shorter than the difference (coordinator: 7 keys beside 9).
       task_scope_excluded_count: (result.task_scope_excluded_count ?? 0) + (result.effective_preferences ?? []).length - effectivePreferences.length,
-      task_scope_mismatch_count: (result.task_scope_mismatch_count ?? 0) + mismatched,
+      // Only when there is one: every full read shares one 32 KiB envelope.
+      ...((result.task_scope_mismatch_count ?? 0) + mismatched ? { task_scope_mismatch_count: (result.task_scope_mismatch_count ?? 0) + mismatched } : {}),
       task_scope_filter: result.task_scope_filtered ? 'provider_before_conflicts' : 'legacy_projection' }
   };
 }
