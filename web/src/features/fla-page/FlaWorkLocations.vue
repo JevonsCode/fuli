@@ -52,7 +52,7 @@ const toggle = (row: WorkRow) => { opened.value = opened.value === keyOf(row) ? 
       <p v-if="state === 'failed'" class="worked-hint" role="status" data-worked-failed>{{ t('flaPage.worked.failed') }}</p>
       <ul v-if="rows.length" class="worked-list">
         <li v-for="row in (showAll ? rows : rows.slice(0, SHOWN))" :key="keyOf(row)" class="worked-item">
-          <button type="button" class="worked-row" :aria-expanded="opened === keyOf(row)" data-worked-row @click="toggle(row)">
+          <Button variant="ghost" class="worked-row" :aria-expanded="opened === keyOf(row)" data-worked-row @click="toggle(row)">
             <ClientInitial :client="clientOf(row)" :label="clientName(row)" />
             <span class="worked-main">
               <span class="worked-where">
@@ -61,7 +61,7 @@ const toggle = (row: WorkRow) => { opened.value = opened.value === keyOf(row) ? 
               </span>
               <span class="worked-counts">{{ counts(row) }}</span>
             </span>
-          </button>
+          </Button>
           <ul v-if="opened === keyOf(row)" class="worked-segments" data-worked-segments>
             <li v-for="segment in row.recent" :key="`${segment.conversation_id}:${segment.session_id}`" class="worked-segment">
               <span class="worked-main">
@@ -91,7 +91,7 @@ const toggle = (row: WorkRow) => { opened.value = opened.value === keyOf(row) ? 
 .worked-label .ui-num { color: var(--color-faint); font-weight: var(--weight-medium); }
 .worked-card { gap: 8px; padding: 12px 24px; }
 .worked-list, .worked-segments, .worked-gaps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.worked-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--control-height); padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.worked-row { justify-content: flex-start; gap: 10px; width: 100%; height: auto; min-height: var(--control-height); padding: 2px 4px; text-align: left; }
 .worked-row:hover .worked-where { text-decoration: underline; }
 .worked-segments { margin: 2px 0 6px 34px; }
 .worked-segment { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--control-height); }
