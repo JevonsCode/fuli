@@ -205,7 +205,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   list_project_agent_routing_learning: UNSCOPED,
   ignore_project_agent_routing_learning: UNSCOPED,
   reset_project_agent_routing_learning: UNSCOPED,
-  list_workflow_candidates: UNSCOPED,
   revise_personal_knowledge: UNSCOPED,
   reassign_personal_knowledge: UNSCOPED,
   preview_personal_project_action: UNSCOPED,

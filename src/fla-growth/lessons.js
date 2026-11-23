@@ -1,5 +1,4 @@
-import { ApplicationError } from '../app/application-error.js';
-import { callingTask } from '../app/calling-task.js';
+import { boundFla, callingTask } from '../app/calling-task.js';
 import { captureDecision, taskCaptureScope } from '../graphiti/capture-decision.js';
 import { experienceCapture } from '../graphiti/task-experiences.js';
 import { normalizeTaskCaptures, taskCaptureInput } from '../graphiti/task-knowledge-routing.js';
@@ -21,9 +20,7 @@ export async function recordFlaLesson(app, input) {
       guidance: 'A requirement of this task only: apply it here; it is not kept as an experience.' };
   }
   // Only what is kept needs an FLA and a project to belong to.
-  if (!task.projectAgentId || !task.personalProjectId) {
-    throw new ApplicationError('agent_not_bound', 'Lessons belong to an FLA in a project; this task is not bound to one', { status: 409 });
-  }
+  boundFla(app, task, { what: 'Lessons belong to an FLA in a project', inProject: true });
   const { capture, captureRouting } = experienceCapture(task, [{ task: input.title, solution: input.solution,
     boundary: input.boundary, searchKeys: input.searchKeys, check: input.check, ...(corrected ? { origin: 'correction' } : {}) }],
   { sourceApplication: task.sourceApplication });
