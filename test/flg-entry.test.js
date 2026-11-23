@@ -348,8 +348,10 @@ test('#FLG 好 while a choice waits shows the same choice again instead of a new
 
 test('a start refused for lack of executors ends the choice: routing returns and #FLG opens a new choice', async () => {
   const { app, hook } = fixture();
-  app.standingAssignments = { match: (_, text) => text.includes('部署') ? [{ matchedTerms: ['部署'],
-    assignment: { assignmentId: 'sa-1', projectId: 'project-b', leadAgentId: 'ops', responsibility: '部署' } }] : [] };
+  // The person's own rule, matched by its words, as the store answers it.
+  app.standingAssignments = { match: (_, text) => text.includes('部署') ? [{ matchedTerms: ['部署'], matchedOn: ['words'],
+    assignment: { assignmentId: 'sa-1', projectId: 'project-b', leadAgentId: 'ops', responsibility: '部署',
+      source: 'user' } }] : [] };
   // The real roundtable keeps what the entry records; its synthetic host knows the moderator's task.
   const roundtable = createAgentRoundtable({ openStore: () => createRoundtableStore(), env: {}, clientAvailable: () => false,
     host: createFuliRoundtableHost({ config: { personal: { spaceId: SPACE } },
@@ -374,8 +376,10 @@ test('a start refused for lack of executors ends the choice: routing returns and
 
 test('standing routing is bypassed only on #FLG turns and while the discussion is in progress', async () => {
   const { app, hook, discussions } = fixture();
-  app.standingAssignments = { match: (_, text) => text.includes('部署') ? [{ matchedTerms: ['部署'],
-    assignment: { assignmentId: 'sa-1', projectId: 'project-b', leadAgentId: 'ops', responsibility: '部署' } }] : [] };
+  // The person's own rule, matched by its words, as the store answers it.
+  app.standingAssignments = { match: (_, text) => text.includes('部署') ? [{ matchedTerms: ['部署'], matchedOn: ['words'],
+    assignment: { assignmentId: 'sa-1', projectId: 'project-b', leadAgentId: 'ops', responsibility: '部署',
+      source: 'user' } }] : [] };
   await hook('#FLG 讨论上线风险 Nova Lane Pia Mo');
   const requestId = (await hook('#FLG 开始')).flg.start.requestId;
   Object.assign(discussions.get(requestId), { chatId: 'local:chat-1', status: 'running' });
