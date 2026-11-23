@@ -1,7 +1,8 @@
 export const roundtableMessages = {
   'zh-CN': {
     threads: '对话',
-    list: { instant: '即时对话', board: '留言板', collapse: '收起对话列表', expand: '展开对话列表', none: '选择一段对话' },
+    list: { instant: '即时对话', board: '留言板', collapse: '收起对话列表', expand: '展开对话列表', none: '选择一段对话',
+      generatedSubject: '{names} 的对话', agentConversation: 'Agent 之间的对话' },
     prompts: {
       open: 'Agent 怎么开始对话', hint: '复制下面一句，粘贴到你和 Agent 的对话里。',
       discuss: '请 2–4 位 FLA 一起讨论', pair: '指定两位 FLA 讨论', relay: '让一位 FLA 去问另一位', continue: '让一位 FLA 接着在这里做',
@@ -66,7 +67,8 @@ export const roundtableMessages = {
   },
   'en-US': {
     threads: 'Conversations',
-    list: { instant: 'Instant chat', board: 'Message board', collapse: 'Collapse conversation list', expand: 'Expand conversation list', none: 'Choose a conversation' },
+    list: { instant: 'Instant chat', board: 'Message board', collapse: 'Collapse conversation list', expand: 'Expand conversation list', none: 'Choose a conversation',
+      generatedSubject: 'Conversation of {names}', agentConversation: 'A conversation between Agents' },
     prompts: {
       open: 'How Agents start talking', hint: 'Copy a line and paste it into your chat with an Agent.',
       discuss: 'Invite 2–4 FLAs to discuss', pair: 'Have two named FLAs discuss', relay: 'Have one FLA ask another', continue: 'Have one FLA carry on here',

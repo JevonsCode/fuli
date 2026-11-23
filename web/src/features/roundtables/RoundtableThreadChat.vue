@@ -11,7 +11,7 @@ import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
 import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
 import { chatRunMarks } from './chat-runs'
-import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
+import { chatBubbles, postRecipients, tableSeats, threadName, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableChatHead from './RoundtableChatHead.vue'
 import RoundtableComposer from './RoundtableComposer.vue'
@@ -88,7 +88,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 <template>
   <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
     <div class="rt-thread-main">
-      <RoundtableChatHead :seats="seats" :title="thread.subject" :stale="stale"
+      <RoundtableChatHead :seats="seats" :title="threadName({ subject: thread.subject, participants: seats.map(seat => seat.person) })" :stale="stale"
         :meta="`${t('roundtable.messages', { count: thread.messages.length })} · ${time(thread.createdAt)}`" />
       <div ref="body" class="rt-chat-body">
         <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
