@@ -181,7 +181,12 @@ export function errorToolResult(error) {
 // "internal_error: Tool execution failed", and every FULI tool said the same
 // while the console was not running). Only the kind of failure is read, from
 // the error and its causes; no message text of it is passed on.
-const REFUSED = new Set(['ECONNREFUSED', 'ENOENT', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
+// Connection codes only. ENOENT is one too, but only from connect() to a local
+// socket: FULI reading a missing file throws the same code from inside a call
+// that may already have written something, and "nothing was done" would then
+// be false (review of #1076).
+const REFUSED = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
+const refusedConnection = item => REFUSED.has(item.code) || (item.code === 'ENOENT' && item.syscall === 'connect');
 const TIMED_OUT = new Set(['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 const DROPPED = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
 function uncontrolledFailure(error) {
@@ -189,7 +194,7 @@ function uncontrolledFailure(error) {
   for (let item = error, depth = 0; item && typeof item === 'object' && depth < 8; item = item.cause, depth++) chain.push(item);
   const codes = chain.map(item => item.code).filter(code => typeof code === 'string');
   const names = chain.map(item => item.name);
-  if (codes.some(code => REFUSED.has(code)) || chain.some(item => /\bECONNREFUSED\b/.test(String(item.message ?? '')))) {
+  if (chain.some(refusedConnection) || chain.some(item => /\bECONNREFUSED\b/.test(String(item.message ?? '')))) {
     return { code: 'fuli_not_running', message: 'FULI did not answer on this computer (connection refused): it is not running, so nothing was done.' };
   }
   if (codes.some(code => TIMED_OUT.has(code)) || names.some(name => name === 'TimeoutError' || name === 'AbortError')) {

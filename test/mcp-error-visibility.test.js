@@ -70,7 +70,11 @@ test('an unanticipated failure says which kind it was and what to do next', () =
     { cause: Object.assign(new Error('synthetic cause'), { code, name }) });
   const cases = [
     [caused('ECONNREFUSED'), 'fuli_not_running', /not running, so nothing was done/],
-    [caused('ENOENT'), 'fuli_not_running', /not running/],
+    // ENOENT only counts from connect() to a local socket (review of #1076).
+    [Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('synthetic cause'), { code: 'ENOENT', syscall: 'connect' }) }),
+      'fuli_not_running', /not running/],
+    [Object.assign(new Error('synthetic'), { code: 'ENOENT', syscall: 'open', path: '/synthetic/missing.json' }), 'internal_error',
+      /recorded where in its diagnostics/],
     [Object.assign(new Error('synthetic'), { name: 'TimeoutError' }), 'fuli_timeout', /whether this call finished is unknown/],
     [Object.assign(new Error('synthetic'), { name: 'AbortError' }), 'fuli_timeout', /in time/],
     [caused('UND_ERR_HEADERS_TIMEOUT'), 'fuli_timeout', /in time/],
@@ -82,7 +86,7 @@ test('an unanticipated failure says which kind it was and what to do next', () =
     assert.equal(shown.code, code, error.message);
     assert.match(shown.message, message);
     assert.ok(shown.next?.length > 20, `${code} says what to do next`);
-    assert.doesNotMatch(JSON.stringify(shown), /synthetic cause|reading 'x'/, 'no message text of the error itself');
+    assert.doesNotMatch(JSON.stringify(shown), /synthetic cause|reading 'x'|missing\.json/, 'no message text of the error itself');
   }
 });
 
