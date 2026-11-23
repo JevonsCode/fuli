@@ -136,9 +136,17 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
       local(response, 405, { error: 'post_from_this_console' });
       return;
     }
-    const reached = store.host() && !store.host()?.revokedAt ? await connection.connect() : null;
+    const host = store.host();
+    // Revoked is said as revoked, never as the host being away (review of #1069).
+    const refusal = unpairedAnswer(host);
+    if (refusal) {
+      local(response, refusal.status, refusal.body);
+      return;
+    }
+    const reached = await connection.connect();
     if (!reached) {
-      local(response, 503, { error: store.host() ? 'host_unreachable' : 'not_paired' });
+      local(response, 503, { error: 'host_unreachable', message: `${host.name} 现在不在线，记录还在这里等着；它回来后会自动送出。`
+        + ` / ${host.name} does not answer now; the records wait here and go once it answers.` });
       return;
     }
     const result = await deliver({ store, connection });
@@ -222,7 +230,9 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
   async function away(request, response, host, path) {
     if (!wantsHtml(request)) {
       response.setHeader(SOURCE_HEADER, 'unavailable');
-      sendJson(response, 503, { error: host ? 'host_unreachable' : 'not_paired', outbox: store.outbox().queued });
+      const refusal = unpairedAnswer(host);
+      sendJson(response, refusal?.status ?? 503, { ...(refusal?.body ?? { error: 'host_unreachable' }),
+        outbox: store.outbox().queued });
       return;
     }
     const state = await status({ reach: false, reachable: false });
@@ -238,6 +248,24 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     server.close(() => resolve());
     server.closeAllConnections?.();
   }) };
+}
+
+// Not paired, or revoked: the answer for it, said as what it is. null while paired.
+// The person acts on the host (a new invitation), then joins here; the page
+// offers that command to copy, as nothing can be done with one click here.
+const JOIN_AGAIN = { command: 'fuli runner invite',
+  zh: '在主机上运行这条命令生成新邀请，再在这台电脑上运行它打印的 fuli runner join …。',
+  en: 'Run this on the host for a new invitation, then run the `fuli runner join …` it prints on this computer.' };
+function unpairedAnswer(host) {
+  if (!host) {
+    return { status: 409, body: { error: 'not_paired', message: '这台电脑还没有跟随任何主机。 / This computer follows no host.',
+      action: JOIN_AGAIN } };
+  }
+  if (!host.revokedAt) return null;
+  return { status: 403, body: { error: 'runner_revoked',
+    message: `${host.name} 已撤销这台电脑，记录不会再送出，直到重新加入同一台主机。`
+      + ` / ${host.name} revoked this computer; nothing is sent until it joins the same host again.`,
+    action: JOIN_AGAIN } };
 }
 
 // `/remote/<host>/<path>` → the path on that host, or why it reaches nothing.

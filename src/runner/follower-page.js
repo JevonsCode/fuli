@@ -1,5 +1,5 @@
-import { BAND_HEIGHT, BAND_STYLE } from './follower-band.js';
-import { CAPABILITIES, followerLine, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
+import { followerLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
 // `127.0.0.1:<console port>` opens on a computer that follows another one. It
@@ -38,7 +38,7 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FULI · ${escape(host?.name ?? '本机')}</title>
 <style>${BAND_STYLE}${PAGE_STYLE}</style></head>
-<body>
+<body${requested ? ' data-requested="1"' : ''}>
 <div id="fuli-follower-band" role="status">
   <span class="dot ${host?.reachable ? 'on' : host ? 'off' : ''}"></span>
   <span data-line>${escape(line.zh)}</span><span class="gap"></span>
@@ -179,6 +179,23 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 const PAGE_SCRIPT = [
   'const retry = document.querySelector("[data-retry]");',
   'const outcome = document.querySelector("[data-outcome]");',
+  '',
+  '// A failure in words, with the one thing to do: a command to copy when it has to run on another computer.',
+  'function tell(where, body) {',
+  '  where.hidden = false;',
+  '  where.textContent = body.message ?? "没有成功。 / It did not work.";',
+  '  if (!body.action?.command) return;',
+  '  const hint = document.createElement("div");',
+  '  hint.textContent = body.action.zh + " / " + body.action.en;',
+  '  const copy = document.createElement("button");',
+  '  copy.type = "button";',
+  '  copy.textContent = "复制 " + body.action.command + " / Copy";',
+  '  copy.addEventListener("click", () => navigator.clipboard?.writeText(body.action.command)',
+  '    .then(() => { copy.textContent = "已复制 / Copied"; }).catch(() => {}));',
+  '  where.append(hint, copy);',
+  '}',
+  'const NO_ANSWER = { message: "这台电脑的控制台没有回答，请刷新页面。 / This computer\'s console did not answer; reload the page." };',
+  '',
   'retry.addEventListener("click", async () => {',
   '  retry.disabled = true;',
   '  outcome.hidden = false;',
@@ -186,38 +203,48 @@ const PAGE_SCRIPT = [
   '  try {',
   `    const answer = await fetch(${JSON.stringify(SYNC_PATH)}, { method: "POST", headers: { "content-type": "application/json" } });`,
   '    const body = await answer.json();',
-  '    if (!answer.ok) throw new Error(body.error ?? answer.status);',
+  '    if (!answer.ok) { tell(outcome, body); return; }',
   '    outcome.textContent = "送出 " + body.delivered + "，被拒 " + body.refused + "，还剩 " + body.queued',
   '      + "。 / delivered " + body.delivered + ", refused " + body.refused + ", " + body.queued + " left.";',
   '    document.querySelector("[data-outbox]").innerHTML = body.html;',
   '    document.querySelector("[data-line]").textContent = body.line.zh;',
-  '  } catch (error) {',
-  '    outcome.textContent = "没送成：" + error.message + "。 / Not delivered: " + error.message + ".";',
+  '  } catch {',
+  '    tell(outcome, NO_ANSWER);',
+  '  } finally {',
+  '    retry.disabled = false;',
   '  }',
-  '  retry.disabled = false;',
   '});',
   '',
   '// The one next step when the host does not answer: where it is.',
   'const open = document.querySelector("[data-address-open]");',
   'const form = document.querySelector("[data-address-form]");',
   'if (open && form) {',
-  '  const said = document.querySelector("[data-address-outcome]");',
+  '  const result = document.querySelector("[data-address-outcome]");',
   '  open.addEventListener("click", () => { form.hidden = false; open.hidden = true; form.address.focus(); });',
   '  form.addEventListener("submit", async (event) => {',
   '    event.preventDefault();',
-  '    said.hidden = false;',
-  '    said.textContent = "正在找主机… / Looking for the host…";',
+  '    result.hidden = false;',
+  '    result.textContent = "正在找主机… / Looking for the host…";',
   '    try {',
   `      const answer = await fetch(${JSON.stringify(ADDRESS_PATH)}, { method: "POST",`,
   '        headers: { "content-type": "application/json" }, body: JSON.stringify({ address: form.address.value }) });',
   '      const body = await answer.json();',
-  '      if (!answer.ok) throw new Error(body.message ?? body.error ?? answer.status);',
-  '      said.textContent = body.reachable ? "找到了，正在刷新。 / Found it; reloading." : "还是连不上这个地址。 / Still no answer there.";',
-  '      if (body.reachable) location.reload();',
-  '    } catch (error) {',
-  '      said.textContent = "没能保存：" + error.message + " / Not saved: " + error.message;',
+  '      if (!answer.ok) { tell(result, body); return; }',
+  '      if (body.reachable) { result.textContent = "找到了，正在刷新。 / Found it; reloading."; location.reload(); return; }',
+  '      result.textContent = "这个地址还是没有回答：确认两台电脑在同一个局域网或同一个 VPN 里。"',
+  '        + " / Still no answer there: check that both computers are on one LAN or VPN.";',
+  '    } catch {',
+  '      tell(result, NO_ANSWER);',
   '    }',
   '  });',
+  '}',
+  '',
+  '// A host page shown while the host was away opens by itself once the host answers again.',
+  'if (document.body.dataset.requested) {',
+  '  setInterval(async () => {',
+  `    try { if ((await (await fetch(${JSON.stringify(STATUS_PATH)})).json()).host?.reachable) location.reload(); }`,
+  '    catch { /* this computer\'s console is restarting: the next look tries again */ }',
+  '  }, 10000);',
   '}',
   ''
 ].join('\n');

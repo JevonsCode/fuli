@@ -362,6 +362,35 @@ test('「现在重试」 delivers now and only from this computer\'s own page', 
   assert.match(JSON.parse(asked.text).html, /Nothing is waiting/);
 });
 
+// Review of #1069: 「现在重试」 on a revoked computer said the host was unreachable.
+test('a revoked computer is told it was revoked, with the step that pairs it again, never that the host is away', async (t) => {
+  const { entry, hostStore, runner, store } = await pairedRunner(t);
+  hostStore.revoke(runner.fingerprint);
+  await get(`${entry.url}/api/tasks`);
+  assert.ok(store.host().revokedAt, 'the host said so');
+  const sync = await get(`${entry.url}${SYNC_PATH}`, { method: 'POST', body: '{}',
+    headers: { 'content-type': 'application/json', origin: entry.url } });
+  assert.equal(sync.status, 403);
+  const body = JSON.parse(sync.text);
+  assert.equal(body.error, 'runner_revoked');
+  assert.match(body.message, /撤销/);
+  assert.equal(body.action.command, 'fuli runner invite');
+  const api = await get(`${entry.url}/api/tasks`);
+  assert.equal(JSON.parse(api.text).error, 'runner_revoked');
+});
+
+test('the band opens this computer\'s own page, and a host page shown while away opens by itself later', async (t) => {
+  const { entry, setAway } = await pairedRunner(t);
+  const band = await get(`${entry.url}/__fuli-follower/band.js`);
+  assert.match(band.text, /line\.href = "\/local"/);
+  setAway(true);
+  const awayPage = await get(`${entry.url}/projects/synthetic`, { headers: { accept: 'text/html' } });
+  assert.match(awayPage.text, /<body data-requested="1">/);
+  assert.match(awayPage.text, /location\.reload\(\)/);
+  const own = await get(`${entry.url}${LOCAL_PATH}`, { headers: { accept: 'text/html' } });
+  assert.doesNotMatch(own.text, /data-requested/, 'this computer\'s own page does not reload itself');
+});
+
 test('a revoked runner\'s console entry reaches nothing on the host', async (t) => {
   const { entry, hostStore, runner, consoleSide } = await pairedRunner(t);
   hostStore.revoke(runner.fingerprint);

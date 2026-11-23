@@ -109,7 +109,7 @@ export const BAND_SOURCE = [
   '  dot.className = "dot" + (state?.host?.reachable === true ? " on" : state?.host ? " off" : "");',
   '  bar.append(dot);',
   '  const line = document.createElement("a");',
-  '  line.href = "/";',
+  '  line.href = "/local";',
   '  line.textContent = state?.line?.zh ?? "正在读取本机状态…";',
   '  line.title = (state?.line?.en ?? "Reading this computer\'s state…") + " — 打开本机控制台 / open this computer\'s console";',
   '  const gap = document.createElement("span");',
