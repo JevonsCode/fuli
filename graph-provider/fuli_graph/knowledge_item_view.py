@@ -46,6 +46,7 @@ from .knowledge_visibility import (
 )
 from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import json_object, native_datetime
+from .temporary_project_scope import is_temporary_project_id
 
 EVIDENCE_LIMIT = 10
 REVISION_LIMIT = 20
@@ -266,11 +267,16 @@ async def scope_projects(store, space, project_ids) -> list[KnowledgeScopeProjec
                project.profile_json AS profile_json, project.scope_type AS scope_type
         ''', space_id=space['id'], project_ids=list(project_ids), routing_='r')
     found = {record['id']: record for record in records}
-    return [KnowledgeScopeProject(
-        id=project_id,
-        name=found[project_id]['name'] or json_object(found[project_id]['profile_json']).get('name'),
-        temporary=found[project_id]['scope_type'] == 'temporary',
-    ) for project_id in project_ids if project_id in found]
+    return [_scope_project(project_id, found[project_id])
+            for project_id in project_ids if project_id in found]
+
+
+def _scope_project(project_id, record) -> KnowledgeScopeProject:
+    """A name only where somebody gave one: a temporary project carries its
+    `temporary` marker instead, and each console names it in its own language."""
+    temporary = record['scope_type'] == 'temporary' or is_temporary_project_id(project_id)
+    name = record['name'] or json_object(record['profile_json']).get('name')
+    return KnowledgeScopeProject(id=project_id, name=name or None, temporary=temporary)
 
 
 async def _agent_name(store, space, agent_id) -> str | None:

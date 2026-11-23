@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from . import graph_format_backfills as backfills
 from . import graph_format_builtin_occupations as builtin_occupations
+from . import graph_format_temporary_names as temporary_names
 from .graph_format_journal import RecordJournal
 from .graph_format_schema import (
     BASELINE_LABELS,
@@ -194,6 +195,13 @@ GRAPH_MIGRATIONS = (
         'where each host session of a conversation ran (client, session, folder, model, first and last seen) '
         "and a new conversation's opening words as its title; earlier conversations name client and session from their journal",
         rules=CONVERSATION_SESSION_RULES, labels=CONVERSATION_SESSION_LABELS,
+    ),
+    _records(
+        'graph/23-temporary-project-names', 23, 'rewrite',
+        'a temporary project stores no name, so every console shows it in its own language; '
+        'the three names FULI generated are cleared and a name a person gave stays',
+        temporary_names.pending_temporary_names, temporary_names.apply_temporary_names,
+        temporary_names.TEMPORARY_NAME_JOURNAL,
     ),
 )
 

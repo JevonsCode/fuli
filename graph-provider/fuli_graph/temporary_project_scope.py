@@ -14,14 +14,24 @@ from .store_transactions import TransactionQueryDriver, query_store_transaction
 
 
 TEMPORARY_SCOPE = {'type': 'temporary', 'lifetime': 'task', 'persisted': True}
-_TASK_PROFILE = ProjectProfile(name='临时任务 / Temporary task', lifecycle='active',
+# No name: nobody named these, so there is nothing to store. Every reader shows
+# a temporary project in the person's own language, told apart by its short
+# number, its date and whatever title someone later gave it. Before graph/23 the
+# two profiles below carried '临时任务 / Temporary task' and
+# '临时会话 / Temporary session'; graph_format_temporary_names.py clears those.
+_TASK_PROFILE = ProjectProfile(lifecycle='active',
     purpose='Isolated task scope created by explicit Agent coordination.',
     boundaries=['Task-local context only; no implicit project inheritance.',
                 'Audit history is retained after the task ends.'])
-_SESSION_PROFILE = ProjectProfile(name='临时会话 / Temporary session', lifecycle='active',
+_SESSION_PROFILE = ProjectProfile(lifecycle='active',
     purpose='Holds what a session saved before anyone chose where it applies.',
     boundaries=['Scope pending: nothing here applies to other projects or FLAs.',
                 'Items move only when the person chooses their scope.'])
+# A temporary project's ID, whichever generation made it: the session scopes
+# this module derives, and the conversation fallback task entry wrote until
+# 2026-10-18. Callers that hold a record read scope_type instead; this is for
+# the ones that hold only an ID.
+TEMPORARY_ID_PREFIXES = ('temporary-', 'conversation-')
 
 
 class TemporaryProjectEnsure(StrictModel):
@@ -44,6 +54,12 @@ def conversation_fallback_project_id(space_id: str, source_application: str, ses
     """The project task entry created for an unmatched session until 2026-10-18
     (removed in e50b04c2; its projects remain): the same key that code asked for."""
     return 'conversation-' + _scope_key(['fuli-conversation-project-v1', space_id, source_application, session_id])
+
+
+def is_temporary_project_id(project_id: str) -> bool:
+    """Whether an ID is one FULI generated for a temporary scope. A caller that
+    holds the record reads its scope_type; this is for the ones holding an ID."""
+    return project_id.startswith(TEMPORARY_ID_PREFIXES)
 
 
 def _scope_key(parts: list) -> str:
@@ -73,14 +89,14 @@ async def ensure_temporary_project(store, actor, request):
         ON CREATE SET project.project_id = $project_id,
           project.publication_key = $publication_key, project.scope_type = 'temporary',
           project.scope_key = $scope_key, project.profile_json = $profile_json,
-          project.name = $name, project.created_at = $now, project.updated_at = $now
+          project.name = '', project.created_at = $now, project.updated_at = $now
         WITH space, project
         WHERE project.scope_type = 'temporary' AND project.scope_key = $scope_key
         MERGE (space)-[:CONTAINS_PROJECT]->(project)
         RETURN project
         ''', space_id=request.personal_space_id, id=node_id, project_id=project_id,
         publication_key=stable_uuid(node_id, 'publication'), scope_key=request.scope_key,
-        profile_json=profile.model_dump_json(), name=profile.name, now=now_utc())
+        profile_json=profile.model_dump_json(), now=now_utc())
     if not records:
         raise HTTPException(409, 'Temporary scope conflicts with an existing project')
     return store._personal_project(records[0]['project'], request.personal_space_id)
