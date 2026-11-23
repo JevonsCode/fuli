@@ -61,7 +61,7 @@ class MacosAppRuntime implements FuliRuntime {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {
       final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action],
-          workingDirectory: root);
+          workingDirectory: root, environment: onStage == null ? null : stageMarkersEnvironment);
       unawaited(process.stderr.drain<void>());
       final output = StringBuffer();
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {

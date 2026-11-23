@@ -5,7 +5,8 @@ import 'fuli_runtime.dart';
 // Reading what FULI's own entry points print:
 // - src/desktop/windows-controller.js prints one JSON line
 //   ({ok, status, state, error, notice, portBlocked} for an action,
-//   {ok, dataDir, logDir, instanceKey} for `context`);
+//   {ok, dataDir, logDir, instanceKey} for `context`), after one
+//   {"stage": …} line per startup step when this client asked for them;
 // - `fuli status --json` prints one pretty JSON object; a login shell may add
 //   its own lines around it.
 
@@ -26,6 +27,11 @@ RuntimeReport parseControllerReply(String stdout) {
     stage: reply['ok'] == true || stage is! String || stage.isEmpty ? null : stage,
   );
 }
+
+/// Asks a controller or the CLI for its startup steps as lines
+/// (src/local-runtime/startup-stage.js). Without it they print only their
+/// result, which every other caller of theirs reads whole.
+const stageMarkersEnvironment = {'FULI_STAGE_MARKERS': '1'};
 
 /// The step a controller reports while it works: one `{"stage": "…"}` line of
 /// its own (src/desktop/desktop-controller.js `stageReporter`). The result

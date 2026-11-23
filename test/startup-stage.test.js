@@ -96,10 +96,15 @@ test('the desktop controller reports its own steps and names the one that failed
   assert.deepEqual(stages, ['first_setup', 'graph_start', 'provider_wait', 'checking']);
 });
 
-test('the controller writes one marker line per step for its client', () => {
+test('the controller writes step lines only for a client that asks for them', () => {
   const lines = [];
-  stageReporter(line => lines.push(line))('first_setup');
+  stageReporter({ [STAGE_MARKER_ENV]: '1' }, line => lines.push(line))('first_setup');
   assert.deepEqual(lines, [`${startupStageMarker('first_setup')}\n`]);
+  // The updaters, acceptance runs and smoke scripts read the whole output as
+  // one JSON result: without the ask, nothing but that result is written.
+  const quiet = [];
+  stageReporter({}, line => quiet.push(line))('first_setup');
+  assert.deepEqual(quiet, []);
 });
 
 function trayContext() {

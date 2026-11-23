@@ -196,7 +196,11 @@ function executeCli(context, args, onStage = () => {}) {
 // How the tray and macOS entry points pass the phase on to their client: one
 // JSON line per phase as it starts, before the single result line the client
 // reads at the end (desktop/flutter/lib/src/runtime/runtime_output.dart).
-export function stageReporter(write = (line) => process.stdout.write(line)) {
+// Only a caller that asks for them (FULI_STAGE_MARKERS=1) gets them: the
+// updaters, acceptance runs and smoke scripts read the whole output as the
+// one result line, and must keep getting exactly that.
+export function stageReporter(env = process.env, write = (line) => process.stdout.write(line)) {
+  if (env?.[STAGE_MARKER_ENV] !== '1') return () => {};
   return (stage) => write(startupStageMarker(stage) + '\n');
 }
 

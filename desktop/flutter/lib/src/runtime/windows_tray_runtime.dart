@@ -68,6 +68,7 @@ class WindowsTrayRuntime implements FuliRuntime {
         nodePathOf(root),
         [controllerPathOf(root), action],
         workingDirectory: root,
+        environment: onStage == null ? null : stageMarkersEnvironment,
         mode: ProcessStartMode.detachedWithStdio,
       );
       unawaited(process.stderr.drain<void>());

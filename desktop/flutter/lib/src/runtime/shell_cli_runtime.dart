@@ -10,8 +10,6 @@ const _locateTimeout = Duration(seconds: 20);
 const _commandTimeout = Duration(minutes: 10);
 const _commandNotFound = 127;
 const _errorTail = 400;
-// src/local-runtime/startup-stage.js: ask the CLI for its steps as lines.
-const _stageMarkers = 'FULI_STAGE_MARKERS';
 
 /// macOS and Linux: runs the `fuli` CLI through the person's login shell,
 /// because an app started from Finder or the Dock does not get the PATH the
@@ -93,7 +91,7 @@ class ShellCliRuntime implements FuliRuntime {
   Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage) async {
     try {
       final process = await Process.start(_shell, [mode, command],
-          environment: {...env, _stageMarkers: '1'});
+          environment: {...env, ...stageMarkersEnvironment});
       final errors = StringBuffer();
       final reading = process.stderr.transform(utf8.decoder).forEach(errors.write);
       await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {

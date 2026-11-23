@@ -27,7 +27,7 @@ if (isMainModule(import.meta.url)) {
   try {
     if (process.argv.length !== 3) throw new Error('Expected exactly one action.');
     const result = await runTrayAction(process.argv[2], loadMacosAppContext(),
-      { onStage: stageReporter() });
+      { onStage: stageReporter(process.env) });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

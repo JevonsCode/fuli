@@ -89,7 +89,7 @@ if (isMainModule(import.meta.url)) {
     const result = process.argv[2] === 'context'
       ? { ok: true, dataDir: context.dataDir, logDir: context.logDir,
         nativeLogDir: context.nativeLogDir, instanceKey: context.instanceKey }
-      : await runTrayAction(process.argv[2], context, { onStage: stageReporter() });
+      : await runTrayAction(process.argv[2], context, { onStage: stageReporter(process.env) });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {
