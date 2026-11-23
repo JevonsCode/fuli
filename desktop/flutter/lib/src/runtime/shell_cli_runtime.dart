@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'console_port.dart';
@@ -42,6 +43,9 @@ class ShellCliRuntime implements FuliRuntime {
   Future<int> consolePort() => readConsolePort(defaultDataDir(os: os, env: env));
 
   @override
+  Future<String> logDirectory() async => '${defaultDataDir(os: os, env: env)}/logs';
+
+  @override
   Future<RuntimeReport> status() async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     final result = await _sh(_mode!, 'fuli status --json', _commandTimeout);
@@ -54,10 +58,11 @@ class ShellCliRuntime implements FuliRuntime {
   }
 
   @override
-  Future<RuntimeReport> start() => _command('fuli start');
+  Future<RuntimeReport> start({StageListener? onStage}) => _command('fuli start', onStage: onStage);
 
   @override
-  Future<RuntimeReport> endOrphansAndStart() => _command('fuli start --end-orphaned-services');
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) =>
+      _command('fuli start --end-orphaned-services', onStage: onStage);
 
   @override
   Future<RuntimeReport> stop() => _command('fuli stop');
@@ -67,21 +72,65 @@ class ShellCliRuntime implements FuliRuntime {
   bool get canChangePort => false;
 
   @override
-  Future<RuntimeReport> changePort() async => const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
+  Future<RuntimeReport> changePort({StageListener? onStage}) async =>
+      const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
+
+  // The CLI's own checked release (`fuli graph runtime unlock`), then a start.
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) async {
+    if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
+    final released = await _sh(_mode!, 'fuli graph runtime unlock --yes', _commandTimeout);
+    if (released == null || released.exitCode != 0) {
+      final after = await status();
+      // Why it kept the lock comes on its reason line (startup-failure-line.js) and is worded by this client.
+      final printed = readStartupFailure('${released?.stderr ?? ''}');
+      final kept = printed.failure;
+      return RuntimeReport(after.state, consolePort: after.consolePort,
+          error: printed.stderr.trim().isEmpty ? 'fuli graph runtime unlock did not finish.' : printed.stderr.trim(),
+          lockKept: kept?.code == 'lock_kept' && kept?.text('reason') != null ? StartupFailure(kept!.text('reason')!, kept.facts) : null);
+    }
+    return start(onStage: onStage);
+  }
 
   // `fuli start` and `fuli stop` print text, not JSON; the state afterwards
-  // comes from `fuli status --json`.
-  Future<RuntimeReport> _command(String command) async {
+  // comes from `fuli status --json`. With [onStage] the CLI is asked for its
+  // startup steps as machine-readable lines instead (startup-stage.js) and
+  // they are read as they arrive.
+  Future<RuntimeReport> _command(String command, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
-    final result = await _sh(_mode!, command, _commandTimeout);
+    final result = onStage == null
+        ? await _sh(_mode!, command, _commandTimeout)
+        : await _shFollowing(_mode!, command, _commandTimeout, onStage);
     final after = await status();
     if (result != null && result.exitCode == 0) return after;
-    final failure = readStartupFailure('${result?.stderr ?? ''}');
-    final stderr = failure.stderr.trim();
+    // The reason a start can name comes on a line of its own (startup-failure-line.js).
+    final printed = readStartupFailure('${result?.stderr ?? ''}');
+    final stderr = printed.stderr.trim();
     final error = stderr.isEmpty
         ? '$command did not finish.'
         : stderr.substring(stderr.length > _errorTail ? stderr.length - _errorTail : 0);
-    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, orphanedServices: failure.orphanedServices);
+    return RuntimeReport(after.state, consolePort: after.consolePort, error: error, failure: printed.failure,
+        autostartGaveUpAt: after.autostartGaveUpAt);
+  }
+
+  // Runs the command with FULI_STAGE_MARKERS set, so each startup step arrives
+  // as its own line while the command is still running.
+  Future<ProcessResult?> _shFollowing(String mode, String command, Duration timeout, StageListener onStage) async {
+    try {
+      final process = await Process.start(_shell, [mode, command],
+          environment: {...env, ...stageMarkersEnvironment});
+      final errors = StringBuffer();
+      final reading = process.stderr.transform(utf8.decoder).forEach(errors.write);
+      await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
+        if (parseStageLine(line) case final step?) onStage(step.stage, step.maxSeconds);
+      }).timeout(timeout);
+      await reading;
+      return ProcessResult(process.pid, await process.exitCode.timeout(timeout), '', errors.toString());
+    } on ProcessException {
+      return null;
+    } on TimeoutException {
+      return null;
+    }
   }
 
   Future<ProcessResult?> _sh(String mode, String command, Duration timeout) async {

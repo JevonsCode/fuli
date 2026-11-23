@@ -43,7 +43,15 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
-          if (snapshot.running && !snapshot.reached)
+          // After a start that failed, the start's log is a click here.
+          if (_startupLog case final folder?)
+            TextButton.icon(
+              key: const Key('notice-action'),
+              onPressed: () => opener.open(Uri.directory(folder)),
+              icon: const Icon(Icons.article_outlined, size: 16),
+              label: Text(strings.viewStartupLog),
+            )
+          else if (snapshot.running && !snapshot.reached)
             TextButton.icon(
               key: const Key('recheck'),
               onPressed: controller.pending != null ? null : controller.recheck,
@@ -68,6 +76,8 @@ class StatusActions extends StatelessWidget {
       ),
     );
   }
+
+  String? get _startupLog => controller.pending == null ? controller.notice?.logDirectory : null;
 
   Widget _statusLine() {
     final pending = controller.pending;
@@ -101,6 +111,15 @@ class StatusActions extends StatelessWidget {
         child: Text(strings.endOrphansAndStart),
       );
     }
+    // The last start stopped at a maintenance lock a person may release: the
+    // one way on, confirmed first; FULI's own checks decide (neo4j-lifecycle-lock.js).
+    if (!snapshot.running && controller.releasableLock) {
+      return FilledButton(
+        key: const Key('release-lock-start'),
+        onPressed: busy ? null : () => _confirmReleaseLock(context),
+        child: Text(strings.releaseLockAndStart),
+      );
+    }
     // Running without an answering console: restarting is what fixes it.
     if (snapshot.running && !snapshot.reached) {
       return FilledButton(onPressed: busy ? null : controller.restart, child: Text(strings.restartFuli));
@@ -128,5 +147,24 @@ class StatusActions extends StatelessWidget {
       ),
     );
     if (confirmed == true) await controller.endOrphansAndStart();
+  }
+
+  Future<void> _confirmReleaseLock(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.releaseLockTitle),
+        content: Text(strings.releaseLockBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(strings.cancel)),
+          FilledButton(
+            key: const Key('release-lock-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.releaseLockConfirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await controller.releaseLockAndStart();
   }
 }

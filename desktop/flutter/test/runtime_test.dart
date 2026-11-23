@@ -202,16 +202,17 @@ void main() {
   });
 
   test('a controller reply naming lost graph services is read into the report, and nothing else of it', () {
-    final report = parseControllerReply('{"ok":false,"status":"stopped","error":"stopped","orphanedServices":'
-        '[{"port":7687,"command":"java","pid":501},{"port":"x"}]}');
-    expect(report.orphanedServices.map((service) => (service.port, service.command)), [(7687, 'java')]);
-    expect(parseControllerReply('{"ok":false,"status":"stopped","error":"x"}').orphanedServices, isEmpty);
+    final report = parseControllerReply('{"ok":false,"status":"stopped","error":"stopped","failure":'
+        '{"code":"orphaned_graph_service","services":[{"port":7687,"command":"java","pid":501},{"port":"x"}]}}');
+    expect(report.failure!.orphanedServices.map((service) => (service.port, service.command)), [(7687, 'java')]);
+    expect(parseControllerReply('{"ok":false,"status":"stopped","error":"x","failure":{"code":"port_taken","port":7687,"services":[{"port":7687}]}}')
+        .failure!.orphanedServices, isEmpty, reason: 'only a lost graph service names services to end');
   });
 
   test('a failed fuli start keeps its reason line out of the message and reads the services from it', () {
     final read = readStartupFailure('The graph service is still running.\n'
         'FULI_STARTUP_FAILURE {"code":"orphaned_graph_service","services":[{"port":7474,"command":"java"}]}\n');
     expect(read.stderr.trim(), 'The graph service is still running.');
-    expect(read.orphanedServices.single.port, 7474);
+    expect(read.failure!.orphanedServices.single.port, 7474);
   });
 }

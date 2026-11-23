@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
+import { reportingStartupFailure } from '../src/local-runtime/startup-failure.js';
 import { startupFailureLine } from '../src/local-runtime/startup-failure-line.js';
 import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from '../src/native-runtime/orphan-services.js';
 
@@ -74,6 +75,18 @@ test('the start says what holds the port, in both languages, with one action to 
   assert.match(error.message, /End it and start/);
 });
 
+test('in the terminal the lost service is said as what happened and the command that ends it, its facts kept for a client', async () => {
+  const thrown = orphanedServicesError([{ port: 7687, pid: 501, group: 500, command: 'java' }]);
+  await assert.rejects(reportingStartupFailure(async () => { throw thrown; }), (error) => {
+    const lines = error.message.split('\n');
+    assert.match(lines[0], /^没有启动：.*占着端口 7687/);
+    assert.match(lines[1], /^下一步：运行 fuli start --end-orphaned-services/);
+    assert.match(lines[3], /^Next: Run `fuli start --end-orphaned-services`/);
+    assert.deepEqual(error.startupFailure.services, [{ port: 7687, pid: 501, command: 'java' }]);
+    return true;
+  });
+});
+
 test('ending them stops each process group once and records each port in the diagnostics', async () => {
   const stopped = [];
   const recorded = [];
@@ -105,7 +118,7 @@ test('the desktop app\'s 「结束它并启动」 starts with the choice to end 
 });
 
 // Review of #1075: the button needs the reason as data, not as words in an error message.
-test('a start that stops at a lost service tells the window which ports and programs, and nothing more', async (t) => {
+test('a start that stops at a lost service tells the window its reason with the ports and programs', async (t) => {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'fuli-orphans-report-'));
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   mkdirSync(path.join(dataDir, 'native'));
@@ -120,7 +133,8 @@ test('a start that stops at a lost service tells the window which ports and prog
     portBlocked: async () => false, otherConsole: () => null, holdAdoption: () => null
   });
   assert.equal(result.ok, false);
-  assert.deepEqual(result.orphanedServices, [{ port: 7687, command: 'java' }]);
+  assert.equal(result.failure.code, 'orphaned_graph_service');
+  assert.deepEqual(result.failure.services, [{ port: 7687, pid: 501, command: 'java' }]);
   assert.doesNotMatch(result.error, /FULI_STARTUP_FAILURE/, 'the reason line is not shown as words');
   assert.match(result.error, /结束它并启动/);
 });

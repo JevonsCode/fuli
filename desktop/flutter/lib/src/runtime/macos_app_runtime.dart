@@ -38,11 +38,15 @@ class MacosAppRuntime implements FuliRuntime {
   @override
   Future<int> consolePort() => readConsolePort(defaultDataDir(os: 'macos', env: env));
 
+  // src/setup/paths.js: <data>/logs holds runtime.log and the services' logs.
+  @override
+  Future<String> logDirectory() async => '${defaultDataDir(os: 'macos', env: env)}/logs';
+
   @override
   Future<RuntimeReport> status() => _action('status');
 
   @override
-  Future<RuntimeReport> start() => _action('start');
+  Future<RuntimeReport> start({StageListener? onStage}) => _action('start', onStage: onStage);
 
   @override
   Future<RuntimeReport> stop() => _action('stop');
@@ -52,19 +56,29 @@ class MacosAppRuntime implements FuliRuntime {
   bool get canChangePort => false;
 
   @override
-  Future<RuntimeReport> changePort() async =>
+  Future<RuntimeReport> changePort({StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
   @override
-  Future<RuntimeReport> endOrphansAndStart() => _action('end-orphans-start');
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
 
-  Future<RuntimeReport> _action(String action) async {
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
+
+  // The controller's lines are read as they arrive: the steps it reports while
+  // it works, then the one result line at the end.
+  Future<RuntimeReport> _action(String action, {StageListener? onStage}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {
-      final result = await Process.run(macosNodePathOf(root), [macosControllerPathOf(root), action],
-              workingDirectory: root, stdoutEncoding: utf8, stderrEncoding: utf8)
-          .timeout(_controllerTimeout);
-      return parseControllerReply('${result.stdout}');
+      final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action],
+          workingDirectory: root, environment: onStage == null ? null : stageMarkersEnvironment);
+      unawaited(process.stderr.drain<void>());
+      final output = StringBuffer();
+      await process.stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
+        output.writeln(line);
+        if (parseStageLine(line) case final step?) onStage?.call(step.stage, step.maxSeconds);
+      }).timeout(_controllerTimeout);
+      return parseControllerReply(output.toString());
     } on ProcessException catch (error) {
       return RuntimeReport(RuntimeState.unknown, error: error.message);
     } on TimeoutException {

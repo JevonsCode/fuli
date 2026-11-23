@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/app_services.dart';
+import '../app/fuli_controller.dart';
 import 'brand.dart';
 import 'home_page.dart';
 import 'theme.dart';
@@ -112,7 +113,21 @@ class _WindowState extends State<_Window> {
         if (snapshot == null) return WaitingScreen(label: strings.checking);
         final bringingUp = controller.bringingUp;
         if (bringingUp != null) {
-          return WaitingScreen(label: controller.pending ?? bringingUp);
+          // What the start is doing now, as it reports it, and — once a step
+          // has run longer than usual — what it is waiting on.
+          final step = strings.startupStage(controller.startupStage);
+          final waited = controller.startupWaited;
+          final slow = waited != null && waited >= FuliController.stageSlowAfter;
+          return WaitingScreen(
+            label: step ?? controller.pending ?? bringingUp,
+            detail: slow ? strings.startupStageSlow(waited, controller.startupMaxSeconds) : null,
+            spokenDetail: slow ? strings.startupStageLimit(controller.startupMaxSeconds) : null,
+            // A step that takes long can be looked into while it runs; it is not cancelled.
+            actionLabel: slow ? strings.viewStartupLog : null,
+            onAction: slow
+                ? () async => _services.opener.open(Uri.directory(await controller.runtime.logDirectory()))
+                : null,
+          );
         }
         return HomePage(
             controller: controller,
