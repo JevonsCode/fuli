@@ -1,158 +1,167 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { agentWorkLocations, summariseWorkLocations } from '../src/graphiti/agent-work-locations.js';
+import { sessionClientRecords } from '../src/agent-kits/session-clients.js';
+import { dispatchGraphTool } from '../src/agent-tools/graph-handlers.js';
+import { consoleWorkLocations, summariseWorkLocations } from '../src/graphiti/agent-work-locations.js';
+import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 
-// Synthetic conversations and host sessions only.
+// Synthetic spaces, projects, FLAs, conversations and host sessions only.
 const session = (client, model, lastSeen, sessionId = `${client}-${lastSeen}`) =>
   ({ client, session_id: sessionId, model, first_seen: lastSeen, last_seen: lastSeen });
 const conversation = (id, sessions, extra = {}) =>
   ({ id, summary: 'Amount parser for the ledger import', status: 'incomplete', last_activity: '2026-11-22T10:00:00Z', sessions, ...extra });
+const page = (conversations, personalProjectId = 'ledger', limit = 50) => ({ personalProjectId, conversations, limit });
 
-test('one row per client and model, most work first', () => {
-  const found = summariseWorkLocations([
+test('one row per client and model, most work first, each with its own segments', () => {
+  const found = summariseWorkLocations([page([
     conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z'),
       session('claude_code', 'synthetic-model-c', '2026-11-21T09:00:00Z')]),
     conversation('c2', [session('codex', 'synthetic-model-s', '2026-11-20T09:00:00Z')])
-  ]);
+  ])]);
   assert.equal(found.segments, 3);
-  assert.deepEqual(found.rows.map(row => [row.client, row.model, row.segments, row.conversations]),
-    [['codex', 'synthetic-model-s', 2, 2], ['claude_code', 'synthetic-model-c', 1, 1]]);
-  assert.equal(found.conversations_read, 2);
-  assert.equal(found.partial, false);
+  assert.deepEqual(found.rows.map(row => [row.client, row.model, row.segments, row.conversations, row.recent.length]),
+    [['codex', 'synthetic-model-s', 2, 2, 2], ['claude_code', 'synthetic-model-c', 1, 1, 1]]);
+  // A row's segments are exactly the ones it counts, newest first.
+  assert.deepEqual(found.rows[0].recent.map(segment => segment.conversation_id), ['c1', 'c2']);
+  assert.equal(found.complete, true);
 });
 
-test('an unknown model keeps its own row and says why it is unknown', () => {
-  const found = summariseWorkLocations([
+test('an unknown model keeps its own row and says why, never blaming the client for what FULI does not read', () => {
+  const found = summariseWorkLocations([page([
     conversation('c1', [session('cursor', null, '2026-11-22T09:00:00Z')]),
     conversation('c2', [session('claude_code', null, '2026-11-21T09:00:00Z'),
-      session('claude_code', 'synthetic-model-c', '2026-11-21T10:00:00Z')])
-  ]);
+      session('claude_code', 'synthetic-model-c', '2026-11-21T10:00:00Z')]),
+    conversation('c3', [session(null, null, '2026-11-01T10:00:00Z')])
+  ])]);
   assert.deepEqual(found.rows.map(row => [row.client, row.model, row.model_reason ?? null]), [
-    // Cursor's own hook reports no model at all.
-    ['cursor', null, 'client_sends_none'],
-    // Claude Code does report one, so a segment without it simply predates the record.
+    ['cursor', null, 'not_read'],
     ['claude_code', 'synthetic-model-c', null],
-    ['claude_code', null, 'not_recorded']
+    ['claude_code', null, 'not_recorded'],
+    // An older record that never said which client did the work.
+    [null, null, 'client_not_recorded']
   ]);
-  // An unknown model is never folded into the named row of the same client.
-  assert.equal(found.rows.filter(row => row.client === 'claude_code').length, 2);
 });
 
-test('counts say how far they reach instead of implying a lifetime total', () => {
-  const many = Array.from({ length: 50 }, (_, index) =>
-    conversation(`c${index}`, [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')]));
-  assert.equal(summariseWorkLocations(many, 50).partial, true);
-  assert.equal(summariseWorkLocations(many.slice(0, 3), 50).partial, false);
-  assert.match(summariseWorkLocations(many, 50).guidance, /not a lifetime total/);
+test('a requested model is marked as requested, not as what answered', () => {
+  const [row] = summariseWorkLocations([page([conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])])]).rows;
+  assert.equal(row.model_source, 'requested');
+  assert.match(summariseWorkLocations([]).guidance, /requested is the model the client asked for/);
 });
 
-test('each recent segment names its session, its work and how far that work got', () => {
-  const found = summariseWorkLocations([conversation('c1', [
-    session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z', 'f41c9a02-7b5d-4e18-9a30-0c2b7d6e4518')])]);
-  const [segment] = found.recent;
-  assert.equal(segment.conversation_id, 'c1');
-  assert.equal(segment.session_id, 'f41c9a02-7b5d-4e18-9a30-0c2b7d6e4518');
-  assert.equal(segment.session_short, 'f41c9a02');
-  assert.equal(segment.model_source, 'requested');
-  assert.equal(segment.status, 'incomplete');
-  assert.equal(segment.title, 'Amount parser for the ledger import');
+test('every way the count was cut short is named, per scope', () => {
+  const full = Array.from({ length: 50 }, (_, index) => conversation(`full-${index}`, [session('codex', null, '2026-11-22T09:00:00Z')]));
+  const found = summariseWorkLocations([page(full, 'ledger'), page([conversation('b1', [session('codex', null, '2026-11-22T09:00:00Z')])], 'billing'),
+    page([conversation('crowded', Array.from({ length: 5 }, (_, index) => session('codex', null, `2026-11-2${index}T09:00:00Z`)))], 'reports')]);
+  assert.equal(found.complete, false);
+  // One project full and two not: the full one is named, not hidden in a total.
+  assert.deepEqual(found.truncated, [
+    { reason: 'conversations_limit', personal_project_id: 'ledger', read: 50 },
+    { reason: 'sessions_per_conversation', conversation_id: 'crowded', read: 5 }]);
 });
 
-test('newest segment first, whichever conversation it belongs to', () => {
-  const found = summariseWorkLocations([
-    conversation('c1', [session('codex', null, '2026-11-20T09:00:00Z')]),
-    conversation('c2', [session('cursor', null, '2026-11-23T09:00:00Z')])
-  ]);
-  assert.deepEqual(found.recent.map(segment => segment.client), ['cursor', 'codex']);
-});
-
-test('continuing elsewhere travels as its own field, separate from going back to a session', () => {
-  const found = summariseWorkLocations([
-    conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')],
-      { continuation_prompt: '#FLA {lead-1} 请在 FULI 项目继续工作。' }),
-    conversation('c2', [session('cursor', null, '2026-11-20T09:00:00Z')],
-      { continuation_prompt: '#FLA {lead-1} 另一段。' })
-  ]);
-  // The newest conversation's prompt, and what it does: a new session, with the
-  // original conversation left where it is.
-  assert.equal(found.continuation.conversation_id, 'c1');
-  assert.equal(found.continuation.opens, 'new_session');
-  assert.equal(found.continuation.leaves_original, true);
-  // The segment's own way back is the native session, kept apart from it.
-  assert.equal(found.recent[0].session_id, 'codex-2026-11-22T09:00:00Z');
-  assert.equal(summariseWorkLocations([conversation('c3', [])]).continuation, null);
-});
-
-test('a conversation with no session record counts nothing and invents nothing', () => {
-  const found = summariseWorkLocations([conversation('c1', []), { id: 'c2', last_activity: null }]);
-  assert.deepEqual(found.rows, []);
-  assert.equal(found.segments, 0);
-  assert.deepEqual(found.recent, []);
-});
-
-test('the read asks for this Agent in this scope and bounds how much it reads', async () => {
-  const asked = [];
-  const application = { config: { personal: { spaceId: 'space' } },
-    personal: { conversation: async (mode, request) => {
-      asked.push({ mode, request });
-      return { conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
-    } } };
-  const found = await agentWorkLocations(application,
-    { personalSpaceId: 'space', personalProjectId: 'ledger', agentId: 'lead-1', limit: 5000 });
+test('a scope that could not be read is named with its reason and never counted as no work', () => {
+  const found = summariseWorkLocations([page([conversation('c1', [session('codex', null, '2026-11-22T09:00:00Z')])]),
+    { personalProjectId: 'billing', failed: 'provider_unavailable' }]);
+  assert.equal(found.complete, false);
+  assert.deepEqual(found.unavailable, [{ personal_project_id: 'billing', reason: 'provider_unavailable' }]);
   assert.equal(found.segments, 1);
-  assert.deepEqual(asked[0].mode, 'query');
-  assert.equal(asked[0].request.agent_id, 'lead-1');
-  assert.equal(asked[0].request.personal_project_id, 'ledger');
-  assert.equal(asked[0].request.mode, 'list');
-  // An outsized request is capped rather than passed to the Provider.
-  assert.equal(asked[0].request.limit, 200);
-  assert.equal(asked.length, 1);
 });
 
-test('without a project the Agent\'s own active projects are read, bounded, in one call', async () => {
+test('continuing elsewhere takes the newest conversation and says which work and which project', () => {
+  const found = summariseWorkLocations([
+    page([conversation('older', [], { last_activity: '2026-11-20T09:00:00Z', continuation_prompt: '#FLA {lead} older' })], 'ledger'),
+    page([conversation('newer', [], { last_activity: '2026-11-23T09:00:00Z', summary: 'CSV export',
+      continuation_prompt: '#FLA {lead} newer' })], 'billing')]);
+  assert.deepEqual(found.continuation, { conversation_id: 'newer', personal_project_id: 'billing', title: 'CSV export',
+    prompt: '#FLA {lead} newer', opens: 'new_session', leaves_original: true });
+  assert.equal(summariseWorkLocations([page([conversation('c3', [])])]).continuation, null);
+});
+
+// The console's read: the person's own records across the FLA's active projects.
+function consoleApplication({ assignments = ['ledger'], failing = [], assignmentsFail = false, runtimeConfigPath } = {}) {
   const asked = [];
-  const application = {
-    config: { personal: { spaceId: 'space' } },
-    listProjectAgentAssignments: async input => {
-      assert.equal(input.status, 'active');
-      return ['ledger', 'billing', 'reports', 'archive'].map(personalProjectId => ({ personalProjectId }));
+  return { asked, runtimeConfigPath, config: { personal: { spaceId: 'space' } },
+    listProjectAgentAssignments: async () => {
+      if (assignmentsFail) throw Object.assign(new Error('synthetic'), { code: 'provider_unavailable' });
+      return assignments.map(personalProjectId => ({ personalProjectId }));
     },
-    personal: { conversation: async (mode, request) => {
-      asked.push(request.personal_project_id);
+    personal: { conversation: async (_operation, request) => {
+      asked.push(request);
+      if (failing.includes(request.personal_project_id)) throw Object.assign(new Error('synthetic'), { code: 'provider_timeout' });
       return { conversations: [conversation(`c-${request.personal_project_id}`,
-        [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
-    } }
-  };
-  const found = await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'lead-1' });
-  assert.deepEqual(asked, ['ledger', 'billing', 'reports']);
-  assert.equal(found.segments, 3);
-  assert.equal(found.conversations_read, 3);
+        [session('claude_code', 'synthetic-model-c', '2026-11-22T09:00:00Z', `session-${request.personal_project_id}`)])] };
+    } } };
+}
+
+test('console: the FLA\'s active projects, bounded, saying what that leaves out', async () => {
+  const app = consoleApplication({ assignments: ['ledger', 'billing', 'reports', 'archive'] });
+  const found = await consoleWorkLocations(app, { personalSpaceId: 'space', agentId: 'lead' });
+  assert.deepEqual(app.asked.map(request => request.personal_project_id), ['ledger', 'billing', 'reports']);
+  assert.ok(app.asked.every(request => request.source_application === null), 'the person reads their own records');
+  assert.deepEqual(found.truncated, [{ reason: 'projects_limit', read: 3, total: 4 }, { reason: 'global_scope_not_counted' }]);
 });
 
-test('an Agent with no project assignment is read in its global scope', async () => {
+test('console: a failed project or an unreadable assignment list is said, not shown as no work', async () => {
+  const partly = await consoleWorkLocations(consoleApplication({ assignments: ['ledger', 'billing'], failing: ['billing'] }),
+    { personalSpaceId: 'space', agentId: 'lead' });
+  assert.deepEqual(partly.unavailable, [{ personal_project_id: 'billing', reason: 'provider_timeout' }]);
+  assert.equal(partly.segments, 1);
+  const none = await consoleWorkLocations(consoleApplication({ assignmentsFail: true }), { personalSpaceId: 'space', agentId: 'lead' });
+  assert.equal(none.segments, 0);
+  assert.equal(none.complete, false);
+  assert.deepEqual(none.unavailable, [{ scope: 'assignments', reason: 'provider_unavailable' }]);
+});
+
+test('console: a session this computer\'s own hook recorded is marked as here; any other is unknown, never "elsewhere"', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-work-locations-'));
+  try {
+    sessionClientRecords(root).record('claude_code', 'session-ledger', { source: 'Claude Code' });
+    const found = await consoleWorkLocations(consoleApplication({ assignments: ['ledger', 'billing'],
+      runtimeConfigPath: join(root, 'runtime.json') }), { personalSpaceId: 'space', agentId: 'lead' });
+    const segments = found.rows.flatMap(row => row.recent);
+    assert.equal(segments.find(segment => segment.session_id === 'session-ledger').on_this_computer, true);
+    assert.equal(segments.find(segment => segment.session_id === 'session-billing').on_this_computer, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Agents count through list_agent_conversations, with that tool's own scope and checks.
+function agentApplication(conversationImpl) {
+  const app = new FederatedGraphApplication({ version: 1, personal: { providerUrl: 'http://127.0.0.1:8787',
+    accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: 'space' }, workspaces: [] },
+  { fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
   const asked = [];
-  const application = {
-    config: { personal: { spaceId: 'space' } },
-    listProjectAgentAssignments: async () => [],
-    personal: { conversation: async (mode, request) => {
-      asked.push(request.personal_project_id);
-      return { conversations: [] };
-    } }
-  };
-  await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'global-1' });
-  assert.deepEqual(asked, [null]);
+  app.personal.conversation = async (operation, request) => { asked.push({ operation, request }); return conversationImpl(request); };
+  app.listProjectAgentAssignments = async () => { throw new Error('an Agent count must not expand to other projects'); };
+  return { app, asked };
+}
+
+test('agent: the count reads only the scope asked for, as the calling client, never as the owner', async () => {
+  const { app, asked } = agentApplication(() => ({ conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] }));
+  const answer = await dispatchGraphTool(app, 'list_agent_conversations', { personalSpaceId: 'space', personalProjectId: 'ledger',
+    agentId: 'lead', sourceApplication: 'cursor', workLocations: true });
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].request.personal_project_id, 'ledger');
+  // The calling client goes to the Provider, which checks the FLA's allowed clients.
+  assert.equal(asked[0].request.source_application, 'cursor');
+  assert.equal(answer.work_locations.segments, 1);
+  assert.equal(answer.conversations.length, 1);
 });
 
-test('one unreadable project never empties the whole answer', async () => {
-  const application = {
-    config: { personal: { spaceId: 'space' } },
-    listProjectAgentAssignments: async () => [{ personalProjectId: 'ledger' }, { personalProjectId: 'closed' }],
-    personal: { conversation: async (mode, request) => {
-      if (request.personal_project_id === 'closed') throw new Error('refused');
-      return { conversations: [conversation('c1', [session('codex', 'synthetic-model-s', '2026-11-22T09:00:00Z')])] };
-    } }
-  };
-  const found = await agentWorkLocations(application, { personalSpaceId: 'space', agentId: 'lead-1' });
-  assert.equal(found.segments, 1);
+test('agent: a Provider refusal is a refusal, never a count of zero', async () => {
+  const { app } = agentApplication(() => { throw Object.assign(new Error('Agent is not allowed in this client'), { status: 403 }); });
+  await assert.rejects(dispatchGraphTool(app, 'list_agent_conversations', { personalSpaceId: 'space', personalProjectId: 'ledger',
+    agentId: 'someone-else', sourceApplication: 'cursor', workLocations: true }), error => error.status === 403);
+});
+
+test('agent: without workLocations the list answers exactly as before', async () => {
+  const { app } = agentApplication(() => ({ conversations: [] }));
+  const answer = await dispatchGraphTool(app, 'list_agent_conversations', { personalSpaceId: 'space', personalProjectId: 'ledger',
+    agentId: 'lead', sourceApplication: 'codex' });
+  assert.equal('work_locations' in answer, false);
 });

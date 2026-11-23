@@ -468,8 +468,7 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.viewAgentWorkLocations({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
-      agentId: url.searchParams.get('agentId'),
-      limit: Number(url.searchParams.get('limit')) || undefined
+      agentId: url.searchParams.get('agentId')
     }));
     return true;
   }

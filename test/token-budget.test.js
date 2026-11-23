@@ -243,10 +243,10 @@ const BASELINE = Object.freeze({
   // 192,212 -> 192,290 B (+78 B), measured. Chat, instructions and entry are unchanged.
   // list_agent_conversations gains topic (one open unclaimed topic's chats, so a later conversation about it
   // finds the earlier ones), no new tool: 192,290 -> 192,435 B (+145 B), measured.
-  // view_project_agent_activity gains workLocations (where this FLA worked, per client and model, rec#147),
-  // no new tool: 192,435 -> 192,546 B (+111 B), measured. Chat, instructions and entry are unchanged;
-  // the rules for reading it travel in the answer's own guidance, not in the listed schema.
-  fullToolSchemaBytes: 192546,
+  // list_agent_conversations gains workLocations (where this FLA worked, per client and model, rec#147),
+  // no new tool, with that tool's own scope and checks: 192,435 -> 192,512 B (+77 B), measured. Chat,
+  // instructions and entry are unchanged; the rules for reading it travel in the answer's own guidance.
+  fullToolSchemaBytes: 192512,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

@@ -198,14 +198,13 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
   {
     name: 'view_project_agent_activity',
     title: 'READ · View Agent terminal activity',
-    description: 'Return actual per-Agent daily completed/failed/cancelled activity and verifiable summaries. No history is fabricated and configured Agent status is not treated as running state. workLocations adds where this Agent worked, counted per client and model; follow its own guidance.',
+    description: 'Return actual per-Agent daily completed/failed/cancelled activity and verifiable summaries. No history is fabricated and configured Agent status is not treated as running state.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
       agentId: id,
       fromDate: nullableStringSchema(),
-      toDate: nullableStringSchema(),
-      workLocations: booleanSchema()
+      toDate: nullableStringSchema()
     }, ['personalSpaceId', 'agentId'])
   },
   {
