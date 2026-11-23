@@ -16,6 +16,16 @@ test('a question, a command run or one named change is small', () => {
   }
 });
 
+// Review of #1076: a rename is small only when it names one thing.
+test('a rename of one named thing is small; a rename across the code is not', () => {
+  assert.equal(taskSize('把这个合成字段重命名'), SMALL);
+  assert.equal(taskSize('rename the synthetic flag'), SMALL);
+  for (const prompt of ['rename the synthetic module', 'rename synthetic_id everywhere', 'rename the field across the codebase',
+    '把所有合成接口重命名', '全局重命名合成字段']) {
+    assert.equal(taskSize(prompt), STANDARD, prompt);
+  }
+});
+
 test('anything that builds, moves or asks for several things is standard', () => {
   for (const prompt of ['实现合成导出接口', '重构合成模块', '设计一个合成方案', '迁移合成数据',
     'implement the synthetic export endpoint', 'refactor the synthetic module',

@@ -23,8 +23,7 @@ import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
-import { closedTaskRefusal } from './checkpoint-save-status.js';
-import { admittedTask } from './checkpoint-save-status.js';
+import { admittedTask, closedTaskRefusal } from './checkpoint-save-status.js';
 import { roundtableTurn } from '../agent-roundtable/turn-receipt.js';
 
 export async function checkpointTaskKnowledge(application, {
