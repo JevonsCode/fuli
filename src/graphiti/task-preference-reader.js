@@ -26,7 +26,7 @@ const PAGERS = new WeakMap();
 // A fresh read of the current source, never a task entry or preference snapshot.
 export async function readTaskPreferences(application, {
   taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified = false, sourceSessionBinding = null,
-  workerRun = null, cursor
+  workerRun = null, cursor, keys = null
 }) {
   const sessionId = await readerSession(application,
     { taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified, sourceSessionBinding });
@@ -55,6 +55,7 @@ export async function readTaskPreferences(application, {
     taskScope: { sessionId: task.sessionId, sourceSessionId: task.sourceSessionId,
       workKind: scope.work_kind, workflow: scope.workflow }
   });
+  if (Array.isArray(keys) && keys.length) return keyedPreferences(task, projection, keys);
   const spaceId = application.config.personal.spaceId;
   let rawAgent;
   let project;
@@ -158,3 +159,26 @@ async function ownedTaskPreferences(application, token, scope) {
 }
 
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
+
+// The preferences a task entry named in its index (preferences_omitted.index,
+// rec#137), read by key: the bodies of those items whole, in one result, with
+// no page and no cursor, so expanding the two that may apply costs one call
+// and survives the next turn's new token. It is never the complete set:
+// preferences_complete stays false, so no session takes it as the base of a
+// delta. A key this task does not have is named back, never guessed.
+const KEYED_GUIDANCE = 'These are only the preferences you asked for by key; the rest of this task\'s set still applies '
+  + 'as the entry delivered it. A key in missing is not one of this task\'s preferences now.';
+function keyedPreferences(task, projection, keys) {
+  const wanted = new Set(keys);
+  const effective = projection.effective_preferences.filter(item => wanted.has(item.preference_key));
+  const found = new Set(effective.map(item => item.preference_key));
+  const value = {
+    taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+    context: projection.context,
+    effective_preferences: effective,
+    preference_delivery: { status: 'keys', requested: wanted.size, missing: [...wanted].filter(key => !found.has(key)),
+      guidance: KEYED_GUIDANCE },
+    preferences_complete: false, same_task_recovery_available: true, truncated: false
+  };
+  return projection.context.source_truncated ? blockedPreferenceRecovery(value, 'source_window') : value;
+}
