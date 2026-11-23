@@ -6,7 +6,7 @@ import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { readWorkLocations, type WorkLocations } from './work-locations'
 
-// Widget 'fla-continue-elsewhere' (rec#147): carrying this FLA's work into
+// Widget 'fla-continue-elsewhere' (rec issue 147): carrying this FLA's work into
 // another client. One click copies the opening prompt; the person pastes it as
 // the first message there. It is deliberately not the same control as 「回到原
 // 会话」 next to a segment: this one starts a NEW session and leaves the

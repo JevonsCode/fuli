@@ -8,7 +8,7 @@ import { t } from '@/i18n'
 import FlaSessionActions from './FlaSessionActions.vue'
 import { modelReasonText, modelText, readWorkLocations, type WorkLocations, type WorkRow, type WorkSegment } from './work-locations'
 
-// Widget 'fla-work-locations' (rec#147): where this FLA has worked — which
+// Widget 'fla-work-locations' (rec issue 147): where this FLA has worked — which
 // clients, which models, how many segments of work each — and, per segment,
 // the way back to the session that produced it.
 //

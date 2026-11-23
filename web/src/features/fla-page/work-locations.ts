@@ -4,7 +4,7 @@ import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 
 // Where one FLA worked: which clients, which models, how many segments of work
-// each (rec#147). The server counts the conversation session records FULI
+// each (rec issue 147). The server counts the conversation session records FULI
 // already keeps and says how far the count reaches
 // (GET /api/project-agent-work-locations, src/graphiti/agent-work-locations.js).
 //
