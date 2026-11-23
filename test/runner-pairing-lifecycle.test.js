@@ -184,7 +184,7 @@ test('fuli runner leave ends the pairing and deletes what is kept here, with --f
   assert.equal(result.exitCode, 0);
   assert.match(lines.join('\n'), /keep their FULI MCP entry.*`fuli uninstall` removes those entries/s);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false);
-  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted\./);
+  assert.match(lines.join('\n'), /Left Host A\. The pairing, the answers kept here, the outbox, the executor decisions made here and the routes to it are deleted\./);
   assert.match(lines.join('\n'), /fuli runner revoke [0-9a-f]{16}/);
   const usage = [];
   await runRunnerCommand(['--help'], { write: (line) => usage.push(line) });

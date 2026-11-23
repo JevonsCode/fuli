@@ -1,0 +1,42 @@
+import { routeOfCall } from './call-routes.js';
+import { failure, TASK_ENTRY_TOOLS, taskTokenOf } from './offline-calls.js';
+import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
+
+// What the follower's MCP server (runner-mcp.js) asks the routes for each call
+// (docs/runner-roles-design.md §4). With `global → host` and `default → host` —
+// what a runner of an earlier version becomes — every call belongs to the
+// paired host and nothing here changes what happens. It refuses rather than
+// writing one computer's scope into another's:
+//
+// - a scope this computer owns, while it has no FULI of its own to answer it
+//   from (owning scopes here is the next step; `fuli routes local` refuses it
+//   until then, so only a hand-edited store gets here);
+// - a scope routed to a host this computer is no longer paired with;
+// - a call under a task another computer entered, which this computer can no
+//   longer reach — its checkpoint must go back to the computer that entered it.
+//
+// input: the call's arguments (through fuli_call, its input).
+export function routeRefusal({ routes, store, input }) {
+  const { scope, owner, byTask } = routeOfCall(routes, input ?? {});
+  if (owner === LOCAL_OWNER) {
+    return failure('scope_owned_here', `${scope} is owned by this computer, which has no FULI of its own yet to answer it `
+      + `from. Point it at the host again with \`fuli routes follow ${scope} <host>\`; \`fuli routes list\` shows every route.`);
+  }
+  const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
+  // No pairing at all: the follower already answers that (runner_not_paired).
+  if (!paired || ownerFingerprint(owner) === paired) return null;
+  return byTask
+    ? failure('task_owner_not_paired', 'This task was entered on a computer this one is no longer paired with, so the '
+      + 'call cannot go back to it. Enter the task again with get_collaboration_preferences and use the token it gives.')
+    : failure('scope_owner_not_paired', `${scope} belongs to a computer this one is no longer paired with. `
+      + `\`fuli routes list\` shows it; \`fuli routes follow ${scope} <host>\` points it at the host paired now.`);
+}
+
+// A task entry the host answered: its token is that host's, so whatever the
+// routes become, the calls and the checkpoint of that task go back there.
+export function rememberTaskOwner({ routes, store, tool, answer }) {
+  if (!TASK_ENTRY_TOOLS.has(tool) || answer?.isError) return;
+  const token = taskTokenOf(answer);
+  const fingerprint = store.host()?.fingerprint;
+  if (token && fingerprint) routes.rememberTaskOwner(token, hostOwner(fingerprint));
+}

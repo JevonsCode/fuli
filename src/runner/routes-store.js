@@ -128,6 +128,18 @@ export class RoutesStore {
     return this.db.prepare('SELECT owner FROM task_owners WHERE token = ?').get(token)?.owner ?? null;
   }
 
+  // `fuli runner join`: 「follow everything」 on the host just joined. `global`
+  // and `default` go to it, and so does every scope that followed another
+  // host, which this computer can no longer reach; a scope this computer owns
+  // stays its own.
+  joined(owner) {
+    immediateTransaction(this.db, () => {
+      this.db.prepare(`UPDATE routes SET owner = ?, updated_at = ? WHERE owner <> ?`)
+        .run(owner, new Date(this.now()).toISOString(), LOCAL_OWNER);
+      for (const scope of [GLOBAL_SCOPE, DEFAULT_SCOPE]) this.set(scope, owner);
+    });
+  }
+
   #missing() {
     return !this.database && this.path !== ':memory:' && !existsSync(this.path);
   }

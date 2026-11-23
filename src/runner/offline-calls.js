@@ -15,7 +15,7 @@ import { sha256Bytes } from '../security/digest.js';
 // earlier task (its token, receipt, checkpoint duty, recall) is not its own.
 // A runner that is not paired, or whose host revoked it, answers nothing from cache.
 const OFFLINE_TOKEN_PREFIX = 'runner-offline-';
-const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
+export const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 export const QUEUED_TOOLS = new Set(['checkpoint_task_knowledge']);
 // Continuing an earlier conversation: the host holds it, so what this computer
 // can offer offline is the last recovery context it read for that conversation
@@ -51,6 +51,14 @@ export function effectiveCall(name, args) {
 // Enforce this on the runner as well as the host, including with an older host.
 export function hostOnlyAnswer(tool) {
   return tool === DIAGNOSTIC_EVENTS_TOOL ? failure('local_user_only', HOST_DIAGNOSTICS_ONLY) : null;
+}
+
+// The task token a task entry answered with, or null: which task the calls
+// that follow belong to (call-routes.js remembers whose task it is).
+export function taskTokenOf(result) {
+  const value = resultValue(result);
+  const token = value?.taskContextToken ?? value?.task_context_token;
+  return typeof token === 'string' && token ? token : null;
 }
 
 // Keeps an answer the host gave, for showing while it is away.

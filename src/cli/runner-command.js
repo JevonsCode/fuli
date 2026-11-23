@@ -5,6 +5,7 @@ import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-id
 import { createHostConnection } from '../runner/host-connection.js';
 import { joinHost } from '../runner/join.js';
 import { deliverOutbox } from '../runner/outbox-delivery.js';
+import { ROUTES_FILE } from '../runner/routes-store.js';
 import { ROUTING_LEDGER_FILE } from '../runner/routing-ledger.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { mcpSessionsLine } from '../runner/protocol.js';
@@ -174,13 +175,15 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync } = {}
   try {
     remove(file, { force: true });
     remove(join(dataDir, ROUTING_LEDGER_FILE), { force: true });
+    // Its routes named that host: with the pairing gone, this computer owns everything it has again.
+    remove(join(dataDir, ROUTES_FILE), { force: true });
   } catch {
     // A client's FULI process has it open (Windows): the store is empty now, and the marker says the
     // pairing ended, so this computer is not taken for a follower while the file stays.
     writeFileSync(join(dataDir, LEFT_MARKER), `${new Date().toISOString()}\n`);
   }
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
-  write(`Left ${host.name}. The pairing, the answers kept here, the outbox and the executor decisions made here are deleted.`);
+  write(`Left ${host.name}. The pairing, the answers kept here, the outbox, the executor decisions made here and the routes to it are deleted.`);
   write(`On ${host.name}, \`fuli runner revoke ${identity.fingerprint.slice(0, 16)}\` removes this computer from its list.`);
   write('The clients set up here keep their FULI MCP entry (it now answers that this computer is not paired); '
     + '`fuli uninstall` removes those entries.');

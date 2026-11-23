@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import { runRoutesCommand } from '../src/cli/routes-command.js';
+import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, followsAnything, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -118,4 +119,28 @@ test('fuli routes follow on a computer paired with no host says so', async (t) =
   const lines = [];
   await runRoutesCommand(['list', '--data-dir', dataDir], { write: (line) => lines.push(line) });
   assert.match(lines.join('\n'), /follows no other computer/);
+});
+
+test('joining a host is 「follow everything」 there; a scope this computer owns stays its own', () => {
+  const routes = new RoutesStore(':memory:');
+  routes.set('global', hostOwner('a'.repeat(64)));
+  routes.set('project:example.test/team/widgets', hostOwner('a'.repeat(64)));
+  routes.set('project:example.test/team/notes', LOCAL_OWNER);
+  routes.joined(hostOwner('b'.repeat(64)));
+  assert.deepEqual(routes.all().map((row) => [row.scope, row.owner]), [
+    ['global', hostOwner('b'.repeat(64))], ['default', hostOwner('b'.repeat(64))],
+    ['project:example.test/team/notes', LOCAL_OWNER], ['project:example.test/team/widgets', hostOwner('b'.repeat(64))]]);
+  routes.close();
+});
+
+test('leaving the host deletes the routes to it, so this computer owns everything it has again', async (t) => {
+  const dataDir = dataDirectory(t);
+  openRoutes(dataDir).close();
+  assert.equal(followsAnything(dataDir), true);
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  store.delivered('waiting-1');
+  store.close();
+  await runRunnerCommand(['leave', '--data-dir', dataDir], { write: () => {} });
+  assert.equal(existsSync(path.join(dataDir, 'runner', 'routes.sqlite')), false);
+  assert.equal(followsAnything(dataDir), false);
 });
