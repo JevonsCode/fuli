@@ -114,24 +114,37 @@ export function inlineEntryFit(limit, length, { taskPrompt = null } = {}) {
     const [level, fixed, order] = base ? [base, kept, ranked] : [bounded.at(-1), [], kept.length ? kept : ranked];
     const richer = bounded.slice(0, bounded.indexOf(level) + 1);
     const selection = count => new Set([...fixed, ...order.slice(0, count)]);
-    // Once the fixed set and the best-ranked few are in, naming every other
-    // preference comes before spelling more of them out (rec#137): the model
-    // then knows what exists and expands only what this task may touch. A line
-    // each where that fits, the keys alone where it does not, and a count
-    // alone where even those do not. The reserve keeps the index from taking
-    // the few items this task's own scene asked for (rec#111).
-    // Nothing is reserved where not even the hard rules fit: there `order` is
-    // the hard rules themselves, and reserving one of those would leave no
-    // room to name the rest at all.
-    const reserved = base ? Math.min(RESERVED_RANKED, order.length) : 0;
-    const indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail));
-    // The largest prefix of `order` that fits; at a detail level that may be all of it.
-    let low = 0;
-    let high = order.length;
-    while (low < high) {
-      const middle = Math.ceil((low + high) / 2);
-      if (fitsAt(level, selection(middle), indexed)) low = middle;
-      else high = middle - 1;
+    // The largest prefix of `order` that fits with the given index tier; at a
+    // detail level that may be all of it.
+    const largestPrefix = index => {
+      let low = 0;
+      let high = order.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (fitsAt(level, selection(middle), index)) low = middle;
+        else high = middle - 1;
+      }
+      return low;
+    };
+    // Naming every other preference comes before spelling more of them out
+    // (rec#137): the model then knows what exists and reads only what this
+    // task may touch. A line each where that fits, the keys alone where it
+    // does not, a count where even those do not — and never at the cost of a
+    // hard rule's body (D-69):
+    // - every hard rule fits (base): the index is chosen beside them and the
+    //   best-ranked few this task's own scene asked for (rec#111), then the
+    //   ranked rest fills what is left;
+    // - they do not all fit: `order` is the hard rules themselves, so their
+    //   prefix is settled without any index first, and an index tier is taken
+    //   only in the room that prefix leaves.
+    let indexed, low;
+    if (base) {
+      const reserved = Math.min(RESERVED_RANKED, order.length);
+      indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail));
+      low = largestPrefix(indexed);
+    } else {
+      low = largestPrefix(false);
+      indexed = indexDetail(detail => fitsAt(level, selection(low), detail));
     }
     const frame = candidate => low === order.length ? candidate
       : withPreferences(candidate, selection(low), preferences.length, indexed);

@@ -209,6 +209,28 @@ test('hard rules alone over the inline limit are trimmed too: hard rules first, 
   assert.equal(frame.checkpoint_required, true);
 });
 
+// Review of #1070: where the hard rules do not all fit, their prefix was
+// searched with the index already in, so the index's bytes came out of hard
+// rule bodies (35 hard rules: 11 listed on main, 9 with the index). The index
+// only takes the room the hard-rule prefix leaves. These counts are what the
+// same synthetic entries list with no index at all.
+test('the index never costs a hard rule its full body, however many hard rules there are', async () => {
+  const hardRule = index => syntheticPreference(`hard-${index + 1}`,
+    `SYNTHETIC_HARD_${index + 1}: ${'Run the full suite before every commit. '.repeat(10)}`, { constraint: 'hard' }, 'judgment_preference');
+  const cases = [
+    ['35 hard rules only', Array.from({ length: 35 }, (_, index) => hardRule(index)), 11],
+    ['60 preferences, 30 of them hard', syntheticPreferences(60, { hardEvery: 2 }), 11],
+    ['80 preferences, 26 of them hard', syntheticPreferences(80, { hardEvery: 3 }), 11]
+  ];
+  for (const [name, items, expected] of cases) {
+    const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION })));
+    const hard = keys(items.filter(item => item.preference_qualifiers?.constraint === 'hard'));
+    const listed = keys(frame.effective_preferences).filter(key => hard.includes(key));
+    assert.equal(listed.length, expected, `${name}: hard rules listed in full`);
+    assert.equal(keys(frame.effective_preferences).length, listed.length, `${name}: nothing before a hard rule`);
+  }
+});
+
 // A delta repeats the label every turn, so it asks for one read of what this
 // conversation does not hold yet, never a reread per turn.
 test('the omitted-hard-rules label asks for one read, only when the conversation lacks them', () => {
