@@ -119,6 +119,9 @@ onBeforeUnmount(() => { unmounted = true })
     <GrowthLoading v-if="reading" variant="compact" :label="t('firstRun.clients.reading')" />
     <UiNotice v-else-if="readFailed || observation?.available === false" tone="warning" data-first-run-clients-unreadable>
       {{ t('firstRun.clients.unreadable') }}
+      <template #actions>
+        <Button size="sm" variant="outline" data-first-run-clients-retry @click="read()">{{ t('common.actions.retry') }}</Button>
+      </template>
     </UiNotice>
     <p v-else-if="!clients.length" class="first-run-note first-run-none" data-first-run-none>
       {{ t('firstRun.clients.none') }}

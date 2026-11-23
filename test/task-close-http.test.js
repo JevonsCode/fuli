@@ -78,8 +78,8 @@ test('without the person\'s words, or with Relay your decisions off, nothing clo
   off.setCategory('decisions', false);
   const refused = await post(port, BODY, { headers: relayedCall(WORDS), delegation: off });
   assert.equal(refused.body.code, 'delegation_category_off');
-  assert.match(refused.body.error, /设置 › AI 权限 › 转达你的决定/);
-  assert.match(refused.body.error, /Settings › AI permissions › Relay your decisions/);
+  assert.match(refused.body.error, /设置 › AI 能做什么 › 转达你的决定/);
+  assert.match(refused.body.error, /Settings › What AI may do › Relay your decisions/);
   assert.deepEqual(calls, []);
 });
 
@@ -122,5 +122,5 @@ test('closing as the person is a relayed decision only the console reaches', () 
     assert.deepEqual(writing.filter((path) => modules.has(path)), [], entryPoint);
   }
   // Every permission's refusal names its own switch.
-  for (const { id } of DELEGATION_CATEGORIES) assert.match(categoryOffRefusal(id).message, /AI permissions › \S/);
+  for (const { id } of DELEGATION_CATEGORIES) assert.match(categoryOffRefusal(id).message, /What AI may do › \S/);
 });

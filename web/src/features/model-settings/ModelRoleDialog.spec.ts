@@ -128,3 +128,47 @@ describe('the model picker in the role dialog', () => {
       'https://dashscope.aliyuncs.com/compatible-mode/v1千问（阿里云百炼）', 'https://api.deepseek.com/v1DeepSeek', 'https://api.openai.com/v1OpenAI'])
   })
 })
+
+describe('what the advanced part asks for, chosen rather than typed', () => {
+  beforeEach(() => {
+    api.getJson.mockReset().mockResolvedValue({ saved: [] })
+    api.putJson.mockReset()
+    api.postJson.mockReset().mockResolvedValue({ models: [], source: 'models' })
+  })
+
+  async function openAdvanced(wrapper: ReturnType<typeof mountDialog>) {
+    await wrapper.get('[data-model-advanced] button').trigger('click')
+    await flushPromises()
+  }
+
+  it('lists the task types this role can use by name and saves the ticked ones', async () => {
+    const tonborg = payload('tonborg', 'openai_chat', 'synthetic-old')
+    tonborg.operations = { tonborg: ['knowledge_review', 'executor_routing', 'task_acceptance'] }
+    tonborg.roles[0]!.allowedOperations = ['knowledge_review']
+    api.putJson.mockResolvedValue(tonborg)
+    const wrapper = mount(ModelRoleDialog, { attachTo: document.body, props: { role: 'tonborg', payload: tonborg, projects: [], projectsLoaded: true },
+      global: { stubs: { OptionSelect: optionSelectStubs.OptionSelect } } })
+    mounted.push(wrapper)
+    await flushPromises()
+    await openAdvanced(wrapper)
+    const rows = wrapper.findAll('[data-model-operation]')
+    expect(rows.map(row => row.text())).toEqual(['确认知识', '选谁来执行', '验收任务'])
+    expect(wrapper.find('[data-model-operations] input[type="text"]').exists()).toBe(false)
+    expect(rows.map(row => row.get('[role="checkbox"]').attributes('aria-checked'))).toEqual(['true', 'false', 'false'])
+    await rows[2]!.get('[role="checkbox"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.putJson.mock.calls[0][1].settings.allowedOperations).toEqual(['knowledge_review', 'task_acceptance'])
+  })
+
+  it('「有单价才能设费用上限」 comes with 填单价, which turns prices on and starts at the first price', async () => {
+    const wrapper = mountDialog('jefa')
+    await flushPromises()
+    await openAdvanced(wrapper)
+    expect(wrapper.find('#model-role-input-price').exists()).toBe(false)
+    await wrapper.get('[data-model-add-prices]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('#model-role-input-price').element)
+    expect(wrapper.find('[data-model-add-prices]').exists()).toBe(false)
+  })
+})

@@ -26,6 +26,9 @@ import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 // a cap of its own, and a session the host refuses is said as such, never
 // taken for the host being away.
 
+// A task entered on the host: its token names the host that issued it (task-issuer.js).
+const ISSUED_BY_HOST = /^fuli-from-[0-9a-f]{16}\.host-token$/;
+
 test('starting and stopping many MCP processes of a runner leaves no session behind on the host', async (t) => {
   const pair = await pairedRunner(t);
   // More than the 16 sessions a runner was once held to; each one is closed before the next starts.
@@ -83,7 +86,7 @@ test('a session the host refuses is said with its reason, not answered as if the
   // The first process closing frees its session at once, so the next call reaches the host.
   await first.stop();
   const again = await second.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'next' } });
-  assert.equal(again.structuredContent.taskContextToken, 'host-token');
+  assert.match(again.structuredContent.taskContextToken, ISSUED_BY_HOST);
   await second.stop();
 });
 
@@ -99,7 +102,7 @@ test('a new client on a runner resumes a conversation after many earlier clients
 
   const fresh = await pair.serve();
   const entry = await fresh.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'continue' } });
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the task was entered on the host, not offline');
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the task was entered on the host, not offline');
   const resumed = await fresh.client.callTool({ name: 'fuli_call', arguments: { toolName: 'resume_agent_conversation',
     input: { taskContextToken: 'host-token', conversationId: 'conversation-1' } } });
 
@@ -116,7 +119,7 @@ test('a connection lost in the middle of a call leaves one session on the host, 
 
   const entry = await runner.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'again' } });
 
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the call was made again on a fresh session');
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the call was made again on a fresh session');
   assert.equal((await pair.sessions()).owned, 1, 'the session it stopped using was ended');
   await runner.stop();
   assert.equal((await pair.sessions()).owned, 0);
@@ -158,7 +161,7 @@ test('one runner cannot take every session, and the refusal says whose they are'
   // The other computer still gets in.
   const other = await pair.serve({ on: 1 });
   const entry = await other.client.callTool({ name: 'get_collaboration_preferences', arguments: { taskPrompt: 'mine' } });
-  assert.equal(entry.structuredContent.taskContextToken, 'host-token', 'the other runner always has room');
+  assert.match(entry.structuredContent.taskContextToken, ISSUED_BY_HOST, 'the other runner always has room');
   assert.deepEqual(await pair.sessions(1), { owned: 1, open: 4, max: 4 });
 
   // With the host full and none of them this computer's, the refusal says so instead of blaming it.

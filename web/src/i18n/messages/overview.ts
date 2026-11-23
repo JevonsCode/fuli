@@ -14,13 +14,14 @@ export const overviewMessages = {
         delegated_change: 'FLA 替你改了设置：{reason}',
         model_failing: '{role} 的模型没回应',
         update_available: '有新版本 v{version}',
-        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它：在本机运行 fuli runner revoke {fingerprint}',
+        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它就撤销。',
       },
       actions: {
         topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', retrospective_ready: '去确认', tonborg_confirmed: '查看',
         fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
         runner_paired: '查看接入',
       },
+      runner: { revoke: '撤销', confirmRevoke: '确认撤销', revoking: '正在撤销', revoked: '已撤销，这台电脑不能再用你的 FULI。' },
     },
     lists: {
       search: { running: '搜索标题和目标', done: '搜索标题和结果', notices: '搜索名字、项目和任务' },
@@ -85,13 +86,14 @@ export const overviewMessages = {
         delegated_change: 'An FLA changed a setting for you: {reason}',
         model_failing: 'The {role} model is not answering',
         update_available: 'Version v{version} is out',
-        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Run fuli runner revoke {fingerprint} here',
+        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Revoke it.',
       },
       actions: {
         topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', retrospective_ready: 'Confirm', tonborg_confirmed: 'View',
         fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
         runner_paired: 'View clients',
       },
+      runner: { revoke: 'Revoke', confirmRevoke: 'Confirm revoke', revoking: 'Revoking', revoked: 'Revoked: this computer can no longer use your FULI.' },
     },
     lists: {
       search: { running: 'Search titles and goals', done: 'Search titles and results', notices: 'Search names, projects and tasks' },

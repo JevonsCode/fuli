@@ -15,6 +15,7 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
     lan: null,
     json: false,
     allowProviderDowngrade: false,
+    endOrphanedServices: false,
     automatic: false
   });
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--open']), /Unknown stop option/);
@@ -23,6 +24,9 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
   assert.throws(() => parseLocalRuntimeOptions('restart', ['--automatic']), /Unknown restart option/);
   assert.equal(parseLocalRuntimeOptions('start', ['--allow-provider-downgrade']).allowProviderDowngrade, true);
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--allow-provider-downgrade']), /Unknown stop option/);
+  // Ending a graph service FULI lost track of is the person's choice, made at a start (orphan-services.js).
+  assert.equal(parseLocalRuntimeOptions('start', ['--end-orphaned-services']).endOrphanedServices, true);
+  assert.throws(() => parseLocalRuntimeOptions('restart', ['--end-orphaned-services']), /Unknown restart option/);
   assert.equal(parseLocalRuntimeOptions('start', ['--lan']).lan, true);
   assert.equal(parseLocalRuntimeOptions('restart', ['--lan']).lan, true);
   assert.equal(parseLocalRuntimeOptions('restart', ['--no-lan']).lan, false);

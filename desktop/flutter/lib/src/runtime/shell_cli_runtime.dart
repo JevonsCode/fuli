@@ -61,6 +61,10 @@ class ShellCliRuntime implements FuliRuntime {
   Future<RuntimeReport> start({StageListener? onStage}) => _command('fuli start', onStage: onStage);
 
   @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) =>
+      _command('fuli start --end-orphaned-services', onStage: onStage);
+
+  @override
   Future<RuntimeReport> stop() => _command('fuli stop');
 
   // The CLI has no port change; on macOS a reserved port is not a known problem.

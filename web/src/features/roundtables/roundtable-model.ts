@@ -1,3 +1,4 @@
+import { t } from '@/i18n'
 import type { RoundtableMessage, RoundtablePerson, RoundtableThread, RoundtableThreadSummary } from './roundtable-api'
 
 /** Statuses after which an ask will not be answered by this delivery. */
@@ -112,9 +113,30 @@ export function postRecipients(thread: Pick<RoundtableThread, 'messages' | 'subs
   return [...local].map(([agentId, name]) => ({ agentId, name }))
 }
 
-/** A chat room's name: its title, or for an untitled room the members' names. */
+// A title the thread took from text a host or FULI injected into an Agent's
+// prompt, not words anyone wrote: a leading tag (<system-reminder>…), FULI's own
+// markers (FULI_CHECKPOINT_REQUIRED: …) or a hook's wrapper. The same rule keeps
+// them out of conversation titles (src/graphiti/agent-conversations.js). The
+// stored subject stays; only what the list and the heading show changes.
+const INJECTED_TITLE = /^\s*(?:<|FULI_[A-Z_]+:|UserPromptSubmit hook additional context)/u
+
+/** Whether a stored title is injected prompt text rather than anyone's words. */
+export const isInjectedTitle = (title: string | null | undefined) => INJECTED_TITLE.test(title ?? '')
+
+const namesOf = (people: readonly { name: string | null }[]) =>
+  [...new Set(people.map(person => person.name?.trim()).filter(Boolean))].join('、')
+
+/** A thread's name in the list and its heading: its subject, or for an injected one a plain line in the console's language. */
+export function threadName(thread: { subject: string; participants?: readonly { name: string | null }[] }) {
+  if (!isInjectedTitle(thread.subject)) return thread.subject
+  const names = namesOf(thread.participants ?? [])
+  return names ? t('roundtable.list.generatedSubject', { names }) : t('roundtable.list.agentConversation')
+}
+
+/** A chat room's name: its title, or for an untitled room (or one titled by injected text) the members' names. */
 export function chatRoomName(room: { title: string | null; members: { name: string | null; address: string }[] }) {
-  return room.title?.trim() || room.members.map(member => member.name ?? member.address).join(' · ')
+  const title = room.title?.trim()
+  return (title && !isInjectedTitle(title) ? title : '') || room.members.map(member => member.name ?? member.address).join(' · ')
 }
 
 /** How a conversation in the list delivers a post: it wakes the Agent now, or waits on the board for its next work. */

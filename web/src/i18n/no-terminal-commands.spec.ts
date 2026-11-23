@@ -32,10 +32,6 @@ const ALLOWED = new Map<string, string>([
   ['cli-path.ts:zh-CN.switch', 'names the setting; the step is a switch'],
   ['cli-path.ts:zh-CN.saved', 'names the setting; the step is a switch'],
   ['cli-path.ts:en-US.title', 'names the setting; the step is a switch'],
-  // A computer that paired as a runner: the console has no runner page, so the
-  // notice names the one way to revoke it (decided 2026-11-18).
-  ['overview.ts:zh-CN.notices.kinds.runner_paired', 'revoking a runner has no console control yet'],
-  ['overview.ts:en-US.notices.kinds.runner_paired', 'revoking a runner has no console control yet'],
   // graph/23: the graph has no console export or restore yet, and an undo is
   // refused once a changed project changed again. While the step waits the
   // graph is read-only, so the page offers the export command with a copy
