@@ -1,6 +1,10 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
+import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
+import { followStartupStages, startupStageMarker, wantsStageMarkers } from '../local-runtime/startup-stage.js';
+import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
@@ -17,7 +21,7 @@ import { findNpmCopies } from './npm-copies.js';
 // and the macOS app (macos-controller.js) only differ in how they find the
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port']);
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -58,11 +62,19 @@ export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
-  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold
+  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
+  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
-  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
-  const inspect = async () => {
+  // The step running now, reported as it starts and kept for a failure, so the
+  // client says which step did not finish instead of only that a start failed.
+  let stage = null;
+  const atStage = (next, bound) => { stage = next; onStage(next, bound); };
+  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir], atStage);
+  // Only the look before a start is a step of it; the checks after a start
+  // (did it come up, what runs after a failure) report none.
+  const inspect = async ({ step = true } = {}) => {
+    if (step) atStage('checking');
     const result = await invoke(['status', '--json']);
     if (![0, 1].includes(result.code)) throw cliError(result);
     let state;
@@ -75,6 +87,26 @@ export async function runTrayAction(action, context, {
     const result = await invoke(args);
     if (result.code !== 0) throw cliError(result);
   };
+  // The start's commands finished; FULI must now run. When it does not, no step
+  // of the start is named: each one reported finishing.
+  const requireRunning = async () => {
+    const ready = await inspect({ step: false });
+    if (ready.status !== 'running') {
+      stage = null;
+      throw new Error('启动命令都结束了，但 FULI 没有进入运行状态。 / The start finished, but FULI did not reach its running state.');
+    }
+  };
+  // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
+  // check passes (neo4j-lifecycle-lock.js), then this is an ordinary start.
+  if (action === 'release-lock-start') {
+    const released = await releaseLock({ paths: resolveSetupPaths({ dataDir: context.dataDir }) });
+    if (!released.released) {
+      const state = await inspect({ step: false }).catch(() => null);
+      return { ok: false, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown',
+        state, error: lockReleaseRefusal(released), lockRelease: released };
+    }
+    action = 'start';
+  }
   let starting = false;
   let notice = null;
   let replaced = null;
@@ -95,8 +127,7 @@ export async function runTrayAction(action, context, {
       notice = `已改用端口 ${switched.port}（原 ${switched.previousPort}）。已打开的 Agent 会话里的 Fuli 链接仍指向旧地址，重开会话即可更新。`
         + ` / Fuli now uses port ${switched.port} (was ${switched.previousPort}). Fuli links in open Agent sessions point to the old address until those sessions restart.`;
       await command([before.status === 'running' ? 'restart' : 'start']);
-      const ready = await inspect();
-      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+      await requireRunning();
     }
     if (action === 'start' || action === 'start-open') {
       starting = true;
@@ -104,6 +135,7 @@ export async function runTrayAction(action, context, {
         // A runner (docs/runner.md) starts only its console entry; it never sets up a FULI of its own.
         if ((await inspect()).status !== 'running') await command(['start']);
       } else if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+        atStage('first_setup');
         const setup = await invoke(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
         // A setup that failed names its error on stderr. One that finished but
         // reports "partial" exits 1 silently: right after the first start its
@@ -120,31 +152,39 @@ export async function runTrayAction(action, context, {
         if (other && !hold) { replaced = other; await command(['restart']); }
         else if (before.status !== 'running') await command(['start']);
       }
-      const ready = await inspect();
-      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+      await requireRunning();
       // Clients still pointed at an npm copy are pointed at the app's; a failure here never fails the start.
       if (hold) notice = adoptionHoldNotice(hold);
       else adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies, dataUse }).catch(() => null);
       // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
       try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
-    if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
+    if (['open', 'start-open', 'change-port'].includes(action)) {
+      atStage('console_open');
+      await command(['open']);
+    }
     if (action === 'stop') await command(['stop']);
-    const state = await inspect();
+    const state = await inspect({ step: false });
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {
       throw new Error('Fuli did not confirm that the selected runtime stopped.');
     }
     return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
       ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}) };
   } catch (error) {
+    // The step that did not finish, read before the check below moves on, and
+    // what the start said it ran into (startup-failure-line.js), for the client
+    // to word its own next step.
+    const failedAt = stage;
+    const failure = error?.startupFailure ?? null;
     // A failed start can already own processes. Keep their CLI state and report
     // what is actually running; never kill by process name or delete the data.
-    const state = await inspect().catch(() => null);
+    const state = await inspect({ step: false }).catch(() => null);
     // A start that failed on a port Windows reserves offers the port change.
     const blocked = starting && await portBlocked(context).catch(() => false);
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
+      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}),
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }
@@ -160,17 +200,36 @@ function adoptionHoldNotice(hold) {
 
 function cliError(result) {
   // CLI error details are written to stderr. Do not copy setup/start stdout:
-  // LAN output can contain a temporary access code.
-  return new Error(String(result.stderr ?? '').trim().slice(-4000)
-    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.');
+  // LAN output can contain a temporary access code. A reason a client can act
+  // on comes on a line of its own (startup-failure-line.js) and is kept apart.
+  const { failure, stderr } = readStartupFailure(result.stderr);
+  return Object.assign(new Error(stderr.trim().slice(-4000)
+    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.'),
+  failure ? { startupFailure: failure } : {});
 }
 
-function executeCli(context, args) {
+// The CLI writes its startup phase as a marker line (startup-stage.js) because
+// this client renders the phase itself; the lines are read as they arrive so
+// the window says what the start is doing while it is still doing it.
+function executeCli(context, args, onStage = () => {}) {
   return new Promise((resolveRun) => {
-    execFile(context.nodePath, [context.cliPath, ...args], {
+    const child = execFile(context.nodePath, [context.cliPath, ...args], {
+      // The CLI writes step lines only when this controller was asked for them (it inherits the ask).
       cwd: context.packageRoot, env: process.env, windowsHide: true,
       encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024
     }, (error, stdout, stderr) => resolveRun({ code: error ? error.code ?? 1 : 0, stdout,
       stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '') }));
+    followStartupStages(child.stdout, onStage);
   });
+}
+
+// How the tray and macOS entry points pass the phase on to their client: one
+// JSON line per phase as it starts, before the single result line the client
+// reads at the end (desktop/flutter/lib/src/runtime/runtime_output.dart).
+// Only a caller that asks for them (FULI_STAGE_MARKERS=1) gets them: the
+// updaters, acceptance runs and smoke scripts read the whole output as the
+// one result line, and must keep getting exactly that.
+export function stageReporter(env = process.env, write = (line) => process.stdout.write(line)) {
+  if (!wantsStageMarkers(env)) return () => {};
+  return (stage, bound) => write(startupStageMarker(stage, bound) + '\n');
 }

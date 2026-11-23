@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 
 import { checkLocalConsoleHealth } from '../local-runtime/console-health.js';
-import { isProcessAlive } from '../local-runtime/processes.js';
+import { isOwnProcessRunning } from '../local-runtime/processes.js';
 import { RUNNER_HOOK_CONTEXT, runnerRuntimeConfig } from '../runner/runner-mode.js';
 
 // A thin lifecycle hook entry (rec#132 step 1): the hook process imports only
@@ -149,7 +149,7 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
 
 // { run: 'there', result } | { run: 'here', reason } | { run: 'lost', error }
 export async function forwardLifecycleEvent({ client, argv, env, cwd, stdin }, { deadlineAt, now = Date.now,
-  readText = readTextFile, isAlive = isProcessAlive, healthy = checkLocalConsoleHealth,
+  readText = readTextFile, isAlive = isOwnProcessRunning, healthy = checkLocalConsoleHealth,
   budgets: { health = HEALTH_BUDGET_MS, connect = CONNECT_BUDGET_MS, headers = HEADERS_BUDGET_MS } = {} } = {}) {
   const recorded = recordedConsole(argv, cwd, { readText, isAlive });
   if (!recorded) return { run: 'here', reason: 'no_console' };
