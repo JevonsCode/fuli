@@ -8,6 +8,7 @@ import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
+import { signedReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 
 import { validationError } from '../app/application-error.js';
@@ -140,8 +141,11 @@ export async function beginTaskFromPreferences(application, preferences, {
   // (delivery-cache counters reset on compaction, so they cannot tell).
   const opensConversation = conversation.status === 'saved' && conversation.recovered_from === null;
   const delivered = resumed ? null : recordDelivered(application, task, preferences, { sourceApplication, clientModel, opensConversation });
-  const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt,
-    opensConversation ? delivered : null) : null;
+  // The whole receipt line unless FULI knows this session already had its
+  // conversation and nothing new is on the line (identity-receipt.js).
+  const laterTurn = conversation.status === 'saved' && Boolean(conversation.recovered_from) && !continuation.show;
+  const receipt = preferences.agent_receipt ? signedReceipt(await entryAgentReceipt(application, task, preferences.agent_receipt,
+    opensConversation ? delivered : null), { firstInConversation: !laterTurn }) : null;
   return withPreferenceScope({
     // Only a real continuation travels with the entry. A turn FULI could not
     // record already says so in conversation.status and its guidance, so
