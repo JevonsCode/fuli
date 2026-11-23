@@ -58,6 +58,6 @@ async function unlock(paths, options, write, dependencies) {
     write('已解除这把锁，可以启动 FULI 了。 / The lock is released; FULI can start now.');
     return { status: 'released', exitCode: 0 };
   }
-  write(lockReleaseRefusal(result));
-  return { status: 'kept', reason: result.reason, exitCode: 1 };
+  // Why it kept the lock, in words and as the reason line a desktop client reads (startup-failure-line.js).
+  throw Object.assign(new Error(lockReleaseRefusal(result)), { startupFailure: { code: 'lock_kept', ...result } });
 }

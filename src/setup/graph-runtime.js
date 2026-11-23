@@ -61,7 +61,7 @@ export {
   selectDockerEnvironment
 } from './container-runtime.js';
 import { CONSOLE_HEALTH_TIMEOUT_MS, checkLocalConsoleHealth } from '../local-runtime/console-health.js';
-import { isProcessAlive, stopProcess, waitForExit } from '../local-runtime/processes.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/processes.js';
 import { consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from '../local-runtime/unresponsive-console.js';
 import { isManagedWorkspace, PROVIDER_READY_TIMEOUT_MS, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
 import { parseProviderEnv } from './provider-env.js';
@@ -674,7 +674,8 @@ function graphDependencies(overrides) {
       onStage: options.onStage
     }).start(),
     spawnWebRuntime,
-    isProcessAlive,
+    // Consoles are FULI's own processes (processes.js).
+    isProcessAlive: isOwnProcessRunning,
     stopProcess,
     webHealth: checkLocalConsoleHealth,
     consolePortProblem: (port, host) => reservedPortProblem(port, { host }),

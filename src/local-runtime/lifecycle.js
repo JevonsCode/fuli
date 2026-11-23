@@ -15,7 +15,7 @@ import {
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions, parseSemanticVersion } from '../semantic-version.js';
 import { checkLocalConsoleHealth } from './console-health.js';
-import { isProcessAlive, stopProcess, waitForExit } from './processes.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from './processes.js';
 import { CONSOLE_STOP_LIMITS, consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from './unresponsive-console.js';
 import {
   acquireConsoleStartLock,
@@ -315,7 +315,8 @@ function lifecycleDependencies(overrides) {
       ? readAdaptiveRuntimeSettings(path)
       : { enabled: false },
     readAdaptiveState: (path) => path ? readAdaptiveRuntimeState(path) : null,
-    isProcessAlive,
+    // The recorded console is FULI's own process (processes.js).
+    isProcessAlive: isOwnProcessRunning,
     stopProcess,
     waitForExit,
     consoleProcessOwned,
