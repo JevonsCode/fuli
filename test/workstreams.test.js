@@ -187,12 +187,11 @@ test('an explicit read of the team says how far each line got; task entry asks f
     return input.agentId === 'fla-ember'
       ? [{ task_id: 'task-1', title: '改头图', status: 'running', updated_at: '2026-11-23T02:00:00.000Z' }] : [];
   };
-  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
+  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT, withProgress: true });
   assert.deepEqual(reads.sort(), ['fla-ember', 'fla-orin']);
   // A roster read that shows no progress pays for none of it.
   reads.length = 0;
-  const roster = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT,
-    withProgress: false });
+  const roster = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
   assert.deepEqual(reads, []);
   assert.deepEqual(roster.workstreams.map(item => item.latestTask), [undefined, undefined]);
   assert.deepEqual(team.workstreams.map(line => [line.name, line.ownerName, line.latestTask?.title ?? null]).sort(),
@@ -206,7 +205,7 @@ test('an explicit read of the team says how far each line got; task entry asks f
 test('a failed progress read leaves that line without a claim instead of failing the ledger', async () => {
   const { app } = fixture({ seed: [SPRING] });
   app.personal.listProjectAgentTasks = async () => { throw new Error('Synthetic Provider timeout'); };
-  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT });
+  const team = await app.getProjectTeam({ personalSpaceId: SPACE, personalProjectId: PROJECT, withProgress: true });
   assert.deepEqual(team.workstreams.map(line => [line.name, line.latestTask]), [['春促落地页', null]]);
 });
 

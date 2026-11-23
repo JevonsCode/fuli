@@ -478,7 +478,7 @@ export async function handleGraphApiRequest({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
       // Only the page that shows how far each workstream got pays for reading it.
-      withProgress: url.searchParams.get('withProgress') === '1'
+      ...(url.searchParams.get('withProgress') === '1' ? { withProgress: true } : {})
     }));
     return true;
   }

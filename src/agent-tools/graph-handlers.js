@@ -222,7 +222,8 @@ const HANDLERS = Object.freeze({
   view_project_agent_activity: (app, input) => app.viewProjectAgentActivity(input),
   get_project_agent_coordination_policy: (app, input) =>
     app.getProjectAgentCoordinationPolicy(input),
-  get_project_team: (app, input) => app.getProjectTeam(input),
+  // The Agent's ledger read says how far each workstream got (docs/workstreams.md).
+  get_project_team: (app, input) => app.getProjectTeam({ ...input, withProgress: true }),
   update_project_agent_coordination_policy: (app, input) =>
     app.updateProjectAgentCoordinationPolicy(input),
   list_project_agent_recruitments: (app, input) =>
