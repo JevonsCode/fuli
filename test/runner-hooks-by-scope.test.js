@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { HOOK_OUTCOME_HEADER } from '../src/agents/lifecycle-forwarder.js';
 import { createDeviceCertificate, deviceIdentity, loadDeviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
@@ -358,7 +359,8 @@ function loadedRunnerModules(t, fixture, event, stdin) {
     + `if (r.url.includes('/src/runner/')) appendFileSync(${JSON.stringify(log)}, r.url + '\\n'); return r; } });\n`);
   writeFileSync(log, '');
   return async () => {
-    const answer = await runHook(fixture, event, stdin, { env: { NODE_OPTIONS: `--import=${hook}` } });
+    // A file URL: --import reads a Windows path's drive letter as a URL scheme.
+    const answer = await runHook(fixture, event, stdin, { env: { NODE_OPTIONS: `--import=${pathToFileURL(hook).href}` } });
     const loaded = [...new Set(readFileSync(log, 'utf8').split('\n').filter(Boolean)
       .map((url) => url.slice(url.indexOf('/src/runner/') + 1)))].sort();
     return { answer, loaded };
