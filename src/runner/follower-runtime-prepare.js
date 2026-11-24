@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 import { FULI_VERSION } from '../package-metadata.js';
 import { diskFree } from '../native-runtime/recovered-dir.js';
@@ -14,7 +14,8 @@ import { dropPreparationClaim, holdPreparationLock, readRecord, spaceAwaitsHost,
 import { setGraphAside } from './follower-graph-aside.js';
 import { globalIsCopyHere } from './global-copy.js';
 import { askHostSpace } from './host-space.js';
-import { localGraphOwnGlobal, localGraphProjects } from './local-graph-projects.js';
+import { syncFromPreparation } from './global-sync.js';
+import { localGraphOwnGlobal, localGraphProjects, localGraphSpaceId } from './local-graph-projects.js';
 import { LOCAL_OWNER } from './routes-store.js';
 
 // `fuli runner prepare-local`: prepares a follower's own runtime
@@ -46,7 +47,7 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
   lock = holdPreparationLock, free = diskFree, keepPrivate = keepDataDirectoryPrivate, ensure = ensureGraphRuntime,
   stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, askHost = askHostSpace,
   health = providerHealth, setAside = setGraphAside, globalReplica = globalIsCopyHere, countOwnGlobal = localGraphOwnGlobal,
-  write = () => {} }) {
+  firstSync = syncFromPreparation, write = () => {} }) {
   const release = lock(dataDir);
   if (!release) {
     dropPreparationClaim(dataDir);
@@ -55,14 +56,14 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
   }
   try {
     return await prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-      askHost, health, setAside, globalReplica, countOwnGlobal, write });
+      askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, write });
   } finally {
     release();
   }
 }
 
 async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-  askHost, health, setAside, globalReplica, countOwnGlobal, write }) {
+  askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, write }) {
   const before = readRecord(dataDir);
   // Another start's preparation finished while this one waited to be spawned: nothing left to do.
   if (before?.state === 'existing' || (before?.state === 'ready' && !spaceAwaitsHost({ state: 'ready', space: spaceOf(before) }))) {
@@ -91,7 +92,7 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
   }
   // Whose space this graph is made under: the host's, as its hello says (host-space.js).
   const host = await askHost(dataDir, { ownFormats: before?.formats ?? null });
-  const madeSpace = graphSpaceId(paths.graphRuntimeConfigPath);
+  const madeSpace = localGraphSpaceId(paths.graphRuntimeConfigPath);
   // A graph an earlier preparation made, or a runtime it installed and checked, and the host does
   // not say its space now: nothing to start (Neo4j is not run again at every start for nothing).
   if (!host.known && (madeSpace || before?.state === 'ready')) {
@@ -163,6 +164,14 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     await start(madeSpace === host.spaceId ? {} : { personalSpace: { id: host.spaceId, providerId: host.providerId } });
     const projects = await projectsHere();
     const formats = await ownFormats(paths, health, { replica });
+    // Neo4j runs now anyway: the first copy of the host's `global` comes in before it stops again
+    // (global-sync.js). One that does not succeed is said in the state; the preparation goes on.
+    if (replica) {
+      const synced = await firstSync({ dataDir, configPath: paths.graphRuntimeConfigPath, hostSpace: host, ownFormats: formats, now });
+      write(synced.outcome === 'synced' ? 'The host\'s global was copied into this computer\'s graph.'
+        : `The host's global was not copied now (${synced.outcome}${synced.reason ? `: ${synced.reason}` : synced.code ? `: ${synced.code}` : ''}); `
+          + 'the state says why.');
+    }
     const running = ownsAnyScope(dataDir);
     if (!running) await halt();
     write(running ? 'This computer\'s own runtime is prepared and keeps running: a scope is this computer\'s.'
@@ -180,14 +189,6 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     return ended({ state: 'failed', code: typeof error?.code === 'string' ? error.code : 'prepare_failed',
       message: String(error?.message ?? error).slice(0, 300) });
   }
-}
-
-// The personal space ID of the graph a preparation made here, or null when none was made.
-function graphSpaceId(configPath) {
-  try {
-    const spaceId = JSON.parse(readFileSync(configPath, 'utf8'))?.personal?.spaceId;
-    return typeof spaceId === 'string' && spaceId ? spaceId : null;
-  } catch { return null; }
 }
 
 // What this computer's own Provider says of its formats, sent with hello (host-space.js followerReport).

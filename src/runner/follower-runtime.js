@@ -10,6 +10,8 @@ import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
 import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
 import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
+import { globalCopyLine } from './global-copy-state.js';
+import { startGlobalSync } from './global-sync.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
 import { followerReport } from './host-space.js';
@@ -47,6 +49,7 @@ export function followerRuntimeHandlers({ execPath = process.execPath, fetchImpl
       ? { status: 'running', role: 'runner', url, pid: state.pid, host: state.host, outbox: state.outbox,
         capabilities: state.capabilities, line: state.line, ...(state.versions ? { versions: state.versions } : {}),
         ...(state.localRuntime ? { localRuntime: state.localRuntime } : {}),
+        ...(state.globalCopy ? { globalCopy: state.globalCopy } : {}),
         ...(state.projects !== undefined ? { projects: state.projects } : {}) }
       : { status: 'stopped', role: 'runner', url };
   }
@@ -108,12 +111,14 @@ export function formatFollowerResult(command, result) {
 
 // This computer's own runtime, and which computer each project it knows of
 // belongs to now (step 3a), from the same answer the console shows.
-export function ownSideLines({ localRuntime, projects }) {
+export function ownSideLines({ localRuntime, globalCopy, projects }) {
   const lines = [];
   const runtime = localRuntimeLine(localRuntime);
   if (runtime) lines.push(runtime.en);
   const space = localSpaceLine(localRuntime);
   if (space) lines.push(space.en);
+  const copy = globalCopyLine(globalCopy);
+  if (copy) lines.push(copy.en);
   const step = localRuntime ? localRuntimeStep(localRuntime) : null;
   if (step && localRuntime.state !== 'preparing') lines.push(`  ${step}`);
   if (Array.isArray(projects) && projects.length) {
@@ -154,8 +159,11 @@ export async function serveFollowerConsole({ dataDir, port }) {
   // This computer's own runtime, prepared in the background the first time this version starts here
   // (docs/runner-roles-design.md §10): nothing for the person to do, and nothing routed to it yet.
   try { prepareInBackground({ dataDir }); } catch { /* said as not prepared; the next start tries again */ }
+  // The host's `global` copied into this computer's graph while its runtime runs anyway; never started for it.
+  const sync = startGlobalSync({ dataDir, store, connection });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {
+    sync.close();
     connection.close();
     store.close();
   });

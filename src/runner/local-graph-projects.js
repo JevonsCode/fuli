@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 
 // What this computer's own graph holds of the person's, asked of its own
-// Provider directly. On a computer that follows a host, the console port
+// Provider directly, and the one write a follower makes to it (a copy's import). On a computer that follows a host, the console port
 // answers with the host's pages and API for every path it does not own, so
 // asking the console here would ask the host (the bug fixed with step 3a): the
 // Provider is the one place that knows this computer's records.
@@ -30,6 +32,32 @@ export async function localGraphOwnGlobal(configPath, options = {}) {
   });
 }
 
+// Whether this computer's own Provider runs now, and the formats and copy mode it says:
+// { graph, replicaProtocol, globalReplica }. Only asked, never started (global-sync.js).
+export async function localGraphHealth(configPath, options = {}) {
+  return askOwnProvider(configPath, { timeoutMs: 3000, ...options }, async (provider) => {
+    const health = await provider.health();
+    return { graph: health?.data_format?.supported_version ?? null, replicaProtocol: health?.replicaProtocol ?? null,
+      globalReplica: health?.globalReplica === true };
+  });
+}
+
+// The one write a follower makes to its own graph: another computer's scope, imported as a
+// read-only copy (docs/runner-roles-design.md §12 "Import"). envelope: the owner's export
+// text as it arrived; owner: the certificate fingerprint the pairing pinned. { imported: result }.
+export async function localGraphImport(configPath, { envelope, owner }, options = {}) {
+  return askOwnProvider(configPath, options, async (provider) => ({ imported: await provider.importScope({ envelope, owner }) }));
+}
+
+// The personal space ID this computer's graph was made under, or null when none was made.
+export function localGraphSpaceId(configPath) {
+  try {
+    const spaceId = JSON.parse(readFileSync(configPath, 'utf8'))?.personal?.spaceId;
+    return typeof spaceId === 'string' && spaceId ? spaceId : null;
+  } catch { return null; }
+}
+
+// refused also carries the Provider's message, as it said it.
 async function askOwnProvider(configPath, { fetchImpl = globalThis.fetch, readConfig = readGraphRuntimeConfig,
   timeoutMs = 10_000 } = {}, ask) {
   const { personal } = readConfig(configPath);
@@ -37,6 +65,6 @@ async function askOwnProvider(configPath, { fetchImpl = globalThis.fetch, readCo
     fetchImpl, requestTimeoutMs: timeoutMs });
   try { return await ask(provider, personal.spaceId); } catch (error) {
     if (error?.status === 0 || error?.status === 504) return { unreachable: true };
-    return { refused: error?.status ?? 500, code: error?.code ?? 'provider_error' };
+    return { refused: error?.status ?? 500, code: error?.code ?? 'provider_error', message: String(error?.message ?? '').slice(0, 300) };
   }
 }

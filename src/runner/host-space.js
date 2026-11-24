@@ -95,14 +95,23 @@ export function hostSpaceFrom(greeting) {
 // Asks the paired host once, for the preparation (follower-runtime-prepare.js).
 // { known: false, reason: 'host_unreachable' } when it does not answer now.
 export async function askHostSpace(dataDir, { ownFormats = null } = {}) {
+  return await withHostConnection(dataDir, { ownFormats }, async ({ connection }) => {
+    const greeting = await connection.hello();
+    return greeting ? hostSpaceFrom(greeting) : { known: false, reason: 'host_unreachable' };
+  }) ?? { known: false, reason: 'host_unreachable' };
+}
+
+// A connection to the paired host for the length of use({ store, connection }),
+// for a process that has none of its own (the preparation); null when this
+// computer follows no host or was revoked.
+export async function withHostConnection(dataDir, { ownFormats = null } = {}, use) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   let connection = null;
   try {
-    if (!store.host() || store.host().revokedAt) return { known: false, reason: 'host_unreachable' };
+    if (!store.host() || store.host().revokedAt) return null;
     connection = createHostConnection({ store, identity: await loadDeviceIdentity(join(dataDir, 'peer')),
       report: () => followerReport(ownFormats) });
-    const greeting = await connection.hello();
-    return greeting ? hostSpaceFrom(greeting) : { known: false, reason: 'host_unreachable' };
+    return await use({ store, connection });
   } finally {
     connection?.close();
     store.close();

@@ -882,14 +882,16 @@ export class GraphitiProviderClient {
     } catch {
       throw invalidResponse('Graphiti provider returned invalid JSON.');
     }
-    return Object.freeze({ text, scope: envelope.scope, digest: envelope.digest, complete: envelope.complete,
-      graphFormat: envelope.graphFormat, bytes: Buffer.byteLength(text) });
+    return Object.freeze({ text, scope: envelope.scope, spaceId: envelope.spaceId, digest: envelope.digest,
+      complete: envelope.complete, graphFormat: envelope.graphFormat, replicaProtocol: envelope.replicaProtocol,
+      bytes: Buffer.byteLength(text) });
   }
   // The import half: an envelope's text from the owner computer's export, sent
   // as the request body byte for byte, and `owner`, the certificate fingerprint
   // its pairing pinned. Brought into this graph as a read-only copy under the
   // same IDs; refused whole, with a code, or written whole. For this
-  // computer's own process; no Agent tool. No caller yet.
+  // computer's own process; no Agent tool. A follower's copy of its host's
+  // global calls it (src/runner/global-sync.js).
   importScope({ envelope, owner }) {
     if (typeof envelope !== 'string') throw new TypeError('importScope takes the envelope text exportScope returned');
     return this.#request(`/v1/scopes/import?${new URLSearchParams({ owner })}`, {

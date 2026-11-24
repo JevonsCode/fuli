@@ -71,7 +71,9 @@ function preparation({ free = 50 * 1024 ** 3, fail = null, projects = [], host =
       writeFileSync(input.paths.graphRuntimeConfigPath, '{"synthetic":true}');
     },
     listProjects: async () => { calls.push({ step: 'list' }); return { projects }; },
-    stop: async (_paths, _env, options) => { calls.push({ step: 'stop', options }); }
+    stop: async (_paths, _env, options) => { calls.push({ step: 'stop', options }); },
+    // The first copy of the host's global (global-sync.js), recorded instead of asked of the host.
+    firstSync: async (input) => { calls.push({ step: 'sync', input }); return { outcome: 'synced' }; }
   };
 }
 
@@ -80,8 +82,11 @@ test('the preparation sets up the personal graph without a console, checks it, a
   const steps = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
   assert.equal(record.state, 'ready');
-  const [ask, keptPrivate, ensure, list, stop] = steps.calls;
-  assert.deepEqual([ask.step, keptPrivate.step, ensure.step, list.step, stop.step], ['ask', 'private', 'ensure', 'list', 'stop']);
+  const [ask, keptPrivate, ensure, list, sync, stop] = steps.calls;
+  assert.deepEqual([ask.step, keptPrivate.step, ensure.step, list.step, sync.step, stop.step],
+    ['ask', 'private', 'ensure', 'list', 'sync', 'stop'], 'the first copy of global comes in while Neo4j runs anyway, then it stops');
+  assert.equal(sync.input.hostSpace, HOST_SPACE, 'with what the host\'s own hello said');
+  assert.deepEqual(sync.input.ownFormats, { graph: 25, replicaProtocol: 1 });
   assert.equal(keptPrivate.dataDir, dataDir, 'the data directory is kept private before the graph is written, as setup does');
   // The Provider refuses an empty space name (422 at /v1/bootstrap): the graph is made as setup makes it.
   assert.equal(ensure.input.personalSpaceName, DEFAULT_PERSONAL_SPACE_NAME);

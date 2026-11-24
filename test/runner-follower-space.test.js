@@ -87,7 +87,9 @@ function preparation({ host = KNOWN, projects = [], ownGlobal = 0, failEnsure = 
     health: async () => ({ globalReplica: true, replicaProtocol: 1, data_format: { supported_version: 25 } }),
     listProjects: async () => { calls.push({ step: 'list' }); return { projects }; },
     countOwnGlobal: async () => ({ count: ownGlobal, labels: ownGlobal ? { Entity: ownGlobal } : {} }),
-    stop: async () => { calls.push({ step: 'stop' }); }
+    stop: async () => { calls.push({ step: 'stop' }); },
+    // The first copy of the host's global (global-sync.js), recorded instead of asked of the host.
+    firstSync: async (input) => { calls.push({ step: 'sync', input }); return { outcome: 'synced' }; }
   };
 }
 
@@ -220,7 +222,7 @@ test('the graph is made under the host\'s personal space, with its Provider star
   const dataDir = follower(t);
   const prepared = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...prepared });
-  assert.deepEqual(steps(prepared.calls), ['ask', 'ensure', 'list', 'stop']);
+  assert.deepEqual(steps(prepared.calls), ['ask', 'ensure', 'list', 'sync', 'stop']);
   const { input } = prepared.calls[1];
   assert.deepEqual(input.personalSpace, { id: HOST_SPACE_ID, providerId: 'local-personal' });
   assert.equal(input.globalReplica, true, '`global` is the host\'s: no default record of it is written here');
@@ -304,7 +306,7 @@ test('an empty graph an earlier preparation made under its own space is set asid
   const prepared = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, now: () => Date.parse('2026-11-24T08:00:00.000Z'), ...prepared });
   // Looked into again (started, asked, stopped) before anything moved; then made under the host's space.
-  assert.deepEqual(steps(prepared.calls), ['ask', 'ensure', 'list', 'stop', 'ensure', 'list', 'stop']);
+  assert.deepEqual(steps(prepared.calls), ['ask', 'ensure', 'list', 'stop', 'ensure', 'list', 'sync', 'stop']);
   assert.equal(prepared.calls[1].input.personalSpace, undefined, 'the earlier graph is started as it is, to look into it');
   assert.equal(prepared.calls[1].input.globalReplica, true, 'and writes nothing of `global` while it is looked into');
   assert.deepEqual(prepared.calls[4].input.personalSpace, { id: HOST_SPACE_ID, providerId: 'local-personal' });

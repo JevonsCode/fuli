@@ -147,7 +147,8 @@ the calls that go to the host are not affected by a preparation that is under wa
   it. That is said as 「本机已有图谱，这一步没有动它」.
 - Before anything is downloaded it checks the free disk space (at least 3 GB); below that it says how
   much is free and how much is needed, and downloads nothing.
-- Once set up, it asks the graph which projects it holds, then **stops Neo4j and the Provider again**
+- Once set up, it asks the graph which projects it holds, copies the host's `global` into it once ("The
+  copy of `global`" below), then **stops Neo4j and the Provider again**
   while no scope is this computer's: a follower may be a light computer. It stays running only while
   a scope is this computer's (from step 3c).
 - `runner/local-runtime.json` records the outcome (process state, not FULI data: without it the next
@@ -422,8 +423,9 @@ and turn the notice around. When the host is older the page says to update from 
 console, because a runner's page cannot run the host's update (the relay refuses it). The
 host does not show a runner's version yet: a follower sends its FULI version with every hello
 (`x-fuli-follower-version`), and its graph format and copy protocol once its own Provider said them
-(`x-fuli-follower-graph-format`, `x-fuli-follower-replica-protocol`), for the sync of copies to match
-on; nothing reads or refuses on them in this version, so the notice is on the runner's side only.
+(`x-fuli-follower-graph-format`, `x-fuli-follower-replica-protocol`); the host does not read them yet, so
+the notice is on the runner's side only. The copy of `global` (below) compares the two graph formats and copy
+protocols itself and, when they differ, says so and imports nothing until both run one FULI version.
 
 ### `global` on a follower
 
@@ -433,13 +435,72 @@ on; nothing reads or refuses on them in this version, so the notice is on the ru
 coordinator, the name-key tidy-up), and on demand (`/v1/project-agents/system-hr`,
 `/v1/project-agents/system-coordinator`, and a task's coordinator, which also merged the old AR into
 Bole). They come with the host's copy of `global`; until it arrived, a call that needs them answers
-409 `global_not_synced` (「全局还没从主机同步过来」), never an internal error. Nothing copies `global`
-here yet (the sync is a later step), so this computer's graph stays empty. The first import of
+409 `global_not_synced` (「全局还没从主机同步过来」), never an internal error; nothing on a follower calls
+them yet (every call goes to the host). They come with the copy below. The first import of
 `global` takes over the fixed roles and the recruitment policy this graph made itself before (a
 Provider started before it was a follower's): the owner's properties replace them, they are marked as
 the owner's copies, and this computer's own edges on them stay; one the owner does not have goes as
 any copy the owner no longer has. Any other record of this computer's under an ID the envelope names
 is still refused (`replica_scope_owned_here`).
+
+### The copy of `global`
+
+A follower keeps a **read-only copy** of the host's `global` in its own graph (docs/runner-roles-design.md
+§3, §12 "The sync loop"): the host's export imported under the same IDs, marked as the host's, never
+written otherwise. Nothing reads it yet: every call still goes to the host. It is what later steps read
+when the host is away and what a project this computer owns will take its habits and FLAs from.
+
+- **The host's side.** `GET /runner/1/scope?scope=global&part=digest|envelope` on the paired channel, for
+  a paired, unrevoked follower only (403 `runner_unknown` otherwise). `part=digest` answers the digest,
+  space, graph format, copy protocol, `complete` and size, without the envelope; `part=envelope` answers
+  the envelope exactly as the host's Provider wrote it (never parsed and written again), with its digest in
+  `x-fuli-scope-digest`. One export answers both: it is kept a minute (`SCOPE_EXPORT_KEEP_MS`), and asks
+  while one runs wait for it, so the host exports `global` at most once a minute however many followers ask.
+  Only `global` is offered (`scope_not_offered` otherwise), and only by a host that owns it: one that itself
+  follows another computer for `global`, or whose Provider keeps it as a copy, answers 409
+  `scope_not_owned_here`. Past 64 MB (`SCOPE_ENVELOPE_MAX_BYTES`) it answers 413 `scope_too_large`, never a
+  cut envelope. A Provider that does not run answers at once 503 `host_provider_unavailable`; one slower than
+  20 seconds 503 `host_provider_slow` (its export goes on and is kept for the next ask). The hello never waits
+  for any of it.
+- **When the follower syncs.** Once when the preparation has made its graph under the host's space (Neo4j
+  runs then anyway), before Neo4j stops again. After that only while this computer's own runtime **already
+  runs**: the follower console checks once a minute whether a sync is due, and only then asks its own
+  Provider on loopback whether it runs; never started for a sync. While it runs: once when the console first
+  finds it running, then every 10 minutes (`GLOBAL_SYNC_EVERY_MS`), and sooner after a round the host did not
+  answer, once the console reaches the host again. Each round asks for the digest; the envelope is fetched
+  only when the digest is not the copy's. A follower that owns no project has no running runtime, so today
+  its copy is the one the preparation made; there is no 「现在同步」 button, since that would start Neo4j.
+- **Before it imports**, in this order, each said in the state when it stops there: `global` is routed to the
+  host (`globalIsCopyHere`); the host's hello says its space and versions (else it waits, or the host runs an
+  earlier FULI); the host's space ID is this graph's, as the hello and then the export itself say it; both
+  graph formats and copy protocols are the same, as the hello and then the export say them (else nothing
+  is fetched or imported until one changes); the envelope is `complete`.
+- **The import.** `owner` is the certificate fingerprint the pairing pinned, never anything the envelope
+  says. It runs under the preparation's lock (`runner/local-runtime.lock`), so one import runs at a time
+  and none while a preparation starts or stops the runtime; a round that finds the lock held skips. The
+  envelope's bytes go to this computer's Provider as they arrived. A refusal (409, 422) is recorded with its
+  code and message as said, and is not tried again while the host's digest, both versions and the space are
+  what they were.
+- **What it records.** Success writes `replica = 1` and `replica_synced_at` on the `global` row of
+  `runner/routes.sqlite` (the columns were there; no format change), and `runner/global-copy.json` keeps the
+  digest, when the copy was last checked and when its content last changed, and how the last round went
+  (process state: without it the next sync imports once more, which writes nothing the copy has).
+- **What it says** (the state band, `/local`, `fuli status`, `fuli runner status`): not synced yet and when the
+  first sync comes; last checked and last changed; the host away (「上次同步时主机不在线，连上后再同步」), the
+  host's graph not running or busy; 「主机的 FULI 还不能提供副本，升级主机后继续」 (a host of an earlier
+  version answers 404); the two FULI versions differ, with both formats and which computer to update; this
+  graph is another space than the host's; refused, by which side, with its code and reason, and that nothing
+  was written. Each non-synced line adds that calls to the host are not affected; none names a command.
+- **`fuli runner leave`** sets a graph that holds the host's copy aside, whole, in
+  `native-runtime/recovered/<time>/` with a note (never deleted), and forgets the preparation's record: after
+  leave this data directory is a FULI of its own, whose start would write the defaults of `global` under the
+  IDs of the host's copies. The next start makes a graph of its own, as a first start does. While a
+  preparation or an import holds the runtime, leave says so and changes nothing. A graph no copy ever arrived
+  in is left as it is.
+- **No write fallback yet.** Nothing on a follower writes its own graph but this import: the MCP entry, the
+  hooks, the console and `fuli whoami` go to the host, and the preparation and `fuli routes follow` only read
+  it (docs/runner-roles-design.md §12). Refusing an ordinary write to a copy (`replica_read_only`) comes with
+  the step that lets a follower own a project.
 
 ## Who owns this project (`fuli whoami`)
 
@@ -759,7 +820,8 @@ computer joins a host again.
 
 Step 3a changes no store: `runner/local-runtime.json` is process state (the outcome of the last
 preparation, see "This computer's own runtime"), and the follower's own graph is an ordinary FULI
-graph made by the same setup as any first start.
+graph made by the same setup as any first start. The copy of `global` changes no store either: it writes
+the `replica` columns `runner/routes.sqlite` already had, and `runner/global-copy.json` is process state.
 
 A runner whose Tonborg chooses executors adds `runner/routing.sqlite`
 (`runner-routing`, version 1): its decisions and their reported outcomes, which

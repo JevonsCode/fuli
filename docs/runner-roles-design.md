@@ -211,7 +211,14 @@ docs/runner.md "This computer's own runtime".)
      its own ID is set aside in `native-runtime/recovered/`, never deleted; one with the person's data is
      left as it is and said so), starts its Provider with `global` a copy, which then writes no default
      record of `global`, and the first import of `global` takes over the defaults such a graph made
-     before. Nothing copies `global` yet: the graph stays empty, and Neo4j does not stay running.
+     before. Neo4j does not stay running.
+   - **3a″. The copy of `global`.** — **done**: the host answers a paired follower's ask for `global` on the
+     paired channel (`/runner/1/scope`, `host-scope-export.js`: the digest alone, or the envelope as its
+     Provider wrote it, one export kept a minute, 64 MB cap); the follower imports it into its own graph as a
+     read-only copy (`global-sync.js`): once when the preparation made the graph, then only while its own
+     runtime already runs, every 10 minutes, the envelope fetched only when the digest changed. Where it stands
+     is said in the state band, `/local` and `fuli status` (`global-copy-state.js`); `fuli runner leave` sets a
+     graph holding that copy aside. Nothing reads the copy yet: every call still goes to the host.
    - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
      profile, the FLA roster) from its owner and merges it with the project's own, global first, as one
      FULI does (D2); the task entry's own writes to `global` go to its owner. Open: how — one candidate
@@ -237,7 +244,7 @@ whenever the host does not answer.
 Read-only copies (§3) and moving a scope (§7) share one building block: export every record of a
 scope as one envelope, and import it on another computer under the same IDs. This section is the
 export, the rules it rests on, and the import ("Import", below). Refusing ordinary writes to a copy
-is not built yet, and nothing calls the export or the import today.
+is not built yet. A follower's copy of its host's `global` (step 3a″) is the one caller of both today.
 
 - **One classifier.** `graph-provider/fuli_graph/scope_classifier.py` says, as data, which scope
   every node label and relationship type of a personal space belongs to and how that is decided.
@@ -642,8 +649,12 @@ import overwrites a local change to a copy with the owner's version at the next 
 
 ### What the next steps must do
 
-The import above is safe to merge because nothing calls it yet. The PRs that make copies flow must
-meet these constraints (from the review of the import).
+The import was safe to merge because nothing called it. Now the copy of `global` calls it, and that is
+safe while nothing on a follower writes its own graph otherwise: the MCP entry and the hooks go to the host
+(`runner-mcp.js`, `lifecycle-forwarder.js`; no Provider client is made there), the console relays every path
+it does not own to the host, and the preparation and `fuli routes follow` only read the graph
+(`local-graph-projects.js`). There is no write refusal on a copy yet, so the step that lets a follower own a
+project must bring it. The PRs that make copies flow must meet these constraints (from the review of the import).
 
 **Write refusal (`replica_read_only`)**
 
@@ -700,29 +711,43 @@ meet these constraints (from the review of the import).
   `global_not_synced` until the copy arrived. `clear_stale_name_keys` in rename and hire, and format
   backfills, are ordinary writes and stay with the write refusal above.
 
-**The sync loop**
+**The sync loop** — **done** for `global` (step 3a″); each line below says how, or what is left.
 
-- Hand the envelope on as its raw bytes; never parse and serialize it again.
+- Hand the envelope on as its raw bytes; never parse and serialize it again. *Done:* the host's route
+  writes the Provider's text as UTF-8 bytes (`host-routes.js`), the follower reads the bytes and decodes them
+  once (`host-connection.js getText`) and `importScope` sends that text (`test/runner-global-sync.test.js`,
+  over the real TLS listener).
 - `owner` comes only from the certificate fingerprint pinned at pairing, never from the envelope.
-  Ask only a scope's owner for its export.
+  Ask only a scope's owner for its export. *Done:* `owner` is `store.host().fingerprint`; only the paired host
+  is asked, and a host that does not own `global` answers `scope_not_owned_here`.
 - One import per space at a time. Import global first, then each project, so dangling references
-  converge.
+  converge. *Done* for global: the import runs under the preparation's lock (the preparation's own first
+  sync under the lock it holds). Projects are a later step.
 - Show refusal codes (409/422) to the person as they are; do not retry in a loop. When the graph
-  formats differ, both sides stop first.
+  formats differ, both sides stop first. *Done:* the code and message are kept in `runner/global-copy.json`
+  and said by which side; the same refusal is not tried again while the digest, both versions and the space
+  are unchanged; differing formats stop before anything is fetched.
 - Cap the envelope size: an import holds the whole space and the envelope in the Provider's memory
-  at once.
+  at once. *Done:* `SCOPE_ENVELOPE_MAX_BYTES` (64 MB) on both sides: the host answers 413
+  `scope_too_large`, the follower stops reading past it.
 - Every start of a follower's Provider takes `FULI_GLOBAL_REPLICA` from the routes store
   (`globalIsCopyHere`), including the path that keeps a Provider running for a scope this computer
-  owns, and the restart after it.
+  owns, and the restart after it. *Still true:* the preparation is the only start of a follower's
+  Provider; the sync never starts one (it only asks a running one).
 - After `fuli runner leave`, the `global` copies carrying the host's marker get a clear fate (made
   this computer's own, or set aside) before an ordinary start writes the defaults again: otherwise
-  the defaults it adds collide with those copies by ID.
+  the defaults it adds collide with those copies by ID. *Done:* leave sets a graph holding the copy aside
+  whole (`leave-global-copy.js`), never deleted; the next start makes a graph of its own.
 - Before an import, check the graph format and copy protocol both sides said in hello (the
   follower's request headers, the host's `formats`); when they differ, say so in the state and do
-  not import and fail at every round.
+  not import and fail at every round. *Done:* compared before the digest is asked (the hello) and again
+  from the digest answer (the export); the state says both and which computer to update. The host still
+  does not read the follower's headers.
 - A call that meets `global_not_synced` before the first import is said as waiting for the first
-  copy, never as an error.
+  copy, never as an error. *Not needed yet:* nothing on a follower calls its own Provider; the step that
+  makes a project local must.
 - The host's hello never waits for its Provider: it says the space it read before (`space: null`
   until one read succeeded), reads in the background, and reads again after a few minutes or when
   its settings name another space ID (`host-space.js` `hostSpaceReader`). A loop must not take an
-  old space ID for the current one either.
+  old space ID for the current one either. *Done:* the hello is unchanged and answers at once; the sync
+  checks the space the export itself names, not only the one the hello read.

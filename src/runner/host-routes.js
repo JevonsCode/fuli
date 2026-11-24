@@ -14,10 +14,11 @@ import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
+import { createScopeExport } from './host-scope-export.js';
 import { hostSpaceReader } from './host-space.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
 import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
-  SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
+  SCOPE_DIGEST_HEADER, SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
 // checked the source and read the device fingerprint. Pairing alone accepts an
@@ -85,7 +86,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
   hostAddresses = () => [],
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
-  hostSpace = hostSpaceReader(app) }) {
+  hostSpace = hostSpaceReader(app),
+  // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js).
+  ownsScope = () => true, scopeExport = createScopeExport({ app, ownsScope }) }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -174,6 +177,16 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
         // A runner sends the host its own tokens back; one that still names this host is taken as its own.
         taskIssuer: hostFingerprint?.slice(0, 16) ?? null,
         withRuntimeLease: inWorkspace(fingerprint) }) });
+    } else if (pathname === RUNNER_PATHS.scope) {
+      if (request.method !== 'GET') return void methodNotAllowed(response);
+      const asked = new URL(request.url ?? '/', 'https://runner.invalid').searchParams;
+      const answer = await scopeExport.answer(asked.get('scope'), asked.get('part') === 'envelope' ? 'envelope' : 'digest');
+      if (answer.text === undefined) return void sendJson(response, answer.status, answer.body);
+      // The Provider's text as it wrote it: a follower imports these bytes (docs/runner-roles-design.md §12).
+      const bytes = Buffer.from(answer.text, 'utf8');
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-length': String(bytes.length),
+        [SCOPE_DIGEST_HEADER]: String(answer.digest ?? '') });
+      response.end(bytes);
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       const answer = await replay(fingerprint, await readJson(request));

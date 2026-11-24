@@ -11,10 +11,9 @@ import { sha256Bytes } from '../security/digest.js';
 // computer with no routes is a plain FULI exactly as before.
 //
 // **One writer per scope.** A read-only copy of a scope another computer owns
-// may also be kept here, with the time it was last brought up to date; the
-// columns are here so that copy needs no format change when it arrives
-// (step 3c, 4). Nothing writes them yet, and `fuli routes list` shows them when
-// they are set.
+// may also be kept here, with the time it was last brought up to date: a
+// follower's copy of the host's `global` (global-sync.js) sets them, and
+// `fuli routes list` shows them when they are set.
 export const ROUTES_FILE = 'runner/routes.sqlite';
 // How long a task's owner is kept after its token was last used: as long as an offline task token lasts.
 export const TASK_OWNER_DAYS = 30;
@@ -94,6 +93,19 @@ export class RoutesStore {
     this.db.prepare(`INSERT INTO routes(scope, owner, updated_at) VALUES(?, ?, ?)
       ON CONFLICT(scope) DO UPDATE SET owner = excluded.owner, updated_at = excluded.updated_at`)
       .run(scope, owner, new Date(this.now()).toISOString());
+  }
+
+  // A read-only copy of this scope was brought up to date here (global-sync.js). Only for a
+  // scope another computer owns: the route's owner stays as it is.
+  replicaSynced(scope, at) {
+    this.db.prepare('UPDATE routes SET replica = 1, replica_synced_at = ? WHERE scope = ? AND owner <> ?')
+      .run(at, scope, LOCAL_OWNER);
+  }
+
+  // Whether a copy of this scope ever arrived here.
+  hasReplica(scope) {
+    if (this.#missing()) return false;
+    return this.db.prepare('SELECT replica FROM routes WHERE scope = ?').get(scope)?.replica === 1;
   }
 
   // What `fuli runner join` writes, and what a data directory that was a runner
