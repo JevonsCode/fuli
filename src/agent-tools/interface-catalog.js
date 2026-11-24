@@ -333,13 +333,19 @@ export function interfaceForRoute(route) {
 }
 
 export function interfaceForRequest(method, pathname) {
+  const route = mostSpecificRoute(UI_MUTATION_PARITY.map((entry) => entry.route), method, pathname);
+  return route === null ? null : interfaceForRoute(route);
+}
+
+// The listed route ('POST /api/peer/devices/:nodeId/revoke') a request's method
+// and path match; the most specific wins, a literal segment over a parameter.
+export function mostSpecificRoute(routes, method, pathname) {
   const segments = pathname.split('/');
   const params = (route) => route.split('/').filter((part) => part.startsWith(':')).length;
-  // The most specific entry wins: a literal segment over a parameter.
-  return UI_MUTATION_PARITY.filter(({ route }) => {
-    const [entryMethod, entryPath] = route.split(' ');
-    const pattern = entryPath.split('/');
-    return entryMethod === method && pattern.length === segments.length
+  return routes.filter((route) => {
+    const [routeMethod, routePath] = route.split(' ');
+    const pattern = routePath.split('/');
+    return routeMethod === method && pattern.length === segments.length
       && pattern.every((part, index) => part.startsWith(':') ? segments[index] !== '' : part === segments[index]);
-  }).sort((left, right) => params(left.route) - params(right.route))[0] ?? null;
+  }).sort((left, right) => params(left) - params(right))[0] ?? null;
 }

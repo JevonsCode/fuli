@@ -21,7 +21,7 @@ export const CHAT_LISTING = Object.freeze({
     }
   },
   list_agent_interfaces: {
-    description: 'Discover more FULI tools. Without toolName: names and trust boundaries only. With toolName: that tool\'s full description and schema; then call it by name, or through fuli_call when the host has not refreshed its tool list. Local-user-only boundaries are never Agent-callable.'
+    description: 'Discover more FULI tools. No arguments: index of every tool and trust boundary; domain, area or route: one part; toolName: its full schema, then call it by name or via fuli_call if the host has not refreshed its tool list. Local-user-only boundaries are never Agent-callable.'
   }
 });
 

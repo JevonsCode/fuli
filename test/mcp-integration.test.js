@@ -173,7 +173,14 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   const listed = await connection.client.listTools();
   const interfaceCatalog = await connection.client.callTool({ name: 'list_agent_interfaces', arguments: {} });
   assert.equal(interfaceCatalog.structuredContent.truncated, undefined);
-  assert.equal(interfaceCatalog.structuredContent.uiMutationParity.length, interfaceCatalog.structuredContent.coverage.total);
+  const { areas, coverage } = interfaceCatalog.structuredContent;
+  assert.equal(Object.values(areas).flat().reduce((sum, count) => sum + count, 0), coverage.total);
+  let areaEntries = 0;
+  for (const area of Object.keys(areas)) {
+    const detail = await connection.client.callTool({ name: 'list_agent_interfaces', arguments: { area } });
+    areaEntries += detail.structuredContent.uiMutationParity.length;
+  }
+  assert.equal(areaEntries, coverage.total);
   assert.deepEqual(listed.tools.map(({ name }) => name), [
     'request_agent_attention', 'list_agent_attention', 'cancel_agent_attention',
     'list_project_agent_tasks', 'list_preference_conflicts',
