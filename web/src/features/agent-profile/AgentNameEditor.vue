@@ -4,7 +4,8 @@ import { apiErrorReason } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { t } from "@/i18n";
+import { currentLocale, t } from "@/i18n";
+import { formatDateTime } from "@/lib/date-time";
 import type { ProjectAgentRecord } from "@/types";
 import { workingProjectNames } from "@/features/projects/project-origin";
 import { UiIconButton } from "@/ui";
@@ -49,6 +50,15 @@ async function start() {
   input?.select();
 }
 
+// When another FLA's 原名 becomes free, in the person's own time zone: within
+// 30 days, so the month and day name it. Shown to the minute, rounded up, so
+// any time after the one shown is free.
+const freeTime = (value: string) => {
+  const minute = Math.ceil(Date.parse(value) / 60_000) * 60_000;
+  return formatDateTime(Number.isNaN(minute) ? value : new Date(minute).toISOString(), currentLocale(),
+    { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }, { missing: value });
+};
+
 // One line: runs of spaces (and any line break a paste kept) become one space.
 const cleaned = (value: string) => value.replace(/\s+/g, " ").trim();
 
@@ -66,7 +76,7 @@ async function save(next: string | null) {
     const holder = taken?.usedBy[0];
     freeNames.value = taken?.freeNames ?? [];
     error.value = holder?.freeFrom
-      ? t("agentProfiles.name.takenFormer", { name: saving.value, holder: holder.name, date: holder.freeFrom })
+      ? t("agentProfiles.name.takenFormer", { name: saving.value, holder: holder.name, time: freeTime(holder.freeFrom) })
       : holder
         ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
           { name: saving.value, holder: holder.name, projects: workingProjectNames(holder.projects) })

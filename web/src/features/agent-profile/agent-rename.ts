@@ -31,7 +31,7 @@ export function nameTaken(error: unknown): {
     const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
     const usedBy = Array.isArray(body.usedBy) ? body.usedBy.filter(item => typeof item?.name === 'string')
       .map(item => ({ name: item.name as string, projects: workingProjects(item.projects),
-        // Someone's 原名, free from that date on.
+        // Someone's 原名, free after that time.
         ...(typeof item.formerName === 'string' && typeof item.freeFrom === 'string'
           ? { formerName: item.formerName, freeFrom: item.freeFrom } : {}) })) : []
     return { usedBy, freeNames: strings(body.freeNames) }

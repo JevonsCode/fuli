@@ -208,7 +208,8 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
       ? `${current.name}（原名 ${agent.formerName}）` : `${current.name} `;
     const continuing = current.projectId ? `本会话由 ${called}继续项目 ${current.project} 的工作`
       : `本会话由 ${called}继续其全局工作`;
-    const notice = [continuing, request.sameName && sameNameNotice(request.sameName),
+    const notice = [continuing, request.heldBy && heldByNotice(request.heldBy, current.name),
+      request.sameName && sameNameNotice(request.sameName),
       ...(request.renamed ?? []).map(item => `原名 ${current.name} 的另一位现在叫 ${item.name}（${item.project}）`)]
       .filter(Boolean).join('；') + await linesClause(application, request, current.projectId, readPolicy);
     const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
@@ -282,14 +283,18 @@ function exactRequest(exact, query, here, input) {
   }
   const said = calledAs(named[0], query);
   const only = single(named, here, item => identityKey(calledAs(item, query)) === identityKey(item.name));
-  if (!only) return choose(named, 'same_name', `有多位「${said}」，要继续哪一位？`);
+  if (!only?.pick) return choose(only?.ask ?? named, 'same_name', `有多位「${said}」，要继续哪一位？`);
   const others = named.filter(item => item.agentId !== only.pick.agentId);
   // Another FLA reached only by its 原名 is said as where that name went.
   const formerly = item => identityKey(calledAs(item, query)) !== identityKey(item.name);
   const renamed = calledAs(only.pick, query) === only.pick.name ? others.filter(formerly) : [];
-  const same = others.filter(item => !renamed.includes(item));
+  // The folder's project reached an FLA by its 原名 while another is called that now.
+  const holders = only.basis === 'project' && formerly(only.pick) ? others.filter(item => !formerly(item)) : [];
+  const same = others.filter(item => !renamed.includes(item) && !holders.includes(item));
   return { state: 'continue', target: target(only.pick), origin: 'named',
     ...(same.length ? { sameName: { basis: only.basis, projects: [...new Set(same.map(item => item.project))] } } : {}),
+    ...(holders.length ? { heldBy: { name: holders[0].name, former: calledAs(only.pick, query),
+      projects: [...new Set(holders.map(item => item.project).filter(Boolean))] } } : {}),
     ...(renamed.length ? { renamed: [...new Map(renamed.map(item => [item.agentId,
       { name: item.name, project: item.project }])).values()] } : {}) };
 }
@@ -307,7 +312,8 @@ function calledAs(item, query) {
 // it never decides this); or, where neither the session nor the folder's
 // project has one, the only FLA called that now (byOwnName), over another that
 // still answers to it as its 原名. Anything else is asked: no name is guessed
-// from recency. basis says why, for the notice.
+// from recency. basis says why, for the notice; ask, when only the placements
+// of the one FLA called that now are left to choose from.
 function single(named, { currentProjectId, sessionAgentId }, byOwnName) {
   if (named.length === 1) return { pick: named[0], basis: 'only' };
   const agents = new Set(named.map(item => item.agentId));
@@ -324,7 +330,9 @@ function single(named, { currentProjectId, sessionAgentId }, byOwnName) {
   const here = named.filter(item => !item.role && currentProjectId && inProject(item));
   if (here.length) return here.length === 1 ? { pick: here[0], basis: 'project' } : null;
   const holders = named.filter(byOwnName);
-  return holders.length === 1 ? { pick: holders[0], basis: 'current' } : null;
+  if (holders.length === 1) return { pick: holders[0], basis: 'current' };
+  // One FLA called that now, in several projects: only which project is asked.
+  return holders.length && new Set(holders.map(item => item.agentId)).size === 1 ? { ask: holders } : null;
 }
 
 // One sentence on the others a shared name also reaches, so the person sees
@@ -334,6 +342,14 @@ function sameNameNotice({ basis, projects }) {
   const where = projects.join('、');
   return projects.length === 1 ? `同名还有一位在 ${where}，这次用的是${who}`
     : `同名还有 ${projects.length} 位（${where}），这次用的是${who}`;
+}
+
+// One sentence when the folder's project reached its FLA by a 原名 another
+// FLA is called now: who has the name, and where to call that one instead.
+function heldByNotice({ name, former, projects }, current) {
+  const where = projects.join('、');
+  return `${name} 现在是另一位 FLA${where ? `（${where}）` : ''}的名字，这次按当前项目用的是原名为 ${former} 的 ${current}；`
+    + (where ? `要找那位，请在 ${where} 的项目文件夹里再叫 ${name}` : `要找那位，请换个目录再叫 ${name}`);
 }
 
 function choose(candidates, reason, question = QUESTIONS[reason]) {

@@ -405,10 +405,11 @@ async def test_another_agents_recent_former_name_is_taken_until_it_stops_being_o
     with pytest.raises(HTTPException) as refused:
         await with_person_name(store, upsert('agent-new', 'PPT 专责', 'morgan  vale'))
     [holder] = refused.value.detail['used_by']
-    free_from = (datetime.fromisoformat(RECENTLY[0]['until']) + timedelta(days=30)).date().isoformat()
+    free_from = (datetime.fromisoformat(RECENTLY[0]['until']) + timedelta(days=30)).isoformat(timespec='seconds')
     assert holder == {'agent_id': 'agent-other', 'name': 'Wren Hill', 'projects': [],
                       'former_name': 'Morgan Vale', 'free_from': free_from}
-    assert f'Wren Hill (agent-other), its former name until {free_from}' in refused.value.detail['message']
+    assert free_from.endswith('+00:00')
+    assert f'Wren Hill (agent-other), its former name, free after {free_from}' in refused.value.detail['message']
     assert 'morgan vale' not in {identity_key(name) for name in refused.value.detail['free_names']}
     # A rename to it is refused the same way; the Agent itself may take its 原名 back.
     names = await space_agent_names(store, 'space')
@@ -420,6 +421,42 @@ async def test_another_agents_recent_former_name_is_taken_until_it_stops_being_o
     later = NamesStore({'agent-other': {'name': 'x', 'display_name': 'Wren Hill'}}, history={'agent-other': long_ago})
     named = await with_person_name(later, upsert('agent-new', 'PPT 专责', 'Morgan Vale'))
     assert named.profile.display_name == 'Morgan Vale'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('ended_days_ago, taken', [
+    (timedelta(days=30) - timedelta(minutes=1), True),   # a minute before it is free
+    (timedelta(days=30) + timedelta(minutes=1), False),  # a minute after
+])
+async def test_a_former_name_is_free_exactly_after_the_time_the_refusal_gives(ended_days_ago, taken):
+    until = datetime.now(UTC) - ended_days_ago
+    history = {'agent-other': [{'name': 'Morgan Vale', 'until': until.isoformat(), 'reason': 'renamed'}]}
+    store = NamesStore({'agent-other': {'name': 'x', 'display_name': 'Wren Hill'}}, history=history)
+    if not taken:
+        assert (await with_person_name(store, upsert('agent-new', 'PPT 专责', 'Morgan Vale'))).profile.display_name \
+            == 'Morgan Vale'
+        return
+    with pytest.raises(HTTPException) as refused:
+        await with_person_name(store, upsert('agent-new', 'PPT 专责', 'Morgan Vale'))
+    free_from = datetime.fromisoformat(refused.value.detail['used_by'][0]['free_from'])
+    assert free_from.tzinfo is not None
+    assert timedelta(0) < free_from - datetime.now(UTC) <= timedelta(minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_the_fla_that_kept_a_shared_name_may_respell_it_while_it_is_anothers_former_name():
+    # After a fix, agent-kept kept Milo Reed; agent-renamed was Milo Reed until 3 days ago.
+    history = {'agent-renamed': [{**RECENTLY[0], 'name': 'Milo Reed', 'reason': 'duplicate_name',
+                                   'kept_by_agent_id': 'agent-kept'}]}
+    store = NamesStore({'agent-kept': {'name': 'x', 'display_name': 'Milo Reed'},
+                        'agent-renamed': {'name': 'y', 'display_name': 'Wren Hill'}}, history=history)
+    names = await space_agent_names(store, 'space')
+    assert renamed_profile(names, 'agent-kept', {'name': 'x'}, 'milo  reed')['display_name'] == 'milo  reed'
+    # Any other Agent is still refused, and so is a real new name another Agent has.
+    with pytest.raises(NameTaken):
+        renamed_profile(names, 'agent-third', {'name': 'z'}, 'milo reed')
+    with pytest.raises(NameTaken):
+        renamed_profile(names, 'agent-kept', {'name': 'x'}, 'Wren Hill')
 
 
 @pytest.mark.asyncio

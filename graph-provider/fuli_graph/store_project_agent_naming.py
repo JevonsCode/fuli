@@ -22,6 +22,7 @@ at start and whenever it blocks a write (clear_stale_name_keys).
 A refusal names who is called that and where they work, and offers free names.
 """
 import json
+from datetime import UTC
 
 from fastapi import HTTPException
 from neo4j.exceptions import ConstraintError
@@ -77,14 +78,15 @@ def _former(names) -> dict:
     return names.former if isinstance(names, SpaceNames) else {}
 
 
-def _taken(names, agent_id):
+def _taken(names, agent_id, *, former=True):
     """Every name another Agent is called by: its shown name, a built-in
     role's own name, which it still answers to after a rename, and a 原名,
-    which `#FLA` still reaches for FORMER_NAME_DAYS."""
+    which `#FLA` still reaches for FORMER_NAME_DAYS (unless ``former`` is off)."""
     return {identity_key(agent_display_name(other, name, nickname))
             for other, (name, nickname) in names.items() if other != agent_id} | {
-        identity_key(SYSTEM_PROFILES[other]().name) for other in SYSTEM_PROFILES if other != agent_id} | {
+        identity_key(SYSTEM_PROFILES[other]().name) for other in SYSTEM_PROFILES if other != agent_id} | ({
         identity_key(change.name) for other, change in _former(names).items() if other != agent_id}
+        if former else set())
 
 
 def name_identity(personal_space_id: str, agent_id: str, profile) -> dict:
@@ -165,12 +167,12 @@ async def name_taken(store, personal_space_id, names, agent_id, name, alternativ
     holders += list(formerly)
     projects = await _working_projects(store, personal_space_id, holders) if holders else {}
     used_by = [{'agent_id': other, 'name': _called(names, other), 'projects': projects.get(other, []),
-                **({'former_name': formerly[other].name, 'free_from': free_from(formerly[other]).date().isoformat()}
+                **({'former_name': formerly[other].name, 'free_from': _instant(free_from(formerly[other]))}
                    if other in formerly else {})}
                for other in holders]
     said = ' | '.join(f'{item["name"]} ({item["agent_id"]})'
                       + (f' in {", ".join(_referred(item["projects"]))}' if item['projects'] else '')
-                      + (f', its former name until {item["free_from"]}' if 'free_from' in item else '')
+                      + (f', its former name, free after {item["free_from"]}' if 'free_from' in item else '')
                       for item in used_by)
     return HTTPException(409, {
         'code': 'agent_name_taken',
@@ -179,6 +181,13 @@ async def name_taken(store, personal_space_id, names, agent_id, name, alternativ
                    + f'free names: {", ".join(alternatives)}. Choose one or propose another.',
         'used_by': used_by, 'free_names': list(alternatives),
     })
+
+
+def _instant(moment) -> str:
+    """The exact time, with its offset: a date alone reads differently in
+    each time zone, so the console shows it in the person's own."""
+    moment = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).isoformat(timespec='seconds')
 
 
 def _called(names, agent_id):
@@ -280,6 +289,9 @@ def renamed_profile(names, agent_id: str, profile: dict, display_name: str | Non
             raise HTTPException(422, 'agent_name_required: only a built-in role can go back to its own name')
         return {key: value for key, value in profile.items() if key != 'display_name'}
     taken = _taken(names, agent_id)
-    if identity_key(display_name) in taken:
+    # A change of case or spacing keeps the Agent's own name, even while it is
+    # also another's 原名 (the one that kept a shared name, after a fix).
+    checked = _taken(names, agent_id, former=False) if keeps_its_name(names, agent_id, display_name) else taken
+    if identity_key(display_name) in checked:
         raise NameTaken(free_nicknames(agent_id, taken))
     return {**profile, 'display_name': display_name}
