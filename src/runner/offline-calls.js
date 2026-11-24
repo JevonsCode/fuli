@@ -58,6 +58,10 @@ export function hostOnlyAnswer(tool) {
 // Keeps an answer the host gave, for showing while it is away.
 export function rememberAnswer(store, { tool, input }, result) {
   if (result?.isError) return;
+  // An entry that repeats only the hard rules for a caller already holding the
+  // rest (mcp/task-entry-budget.js) would leave an offline entry nothing else:
+  // the earlier one stays kept.
+  if (TASK_ENTRY_TOOLS.has(tool) && resultValue(result)?.preferences_omitted?.unchanged) return;
   const key = answerKey(tool, input);
   if (key) store.rememberAnswer(key, tool, result);
 }
@@ -317,8 +321,11 @@ function entryPreferences(value) {
 
 function folderEntry(value) {
   if (!value || typeof value !== 'object') return {};
-  return Object.fromEntries(FOLDER_ENTRY_FIELDS.filter((field) => value[field] !== undefined)
-    .map((field) => [field, value[field]]));
+  // A bounded entry lists part of the preferences: an offline entry says how
+  // many it left out and names them, without the host task's read it cannot run.
+  const { read: _read, ...omitted } = value.preferences_omitted ?? {};
+  return { ...Object.fromEntries(FOLDER_ENTRY_FIELDS.filter((field) => value[field] !== undefined)
+    .map((field) => [field, value[field]])), ...(value.preferences_omitted ? { preferences_omitted: omitted } : {}) };
 }
 
 // Task entry is kept per folder (its request differs every time); a resumed

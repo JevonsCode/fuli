@@ -47,6 +47,15 @@ for Agents without an equivalent lifecycle hook. Fuli uses both only for this lo
 never stores or returns them, and resolves the exact local personal project itself. Do not infer
 or guess `personalProjectId` in the Agent.
 
+That answer is bounded like a hook entry: every hard rule in full, the best-ranked preferences that
+fit, and the rest counted (and, where it fits, named) in `preferences_omitted` with its `read`;
+`omitted_guidance` says what to do with them. Read the ones this task may touch through that read
+before acting where one may apply; `read_task_preferences` without `keys` returns every page. On a
+later call in the same conversation pass `knownRevision` = the last answer's `preferences_revision`.
+When nothing changed the answer repeats only the hard rules (`preferences_omitted.unchanged: true`):
+keep applying what the earlier answer listed, and if that answer is no longer in your context, read
+the rest before acting. Never send a revision from another conversation.
+
 Pass the actual native `sessionId` when the host or this turn's Hook supplies it; never guess
 one or use an MCP process ID. With `sessionId` and `taskPrompt`, the fallback also starts a fresh
 durable task and returns its `taskContextToken`. Follow `checkpoint_required` and

@@ -10,7 +10,7 @@ import { recentNotices } from '../src/notices/recent-notices.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
-import { offlineAnswer } from '../src/runner/offline-calls.js';
+import { offlineAnswer, rememberAnswer } from '../src/runner/offline-calls.js';
 import { deliverOutbox } from '../src/runner/outbox-delivery.js';
 import { joinHost } from '../src/runner/join.js';
 import { encodeInvitation, newInvitationCode, RUNNER_PATHS } from '../src/runner/protocol.js';
@@ -354,4 +354,20 @@ test('a pairing left while its store was held open no longer makes this computer
   assert.equal(result.exitCode, 0);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), true, 'the file stayed');
   assert.equal(isRunnerDataDirectory(dataDir), false, 'but the pairing is over');
+});
+
+test('an offline entry keeps what a bounded host entry left out, and never an answer that held only the hard rules', () => {
+  const store = pairedRunner();
+  const entry = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
+  const call = { tool: 'get_collaboration_preferences', input: { projectPath: '/synthetic/repo' } };
+  const hard = { preference_key: 'hard-rule', instruction: 'Synthetic hard rule.' };
+  const read = { tool: 'read_task_preferences', arguments: { taskContextToken: 'host-token' } };
+  rememberAnswer(store, call, entry({ effective_preferences: [hard, { preference_key: 'ranked', instruction: 'Synthetic.' }],
+    preferences_omitted: { count: 3, index: ['other — synthetic line'], read }, taskContextToken: 'host-token' }));
+  rememberAnswer(store, call, entry({ effective_preferences: [hard],
+    preferences_omitted: { count: 4, unchanged: true, read }, taskContextToken: 'host-token' }));
+  const offline = text(offlineAnswer(store, { ...call, sourceApplication: 'codex' }));
+  assert.deepEqual(offline.effective_preferences.map((item) => item.preference_key), ['hard-rule', 'ranked']);
+  assert.deepEqual(offline.preferences_omitted, { count: 3, index: ['other — synthetic line'] });
+  store.close();
 });

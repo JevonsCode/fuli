@@ -144,7 +144,7 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   });
   assert.match(begin.description, /bounded automatic recall/i);
   assert.match(preferenceEntry.description, /task_knowledge_recall/);
-  assert.match(preferenceEntry.description, /never use the full conversational request/i);
+  assert.match(preferenceEntry.description, /never only the full request/i);
 
   const reviseKnowledge = tools.find(({ name }) =>
     name === 'revise_personal_knowledge'

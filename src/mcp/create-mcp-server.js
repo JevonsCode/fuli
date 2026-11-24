@@ -1,4 +1,6 @@
 import { compactTaskContext } from '../conversations/task-context-view.js';
+import { fitUncached } from '../conversations/entry-inline-budget.js';
+import { mcpTaskEntry } from './task-entry-budget.js';
 import { withoutDeliveryProofs } from '../conversations/recent-context.js';
 import { employeeToolCatalogResult } from './employee-tool-catalog.js';
 import { agentToolCatalogResult } from './agent-tool-catalog.js';
@@ -168,6 +170,14 @@ export function createMcpServer(
   const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
   const effectiveHostSessionId = hostSessionId ?? environmentThread ?? mcpHostSessionId({});
   const projectActionPreviews = createProjectActionPreviewTokens();
+  // Only the named chat profile expands on demand. Restricted custom/remote
+  // allow-lists remain a security boundary. Every call keeps its original name.
+  const isChatProfile = !workerTaskContext && toolProfile === 'chat' && toolNames === null;
+  const listedNames = toolNames ?? workerTaskContext?.toolNames ?? toolNamesForProfile(toolProfile);
+  // A task entry is bounded only where its caller can read what the bound
+  // leaves out: read_task_preferences listed, or reached through fuli_call.
+  // A worker's entry is its admitted run's and stays as it is.
+  const entryReadable = !workerTaskContext && (listedNames === null || listedNames.includes('read_task_preferences') || isChatProfile);
   const tools = createToolMap(
     app,
     projectActionPreviews,
@@ -175,22 +185,20 @@ export function createMcpServer(
     effectiveHostSessionId,
     authoritativeSourceApplication,
     withRuntimeLease,
-    toolNames ?? workerTaskContext?.toolNames ?? toolNamesForProfile(toolProfile),
+    listedNames,
     prepareToolInput,
     env,
     workerTaskContext,
-    onSession
+    onSession,
+    entryReadable
   );
-  // Only the named chat profile expands on demand. Restricted custom/remote
-  // allow-lists remain a security boundary. Every call keeps its original name.
-  const isChatProfile = !workerTaskContext && toolProfile === 'chat' && toolNames === null;
   for (const tool of tools.values()) registerTool(server, tool, isChatProfile);
   if (!tools.size) registerEmptyToolList(server);
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   if (flaMenu && !workerTaskContext) registerFlaMenuPrompts(server, app, { sourceApplication: authoritativeSourceApplication, withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
+    authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession, entryReadable) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null, taskIssuer);
@@ -228,7 +236,8 @@ function createToolMap(
   prepareToolInput,
   env = process.env,
   workerTaskContext = null,
-  onSession
+  onSession,
+  entryReadable = false
 ) {
   if (toolNames !== null && !Array.isArray(toolNames)) {
     throw new TypeError('MCP toolNames must be an array or null');
@@ -254,6 +263,9 @@ function createToolMap(
     diagnosticEvents: app?.diagnosticEvents ?? null,
     preferenceDelivery: workerTaskContext ? null : app.preferenceDelivery,
     preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
+    // The conversation an entry's preferences_revision is bound to where the call names none (task-entry-budget.js).
+    hostSessionId,
+    entryReadable,
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
     input: createToolInputValidator(definition.inputSchema),
@@ -374,8 +386,10 @@ function unknownToolResult(name) {
 
 async function invokeTool(tool, input, requestContext = null) {
   const startedAt = Date.now();
+  // knownRevision is this transport's (task-entry-budget.js); the entry itself never sees it.
+  const { knownRevision = null, ...callInput } = input ?? {};
   try {
-    const value = await tool.invoke(input, requestContext);
+    const value = await tool.invoke(tool.definition.name === 'get_collaboration_preferences' ? callInput : input, requestContext);
     auditLifecycleTool(tool.definition.name);
     const preserveHumanInteraction = NATIVE_CHOICE_TOOLS.has(tool.definition.name)
       && value?.human_interaction?.presentation === 'host_native_single_choice';
@@ -389,20 +403,29 @@ async function invokeTool(tool, input, requestContext = null) {
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {
       const name = tool.definition.name;
       const view = name === 'read_task_preferences' ? value : compactTaskContext(value);
+      const native = requestContext?.[NATIVE_CONTEXT];
+      // An MCP client's task entry, bounded as a hook's frame is; null where it stays whole.
+      const entry = name === 'get_collaboration_preferences' ? mcpTaskEntry(view, { knownRevision,
+        readable: tool.entryReadable, projectPath: callInput.projectPath ?? null,
+        session: [tool.preferenceOrigin.sourceApplication, native?.nativeSessionId ?? tool.preferenceOrigin.nativeSessionId
+          ?? callInput.sessionId ?? tool.hostSessionId] }) : null;
       const format = projected => name === 'read_task_preferences' ? completePreferenceToolResult(projected)
         : name === 'begin_task_context' ? hookAdditionalContextToolResult(projected, {
           hookEventName: 'UserPromptSubmit',
           label: 'Fuli task context. Apply effective_preferences and use taskContextToken for the final checkpoint.',
           limitBytes, itemLimit: 1000
-        }) : successToolResult(projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
-      if (!tool.preferenceDelivery) return format(withoutDeliveryProofs(view));
+        }) : successToolResult(entry ? entry.notes(projected) : projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
+      // An answer that repeats nothing the caller holds is no frame for the session's record.
+      if (!tool.preferenceDelivery || entry?.unchanged) {
+        return entry ? fitUncached(entry.fit, entry.value, projected => format(withoutDeliveryProofs(projected)))
+          : format(withoutDeliveryProofs(view));
+      }
       // A result without per-request window proof stays full. What the
       // generation shows is read from the session's own transcript; a host
       // execution or window change starts a new generation there.
-      const native = requestContext?.[NATIVE_CONTEXT];
       const origin = deliveryOrigin(tool, native);
-      return await tool.preferenceDelivery.deliver(view,
-        { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format);
+      return await tool.preferenceDelivery.deliver(entry?.value ?? view,
+        { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format, entry?.fit);
     }
     if (['resume_agent_conversation', 'read_agent_conversation'].includes(tool.definition.name) && tool.preferenceDelivery) {
       return await tool.preferenceDelivery.recordConversation(value, deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
