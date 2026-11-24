@@ -200,11 +200,9 @@ export const SCENARIOS = {
       world.items = before;
       await session.turn(FRONTEND, { note: 'first' });
       await session.turn(FRONTEND, { record: false, note: 'on its way' });
-      // Fifth of the scene's own: past the preferences' floor, which every
-      // turn spells out, and within what one complete frame of `many` holds
-      // beside the lines naming its two habits whose case a frontend task is
-      // not (preference-conditions.js; they cost Codex's frame the sixth).
-      world.items = [...boundary, ...general, ...spacing.slice(0, 4), ...radius, ...spacing.slice(4), ...palette];
+      // Sixth of the scene's own: past the preferences' floor, which every
+      // turn spells out, and within what one complete frame of `many` holds.
+      world.items = [...boundary, ...general, ...spacing.slice(0, 5), ...radius, ...spacing.slice(5), ...palette];
       await session.turn(FRONTEND, { note: ADDED_IN_FLIGHT });
       await session.say('assistant', 'SYNTHETIC reply.');
       for (const note of ['next', 'settled']) {

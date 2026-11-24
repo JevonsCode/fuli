@@ -42,11 +42,17 @@ for (const [name, build] of [['working', syntheticWorkingEntry], ['large', async
       assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-1'), 'one read returns every one');
       assert.ok(label(first.text).includes(OMITTED_PREFERENCES_LABEL));
       // "fix the export bug" is not the case 12 habits state, 3 of the 8 hard rules among them: each
-      // is named by a line with that case (preference-conditions.js), never silently left out. The
-      // working entry has no room for the other 9 lines beside its hard rules, so those rank as before.
+      // is named by a line with that case (preference-conditions.js), never silently left out, and a
+      // hard rule's line says what the rule says. The other 9 would cost bodies the task may need, so
+      // they are counted without a line (the read still serves them).
       const cased = (frame.preferences_omitted.conditional ?? []).map(line => line.split(' — ')[0].split(' (')[0]);
-      assert.equal(cased.length, name === 'large' ? 12 : 3);
-      assert.equal(frame.preferences_omitted.conditional.filter(line => line.includes(' — hard rule · ')).length, 3);
+      assert.equal(cased.length, 3);
+      const hardLines = frame.preferences_omitted.conditional.filter(line => line.includes(' — hard rule · '));
+      assert.equal(hardLines.length, 3);
+      for (const line of hardLines) {
+        const item = items.find(each => each.preference_key === line.split(' — ')[0].split(' (')[0]);
+        assert.ok(line.endsWith(` · ${item.instruction.split('。')[0]}`) || line.endsWith('…'), line);
+      }
       assert.ok(label(first.text).includes(CONDITIONAL_LABEL));
       const missing = hardKeys(items).filter(key => !listed.includes(key) && !cased.includes(key));
       // A hard rule left out is never silent: the frame and its label say so.

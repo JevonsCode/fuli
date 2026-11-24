@@ -6,6 +6,7 @@
 // that one sentence with the two numbers it can now see; the link after it, and
 // every other receipt line, are left exactly as they were.
 import { deliveredHabits, HABITS_LEAD } from '../graphiti/turn-receipt-delivery.js';
+import { conditionalOmitted } from './preference-conditions.js';
 
 // The entry with its habits sentence corrected, or the entry as it is when it
 // has no habits line or leaves nothing out. A task entry's receipt carries the
@@ -16,7 +17,7 @@ export function withDeliveredHabits(value) {
   const readable = value?.preferences_omitted?.count ?? 0;
   if (!receipt || readable < 1) return value;
   const inline = Array.isArray(value.effective_preferences) ? value.effective_preferences.length : 0;
-  const counts = [inline, readable, value.preferences_omitted.conditional?.length ?? 0];
+  const counts = [inline, readable, conditionalOmitted(value)];
   const markdown = typeof receipt.markdown === 'string'
     ? receipt.markdown.split('\n').map(line => rewrite(line, counts)).join('\n') : receipt.markdown;
   const lines = Array.isArray(receipt.lines) ? receipt.lines.map(line => rewrite(line, counts)) : receipt.lines;

@@ -83,11 +83,11 @@ boundary and applies everywhere. Set `attributes.constraint` only when the user 
 keeps a rule in every scene, `"soft"` lets small talk leave it out. The compact `remember` items
 take the same `constraint`, `workKind` and `tasteDomain` fields; there an unlisted `workKind` is read
 like a task prompt ("front-end styling" becomes `frontend`) and an unknown one is left off, so the
-preference is still kept. A case that is not a kind of work (filling in timesheets, campaign work)
-goes in `attributes.appliesWhen` as one short phrase in the person's words, or the instruction opens
-with 「仅在…时适用」 / "Applies only when…": a task entry then names the habit by that case instead of
-spelling it out when a task is clearly not it, hard rules included, and the AI reads it by key when
-the task is.
+preference is still kept. Set `attributes.appliesWhen` only when the person said the habit applies
+only in some case that is not a kind of work (filling in timesheets, campaign work): one short phrase
+in their words. A habit that applies everywhere gets none, and never one written to save room: a
+task entry that judges a task is not that case gives only one line for the habit, hard rules
+included, and the AI must read it by key when the task turns out to be that case.
 
 When the person asks to keep something for later ("remember", "keep this for later sessions",
 "from now on", 记住, 以后都…) or states one of their own habits ("my habit", "one of my habits",

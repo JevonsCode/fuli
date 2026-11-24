@@ -1,5 +1,5 @@
 import { copyPreferenceScope, entryWorkKind, heldOwes, heldStatus } from './preference-snapshot.js';
-import { CONDITIONAL_LABEL, conditionLine, unmetConditions } from './preference-conditions.js';
+import { CONDITIONAL_FOLDED, CONDITIONAL_LABEL, conditionLine, unmetConditions } from './preference-conditions.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
@@ -134,8 +134,8 @@ export function fitUncached(fit, value, render) {
 // none (a restore, a host turn). Before any of the above, a habit whose stated
 // case this task clearly is not (preference-conditions.js) is left out with a
 // line naming that case (preferences_omitted.conditional), so it takes no
-// room; a hard rule's line always stays, and where the lines of the others do
-// not fit beside the hard rules, those others are ranked as before.
+// body room; a hard rule's line always stays, and where the lines of the
+// others would cost a body, those others are counted without a line.
 export function inlineEntryFit(limit, length, { projectPath = null, measure = textLength, request = null } = {}) {
   return conditionalFit(boundedFit(limit, length, projectPath, true, measure), { request, projectPath });
 }
@@ -151,28 +151,37 @@ export function inlineSearchFit(limit, length, { projectPath = null } = {}) {
 }
 
 // The fit `search`, run on the entry without the habits whose stated case
-// this task is not. A frame that cannot hold every hard rule beside all of
-// their lines is chosen again with the hard rules' lines alone.
+// this task is not. A hard rule's line always stays. The lines of the others
+// never cost a body the task may need: where a complete frame with every line
+// lists fewer bodies (or leaves a hard rule out) than one with the hard rules'
+// lines alone, the others are counted without a line (the read still serves
+// them). The choice is a complete frame's, as a new session's first frame
+// would make it, so a later delta with more room names the same lines.
 function conditionalFit(search, { request, projectPath }) {
   return (whole, options) => {
     const given = item => Boolean(options.held) && ['listed', 'changed'].includes(heldStatus(item, options.held));
     const unmet = unmetConditions(whole, { request, projectPath, given });
     if (!unmet.length) return search(whole, options);
     const hard = unmet.filter(index => preferenceAlwaysInline(whole.effective_preferences[index]));
-    const attempt = withoutUnmet(search, whole, unmet, options);
-    return hard.length < unmet.length && crowded(attempt) ? withoutUnmet(search, whole, hard, options) : attempt;
+    if (hard.length === unmet.length) return withoutUnmet(search, whole, unmet, unmet, options);
+    const first = { ...options, deliver: options.complete, held: null };
+    const lined = withoutUnmet(search, whole, unmet, unmet, first);
+    const lean = leavesOut(lined, unmet.length) ? withoutUnmet(search, whole, unmet, hard, first) : null;
+    const fold = lean && (bodies(lean) > bodies(lined) || (crowded(lined) && !crowded(lean)));
+    return withoutUnmet(search, whole, unmet, fold ? hard : unmet, options);
   };
 }
 
-// The search on the entry less `unmet` (indexes into it), which the frame names
-// by their lines. What the search reports in indexes of the smaller entry
-// (`added`, preference-session.js) is given back in the entry's own.
-function withoutUnmet(search, whole, unmet, options) {
-  if (!unmet.length) return search(whole, options);
+// The search on the entry less `unmet` (indexes into it), of which the frame
+// names `lined` by their lines and counts the rest. What the search reports in
+// indexes of the smaller entry (`added`, preference-session.js) is given back
+// in the entry's own.
+function withoutUnmet(search, whole, unmet, lined, options) {
   const left = new Set(unmet);
   const rest = whole.effective_preferences.flatMap((_, index) => left.has(index) ? [] : [index]);
   const reduced = copyPreferenceScope(whole, { ...whole, effective_preferences: rest.map(index => whole.effective_preferences[index]),
-    preferences_omitted: { conditional: unmet.map(index => conditionLine(whole.effective_preferences[index])) } });
+    preferences_omitted: lined.length ? { conditional: lined.map(index => conditionLine(whole.effective_preferences[index])) } : {},
+    ...(unmet.length > lined.length ? { [CONDITIONAL_FOLDED]: unmet.length - lined.length } : {}) });
   const start = withPreferences(reduced, new Set(rest.keys()), rest.length, false);
   // An entry that already leaves some out (an MCP answer that repeats only the
   // hard rules) keeps saying so, and counts these with them.
@@ -183,6 +192,14 @@ function withoutUnmet(search, whole, unmet, options) {
   const own = indexes => indexes.map(index => rest[index]);
   return { ...attempt, added: { ...attempt.added, owed: own(attempt.added.owed), declined: own(attempt.added.declined) } };
 }
+
+// Whether a frame leaves out more than the `unmet` habits it names, or blocks.
+function leavesOut(attempt, unmet) {
+  const omitted = attempt.candidate?.preferences_omitted;
+  return crowded(attempt) || (omitted?.count ?? 0) > unmet;
+}
+
+const bodies = attempt => attempt.candidate?.effective_preferences?.length ?? 0;
 
 // Whether a frame had to leave a hard rule out, or block.
 function crowded(attempt) {
@@ -654,8 +671,9 @@ function selectedPreferences(value, selected, total, indexed = false, tooLarge =
   const read = taskPreferenceRead(value);
   const index = indexed ? preferenceIndex(value.effective_preferences, selected, indexed) : [];
   const conditional = value.preferences_omitted?.conditional ?? [];
+  const folded = value[CONDITIONAL_FOLDED] ?? 0;
   return { effective_preferences: value.effective_preferences.filter((_, index) => selected.has(index)),
-    preferences_omitted: { count: total - selected.size + conditional.length,
+    preferences_omitted: { count: total - selected.size + conditional.length + folded,
       ...(conditional.length ? { conditional } : {}),
       ...(value.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
         ? { includes_always_inline: true } : {}),

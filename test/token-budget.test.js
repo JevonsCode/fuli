@@ -460,11 +460,16 @@ const BASELINE = Object.freeze({
   // nothing is owed after the first frame and memory and recall come back on the second turn
   // instead of the third: 5,756 -> 7,715 bytes there, while the four turns together go from
   // 28,063 to 26,051 bytes (codexWorkingFourTurnBytes).
-  codexWorkingEntryBytes: 8962,
+  // #1104 review: each of the 3 hard rules' lines adds the first sentence of what the rule says,
+  // and the 9 other lines are counted without a line wherever a complete frame would spend a body
+  // on them: 8,962 -> 8,949 bytes. The second turn brings back both memory layers instead of one
+  // (the global one came on the third): 7,715 -> 8,919 bytes there, the third 6,502 -> 4,422, and
+  // the four turns together 26,051 -> 25,099.
+  codexWorkingEntryBytes: 8949,
   // #1102 review: a manager keeps its one trigger sentence and rules version inline (#407) when the
   // details give way for hard rules: 5,646 -> 5,756 bytes.
-  codexWorkingNextTurnBytes: 7715,
-  codexWorkingFourTurnBytes: 26051,
+  codexWorkingNextTurnBytes: 8919,
+  codexWorkingFourTurnBytes: 25099,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that

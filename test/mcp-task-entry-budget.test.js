@@ -95,8 +95,15 @@ test('an MCP entry is bounded to the inline limit with every hard rule, the rest
       assert.equal(frame.effective_preferences.find(item => item.preference_key === rule.preference_key)?.instruction,
         rule.instruction);
     }
-    assert.deepEqual(frame.preferences_omitted.conditional.map(lineKey).sort(), unmet);
-    assert.equal(frame.preferences_omitted.conditional.filter(line => line.includes(' — hard rule · ')).length, 3);
+    // The 3 hard rules among them keep their lines, saying what each says; the other 9 lines
+    // would cost bodies this question may need, so those are counted (the read serves them).
+    const unmetHard = hardKeys(all).filter(key => unmet.includes(key));
+    assert.deepEqual(frame.preferences_omitted.conditional.map(lineKey).sort(), unmetHard);
+    for (const line of frame.preferences_omitted.conditional) {
+      const item = all.find(each => each.preference_key === lineKey(line));
+      assert.ok(line.includes(' — hard rule · '), line);
+      assert.ok(line.endsWith(` · ${item.instruction.split('。')[0]}`) || line.endsWith('…'), line);
+    }
     assert.equal(frame.effective_preferences.some(item => unmet.includes(item.preference_key)), false);
     assert.match(frame.omitted_guidance, /preferences_omitted\.conditional/);
     const listed = frame.effective_preferences.length;
@@ -216,7 +223,8 @@ test('an entry of preferences alone gives the room a working entry spends on its
     assert.ok(result.content[0].text.length <= MCP_ENTRY_INLINE_CHARS);
     assert.ok(lean.effective_preferences.length > rich.effective_preferences.length,
       `${lean.effective_preferences.length} > ${rich.effective_preferences.length}`);
-    assert.equal(lean.preferences_omitted.index.length + lean.preferences_omitted.conditional.length, lean.preferences_omitted.count);
+    const unmet = casedKeys(realScalePreferences()).length;
+    assert.equal(lean.preferences_omitted.index.length + unmet, lean.preferences_omitted.count);
   } finally { await working.close(); await alone.close(); }
 });
 

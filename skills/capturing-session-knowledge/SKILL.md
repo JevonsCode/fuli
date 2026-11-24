@@ -108,7 +108,7 @@ unsupported inference, or a task with no durable value.
 
 Capture confirmed, stable information:
 
-- Personal: the user's enduring preferences, boundaries, habits, and working methods. Project-specific personal rules must explicitly link to that project instead of becoming global defaults. A habit that applies only in some case (filling in timesheets, campaign work) states that case in `attributes.appliesWhen` (or opens with 「仅在…时适用」 / "Applies only when…"), so it takes no room in unrelated tasks.
+- Personal: the user's enduring preferences, boundaries, habits, and working methods. Project-specific personal rules must explicitly link to that project instead of becoming global defaults. Write `attributes.appliesWhen` only when the person said the habit applies only in some case (filling in timesheets, campaign work), in their words; a habit that applies everywhere gets none.
 - Project: PRD facts, requirements, terminology, decisions, constraints, architecture, routes, APIs, metrics, and document-derived knowledge.
 
 FULI search matches words, so you supply the meaning. For a runbook, decision, route, or other item

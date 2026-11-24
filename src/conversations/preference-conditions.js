@@ -1,24 +1,34 @@
-// Habits that apply only in a case they state (a habit written "仅适用于 X",
-// "仅在 X 时适用", "Applies only to X", or one whose qualifiers carry an
-// `appliesWhen`): an entry spells them out only where this task may be that
-// case. A question that has nothing to do with them used to carry every such
-// hard rule in full ("68 条习惯" for one unrelated question).
+// Habits that apply only in a case they state (a habit whose qualifiers carry
+// an `appliesWhen`, or whose instruction opens "仅适用于 X", "仅在 X 时适用",
+// "Applies only to X"): an entry spells them out only where this task may be
+// that case. A question that has nothing to do with them used to carry every
+// such hard rule in full ("68 条习惯" for one unrelated question).
 //
-// The judgment is a rule, never a model call, and it runs on what the entry
-// already holds: the person's request, the project's ID, name and brief, the
-// folder, the task scene, and the person's recent messages the entry carries.
-// Three outcomes for each conditional habit:
-// - met: a distinctive word of its condition appears in those signals;
-// - unmet: its condition has distinctive words and none of them appears,
-//   while the request itself says enough to judge by;
-// - unknown: the request is too short ("继续", "好的") or missing (a restore
-//   after compaction, a host turn), or the condition yields no word to match.
-// Unknown counts as met: missing a habit the person must follow costs more
-// than sending one more. Only an unmet one is left out, with one line naming
-// its case, and read_task_preferences still reads it by key.
+// Missing a habit the person must follow costs more than sending one more, and
+// a hard rule most of all, so the judgment leans one way throughout:
+// - A hard rule is conditional only by an `appliesWhen` or an opening that
+//   says it *applies* only there; 「仅限…」 / "Only for…" limit an action, for
+//   every task (preference-index.js statedScope).
+// - A case that means every task (「总是」「默认」「所有任务」「always」「by
+//   default」) is no case: the habit is unconditional.
+// - Unknown counts as met: a request too short to judge by (fewer than 8
+//   Chinese characters or 3 Latin words once filler is out), one that points
+//   back at earlier words (REFERENCES: 「按上面说的继续做」), no request at all
+//   (a restore after compaction, a host turn), or a case with no word left
+//   once filler is out (「相关工作」).
+// - Met: a distinctive word of its case appears in what the task shows of
+//   itself: the person's request, the project's ID, name and brief, the
+//   folder, the task scene, and the person's latest messages of this
+//   conversation the entry carries (conversation.recovery: a later turn of the
+//   same native session has its own window there; a new one has none).
+// Only an unmet one is left out, with one line naming its case, and
+// read_task_preferences still reads it by key. A hard rule's line also says
+// what the rule says (its first sentence), so a task its case words miss
+// ("region 的判断" for a case worded 「门店促销排期」) is still one the model
+// can tell it touches. The judgment is a rule, never a model call.
 import { basename } from 'node:path';
-import { singleLineExcerpt } from '../text/single-line.js';
-import { distinctiveUnits, preferenceName, statedScopePhrase } from './preference-index.js';
+import { singleLine } from '../text/single-line.js';
+import { distinctiveUnits, preferenceName, statedScope, withoutFiller } from './preference-index.js';
 import { preferenceAlwaysInline, preferenceAppliesWhen } from '../graphiti/preference-task-scope.js';
 import { entryPreferenceScene } from './preference-snapshot.js';
 import { taskPreferenceRead } from '../mcp/preference-delivery.js';
@@ -26,34 +36,91 @@ import { taskPreferenceRead } from '../mcp/preference-delivery.js';
 // What a frame says of them (preferences_omitted.conditional, or
 // conditional_unchanged in a delta whose base listed the same lines).
 export const CONDITIONAL_LABEL = 'preferences_omitted.conditional (or conditional_unchanged: as the base listed) names habits '
-  + 'that apply only in the case each states, left out because this task does not look like one: '
-  + 'if it is, read that one by key with read_task_preferences before acting.';
+  + 'that apply only in the case each states, left out because this task does not look like one '
+  + '(a hard rule\'s line adds what it says): if it is, read that one by key with read_task_preferences before acting.';
 
-// A condition is shown as its own words, cut to one short clause.
-const CONDITION_CHARS = 40;
-// A request with fewer distinctive units than this says too little to tell a
-// habit does not apply ("继续", "好的", "fix it").
-const JUDGEABLE_UNITS = 3;
-// The person's latest messages the entry already carries: what "this" in a
-// short follow-up refers to.
+// How many habits whose case this task is not an entry counts without a line
+// (entry-inline-budget.js: where those lines would cost a body). A symbol on
+// the entry, beside the fields a frame is checked by: it travels with the
+// entry while a frame is built and is never part of what the model reads.
+export const CONDITIONAL_FOLDED = Symbol('conditional habits counted without a line');
+
+// All habits an entry's frame leaves out because this task is not the case they state.
+export const conditionalOmitted = value => (value?.preferences_omitted?.conditional?.length ?? 0) + (value?.[CONDITIONAL_FOLDED] ?? 0);
+
+// A case is shown whole in its own words up to this; past it, cut.
+const CONDITION_CHARS = 120;
+// What a hard rule's line adds of what it says: its first sentence, cut at a
+// word end to this many columns (a Chinese character counts two: 40 of them,
+// or 80 Latin characters).
+const GIST_COLUMNS = 80;
+// A request says enough to tell a habit does not apply once it has this many
+// Chinese characters, or Latin words, without filler (a Chinese pair count
+// reached 3 at four characters: 「按上面说」, review of #1104). Mixed requests add
+// the two shares.
+const JUDGEABLE = Object.freeze({ han: 8, latin: 3 });
+// Words a request uses to point back at what was said before; what they point
+// to is not in the request, so such a request cannot be judged by its words.
+export const REFERENCES = Object.freeze(['上面', '上述', '如上', '同上', '刚才', '刚刚', '之前说', '前面说', '上次说', '那个',
+  '这个', '那些', '这些', '继续', '接着', '同样', '照旧', '照着', 'as above', 'the above', 'that one', 'this one', 'same as',
+  'as before', 'continue', 'keep going', 'go on', 'carry on']);
+const REFERENCE = new RegExp(REFERENCES.map(word => /^[a-z]/u.test(word) ? `\\b${word}\\b` : word).join('|'), 'iu');
+// The person's latest messages of this conversation the entry carries.
 const RECENT_MESSAGES = 4;
+// Chinese words that carry no meaning of their own in a request, beyond filler.
+const HAN_FUNCTION = /[了吗呢吧啊呀把被请帮我你他她它们一下看]/gu;
+// A case that means every task: one of these words, and nothing else of
+// substance once these and generic nouns are out.
+const UNIVERSAL = /总是|始终|一直|默认|全部|所有|任何|任意|每次|每个|一切|\b(?:always|any|every|all|default|everywhere|anytime|whenever)\b/iu;
+const GENERIC = /总是|始终|一直|默认|全部|所有|任何|任意|每次|每个|一切|任务|工作|时候|情况|场景|项目|对话|会话|类型|种类|事情|都|时|\b(?:always|any|every|all|by|default|everywhere|anytime|whenever|in|on|at|of|the|a|an|kinds?|types?|tasks?|work|cases?|situations?|projects?|times?|sessions?|conversations?)\b/giu;
 
-// The case a habit states, as { text, units }, or null for a habit without
-// one. `appliesWhen` (free text a person or Agent wrote) wins over a case the
-// instruction states in its opening words; a habit that states neither is
-// unconditional, whatever its words seem to be about.
+// The case a habit states, as { text, units, end }, or null for a habit
+// without one. `appliesWhen` (free text a person or Agent wrote) wins over a
+// case the instruction states in its opening words; a habit that states
+// neither, or states every task, is unconditional, whatever its words seem to
+// be about. `end`: where an opening that states the case ends in the
+// instruction (0 where it opens with the rule itself).
 export function preferenceCondition(item) {
+  const instruction = typeof item?.instruction === 'string' ? item.instruction : '';
+  const opening = statedScope(instruction, { explicitOnly: preferenceAlwaysInline(item) });
   const appliesWhen = preferenceAppliesWhen(item);
-  const phrase = appliesWhen ?? statedScopePhrase(item?.instruction);
-  return phrase ? { text: singleLineExcerpt(phrase, CONDITION_CHARS), units: distinctiveUnits(phrase) } : null;
+  const phrase = appliesWhen ?? opening?.phrase;
+  if (!phrase || universal(phrase)) return null;
+  const flat = singleLine(phrase).replace(/\s+/gu, ' ');
+  const text = [...flat].length > CONDITION_CHARS ? `${[...flat].slice(0, CONDITION_CHARS - 1).join('').trimEnd()}…` : flat;
+  return { text, units: distinctiveUnits(phrase), end: opening?.end ?? 0 };
+}
+
+function universal(phrase) {
+  return UNIVERSAL.test(phrase) && !distinctiveUnits(phrase.replace(GENERIC, ' ')).length;
 }
 
 // One line for a habit left out because its case is not this task's: its key
-// and layer, whether it is a hard rule, and the case in its own words. The
-// separator is the omission index's, so a delta tells a held line by its key.
+// and layer, whether it is a hard rule, and the case in its own words; a hard
+// rule's also the first sentence of what it says after that case, so a model
+// can tell the task touches it where the case's words miss. The separator is
+// the omission index's, so a delta tells a held line by its key.
 export function conditionLine(item) {
-  const { text } = preferenceCondition(item);
-  return `${preferenceName(item)} — ${preferenceAlwaysInline(item) ? 'hard rule · ' : ''}${text}`;
+  const { text, end } = preferenceCondition(item);
+  const hard = preferenceAlwaysInline(item);
+  const gist = hard ? firstSentence(item.instruction.trim().slice(end)) : '';
+  return `${preferenceName(item)} — ${hard ? 'hard rule · ' : ''}${text}${gist ? ` · ${gist}` : ''}`;
+}
+
+// The first sentence of a text, cut at a word end to GIST_COLUMNS with "…".
+function firstSentence(text) {
+  const sentence = singleLine(text).replace(/^[\s：:，,；;。.、]+/u, '').split(/[。！？；;!?]|\.(?:\s|$)/u)[0].trim();
+  const chars = [...sentence];
+  let columns = 0;
+  for (let index = 0; index < chars.length; index++) {
+    columns += /[\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u.test(chars[index]) ? 2 : 1;
+    if (columns <= GIST_COLUMNS - 1) continue;
+    let cut = chars.slice(0, index).join('');
+    // Inside a Latin word: back to its start.
+    if (/\w$/u.test(cut) && /\w/u.test(chars[index])) cut = cut.replace(/\s*\S*$/u, '') || cut;
+    return `${cut.trimEnd()}…`;
+  }
+  return sentence;
 }
 
 // The indexes of the entry's preferences whose stated case this task clearly
@@ -76,9 +143,9 @@ export function unmetConditions(value, { request = null, projectPath = null, giv
 }
 
 // Everything the task shows of itself, lowercased into one text, or null when
-// the request says too little to judge by.
+// the request cannot be judged by: missing, too short, or pointing back.
 function taskSignals(value, request, projectPath) {
-  if (typeof request !== 'string' || new Set(distinctiveUnits(request)).size < JUDGEABLE_UNITS) return null;
+  if (!judgeable(request)) return null;
   const scene = entryPreferenceScene(value);
   const brief = value.project_agent_context?.project_brief;
   const messages = value.conversation?.recovery?.messages;
@@ -87,4 +154,13 @@ function taskSignals(value, request, projectPath) {
   return [request, value.context?.personal_project_id, brief?.name, brief?.summary, scene?.work_kind, scene?.workflow,
     typeof projectPath === 'string' && projectPath.trim() ? basename(projectPath) : null, ...said]
     .filter(text => typeof text === 'string' && text.trim()).join('\n').toLowerCase();
+}
+
+// Whether a request says enough, by itself, to tell a habit does not apply.
+export function judgeable(request) {
+  if (typeof request !== 'string' || REFERENCE.test(request)) return false;
+  const text = withoutFiller(request).replace(HAN_FUNCTION, ' ');
+  const han = text.match(/\p{Script=Han}/gu)?.length ?? 0;
+  const latin = distinctiveUnits(text.replace(/\p{Script=Han}+/gu, ' ')).length;
+  return han / JUDGEABLE.han + latin / JUDGEABLE.latin >= 1;
 }

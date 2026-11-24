@@ -514,52 +514,87 @@ full on every task, a question about a config dialog included, and an
 (both hooks and the MCP answer: every path through `inlineEntryFit`) now
 spells such a habit out only where the task may be its case
 (`src/conversations/preference-conditions.js`). The judgment is a rule on what
-the entry already holds; it calls no model and reads nothing new.
+the entry already holds; it calls no model and reads nothing new. It leans one
+way throughout: missing a habit the person must follow costs more than sending
+one more, and a hard rule (`constraint: hard`) most of all.
 
-**Which habits are conditional.** One whose qualifiers carry a non-empty
-string `appliesWhen`, or whose instruction opens with a stated case:
-`仅适用于… / 只适用于… / 仅限…`, `仅在…时适用 / 只在…时适用 / 只有在…时才适用`,
-`Only for… / Applies only to… / Only applies to…`, `Applies only when…`
-(`statedScopePhrase`, `src/conversations/preference-index.js`). A case that
-names a time or a moment (`仅在周五发布时适用`, `只在用户确认后才推送`, `Only when the
-person confirms…`) is a rule for every task, not a case. A habit that does not
-say it is limited is unconditional, whatever its words seem to be about: FULI
-never guesses one. Its case is shown in its own words: the `appliesWhen`, or
-the stated phrase, cut to 40 characters.
+**Which habits are conditional.** Hard rules and other habits differ:
 
-**Whether the task is the case.** The case's distinctive units (Latin words of
-three letters or more, pairs of adjacent Chinese characters, without filler and
-without the limiting words; `distinctiveUnits`, the same units a stated scope
-is read against a project with) are looked up in the task's signals: the
-person's request, the project's ID, name and brief, the folder, the work kind
-and workflow, and the person's last four messages in the entry's recovered
-conversation. Three outcomes:
+- A hard rule is conditional only where the person said it applies only in some
+  case: a non-empty string `appliesWhen`, or an instruction that opens by
+  saying it *applies* only there: `仅适用于… / 只适用于…`,
+  `仅在…时适用 / 只在…时适用 / 只有在…时才适用`, `Applies only to… / Only applies to…`,
+  `Applies only when…`. One that opens `仅限…` or `Only for…` is always spelled
+  out: `仅限内部使用，不要外发任何截图` limits what is done, on every task.
+- Any other habit is also conditional on `仅限… / Only for…`
+  (`statedScope`, `src/conversations/preference-index.js`), except where what
+  follows says who may use or see something (`仅限内部使用`, `仅限本人查看`,
+  `Only for internal use`): a restriction, not a case.
+- For both, a case that names a time or a moment (`仅在周五发布时适用`,
+  `只在用户确认后才推送`, `Only when the person confirms…`) is a rule for every
+  task, not a case; and a case that means every task (`总是`, `始终`, `一直`, `默认`,
+  `所有任务`, `任何时候`, `always`, `by default`, `all tasks`, `every task`: one of
+  those words and nothing of substance beside them) is no case. A habit that
+  does not say it is limited is unconditional, whatever its words seem to be
+  about: FULI never guesses one.
+
+A case stated in the opening runs to a colon in the first sentence, so
+`仅适用于 A，以及 B：…` keeps both A and B; without a colon, to the first comma.
+It is shown in its own words, up to 120 characters.
+
+**Whether the task is the case.** Filler (`需求`, `任务`, `工作`, `项目`, `所有`, `的`,
+…) and the limiting words are taken out of the whole text first, then it is cut
+into distinctive units: Latin words of three letters or more and pairs of
+adjacent Chinese characters (`distinctiveUnits`, the same units a stated scope
+is read against a project with), so no pair spans two filler words. The units
+are looked up in the task's signals: the person's request, the project's ID,
+name and brief, the folder, the work kind and workflow, and up to the last four
+messages the person wrote in the entry's `conversation.recovery`. A later turn
+of the same native chat carries that window (the Provider returns the bound
+conversation's recent visible messages, up to three of the person's turns,
+once the transcript collector has saved them; the fit reads them before the
+session cache trims what the model already holds); a new chat carries none.
+Three outcomes:
 
 - met: any unit appears;
-- unmet: the case has units, none appears, and the request itself has at least
-  three distinct units;
-- unknown: the request has fewer than three (`继续`, `好的`, `fix it`), there is no
-  request (a restore after compaction, a host turn's in-place refresh), the
-  case yields no unit, or the entry has no reader for the habit
-  (`taskPreferenceRead`).
-
-Unknown counts as met, a hard rule above all: missing a habit the person must
-follow costs more than sending one more.
+- unmet: the case has units, none appears, and the request can be judged by;
+- unknown, which counts as met:
+  - no request: a restore after compaction, a host turn's in-place refresh;
+  - a request too short to judge by: once filler and function words are out,
+    fewer than 8 Chinese characters or 3 Latin words (a mixed request adds the
+    two shares): `继续`, `好的`, `fix it`, `把 site 判断换掉`;
+  - a request that points back at earlier words (`REFERENCES`: `上面`, `上述`,
+    `刚才`, `之前说`, `那个`, `这个`, `继续`, `接着`, `同样`, `照旧`, `as above`,
+    `that one`, `same as`, `continue`, `keep going`, …): `按上面说的继续做`, whatever
+    its length, since what it points to is not in it;
+  - a case with no unit left once filler is out (`相关工作`);
+  - an entry with no reader for the habit (`taskPreferenceRead`).
 
 **How it is delivered.** Met and unknown habits are ranked exactly as before.
-An unmet one, hard rule or not, is taken out before the fit runs and named in
-`preferences_omitted.conditional` by one line, `key (layer) — hard rule · case`
-(`hard rule · ` only for a hard rule). It takes no body room; the lines do take
-room, before the index of what the limit crowded out. Where the frame cannot
-hold every remaining hard rule beside all the lines (a blocked frame,
-`includes_always_inline` or `too_large`), the fit runs again with the hard
-rules' lines alone: the others rank as before. `preferences_omitted.count`
-includes the unmet ones; `includes_always_inline` does not count them. Every
-frame with lines carries one fixed sentence (`CONDITIONAL_LABEL`): these apply
-only in the case each states; if this task is one, read that one by key with
+An unmet one is taken out before the fit runs and named in
+`preferences_omitted.conditional` by one line:
+
+- a hard rule: `key (layer) — hard rule · case · first sentence…`, where the
+  first sentence is what the rule says after its stated case, cut at a word end
+  to about 40 Chinese or 80 Latin characters. A task worded otherwise than the
+  case (`region 的判断逻辑有个 bug` for a case `门店促销排期`), or in another
+  language, can still miss its units; the line then tells the model what the
+  rule is about, so it can see the task touches it and read it by key. On the
+  real-scale set this adds 87 characters for its 3 such hard rules.
+- any other habit: `key (layer) — case`. These lines never cost a body the task
+  may need: where a complete frame with every line would list fewer bodies (or
+  leave a hard rule out) than one with the hard rules' lines alone, the others
+  are counted in `preferences_omitted.count` without a line, and the read
+  still serves them. The choice is the complete frame's, so a later delta with
+  more room names the same lines.
+
+A hard rule's line is always in the frame. `preferences_omitted.count` includes
+every unmet habit; `includes_always_inline` does not count them. Every frame
+with lines carries one fixed sentence (`CONDITIONAL_LABEL`): these apply only
+in the case each states; if this task is one, read that one by key with
 `read_task_preferences` first. The reader reads every habit, unmet ones
 included. A frame where nothing is unmet is the frame it was before, byte for
-byte.
+byte, and a frame never carries an empty list of lines.
 
 The receipt's habits line counts unmet habits among the readable ones and says
 how many, `另外 K 条随时可读（Z 条这次用不上）`, never among those carried. The
