@@ -20,6 +20,12 @@ function dataDirectory(t) {
   return dataDir;
 }
 
+// The half is closed before the test ends, so before the folder's removal above:
+// Windows refuses to delete a folder whose SQLite files are still open.
+async function withHalf(half, work) {
+  try { return await work(half); } finally { await half.close(); }
+}
+
 test('the core opens the application on that graph and hands the server its options and the lease', async (t) => {
   const dataDir = dataDirectory(t);
   const made = [];
@@ -46,12 +52,13 @@ test('a follower\'s own half is the same MCP server, answered in this process', 
   const dataDir = dataDirectory(t);
   const half = createLocalScopeServer({ dataDir, sourceApplication: 'codex', toolProfile: 'chat', sessionId: 'session-synthetic',
     globalWrites: { elsewhere: () => false } });
-  t.after(() => half.close());
-  const answer = await half.call('fuli_call', { toolName: 'not_a_fuli_tool', input: {} });
-  assert.equal(answer.isError, true);
-  assert.equal(answer.structuredContent.error.code, 'not_found');
-  assert.match(answer.content[0].text, /Unknown Fuli tool/, 'what the follower says as tool_unknown_here');
-  assert.equal((await half.application()).config.personal.spaceId, 'space-synthetic');
+  await withHalf(half, async () => {
+    const answer = await half.call('fuli_call', { toolName: 'not_a_fuli_tool', input: {} });
+    assert.equal(answer.isError, true);
+    assert.equal(answer.structuredContent.error.code, 'not_found');
+    assert.match(answer.content[0].text, /Unknown Fuli tool/, 'what the follower says as tool_unknown_here');
+    assert.equal((await half.application()).config.personal.spaceId, 'space-synthetic');
+  });
 });
 
 test('a half that could not open is opened afresh by the next call', async (t) => {
@@ -63,9 +70,10 @@ test('a half that could not open is opened afresh by the next call', async (t) =
       if (tries === 1) throw new Error('synthetic: runtime not configured yet');
       return openLocalMcpCore(options);
     } });
-  t.after(() => half.close());
-  await assert.rejects(half.call('fuli_call', { toolName: 'x' }), /not configured yet/);
-  const answer = await half.call('fuli_call', { toolName: 'not_a_fuli_tool', input: {} });
-  assert.equal(answer.structuredContent.error.code, 'not_found');
-  assert.equal(tries, 2);
+  await withHalf(half, async () => {
+    await assert.rejects(half.call('fuli_call', { toolName: 'x' }), /not configured yet/);
+    const answer = await half.call('fuli_call', { toolName: 'not_a_fuli_tool', input: {} });
+    assert.equal(answer.structuredContent.error.code, 'not_found');
+    assert.equal(tries, 2);
+  });
 });
