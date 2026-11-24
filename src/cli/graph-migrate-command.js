@@ -4,6 +4,8 @@ import { createInterface } from 'node:readline/promises';
 import { exportGraphData, importGraphData } from '../backup/graph-backup.js';
 import { createGraphBackupAdapter, managedGraphInstances } from '../backup/runtime-adapters.js';
 import { migrateContainerGraphToNative } from '../backup/runtime-migration.js';
+import { unfinishedImportError } from '../backup/unfinished-import.js';
+import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { recordGraphMigration } from '../system/graph-migration.js';
@@ -31,6 +33,12 @@ export async function runGraphMigrateCommand(args, dependencies = {}) {
     write('Cancelled. Nothing was changed.');
     return { status: 'cancelled' };
   }
+  // Counting the container graph starts its database: never on one an
+  // unfinished import may have left half written (backup/unfinished-import.js).
+  await reportingStartupFailure(async () => {
+    const unfinished = unfinishedImportError(paths, 'container');
+    if (unfinished) throw unfinished;
+  });
   const runtime = dependencies.runtime ?? localRuntimeControl(paths, env, write);
   const setup = dependencies.setup ?? runSetupCommand;
   const workspace = managedGraphInstances(paths).includes('workspace');

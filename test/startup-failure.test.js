@@ -161,6 +161,28 @@ test('an interrupted dump, load or update says what it can have changed, and poi
   }
 });
 
+test('an import that finished but stopped before releasing its lock says the graph is whole and nothing is taken back', async () => {
+  const text = await formatStartupFailure({ code: 'native_lifecycle_lock', holder: 'gone', since: '2026-11-22T17:24:35.000Z', pid: 9, operation: 'load', completed: true });
+  assert.match(text, /已经写完了新数据，但在解除维护锁之前停了。图谱是完整的。/);
+  assert.match(text, /下一步：运行 fuli graph runtime recover：.+它不撤回这次导入，只做一次启动检查再解除锁。/);
+  assert.doesNotMatch(text, /只写入了一半|整库恢复/);
+});
+
+test('an unfinished import on a runtime without a lock names what may be half written and the import that is the way back', async () => {
+  const base = { code: 'graph_import_unfinished', mode: 'native', since: '2026-11-22T17:24:35.000Z', graphs: ['workspace'] };
+  const copy = await formatStartupFailure({ ...base, way: 'copy', copyName: 'before-import-1', wayPath: '/data/backups/graph/before-import-1' });
+  assert.match(copy, /^没有启动：上次向原生模式的图谱导入数据（.+开始）没有完成，图谱 workspace 可能只写入了一半，这次没有启动任何东西。/);
+  assert.ok(copy.includes('fuli graph import --input'), copy);
+  assert.ok(copy.includes('/data/backups/graph/before-import-1'));
+  assert.match(copy, /--target-mode native --yes。导回成功后再启动。/);
+  const input = await formatStartupFailure({ ...base, mode: 'container', way: 'input', wayPath: '/data/bundle' });
+  assert.match(input, /容器模式.+导入前的副本里没有图谱 workspace（导入前它是空的，或者没有副本），重新运行那次导入让它完整/s);
+  const reconciling = await formatStartupFailure({ ...base, graphs: [], way: 'input', wayPath: '/data/bundle' });
+  assert.match(reconciling, /新数据已经写完，但没有做完收尾（核对图谱身份）.+重新运行那次导入，把收尾做完/s);
+  const unknown = await formatStartupFailure({ ...base, graphs: ['personal', 'workspace'], way: null });
+  assert.match(unknown, /backups\/graph 里导入前留下的副本（before-import-…）导回：fuli graph import --input <副本> --target-mode native --yes/);
+});
+
 test('the three holders of a lock read differently, each with its own next step', async () => {
   const base = { code: 'native_lifecycle_lock', since: '2026-11-22T17:24:35.000Z', pid: 4321, lockPath: '/x/native-runtime/.neo4j-lifecycle.lock' };
   const running = await formatStartupFailure({ ...base, holder: 'running', command: 'node' });
@@ -224,7 +246,7 @@ test('every failure says what happened and the next step, in both languages', as
     port: 7687, command: 'java', runningSeconds: 30_000, seconds: 60, logPath: '/x/logs/runtime.log',
     services: [{ port: 7687, pid: 4321, command: 'java' }] };
   for (const code of ['native_recovery_needed', 'native_lifecycle_lock', 'orphaned_graph_service', 'port_taken', 'console_not_answering', 'console_exited',
-    'console_port_reserved', 'provider_not_ready', 'provider_exited']) {
+    'console_port_reserved', 'provider_not_ready', 'provider_exited', 'graph_import_unfinished']) {
     const lines = (await formatStartupFailure({ ...facts, code })).split('\n');
     assert.equal(lines.length, 4, code);
     assert.match(lines[0], /^没有启动：/);
@@ -355,4 +377,19 @@ test('FULI\'s own processes count as running only as this user\'s', async () => 
   const { isOwnProcessRunning } = await import('../src/local-runtime/processes.js');
   assert.equal(isOwnProcessRunning(process.pid), true);
   assert.equal(isOwnProcessRunning(-1), false);
+});
+
+test('a failure line that would be too long drops its longest fields first, never the code or a command to copy', () => {
+  const long = `/data/${'x'.repeat(1500)}`;
+  const failure = { code: 'graph_import_unfinished', mode: 'container', way: 'copy', copyName: long, latestCopy: long,
+    command: `fuli graph import --input '${long}' --target-mode container --yes`, abandonCommand: 'fuli graph abandon-import --target-mode container' };
+  const line = startupFailureLine({ startupFailure: failure });
+  assert.ok(line && line.length <= 4096);
+  const { failure: read } = readStartupFailure(line);
+  // One long path goes, just enough for the line to fit; the short facts stay.
+  assert.deepEqual(Object.keys(read).sort(), ['abandonCommand', 'code', 'command', 'latestCopy', 'mode', 'way']);
+  assert.equal(read.command, failure.command);
+  // Short enough as it is: nothing is dropped. Commands alone too long: no line.
+  assert.deepEqual(readStartupFailure(startupFailureLine({ startupFailure: { code: 'port_taken', port: 7687 } })).failure, { code: 'port_taken', port: 7687 });
+  assert.equal(startupFailureLine({ startupFailure: { code: 'graph_import_unfinished', command: 'x'.repeat(5000) } }), null);
 });
