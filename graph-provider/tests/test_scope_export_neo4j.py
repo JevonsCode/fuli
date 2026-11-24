@@ -4,6 +4,7 @@
 Requires FULI_TEST_NEO4J_URI and FULI_TEST_NEO4J_EPHEMERAL=1. The scenario
 uses its own synthetic personal space; only that space's records are removed.
 """
+import json
 from uuid import uuid4
 
 import pytest
@@ -144,6 +145,12 @@ async def test_scope_exports_are_complete_separate_and_deterministic():
             exports = {scope: await export(client, space, scope)
                        for scope in ('global', 'project:alpha', 'project:beta', 'project:gamma')}
             await assert_scopes(driver, space, group, exports)
+            for envelope in exports.values():
+                assert envelope['complete'] is True
+                assert (envelope['unclassifiedLabels'], envelope['unclassifiedRelationshipTypes'],
+                        envelope['unidentifiedNodes'], envelope['unidentifiedRelationships']) == ({}, [], {}, {})
+                # The client session is this computer's: counted, not carried.
+                assert envelope['localOnlyCount'].get('FuliTaskContextSession') == 1
             await assert_deterministic(client, driver, space, exports)
             lighter = await export(client, space, 'global', vectors=False)
             assert (lighter['vectors'], lighter['embeddingModel']) == (False, None)
@@ -232,3 +239,48 @@ async def assert_deterministic(client, driver, space, exports):
     assert changed['project:beta'] != exports['project:beta']['digest']
     for scope in ('global', 'project:alpha', 'project:gamma'):
         assert changed[scope] == exports[scope]['digest'], scope
+
+
+@pytest.mark.asyncio
+async def test_scope_export_counts_what_it_cannot_carry():
+    """A node without its key, labels and a relationship type in no rule: the
+    envelope says so, never names a node by this computer's element ID, and is
+    not complete."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space = (await checked(await client.post('/v1/spaces', json={
+            'name': f'Synthetic scope gaps {uuid4().hex[:8]}', 'kind': 'personal'})))['id']
+        driver = client._transport.app.state.store.runtime.driver
+        records, _, _ = await driver.execute_query('MATCH (s:FuliSpace {id: $id}) RETURN s.group_id AS g', id=space)
+        group = records[0]['g']
+        try:
+            records, _, _ = await driver.execute_query('''
+                MATCH (space:FuliSpace {id: $space})
+                CREATE (space)-[:HAS_KNOWLEDGE_ASSIGNMENT]->(keyless:FuliKnowledgeAssignment {space_id: $space,
+                        item_kind: 'entity', item_id: 'gone', reason: 'Synthetic early record'})
+                CREATE (fact:Entity {uuid: $space + '-fact', group_id: $group, name: 'Synthetic fact'})
+                CREATE (:ScopeTestLoose {space_id: $space, note: 'no relationship at all'})
+                CREATE (:ScopeTestLinked {marker: $space})-[:SCOPE_TEST_LINK]->(fact)
+                CREATE (fact)-[:SCOPE_TEST_LINK]->(:ScopeTestTarget {marker: $space})
+                RETURN elementId(keyless) AS keyless
+            ''', space=space, group=group)
+            keyless = records[0]['keyless']
+            envelope = await export(client, space, 'global')
+            text = json.dumps(envelope)
+            assert keyless not in text and ':element:' not in text
+            assert envelope['unidentifiedNodes'] == {'FuliKnowledgeAssignment': 1}
+            assert envelope['unidentifiedRelationships'] == {'HAS_KNOWLEDGE_ASSIGNMENT': 1}
+            assert not any('FuliKnowledgeAssignment' in node['labels'] for node in envelope['nodes'])
+            assert envelope['unclassifiedLabels'] == {'ScopeTestLinked': 1, 'ScopeTestLoose': 1,
+                                                      'ScopeTestTarget': 1}
+            assert envelope['unclassifiedRelationshipTypes'] == ['SCOPE_TEST_LINK']
+            assert envelope['complete'] is False
+            assert f'Entity:{space}-fact' in envelope['ids']['nodes']
+            # The counts are covered by the digest.
+            await driver.execute_query('MATCH (n:ScopeTestLoose {space_id: $space}) DELETE n', space=space)
+            after = await export(client, space, 'global')
+            assert after['unclassifiedLabels'] == {'ScopeTestLinked': 1, 'ScopeTestTarget': 1}
+            assert after['digest'] != envelope['digest']
+        finally:
+            await driver.execute_query('MATCH (n) WHERE n.marker = $space DETACH DELETE n', space=space)
+            await cleanup(driver, space, group)

@@ -232,7 +232,7 @@ computer's own: client sessions, executors and their learning, one-use tokens an
 principals, the format ledger and undo journals, shared spaces and retired records), **derived**
 (recomputed from other records: executor outcome aggregates), or judged per record from its
 properties, its parent or the knowledge item it is about. local_only and derived records are never
-read by the export. Vectors are derived properties (below).
+exported; local_only ones are counted (`localOnlyCount`). Vectors are derived properties (below).
 
 **Knowledge items** (`Entity` nodes and `RELATES_TO` facts). A preference (`fuli_profile_aspect`
 set) belongs where its scope fields say: `global`; `project` in `fuli_preference_project_id` and
@@ -255,8 +255,12 @@ at an entity the scope lacks.
   FLA, a fact's evidence): a relationship is in every scope both its ends share, and in the project
   scope of an end the other does not share. A relationship between a global and a project node is
   in the project scope only. The end outside the scope is listed in `externalRefs` (its ID and the
-  scope it is in, `global` first), never its content. The global export never carries a project
-  node.
+  scope it is in, `global` first), never its content. The global export carries no node of a
+  project scope, but some global records carry project content, and the owner has accepted this
+  (these copies only go to the same person's other computers): an episode (`Episodic`, with its
+  `fuli_source_excerpt` and `fuli_summary`) that is also evidence for a global habit; a record
+  whose project field names an ID the graph has no project node for (it stays with the person,
+  below); and the handover Markdown of an FLA dismissal (`FuliProjectAgentDismissal`).
 - **Cross-scope records.** A preference conflict between a global habit and a project habit is in
   the project scope, with the global habit in `externalRefs`. Records about one knowledge item
   (revisions, audits, assignments, references, tag links) follow the item; when the item is gone
@@ -283,7 +287,9 @@ at an entity the scope lacks.
 Found by: how the export finds the label in one personal space: `group_id` is the space's, a named
 property is the space's ID, a node of a found parent label reaches it by the named relationship,
 or a conversation journal property names one of the space's journals. Key: the properties that
-identify a record on any computer; its export ID is `<Label>:<key values joined by />`.
+identify a record on any computer; its export ID is `<Label>:<key values joined by />`. A record
+without its key (an early write) has no ID another computer shares: it is not exported, only
+counted (`unidentifiedNodes`), with the relationships that end at it.
 
 | Label | Scope | Found by | Key | Evidence |
 | --- | --- | --- | --- | --- |
@@ -383,6 +389,8 @@ principals to spaces: local_only. Every other type is judged by its ends (cross-
 `CHANGED_OCCUPATION`, `OF_AGENT`. A relationship's ID is `<TYPE>:<key>` for the types that carry
 their own key (`RELATES_TO` and `MENTIONS` by `uuid`; `PERSONAL_PROJECT_RELATION`,
 `PROJECT_MEMORY_ACCESS`, `FULI_PROJECT_RELATION` by `id`), else `<TYPE>:<start ID>-><end ID>`.
+Several relationships with one such ID get `#0`, `#1`, … in the order of their properties; the
+suffix changes when those properties change, so an importer must not treat it as an identity.
 
 ### The envelope
 
@@ -393,9 +401,29 @@ their own key (`RELATES_TO` and `MENTIONS` by `uuid`; `PERSONAL_PROJECT_RELATION
   relationships: [{ id, type, start, end, scopes, properties }],
   ids: { nodes: [...], relationships: [...] },       // the scope's complete ID sets
   externalRefs: [{ id, scope }],                    // ends outside the scope, by ID only
+  unclassifiedLabels: { <label>: <count> },         // the space's nodes in no rule: not exported
   unclassifiedRelationshipTypes: [...],             // in the data, in no rule: not exported
+  unidentifiedNodes: { <label>: <count> },          // the scope's nodes without their key: not exported
+  unidentifiedRelationships: { <type>: <count> },   // the scope's relationships ending at one of them
+  complete: true | false,                           // all four above are empty
+  localOnlyCount: { <label>: <count> },             // this computer's own records: not exported
   exportedAt, digest }
 ```
+
+- **Nothing is left out silently.** When `unclassifiedLabels`, `unclassifiedRelationshipTypes` or
+  `unidentifiedNodes` is not empty (`unidentifiedRelationships` is never non-empty alone),
+  `complete` is false and the envelope **must not be used for an import or a copy**. The counts
+  carry no content and no Neo4j element ID (element IDs differ per computer). Unclassified labels
+  and types are counted for the whole space, since their scope cannot be told: the relationships
+  of every read node in both directions are scanned, and, for a node with no relationship, each
+  label in use (`CALL db.labels()`) that no rule reads is scanned by label for the space's
+  ownership properties (`group_id`, `space_id`, `personal_space_id`, `space`, a journal `scope`).
+  With every label classified, that is one label scan per local_only label present. A node of an
+  unknown label with neither a relationship nor an ownership property cannot be found per space.
+- **localOnlyCount** counts, per label, the space's local_only records the export met (by
+  relationship or ownership property) and the conversations it judged local_only (a journal of a
+  project that has no node, and what hangs under it). It is the same in every scope's envelope and
+  is not covered by the digest.
 
 - **History moves with the records.** Earlier versions (`fuli_replaced_by_item_id`), revisions,
   memory checkpoints, `fuli_human_change_version` and the rest are records and properties of the
@@ -409,12 +437,17 @@ their own key (`RELATES_TO` and `MENTIONS` by `uuid`; `PERSONAL_PROJECT_RELATION
   again. `vectors: false` leaves all three out, with `fuli_semantic_model` and `fuli_semantic_hash`
   (an item must not look indexed without its vector), and sets `embeddingModel` to null.
 - **Deterministic.** Nodes and relationships are sorted by ID, properties by key. `digest` is the
-  SHA-256 of the canonical JSON (sorted keys, no spaces, UTF-8) of everything but `exportedAt` and
-  `digest`. Unchanged data gives the same bytes but for `exportedAt`; a change in one scope changes
+  SHA-256 of the canonical JSON (sorted keys, no spaces, UTF-8) of everything but `exportedAt`,
+  `localOnlyCount` and `digest`. Unchanged data gives the same bytes but for `exportedAt`; a change in one scope changes
   only that scope's digest. A sync skips a copy whose digest has not changed.
-- **Read only.** One transaction in Neo4j's read access mode (Neo4j refuses a write in it); one
-  streamed query per label, parents and relationship starts asked for 1000 at a time. An export
-  reads the whole personal space to decide scopes, so its time follows the space's size.
+- **Read only, not a snapshot.** One transaction in Neo4j's read access mode (Neo4j refuses a
+  write in it); one streamed query per label, parents and relationship starts asked for 1000 at a
+  time. The transaction is read committed: its few dozen queries can see what another transaction
+  commits between them. A copy accepts that (the next sync corrects it); moving a scope must first
+  freeze writes at the source (one writer per scope), export twice and hand over only when the two
+  digests match. An export reads the whole personal space to decide scopes, so its time follows
+  the space's size; vectors are left in Neo4j by that read and read again only for the scope's own
+  records when the export carries them.
 
 ### Not in the graph, so not in this export
 
@@ -422,3 +455,43 @@ These stores are outside the graph and need their own step (a later PR): Jefa's 
 (`employees/data/jefa/board.sqlite`, kept per project: `(space_id, project_id)`), the roundtable
 (`agent-roundtable.sqlite`), the project change log, judgment, model usage, delegation, role work
 and the other stores `src/data-format/local-stores.js` lists, and the runner's own stores.
+
+### What an import must do
+
+The export is the first half. The import PR must:
+
+1. **Check the envelope first and refuse it** unless `complete` is true (no unclassified label or
+   type, no unidentified node), `digest` matches the content, `replicaProtocol` and `graphFormat`
+   are its own (else upgrade the format first), and drop vectors and compute them again when
+   `embeddingModel` differs.
+2. **Match identity**: refuse unless `graphiti_group_id(<own provider_id>, 'personal', spaceId)`
+   equals `groupId`. Same-ID import needs one personal space ID on all of a person's computers (a
+   follower adopts the host's `spaceId`; moving its own earlier data is a separate step).
+3. **Upsert only, never delete-then-insert**: local edges hang on copied nodes (`ASSIGNED_AGENT`,
+   `HAS_WORKING_MEMORY`). Records deleted at the source are found by comparing `ids` and marked,
+   not deleted.
+4. **Restore typed values** (`$datetime`, `$date`, `$time`, `$duration`, `$float`) to graph types
+   and write through the field contract.
+5. **Records in several scopes**: refuse or hold a record whose `scopes` names a project of
+   another owner.
+6. **Parent and child projects under one owner**, enforced at import and routing:
+   `PERSONAL_PROJECT_RELATION` is in both exports with the other end in `externalRefs`; a habit
+   inherited by `descendants` is in the parent's export only, so a child moved or copied alone
+   lacks it. Refuse when related projects have different owners.
+7. **`externalRefs` are references only**: the node exists locally or the reference is recorded
+   as dangling; never create an empty node for it.
+8. **Task contexts**: today's readers reach them through `FuliTaskContextSession -[:HAS_CONTEXT]->`
+   (`store_task_contexts.py`), and sessions are not exported. Either attach imported contexts to
+   a local import session or read read-only history by `personal_space_id`. An imported context's
+   `token` is finished history: never resumed on another computer.
+9. **`FuliConversationSession.working_directory`** is a path on the other computer: display only,
+   never used to tell a project by path; mark which computer the record came from.
+10. **Not a snapshot**: a copy accepts read-committed exports; moving a scope freezes source
+    writes and hands over only when two exports give the same digest.
+11. **Moving loses this computer's records**: executors, executor decisions and observations, and
+    the lead-occupation undo journal stay behind; tasks keep only their `actual_*` fields. Say so
+    in the move's notes.
+12. **The global copy carries some project content** (accepted, see "Cross-scope relationships"):
+    evidence episodes of global habits, records of project IDs without a project node, dismissal
+    handovers.
+13. **Stores outside the graph** (above) need their own step.

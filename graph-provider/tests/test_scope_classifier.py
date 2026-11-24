@@ -3,6 +3,7 @@
 in-memory graph. The same rules on a real Neo4j: test_scope_export_neo4j.py."""
 import re
 
+from fuli_graph.conversation_scope import conversation_scope_id
 from fuli_graph.graph_field_contract import NODE_FIELDS, RELATIONSHIP_FIELDS
 from fuli_graph.graph_format_journal import UNDO_LABEL
 from fuli_graph.graph_format_migrations import GRAPH_MIGRATIONS
@@ -10,6 +11,7 @@ from fuli_graph.scope_classifier import (
     DERIVED, GLOBAL, LOCAL_ONLY, NODE_RULES, RELATIONSHIP_RULES, GraphNode, GraphRelationship,
     ScopeClassification, conversation_scopes, exported,
 )
+from fuli_graph.scope_export import SpaceRead, _left_out
 from test_graph_field_contract import NODE, PACKAGE, RELATIONSHIP, provider_texts
 
 JUDGES = {'fixed', 'projects', 'parent', 'item', 'items', 'knowledge', 'evidence', 'project', 'conversation',
@@ -210,6 +212,21 @@ def test_conversations_are_found_by_journal_scope_and_unknown_journals_stay_here
     assert scopes(in_alpha) == scopes(event) == {'project:alpha'}
     assert scopes(in_global) == {GLOBAL}
     assert scopes(unknown) == {LOCAL_ONLY}
+
+
+def test_what_an_export_leaves_out_is_counted_by_label():
+    graph = Graph()
+    project(graph, 'alpha')
+    journals = conversation_scopes('space', ['fla'], ['alpha'])
+    # A journal whose project has no node: its scope cannot be told.
+    unknown = graph.node('FuliConversation', id='c1', scope=conversation_scope_id('space', 'gone', 'fla'))
+    graph.node('FuliConversationEvent', parent=unknown, id='e1')
+    unread = {'element-session': ('FuliTaskContextSession',), 'element-old': ('OldLabel', 'OtherOldLabel'),
+              'element-aggregate': ('FuliProjectAgentExecutorOutcomeAggregate',)}
+    read = SpaceRead(graph.classify(journals), unread, {'CONTAINS_PROJECT'})
+    unclassified, local_only = _left_out(read)
+    assert unclassified == {'OldLabel': 1, 'OtherOldLabel': 1}
+    assert local_only == {'FuliConversation': 1, 'FuliConversationEvent': 1, 'FuliTaskContextSession': 1}
 
 
 def test_a_record_of_projects_the_space_no_longer_has_stays_with_the_person():
