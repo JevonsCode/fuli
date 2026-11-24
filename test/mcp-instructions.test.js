@@ -74,6 +74,7 @@ test('MCP instructions support task identity, hook context and an exact fallback
   assert.match(MCP_INSTRUCTIONS, /Missing tokens=-.*never invent\/estimate\/copy totals/i);
   // Jevons 11-23: how to write for the person, once per session, after the source marker and before the receipt.
   for (const instructions of [MCP_INSTRUCTIONS, MCP_CHAT_INSTRUCTIONS]) {
+    assert.match(instructions, /Each user task \(skip host notices\):/);
     assert.match(instructions, /sourceMarker\.leadMarkdown.*People: after sourceMarker lead, conclusion\+asks first, short; diagram\/table if clearer; clickable choices not typing; receipt last\./s);
   }
 });
