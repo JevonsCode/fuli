@@ -10,7 +10,8 @@ import { callScope, knownProjects, openRoutes, routeOfCall } from '../src/runner
 import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-runtime.js';
 import { openFormattedDatabase, sqliteFormat } from '../packages/roundtable/src/storage/database-format.js';
 import { hostOwner, LOCAL_OWNER, ROUTES_FORMAT, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
-import { callDestination } from '../src/runner/routed-calls.js';
+import { callDestination, routesUnavailableAnswer } from '../src/runner/routed-calls.js';
+import { resultValue } from '../src/runner/offline-calls.js';
 import { answerWithIssuer, issuedToken, tokenIssuedHere, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 
@@ -365,4 +366,15 @@ test('a project here whose id is not its folder\'s name is found by the folder i
     routes.close();
     store.close();
   }
+});
+
+test('routes another FULI process holds for now say to try again, not to pair again; any other reason says what it did', () => {
+  const busy = resultValue(routesUnavailableAnswer(Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR', errcode: 5 })));
+  assert.equal(busy.code, 'routes_unavailable');
+  assert.match(busy.message, /another FULI process on this computer is writing it/);
+  assert.match(busy.message, /try again in a moment/);
+  assert.doesNotMatch(busy.message, /runner leave|runner join/);
+  const broken = resultValue(routesUnavailableAnswer(Object.assign(new Error('file is not a database'), { code: 'ERR_SQLITE_ERROR', errcode: 26 })));
+  assert.equal(broken.code, 'routes_unavailable');
+  assert.match(broken.message, /`fuli runner leave`, then `fuli runner join`/);
 });

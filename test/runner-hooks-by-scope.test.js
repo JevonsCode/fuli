@@ -6,10 +6,11 @@
 // 127.0.0.1 whose hook is a double, temporary data directories.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { HOOK_OUTCOME_HEADER } from '../src/agents/lifecycle-forwarder.js';
@@ -19,7 +20,7 @@ import { unavailableHere } from '../src/runner/hook-scope.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
-import { hostOwner, LOCAL_OWNER, ROUTES_FILE, RoutesStore } from '../src/runner/routes-store.js';
+import { hostOwner, LOCAL_OWNER, ROUTES_FILE, ROUTES_FORMAT, RoutesStore } from '../src/runner/routes-store.js';
 import { RUNNER_HOOK_CONTEXT } from '../src/runner/runner-mode.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
 import { ownIssuer, readIssued } from '../src/runner/task-issuer.js';
@@ -35,7 +36,8 @@ const CLIENTS = {
     args: (config, event) => ['--fuli-lifecycle', '--runtime-config', config, '--event', event, '--timeout-ms', '20000'] }
 };
 
-function runHook(fixture, event, stdin, { client = 'claude-code', env = {} } = {}) {
+// stdinOpen: stdin is written and left open past the hook's wait for it, then closed.
+function runHook(fixture, event, stdin, { client = 'claude-code', env = {}, stdinOpen = false } = {}) {
   const { entry, args } = CLIENTS[client];
   const startedAt = Date.now();
   const child = spawn(process.execPath, [entry, ...args(fixture.runtimeConfigPath, event)],
@@ -44,10 +46,18 @@ function runHook(fixture, event, stdin, { client = 'claude-code', env = {} } = {
   let stderr = '';
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.stdin.end(stdin);
+  child.stdin.on('error', () => {});
+  let closeStdin = null;
+  if (stdinOpen) {
+    child.stdin.write(stdin);
+    closeStdin = setTimeout(() => child.stdin.end(), 2000);
+  } else child.stdin.end(stdin);
   return new Promise((done, fail) => {
     child.once('error', fail);
-    child.once('close', (exitCode) => done({ stdout, stderr, exitCode, ms: Date.now() - startedAt }));
+    child.once('close', (exitCode) => {
+      clearTimeout(closeStdin);
+      done({ stdout, stderr, exitCode, ms: Date.now() - startedAt });
+    });
   });
 }
 
@@ -121,7 +131,8 @@ async function recordedConsole(t, dataDir, { ran = false } = {}) {
 // (before this change, src/agents/lifecycle-forwarder.js on a follower):
 // `host` the host runs it, `nothing` a hook a runner does not forward, `fallback`
 // the prompt's instruction to enter the task through MCP. After this change
-// every row is the same.
+// every row is the same. A sixth element gives the hook's options (runHook).
+const projectHere = (r, h, f) => { r.followEverything(h); r.setLocalProject(`project:${SYNTHETIC_PROJECT_ID}`, f.projectPath); };
 const ELSEWHERE = [
   ['no routes store yet, a prompt in a project folder', () => {}, 'UserPromptSubmit', (f) => prompt(f.projectPath), 'host'],
   ['following everything, a prompt in a project folder', (r, h) => r.followEverything(h), 'UserPromptSubmit',
@@ -140,16 +151,20 @@ const ELSEWHERE = [
     r.setLocalProject('project:widgets', join(f.root, 'widgets-folder')); }, 'SessionStart', (f) => start(f.otherPath), 'nothing'],
   ['a payload that is not JSON', (r, h) => r.followEverything(h), 'UserPromptSubmit', () => '{synthetic-malformed', 'fallback'],
   ['a payload without a folder', (r, h) => r.followEverything(h), 'UserPromptSubmit',
-    () => JSON.stringify({ session_id: 'synthetic', prompt: 'x' }), 'fallback']
+    () => JSON.stringify({ session_id: 'synthetic', prompt: 'x' }), 'fallback'],
+  ['a project of this computer\'s, a prompt whose stdin does not close in time', projectHere, 'UserPromptSubmit',
+    (f) => prompt(f.projectPath), 'fallback', { stdinOpen: true }],
+  ['following everything, a Codex prompt in a project folder', (r, h) => r.followEverything(h), 'UserPromptSubmit',
+    (f) => prompt(f.projectPath), 'host', { client: 'codex' }]
 ];
 
-for (const [name, routed, event, stdin, today] of ELSEWHERE) {
+for (const [name, routed, event, stdin, today, options = {}] of ELSEWHERE) {
   test(`elsewhere, as today (${today}): ${name}`, async (t) => {
     const f = await follower(t);
     f.withRoutes((routes) => routed(routes, f.hostOwner, f.fixture));
     mkdirSync(join(f.fixture.root, 'widgets-folder'), { recursive: true });
     ready(f.fixture.dataDir);
-    const answer = await runHook(f.fixture, event, stdin(f.fixture));
+    const answer = await runHook(f.fixture, event, stdin(f.fixture), options);
     assert.equal(answer.exitCode, 0);
     assert.equal(f.provider.requests(), 0, 'nothing ran here');
     if (today === 'host') {
@@ -225,11 +240,65 @@ test('a project of this computer\'s with its runtime not ready says so, sends no
   assert.match(context, /local_runtime_not_ready/);
   assert.match(context, /on this computer/);
   assert.match(context, /Start FULI on this computer/);
+  assert.match(context, /启动这台电脑上的 FULI/, 'the Chinese says what to do too');
   assert.match(context, /Nothing was sent to Host A/);
   assert.match(context, /这台电脑/);
   assert.deepEqual([ended.exitCode, ended.stdout], [0, '']);
   assert.match(ended.stderr, /local_runtime_not_ready|cannot answer it yet/);
   assert.ok(asked.ms < 10_000 && ended.ms < 10_000, 'well inside the hook\'s own deadline');
+});
+
+// The routes as 0.29.0-beta wrote them (format version 1, no folder column), with a project of this computer's.
+function writeVersionOneRoutes(f) {
+  mkdirSync(join(f.fixture.dataDir, 'runner'), { recursive: true });
+  const database = new DatabaseSync(join(f.fixture.dataDir, ROUTES_FILE));
+  try {
+    database.exec(ROUTES_FORMAT.schema);
+    const add = database.prepare('INSERT INTO routes(scope, owner, updated_at) VALUES(?, ?, ?)');
+    for (const [scope, owner] of [['global', f.hostOwner], ['default', f.hostOwner], [`project:${SYNTHETIC_PROJECT_ID}`, LOCAL_OWNER]]) {
+      add.run(scope, owner, '2026-11-20T10:00:00.000Z');
+    }
+    database.exec('PRAGMA user_version = 1');
+  } finally {
+    database.close();
+  }
+}
+
+test('routes of an earlier format are not migrated by a hook: it goes as with no project here, the store untouched', async (t) => {
+  const f = await follower(t);
+  writeVersionOneRoutes(f);
+  ready(f.fixture.dataDir);
+  const path = join(f.fixture.dataDir, ROUTES_FILE);
+  const before = readFileSync(path);
+  const answer = await runHook(f.fixture, 'UserPromptSubmit', prompt(f.fixture.projectPath));
+  assert.equal(answer.exitCode, 0, answer.stderr);
+  assert.equal(answer.stdout, HOST_STDOUT);
+  assert.deepEqual(f.hostCalls.map((call) => call.event), ['UserPromptSubmit']);
+  assert.equal(f.provider.requests(), 0, 'nothing ran here');
+  assert.ok(readFileSync(path).equals(before), 'the store is byte for byte as it was');
+  const version = new DatabaseSync(path, { readOnly: true });
+  try { assert.equal(version.prepare('PRAGMA user_version').get().user_version, 1); } finally { version.close(); }
+  assert.equal(existsSync(join(f.fixture.dataDir, 'runner', 'format-backups')), false, 'no backup was taken');
+  assert.deepEqual(readdirSync(join(f.fixture.dataDir, 'runner')).filter((name) => name.startsWith('routes.sqlite')), ['routes.sqlite']);
+});
+
+test('routes another connection holds in a write transaction do not make a hook wait: it goes as with no project here', async (t) => {
+  const f = await localProject(t);
+  // Closed before the test ends, so before its data directory is removed.
+  const holder = new DatabaseSync(join(f.fixture.dataDir, ROUTES_FILE));
+  let answer;
+  try {
+    holder.exec('BEGIN EXCLUSIVE');
+    holder.prepare('UPDATE routes SET updated_at = ?').run('2026-11-21T10:00:00.000Z');
+    answer = await runHook(f.fixture, 'UserPromptSubmit', prompt(f.fixture.projectPath));
+  } finally {
+    if (holder.isTransaction) holder.exec('ROLLBACK');
+    holder.close();
+  }
+  assert.equal(answer.exitCode, 0, answer.stderr);
+  assert.equal(answer.stdout, HOST_STDOUT);
+  assert.equal(f.provider.requests(), 0, 'nothing ran here');
+  assert.ok(answer.ms < 4000, `no wait for the lock (${answer.ms} ms)`);
 });
 
 test('routes this computer cannot read are said as they are, and the hook goes nowhere', async (t) => {
@@ -277,6 +346,7 @@ test('a hook this computer\'s FULI could not run at all says which computer, why
   assert.match(message, /fuli start/);
   assert.match(message, /Nothing was sent to Host A/);
   assert.match(message, /这台电脑/);
+  assert.match(message, /没能运行这个钩子（synthetic runtime closed）/, 'the Chinese gives the error too');
 });
 
 // Every module a hook process loads, by a resolve hook that writes each to a file.

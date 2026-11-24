@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 
 import { parseHookInput } from '../agents/lifecycle-input.js';
-import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore } from './routes-store.js';
+import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
+import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore, routesAsTheyAre } from './routes-store.js';
 import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 
 // Where a lifecycle hook on a follower runs (docs/runner-roles-design.md §4):
@@ -19,16 +20,27 @@ import { issuedToken, ownIssuer, readIssued } from './task-issuer.js';
 //
 // A follower with no project routed here reads the routes once and goes on:
 // without such a route callDestination never answers `local` for a call
-// without a task token, which a hook's payload never carries.
+// without a task token, which a hook's payload never carries. The routes are
+// read as they are (routes-store.js routesAsTheyAre), never migrated or
+// waited on here: a store at another version, being migrated or held by
+// another connection has no project of this computer's for the hook, which
+// goes as it went before; the MCP entry and the console migrate it.
 export async function hookDestination({ dataDir, stdin }) {
   const folder = payloadFolder(stdin);
   if (!folder) return ELSEWHERE;
-  const routes = new RoutesStore(join(dataDir, ROUTES_FILE));
+  let routes;
+  try {
+    routes = routesAsTheyAre(join(dataDir, ROUTES_FILE));
+  } catch (error) {
+    return { refused: await routesUnreadable(error) };
+  }
+  if (!routes) return ELSEWHERE;
   try {
     let owned;
     try {
       owned = routes.all().some(({ scope, owner }) => owner === LOCAL_OWNER && scope.startsWith(PROJECT_PREFIX));
     } catch (error) {
+      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: await routesUnreadable(error) };
     }
     if (!owned) return ELSEWHERE;
@@ -43,19 +55,21 @@ export async function hookDestination({ dataDir, stdin }) {
         store.close();
       }
     } catch (error) {
+      if (sqliteBusy(error)) return ELSEWHERE;
       return { refused: refusal('hook_route_unknown',
         `This computer could not tell whether this folder's project is answered here or by its FULI host (${detail(error)}), `
         + 'so this hook sent nothing anywhere. `fuli routes list` shows which computer each project belongs to.',
         `这台电脑没能判断这个文件夹的项目由本机还是主机回答（${detail(error)}），所以这个钩子什么都没发。\`fuli routes list\` 列出每个项目归哪台电脑。`) };
     }
-    const { localRuntimeLine, localRuntimeStep, readLocalRuntime } = await import('./follower-local-runtime.js');
+    const { localRuntimeLine, localRuntimeStep, localRuntimeStepZh, readLocalRuntime } = await import('./follower-local-runtime.js');
     const runtime = readLocalRuntime(dataDir);
     if (runtime.state !== 'ready') {
       const line = localRuntimeLine(runtime);
       return { refused: refusal('local_runtime_not_ready',
         `This folder's project is on this computer, and this computer's own FULI cannot answer it yet. ${line.en} `
         + `${localRuntimeStep(runtime) ?? ''} Nothing was sent to ${hostName}: the project is not there.`,
-        `这个文件夹的项目在这台电脑上，但这台电脑自己的 FULI 现在还不能回答。${line.zh} 没有发给 ${hostName}：项目不在那里。`) };
+        `这个文件夹的项目在这台电脑上，但这台电脑自己的 FULI 现在还不能回答。${line.zh}`
+        + `${localRuntimeStepZh(runtime) ?? ''}没有发给 ${hostName}：项目不在那里。`) };
     }
     return { here: true, hostName };
   } finally {
@@ -68,7 +82,7 @@ export function unavailableHere(error, hostName) {
   return refusal('local_unavailable',
     `This folder's project is on this computer, and its FULI could not run this hook (${detail(error)}). `
     + `Start FULI here (FULI.app, or \`fuli start\`) and try again. Nothing was sent to ${hostName}: the project is not there.`,
-    `这个文件夹的项目在这台电脑上，但这台电脑的 FULI 没能运行这个钩子。启动这台电脑上的 FULI（FULI.app 或 \`fuli start\`）后再试。`
+    `这个文件夹的项目在这台电脑上，但这台电脑的 FULI 没能运行这个钩子（${detail(error)}）。启动这台电脑上的 FULI（FULI.app 或 \`fuli start\`）后再试。`
     + `没有发给 ${hostName}：项目不在那里。`);
 }
 
