@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show OutlinedButton;
+import 'package:flutter/material.dart' show FilledButton, OutlinedButton;
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +10,7 @@ import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
 import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
+import 'package:fuli_desktop/src/ui/theme.dart';
 
 import 'support/brand.dart';
 import 'support/fakes.dart';
@@ -42,12 +43,14 @@ void main() {
     expect(opener.opened.single.toFilePath(), '/fuli-data/logs/');
   });
 
-  testWidgets('an unfinished import offers 查看命令 where 打开控制台 sits: the real commands, each to copy, and 启动 FULI stays', (tester) async {
+  const unfinished = StartupFailure('graph_import_unfinished', {'mode': 'native', 'graphs': ['personal'], 'way': 'copy', 'readable': true,
+    'command': "fuli graph import --input '/fuli-data/backups/graph/before-import-1' --target-mode native --yes",
+    'abandonCommand': 'fuli graph abandon-import --target-mode native'});
+
+  testWidgets('an unfinished import puts 导回到导入前并启动 in the primary place and keeps 查看命令, each command to copy, where 打开控制台 sits',
+      (tester) async {
     final api = DemoFuliApi()..reachable = false;
-    const command = "fuli graph import --input '/fuli-data/backups/graph/before-import-1' --target-mode container --yes";
-    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished',
-        failure: StartupFailure('graph_import_unfinished', {'mode': 'container', 'graphs': ['personal'], 'way': 'copy',
-          'wayPath': '/fuli-data/backups/graph/before-import-1', 'command': command, 'abandonCommand': 'fuli graph abandon-import --target-mode container'})));
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished', failure: unfinished));
     final copied = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
       if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
@@ -60,19 +63,84 @@ void main() {
     final place = tester.getRect(openConsole);
     await controller.start();
     await tester.pump();
+    expect(find.descendant(of: primary, matching: find.text('导回到导入前并启动')), findsOneWidget);
     final show = find.byKey(const Key('unfinished-import-commands'));
     expect(find.descendant(of: show, matching: find.text('查看命令')), findsOneWidget);
     expect(tester.getRect(show).left, place.left);
-    expect(find.descendant(of: primary, matching: find.text('启动 FULI')), findsOneWidget);
     await tester.tap(show);
     await tester.pumpAndSettle();
     expect(find.text('在终端里运行'), findsOneWidget);
-    expect(find.byKey(const ValueKey('unfinished-import-command 0')), findsOneWidget);
-    expect(find.text(command), findsOneWidget);
-    expect(find.text('fuli graph abandon-import --target-mode container'), findsOneWidget);
+    expect(find.text(unfinished.facts['command']! as String), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('copy-unfinished-import-command 1')));
-    await tester.tap(find.byKey(const ValueKey('copy-unfinished-import-command 0')));
-    expect(copied, ['fuli graph abandon-import --target-mode container', command]);
+    expect(copied, ['fuli graph abandon-import --target-mode native']);
+  });
+
+  testWidgets('导回到导入前并启动 shows the copy and the graphs first, runs only once confirmed, and says it is back', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished', failure: unfinished))
+      ..recoveryPlan = const RecoveryPlan('import_back', [{'do': 'import', 'from': '/fuli-data/backups/graph/before-import-1', 'mode': 'native'}],
+          '0123456789abcdef', {'createdAt': '2026-11-20T08:00:00.000Z', 'bytes': 2048, 'instances': ['personal'], 'readable': true})
+      ..recoverReport = const RuntimeReport(RuntimeState.running, consolePort: 2727);
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.text('把图谱导回去再启动？'), findsOneWidget);
+    expect(find.textContaining('整库导入个人图谱。那次导入写进去的东西不会保留'), findsOneWidget);
+    expect(find.byKey(const Key('abandon-import')), findsOneWidget, reason: 'giving up sits beside it, never in its place');
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(runtime.calls.where((call) => call.startsWith('recover-start')), isEmpty);
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: find.byKey(const Key('recover-confirm')), matching: find.text('导回到导入前并启动')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('recover-start 0123456789abcdef'));
+    expect(controller.notice?.text, '已把图谱导回到导入前。');
+  });
+
+  testWidgets('放弃这次导入… from that confirmation says which graphs move where, takes the red button, and shows where they went', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished', failure: unfinished))
+      ..recoveryPlan = const RecoveryPlan('import_back', [{'do': 'import', 'from': '/x/b', 'mode': 'native'}], '0123456789abcdef', {'readable': true})
+      ..recoverReport = const RuntimeReport(RuntimeState.running, consolePort: 2727,
+          importAbandoned: '已放弃那次没完成的导入：图谱 personal 挪到了 /x/recovered / The unfinished import was given up');
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    runtime.recoveryPlan = const RecoveryPlan('abandon_import', [{'do': 'abandon-import'}], 'aaaaaaaaaaaaaaaa',
+        {'graphs': ['personal'], 'asideTo': {'folder': '/x/recovered', 'volume': false}});
+    await tester.tap(find.byKey(const Key('abandon-import')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-preview'));
+    expect(find.textContaining('个人图谱可能只写了一半，会被挪到 /x/recovered（不删除）'), findsOneWidget);
+    final confirm = tester.widget<FilledButton>(find.byKey(const Key('abandon-import-confirm')));
+    expect(confirm.style?.backgroundColor?.resolve({}), FuliColors.danger);
+    await tester.tap(find.byKey(const Key('abandon-import-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('abandon-import-start aaaaaaaaaaaaaaaa'));
+    expect(find.text('已放弃那次没完成的导入：图谱 personal 挪到了 /x/recovered'), findsOneWidget);
+  });
+
+  testWidgets('a window running the fuli CLI keeps an unfinished import\'s commands for a terminal behind its button', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'unfinished', failure: unfinished))..recoversInTerminal = true;
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.text('在终端里运行'), findsOneWidget);
+    expect(runtime.calls.where((call) => call.endsWith('-preview')), isEmpty, reason: 'the CLI has no preview of its own for this');
   });
 
   testWidgets('a lock nobody holds puts 解除这把锁并启动 in the primary place, and nothing happens without the confirmation',

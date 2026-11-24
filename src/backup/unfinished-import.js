@@ -148,6 +148,8 @@ export function unfinishedImportError(paths, mode) {
   const facts = { code: 'graph_import_unfinished', mode, since: marker.startedAt, graphs: marker.partial,
     way: back?.kind ?? null, copyName: marker.copy ? basename(marker.copy) : null,
     copyPath: marker.copy, wayPath: back?.path ?? null,
+    // The way back names a folder that is no longer there: importing it cannot work, so giving up comes first.
+    wayGone: Boolean(back) && !existsSync(back.path),
     command: back ? graphImportCommand(back.path, mode) : latest ? graphImportCommand(latest, mode) : null,
     abandonCommand: marker.readable ? abandonImportCommand(mode) : null,
     readable: marker.readable, markerPath: marker.path, latestCopy: latest,

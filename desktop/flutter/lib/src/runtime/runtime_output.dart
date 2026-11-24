@@ -35,6 +35,7 @@ RuntimeReport parseControllerReply(String stdout) {
       if (reply['keptGraphData'] is List)
         for (final folder in reply['keptGraphData'] as List) if (folder is Map) Map<String, Object?>.from(folder),
     ],
+    importAbandoned: reply['importAbandoned'] is String ? reply['importAbandoned'] as String : null,
   );
 }
 

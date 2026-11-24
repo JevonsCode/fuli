@@ -232,8 +232,7 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
   // /data/recovered-<time>-replaced/ (moved, not deleted). A move that fails
   // part way says what already moved, and where.
   async function setAside(instance) {
-    const startedAt = Date.parse(readUnfinishedImport(paths, 'container')?.startedAt ?? '');
-    const folder = `/data/recovered-${recoveryStamp(Number.isFinite(startedAt) ? startedAt : Date.now())}`;
+    const folder = containerAsideFolder(readUnfinishedImport(paths, 'container')?.startedAt);
     const lines = String(await withBackupHelper(instance, helper => docker(['exec', helper, 'sh', '-c', SET_ASIDE_SCRIPT, 'sh', folder])))
       .split(/\r?\n/).map(line => line.trim().split(' ')).filter(([, store]) => CONTAINER_STORES.includes(store));
     const moved = lines.filter(([state]) => state === 'moved').map(([, store, to]) => ({ store, to }));
@@ -357,6 +356,13 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
 const CONTAINER_STORES = ['databases/neo4j', 'transactions/neo4j'];
 const SET_ASIDE_SCRIPT = `for store in ${CONTAINER_STORES.join(' ')}; do if [ -e "/data/$store" ]; then to="$1/$store"; if [ -e "$to" ]; then to="$to-$(date +%s)"; fi; `
   + 'if why=$(mkdir -p "$(dirname "$to")" 2>&1 && mv "/data/$store" "$to" 2>&1); then echo "moved $store $to"; else echo "failed $store $why" | tr "\\n" " "; echo; exit 0; fi; fi; done';
+
+// The folder inside a container's volume a graph moves aside into: named for
+// when the unfinished import began ([startedAt], its marker), or now.
+export function containerAsideFolder(startedAt) {
+  const at = Date.parse(startedAt ?? '');
+  return `/data/recovered-${recoveryStamp(Number.isFinite(at) ? at : Date.now())}`;
+}
 
 function nativeInstanceDir(paths, instance) {
   if (instance === 'personal') return paths.nativePersonalDir;

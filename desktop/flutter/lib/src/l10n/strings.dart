@@ -96,6 +96,8 @@ class Strings {
   String? startupStage(String? stage) => switch (stage) {
         'checking' => _t('正在看 FULI 现在的状态…', 'Checking what FULI is doing now…'),
         'first_setup' => _t('第一次启动，正在安装 FULI…', 'First start: installing FULI…'),
+        'graph_import' => _t('正在导入图谱，导完再启动…', 'Importing the graph; FULI starts once it is done…'),
+        'import_abandon' => _t('正在放弃这次导入，挪开可能只写了一半的图谱…', 'Giving the import up: moving the graph that may be half written aside…'),
         'start_wait' => _t('正在等另一次启动结束…', 'Waiting for another start to finish…'),
         'graph_runtime' => _t('正在准备图数据库…', 'Getting the graph database ready…'),
         'graph_install' => _t('正在安装图数据库程序…', 'Installing the graph database programs…'),
@@ -159,8 +161,8 @@ class Strings {
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
   // A start that failed for a reason it named (src/local-runtime/startup-failure.js):
   // what happened, then the next step as the button beside it; never a command
-  // to type, except where no button can take that step (an unfinished import
-  // on a runtime without a lock: the way back is an import in Terminal).
+  // to type, except where no button can take that step (moving an unfinished
+  // import's damaged record away by hand, under 「查看命令」).
   // Null for a code this version does not know.
   String? startFailedBecause(StartupFailure failure) {
     final since = _clock(failure.text('since'));
@@ -247,49 +249,69 @@ class Strings {
 
   // An import into a runtime with no lifecycle lock that never finished
   // (src/backup/unfinished-import.js): nothing starts until an import brings
-  // the graph back, or the import is given up. There is no button for either
-  // yet: the words name the way, and 「查看命令」 beside them shows the
-  // commands with their real paths, written by the CLI for this computer's
-  // terminal (PowerShell on Windows), to copy (unfinishedImportCommands).
+  // the graph back, or the import is given up. Both are buttons
+  // (status_actions.dart: 「导回到导入前并启动」 or 「重新运行那次导入并启动」, and
+  // 「放弃这次导入…」 beside it in the confirmation); 「查看命令」 keeps the same
+  // commands for a terminal, and is the way only for moving a damaged record
+  // away by hand. [attemptError]: why the window's own attempt just failed.
   String _unfinishedImport(StartupFailure failure, String since) {
     final mode = failure.text('mode') ?? 'native';
     final modeZh = mode == 'container' ? '容器模式' : '原生模式';
     final graphs = failure.facts['graphs'] is List ? failure.facts['graphs'] as List : const [];
     final at = failure.text('since') == null ? '' : _t('（$since 开始）', ' (begun $since)');
-    const commands = '点「查看命令」复制到终端里运行，成功后再点「启动 FULI」。';
-    const commandsEn = 'Choose Show commands to copy it into Terminal, then choose Start FULI once it succeeds.';
+    final attempt = failure.text('attemptError');
+    final tried = attempt == null ? '' : _t('这次没有导回：${half(attempt)}${half(attempt).endsWith('。') ? '' : '。'}', 'This attempt did not bring it back: ${half(attempt)} ');
+    final way = unfinishedImportWay(failure);
     if (failure.facts['readable'] == false) {
       final marker = failure.text('markerPath') ?? 'graph-import-unfinished-$mode.json';
-      return _t(
+      return tried + _t(
           '没有启动：记录上次向$modeZh图谱导入数据的文件 $marker 坏了，读不出来，FULI 不知道哪个图谱可能只写了一半，所以不敢启动。'
-              '${failure.text('latestCopy') == null ? '' : '先用最近一份导入前的副本导回。'}最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整。$commands',
+              '${way == null ? '' : '点「${unfinishedImportAction(failure)}」用最近一份导入前的副本导回。'}最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整；命令在「查看命令」里。',
           'FULI did not start: the file recording an earlier graph import into the $mode runtime, $marker, is damaged and cannot be read, so FULI cannot tell which graph may be half written. '
-              '${failure.text('latestCopy') == null ? '' : 'Bring the newest copy from before an import back first. '}The last way out is to move that file away: FULI then starts, but the graph is not known to be whole. $commandsEn');
+              '${way == null ? '' : 'Choose ${unfinishedImportAction(failure)} to bring the newest copy from before an import back. '}The last way out is to move that file away: FULI then starts, but the graph is not known to be whole; the command is under Show commands.');
     }
     final what = graphs.isEmpty
         ? _t('没有启动：上次向$modeZh的图谱导入数据$at，新数据已经写完，但没有做完收尾（核对图谱身份）。',
             'FULI did not start: an earlier graph import into the $mode runtime$at wrote all of its new data but did not finish its last step (reconciling the graph identity).')
         : _t('没有启动：上次向$modeZh的图谱导入数据$at没有完成，${_names(graphs)}可能只写入了一半。',
             'FULI did not start: an earlier graph import into the $mode runtime$at did not finish, so ${_names(graphs)} may be only half written.');
-    // The path can be left out of a line that would be too long (startup-failure-line.js); the command keeps it.
-    final path = failure.text('wayPath');
-    final (inParens, inParensEn) = path == null ? ('', '') : ('（$path）', ' ($path)');
-    final next = switch (failure.text('way')) {
-      'copy' => _t('把导入前的副本$inParens导回。', 'Bring back the copy from before the import$inParensEn.'),
-      'input' => _t('重新运行那次导入$inParens。', 'Run that import again$inParensEn.'),
-      _ => _t('用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回。', 'Bring back a copy from before an import (before-import-… in the FULI data folder\'s backups/graph).'),
-    };
     final giveUp = _t('导回走不通时，可以放弃这次导入：可能只写了一半的图谱会被挪开（不删除），之后它是空的。',
         'If that does not work, give the import up: the graph that may be half written moves aside (not deleted) and is empty afterwards.');
-    return _t('$what$next$giveUp$commands', '$what $next $giveUp $commandsEn');
+    final next = switch (way) {
+      'copy' => _t('点「${unfinishedImportAction(failure)}」：先说明用哪一份副本、哪些图谱会回到导入前，你确认后才做。$giveUp',
+          'Choose ${unfinishedImportAction(failure)}: it says first which copy it uses and which graphs go back, and acts only once you confirm. $giveUp'),
+      'input' => _t('导入前的副本里没有它，点「${unfinishedImportAction(failure)}」把那次导入做完：先说明会怎样，你确认后才做。$giveUp',
+          'No copy from before the import holds it; choose ${unfinishedImportAction(failure)} to finish that import: it says what happens first, and acts only once you confirm. $giveUp'),
+      _ => failure.facts['wayGone'] == true
+          ? _t('${failure.text('way') == 'input' ? '那次导入用的备份' : '导入前的副本'}已经不在了，导不回去。点「放弃这次导入…」：先说明哪些图谱会被挪开、挪到哪里，你确认后才做。',
+              'The ${failure.text('way') == 'input' ? "import's input" : 'copy from before the import'} is gone, so it cannot be brought back. Choose Abandon the import…: it says first which graphs move aside and where, and acts only once you confirm.')
+          : _t('没有能导回的副本。点「放弃这次导入…」：先说明哪些图谱会被挪开、挪到哪里，你确认后才做。',
+              'There is no copy to bring back. Choose Abandon the import…: it says first which graphs move aside and where, and acts only once you confirm.'),
+    };
+    return _t('$tried$what$next', '$tried$what $next');
   }
+
+  /// How an unfinished import goes back, when a button can do it: 'copy' (the
+  /// copy from before it, or for a damaged record the newest such copy) or
+  /// 'input' (that import again); null when nothing is there to import.
+  String? unfinishedImportWay(StartupFailure failure) {
+    if (failure.code != 'graph_import_unfinished' || failure.text('command') == null || failure.facts['wayGone'] == true) return null;
+    return failure.text('way') == 'input' ? 'input' : 'copy';
+  }
+
+  /// The button that takes an unfinished import's way back, then starts.
+  /// Fits the status bar's primary place (status_actions.dart `_primaryWidth`).
+  String unfinishedImportAction(StartupFailure failure) =>
+      unfinishedImportWay(failure) == 'input' ? _t('重新运行那次导入并启动', 'Import again and start') : _t('导回到导入前并启动', 'Go back and start');
 
   /// The commands for an unfinished import's way out, as the CLI wrote them
   /// for this computer's terminal: the way back, then giving the import up
   /// (or, for a marker that cannot be read, moving it away by hand). Empty
-  /// for any other failure.
+  /// for a failure that carries none (a refused plan of that way out carries them too).
   List<({String label, String command})> unfinishedImportCommands(StartupFailure failure) {
-    if (failure.code != 'graph_import_unfinished') return const [];
+    final marker = failure.code == 'graph_import_unfinished' ||
+        (failure.code == 'recovery_refused' && (failure.text('abandonCommand') ?? failure.text('moveMarkerCommand')) != null);
+    if (!marker) return const [];
     final way = failure.text('way');
     return [
       if (failure.text('command') case final command?)
@@ -298,6 +320,14 @@ class Strings {
       if (failure.text('moveMarkerCommand') case final command?)
         (label: _t('最后的办法：挪走这条记录（之后不保证图谱完整）', 'Last way out: move the record away (the graph is not known to be whole then)'), command: command),
     ];
+  }
+
+  /// The half of a "中文 / English" line FULI's core wrote for this language;
+  /// the whole line when it has no such halves.
+  String half(String text) {
+    final at = text.indexOf(' / ');
+    if (at < 0) return text;
+    return chinese ? text.substring(0, at) : text.substring(at + 3);
   }
 
   String get showCommands => _t('查看命令', 'Show commands');
@@ -344,6 +374,7 @@ class Strings {
   // and a recovery that stopped for a reason that can pass, so trying again is the way on.
   bool recoverable(StartupFailure failure) =>
       failure.code == 'native_recovery_needed' ||
+      unfinishedImportWay(failure) != null ||
       (failure.code == 'native_lifecycle_lock' && failure.text('holder') == 'gone') ||
       (failure.code == 'recovery_refused' && _retryable.contains(failure.text('reason'))) ||
       stoppedSwitch(failure);
@@ -351,8 +382,13 @@ class Strings {
   // An interrupted import whose own copy cannot be used: 「放弃这次导入…」 is the
   // way on, and it is the person's own choice (its graphs end up empty).
   // A good copy that would not go back (restore_failed) opens it too, beside trying again.
+  // An unfinished import on a runtime with no lock (src/backup/unfinished-import-plan.js)
+  // whose way back is gone or was never recorded opens it the same way.
   bool abandonableImport(StartupFailure failure) =>
-      failure.code == 'recovery_refused' && const {'restore_point_unknown', 'restore_point_damaged', 'restore_failed'}.contains(failure.text('reason'));
+      (failure.code == 'recovery_refused' && const {'restore_point_unknown', 'restore_point_damaged', 'restore_failed'}.contains(failure.text('reason'))) ||
+      (failure.facts['readable'] != false &&
+          ((failure.code == 'graph_import_unfinished' && unfinishedImportWay(failure) == null) ||
+              (failure.code == 'recovery_refused' && const {'import_input_missing', 'import_copy_missing', 'no_way_back'}.contains(failure.text('reason')))));
 
   // An unfinished switch whose finishing or cancelling stopped at the start
   // check or the store format: trying again is the way on, and the plan then
@@ -416,6 +452,7 @@ class Strings {
   // Giving up an import empties graphs: its own button and words, never 「恢复并启动」.
   String get abandonImport => _t('放弃这次导入…', 'Abandon the import…');
   String get abandonImportTitle => _t('放弃这次没做完的导入？', 'Abandon the unfinished import?');
+  String get importBackTitle => _t('把图谱导回去再启动？', 'Bring the graph back, then start?');
   String get abandonImportConfirm => _t('放弃导入，清空这些图谱', 'Abandon and empty these graphs');
   // Finishing a switch without a start check, once going back is not possible or was tried: its own button and words.
   String keepNewer(Map<String, Object?> facts) => _t('完成${_switchWords(facts).verb}并解除这把锁…', 'Finish the ${_switchWords(facts).verbEn} and unlock…');
@@ -464,6 +501,11 @@ class Strings {
       'finish_recovery' => _t('上一次恢复的步骤都做完了，只剩解除它加的锁。', 'The last recovery\'s steps are done; only the lock it took is left.'),
       'abandon_load' => _t('放弃这次中途停下的导入：不再把图撤回到导入前。只把可能写了一半的图谱挪开（它会变成空的），其余图谱原地不动；每个图谱现在是什么样，下面逐个说明。确认之后，再点「恢复并启动」只会接着把放弃做完，不会再自动导回；想回到导入前，请在终端里用下面列出的导回命令。',
           'Abandon the interrupted import: the graph does not go back to before it. Only a graph that may be half written moves aside (it becomes empty); the others stay as they are, and what each one now holds is said below. Once you confirm, Recover and start only finishes abandoning and never brings the copy back by itself; to go back to before the import, use an import command listed below in Terminal.'),
+      'import_back' => _t('把图谱导回到导入前：用${plan.facts['readable'] == false ? '最近一份' : '那次导入开始前留下的'}副本（${_clock(plan.text('createdAt'))}，${_sizeOf(plan.facts['bytes'])}）整库导入${_names(plan.facts['instances'])}。那次导入写进去的东西不会保留；导回成功后启动 FULI。',
+          'Take the graph back to before the import: ${_names(plan.facts['instances'])} ${_count(plan.facts['instances']) == 1 ? 'is' : 'are'} imported whole from the ${plan.facts['readable'] == false ? 'newest copy' : 'copy taken before that import'} (${_clock(plan.text('createdAt'))}, ${_sizeOf(plan.facts['bytes'])}). What that import wrote is not kept; FULI starts once it is back.'),
+      'import_again' => _t('重新运行那次导入，把${_names(plan.facts['graphs'])}完整写进去：导入前的副本里没有它（导入前它是空的）。用的是那次导入的备份（${_clock(plan.text('createdAt'))}，${_sizeOf(plan.facts['bytes'])}）；成功后启动 FULI。',
+          'Run that import again so ${_names(plan.facts['graphs'])} ${_count(plan.facts['graphs']) == 1 ? 'is' : 'are'} written whole: no copy from before the import holds it (it was empty then). It uses that import\'s own backup (${_clock(plan.text('createdAt'))}, ${_sizeOf(plan.facts['bytes'])}); FULI starts once it succeeds.'),
+      'abandon_import' => _abandonImportWords(plan),
       'keep_newer' => _t('完成这次没做完的$verb，留在 $to，并解除这把锁：不再做启动检查，切换记录移到 recovered 文件夹，解除数据库维护锁。之后起不来就是一次普通的启动失败，会说明原因和下一步。这样做之后，不能再取消这次$verb回到 $from。',
           'Finish the unfinished $verbEn on $toEn and release the lock: no start check; the switch journal moves to the recovered folder and the maintenance lock is released. If it does not start afterwards, that is an ordinary failed start, which says why and what to do next. After this, the $verbEn can no longer be cancelled back to $fromEn.'),
       _ => plan.kind,
@@ -605,6 +647,40 @@ class Strings {
             if (p is Map) zh ? '${p['pid']}（${p['name'] ?? '?'}）' : '${p['pid']} (${p['name'] ?? '?'})'
       ].join(zh ? '、' : ', ');
 
+  // Giving up an unfinished import on a runtime with no lock: which graphs
+  // move where (never deleted), how to get them back, and the copy that stays.
+  String _abandonImportWords(RecoveryPlan plan) {
+    final graphs = plan.facts['graphs'] is List ? plan.facts['graphs'] as List : const [];
+    final aside = plan.facts['asideTo'] is Map ? plan.facts['asideTo'] as Map : const {};
+    final folder = '${aside['folder'] ?? 'recovered'}';
+    final where = aside['volume'] == true
+        ? _t('每个图谱自己的容器数据卷里的 $folder', '$folder inside each graph\'s own container volume')
+        : folder;
+    final copy = plan.text('copy');
+    final kept = copy == null
+        ? ''
+        : _t('导入前的副本还留着（$copy），之后想回到导入前还能导回。', ' The copy from before the import stays ($copy), so you can still go back to before the import later.');
+    if (graphs.isEmpty) {
+      return _t('放弃这次导入：图谱里已经是那次导入写完的新数据，只是没有核对图谱身份；不挪动任何图谱，只清掉这条导入记录，之后 FULI 可以启动。$kept',
+          'Give the import up: the graph holds that import\'s data whole, only its identity was not reconciled; no graph moves, only the import\'s record is cleared, and FULI can start afterwards.$kept');
+    }
+    return _t('放弃这次导入：${_names(graphs)}可能只写了一半，会被挪到 $where（不删除），之后它是空的；其余图谱原地不动。挪开的库可以再搬回来，做完后会告诉你在哪、怎么搬。$kept',
+        'Give the import up: ${_names(graphs)} may be half written and ${graphs.length == 1 ? 'moves' : 'move'} to $where (not deleted), empty afterwards; the other graphs stay as they are. What moved can be moved back; once it is done, the window says where it is and how.$kept');
+  }
+
+  String _sizeOf(Object? bytes) => bytes is int ? _size(bytes) : '?';
+
+  /// What the window says once an unfinished import's way out worked.
+  String importDone(RecoveryPlan plan) => switch (plan.kind) {
+        'import_back' => _t('已把图谱导回到导入前。', 'The graph is back to how it was before the import.'),
+        'import_again' => _t('已重新运行那次导入，图谱完整了。', 'That import ran again and the graph is whole.'),
+        _ => _t('已放弃那次导入。', 'The import was given up.'),
+      };
+
+  /// The confirm button of an unfinished import's way back, as in the status bar.
+  String importConfirm(RecoveryPlan plan) =>
+      plan.kind == 'import_again' ? _t('重新运行那次导入并启动', 'Import again and start') : _t('导回到导入前并启动', 'Go back and start');
+
   /// The recovery's confirm button when its plan first ends a graph database
   /// of this data directory that holds the store (`end-holders`).
   String get endHoldersAndRetry => _t('结束它并重试导回', 'End it and retry');
@@ -690,6 +766,8 @@ class Strings {
           'Move ${_movedWhat(path)[1]} (${last(path)}$size) to the recovered folder, not deleted'),
       'rename' => _t('把没写完的备份改名为 ${last(step['to'])}', 'Rename the unfinished backup to ${last(step['to'])}'),
       'archive-journal' => _t('把切换记录移到 recovered 文件夹', 'Move the switch journal to the recovered folder'),
+      'import' => _t('从 ${step['from']} 整库导入（等同于 fuli graph import），导入前会先留一份现在的副本', 'Import the whole graph from ${step['from']} (as fuli graph import does), keeping a copy of the graph as it is now first'),
+      'abandon-import' => _t('挪开可能只写了一半的图谱，清掉这条导入记录（等同于 fuli graph abandon-import）', 'Move the graph that may be half written aside and clear the import\'s record (as fuli graph abandon-import does)'),
       'end-holders' => _t('结束占着库的进程 ${_processes(step['processes'], true)}：它是本数据目录之前没关掉的图数据库；结束前再核对一次，已经不在了就跳过',
           'End the process holding the store, ${_processes(step['processes'], false)}: a graph database of this data directory that FULI did not stop; it is checked again first, and skipped if it is gone'),
       'restore' => _t('从导入前的备份整库恢复 ${_names(step['instances'])}', 'Restore ${_names(step['instances'])} whole from the copy taken before the import'),
@@ -791,6 +869,15 @@ class Strings {
       'restore_point_usable' => _t('没有放弃：这次导入在导入前留下的副本还能用，点「恢复并启动」把图撤回到导入前。',
           'Not abandoned: the copy this import took before it started can still be used; choose Recover and start to take the graph back to before the import.'),
       'no_import' => _t('没有放弃：现在没有中途停下的导入。', 'Not abandoned: there is no interrupted import now.'),
+      'import_input_missing' || 'import_copy_missing' => _t(
+          '没有导回：${reason == 'import_input_missing' ? '那次导入用的备份' : '导入前的副本'}已经不在了，或者读不出来，导不回去。可以点「放弃这次导入…」：先说明哪些图谱会被挪开，你确认后才做。',
+          'Not brought back: the ${reason == 'import_input_missing' ? "import's input" : 'copy from before the import'} is gone or cannot be read. You can choose Abandon the import…: it says first which graphs move aside, and acts only once you confirm.'),
+      'no_way_back' => facts['readable'] == false
+          ? _t('没有导回：记录坏了，也没有导入前的副本。最后的办法是把这条记录挪走（不保证图谱完整），命令在「查看命令」里。',
+              'Not brought back: the record is damaged and there is no copy from before an import. The last way out is to move the record away (the graph is not known to be whole then); the command is under Show commands.')
+          : _t('没有导回：没有能导回的副本。可以点「放弃这次导入…」。', 'Not brought back: there is no copy to bring back. You can choose Abandon the import….'),
+      'marker_unreadable' => _t('没有放弃：记录这次导入的文件坏了，FULI 不知道哪个图谱可能只写了一半，不替你挪动图谱。最后的办法是把这条记录挪走（不保证图谱完整），命令在「查看命令」里。',
+          'Not abandoned: the file recording the import is damaged, so FULI cannot tell which graph may be half written and moves none for you. The last way out is to move the record away (the graph is not known to be whole then); the command is under Show commands.'),
       'lock_changed' => _t('没有恢复：锁在恢复途中变了。$retry', 'Not recovered: the lock changed during the recovery; $retry'),
       'recovery_running' => _t('没有恢复：另一个恢复（进程 $pid）正在进行，这次什么都没做。等它结束后$retry',
           'Not recovered: another recovery (process $pid) is in progress, so nothing was done. Wait for it to end, $retry'),

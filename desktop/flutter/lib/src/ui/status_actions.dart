@@ -45,8 +45,10 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
-          // After a start an unfinished import refused, its way out is typed in
-          // Terminal: the commands with their real paths, to copy, are a click here.
+          // After a start an unfinished import refused, its way out is the
+          // primary button; the same commands for a terminal, with their real
+          // paths to copy, stay a click here (and are the only way to move a
+          // damaged record away by hand).
           if (!snapshot.running && controller.pending == null && controller.unfinishedImportCommands.isNotEmpty)
             TextButton.icon(
               key: const Key('unfinished-import-commands'),
@@ -116,11 +118,15 @@ class StatusActions extends StatelessWidget {
     }
     // The last start stopped at an interrupted database operation: recovering
     // it is the one way on, after the person saw the plan and confirmed it.
+    // An unfinished import's way back is named for what it does.
     if (!snapshot.running && controller.recoverable) {
+      final failure = controller.lastFailure;
       return FilledButton(
         key: const Key('recover-start'),
         onPressed: busy ? null : () => _confirmRecovery(context),
-        child: Text(strings.recoverAndStart),
+        child: Text(failure != null && strings.unfinishedImportWay(failure) != null
+            ? strings.unfinishedImportAction(failure)
+            : strings.recoverAndStart),
       );
     }
     // The import's own copy cannot be used: giving the import up is the way on,
@@ -200,14 +206,18 @@ class StatusActions extends StatelessWidget {
   // The plan in the window's words; a switch that can also be backed out
   // offers both, each with its own button, and says how they differ.
   Future<void> _confirmRecovery(BuildContext context) async {
+    // A window running the `fuli` CLI has no import of its own to run: the commands, for a terminal.
+    if (controller.recoversInTerminal && controller.unfinishedImportCommands.isNotEmpty) return _showUnfinishedImport(context);
     final plan = await controller.previewRecovery();
     if (plan == null || !context.mounted) return;
     final alternative = plan.alternative;
     // Finishing without a start check: only when the plan says going back is
     // not possible or was tried (neo4j-recovery.js `keepable`), a choice of its own.
     final keepable = plan.kind == 'finish_switch' && plan.facts['keepable'] == true;
-    // A good copy that would not go back: abandoning the import is open beside trying again.
-    final abandonable = plan.kind == 'restore_load' && plan.facts['restoreFailed'] is Map;
+    // A good copy that would not go back: abandoning the import is open beside trying again;
+    // so it is beside an unfinished import's way back (its record readable).
+    final importing = plan.kind == 'import_back' || plan.kind == 'import_again';
+    final abandonable = (plan.kind == 'restore_load' && plan.facts['restoreFailed'] is Map) || (importing && plan.facts['readable'] != false);
     if (controller.recoversInTerminal) {
       return _showInTerminal(context, plan, [_command(plan), if (alternative != null) _command(alternative),
         if (keepable) 'fuli graph runtime recover --keep-newer', if (abandonable) 'fuli graph runtime recover --abandon-import']);
@@ -218,7 +228,7 @@ class StatusActions extends StatelessWidget {
     final chosen = await showDialog<RecoveryPlan>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(strings.recoveryTitle),
+        title: Text(importing ? strings.importBackTitle : strings.recoveryTitle),
         content: SingleChildScrollView(child: Text(words.join('\n'))),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.cancel)),
@@ -245,9 +255,11 @@ class StatusActions extends StatelessWidget {
             onPressed: () => Navigator.of(dialogContext).pop(plan),
             child: Text(switching && alternative != null
                 ? (plan.kind == 'finish_switch' ? strings.finishSwitchTo(plan.facts) : strings.cancelSwitch(plan.facts))
-                : plan.steps.any((step) => step['do'] == 'end-holders')
-                    ? strings.endHoldersAndRetry
-                    : strings.recoveryConfirm),
+                : importing
+                    ? strings.importConfirm(plan)
+                    : plan.steps.any((step) => step['do'] == 'end-holders')
+                        ? strings.endHoldersAndRetry
+                        : strings.recoveryConfirm),
           ),
         ],
       ),
@@ -291,8 +303,9 @@ class StatusActions extends StatelessWidget {
   // it is, how big, which graphs, and the commands that move it back (copyable).
   Future<void> _showKeptGraphData(BuildContext context) async {
     final folders = controller.keptGraphData;
-    if (folders.isEmpty) return;
-    final words = strings.keptGraphDataWords(folders).join('\n');
+    final abandoned = controller.importAbandoned;
+    if (folders.isEmpty && abandoned == null) return;
+    final words = abandoned ?? strings.keptGraphDataWords(folders).join('\n');
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -342,6 +355,8 @@ class StatusActions extends StatelessWidget {
   // Giving up the import: what happens to which graphs and how to import back
   // come first; its button says it empties them.
   Future<void> _confirmAbandon(BuildContext context) async {
+    // The `fuli` CLI gives an import up only at a terminal (graph-data-command.js): the commands.
+    if (controller.recoversInTerminal && controller.unfinishedImportCommands.isNotEmpty) return _showUnfinishedImport(context);
     final plan = await controller.previewRecovery(abandonImport: true);
     if (plan == null || !context.mounted) return;
     if (controller.recoversInTerminal) return _showInTerminal(context, plan, [_command(plan)]);

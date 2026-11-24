@@ -159,6 +159,17 @@ import).
   processes naming a graph directory) and, as the last way out, the marker's
   path and how to move it away by hand. A marker that cannot be read is
   named by its path with that move and the newest copy's import.
+  The desktop controller offers both as a plan the window confirms
+  (`src/backup/unfinished-import-plan.js`, through its `recover-*` and
+  `abandon-import-*` actions when the data's runtime mode has a marker):
+  `import_back` (the marker's copy, or for an unreadable marker the newest
+  `before-import-*` copy), `import_again` (the import's own input) and
+  `abandon_import`, each with its digest; it then runs the same
+  `fuli graph import` or `fuli graph abandon-import` in its own process (the
+  person who confirmed in the window is the person the terminal check asks
+  for; the CLI keeps that check) and starts. A refused start adds `wayGone`
+  when the way back names a folder that is no longer there, so giving up
+  comes first.
   It does none of the recovery above: it only keeps a start off a half-written
   graph and says how to get back to before the import.
 - A lock that names no holder (taken before FULI recorded one) is released only

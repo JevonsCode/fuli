@@ -328,8 +328,16 @@ FULI starts with that graph empty. A graph that was empty before a failed import
 way by the rollback. When even that cannot move a graph, the words name what holds it when FULI can
 tell, and, as the last way out, the marker file's path and the command that moves it away by hand
 (FULI then starts, but the graph is not known to be whole). Commands in these words quote paths
-literally (single quotes; PowerShell syntax on Windows), and the desktop window shows them with their
-real paths under 「查看命令」 to copy. When the
+literally (single quotes; PowerShell syntax on Windows). The desktop window (the Windows tray) does
+both itself: its main button is 「导回到导入前并启动」 (or 「重新运行那次导入并启动」 when no copy holds
+the graph), which first says which copy it uses, how big it is and which graphs go back, and after you
+confirm runs the same import, then starts FULI; when the import fails, it says why and the buttons stay.
+「放弃这次导入…」 sits beside it in that confirmation (and is the main button when the way back is gone):
+it says which graphs move where, takes a red button, runs the same give-up, then shows where each graph
+went and how to move it back. 「查看命令」 still shows the commands with their real paths to copy, and
+is the way to move a damaged marker away by hand. A window that drives an npm-installed `fuli` CLI
+(macOS container mode) shows those commands instead, since the CLI gives an import up only at a
+terminal. When the
 disk is full, the error says to free space first: at least twice the size of the copy from before the
 import, with the copy's size and the space free now. If `graph migrate` fails while its import keeps the
 native lock (macOS), it still switches back to the unchanged container graph, which can be used as
