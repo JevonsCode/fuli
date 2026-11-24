@@ -106,4 +106,13 @@ void main() {
     expect(view(working: true), view(working: true));
     expect(view(working: true), isNot(view(working: false)));
   });
+
+  test('a busy computer keeps the normal icon; only the tooltip says FULI is slow', () {
+    const busy = FuliSnapshot(condition: FuliCondition.busy, port: 2727, installed: true, running: true, reached: false);
+    final view = trayViewOf(busy, busy: false, strings: zh, now: now);
+    expect(view.icon, TrayIcon.ok);
+    expect(view.tooltip, contains('电脑现在很忙'));
+    const waiting = FuliSnapshot(condition: FuliCondition.needsPerson, port: 2727, installed: true, running: true);
+    expect(trayViewOf(waiting, busy: false, strings: zh, now: now).icon, TrayIcon.needsPerson);
+  });
 }

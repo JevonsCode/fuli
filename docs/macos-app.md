@@ -92,10 +92,13 @@ step waits for the person (docs/client-connections.md, "FULI starts with your se
 When the console holds its port but does not answer in time, the window says the
 computer is busy and FULI is slow, and waits: it asks for the heavy health check
 (体检) less and less often (skipping 1, 3, then 7 checks), polls less often, and
-starts no `fuli status` meanwhile. Only after 5 minutes without one answer does it
-say the console does not answer and offer 「重启 FULI」, which replaces only the
-console (the graph database and Provider keep running) and is not recorded as the
-person stopping FULI.
+starts no `fuli status` meanwhile; the tray keeps its normal icon and its tooltip
+says FULI is slow. Only after 5 minutes without one answer does it say the console
+does not answer and offer 「重启 FULI」, which replaces only the console (the graph
+database and Provider keep running) and is not recorded as the person stopping FULI.
+Until the console answers again its checks stay stretched (up to one every 2
+minutes while the window is open), so a computer that stays busy is not handed a
+`fuli status` every 15 seconds.
 
 An npm installation and the app share the data directory; use one of them at a
 time. Existing data set up in container (Docker) mode is not switched: start

@@ -231,14 +231,46 @@ void main() {
     expect(controller.snapshot!.condition, FuliCondition.degraded);
     expect(controller.snapshot!.problem, zh.noAnswer);
     expect(runtime.calls, ['status']);
+    // Still no answer: the poll stays stretched, so a computer that stays busy
+    // is not handed a `fuli status` every 15 s.
+    expect(controller.pollInterval, const Duration(minutes: 2));
+    await controller.refresh();
+    expect(controller.pollInterval, const Duration(minutes: 2));
 
-    // It answers again: back to the normal window, with the doctor's next answer.
+    // It answers again: back to the normal window and schedule, with the doctor's next answer.
     api.slow = false;
+    await controller.refresh();
+    expect(controller.pollInterval, const Duration(seconds: 15));
     await controller.recheck();
     expect(controller.snapshot!.reached, isTrue);
     expect(controller.snapshot!.condition, FuliCondition.needsPerson);
     await controller.refresh();
     expect(api.requests.last, isNot('health'));
+  });
+
+  test('a restart forgets the replaced console\'s silence and the stretched poll', () async {
+    final api = DemoFuliApi();
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    var clock = DateTime.utc(2026, 11, 24, 20, 49);
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: notifier, strings: zh,
+        checkLog: _RecordingCheckLog(), now: () => clock);
+    await controller.refresh();
+    api.slow = true;
+    for (var check = 0; check < 4; check++) {
+      await controller.refresh();
+      clock = clock.add(const Duration(minutes: 1));
+    }
+    expect(controller.snapshot!.condition, FuliCondition.busy);
+    expect(controller.pollInterval, greaterThan(const Duration(seconds: 15)));
+
+    // The new console is slow at first too: its wait starts at the restart, not before it.
+    clock = clock.add(slowPatience);
+    final before = api.requests.length;
+    await controller.restart();
+    expect(controller.snapshot!.condition, FuliCondition.busy);
+    expect(controller.snapshot!.problem, isNull);
+    expect(controller.pollInterval, const Duration(seconds: 15));
+    expect(api.requests.sublist(before), contains('doctor'), reason: 'the restart asks the doctor again at once');
   });
 
   test('one check runs at a time: a second refresh while one waits joins it', () async {

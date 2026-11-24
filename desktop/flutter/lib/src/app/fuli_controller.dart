@@ -94,8 +94,11 @@ class FuliController extends ChangeNotifier {
   bool _startOnOpen = false;
   final _restarts = <DateTime>[];
   int _failures = 0;
-  // Checks in a row that found the computer busy; they stretch the poll as failures do.
-  int _busyChecks = 0;
+  // Checks in a row since the console last answered while it held its port
+  // (busy, and after [slowPatience] still unanswered); they stretch the poll
+  // as failures do until the first answer, so a computer that stays busy is
+  // not handed a `fuli status` every 15 s once the patience runs out.
+  int _unansweredChecks = 0;
   // Doctors in a row that did not answer in time, and how many checks still
   // skip it (0, 1, 3, then 7 after each): the light health check stands in, so
   // a busy computer is not handed the heaviest check every few seconds.
@@ -334,7 +337,7 @@ class FuliController extends ChangeNotifier {
     // FULI running without an answering console is checked on the normal
     // schedule: backing off would leave the page stale for minutes (11-03).
     _failures = snapshot.reached || snapshot.running ? 0 : _failures + 1;
-    _busyChecks = snapshot.condition == FuliCondition.busy ? _busyChecks + 1 : 0;
+    _unansweredChecks = _unansweredSince != null ? _unansweredChecks + 1 : 0;
     if (snapshot.condition != FuliCondition.notRunning) _stoppedByPerson = false;
     if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _startOnOpen || _pending != null)) {
       unawaited(notifier.notify('FULI', snapshot.sentence(strings)));
@@ -342,10 +345,15 @@ class FuliController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// How long the next scheduled check waits.
+  @visibleForTesting
+  Duration get pollInterval =>
+      pollDelay(visible: _visible, failures: _failures > _unansweredChecks ? _failures : _unansweredChecks);
+
   void _schedule() {
     _timer?.cancel();
     if (!_polling || _disposed) return;
-    _timer = Timer(pollDelay(visible: _visible, failures: _failures > _busyChecks ? _failures : _busyChecks), () {
+    _timer = Timer(pollInterval, () {
       // A running operation checks again when it ends.
       if (_pending == null) unawaited(refresh());
     });
@@ -596,7 +604,7 @@ class FuliController extends ChangeNotifier {
     if (_pending != null) return Future.value();
     _runtimePort = null;
     _failures = 0;
-    _busyChecks = 0;
+    _unansweredChecks = 0;
     _doctorSkips = 0;
     _notice = null;
     if (!_disposed) notifyListeners();
@@ -613,6 +621,9 @@ class FuliController extends ChangeNotifier {
     _stoppedByPerson = false;
     return _bringUp(strings.restarting, () async {
       _runtimePort = null;
+      // The replaced console's silence is not the new one's.
+      _answered();
+      _unansweredChecks = 0;
       _notice = await _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
     });
   }
