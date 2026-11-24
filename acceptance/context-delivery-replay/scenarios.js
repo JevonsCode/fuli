@@ -41,15 +41,16 @@ function sentExactly(turn, texts) {
   const wanted = turn.windowMessages.filter(of);
   return wanted.length > 0 && turn.sentMessages.length === wanted.length && wanted.every(text => turn.sentMessages.includes(text));
 }
-const sentWholeWindow = turn => sentExactly(turn, turn.windowMessages);
-// Every one of `texts` the uncached entry holds was sent, and nothing but
-// `texts`. Where the host bounds its entry (Codex, Claude Code), the uncached
-// entry may itself drop the oldest messages to fit, while a delta has room to
-// resend one more of the lost ones: that is still the lost messages resent.
-function sentLost(turn, texts) {
-  const of = shown => texts.some(text => text === shown || (shown.endsWith('…') && text.startsWith(shown.slice(0, -1))));
-  const wanted = turn.windowMessages.filter(of);
-  return wanted.length > 0 && wanted.every(text => turn.sentMessages.includes(text)) && turn.sentMessages.every(of);
+// A full frame (a new generation) sent exactly the window one full frame holds
+// under the host's inline limit: the uncached entry through the same bounded
+// hook. Where the limit leaves the oldest out, the next turn pays them
+// (sentRest).
+const sentWholeWindow = turn => sentExactly(turn, turn.frameWindowMessages);
+// The turn after a full frame sent exactly the window messages that frame left
+// out, and nothing when it left none.
+function sentRest(turn, full) {
+  const rest = turn.windowMessages.filter(text => !full.sentMessages.includes(text));
+  return rest.length ? sentExactly(turn, rest) : turn.sentMessages.length === 0;
 }
 
 // C (Codex) opens the conversation; H (Claude Code) joins it by the pointer
@@ -119,7 +120,8 @@ export const SCENARIOS = {
     await c.compact();
     const after = await c.turn(WORK, { note: 'C after compaction' });
     world.check('compact: the new generation receives the window again', sentWholeWindow(after));
-    await c.turn(WORK, { note: 'C after compaction, settled' });
+    const settled = await c.turn(WORK, { note: 'C after compaction, settled' });
+    world.check('compact: the next turn sends exactly what that frame left out', sentRest(settled, after));
     await c.sessionStart('resume');
     const codexResumed = await c.turn(WORK, { note: 'C after SessionStart resume' });
     world.check('Codex resume: the new generation receives the window again', sentWholeWindow(codexResumed));
@@ -141,7 +143,7 @@ export const SCENARIOS = {
     await c.turn(WORK, { record: false, note: 'C output lost again' });
     await c.turn(WORK, { preview: true, note: 'C recorded as preview only' });
     const resent = await c.turn(WORK, { note: 'C resend, recorded' });
-    world.check('failure: the lost messages are resent', sentLost(resent, fromH));
+    world.check('failure: the lost messages are resent', sentExactly(resent, fromH));
     await c.turn(WORK, { note: 'C settled' });
     const fromC = await talk(c, world, 'fromC');
     await h.turn(WORK, { record: false, note: 'H output lost' });

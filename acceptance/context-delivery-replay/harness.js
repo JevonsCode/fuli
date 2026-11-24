@@ -263,9 +263,15 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       // preference scope (its work kind): structuredClone drops it, and an
       // inline budget then ranked without the task's scene, so the comparison
       // listed other bodies than any session would (not a missed delivery).
-      const uncached = async entry => (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry,
-        { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }) })).hookSpecificOutput.additionalContext;
+      const uncached = async (entry, options = {}) => (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry,
+        { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }), ...options })).hookSpecificOutput.additionalContext;
       const baseline = await uncached(copyPreferenceScope(context, structuredClone(context)));
+      // The recovery window a turn is checked against: the same uncached entry
+      // with no inline limit, so a window the host's limit cut short does not
+      // become the expected set (Codex: inlineBytes; Claude Code's hook takes
+      // no limit option and stays bounded, as its checks were written for).
+      // `baseline` stays the window one full frame holds under that limit.
+      const unbounded = await uncached(copyPreferenceScope(context, structuredClone(context)), { inlineBytes: null });
       // The preferences this turn should leave the model holding at least: a
       // new session's first frame for this entry. A host line sends nothing by
       // design (T1), so the model keeps what its entry turn gave it: the
@@ -299,7 +305,9 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       // sets; kept out of the JSON result.
       Object.defineProperty(turn, 'modelPreferences', { value: new Map(view.preferences) });
       Object.defineProperty(turn, 'sentMessages', { value: (recoveryOf(frame)?.messages ?? []).map(message => message.content) });
-      Object.defineProperty(turn, 'windowMessages', { value: (recoveryOf(frameOf(baseline))?.messages ?? [])
+      Object.defineProperty(turn, 'windowMessages', { value: (recoveryOf(frameOf(unbounded))?.messages ?? [])
+        .map(message => message.content) });
+      Object.defineProperty(turn, 'frameWindowMessages', { value: (recoveryOf(frameOf(baseline))?.messages ?? [])
         .map(message => message.content) });
       view.turns++;
       world.turns.push(turn);

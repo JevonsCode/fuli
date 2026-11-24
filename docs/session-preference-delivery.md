@@ -445,10 +445,9 @@ after the entry (an outdated-MCP notice, the `#fulidebug` line), is kept under
 `CODEX_CONTEXT_BYTES` = 9,200, below the 9,253 seen kept whole: a turn with
 notices gives the entry 9,200 less what they take (`codexEntryBytes`). These
 limits come from one computer's rollouts; another model or Codex
-configuration may keep less. When the hook finds that Codex cut the last FULI
-context it recorded anyway (its `Warning: truncated output` line,
-`codex/context-cut.js`), it logs `host_context_cut` in the diagnostics log
-and bounds that turn's entry to 70% of its limit. The fit measures the hook context, and the preferences' floor, in
+configuration may keep less. A frame Codex cuts all the same is not detected
+yet: that check belongs inside the entry's deadline budget and after the
+transcript hand-off, and is a follow-up. The fit measures the hook context, and the preferences' floor, in
 the host's unit (`inlineEntryFit`'s `measure`); a Chinese character is three
 bytes. Its frames now fit what Codex keeps, are confirmed from the rollout's
 hook record, and later turns are deltas. The read call is the same as Claude

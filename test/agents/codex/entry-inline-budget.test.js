@@ -5,7 +5,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CODEX_ENTRY_INLINE_BYTES, codexEntryBytes, codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
-import { lastHookContextCut } from '../../../src/agents/codex/context-cut.js';
 import { withOutdatedMcpNotice } from '../../../src/mcp/process-registry.js';
 import { DEBUG_MARK_NOTICE, withDebugMarkNotice } from '../../../src/debug-turns/trigger.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
@@ -208,15 +207,4 @@ test('every Codex context with the longest appended notices stays under what Cod
       assert.ok(bytes(text) <= SEEN_WHOLE_BYTES, `${kind}: ${bytes(text)} bytes`);
     }
     assert.ok(contexts.full.endsWith(DEBUG_MARK_NOTICE) && contexts.full.includes(LONG_NOTICE));
-  }));
-
-test('a rollout whose last FULI context Codex cut is told apart from one it kept whole', () =>
-  codexEntrySession(async session => {
-    assert.equal(await lastHookContextCut(session.input.transcript_path), false, 'nothing recorded yet');
-    await session.turn(syntheticLargeEntry({ items: realScalePreferences().slice(0, 3), sessionId: session.sessionId,
-      conflicts: false, sourceApplication: 'codex' }));
-    assert.equal(await lastHookContextCut(session.input.transcript_path), false);
-    await session.host.inject(`Warning: truncated output (original token count: 2600)\n\nFuli task context…650 tokens truncated…}`);
-    assert.equal(await lastHookContextCut(session.input.transcript_path), true);
-    assert.equal(await lastHookContextCut('/synthetic/missing.jsonl'), false);
   }));

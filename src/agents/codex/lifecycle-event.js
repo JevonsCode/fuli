@@ -27,9 +27,6 @@ import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partial
 import { recordDebugTurn } from '../../debug-turns/recorder.js';
 import { DEBUG_MARK_NOTICE, isDebugPrompt, withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
 import { codexHookTimeoutMs } from './hook-contract.js';
-import { lastHookContextCut } from './context-cut.js';
-import { diagnosticEventLog } from '../../diagnostics/event-log.js';
-import { dirname } from 'node:path';
 
 export async function codexStopLifecycleOutput(input, invoke) {
   const sessionId = input?.session_id;
@@ -51,7 +48,8 @@ export async function codexStopLifecycleOutput(input, invoke) {
 // tail around a cut, the whole text spilled to a file (Codex rollouts: every
 // context of 2,559 tokens or more kept 2,458 of them; none of 9,253 bytes or
 // fewer was cut). These are one computer's records: another model or Codex
-// configuration may keep less. The preferences in the cut are never seen, and
+// configuration may keep less, and a frame the host cuts all the same is not
+// detected yet (a follow-up). The preferences in the cut are never seen, and
 // the cut preview is no frame preference-evidence.js can confirm, so every
 // turn resent the whole entry (a real-scale working entry: 41k characters,
 // 64k bytes). As Claude Code's (claude-code/lifecycle-event.js), the task
@@ -64,15 +62,6 @@ export const CODEX_ENTRY_INLINE_BYTES = 9000;
 // 9,253 bytes it was seen to keep whole. A turn with notices gives the entry
 // this less what they take (codexEntryBytes).
 export const CODEX_CONTEXT_BYTES = 9200;
-
-// The share of its limit an entry gets on the turn after Codex cut one.
-const CUT_SHARE = 0.7;
-
-function recordContextCut(runtimeConfigPath, sessionId) {
-  if (typeof runtimeConfigPath !== 'string' || !runtimeConfigPath) return;
-  diagnosticEventLog(dirname(runtimeConfigPath)).record({ component: 'hook', operation: 'codex.UserPromptSubmit',
-    outcome: 'failed', code: 'host_context_cut', correlationId: typeof sessionId === 'string' ? sessionId : null });
-}
 
 // The entry's limit on a turn whose hook appends `notice` and, for a
 // #fulidebug prompt, the debug mark's line, each after a newline.
@@ -139,13 +128,7 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     return output;
   }
   // The entry keeps room for what is appended after it (CODEX_CONTEXT_BYTES).
-  let inlineBytes = event === 'UserPromptSubmit' ? codexEntryBytes(notice(), input?.prompt) : CODEX_ENTRY_INLINE_BYTES;
-  // A context Codex cut all the same (its limit here may be lower than the
-  // one measured): the cut is logged, and this turn's entry is bounded tighter.
-  if (event === 'UserPromptSubmit' && await lastHookContextCut(input?.transcript_path)) {
-    recordContextCut(runtimeConfigPath, input.session_id);
-    inlineBytes = Math.floor(inlineBytes * CUT_SHARE);
-  }
+  const inlineBytes = event === 'UserPromptSubmit' ? codexEntryBytes(notice(), input?.prompt) : CODEX_ENTRY_INLINE_BYTES;
   let app;
   let leases;
   // Also called at the hook's deadline; each is closed once, whichever comes

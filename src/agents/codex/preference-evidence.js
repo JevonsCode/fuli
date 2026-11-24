@@ -37,7 +37,7 @@ export const codexPreferenceEvidence = Object.freeze({
 // cannot carry that kind; older rollouts without it prove nothing. An oversized
 // context is spilled to a file and replaced by a preview, which never parses
 // as a complete frame.
-export function hookContext(item) {
+function hookContext(item) {
   const metadata = item?.internal_chat_message_metadata_passthrough;
   const [part, ...rest] = Array.isArray(item?.content) ? item.content : [];
   if (item?.type !== 'message' || item.role !== 'developer' || rest.length || part?.type !== 'input_text'
