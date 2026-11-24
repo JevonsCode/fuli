@@ -35,13 +35,18 @@ async def copies(driver):
 
 
 async def own_project(driver, space_id):
-    """This computer's own project, as text: what a release must leave as it was."""
+    """This computer's own project, as text: what a release must leave as it was (but the copy
+    marker of a record it reaches, which the release takes off)."""
     records, _, _ = await driver.execute_query('''
         MATCH (:FuliSpace {id: $space})-[:CONTAINS_PROJECT]->(project:FuliPersonalProject {project_id: $project})
         OPTIONAL MATCH (project)-[*1..2]->(below)
-        RETURN properties(project) AS project, collect(DISTINCT properties(below)) AS below''',
+        WITH project, collect(DISTINCT below) AS below
+        RETURN properties(project) AS project,
+               [item IN below | [key IN keys(item) WHERE NOT key STARTS WITH 'fuli_replica' | [key, item[key]]]]
+               AS below''',
         space=space_id, project=LOCAL)
-    return str(sorted(map(str, records[0]['below']))) + str(records[0]['project'])
+    below = sorted(str(sorted(map(str, item))) for item in records[0]['below'])
+    return str(below) + str(sorted(map(str, records[0]['project'].items())))
 
 
 @pytest.mark.asyncio

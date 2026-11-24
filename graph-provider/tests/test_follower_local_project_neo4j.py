@@ -78,7 +78,7 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
                                             'Synthetic correction.')
             item = revised.get('version_item_id') or item
             await checked(await client.post('/v1/knowledge/batch-confirmations', json={
-                'personal_space_id': space_id, 'group_kind': 'source', 'group_value': 'synthetic-source',
+                'personal_space_id': space_id, 'group_kind': 'review', 'group_value': 'pending',
                 'reason': 'Synthetic review.', 'operation_actor': 'human',
                 'confirmer': {'kind': 'user', 'label': 'Synthetic user'},
                 'items': [{'item_id': item, 'item_kind': 'entity', 'existence_reason': 'Synthetic.',
