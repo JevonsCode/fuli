@@ -386,7 +386,8 @@ const BASELINE = Object.freeze({
   // managers as the calls that read them, and Tonborg as its one sentence: 11,154 -> 6,645 B,
   // measured on the compact view the MCP result carries (with the shared rules_version).
   // rec#75: a delivered preference names its id, so a correction can revise it: 6645 -> 6,683 B, measured.
-  tokenlessEntryBytes: 6683,
+  // #1102: main (572e9033, with #1101) already measured 6,528 here; tightened from 6,683 to the measurement.
+  tokenlessEntryBytes: 6528,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -423,7 +424,8 @@ const BASELINE = Object.freeze({
   // frame is already there, so the next turn is the empty delta again (index_unchanged): 1,403 chars
   // as on main (8,942 for one push that let later deltas spell out every remaining body).
   claudeBoundedEntryChars: 8693,
-  claudeBoundedNextTurnChars: 1403,
+  // #1102: main (572e9033, with #1101) already measured 724 here; tightened from 1,403 to the measurement.
+  claudeBoundedNextTurnChars: 724,
   // Design T1/T3: one session of 70 preferences of 130 chars (claudeHostEventSession): a prompt,
   // five background-task notifications (two queued), and a prompt with another recall that asks
   // FULI to keep something. The notifications were 2,578-char empty deltas each and the second
@@ -437,7 +439,8 @@ const BASELINE = Object.freeze({
   // (11 bodies and a line for each of the rest, 8,842 chars; it was 16 bodies and the keys, 8,733,
   // and on a real-scale set 4 bodies fewer than main), and the second prompt catches up the 7
   // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
-  claudeHostEventSessionChars: 15843,
+  // #1102: main (572e9033, with #1101) already measured 14,663 here; tightened from 15,843 to the measurement.
+  claudeHostEventSessionChars: 14663,
   claudeHostEventLineChars: 171,
   // A real-scale working entry (syntheticWorkingEntry: 70 preferences of mostly Chinese text, 8
   // hard rules) through the Codex hook and session cache, in the UTF-8 bytes Codex counts. Its
@@ -463,8 +466,10 @@ const BASELINE = Object.freeze({
   // console: 14 -> 88 chars (+74, about 25 tokens, only on a turn that saved items; the first
   // form with space and client in the path was +130 with a real UUID space).
   turnReceiptNoChangeChars: 0,
-  turnReceiptHeadingChars: 88,
-  turnReceiptEntryChars: 152,
+  // #1102: main (572e9033, with #1101) already measured 86 here; tightened from 88 to the measurement.
+  turnReceiptHeadingChars: 86,
+  // #1102: main (572e9033, with #1101) already measured 150 here; tightened from 152 to the measurement.
+  turnReceiptEntryChars: 150,
   // 11-11: the /flreview knowledge review was retired, so the Codex `fuli review` line and its
   // 101 B of guidance (rec#22, codexReviewGuidanceBytes) are gone.
   // Data-format completion reminders add the remaining count and local dismissal link:
@@ -473,15 +478,18 @@ const BASELINE = Object.freeze({
   // local link's text without the link: 104 -> 116.
   migrationReceiptNoneChars: 0,
   migrationReceiptPendingChars: 59,
-  migrationReceiptAppliedChars: 116,
+  // #1102: main (572e9033, with #1101) already measured 114 here; tightened from 116 to the measurement.
+  migrationReceiptAppliedChars: 114,
   // rec#20 part 2: the link to a session's batch migration, with its separator. Nothing waits, or
   // the session already worked in this project: no bytes. The session's first task in a formal
   // project while its temporary project holds items: one line with the count (152 chars with a
   // UUID session, about 105 of them the link). A turn in a formal project that left items
   // undecided: one line after its receipt (149 chars). No tool, schema or instruction text.
   sessionMigrationNoneChars: 0,
-  sessionMigrationOfferChars: 152,
-  sessionMigrationTurnChars: 149,
+  // #1102: main (572e9033, with #1101) already measured 150 here; tightened from 152 to the measurement.
+  sessionMigrationOfferChars: 150,
+  // #1102: main (572e9033, with #1101) already measured 147 here; tightened from 149 to the measurement.
+  sessionMigrationTurnChars: 147,
   // rec#82: a migration the person confirmed for this session, told at its next task entry: one
   // plain line with its separator (what moved and what still waits; no link, no instruction),
   // once per confirm. A session with none reads no file and adds nothing.
@@ -500,7 +508,8 @@ const BASELINE = Object.freeze({
   flaGrowthNoneChars: 0,
   flaGrowthRepeatedChars: 258,
   flaGrowthWorkflowsMaxChars: 888,
-  repeatGuidanceChars: 513,
+  // #1102: main (572e9033, with #1101) already measured 512 here; tightened from 513 to the measurement.
+  repeatGuidanceChars: 512,
   // list_agent_interfaces without arguments returned the whole Agent interface catalog (every
   // console change with its reason or undo, every domain with its guidance, every tool's title):
   // 63,848 B, 848 B under its 64 KB cap. It is now an index (domains with their tools, route
