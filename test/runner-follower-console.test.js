@@ -11,8 +11,9 @@ import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js'
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
+import { createFollowerLocalApi } from '../src/runner/follower-local-api.js';
 import { BAND_SOURCE } from '../src/runner/follower-band.js';
-import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
+import { LOCAL_PATH, startFollowerConsole, STATUS_PATH, whoAnswers } from '../src/runner/follower-console.js';
 import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, SYNC_PATH } from '../src/runner/follower-page.js';
 import { capabilityLines } from '../src/runner/follower-runtime.js';
 import { CAPABILITIES } from '../src/runner/follower-status.js';
@@ -62,7 +63,7 @@ const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => nu
 
 // A host listener with one paired runner, and that runner's console entry.
 // nowhere: the entry's connection never reaches anything.
-async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
+async function pairedRunner(t, { clients = null, nowhere = false, localApi = null, projectIds } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -89,7 +90,7 @@ async function pairedRunner(t, { clients = null, nowhere = false } = {}) {
   const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner,
     lookUp: async () => { looked.mdns += 1; return []; } });
   const delivered = [];
-  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients,
+  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients, localApi, projectIds,
     deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
   t.after(async () => {
     await entry.close();
@@ -664,4 +665,67 @@ test('once the host is found, the page says so and when it was last reached', as
   assert.equal(page.element('[data-reach]').textContent, '现在在线');
   assert.equal(page.element('[data-reached]').textContent, '2026-11-23T09:00:00.000Z');
   assert.equal(page.element('[data-away-step]').hidden, true);
+});
+
+test('a follower with no explicit local project keeps each existing console destination', () => {
+  for (const [path, answer] of [[LOCAL_PATH, 'local'], [STATUS_PATH, 'local'], [SYNC_PATH, 'local'],
+    [ADDRESS_PATH, 'local'], ['/remote/host-a/', 'host'], ['/api/personal-projects', 'host'],
+    ['/api/personal-projects/sample/history', 'host'], ['/api/system/runtime/leases', 'host'],
+    ['/api/project-agent-tasks', 'host'], ['/api/data-format', 'host'], ['/', 'host']]) {
+    assert.equal(whoAnswers(path, { ids: [], projectId: 'sample' }), answer, path);
+  }
+});
+
+test('project page data and loopback leases go to the owning computer; a relayed body keeps its bytes', async (t) => {
+  const handled = [];
+  const localApi = { async handle(request, response, url) {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    handled.push([url.pathname, Buffer.concat(chunks).toString()]);
+    response.end('here');
+  } };
+  const { entry, consoleSide } = await pairedRunner(t, { localApi, projectIds: () => ['sample'] });
+  for (const path of ['/api/personal-projects/sample/history', '/api/project-agent-tasks?personalProjectId=sample',
+    '/api/system/runtime/leases', '/api/system/runtime/leases/synthetic', '/api/personal-projects']) {
+    assert.equal(await (await fetch(entry.url + path)).text(), 'here', path);
+  }
+  const put = body => fetch(entry.url + '/api/personal-projects', { method: 'PUT', body,
+    headers: { 'content-type': 'application/json' } });
+  const local = '{ "projectId": "sample" }';
+  assert.equal(await (await put(local)).text(), 'here');
+  assert.deepEqual(handled.at(-1), ['/api/personal-projects', local]);
+  const remote = '{ "projectId": "elsewhere" }';
+  assert.equal((await (await put(remote)).json()).body, remote);
+  const status = await new Promise((resolve, reject) => {
+    const req = httpRequest(entry.url + '/api/system/runtime/leases', { headers: { host: 'example.test' } }, response => {
+      response.resume();
+      resolve(response.statusCode);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(status, 403);
+  assert.equal((await fetch(entry.url + '/__fuli-follower/graph-backups', { method: 'POST' })).status, 403);
+  assert.equal(consoleSide.seen.some(row => row.url.includes('/runtime/leases')), false);
+});
+
+test('the local lease endpoints and merged project list use only this computer’s broker and application', async t => {
+  let opens = 0;
+  const calls = [];
+  const broker = { current: async () => ({ withLease: (_owner, fn) => fn(),
+    acquire: async () => { calls.push('acquire'); return { leaseId: 'sample' }; },
+    refresh: id => ({ refreshed: id === 'sample' }), release: id => ({ released: id === 'sample' }) }) };
+  const localApi = createFollowerLocalApi({ paths: {}, broker: () => broker, store: { host: () => ({ name: 'Host A' }) },
+    connection: { getText: async () => ({ status: 200, text: JSON.stringify([{ project_id: 'from-host' }]) }) },
+    open: async () => { opens++; return { listPersonalProjects: async () => [{ project_id: 'sample' }, { project_id: 'unrouted' }] }; } });
+  const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi });
+  const lease = entry.url + '/api/system/runtime/leases';
+  assert.equal((await (await fetch(lease, { method: 'POST', body: '{}' })).json()).leaseId, 'sample');
+  assert.equal((await (await fetch(lease + '/sample', { method: 'PATCH' })).json()).refreshed, true);
+  assert.equal((await (await fetch(lease + '/sample', { method: 'DELETE' })).json()).released, true);
+  assert.deepEqual(calls, ['acquire']);
+  assert.equal(opens, 0);
+  const list = await (await fetch(entry.url + '/api/personal-projects')).json();
+  assert.deepEqual(list.map(row => [row.project_id, row.owner]), [['from-host', 'host'], ['sample', 'this_computer']]);
+  assert.equal(opens, 1);
 });

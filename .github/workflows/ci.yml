@@ -103,6 +103,8 @@ jobs:
               - 'test/agent-dismissal-acceptance.test.js'
               - 'test/conversation-hook-neo4j-acceptance.test.js'
               - 'test/global-copy-neo4j-acceptance.test.js'
+              - 'test/runner-leave-neo4j.test.js'
+              - 'test/follower-backup-neo4j.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
               - 'package.json'
@@ -193,6 +195,7 @@ jobs:
       - run: npm run test:neo4j
         env:
           FULI_TEST_PYTHON: python
+          FULI_TEST_NEO4J_CONTAINER: ${{ job.services.neo4j.id }}
 
   # The required check keeps its name. It fails when any Neo4j job failed or was
   # cancelled, and passes when they succeeded or were skipped for an unrelated change.

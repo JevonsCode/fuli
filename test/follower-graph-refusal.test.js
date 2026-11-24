@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { mock } from 'node:test';
 
+import { openRoutes } from '../src/runner/call-routes.js';
 import { refuseOnFollower } from '../src/cli/follower-graph-refusal.js';
 import { runGraphDataCommand } from '../src/cli/graph-data-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
@@ -137,4 +138,17 @@ test('the desktop app\'s recovery actions refuse on a follower with the words re
     assert.equal(reply.ok, false, action);
     assert.match(reply.error, /^fuli graph runtime recover：这台电脑跟随主机.*有「重新准备」就按；没有的话用 `fuli runner leave`/s, action);
   }
+});
+
+test('a follower with an explicit local project previews graph migrations and can recover locally', async t => {
+  const dir = dataDir(t, { follows: true });
+  const routes = openRoutes(dir);
+  routes.setLocalProject('project:sample', null);
+  routes.close();
+  let asked = 0;
+  await runMigrateCommand(['preview', '--data-dir', dir], { ...untouched,
+    graph: { preview: async () => { asked++; return { plan: null, undoable: [] }; } } });
+  assert.equal(asked, 1);
+  assert.doesNotThrow(() => refuseOnFollower(dir, 'fuli graph runtime recover', { recover: true }));
+  await assert.rejects(runMigrateCommand(['reconcile-knowledge', '--data-dir', dir], untouched), REFUSED);
 });

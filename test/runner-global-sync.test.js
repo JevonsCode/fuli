@@ -1,3 +1,4 @@
+import { requestSyncSoon } from '../src/runner/global-copy-state.js';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -121,9 +122,9 @@ const digestAnswer = (text) => {
 const envelopeAnswer = (text) => ({ reachable: true, status: 200, text,
   headers: new Headers({ [SCOPE_DIGEST_HEADER]: JSON.parse(text).digest }) });
 
-function withStore(dataDir, use) {
+async function withStore(dataDir, use) {
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
-  try { return use(store); } finally { store.close(); }
+  try { return await use(store); } finally { store.close(); }
 }
 
 test('the host hands the envelope on byte for byte over the paired channel, and the follower imports those bytes', async (t) => {
@@ -389,6 +390,12 @@ test('the running sync asks nothing while the runtime does not run, and then eve
     assert.equal(synced.length, 2);
     assert.equal(synced[1].verify, false, 'later ones verify every VERIFY_EVERY-th time');
 
+    clock += 1;
+    requestSyncSoon(dataDir, { now: () => clock });
+    await loop.round();
+    assert.equal(synced.length, 3, 'a delivered write wakes the next round before the normal interval');
+    assert.equal(await loop.round(), null, 'the request was answered');
+
     writeRecord(dataDir, { state: 'ready', createdHere: true, running: false, projects: [], space: { state: 'later', reason: 'host_unreachable' } });
     clock = 30 * 60_000;
     healthAsked = 0;
@@ -551,7 +558,8 @@ test('leaving refuses to move a graph whole that holds data of this computer\'s 
   await assert.rejects(setAsideHostCopy(paths, own('1 project(s)')), { code: 'local_data_here' });
 
   const unanswered = async () => ({ unreachable: true });
-  assert.equal(await ownDataHere(paths, { localRoutes: ['project:synthetic'] }), 'scopes routed to this computer: project:synthetic');
+  await assert.rejects(ownDataHere(paths, { localRoutes: ['project:synthetic'], projects: unanswered }),
+    { code: 'own_data_unknown' });
   assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: ['synthetic-project'] }),
     ownGlobal: async () => ({ count: 0 }) }), '1 project(s)');
   assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: [] }), ownGlobal: async () => ({ count: 3 }) }),
@@ -559,4 +567,24 @@ test('leaving refuses to move a graph whole that holds data of this computer\'s 
   assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered,
     record: () => ({ projects: [], ownGlobal: 2 }) }), '2 record(s) of global', 'not running: what the preparation found');
   assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered, record: () => ({ projects: [] }) }), null);
+});
+
+test('a project owner compares replica content with its last import before fetching an unchanged envelope', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const text = envelopeText('a'.repeat(64));
+  let content = 'original';
+  let imports = 0;
+  let checks = 0;
+  const sync = () => withStore(dataDir, store => syncGlobalCopy({ dataDir, store, hostSpace: KNOWN, ownFormats: FORMATS,
+    localSpaceId: HOST_SPACE_ID, connection: scriptedConnection({ digest: digestAnswer(text), envelope: envelopeAnswer(text) }),
+    replicaSummary: async () => { checks++; return { contentDigest: content }; },
+    importInto: async () => { imports++; return { imported: { contentDigest: 'original', nodes: { updated: 1 } } }; } }));
+  await sync();
+  assert.equal(checks, 0);
+  assert.equal((await sync()).unchanged, true);
+  assert.equal(imports, 1);
+  content = 'changed locally';
+  assert.equal((await sync()).corrected, true);
+  assert.equal(imports, 2);
+  assert.equal(checks, 2);
 });

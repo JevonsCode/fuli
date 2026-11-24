@@ -5,7 +5,7 @@ import test from 'node:test';
 // rec#31: Node files gated on a disposable Neo4j skip in `npm test`, so CI runs
 // them only through `npm run test:neo4j`. A gated file missing from that script
 // would silently go stale against the Provider's contract.
-const GATES = /FULI_TEST_NEO4J_URI|realTaskContextEnabled/;
+const GATES = /FULI_TEST_NEO4J_URI|realTaskContextEnabled|replicaFixture/;
 
 test('every Neo4j-gated Node test file runs in the serial test:neo4j script', () => {
   const testDirectory = new URL('./', import.meta.url);
