@@ -274,7 +274,7 @@ test('while a frame that spelled out more is on its way, the next one adds none 
     assert.deepEqual([next.frame.preference_updates, next.frame.preference_delivery.removed], [[], []]);
     await session.host.say('assistant', 'SYNTHETIC reply.');
     const after = await session.turn(entry('task-4', [...added, ...items]));
-    assert.ok(after.frame.preference_updates.length > 0, 'once answered, it spells out more again');
+    assert.ok(keys(after.frame.preference_updates).includes(keys(added)[0]), 'once answered, the added one arrives');
   }));
 
 // A preference the person just added that ranks within the cap does not use
@@ -387,6 +387,35 @@ test('after an import spent the quota, a habit said one at a time still arrives 
   const { listed } = await quotaSession([addedBoundaries(50), ...singles]);
   assert.deepEqual(singles.flat().map(item => item.preference_key).filter(key => !listed.has(key)), []);
 });
+
+// A habit said after an import spent the quota, whose frame was lost, stays
+// owed: it is never taken as in view, so it does not wait for a complete frame.
+test('a habit said after the quota is spent, in a frame that was lost, arrives in full once a frame is delivered', () =>
+  claudeEntrySession(async session => {
+    let items = syntheticPreferences(30);
+    let turn = 0;
+    const next = async ({ record = true } = {}) => {
+      const token = `task-${++turn}`;
+      const { frame } = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+        recall: syntheticRecall(6, { length: 690 + turn }) }), { record });
+      if (record) await session.host.say('assistant', 'SYNTHETIC reply.');
+      return frame;
+    };
+    await next();
+    const imported = renamed(addedBoundaries(50), 'import');
+    items = [...imported, ...items];
+    for (let again = 0; again < 3; again++) await next();
+    const [said] = renamed(addedBoundaries(1), 'said-lost');
+    items = [said, ...items];
+    const lost = await next({ record: false });
+    assert.ok(keys(lost.preference_updates).includes(said.preference_key), 'the lost frame spelled it out');
+    let arrived = false;
+    for (let again = 0; again < 2 && !arrived; again++) {
+      const frame = await next();
+      arrived = keys(frame.preference_updates).includes(said.preference_key);
+    }
+    assert.ok(arrived, 'it arrives on a delivered frame, not only on a complete one');
+  }));
 
 test('four added in each of several turns are bounded by the quota plus three a turn, and three of each arrive', async () => {
   const batches = [1, 2, 3, 4].map(turn => renamed(addedBoundaries(4), `batch-${turn}`));

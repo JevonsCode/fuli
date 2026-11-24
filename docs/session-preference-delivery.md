@@ -180,8 +180,10 @@ until the preferences are complete (rec#110 item 6).
    quota bounds an import, not a person talking: whatever is left of it, the
    new ones a frame sees for the first time (neither owed nor in view before)
    get room for at least 3 of them (4 said at once: 3 in full, not all only
-   counted), and count as spent. They take that room before the owed ones,
-   which use only what is left of the quota itself.
+   counted), and count as spent; owed ones count toward those 3 too, after
+   the ones just said. An owed one that gets no room stays owed (never taken
+   as in view), so a habit whose frame was lost still arrives on a later
+   delta.
    "In view" is told by the frame's index, or, where a frame only counts what
    it leaves out, by `known`: short hashes of what the scope's first frame
    had, plus each new one a frame left to rank, kept once for the latest

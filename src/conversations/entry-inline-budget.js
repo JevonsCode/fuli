@@ -97,8 +97,9 @@ export function inlineEntryFit(limit, length, { projectPath = null } = {}) {
 }
 
 // The search alone (steps 1 to 4 without the preferences' floor), as main
-// bounds every entry: what a session's first frame is measured against, so
-// that holding a set never spells out fewer bodies there (tests).
+// bounds every entry. Only tests call it, as main's old path to measure a
+// session's first frame against (it never spells out fewer bodies there);
+// production code never does.
 export function inlineSearchFit(limit, length, { projectPath = null } = {}) {
   return boundedFit(limit, length, projectPath, false);
 }
@@ -379,25 +380,28 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
     if (status.get(index) !== 'new') above++;
     else if (rank < floor.count || above < cap) candidates.push(index);
   });
-  // The few just said come first, at least ADDED_QUOTA_MIN of them whatever
-  // is left of the quota; the owed ones then take only what is left of the
-  // quota itself, never that minimum.
+  // The few just said and the owed ones (said before, not spelled out yet)
+  // get room for at least ADDED_QUOTA_MIN of them whatever is left of the
+  // quota, the ones just said first.
   const fresh = of('new').filter(index => !owes(index)).length;
-  let room = Math.max(quota - held.spent, Math.min(fresh, ADDED_QUOTA_MIN));
+  const owing = of('new').filter(owes).length;
+  let room = Math.max(quota - held.spent, Math.min(fresh + owing, ADDED_QUOTA_MIN));
   const added = [];
   const fitsAlone = index => delivers(listing(selection([...baseItems, index], base + 1), lightest)(leanest));
   const take = index => { if (room > 0 && fitsAlone(index)) { added.push(index); room--; } };
   candidates.filter(index => !owes(index)).forEach(take);
-  room = Math.min(room, quota - held.spent - added.length);
   candidates.filter(owes).forEach(take);
   const growing = [...new Set([...baseItems, ...added, ...ranked])];
   const indexed = richerIndex(leanest, growing, { keys: false });
   const most = Math.max(base, cap) + added.length;
-  // What the session keeps: the added ones not spelled out are owed, the new
-  // ones left to rank are in view from now on (heldPreferences `known`), and
-  // the spent quota never passes what the record keeps.
-  const tally = selected => ({ owed: added.filter(index => !selected.has(index)),
-    declined: of('new').filter(index => !added.includes(index)),
+  // What the session keeps: the added ones not spelled out are owed, and so
+  // are the owed ones that got no room this time (never taken as in view, so
+  // a habit said once is not left to a complete frame); the new ones left to
+  // rank are in view from now on (heldPreferences `known`), and the spent
+  // quota never passes what the record keeps.
+  const tally = selected => ({ owed: [...added.filter(index => !selected.has(index)),
+    ...of('new').filter(index => owes(index) && !added.includes(index))].slice(0, ADDED_QUOTA_MAX),
+    declined: of('new').filter(index => !added.includes(index) && !owes(index)),
     spent: Math.min(held.spent + added.filter(index => selected.has(index)).length, ADDED_QUOTA_MAX) });
   const chosen = selected => attempt => attempt && { ...attempt, added: tally(selected) };
   // The recall gives way to the added ones: the richest level where the base's
