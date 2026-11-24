@@ -287,12 +287,12 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // A later frame of the same generation and scope. What its base spelled out
 // stays spelled out: dropping one would make the frame complete again (a
 // bounded frame never names a removal, preference-snapshot.js), while adding
-// one only sends its body once in the delta. So the base's set, with the floor,
-// takes the richest level where the frame this turn actually delivers fits,
+// one only sends its body once in the delta. So the base's set (the first
+// frame's floor among it) takes the richest level where the frame this turn actually delivers fits,
 // and then the rest are added in rank order while it still fits, up to what
-// one complete frame holds beside the leanest context, plus any preference
-// added in this generation and scope that ranks within that and no frame has
-// spelled out yet (heldStatus 'new'): a turn with a lighter
+// one complete frame holds beside the leanest context (the cap), plus the
+// preferences the person added in this generation and scope, within a quota
+// (ADDED_QUOTA_MIN): a turn with a lighter
 // recall spells out what a richer first frame only named, never more than the
 // lightest turn would list whole, so the bodies of every preference are not
 // sent one turn after another. While an earlier frame is still on its way
@@ -300,52 +300,79 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // Only where the base's set does not fit even so (a body grew, or this frame
 // must be complete) does it give way, as a complete frame beside the leanest
 // context: a preference changed since the base first, so the model is not left
-// with its old body and a line, then the base's set, the floor and new ones by
+// with its old body and a line, then the base's set and the added ones by
 // rank, then the rest; hard rules are always listed.
+// The frame it returns carries `added`: what the session keeps with it for the
+// next frame (preference-session.js), the added ones it still owes (indexes
+// into the entry's preferences) and the quota spent so far.
 function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, frameAt, delivers, listing, selection, richerIndex }) {
   const status = new Map(ranked.map(index => [index, heldStatus(preferences[index], held)]));
   const of = (...kinds) => ranked.filter(index => kinds.includes(status.get(index)));
-  const floorItems = ranked.slice(0, floor.count);
   // The most a generation spells out: what a first frame would list beside
   // the leanest context, by rank, its index tier included (as main listed on
-  // its lightest turn). A first frame that a rich recall kept below it catches
-  // up; nothing goes past it but what the base already holds, and a
-  // preference added since whose rank is within it: the person just set it,
-  // and main would give it a body on the next turn. One ranked past it is
-  // only named, as on main. Hard rules are never counted.
+  // its lightest turn), counting only the preferences there before. A first
+  // frame that a rich recall kept below it catches up; nothing goes past it
+  // but what the base already holds and the added ones within the quota.
+  // Hard rules are never counted.
   const lightest = richerIndex(leanest, ranked);
   const capOf = order => largestCount(0, order.length, count => fitsAt(leanest, selection(order, count), lightest));
-  // The cap counts only what was there before, so the added ones are on top
-  // of it; one is within it where fewer than the cap of those rank above it.
   const cap = capOf(ranked.filter(index => status.get(index) !== 'new'));
-  const added = [];
+  // The first frame spelled out the floor, so the base holds it. One that
+  // ranks into it later comes in by rank like the rest, and one the person
+  // added only through the quota below, which the floor's place uses first:
+  // an import that outranks everything would otherwise take the floor batch
+  // by batch.
+  const baseItems = of('listed', 'changed');
+  const base = baseItems.length;
+  // A preference the person added (heldStatus 'new') is not held to the cap:
+  // they just set it, and main would give it a body on the next turn. That is
+  // for the few they just said, not an import: the generation spells out at
+  // most the quota that way, the floor's own place included (the cap, or
+  // what the base spelled out of its own where that is more), best-ranked
+  // first, each only where fewer than the cap of the older ones rank above it
+  // and its body fits beside the leanest context at all (one that never fits would keep the recall at its leanest
+  // turn after turn). The rest rank like any other and are only named past
+  // the cap, as on main; none of them is owed.
+  const quota = Math.min(Math.max(cap, base - held.spent, ADDED_QUOTA_MIN), ADDED_QUOTA_MAX);
+  let room = Math.max(0, quota - held.spent);
   let above = 0;
+  const added = [];
+  const fitsAlone = index => delivers(listing(selection([...baseItems, index], base + 1), lightest)(leanest));
   ranked.forEach((index, rank) => {
     if (status.get(index) !== 'new') above++;
-    else if (rank >= floor.count && above < cap) added.push(index);
+    else if ((rank < floor.count || above < cap) && room > 0 && fitsAlone(index)) { added.push(index); room--; }
   });
-  const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...added, ...ranked])];
-  const base = new Set([...of('listed', 'changed'), ...floorItems]).size;
+  const growing = [...new Set([...baseItems, ...added, ...ranked])];
   const indexed = richerIndex(leanest, growing);
   const most = Math.max(base, cap) + added.length;
+  const tally = selected => ({ owed: added.filter(index => !selected.has(index)),
+    spent: held.spent + added.filter(index => selected.has(index)).length });
+  const chosen = selected => attempt => attempt && { ...attempt, added: tally(selected) };
   // The recall gives way to the added ones: the richest level where the base's
   // set and every added body fit; where none does, the leanest level, with the
   // added ones by rank as far as they fit there. While an earlier frame is on
-  // its way, none is added; the rest stay owed (preference-snapshot.js
-  // heldStatus) and come on a later turn.
+  // its way, none is added; they stay owed and come on a later turn.
   const wanted = held.grow ? base + added.length : base;
   for (const index of new Set([indexed, 'keys'])) {
     const at = count => listing(selection(growing, count), index);
     const level = levels.find(candidate => delivers(at(wanted)(candidate)))
-      ?? (delivers(at(base)(levels.at(-1))) ? levels.at(-1) : null);
-    if (level) return frameAt(at(held.grow ? largestCount(base, most, count => delivers(at(count)(level))) : base));
+      ?? (delivers(at(base)(leanest)) ? leanest : null);
+    if (!level) continue;
+    const count = held.grow ? largestCount(base, most, middle => delivers(at(middle)(level))) : base;
+    return chosen(selection(growing, count))(frameAt(at(count)));
   }
-  const giving = [...new Set([...of('changed'), ...ranked.filter((index, rank) => rank < floor.count || status.get(index) !== 'indexed'),
-    ...ranked])];
+  const giving = [...new Set([...of('changed'), ...baseItems, ...added, ...ranked])];
   if (!fitsAt(leanest, selection(giving, 0), indexed)) return null;
-  return frameAt(listing(selection(giving, largestCount(0, giving.length, count => fitsAt(leanest, selection(giving, count), indexed))),
-    indexed));
+  const count = largestCount(0, giving.length, middle => fitsAt(leanest, selection(giving, middle), indexed));
+  return chosen(selection(giving, count))(frameAt(listing(selection(giving, count), indexed)));
 }
+
+// The most bodies a generation spells out on top of its cap for preferences
+// the person added (heldFit): the cap again, at least this few, so a person
+// who just set two or three is always followed, and never more than the most
+// the session record keeps owed (preference-session.js).
+const ADDED_QUOTA_MIN = 3;
+export const ADDED_QUOTA_MAX = 64;
 
 // The richest index tier the caller accepts, or false when none is taken.
 function indexDetail(accepts) {

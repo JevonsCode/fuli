@@ -3,6 +3,8 @@
 // transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
 import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../../../src/agents/lifecycle-message.js';
@@ -312,6 +314,87 @@ test('at the cap with a rich recall, five preferences added at once all arrive i
       await session.host.say('assistant', 'SYNTHETIC reply.');
     }
     assert.deepEqual(keys(added).filter(key => !arrived.has(key)), []);
+  }));
+
+// "Added on top of the cap" is for the few the person just set, not for an
+// import: a generation spells out at most a quota of bodies that way (the
+// cap, at least 3), the best-ranked first; the rest rank like any other and
+// stay lines, also where they rank into the preferences' floor. The first
+// frame has no recall, so it lists the cap. 30 older
+// preferences, so the index of all of them still leaves the floor its room
+// (with many more there is no floor and each frame chooses afresh, as main).
+const quotaSession = batches => claudeEntrySession(async session => {
+  const items = syntheticPreferences(30);
+  // Another recall each turn, so each frame shows it (or its pointer).
+  const entry = (token, list, recall = true) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token,
+    recall: recall ? syntheticRecall(6, { length: 690 + Number(token.split('-')[1]) }) : null });
+  const first = await session.turn(entry('task-1', items, false));
+  const hard = first.frame.effective_preferences.filter(item => /HARD/.test(item.instruction)).length;
+  const quota = Math.max(first.frame.effective_preferences.length - hard, 3);
+  let listed = new Set(keys(first.frame.effective_preferences));
+  let current = items;
+  const frames = [];
+  let turn = 1;
+  for (const batch of batches) {
+    current = [...batch, ...current];
+    for (let again = 0; again < 3; again++) {
+      const { text, frame } = await session.turn(entry(`task-${++turn}`, current));
+      assert.ok(text.length <= INLINE_CHARS, `${turn}: ${text.length} chars`);
+      assert.equal(frame.preference_delivery?.status, 'delta', `${turn}: never resent whole`);
+      listed = new Set([...listed, ...keys(frame.preference_updates)]);
+      frames.push(frame);
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+    }
+  }
+  return { most: first.frame.effective_preferences.length + quota, listed, frames, total: current.length };
+});
+
+test('fifty preferences added at once spell out no more than the quota on top of the cap; the rest stay lines', async () => {
+  const added = addedBoundaries(50);
+  const { most, listed, frames, total } = await quotaSession([added]);
+  assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
+  assert.ok(keys(added).filter(key => listed.has(key)).length > 1, 'the quota is used, best-ranked first');
+  assert.equal(frames.at(-1).preferences_omitted.count, total - listed.size);
+  assert.ok(frames.at(-1).task_knowledge_recall.facts.length > 0, 'once the quota is spent, the recall is not kept at its leanest');
+});
+
+test('ten added in each of five turns use the same quota for the generation', async () => {
+  const batches = Array.from({ length: 5 }, (_, batch) => addedBoundaries(10).map(item => ({ ...item,
+    preference_key: `${item.preference_key}-batch-${batch + 1}` })));
+  const { most, listed } = await quotaSession(batches);
+  assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
+});
+
+test('two preferences added at once both arrive in full', async () => {
+  const added = addedBoundaries(2);
+  const { listed } = await quotaSession([added]);
+  assert.deepEqual(keys(added).filter(key => !listed.has(key)), []);
+});
+
+// One whose body does not fit even beside the leanest context is left to the
+// index and is not owed: no turn tries it again, and the recall is not kept
+// at its leanest for it.
+test('an added preference too long to fit is only named, and the recall is not held down for it', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, list) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token,
+      recall: syntheticRecall(6, { length: 690 + Number(token.split('-')[1]) }) });
+    await session.turn(entry('task-1', items));
+    // A scene item of this task's work kind, past the floor, and longer than
+    // the room the leanest delta leaves.
+    const huge = syntheticPreference('synthetic-huge', `SYNTHETIC_SCENE_HUGE: ${'Spell out every step of the release. '.repeat(220)}`,
+      { tasteDomain: 'code' }, 'taste');
+    for (const token of ['task-2', 'task-3']) {
+      const { frame } = await session.turn(entry(token, [huge, ...items]));
+      assert.equal(frame.preference_delivery.status, 'delta', token);
+      assert.equal(keys(frame.preference_updates).includes('synthetic-huge'), false, token);
+      assert.ok(frame.task_knowledge_recall.facts.length > 0, `${token}: the recall stays`);
+      // Not owed, so no later turn tries it again.
+      const [file] = (await readdir(session.cache)).filter(name => name.endsWith('.json'));
+      const record = JSON.parse(await readFile(join(session.cache, file), 'utf8'));
+      assert.equal(record.pending.at(-1).owed, undefined, token);
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+    }
   }));
 
 // While the frame before is on its way, a turn adds no body (it would name a

@@ -7,13 +7,13 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 import { acquireTranscriptGuardLock } from './transcript-guard-lock.js';
 import { readPreferenceEvidence, preferenceFrameHash } from './preference-evidence.js';
 import { applyPreferenceDeltaSnapshot, applySceneSwitchSnapshot, completePreferenceFrame, confirmableScene,
-  frameOmittedIndex, framePreferenceSnapshot, heldPreferences, OWED_ID, owedPreferences, pendingScene, preferenceSnapshot,
+  frameOmittedIndex, framePreferenceSnapshot, heldPreferences, OWED_ID, owedPreferenceIds, pendingScene, preferenceSnapshot,
   previousAgentPreferences, projectPreferenceDelta, shownRevision } from './preference-snapshot.js';
 import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ownRecordOffsets, projectRecentContext, recentEvidence,
   validRecentFrames, withoutDeliveryProofs } from './recent-context.js';
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
-import { fitUncached, WHOLE_ENTRY } from './entry-inline-budget.js';
+import { ADDED_QUOTA_MAX, fitUncached, WHOLE_ENTRY } from './entry-inline-budget.js';
 import { projectSkeleton, rememberSkeletonTask, skeletonEvidence, skeletonTasks } from './entry-skeleton.js';
 
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,15 +34,17 @@ const MAX_PENDING = 16;
 // A pending item's optional `producedAt` (design T1) is read as absent by a
 // version 4 FULI that predates it, which then never takes it as a base. So are
 // its optional `authorityHash` (whose task it was, so a turn handed to another
-// FLA is complete) and `owed` (short hashes of the preferences added in its
-// generation and scope that it did not spell out yet, design T3). A pending
-// item without `owed` owes none: only a FULI that holds a set across frames
-// ever leaves a new preference out of a frame it then builds on, and that one
-// writes it; one without `authorityHash` names no hand-over, as before.
+// FLA is complete), `owed` (short hashes of the preferences added in its
+// generation and scope, within the quota, that it did not spell out yet) and
+// `spent` (how much of that quota the generation used; design T3,
+// entry-inline-budget.js heldFit). A pending item without them owes none and
+// has spent none: only a FULI that holds a set across frames ever leaves a
+// new preference out of a frame it then builds on, and that one writes them;
+// one without `authorityHash` names no hand-over, as before. Neither can
+// exceed the quota's most (ADDED_QUOTA_MAX); a value past it, or malformed,
+// makes the record untrusted, so the session starts a new generation with
+// complete frames: never fewer bodies.
 const RECORD_VERSION = 4;
-// More owed preferences than this make the record untrusted, so the session
-// starts a new generation with complete frames: never fewer bodies.
-const MAX_OWED = 256;
 export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, 3, RECORD_VERSION] });
 
 // This private cache contains only hashes/cursors. It never stores instruction
@@ -176,12 +178,15 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
               && shownRevision(result.structuredContent)
               && preferenceDeliveryReason(projected, result.structuredContent) === null
               && result.structuredContent?.preference_delivery?.status !== 'blocked') {
-            // What it leaves owed, so a later frame built on it still spells
-            // those out (preference-snapshot.js heldStatus).
-            const owed = owedPreferences(value, held, delivered);
+            // What it leaves owed and the quota spent, so a later frame built
+            // on it still spells those out and adds no more past the quota
+            // (entry-inline-budget.js heldFit). A frame chosen afresh keeps
+            // the generation's spent quota, or none without a base.
+            const owed = owedPreferenceIds(value, chosen.added?.owed ?? []);
+            const spent = chosen.added?.spent ?? held?.spent ?? 0;
             const pending = { scopeHash: delivered.scopeHash, snapshotHash: delivered.snapshotHash,
               frameHash: preferenceFrameHash(result.structuredContent), scene: pendingScene(delivered),
-              authorityHash: delivered.authorityHash, ...(owed.length ? { owed } : {}),
+              authorityHash: delivered.authorityHash, ...(owed.length ? { owed } : {}), ...(spent ? { spent } : {}),
               ...(proof.known || proof.absent ? { producedAt: proof.known ? proof.size : 0 } : {}) };
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
           }
@@ -297,7 +302,7 @@ function acknowledgedSnapshot(value, current, state, proof) {
     // The omission index the model holds with this frame (preference-snapshot.js
     // frameOmittedIndex): its own, or its base's where it said it was unchanged.
     const held = delivered ? { ...delivered, revision, omittedIndex: frameOmittedIndex(frame.value, shown),
-      owed: expected.owed ?? [] } : null;
+      owed: expected.owed ?? [], spent: expected.spent ?? 0 } : null;
     shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? held : AMBIGUOUS);
     if (delivered?.authorityHash === current.authorityHash) baseline = held;
     if (expected?.authorityHash === current.authorityHash) others = [];
@@ -364,8 +369,10 @@ async function readState(path) {
           .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene))
           || !(item.producedAt === undefined || (Number.isSafeInteger(item.producedAt) && item.producedAt >= 0))
           || !(item.authorityHash === undefined || /^[a-f0-9]{64}$/.test(item.authorityHash))
-          || !(item.owed === undefined || (Array.isArray(item.owed) && item.owed.length <= MAX_OWED
-            && item.owed.every(id => typeof id === 'string' && OWED_ID.test(id)))))) return UNTRUSTED;
+          || !(item.owed === undefined || (Array.isArray(item.owed) && item.owed.length <= ADDED_QUOTA_MAX
+            && item.owed.every(id => typeof id === 'string' && OWED_ID.test(id))))
+          || !(item.spent === undefined || (Number.isSafeInteger(item.spent) && item.spent >= 0
+            && item.spent <= ADDED_QUOTA_MAX)))) return UNTRUSTED;
     const recent = value.recent ?? [];
     const { prompts, ...kept } = value;
     const tasks = skeletonTasks(value.tasks ?? prompts ?? []);

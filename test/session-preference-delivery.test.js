@@ -194,13 +194,14 @@ test('a pending item without its scene, or with another scene, confirms nothing'
   }
 });
 
-// Design T3: a pending item's `authorityHash` and `owed` are optional. One
+// Design T3: a pending item's `authorityHash`, `owed` and `spent` are optional. One
 // written without them (before they existed) is still a base and owes
 // nothing; a malformed one makes the record untrusted, so the next frame is
 // complete: never fewer bodies.
-test('a pending item without authorityHash or owed is still a base; a malformed one is never trusted', async () => {
-  for (const [change, trusted] of [[item => { delete item.authorityHash; delete item.owed; }, true],
-    [item => { item.owed = ['not-a-hash']; }, false], [item => { item.owed = Array(257).fill('0123456789abcdef'); }, false],
+test('a pending item without authorityHash, owed or spent is still a base; a malformed one is never trusted', async () => {
+  for (const [change, trusted] of [[item => { delete item.authorityHash; delete item.owed; delete item.spent; }, true],
+    [item => { item.owed = ['not-a-hash']; }, false], [item => { item.owed = Array(65).fill('0123456789abcdef'); }, false],
+    [item => { item.spent = -1; }, false],
     [item => { item.authorityHash = 'short'; }, false]]) {
     await fixture(async f => {
       const first = await f.service.deliver(entry(), origin, format);

@@ -88,7 +88,12 @@ A turn may be handed to another FLA within one session (a workstream's owner,
 also when the session goes back to an FLA it had before (A, B, then A again):
 each pending record keeps its `authorityHash`, and where the latest frame was
 another authority's, nothing is held and no delta is built on the older frame
-of this one. The FLA-level preferences the frames since then spelled out are
+of this one. `authorityHash` is the snapshot's authority, which includes the
+entry rules' version, as its `scopeHash` does: two processes on different
+rule versions taking turns on one session read each other's frames as another
+authority, but they could not verify them as a base either (the scope hash
+differs), so each such turn is complete already and nothing changes. The
+FLA-level preferences the frames since then spelled out are
 still in the conversation, so that frame names each one this FLA does not
 have, by key and layer, in `preferences_of_previous_agent`: they do not apply
 to this FLA. Only when it has a name: 35 bytes plus each name quoted (52 bytes
@@ -156,20 +161,38 @@ until the preferences are complete (rec#110 item 6).
    (most often a delta, which does not repeat a body the model holds) still
    fits, up to a cap: what a first frame would list beside the leanest
    context, by rank (what main lists on its lightest turn), counting only the
-   preferences that were there before, plus each one added since whose rank
-   falls within that (fewer than the cap of the older ones rank above it):
-   the person just set it, and main would give it a body on the next turn, so
-   it never waits for room in a session already at its cap. Missing one the
+   preferences that were there before, plus the ones the person added since,
+   within a quota: the person just set them, and main would give them a body
+   on the next turn, so they never wait for room in a session already at its
+   cap. The quota is for the few a person just said, not for an import: a
+   generation spells out at most the cap again that way (or what its base
+   spelled out of its own, where that is more; at least 3, at most 64),
+   best-ranked first, each only where fewer than the cap of the older ones
+   rank above it and its body fits beside the leanest context at all. One
+   past the quota ranks like any other and is only named past the cap, as on
+   main, even where it would rank into the preferences' floor (the first
+   frame's floor is in the base already; an import that outranks everything
+   would otherwise take the floor batch by batch). Fifty added at once, or
+   ten in each of five turns, spell out no more than that. Missing one the
    person must follow is worse than sending one more, so the recall gives way
    to the added ones: the level is the richest where the base's bodies and
    every added body fit; where none does, the leanest, with the added ones by
    rank as far as they fit there. "Added" is told against the generation and
-   scope, not the frame before: one that a frame of this scope named only in
-   its index, because it did not fit or because a frame before was still on
+   scope, not the frame before: one within the quota that a frame named only
+   in its index, because it did not fit or because a frame before was still on
    its way, stays added until a frame spells it out. Each pending record keeps
-   those it owes (`owed`, a 16-hex hash of key and layer each; a record
-   written without the field owes none, since only a FULI that holds a set
-   across frames ever leaves a new one out of a frame it builds on). One
+   those it owes (`owed`, a 16-hex hash of key and layer each) and the quota
+   the generation has spent (`spent`); a record written without them owes
+   none and has spent none, since only a FULI that holds a set across frames
+   ever leaves a new one out of a frame it builds on. Neither can pass 64; a
+   value past it, or malformed, makes the record untrusted, and the session
+   starts a new generation with complete frames. While processes of an older
+   FULI and this one take turns on one session (an upgrade with a client still
+   running the older one), a frame the older one produced carries neither
+   `owed` nor `spent` nor `authorityHash` (below): built on it, an owed
+   preference ranks like any other and a hand-over to another FLA is not
+   recognised, which is what the older FULI does on its own, never fewer
+   bodies than that. One
    ranked past the cap is only
    named, as on main. Hard rules are never counted. A turn with a lighter recall therefore catches up on bodies a
    richer first frame could only name, and none is ever taken back while it

@@ -311,6 +311,8 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
       if (record) await host.inject(text);
       return text;
     };
-    return await fn({ sessionId, host, delivery, turn, notify });
+    // `cache`: the session delivery record's directory, for a test that reads
+    // what the record keeps.
+    return await fn({ sessionId, host, delivery, turn, notify, cache: join(directory, 'cache') });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

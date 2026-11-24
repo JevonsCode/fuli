@@ -260,12 +260,13 @@ function unitId(item) { return canonicalJson(identity(item)); }
 // What a session's base frame (preference-session.js) left the model holding,
 // for an inline budget to keep (entry-inline-budget.js): `units`, what it
 // spelled out, `index`, its omission index, or null where it named none,
-// `owed`, the preferences added in this generation and scope that no frame
-// has spelled out yet (owedPreferences), and `grow`, whether this frame may
+// `owed`, the preferences added in this generation and scope within its quota
+// that no frame has spelled out yet (owedPreferenceIds), `spent`, how much of
+// that quota the generation has used, and `grow`, whether this frame may
 // spell out more than that.
 export function heldPreferences(baseline, { grow = true } = {}) {
   return { units: baseline.units, index: Array.isArray(baseline.omittedIndex) ? baseline.omittedIndex : null,
-    owed: new Set(baseline.owed ?? []), grow };
+    owed: new Set(baseline.owed ?? []), spent: baseline.spent ?? 0, grow };
 }
 
 // Where a preference of this entry stood in the held base frame: 'listed'
@@ -282,16 +283,12 @@ export function heldStatus(item, held) {
   return held.index?.some(entry => preferenceIndexNames(entry, item)) ? 'indexed' : 'new';
 }
 
-// What a frame bounded beside `held` still owes: each preference new to this
-// generation and scope (heldStatus) that it does not spell out, by a short
-// hash of its key and layer, so a later frame still treats it as new. A frame
-// without `held` chooses afresh and owes nothing. `value` is the whole entry,
-// `delivered` the snapshot of the set the frame spells out.
-export function owedPreferences(value, held, delivered) {
-  if (!held || !Array.isArray(value?.effective_preferences)) return [];
-  return [...new Set(value.effective_preferences.filter(item => heldStatus(item, held) === 'new')
-    .map(item => JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true })))
-    .filter(view => !Object.hasOwn(delivered.units, unitId(view))).map(owedId))].sort();
+// The short hashes the session record keeps for the preferences a frame
+// still owes (entry-inline-budget.js heldFit), by their index in `value`, the
+// whole entry: key and layer only, so a later frame still treats each as new.
+export function owedPreferenceIds(value, indexes) {
+  return [...new Set(indexes.map(index => owedId(JSON.parse(canonicalJson(
+    preferenceInstructionView(value.effective_preferences[index]), { omitUndefined: true })))))].sort();
 }
 
 // A turn handed to another FLA (a workstream's owner, #1063) gets a complete
