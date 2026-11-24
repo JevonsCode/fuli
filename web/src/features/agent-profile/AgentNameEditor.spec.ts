@@ -92,12 +92,16 @@ describe('AgentNameEditor', () => {
   it('says when a name that is still another FLA\'s 原名 becomes free', async () => {
     putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
       error: 'agent_name_taken', freeNames: ['Nora Lin'],
-      usedBy: [{ agentId: 'agent-x', name: 'Wren Hill', projects: [], formerName: 'Morgan Vale', freeFrom: '2026-12-21' }] })))
+      usedBy: [{ agentId: 'agent-x', name: 'Wren Hill', projects: [], formerName: 'Morgan Vale', freeFrom: '2026-12-20T16:29:30+00:00' }] })))
     const wrapper = mount(AgentNameEditor, { props: { agent: agent() } })
     await edit(wrapper, 'Morgan Vale')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toBe('「Morgan Vale」是 Wren Hill 的原名，2026-12-21 之后可以用')
+    // The exact time in the person's own time zone, rounded up to the minute
+    // (16:30 UTC is 12月21日 00:30 in UTC+8).
+    const local = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      .format(new Date('2026-12-20T16:30:00Z'))
+    expect(wrapper.get('[role="alert"]').text()).toBe(`「Morgan Vale」是 Wren Hill 的原名，${local} 之后可以用`)
   })
 
   it('gives a renamed built-in role its own name back; other Agents have no such button', async () => {
