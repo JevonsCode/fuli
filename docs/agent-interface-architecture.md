@@ -58,7 +58,10 @@ Uniqueness is held by the graph, not only by the check before a write (graph/24)
 the person, FULI's own roles included, stores the identity key of its shown name with its space
 (`display_name_space_id`, `display_name_key`) under a uniqueness constraint, so two hires or renames
 racing for one name cannot both commit; the loser is named again or refused. A built-in role's
-built-in name stays reserved by the check. A refusal carries `used_by` (name, Agent ID, projects)
+built-in name stays reserved by the check, and so does another Agent's 原名 for 30 days after its
+rename (the refusal's `used_by` entry then carries `former_name` and `free_from`). A key an older
+FULI left on an Agent it renamed (FULI 22 renames without updating it) is cleared when the Provider
+starts and whenever it blocks a write; only the key fields change. A refusal carries `used_by` (name, Agent ID, projects)
 and `free_names` as fields beside its sentence. Each project there, as in the list of shared
 names, comes as its ID, stored name and `scope_type`, so the console names a temporary project
 the way it does everywhere (临时项目 #编号) and the sentence an Agent reads gives its number. A rename keeps
@@ -76,7 +79,9 @@ plan (`GET /api/project-agent-name-fixes`, `keep=<agentId>` to pick another keep
 shared name, who keeps it, the new name of each other FLA and why; the person may leave renames
 out, and one apply (`POST /api/project-agent-name-fixes/apply`, `agent_relayed`: an Agent proposes,
 only the person's words apply it) renames the rest through the ordinary rename write, refusing
-the whole apply if anything changed since the plan was read. In each group the name stays with,
+the whole apply if anything changed since the plan was read. New names avoid every name of the
+space (each Agent's, every built-in role's, each recent 原名) and each other; past every generated
+name a numbered one is given. An apply keys a keeper only once no other FLA shares its name. In each group the name stays with,
 in order: a built-in role; an FLA not dismissed; one that is not a test FLA; one whose name a
 person gave (a rename in its history, or a name FULI does not generate); one that works beyond
 temporary or conversation projects; the one with more work (tasks it took part in, hiring tasks

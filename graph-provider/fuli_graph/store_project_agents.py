@@ -26,7 +26,7 @@ from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
 from .store_transactions import query_store_transaction
 from .store_project_agent_naming import (
-    UNKEYED, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
+    UNKEYED, clear_stale_name_keys, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
     with_rename_suggestion,
 )
 from .store_project_agent_occupation import occupation_from_agent_node
@@ -146,6 +146,7 @@ class StoreProjectAgents:
         given = request
         identity = None
         races = 0
+        repaired = False
         while True:
             request = await with_person_name(self, given, recruitment_id=recruitment_id)
             try:
@@ -154,6 +155,11 @@ class StoreProjectAgents:
             except ConstraintError as error:
                 if not lost_name_race(error):
                     raise
+                key = name_identity(request.personal_space_id, request.agent_id, request.profile)['display_name_key']
+                if not repaired and await clear_stale_name_keys(self.runtime.driver, request.personal_space_id, [key]):
+                    # The name was held only by a key an older FULI left behind.
+                    repaired = True
+                    continue
                 names = await space_agent_names(self, request.personal_space_id)
                 if identity is None and keeps_its_name(names, request.agent_id, request.profile.display_name):
                     # An FLA that already shared its name: this write (an

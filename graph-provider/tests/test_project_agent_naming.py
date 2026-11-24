@@ -3,7 +3,7 @@ alternatives (and who uses it, where) at write time, offered as a rename on
 read. Synthetic Agents only."""
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -23,7 +23,8 @@ from fuli_graph.project_agent_names import (
     unique_nickname,
 )
 from fuli_graph.store_project_agent_naming import (
-    name_identity, renamed_profile, require_free_proposed_name, with_person_name, with_rename_suggestion,
+    clear_stale_name_keys, name_identity, renamed_profile, require_free_proposed_name, space_agent_names,
+    with_person_name, with_rename_suggestion,
 )
 from fuli_graph.store_project_agent_rename import StoreProjectAgentRename
 
@@ -32,8 +33,10 @@ class NamesStore:
     """Answers the one names read with the given Agents: agent_id -> profile dict,
     and a refusal's read of where the holders work: agent_id -> project names."""
 
-    def __init__(self, agents, projects=None):
-        rows = [{'agent_id': agent_id, 'profile_json': json.dumps(profile)} for agent_id, profile in agents.items()]
+    def __init__(self, agents, projects=None, history=None):
+        rows = [{'agent_id': agent_id, 'profile_json': json.dumps(profile),
+                 'name_history_json': json.dumps((history or {}).get(agent_id)) if agent_id in (history or {})
+                 else None} for agent_id, profile in agents.items()]
         self.calls = 0
 
         async def execute_query(query, **parameters):
@@ -260,12 +263,21 @@ class RenameStore(StoreProjectAgentRename):
     between the check and this write, refused by the graph's uniqueness rule."""
 
     def __init__(self, profile, *, agent_id='employee.jefa', others=None, changed_meanwhile=False,
-                 taken_meanwhile=None):
+                 taken_meanwhile=None, stale=None):
         self.profile_json = json.dumps(profile)
         self.writes = []
         self.others = dict(others or {})
+        # Keys an older FULI left on Agents it renamed: the graph refuses the
+        # name until they are cleared.
+        self.stale, self.cleared = list(stale or []), []
 
         async def execute_query(query, **parameters):
+            if 'display_name_key IS NOT NULL' in query:
+                return [row for row in self.stale if row['key'] in parameters['keys']], None, None
+            if 'SET agent.display_name_space_id = null' in query:
+                self.cleared += [row['agent_id'] for row in parameters['rows']]
+                self.stale = []
+                return [{'cleared': len(parameters['rows'])}], None, None
             if 'RETURN agent.agent_id AS agent_id, agent.profile_json' in query:
                 rows = {**{other: json.dumps(value) for other, value in self.others.items()},
                         agent_id: self.profile_json}
@@ -277,6 +289,9 @@ class RenameStore(StoreProjectAgentRename):
                         for other in parameters['agent_ids']], None, None
             if 'SET agent.profile_json' in query:
                 [row] = parameters['rows']
+                if self.stale:
+                    raise ConstraintError('Node(3) already exists with label `FuliProjectAgent` and properties '
+                                          '`display_name_key` = \'' + self.stale[0]['key'] + '\'')
                 if taken_meanwhile:
                     self.others['racer'] = {'name': 'x', 'display_name': taken_meanwhile}
                     raise ConstraintError('Node(7) already exists with label `FuliProjectAgent` and properties '
@@ -378,6 +393,56 @@ async def test_a_refused_new_name_says_who_has_it():
         await require_free_proposed_name(roles, 'space', 'task-1', ProjectAgentProfile(
             name='PPT 专责', display_name='Tonborg', responsibility='制作 PPT。'))
     assert role.value.status_code == 409 and 'used by: Tonborg (employee.tonborg)' in role.value.detail['message']
+
+
+RECENTLY = [{'name': 'Morgan Vale', 'until': (datetime.now(UTC) - timedelta(days=3)).isoformat(),
+             'reason': 'renamed'}]
+
+
+@pytest.mark.asyncio
+async def test_another_agents_recent_former_name_is_taken_until_it_stops_being_one():
+    store = NamesStore({'agent-other': {'name': 'x', 'display_name': 'Wren Hill'}}, history={'agent-other': RECENTLY})
+    with pytest.raises(HTTPException) as refused:
+        await with_person_name(store, upsert('agent-new', 'PPT 专责', 'morgan  vale'))
+    [holder] = refused.value.detail['used_by']
+    free_from = (datetime.fromisoformat(RECENTLY[0]['until']) + timedelta(days=30)).date().isoformat()
+    assert holder == {'agent_id': 'agent-other', 'name': 'Wren Hill', 'projects': [],
+                      'former_name': 'Morgan Vale', 'free_from': free_from}
+    assert f'Wren Hill (agent-other), its former name until {free_from}' in refused.value.detail['message']
+    assert 'morgan vale' not in {identity_key(name) for name in refused.value.detail['free_names']}
+    # A rename to it is refused the same way; the Agent itself may take its 原名 back.
+    names = await space_agent_names(store, 'space')
+    with pytest.raises(NameTaken):
+        renamed_profile(names, 'agent-ppt', {'name': 'PPT 专责'}, 'Morgan Vale')
+    assert renamed_profile(names, 'agent-other', {'name': 'x'}, 'Morgan Vale')['display_name'] == 'Morgan Vale'
+    # Once 30 days have passed the old name is free.
+    long_ago = [{**RECENTLY[0], 'until': (datetime.now(UTC) - timedelta(days=31)).isoformat()}]
+    later = NamesStore({'agent-other': {'name': 'x', 'display_name': 'Wren Hill'}}, history={'agent-other': long_ago})
+    named = await with_person_name(later, upsert('agent-new', 'PPT 专责', 'Morgan Vale'))
+    assert named.profile.display_name == 'Morgan Vale'
+
+
+@pytest.mark.asyncio
+async def test_a_name_held_only_by_a_key_an_older_fuli_left_behind_is_freed_and_the_rename_goes_through():
+    # FULI 22 renamed old-holder from Nova Park to Wren Hill but left its key.
+    stale = [{'agent_id': 'old-holder', 'space_id': 'space', 'key': 'nova park',
+              'profile_json': json.dumps({'name': 'x', 'display_name': 'Wren Hill'})}]
+    store = RenameStore({'name': 'PPT 专责', 'display_name': 'Iris Vale', 'responsibility': '制作 PPT。'},
+                        agent_id='agent-ppt', others={'old-holder': {'name': 'x', 'display_name': 'Wren Hill'}},
+                        stale=stale)
+    await store.rename_project_agent({}, 'agent-ppt', ProjectAgentRename(personal_space_id='space',
+                                                                         display_name='Nova Park'))
+    assert store.cleared == ['old-holder'] and store.writes[0]['key'] == 'nova park'
+
+
+@pytest.mark.asyncio
+async def test_a_key_that_still_says_its_agents_name_is_never_cleared():
+    held = [{'agent_id': 'holder', 'space_id': 'space', 'key': 'nova park',
+             'profile_json': json.dumps({'name': 'x', 'display_name': 'Nova Park'})}]
+    store = RenameStore({'name': 'PPT 专责', 'display_name': 'Iris Vale', 'responsibility': '制作 PPT。'},
+                        agent_id='agent-ppt', stale=held)
+    assert await clear_stale_name_keys(store.runtime.driver, 'space', ['nova park']) == 0
+    assert store.cleared == []
 
 
 def test_the_stored_name_identity_is_the_shown_names_key_roles_included():

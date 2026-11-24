@@ -59,6 +59,14 @@ def called_by(agent_id: str, shown: str) -> frozenset[str]:
     return frozenset(keys - {''})
 
 
+def space_taken_names(shown: dict[str, str], former: list[str]) -> frozenset[str]:
+    """Every name a new one may not be: each Agent's (``shown``: agent_id ->
+    shown name), every built-in role's own name, and each recent 原名."""
+    keys = {key for agent_id, name in shown.items() for key in called_by(agent_id, name)}
+    keys |= {identity_key(profile().name) for profile in SYSTEM_PROFILES.values()}
+    return frozenset((keys | {identity_key(name) for name in former}) - {''})
+
+
 def shared_names(holders: list[NameHolder]) -> dict[str, list[NameHolder]]:
     """Each name two or more Agents are called by, with those Agents."""
     by_name: dict[str, list[NameHolder]] = {}
@@ -68,12 +76,16 @@ def shared_names(holders: list[NameHolder]) -> dict[str, list[NameHolder]]:
     return {key: group for key, group in by_name.items() if len(group) > 1}
 
 
-def name_fix_plan(holders: list[NameHolder], keep: frozenset[str] = frozenset()) -> list[NameFixGroup]:
-    """Every shared name and how it would be settled. ``keep`` names Agents the
-    person chose to keep their names; a built-in role always keeps its own.
-    New names are free across the whole space and stay the same whichever
-    renames the person then leaves out."""
-    taken = set().union(*(holder.names for holder in holders)) if holders else set()
+def name_fix_plan(holders: list[NameHolder], keep: frozenset[str] = frozenset(),
+                  taken: frozenset[str] = frozenset()) -> list[NameFixGroup]:
+    """Every shared name and how it would be settled. ``holders`` are the
+    Agents that share a name; ``taken`` the identity keys of every name in the
+    space (space_taken_names), which no new name may be. ``keep`` names Agents
+    the person chose to keep their names; a built-in role always keeps its own.
+    New names are free across the whole space, differ from each other, and stay
+    the same whichever renames the person then leaves out. Past every generated
+    name a numbered one is given (free_nicknames), never a repeated one."""
+    taken = set(taken).union(*(holder.names for holder in holders))
     groups, giving_way = [], set()
     for key, group in sorted(shared_names(holders).items()):
         ranked = sorted(group, key=lambda holder: holder.standing)

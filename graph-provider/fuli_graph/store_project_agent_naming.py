@@ -12,9 +12,12 @@ The check reads the space's names before the write; the graph holds the rule
 itself (AGENT_NAME_RULES): every Agent of the person, FULI's own roles
 included, stores the identity key of its shown name, unique per space
 (name_identity), so two writes racing for one name cannot both commit. A
-role's built-in name is reserved by the check (renamed_profile). An FLA that
+role's built-in name is reserved by the check (renamed_profile), and so is
+another Agent's 原名 while `#FLA` still reaches it by that name. An FLA that
 already shared its name before this rule writes without a key (UNKEYED) until
-the person settles the name (store_project_agent_name_fixes.py).
+the person settles the name (store_project_agent_name_fixes.py). A key an
+older FULI left on an Agent it renamed no longer says its name; it is cleared
+at start and whenever it blocks a write (clear_stale_name_keys).
 
 A refusal names who is called that and where they work, and offers free names.
 """
@@ -24,9 +27,12 @@ from fastapi import HTTPException
 from neo4j.exceptions import ConstraintError
 
 from .name_identity import identity_key
+from .project_agent_name_history import free_from, name_history, recent_change
 from .project_agent_names import (
-    NameTaken, agent_display_name, free_nicknames, new_agent_display_name, title_like, unique_nickname,
+    NameTaken, agent_display_name, free_nicknames, new_agent_display_name, profile_shown_name, title_like,
+    unique_nickname,
 )
+from .provider_values import now_utc
 from .system_agents import SYSTEM_PROFILES
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 from .temporary_project_scope import project_reference, stored_project_name
@@ -35,30 +41,50 @@ from .temporary_project_scope import project_reference, stored_project_name
 SYSTEM_NAMED = frozenset({*SYSTEM_PROFILES, LEGACY_HR_AGENT_ID})
 
 
-async def space_agent_names(store, personal_space_id: str) -> dict[str, tuple[str, str | None]]:
-    """Every Agent of the space, archived ones included: agent_id -> (role name, stored nickname)."""
+class SpaceNames(dict):
+    """agent_id -> (role name, stored nickname) for every Agent of a space,
+    archived ones included; ``former`` holds each Agent's latest rename while
+    its old name is still its 原名 (project_agent_name_history.py)."""
+
+    def __init__(self, names=(), former=None):
+        super().__init__(names)
+        self.former = dict(former or {})
+
+
+async def space_agent_names(store, personal_space_id: str) -> SpaceNames:
+    """Every Agent of the space, archived ones included, with recent 原名."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
               [:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent)
-        RETURN agent.agent_id AS agent_id, agent.profile_json AS profile_json
+        RETURN agent.agent_id AS agent_id, agent.profile_json AS profile_json,
+               agent.name_history_json AS name_history_json
         ''',
         personal_space_id=personal_space_id,
         routing_='r',
     )
-    names = {}
+    names, now = SpaceNames(), now_utc()
     for row in records:
         profile = json.loads(row['profile_json'] or '{}')
         names[row['agent_id']] = (profile.get('name') or '', profile.get('display_name'))
+        change = recent_change(name_history(row.get('name_history_json')), now)
+        if change:
+            names.former[row['agent_id']] = change
     return names
 
 
+def _former(names) -> dict:
+    return names.former if isinstance(names, SpaceNames) else {}
+
+
 def _taken(names, agent_id):
-    """Every name another Agent is called by: its shown name, and a built-in
-    role's own name, which it still answers to after a rename."""
+    """Every name another Agent is called by: its shown name, a built-in
+    role's own name, which it still answers to after a rename, and a 原名,
+    which `#FLA` still reaches for FORMER_NAME_DAYS."""
     return {identity_key(agent_display_name(other, name, nickname))
             for other, (name, nickname) in names.items() if other != agent_id} | {
-        identity_key(SYSTEM_PROFILES[other]().name) for other in SYSTEM_PROFILES if other != agent_id}
+        identity_key(SYSTEM_PROFILES[other]().name) for other in SYSTEM_PROFILES if other != agent_id} | {
+        identity_key(change.name) for other, change in _former(names).items() if other != agent_id}
 
 
 def name_identity(personal_space_id: str, agent_id: str, profile) -> dict:
@@ -80,6 +106,41 @@ def lost_name_race(error: Exception) -> bool:
     return isinstance(error, ConstraintError) and 'display_name_key' in str(error)
 
 
+async def clear_stale_name_keys(driver, personal_space_id: str | None = None, keys=None) -> int:
+    """Clear stored name identities that no longer match the Agent's shown
+    name, in every space or one, for every key or the given ones: FULI 22
+    renames an Agent without updating its key, which would otherwise keep its
+    old name from anyone else after an upgrade. Only the key fields change, and
+    only over the profile read; the next write keys the Agent again."""
+    records, _, _ = await driver.execute_query(
+        '''
+        MATCH (agent:FuliProjectAgent)
+        WHERE agent.display_name_key IS NOT NULL
+          AND ($space_id IS NULL OR agent.display_name_space_id = $space_id)
+          AND ($keys IS NULL OR agent.display_name_key IN $keys)
+        RETURN agent.agent_id AS agent_id, agent.display_name_space_id AS space_id,
+               agent.display_name_key AS key, agent.profile_json AS profile_json
+        ''',
+        space_id=personal_space_id, keys=None if keys is None else list(keys), routing_='r',
+    )
+    stale = [dict(row) for row in records if identity_key(
+        profile_shown_name(row['agent_id'], json.loads(row['profile_json'] or '{}'))) != row['key']]
+    if not stale:
+        return 0
+    cleared, _, _ = await driver.execute_query(
+        '''
+        UNWIND $rows AS row
+        MATCH (agent:FuliProjectAgent {agent_id: row.agent_id, display_name_space_id: row.space_id,
+                                       display_name_key: row.key})
+        WHERE coalesce(agent.profile_json, '') = coalesce(row.profile_json, '')
+        SET agent.display_name_space_id = null, agent.display_name_key = null
+        RETURN count(agent) AS cleared
+        ''',
+        rows=stale,
+    )
+    return cleared[0]['cleared'] if cleared else 0
+
+
 def keeps_its_name(names, agent_id: str, display_name: str | None) -> bool:
     """Whether a write leaves an existing Agent called what it was: a clash on
     its identity then means an Agent that already shared the name, never a race."""
@@ -98,11 +159,18 @@ async def name_taken(store, personal_space_id, names, agent_id, name, alternativ
                if other != agent_id and identity_key(agent_display_name(other, role, nickname)) == key]
     holders += [other for other in SYSTEM_PROFILES if other != agent_id and other not in holders
                 and identity_key(SYSTEM_PROFILES[other]().name) == key]
+    # Someone whose 原名 it still is: free once that name stops being one.
+    formerly = {other: change for other, change in _former(names).items()
+                if other != agent_id and other not in holders and identity_key(change.name) == key}
+    holders += list(formerly)
     projects = await _working_projects(store, personal_space_id, holders) if holders else {}
-    used_by = [{'agent_id': other, 'name': _called(names, other), 'projects': projects.get(other, [])}
+    used_by = [{'agent_id': other, 'name': _called(names, other), 'projects': projects.get(other, []),
+                **({'former_name': formerly[other].name, 'free_from': free_from(formerly[other]).date().isoformat()}
+                   if other in formerly else {})}
                for other in holders]
     said = ' | '.join(f'{item["name"]} ({item["agent_id"]})'
                       + (f' in {", ".join(_referred(item["projects"]))}' if item['projects'] else '')
+                      + (f', its former name until {item["free_from"]}' if 'free_from' in item else '')
                       for item in used_by)
     return HTTPException(409, {
         'code': 'agent_name_taken',

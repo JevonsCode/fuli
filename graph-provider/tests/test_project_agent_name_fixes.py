@@ -1,7 +1,9 @@
 """Who keeps a name several Agents share, what the others become and why
 (project_agent_name_fixes.py). Synthetic Agents only."""
+import re
+
 from fuli_graph.name_identity import identity_key
-from fuli_graph.project_agent_name_fixes import NameHolder, called_by, name_fix_plan
+from fuli_graph.project_agent_name_fixes import NameHolder, called_by, name_fix_plan, space_taken_names
 from fuli_graph.project_agent_names import FIRST_NAMES, LAST_NAMES, is_generated_nickname
 
 
@@ -49,16 +51,40 @@ def test_the_person_may_pick_who_keeps_a_name_and_the_others_say_so():
 
 
 def test_new_names_are_free_generated_and_distinct_across_the_space():
-    taken = holder('x', 'Nova Reed')
-    plan = name_fix_plan([holder('a', work=2), holder('b'), holder('c', 'Iris Vale', work=1),
-                          holder('d', 'iris  VALE'), taken])
+    # As the store calls it: only the FLAs that share a name are holders; every
+    # other name of the space, a built-in role's and a recent 原名 arrive as taken.
+    sharing = [holder('a', work=2), holder('b'), holder('c', 'Iris Vale', work=1), holder('d', 'iris  VALE')]
+    alone = {member.agent_id: member.new_name for group in name_fix_plan(sharing) for member in group.members
+             if not member.keeps}
+    # Another FLA is called exactly what b would get, and d's would be someone's 原名.
+    taken = space_taken_names({'x': alone['b'], **{item.agent_id: item.name for item in sharing}},
+                              former=[alone['d']])
+    plan = name_fix_plan(sharing, taken=taken)
     new = [member.new_name for group in plan for member in group.members if not member.keeps]
     assert len(new) == 2 and len({identity_key(name) for name in new}) == 2
     assert all(is_generated_nickname(name) for name in new)
-    assert not {identity_key(name) for name in new} & {'morgan vale', 'iris vale', 'nova reed'}
+    assert not {identity_key(name) for name in new} & (taken | {'morgan vale', 'iris vale'})
+    assert {identity_key(alone['b']), identity_key(alone['d']), 'bole'} <= taken
     # Asking again gives the same names, so what the person saw is what is applied.
-    assert plan == name_fix_plan([holder('a', work=2), holder('b'), holder('c', 'Iris Vale', work=1),
-                                  holder('d', 'iris  VALE'), taken])
+    assert plan == name_fix_plan(sharing, taken=taken)
+
+
+def test_past_every_generated_name_the_new_names_are_numbered_and_distinct():
+    every = {identity_key(name) for name in _all_generated()}
+    sharing = [holder('a', work=3), holder('b', work=2), holder('c', work=1)]
+    plan = name_fix_plan(sharing, taken=frozenset(every))
+    new = [member.new_name for group in plan for member in group.members if not member.keeps]
+    assert len(new) == 2 and len({identity_key(name) for name in new}) == 2
+    assert all(re.fullmatch(r'\S+ \S+ \d+', name) and is_generated_nickname(name) for name in new)
+    assert not {identity_key(name) for name in new} & every
+
+
+def _all_generated():
+    """Every generated nickname, single and double surname."""
+    for first in FIRST_NAMES:
+        for last in LAST_NAMES:
+            yield f'{first} {last}'
+            yield from (f'{first} {last}-{other}' for other in LAST_NAMES if other != last)
 
 
 def test_no_shared_name_no_plan():

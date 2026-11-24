@@ -200,6 +200,13 @@ async def test_the_upgrade_needs_nobody_and_the_person_settles_shared_names_in_o
             assert (change['name'], change['reason']) == (before[agent_id]['name'], 'duplicate_name'), agent_id
         assert after['emery-a']['history'][-1]['gave_way'] == 'person_chose'
         assert after['emery-b']['key'] == 'emery fox' and after['casey-b']['name'] == 'Casey Hayes'
+        # The two the person left alike are not keyed by the apply, and each
+        # still saves its own edits afterwards.
+        assert (after['casey-a']['key'], after['casey-b']['key']) == (None, None)
+        for agent_id in ('casey-b', 'casey-a'):
+            edited = await client.put('/v1/project-agents', json={
+                **_profile(agent_id, 'Casey Hayes', 'Edited work.'), 'occupation': {'role': 'design'}})
+            assert edited.status_code == 200, edited.text
         record = (await client.get('/v1/project-agents/morgan-b', params={'personal_space_id': SPACE})).json()
         assert record['agent_id'] == 'morgan-b' and record['former_name'] == 'Morgan Vale'
 
@@ -292,3 +299,75 @@ async def test_the_name_rule_waits_behind_a_confirmed_step_and_stays_when_that_s
                                       json={'digest': again['digest'], 'entrypoint': 'cli'})
         assert reapplied.status_code == 200, reapplied.text
         assert await _version(driver) == 24
+
+
+async def _add_agent(driver, settings, agent_id, display_name, key=None):
+    """One more FLA, holding ``key`` as its stored name identity."""
+    await driver.execute_query(
+        '''
+        MATCH (space:FuliSpace {id: $space})
+        CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent {id: $node_id, agent_id: $agent_id,
+                 name: '开发', status: 'active', agent_type: 'durable', profile_json: $profile_json,
+                 display_name_space_id: CASE WHEN $key IS NULL THEN null ELSE $space END, display_name_key: $key,
+                 created_at: datetime('2026-10-01T00:00:00Z'), updated_at: datetime('2026-10-15T00:00:00Z')})
+        ''',
+        space=SPACE, agent_id=agent_id, key=key,
+        node_id=stable_uuid(settings.provider_id, SPACE, 'project-agent', agent_id),
+        profile_json=json.dumps({'name': '开发', 'display_name': display_name,
+                                 'responsibility': 'Synthetic work.'}, ensure_ascii=False),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_settled_name_avoids_every_name_in_the_space_not_only_the_shared_ones(graph):
+    """Another FLA, sharing nothing, is called exactly what the list would
+    first give: the list gives another name and the apply goes through."""
+    settings, driver = graph
+    await _seed(settings, driver, [_agent('sky-a', 'Sky Cole', work=2), _agent('sky-b', 'Sky Cole')])
+    async with provider_client(settings, ACCESS_TOKEN) as (client, _):
+        params = {'personal_space_id': SPACE}
+        first = _renames((await client.get('/v1/project-agent-name-fixes', params=params)).json())['sky-b']
+        await _add_agent(driver, settings, 'bystander', first, key=identity_key(first))
+
+        plan = (await client.get('/v1/project-agent-name-fixes', params=params)).json()
+        renames = _renames(plan)
+        assert identity_key(renames['sky-b']) != identity_key(first) and is_generated_nickname(renames['sky-b'])
+        applied = await client.post('/v1/project-agent-name-fixes/apply', json={
+            **params, 'keep': [], 'renames': renames})
+        assert applied.status_code == 200, applied.text
+        assert applied.json()['groups'] == []
+
+    names = await _names(driver)
+    assert names['sky-b']['name'] == renames['sky-b'] and names['bystander']['name'] == first
+    shown = [identity_key(item['name']) for item in names.values()]
+    assert len(shown) == len(set(shown)), shown
+
+
+@pytest.mark.asyncio
+async def test_a_name_key_an_older_fuli_left_on_a_renamed_fla_never_blocks_that_name(graph):
+    """FULI 22 renamed an FLA without updating its key. The Provider clears
+    such a key when it starts; one that appears later is cleared when it blocks
+    a rename or a new FLA. Only the key changes, never a name."""
+    settings, driver = graph
+    await _seed(settings, driver, [_agent('nova', 'Nova Reed')])
+    await _add_agent(driver, settings, 'renamed-in-22', 'Wren Hill', key='morgan vale')
+    async with provider_client(settings, ACCESS_TOKEN) as (client, _):
+        assert (await client.get('/health')).json()['data_format']['state'] == 'current'
+        assert (await _names(driver))['renamed-in-22'] == {'name': 'Wren Hill', 'history': [], 'key': None}
+
+        await driver.execute_query(
+            "MATCH (a:FuliProjectAgent {agent_id: 'renamed-in-22'}) "
+            "SET a.display_name_space_id = $space, a.display_name_key = 'morgan vale'", space=SPACE)
+        renamed = await client.put('/v1/project-agents/nova/name', json={
+            'personal_space_id': SPACE, 'display_name': 'Morgan Vale'})
+        assert renamed.status_code == 200, renamed.text
+
+        await driver.execute_query(
+            "MATCH (a:FuliProjectAgent {agent_id: 'renamed-in-22'}) "
+            "SET a.display_name_space_id = $space, a.display_name_key = 'quinn shaw'", space=SPACE)
+        hired = await client.put('/v1/project-agents', json=_profile('quinn', 'Quinn Shaw', 'Synthetic work.'))
+        assert hired.status_code == 200, hired.text
+
+    names = await _names(driver)
+    assert (names['nova']['key'], names['quinn']['key']) == ('morgan vale', 'quinn shaw')
+    assert names['renamed-in-22'] == {'name': 'Wren Hill', 'history': [], 'key': None}

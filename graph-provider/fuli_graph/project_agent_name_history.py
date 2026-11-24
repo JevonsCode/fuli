@@ -27,10 +27,22 @@ def name_history(history_json: str | None) -> list[ProjectAgentNameChange]:
     return [ProjectAgentNameChange.model_validate(item) for item in json.loads(history_json or '[]')]
 
 
-def former_name(history: list[ProjectAgentNameChange], now) -> str | None:
-    """The name the Agent had until its latest rename, while that is recent."""
+def recent_change(history: list[ProjectAgentNameChange], now) -> ProjectAgentNameChange | None:
+    """The Agent's latest rename while its old name is still its 原名: people
+    still call it by that name, so no other Agent may take it until then."""
     if not history:
         return None
     latest = history[-1]
-    return latest.name if native_datetime(now) - native_datetime(latest.until) <= timedelta(days=FORMER_NAME_DAYS) \
+    return latest if native_datetime(now) - native_datetime(latest.until) <= timedelta(days=FORMER_NAME_DAYS) \
         else None
+
+
+def former_name(history: list[ProjectAgentNameChange], now) -> str | None:
+    """The name the Agent had until its latest rename, while that is recent."""
+    change = recent_change(history, now)
+    return change.name if change else None
+
+
+def free_from(change: ProjectAgentNameChange):
+    """When a 原名 stops being one, and another Agent may take it."""
+    return native_datetime(change.until) + timedelta(days=FORMER_NAME_DAYS)

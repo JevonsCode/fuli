@@ -20,7 +20,7 @@ from .project_agent_names import NameTaken, profile_shown_name
 from .provider_values import native_datetime, now_utc
 from .system_agents import SYSTEM_PROFILES
 from .store_project_agent_naming import (
-    lost_name_race, name_identity, name_taken, renamed_profile, space_agent_names,
+    clear_stale_name_keys, lost_name_race, name_identity, name_taken, renamed_profile, space_agent_names,
 )
 from .system_hr_identity import resolve_hr_alias
 
@@ -41,7 +41,19 @@ def renamed_row(personal_space_id: str, agent_id: str, stored: str, history_json
 async def write_agent_names(driver, personal_space_id: str, rows: list[dict], updated_at) -> bool:
     """Every row's name at once, or none: each lands only over the profile it
     was read from, so a concurrent edit is never lost. A name another Agent took
-    meanwhile raises the graph's ConstraintError."""
+    meanwhile raises the graph's ConstraintError; one held only by a key that
+    no longer says its Agent's name (clear_stale_name_keys) is freed and the
+    write tried once more."""
+    try:
+        return await _write_agent_names(driver, personal_space_id, rows, updated_at)
+    except ConstraintError as error:
+        if not lost_name_race(error) or not await clear_stale_name_keys(
+                driver, personal_space_id, [row['display_name_key'] for row in rows if row['display_name_key']]):
+            raise
+    return await _write_agent_names(driver, personal_space_id, rows, updated_at)
+
+
+async def _write_agent_names(driver, personal_space_id: str, rows: list[dict], updated_at) -> bool:
     records, _, _ = await driver.execute_query(
         '''
         UNWIND $rows AS row
