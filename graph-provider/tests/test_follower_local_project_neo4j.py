@@ -48,10 +48,17 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
             entry = await checked(await client.get('/v1/collaboration-preferences', params={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL}))
             assert HABIT in str(entry)
+            # With no lead yet, the entry hires one: it waits for the host to make it.
+            staffed = await staff_lead(client, space_id)
+            assert (staffed['status'], staffed['reason']) == ('unassigned', ON_OWNER)
+            await unchanged('a lead the project hires')
             await checked(await client.post('/v1/project-agent-assignments', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL, 'agent_id': 'scope-lead',
                 'idempotency_key': f'assign-{suffix}', 'responsibility': 'Keep the sample.',
                 'work_kinds': ['implementation'], 'capabilities': ['coding'], 'reason': 'Synthetic staffing.'}))
+            # The project's own lead, kept in the project's own policy.
+            await checked(await client.put('/v1/project-agent-coordination-policy', json={
+                'personal_space_id': space_id, 'personal_project_id': LOCAL, 'team_lead_agent_id': 'scope-lead'}))
             resolved = await checked(await client.post('/v1/project-agent-context/resolve', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL, 'source_application': 'codex'}))
             assert resolved['agent']['agent_id'] == 'scope-lead'
@@ -125,9 +132,7 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
             await unchanged('a task Jefa coordinates')
 
             # A task that needs a new FLA waits for the host to make it.
-            staffed = await staff_lead(client, space_id)
-            assert (staffed['status'], staffed['reason']) == ('unassigned', ON_OWNER)
-            hire = await checked(await client.post('/v1/project-agent-tasks', json={
+            hire =await checked(await client.post('/v1/project-agent-tasks', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL,
                 'idempotency_key': f'hire-{suffix}', 'title': 'Synthetic new specialist',
                 'objective': 'Hire a specialist for the sample.', 'work_kind': 'verification',

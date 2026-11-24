@@ -66,8 +66,8 @@ class OwnerHireResult(StrictModel):
 
 def _origin(request: OwnerHireRequest) -> str:
     """Where the recruitment came from, kept in the FLA's recruitment reason (no field of its own)."""
-    computer = request.origin_computer + (f'（{request.origin_fingerprint}）' if request.origin_fingerprint else '')
-    return f'来自 {computer} 的项目 {request.origin_project} 的招聘：{request.reason}'[:4096]
+    computer = request.origin_computer + (f'（{request.origin_fingerprint}）' if request.origin_fingerprint else ' ')
+    return f'来自 {computer}的项目 {request.origin_project} 的招聘：{request.reason}'[:4096]
 
 
 async def hire_for_owner_recruitment(store, actor, request: OwnerHireRequest) -> OwnerHireResult:

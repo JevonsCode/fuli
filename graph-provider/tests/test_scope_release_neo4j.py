@@ -62,7 +62,9 @@ async def test_a_release_keeps_the_copies_its_project_points_at_and_lets_the_res
             released = await release(client, space_id)
             assert released['owner'] == OWNER
             assert released['kept']['nodes'] >= 1 and released['deleted']['nodes'] >= 1
-            assert await copies(driver) == (0, 0)
+            left, _, _ = await driver.execute_query(
+                'MATCH (n) WHERE n.fuli_replica_owner IS NOT NULL RETURN labels(n) AS labels')
+            assert await copies(driver) == (0, 0), [row['labels'] for row in left]
             records, _, _ = await driver.execute_query('''
                 MATCH (space:FuliSpace {id: $space})-[:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent)
                 RETURN agent.agent_id AS agent_id, [key IN keys(agent) WHERE key STARTS WITH 'fuli_replica'] AS marker

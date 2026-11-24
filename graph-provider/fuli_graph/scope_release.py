@@ -33,7 +33,8 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
         read = await read_space(transaction, space)
         classification = read.classification
         nodes = {element for element, node in classification.nodes.items() if node.properties.get(OWNER) == owner}
-        links = [item for item in classification.relationships if item.properties.get(OWNER) == owner]
+        nodes |= await _unread_copies(transaction, owner, set(classification.nodes), session_id)
+        links = await _marked_links(transaction, owner)
         if not nodes and not links:
             raise HTTPException(409, {
                 'code': 'replica_not_held',
@@ -41,7 +42,7 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
                            '这台电脑没有那台电脑的副本，没有可释放的。'})
         kept = await held_here(transaction, nodes)
         gone = nodes - kept
-        kept_links = [item.element_id for item in links if item.start not in gone and item.end not in gone]
+        kept_links = [element for element, start, end in links if start not in gone and end not in gone]
         await _each(transaction, f'MATCH (item) WHERE elementId(item) = element REMOVE {_MARKER}', kept)
         await _each(transaction, f'MATCH ()-[item]->() WHERE elementId(item) = element REMOVE {_MARKER}',
                     kept_links)
@@ -50,6 +51,24 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
     return {'owner': owner,
             'kept': {'nodes': len(kept), 'relationships': len(kept_links)},
             'deleted': {'nodes': len(gone), 'relationships': len(links) - len(kept_links)}}
+
+
+async def _unread_copies(transaction, owner: str, read: set[str], session_id: str) -> set[str]:
+    """The owner's copies the space read does not classify (no export rule reads
+    them), so a release leaves no marker behind; the task session has its own rule."""
+    result = await transaction.run('''
+        MATCH (item) WHERE item.fuli_replica_owner = $owner
+          AND NOT (item:FuliTaskContextSession AND item.id = $session)
+        RETURN elementId(item) AS element''', owner=owner, session=session_id)
+    return {record['element'] async for record in result} - read
+
+
+async def _marked_links(transaction, owner: str) -> list[tuple[str, str, str]]:
+    """Every relationship the owner's copies left, read ones or not: (element, start, end)."""
+    result = await transaction.run('''
+        MATCH (start)-[item]->(end) WHERE item.fuli_replica_owner = $owner
+        RETURN elementId(item) AS element, elementId(start) AS start, elementId(end) AS end''', owner=owner)
+    return [(record['element'], record['start'], record['end']) async for record in result]
 
 
 async def _each(transaction, statement: str, elements) -> None:

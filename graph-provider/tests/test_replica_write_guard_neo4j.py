@@ -255,9 +255,12 @@ async def test_a_follower_refuses_the_other_writes_of_global_and_aliases_its_own
                        COUNT { (:FuliPublicationDraft {personal_space_id: $space}) } AS drafts,
                        COUNT { (:FuliSpace {id: $space})-[:SUBSCRIBES_TO]->() } AS subscriptions''', space=space_id)
             assert dict(records[0]) == {'declines': 0, 'drafts': 0, 'subscriptions': 0}
-            project_tag = (await checked(await client.post('/v1/knowledge-tags/create', json={
+            # Judged apart from the copied personal tag, whose word it shares.
+            created = await checked(await client.post('/v1/knowledge-tags/create', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL, 'name': 'Synthetic module',
-                'namespace': 'project', 'reason': 'Synthetic tag.'})))['tag']
+                'namespace': 'project', 'reason': 'Synthetic tag.', 'distinct_from': [tag_id]}))
+            assert created['outcome'] == 'created', created
+            project_tag = created['tag']
             aliased = await checked(await client.post('/v1/knowledge-tags/aliases', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL, 'tag_id': project_tag['id'],
                 'alias': 'Synthetic component', 'reason': 'Synthetic alias.'}))
