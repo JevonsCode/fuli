@@ -365,6 +365,15 @@ test('fifty preferences added at once spell out no more than the quota on top of
   assert.ok(keys(added).filter(key => listed.has(key)).length > 1, 'the quota is used, best-ranked first');
   assert.equal(frames.at(-1).preferences_omitted.count, total - listed.size);
   assert.ok(frames.at(-1).task_knowledge_recall.facts.length > 0, 'once the quota is spent, the recall is not kept at its leanest');
+  // The first frame named the older ones by a line. 43 new ones do not all fit
+  // as lines, so they are named by key, but only they: the lines the model
+  // holds are never resent as a keys-only list (before: all 64 by key).
+  for (const frame of frames) {
+    assert.equal(frame.preferences_omitted.index, undefined, 'the held index is not resent');
+    assert.equal(frame.preferences_omitted.index_unchanged, true);
+    assert.equal((frame.preferences_omitted.index_added ?? []).some(entry => !entry.startsWith('synthetic-new-')), false);
+  }
+  assert.ok(frames[0].preferences_omitted.index_added.length > 0, 'the new ones are named once');
 });
 
 // Each turn the person says something new, the first 3 of it get a body
@@ -462,17 +471,22 @@ test('an added preference too long to fit is only named, and the recall is not h
 // alone past the hard rules exceed half the limit, so the floor counts the
 // rest rather than naming them (as the real entry frames did), and the set
 // is held. One session: a prompt, five host events, three prompts (the
-// second with a rich recall, the third with one habit added). Measured: a
-// complete 8,823-character frame, 17 in full (main's search: 17); five
-// 171-character lines; deltas of 5,300 (17 in full), 3,341 (18, the added
-// one) and 3,115 characters (18), none with a keys-only index.
+// second with a rich recall, the third with one habit added). The recovered
+// messages carry the Provider's proofs, as a session's own entry gets them.
+// Measured: a complete 8,823-character frame, 17 in full (main's search: 17);
+// five 171-character lines; deltas of 4,621 (17 in full), 1,938 (18, the
+// added one) and 1,712 characters (18), none with a keys-only index. Before
+// the conflicts were a skeleton part (and with messages without proofs, so
+// resent every turn) the deltas were 5,300, 3,341 and 3,115; with proofs but
+// the conflicts resent, 5,300, 2,617 and 2,391.
 test('a real-scale working set keeps its floor: host events are one line, later prompts are deltas', async t => {
   const rows = [];
   let mainFirst = 0;
   await claudeEntrySession(async session => {
     let items = realScalePreferences();
     const entry = (token, recall, sessionId = session.sessionId) => syntheticLargeEntry({ items, sessionId, token,
-      recall: syntheticRecall(recall, { length: 300 + Number(token.split('-')[1]) }), conversation: syntheticRecovery(2, { length: 300 }) });
+      recall: syntheticRecall(recall, { length: 300 + Number(token.split('-')[1]) }),
+      conversation: syntheticRecovery(2, { length: 300, proofs: true }) });
     const task = { token: 'task-1', sessionId: session.sessionId, sourceApplication: 'claude_code', checkpoint: null };
     const read = async (_name, { taskContextToken }) => {
       const { task_knowledge_recall: _recall, conversation: _conversation, ...rest } = entry(taskContextToken, 0);
@@ -518,7 +532,69 @@ test('a real-scale working set keeps its floor: host events are one line, later 
   }
   assert.ok(rows.slice(6).every(row => row.frame.preference_delivery.removed.length === 0), 'none taken back');
   assert.ok(keys(rows[7].frame.preference_updates).includes('remember-0123456789abcdef01234567'), 'the added habit arrives');
+  // Nothing a frame repeats word for word from the one delivered before it:
+  // the conflicts, receipt and rule references are named by the skeleton
+  // revision of that frame; the token and checkpoint requirement of the turn
+  // are always there; messages the session already holds are counted.
+  const prompts = rows.filter(row => row.kind !== 'line');
+  for (const [index, { turn, frame }] of prompts.entries()) {
+    assert.equal(typeof frame.taskContextToken, 'string', turn);
+    assert.equal(typeof frame.checkpoint_required, 'boolean', turn);
+    if (!index) continue;
+    for (const part of ['active_conflicts', 'deferred_conflicts', 'agent_receipt', 'application_guidance']) {
+      assert.equal(Object.hasOwn(frame, part), false, `${turn}: ${part} named, not repeated`);
+    }
+    assert.equal(frame.skeleton_unchanged, prompts[index - 1].frame.skeleton_revision, `${turn}: names the frame before it`);
+  }
+  assert.ok(prompts[0].frame.active_conflicts.length && prompts[0].frame.agent_receipt.markdown, 'the first frame gives them');
+  for (const { turn, frame } of prompts.slice(2)) {
+    assert.equal(frame.conversation.recovery.messages, undefined, `${turn}: the messages the session holds are not resent`);
+  }
 });
+
+// An entry with no session record: where most keys are ones FULI made from a
+// habit's text (`remember-` and 24 hex), a keys-only index tells the model
+// nothing, so the room goes to bodies and the rest are counted. Measured: 17
+// in full and the rest counted (before: 11 in full and 59 keys, 2,283
+// characters of them). Keys a person chose (`rule-N`) are still named.
+test('without a session record, a keys-only index of generated keys gives way to more bodies', async () => {
+  const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items: realScalePreferences(), sessionId: SESSION,
+    recall: syntheticRecall(2, { length: 300 }), conversation: syntheticRecovery(2, { length: 300 }) })));
+  assert.equal(frame.preferences_omitted.index, undefined);
+  assert.equal(frame.effective_preferences.length, 17);
+  const named = hookFrame(await claudeEntry(syntheticLargeEntry({ items: syntheticPreferences(60), sessionId: SESSION })));
+  assert.ok(named.preferences_omitted.index.length > 0, 'meaningful keys keep their index');
+});
+
+// The conflicts are named only from a frame the host recorded in this
+// generation: a lost frame, a compaction and a changed conflict send them.
+test('the conflicts are sent again after a lost frame, a compaction or a change, and named otherwise', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(20, { length: 120 });
+    let conflict = 'SYNTHETIC_CONFLICT_A: tabs.';
+    const entry = token => {
+      const value = syntheticLargeEntry({ items, sessionId: session.sessionId, token });
+      return copyPreferenceScope(value, { ...value, active_conflicts: value.active_conflicts.map(item =>
+        ({ ...item, alternatives: item.alternatives.map((alternative, index) => index ? alternative : { ...alternative, instruction: conflict }) })) });
+    };
+    const reply = () => session.host.say('assistant', 'SYNTHETIC reply.');
+    const sent = frame => Object.hasOwn(frame, 'active_conflicts');
+    assert.ok(sent((await session.turn(entry('task-1'), { record: false })).frame), 'first frame');
+    await reply();
+    assert.ok(sent((await session.turn(entry('task-2'))).frame), 'the frame before was lost');
+    await reply();
+    const named = (await session.turn(entry('task-3'))).frame;
+    assert.equal(sent(named), false, 'recorded before: named');
+    assert.equal(typeof named.skeleton_unchanged, 'string');
+    await reply();
+    conflict = 'SYNTHETIC_CONFLICT_A: tabs, width 4.';
+    const changed = (await session.turn(entry('task-4'))).frame;
+    assert.equal(changed.active_conflicts[0].alternatives[0].instruction, conflict, 'a changed conflict is sent');
+    await reply();
+    await session.host.compact();
+    const compacted = (await session.turn(entry('task-5'))).frame;
+    assert.ok(sent(compacted) && compacted.agent_receipt && !compacted.skeleton_unchanged, 'after a compaction everything is sent');
+  }));
 
 // The quota bounds an import, not a person talking, also where a frame only
 // counts what it leaves out (`known` tells new from in view): once an import
@@ -646,7 +722,7 @@ test('a held set that no longer fits gives way in a complete frame that keeps th
     const [grown] = listed.filter(key => kind(byKey.get(key).instruction) === 'SCENE').sort((a, b) => number(b) - number(a));
     const [deleted] = listed.filter(key => kind(byKey.get(key).instruction) === 'SCENE' && key !== grown);
     const next = items.filter(item => item.preference_key !== deleted).map(item => item.preference_key === grown
-      ? { ...item, instruction: `${item.instruction} ${'SYNTHETIC grown clause. '.repeat(80)}` } : item);
+      ? { ...item, instruction: `${item.instruction} ${'SYNTHETIC grown clause. '.repeat(110)}` } : item);
     const { text, frame } = await session.turn(syntheticLargeEntry({ items: next, sessionId: session.sessionId, token: 'task-2' }));
     assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
     assert.equal(frame.preference_delivery, undefined, 'a complete frame');
