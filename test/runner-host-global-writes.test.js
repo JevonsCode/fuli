@@ -90,6 +90,22 @@ test('each op is applied as the runner\'s call and answered on its own; a refuse
     toolName: 'checkpoint_task_knowledge', items: usageOp.input.items });
 });
 
+test('an entry as large as a checkpoint may be is applied, not refused for its size', async (t) => {
+  const { app, calls } = hostApp();
+  const { post } = await host(t, app);
+  // Far past the 64 KiB a local API route reads, within what one MCP request may carry.
+  const entities = Array.from({ length: 120 }, (_, index) => ({ ...preference, key: `synthetic-preference-${index}`,
+    summary: 'synthetic '.repeat(200) }));
+  const large = { ...captureOp, input: { ...captureOp.input, entities } };
+  assert.ok(Buffer.byteLength(JSON.stringify(large)) > 200 * 1024);
+
+  const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('global-large', [large]));
+
+  assert.equal(answer.status, 200);
+  assert.deepEqual(answer.body.result.ops, [{ kind: 'capture', outcome: 'applied', code: null }]);
+  assert.equal(calls[0].input.entities.length, 120);
+});
+
 test('one entry id delivered twice is applied once, and the second delivery gets the first answer', async (t) => {
   const { app, calls } = hostApp();
   const { post } = await host(t, app);

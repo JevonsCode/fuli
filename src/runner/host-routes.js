@@ -60,6 +60,10 @@ const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge', GLOBAL_WRITES_ENT
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
 const SESSION_ID = ENTRY_ID;
+// A replayed entry may be as large as the MCP request it stands for (a
+// checkpoint, mcp/http-session-transport.js): a smaller bound here refused the
+// larger ones for good, and what they carried was lost.
+const REPLAY_MAX_BYTES = 1024 * 1024;
 // A forwarded prompt hook gets what a client's hook process would: the clients wait 30 s.
 const HOOK_TIMEOUT_MS = 25_000;
 // The hooks a runner forwards: task entry at each prompt, and the turn's end, which closes it.
@@ -193,7 +197,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       response.end(bytes);
     } else if (pathname === RUNNER_PATHS.replay) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
-      const answer = await replay(fingerprint, await readJson(request));
+      const answer = await replay(fingerprint, await readJson(request, { maxBytes: REPLAY_MAX_BYTES }));
       sendJson(response, answer.status, answer.body);
     }
   }

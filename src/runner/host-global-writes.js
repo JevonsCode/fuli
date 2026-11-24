@@ -20,13 +20,10 @@ import { requiredString } from '../validation/values.js';
 // memory carry the checkpoint's idempotency keys, a use is recorded once per
 // task, item and kind of use, and a hire answers the FLA it already made.
 //
-// Size: the replay route reads at most 64 KiB of JSON (src/http/response.js),
-// whatever MAX_OPS allows, and refuses a larger entry (413) for good. A
-// checkpoint sends at most three ops (its global capture, its FLA's global
-// memory, its uses), so 64 KiB, not 32 ops, is the bound that matters. The
-// capture is the large one: its own limits (128 entities, 256 relationships)
-// allow far more than 64 KiB, as an online checkpoint's MCP request may carry
-// 1 MiB (mcp/http-session-transport.js).
+// Size: the replay route reads as much as one MCP request may carry (1 MiB,
+// host-routes.js), so the capture a checkpoint could send online also arrives
+// through the outbox. A checkpoint sends at most three ops (its global capture,
+// its FLA's global memory, its uses); a larger entry is refused (413) for good.
 const MAX_OPS = 32;
 // Tool-schema bounds (agent-tools/project-agent-definitions.js) and the Provider's usage batch.
 const MAX_ID = 256;
