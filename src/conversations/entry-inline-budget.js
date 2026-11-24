@@ -291,7 +291,8 @@ function sharedFit({ value, preferences, kept, ranked, limit, held, levels, lean
 // takes the richest level where the frame this turn actually delivers fits,
 // and then the rest are added in rank order while it still fits, up to what
 // one complete frame holds beside the leanest context, plus any preference
-// added since that ranks within that: a turn with a lighter
+// added in this generation and scope that ranks within that and no frame has
+// spelled out yet (heldStatus 'new'): a turn with a lighter
 // recall spells out what a richer first frame only named, never more than the
 // lightest turn would list whole, so the bodies of every preference are not
 // sent one turn after another. While an earlier frame is still on its way
@@ -314,16 +315,29 @@ function heldFit({ preferences, ranked, floor, held, levels, leanest, fitsAt, fr
   // only named, as on main. Hard rules are never counted.
   const lightest = richerIndex(leanest, ranked);
   const capOf = order => largestCount(0, order.length, count => fitsAt(leanest, selection(order, count), lightest));
-  const cap = capOf(ranked);
-  const added = ranked.filter((index, rank) => status.get(index) === 'new' && rank >= floor.count && rank < cap);
+  // The cap counts only what was there before, so the added ones are on top
+  // of it; one is within it where fewer than the cap of those rank above it.
+  const cap = capOf(ranked.filter(index => status.get(index) !== 'new'));
+  const added = [];
+  let above = 0;
+  ranked.forEach((index, rank) => {
+    if (status.get(index) !== 'new') above++;
+    else if (rank >= floor.count && above < cap) added.push(index);
+  });
   const growing = [...new Set([...of('listed', 'changed'), ...floorItems, ...added, ...ranked])];
   const base = new Set([...of('listed', 'changed'), ...floorItems]).size;
   const indexed = richerIndex(leanest, growing);
-  // The cap of what was there before, so the added ones are on top of it.
-  const most = Math.max(base, capOf(ranked.filter(index => status.get(index) !== 'new'))) + added.length;
+  const most = Math.max(base, cap) + added.length;
+  // The recall gives way to the added ones: the richest level where the base's
+  // set and every added body fit; where none does, the leanest level, with the
+  // added ones by rank as far as they fit there. While an earlier frame is on
+  // its way, none is added; the rest stay owed (preference-snapshot.js
+  // heldStatus) and come on a later turn.
+  const wanted = held.grow ? base + added.length : base;
   for (const index of new Set([indexed, 'keys'])) {
     const at = count => listing(selection(growing, count), index);
-    const level = levels.find(candidate => delivers(at(base)(candidate)));
+    const level = levels.find(candidate => delivers(at(wanted)(candidate)))
+      ?? (delivers(at(base)(levels.at(-1))) ? levels.at(-1) : null);
     if (level) return frameAt(at(held.grow ? largestCount(base, most, count => delivers(at(count)(level))) : base));
   }
   const giving = [...new Set([...of('changed'), ...ranked.filter((index, rank) => rank < floor.count || status.get(index) !== 'indexed'),

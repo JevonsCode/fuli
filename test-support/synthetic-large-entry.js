@@ -80,22 +80,23 @@ export function syntheticIndexRecall(count) {
 // begin_task_context as the Provider-backed producer returns it, before the
 // hook compacts it: preferences filtered for the scene, the task token,
 // receipt, one active conflict and the private scope the delivery cache binds.
+// `agent`: the FLA the task runs as (a workstream may hand a turn to another).
 export function syntheticLargeEntry({ items, sessionId, token = 'task-large', workKind = 'implementation',
-  conversation = null, recall = null, conflicts = true }) {
+  conversation = null, recall = null, conflicts = true, agent = AGENT }) {
   const projection = projectAgentCollaborationPreferences({ personal_space_id: SPACE, personal_project_id: PROJECT,
-    project_agent_id: AGENT, effective_preferences: structuredClone(items), truncated: false,
+    project_agent_id: agent, effective_preferences: structuredClone(items), truncated: false,
     conflicts: conflicts ? [{ preference_key: 'indent', preference_scope: 'global', item_ids: ['conflict-a', 'conflict-b'] }] : [],
     global_preferences: conflicts ? [syntheticPreference('conflict-a', 'SYNTHETIC_CONFLICT_A: tabs.'),
       syntheticPreference('conflict-b', 'SYNTHETIC_CONFLICT_B: spaces.')].map((item, index) =>
       ({ ...item, id: index ? 'conflict-b' : 'conflict-a' })) : [],
     source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } },
-  { personalProjectId: PROJECT }, { projectAgentId: AGENT, taskScope: { sessionId, workKind } });
+  { personalProjectId: PROJECT }, { projectAgentId: agent, taskScope: { sessionId, workKind } });
   return withPreferenceScope({ ...projection, taskContextToken: token, task_context_token: token, checkpoint_required: true,
-    agent_receipt: { required: true, markdown: `**[◇ FULI · Synthetic lead](http://127.0.0.1:4318/agents/${SPACE}/${AGENT})**` },
-    context: { personal_project_id: PROJECT, project_agent_id: AGENT },
+    agent_receipt: { required: true, markdown: `**[◇ FULI · Synthetic lead](http://127.0.0.1:4318/agents/${SPACE}/${agent})**` },
+    context: { personal_project_id: PROJECT, project_agent_id: agent },
     ...(recall ? { task_knowledge_recall: recall } : {}),
     ...(conversation ? { conversation: { status: 'saved', conversation_id: conversation.conversation_id, recovery: conversation } } : {}) },
-  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
+  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: agent, session_id: sessionId,
     source_application: 'claude_code', preference_scope: { version: 1, work_kind: workKind, workflow: null } });
 }
 

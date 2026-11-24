@@ -21,6 +21,9 @@ const CHAT = '你好！';
 const ciEvent = n => `<ci-monitor-event>Synthetic PR ${n}: check "unit" failed on the latest push. `
   + 'The app sends each change as a <ci-monitor-event> message.</ci-monitor-event>';
 const taskDone = n => `<task-notification><task-id>synthetic-${n}</task-id><status>completed</status></task-notification>`;
+// The turn that adds a preference while the frame before is on its way: it
+// spells out none (design T3), so a bounded one may miss it that one turn.
+export const ADDED_IN_FLIGHT = 'added while the frame before is on its way';
 const NOTIFICATIONS = Array.from({ length: 10 }, (_, i) => (i % 3 === 2 ? taskDone(i) : ciEvent(i)));
 
 // One group of native messages; returns their texts.
@@ -172,6 +175,30 @@ export const SCENARIOS = {
       world.check(`${label} added: the model view is exactly ${keys(world.items)}`, holds(added, world.items));
       world.check(`${label} added: the hook sends only the added item (delta)`,
         added.preference_delivery === 'delta' && added.preferences_sent === radius.length);
+    }
+  },
+
+  // Design T3: a preference the person adds while the frame before is still
+  // on its way. That turn spells out no more (its base may be lost); the new
+  // one is owed and arrives on the next turn, and stays.
+  async added_in_flight(world) {
+    const { boundary, general, spacing, palette, radius } = world.fixture;
+    const before = [...boundary, ...general, ...spacing, ...palette];
+    for (const [client, label] of [['claude_code', 'H'], ['codex', 'C']]) {
+      const session = await world.open(client, label);
+      world.items = before;
+      await session.turn(FRONTEND, { note: 'first' });
+      await session.turn(FRONTEND, { record: false, note: 'on its way' });
+      // Sixth of the scene's own: past the preferences' floor, which every
+      // turn spells out, and within what one complete frame of `many` holds.
+      world.items = [...boundary, ...general, ...spacing.slice(0, 5), ...radius, ...spacing.slice(5), ...palette];
+      await session.turn(FRONTEND, { note: ADDED_IN_FLIGHT });
+      await session.say('assistant', 'SYNTHETIC reply.');
+      for (const note of ['next', 'settled']) {
+        const turn = await session.turn(FRONTEND, { note });
+        world.check(`${label} ${note}: the added body is in the model view`,
+          radius.every(item => turn.modelPreferences.get(item.preference_key) === item.instruction));
+      }
     }
   },
 

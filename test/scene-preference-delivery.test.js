@@ -203,8 +203,12 @@ test('an unacknowledged predecessor is never forged as a base: the switch is a p
   assert.deepEqual(chat.structuredContent.effective_preferences.map(item => item.preference_key), ['no-force-push']);
 }));
 
-test('another Agent in the same native session is not a predecessor; a later switch finds its base by supersedes', () => fixture(async f => {
-  const frontend = await f.turn('task-a', 'frontend', [HARD, SPACING]);
+// A turn handed back from another Agent is complete: a delta or scene switch
+// on this Agent's older frame would leave the other Agent's frame, which
+// replaced the set, between them. Once this Agent's frame is the latest, a
+// switch finds its base by supersedes again.
+test('another Agent in the same native session is not a predecessor; handed back, the frame is complete', () => fixture(async f => {
+  await f.turn('task-a', 'frontend', [HARD, SPACING]);
   const other = compactTaskContext(withPreferenceScope(entry('task-b', 'chat', [HARD, SPACING]),
     { ...authority, project_agent_id: 'other-lead', preference_scope: { version: 1, work_kind: 'chat', workflow: null } }));
   const result = await f.service.deliver(other, origin, format);
@@ -212,12 +216,15 @@ test('another Agent in the same native session is not a predecessor; a later swi
   // The other Agent's frame is recorded between this scope's frames.
   const between = { id: await f.record(result), frame: result.structuredContent };
   const chat = await f.turn('task-c', 'chat', [HARD, SPACING]);
-  assert.equal(chat.frame.preference_delivery.status, 'scene_switch');
-  assert.equal(chat.frame.preference_delivery.supersedes, frontend.frame.revision, 'not the adjacent frame');
-  assert.notEqual(chat.frame.preference_delivery.supersedes, between.frame.revision);
+  assert.equal(chat.frame.preference_delivery, undefined, 'a complete frame, not one built on the older frame');
+  assert.notEqual(chat.frame.revision, between.frame.revision);
+  assert.equal(chat.frame.preferences_of_previous_agent, undefined, 'the other Agent had no preference of its own');
   const views = new Map();
-  for (const step of [frontend, between]) replay(views, step.frame);
+  replay(views, between.frame);
   assert.deepEqual([...replay(views, chat.frame).keys()], ['no-force-push']);
+  const frontend = await f.turn('task-d', 'frontend', [HARD, SPACING]);
+  assert.equal(frontend.frame.preference_delivery.status, 'scene_switch');
+  assert.equal(frontend.frame.preference_delivery.supersedes, chat.frame.revision);
 }));
 
 test('a recorded copy that claims a scene or another revision never verifies as a predecessor', () => fixture(async f => {

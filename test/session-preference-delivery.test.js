@@ -194,6 +194,29 @@ test('a pending item without its scene, or with another scene, confirms nothing'
   }
 });
 
+// Design T3: a pending item's `authorityHash` and `owed` are optional. One
+// written without them (before they existed) is still a base and owes
+// nothing; a malformed one makes the record untrusted, so the next frame is
+// complete: never fewer bodies.
+test('a pending item without authorityHash or owed is still a base; a malformed one is never trusted', async () => {
+  for (const [change, trusted] of [[item => { delete item.authorityHash; delete item.owed; }, true],
+    [item => { item.owed = ['not-a-hash']; }, false], [item => { item.owed = Array(257).fill('0123456789abcdef'); }, false],
+    [item => { item.authorityHash = 'short'; }, false]]) {
+    await fixture(async f => {
+      const first = await f.service.deliver(entry(), origin, format);
+      await f.delivered('native-call-a', first);
+      const [file] = (await readdir(f.options.directory)).filter(path => path.endsWith('.json'));
+      const record = JSON.parse(await readFile(join(f.options.directory, file), 'utf8'));
+      assert.match(record.pending[0].authorityHash, /^[0-9a-f]{64}$/);
+      assert.equal(record.pending[0].owed, undefined, 'a frame that chose afresh owes nothing');
+      change(record.pending[0]);
+      await writeFile(join(f.options.directory, file), JSON.stringify(record));
+      const next = (await f.service.deliver(entry('task-b'), origin, format)).structuredContent;
+      assert.equal(next.preference_delivery?.base_revision, trusted ? first.structuredContent.revision : undefined);
+    });
+  }
+});
+
 // rec#15 D-29.3: a Codex command-hook context is a base only with the harness
 // hook provenance codex/preference-evidence.js checks; an older rollout
 // without it, or a tool result whose visible text differs, stays full.

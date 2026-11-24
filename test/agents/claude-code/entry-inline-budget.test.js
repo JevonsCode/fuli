@@ -284,6 +284,59 @@ test('a preference added at the cap that ranks within it arrives in full as a de
     assert.equal(frame.preference_delivery.unchanged, first.frame.effective_preferences.length);
   }));
 
+// Boundaries rank first, so a new one ranks within any cap.
+const addedBoundaries = count => Array.from({ length: count }, (_, index) => syntheticPreference(`synthetic-new-${index + 1}`,
+  `SYNTHETIC_BOUNDARY_NEW_${index + 1}: ${'Ask before touching shared data and say which data. '.repeat(8)}`, {}, 'judgment_preference'));
+
+// A rich recall gives way to what the person just added: the recall level is
+// chosen so the held set and every new body fit, and one that does not fit
+// even so is still owed, so a later turn spells it out. None waits forever
+// behind the line the first frame left it in the index.
+test('at the cap with a rich recall, five preferences added at once all arrive in full as deltas, none taken back', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, list, recall) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token,
+      recall: recall ? syntheticRecall(6, { length: 700 }) : null, conversation: recall ? syntheticRecovery(4, { length: 600 }) : null });
+    const first = await session.turn(entry('task-1', items, false));
+    const added = addedBoundaries(5);
+    let listed = new Set(keys(first.frame.effective_preferences));
+    const arrived = new Set();
+    for (const token of ['task-2', 'task-3']) {
+      const { text, frame } = await session.turn(entry(token, [...added, ...items], true));
+      assert.ok(text.length <= INLINE_CHARS, `${token}: ${text.length} chars`);
+      assert.equal(frame.preference_delivery.status, 'delta', `${token}: never resent whole`);
+      assert.deepEqual(frame.preference_delivery.removed, [], token);
+      assert.equal(frame.preference_delivery.unchanged, listed.size, `${token}: none taken back`);
+      for (const key of keys(frame.preference_updates)) arrived.add(key);
+      listed = new Set([...listed, ...keys(frame.preference_updates)]);
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+    }
+    assert.deepEqual(keys(added).filter(key => !arrived.has(key)), []);
+  }));
+
+// While the frame before is on its way, a turn adds no body (it would name a
+// base the model may never see), not even a new one. The new one is owed, and
+// the next turn spells it out.
+test('a preference added while the frame before is on its way arrives in full on the next turn', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(60);
+    const entry = (token, list) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token });
+    const first = await session.turn(entry('task-1', items));
+    await session.turn(entry('task-2', items), { record: false });
+    // A scene item of this task's work kind: past the preferences' floor,
+    // which is spelled out every turn, and within the cap.
+    const added = syntheticPreference('synthetic-new-scene', `SYNTHETIC_SCENE_NEW: ${'Name each exported field by its unit. '.repeat(11)}`,
+      { tasteDomain: 'code' }, 'taste');
+    const deferred = await session.turn(entry('task-3', [added, ...items]));
+    assert.equal(deferred.frame.preference_delivery.base_revision, first.frame.revision);
+    assert.deepEqual(deferred.frame.preference_updates, [], 'nothing added while the frame before is on its way');
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const next = await session.turn(entry('task-4', [added, ...items]));
+    assert.equal(next.frame.preference_delivery.status, 'delta');
+    assert.deepEqual(keys(next.frame.preference_updates), [added.preference_key]);
+    assert.deepEqual(next.frame.preference_delivery.removed, []);
+  }));
+
 test('a preference added or changed since the base frame is delivered as a delta where it fits', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
@@ -357,6 +410,40 @@ test('a frame in another scope chooses afresh and names what the old scope had t
     const fresh = hookFrame(await claudeEntry(syntheticLargeEntry({ items: [...scoped('architecture'), ...shared], sessionId: SESSION,
       workKind: 'architecture', recall: syntheticRecall(6, { length: 300 }) })));
     assert.deepEqual(sent, keys(fresh.effective_preferences));
+  }));
+
+// A workstream may hand a turn of the session to another FLA (#1063). That
+// frame is complete and chooses afresh, and it names the previous FLA's own
+// preferences whose bodies are still in the conversation, so the model stops
+// applying them; back and forth, each hand-over names the one before.
+test('a turn handed to another FLA is complete and names the previous FLA\'s own preferences, both ways', () =>
+  claudeEntrySession(async session => {
+    const shared = syntheticPreferences(6);
+    const own = agent => [1, 2].map(index => ({ ...syntheticPreference(`${agent}-own-${index}`,
+      `SYNTHETIC ${agent} rule ${index}: report what was verified.`), preference_scope: 'agent', preference_agent_id: agent }));
+    const turn = async (token, agent) => {
+      const result = await session.turn(syntheticLargeEntry({ items: [...shared, ...own(agent)], sessionId: session.sessionId,
+        token, agent }));
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+      return result.frame;
+    };
+    const names = agent => own(agent).map(item => `${item.preference_key} (agent)`);
+    const first = await turn('task-1', 'lead');
+    assert.equal(first.preferences_of_previous_agent, undefined);
+    const handed = await turn('task-2', 'reviewer');
+    assert.equal(handed.preference_delivery, undefined, 'a complete frame');
+    assert.deepEqual(keys(handed.effective_preferences).sort(), keys([...shared, ...own('reviewer')]).sort());
+    assert.deepEqual(handed.preferences_of_previous_agent, names('lead'));
+    assert.equal(handed.preferences_removed, undefined, 'none was deleted');
+    const again = await turn('task-3', 'reviewer');
+    assert.equal(again.preference_delivery.status, 'delta');
+    assert.equal(again.preferences_of_previous_agent, undefined);
+    const back = await turn('task-4', 'lead');
+    assert.equal(back.preference_delivery, undefined, 'back to the first FLA is complete too');
+    assert.deepEqual(back.preferences_of_previous_agent, names('reviewer'));
+    const settled = await turn('task-5', 'lead');
+    assert.equal(settled.preference_delivery.status, 'delta');
+    assert.equal(settled.preferences_of_previous_agent, undefined);
   }));
 
 // D-69 (revises D-54): past Claude Code's preview a hard rule is not seen

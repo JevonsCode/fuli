@@ -83,6 +83,18 @@ when it has a name: 25 and 30 bytes plus each name quoted (34 and 39 bytes
 for one key like `rule-12`), nothing otherwise
 (`session-preference-delta.test.js`).
 
+A turn may be handed to another FLA within one session (a workstream's owner,
+#1063). The authority differs, so that frame is complete and chooses afresh,
+also when the session goes back to an FLA it had before (A, B, then A again):
+each pending record keeps its `authorityHash`, and where the latest frame was
+another authority's, nothing is held and no delta is built on the older frame
+of this one. The FLA-level preferences the frames since then spelled out are
+still in the conversation, so that frame names each one this FLA does not
+have, by key and layer, in `preferences_of_previous_agent`: they do not apply
+to this FLA. Only when it has a name: 35 bytes plus each name quoted (52 bytes
+for one name like `rule-12 (agent)`), nothing otherwise
+(`entry-inline-budget.test.js`).
+
 Instruction fingerprints use the same mandatory projection as compact entry.
 A single complete `read_task_preferences` result can establish that baseline
 while keeping its additional source metadata. Paginated results, including the
@@ -143,10 +155,22 @@ until the preferences are complete (rec#110 item 6).
    delivers fits, and then the rest are added in rank order while that frame
    (most often a delta, which does not repeat a body the model holds) still
    fits, up to a cap: what a first frame would list beside the leanest
-   context, by rank (what main lists on its lightest turn), plus each
-   preference added since whose rank falls within that: the person just set
-   it, and main would give it a body on the next turn, so it never waits for
-   room in a session already at its cap. One ranked past the cap is only
+   context, by rank (what main lists on its lightest turn), counting only the
+   preferences that were there before, plus each one added since whose rank
+   falls within that (fewer than the cap of the older ones rank above it):
+   the person just set it, and main would give it a body on the next turn, so
+   it never waits for room in a session already at its cap. Missing one the
+   person must follow is worse than sending one more, so the recall gives way
+   to the added ones: the level is the richest where the base's bodies and
+   every added body fit; where none does, the leanest, with the added ones by
+   rank as far as they fit there. "Added" is told against the generation and
+   scope, not the frame before: one that a frame of this scope named only in
+   its index, because it did not fit or because a frame before was still on
+   its way, stays added until a frame spells it out. Each pending record keeps
+   those it owes (`owed`, a 16-hex hash of key and layer each; a record
+   written without the field owes none, since only a FULI that holds a set
+   across frames ever leaves a new one out of a frame it builds on). One
+   ranked past the cap is only
    named, as on main. Hard rules are never counted. A turn with a lighter recall therefore catches up on bodies a
    richer first frame could only name, and none is ever taken back while it
    fits; past the cap nothing more is spelled out, so the bodies of every
@@ -164,7 +188,8 @@ until the preferences are complete (rec#110 item 6).
    line (`key (project) — …`); a keys-only index names the key alone and
    cannot tell two layers apart. While a frame produced earlier is still on
    its way (below), a frame adds nothing: it builds on the recorded base, so a
-   lost frame that added bodies is never named as a base. In another scope
+   lost frame that added bodies is never named as a base; a preference added
+   meanwhile is owed and spelled out by the next turn. In another scope
    (another project or work kind; the snapshot's `scopeHash` differs) the
    frame is complete anyway, so nothing is held: it chooses afresh, as a
    generation's first frame does. Where the hard rules alone, or with an

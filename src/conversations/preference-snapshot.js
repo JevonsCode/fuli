@@ -97,9 +97,10 @@ export function preferenceSnapshot(value) {
 // A complete result as it is, plus the revision a later delta can name.
 // `shown` is null when this session can never confirm the frame, and an empty
 // set (outside a bounded frame) never needs a base: both stay exactly the
-// uncached result.
-export function completePreferenceFrame(value, shown) {
-  return withRevision(value, preferenceSnapshot(value), shown);
+// uncached result. `previous`: what the FLA before spelled out that does not
+// apply here (previousAgentPreferences).
+export function completePreferenceFrame(value, shown, previous = []) {
+  return withPreviousAgent(withRevision(value, preferenceSnapshot(value), shown), previous);
 }
 
 // The complete frame, or a smaller delta or scene switch against `baseline`,
@@ -110,11 +111,13 @@ export function completePreferenceFrame(value, shown) {
 // it then names by the revision that frame showed. `whole`: the snapshot of
 // the whole entry, before an inline budget bounded it to `value`, so a
 // complete frame can tell what is gone from what it only leaves out.
-export function projectPreferenceDelta(value, baseline, shown, provisional = null, whole = null) {
+// `previous`: on a turn handed to another FLA (no baseline then), what the FLA
+// before spelled out that does not apply here (previousAgentPreferences).
+export function projectPreferenceDelta(value, baseline, shown, provisional = null, whole = null, previous = []) {
   const snapshot = preferenceSnapshot(value);
   if (!snapshot) return value;
   const plain = withPreferenceScope({ ...value, effective_preferences: snapshot.preferences }, value[SCOPE]);
-  const full = withRevision(plain, snapshot, shown);
+  const full = withPreviousAgent(withRevision(plain, snapshot, shown), previous);
   const revision = full.revision;
   if (revision && provisional?.snapshotHash === snapshot.snapshotHash && provisional.scopeHash === snapshot.scopeHash) {
     baseline = { ...snapshot, revision, omittedIndex: null };
@@ -256,22 +259,67 @@ function unitId(item) { return canonicalJson(identity(item)); }
 
 // What a session's base frame (preference-session.js) left the model holding,
 // for an inline budget to keep (entry-inline-budget.js): `units`, what it
-// spelled out, `index`, its omission index, or null where it named none, and
-// `grow`, whether this frame may spell out more than that.
+// spelled out, `index`, its omission index, or null where it named none,
+// `owed`, the preferences added in this generation and scope that no frame
+// has spelled out yet (owedPreferences), and `grow`, whether this frame may
+// spell out more than that.
 export function heldPreferences(baseline, { grow = true } = {}) {
-  return { units: baseline.units, index: Array.isArray(baseline.omittedIndex) ? baseline.omittedIndex : null, grow };
+  return { units: baseline.units, index: Array.isArray(baseline.omittedIndex) ? baseline.omittedIndex : null,
+    owed: new Set(baseline.owed ?? []), grow };
 }
 
 // Where a preference of this entry stood in the held base frame: 'listed'
 // (spelled out as it is now), 'changed' (spelled out, changed since), 'indexed'
 // (named in its omission index) or 'new' (never named: added, or now at
-// another layer).
+// another layer). One added in this generation stays 'new' until a frame
+// spells it out, even once an index named it: an index only names what the
+// first frame chose to leave out, and one the person added later is not that.
 export function heldStatus(item, held) {
   const view = JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true }));
   const base = held.units[unitId(view)];
   if (base) return base.hash === unit(view).hash ? 'listed' : 'changed';
+  if (held.owed?.has(owedId(view))) return 'new';
   return held.index?.some(entry => preferenceIndexNames(entry, item)) ? 'indexed' : 'new';
 }
+
+// What a frame bounded beside `held` still owes: each preference new to this
+// generation and scope (heldStatus) that it does not spell out, by a short
+// hash of its key and layer, so a later frame still treats it as new. A frame
+// without `held` chooses afresh and owes nothing. `value` is the whole entry,
+// `delivered` the snapshot of the set the frame spells out.
+export function owedPreferences(value, held, delivered) {
+  if (!held || !Array.isArray(value?.effective_preferences)) return [];
+  return [...new Set(value.effective_preferences.filter(item => heldStatus(item, held) === 'new')
+    .map(item => JSON.parse(canonicalJson(preferenceInstructionView(item), { omitUndefined: true })))
+    .filter(view => !Object.hasOwn(delivered.units, unitId(view))).map(owedId))].sort();
+}
+
+// A turn handed to another FLA (a workstream's owner, #1063) gets a complete
+// frame, but the bodies the FLA before spelled out are still in the
+// conversation. This names, by key and layer, each FLA-level preference of
+// another FLA that `frames` (what the session was given since this FLA's own
+// latest frame) spelled out and the whole entry `value` does not have.
+export function previousAgentPreferences(value, frames) {
+  const agent = value?.[SCOPE]?.project_agent_id;
+  const current = preferenceSnapshot(value);
+  if (!current) return [];
+  const names = frames.flatMap(frame => [...(Array.isArray(frame?.effective_preferences) ? frame.effective_preferences : []),
+    ...(Array.isArray(frame?.preference_updates) ? frame.preference_updates : [])])
+    .filter(item => item?.preference_scope === 'agent' && item.preference_agent_id && item.preference_agent_id !== agent
+      && typeof item.preference_key === 'string' && !Object.hasOwn(current.units, unitId(item)))
+    .map(item => preferenceName(identity(item)));
+  return [...new Set(names)].sort();
+}
+
+// The complete frame of a turn handed to another FLA, naming what the one
+// before spelled out that does not apply here; only where there is any.
+function withPreviousAgent(frame, names) {
+  return names?.length ? copyPreferenceScope(frame, { ...frame, preferences_of_previous_agent: names }) : frame;
+}
+
+function owedId(view) { return contentHash(unitId(view)).slice(0, OWED_HEX); }
+const OWED_HEX = 16;
+export const OWED_ID = /^[0-9a-f]{16}$/;
 
 // The omission index a recorded frame left the model holding: the one it
 // carries, or, for a delta that said index_unchanged, the one its base held.

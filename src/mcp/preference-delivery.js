@@ -23,9 +23,10 @@ const PARTIAL_UNRECOVERABLE = 'Apply them; do not finish the task on them alone.
 const PARTIAL_GUIDANCE = 'effective_preferences lists the hard rules and the preferences most relevant to this task that fit, if any; preferences_omitted counts the rest; its index, where present, names each in one line.';
 const NONE_DELIVERED = 'No complete preferences are delivered here.';
 // preferences_omitted (rec#11 D-54) belongs to the frame: its hash binds what the frame says it left out,
-// as preferences_removed / preferences_out_of_scene bind what a complete frame says no longer applies (preference-snapshot.js).
+// as preferences_removed / preferences_out_of_scene / preferences_of_previous_agent bind what a complete frame says no
+// longer applies (preference-snapshot.js).
 const PREFERENCE_FIELDS = ['effective_preferences', 'preference_updates', 'preference_delivery', 'preferences_omitted',
-  'preferences_removed', 'preferences_out_of_scene', 'revision', 'scope_unknown', 'active_conflicts', 'deferred_conflicts', 'conflicts',
+  'preferences_removed', 'preferences_out_of_scene', 'preferences_of_previous_agent', 'revision', 'scope_unknown', 'active_conflicts', 'deferred_conflicts', 'conflicts',
   'application_guidance', 'task_guidance', 'judgment_context'];
 const REQUIRED_ENTRY_FIELDS = ['taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'agent_receipt'];
 const IDENTITY_FIELDS = ['context', 'project_scope', 'worker_run', 'sessionId', 'session_id',

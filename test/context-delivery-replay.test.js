@@ -6,7 +6,7 @@ import test from 'node:test';
 import { measure } from '../acceptance/context-delivery-replay/run.js';
 import { markdownTable } from '../acceptance/context-delivery-replay/report.js';
 import { FIXTURES } from '../acceptance/context-delivery-replay/fixtures.js';
-import { BOUNDED_VARIANTS } from '../acceptance/context-delivery-replay/scenarios.js';
+import { ADDED_IN_FLIGHT, BOUNDED_VARIANTS } from '../acceptance/context-delivery-replay/scenarios.js';
 import { PROVIDER_RECOVERY_WINDOW, syntheticJournal } from '../test-support/synthetic-context-session.js';
 
 // The exact encoding a complete frame with preferences adds (D-29.10): its
@@ -27,6 +27,7 @@ const STRICTLY_SMALLER = ['acceptance', 'edit_withdraw', 'scene_switch', 'compac
 const result = measure({ variants: ['tiny', 'scaled'] });
 const bounded = measure({ variants: BOUNDED_VARIANTS });
 const variants = async () => (await result).variants;
+const canonical = keys => JSON.stringify([...keys].sort());
 const describe = (variant, scenario, turn, index) => `${variant} ${scenario} turn ${index + 1} (${turn.session} ${turn.note}): `
   + `${turn.preference_delivery}, ${turn.preferences_sent} preferences, ${turn.messages_sent} messages, `
   + `produced ${turn.produced_bytes} B, no cache ${turn.no_cache_bytes} B, revision field ${turn.revision_field_bytes} B`;
@@ -221,7 +222,13 @@ test('the large-set fixture names every preference it leaves out and stays locat
     // Every delivered turn leaves the model what a new session's first frame
     // for that entry would list (no body missing; add_fourth and scene_switch
     // included), and no body beyond it that is gone or stale (design T3).
-    for (const turn of scenario.detail.filter(item => item.correctness && !item.correctness.ok)) {
+    // The one exception: a turn that adds a preference while the frame before
+    // is on its way spells out none (design T3); the next turn owes it.
+    const owed = ({ note, correctness: { missing_preferences: missing, ...rest } }) => scenario.scenario === 'added_in_flight'
+      && note === ADDED_IN_FLIGHT && canonical(missing) === canonical(FIXTURES.many.radius.map(item => item.preference_key))
+      && !rest.base_unlocated && !rest.skeleton_unlocated && [rest.skeleton_mismatch, rest.missing_messages, rest.extra_preferences,
+        rest.withdrawn_present].every(list => list.length === 0);
+    for (const turn of scenario.detail.filter(item => item.correctness && !item.correctness.ok && !owed(item))) {
       const { missing_preferences: missing, extra_preferences: extra } = turn.correctness;
       failures.push(`${scenario.scenario} ${turn.note}: missing ${missing}, extra ${extra}`);
     }
@@ -236,6 +243,13 @@ test('the large-set fixture names every preference it leaves out and stays locat
     }
   }
   assert.deepEqual(failures, []);
+  // After that turn, nothing is missing in either client (the scenario's own
+  // checks say the added body is held; the loop above, that nothing else is).
+  const inFlight = many.scenarios.find(item => item.scenario === 'added_in_flight');
+  assert.deepEqual(inFlight.detail.filter(turn => ['next', 'settled'].includes(turn.note))
+    .map(turn => [turn.session, turn.note, turn.correctness.missing_preferences]),
+  [['H', 'next', []], ['H', 'settled', []], ['C', 'next', []], ['C', 'settled', []]]);
+  assert.deepEqual(inFlight.checks.filter(check => !check.pass), []);
   const indexed = many.scenarios.reduce((total, scenario) => total + scenario.inline.indexed_items, 0);
   assert.ok(indexed > 0, 'the fixture is large enough to exercise the index');
 });
