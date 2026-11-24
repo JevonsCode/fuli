@@ -48,6 +48,14 @@ export function preferenceSceneReplaceable(item) {
     || generalItemReplaceable(qualifiers, item.profile_aspect);
 }
 
+// The case a person or Agent wrote the item applies in (`appliesWhen`, free
+// text), or null. Not one of the structured dimensions above: an entry reads it
+// against the task's own words (preference-conditions.js).
+export function preferenceAppliesWhen(item) {
+  const value = itemQualifiers(item).appliesWhen;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 // What an inline entry budget leaves out last (rec#11 D-54, D-69): a rule a
 // person marked constraint: "hard". A boundary in the scene sense (an
 // unmarked judgment_preference without a scene key, task-scene.js) is only the

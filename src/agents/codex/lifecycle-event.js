@@ -94,7 +94,7 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   const entry = compactTaskContext(context);
   return preferenceHookOutput(entry, event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND,
-    false, { inlineBytes });
+    false, { inlineBytes, request: withoutDebugMark(input.prompt) });
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {

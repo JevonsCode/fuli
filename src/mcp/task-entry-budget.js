@@ -4,6 +4,7 @@
 // own frame (preference-lifecycle.js) and never comes through here.
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { hardRulesOnly, inlineEntryFit, OMITTED_PREFERENCES_LABEL, omittedSentences } from '../conversations/entry-inline-budget.js';
+import { CONDITIONAL_LABEL, unmetConditions } from '../conversations/preference-conditions.js';
 import { entryPreferenceScene } from '../conversations/preference-snapshot.js';
 import { entryRules } from '../conversations/entry-rules.js';
 import { taskPreferenceRead } from './preference-delivery.js';
@@ -48,16 +49,20 @@ export const UNCHANGED_LABEL = 'Preferences unchanged since knownRevision: only 
 // rules is left out: the caller holds them (`unchanged`).
 // `session`: the conversation the revision is bound to, so one named in
 // another session or MCP process never matches.
-export function mcpTaskEntry(view, { knownRevision = null, session = null, projectPath = null, readable = false } = {}) {
+// `request`: the taskPrompt, which habits with a stated case are read against
+// (preference-conditions.js).
+export function mcpTaskEntry(view, { knownRevision = null, session = null, projectPath = null, readable = false,
+  request = null } = {}) {
   if (!readable || !taskPreferenceRead(view) || !Array.isArray(view?.effective_preferences)) return null;
-  const revision = preferencesRevision(view, session);
+  const revision = preferencesRevision(view, session, unmetConditions(view, { request, projectPath })
+    .map(index => view.effective_preferences[index].preference_key));
   const lean = knownRevision === revision ? hardRulesOnly(view) : view;
   const unchanged = lean !== view;
   return {
     value: unchanged ? { ...lean, preferences_omitted: { ...lean.preferences_omitted, unchanged: true, index_unchanged: true } }
       : view,
     unchanged,
-    fit: inlineEntryFit(unchanged ? MCP_UNCHANGED_INLINE_CHARS : MCP_ENTRY_INLINE_CHARS, resultChars, { projectPath }),
+    fit: inlineEntryFit(unchanged ? MCP_UNCHANGED_INLINE_CHARS : MCP_ENTRY_INLINE_CHARS, resultChars, { projectPath, request }),
     // What the answer adds to the frame the fit chose: the revision to name
     // next time, and what it leaves out in words (a hook says it in its label).
     notes: projected => withNotes(unchanged ? pointingBack(projected) : projected, revision)
@@ -73,7 +78,9 @@ function pointingBack(projected) {
 
 function withNotes(projected, revision) {
   const sentences = omittedSentences(projected);
-  const guidance = projected?.preferences_omitted?.unchanged ? [UNCHANGED_LABEL, OMITTED_PREFERENCES_LABEL,
+  const omitted = projected?.preferences_omitted;
+  const guidance = omitted?.unchanged ? [UNCHANGED_LABEL, OMITTED_PREFERENCES_LABEL,
+    ...(omitted.conditional?.length ? [CONDITIONAL_LABEL] : []),
     ...(projected.active_conflicts_omitted ? sentences.slice(-1) : [])] : sentences;
   // next_call: what to pass back, beside the revision, for a model that does not read the tool's description.
   return { ...projected, preferences_revision: revision, next_call: `knownRevision=${revision}`,
@@ -83,10 +90,12 @@ function withNotes(projected, revision) {
 // Everything a later answer would repeat if it changed: the preferences and
 // conflicts as compacted, the project, Agent, session and task scene (work
 // kind, workflow: they rank the preferences, as a hook frame's scopeHash
-// holds them), and the entry rules they are read by.
-function preferencesRevision(view, session) {
+// holds them), the entry rules they are read by, and the habits whose stated
+// case this task is not (`unmet`, keys): a task that becomes one of those
+// cases gets their bodies, never "unchanged".
+function preferencesRevision(view, session, unmet) {
   const context = view.context ?? {};
-  return contentHash(JSON.parse(JSON.stringify({ rules: entryRules().version, session,
+  return contentHash(JSON.parse(JSON.stringify({ rules: entryRules().version, session, ...(unmet.length ? { unmet } : {}),
     scope: [context.personal_space_id ?? null, context.personal_project_id ?? null, context.project_agent_id ?? null],
     scene: entryPreferenceScene(view),
     preferences: view.effective_preferences, active: view.active_conflicts ?? [], deferred: view.deferred_conflicts ?? [] })))
