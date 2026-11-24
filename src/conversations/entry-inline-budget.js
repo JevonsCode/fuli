@@ -5,6 +5,7 @@ import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
 import { basename } from 'node:path';
 import { generatedPreferenceKey, preferenceIndex, statedScopeMeetsProject } from './preference-index.js';
 import { withDeliveredHabits } from './entry-habits-line.js';
+import { HARD_RULE_ROOM_STEPS, present, withContinuity } from './entry-hard-rule-room.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
 const INLINE_BUDGET = 'inline_budget';
@@ -25,6 +26,11 @@ export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferenc
   + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
   + 'they stay in force.';
 
+// Added when a hard rule does not fit this host's entry even on its own
+// (preferences_omitted.too_large): no later frame will spell it out either.
+export const TOO_LARGE_LABEL = 'preferences_omitted.too_large names hard rules too long for this entry: read them by key '
+  + 'with read_task_preferences before acting; they stay in force.';
+
 // Instead of the sentences above when the task's reader cannot serve them
 // (no read named, rec#128): nothing points at a read that would be refused.
 export const OMITTED_UNREADABLE_LABEL = 'More preferences or conflicts apply than this entry lists (preferences_omitted, '
@@ -44,7 +50,8 @@ export function omittedSentences(projected) {
   if (!(omitted ?? conflicts).read) return [OMITTED_UNREADABLE_LABEL];
   return [...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
     ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
-    ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])];
+    ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []),
+    ...(omitted?.too_large?.length ? [TOO_LARGE_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])];
 }
 
 // The entry with only its hard rules spelled out and the rest counted with
@@ -161,7 +168,8 @@ function boundedFit(limit, length, projectPath, withFloor, measure) {
     const bounded = [...levels, ...steps.map((_, index) => reducedDetails(leanest, steps.slice(0, index + 1)))];
     // Past this point a frame without a floor says so (NOT_HELD).
     let mark = candidate => candidate;
-    const fitsAt = (level, selected, index) => fits(complete(mark(withPreferences(level, selected, preferences.length, index))));
+    const fitsAt = (level, selected, index, tooLarge = []) => fits(complete(mark(withPreferences(level, selected,
+      preferences.length, index, tooLarge))));
     // Step 1 and 2 above: the preferences' floor, the recall and the
     // conversation, then more preferences while they fit (never fewer than held).
     const floor = withFloor ? preferenceFloor(value, kept, ranked, limit, tiers, measure) : null;
@@ -205,17 +213,27 @@ function boundedFit(limit, length, projectPath, withFloor, measure) {
     // - they do not all fit: `order` is the hard rules themselves, so their
     //   prefix is settled without any index first, and an index tier is taken
     //   only in the room that prefix leaves.
-    let indexed, low;
+    // - where they do not all fit, each is tried in rank order and one that
+    //   does not fit is passed over, not the end of the list: a long hard rule
+    //   never keeps the shorter ones after it out (#1102 review). One that does
+    //   not fit even alone is named as too large.
+    let indexed, low, picked, tooLarge = [];
     if (base) {
       const reserved = Math.min(RESERVED_RANKED, order.length);
       indexed = indexDetail(detail => fitsAt(level, selection(reserved), detail), tiers);
       low = largestPrefix(indexed);
+      picked = selection(low);
     } else {
-      low = largestPrefix(false);
-      indexed = indexDetail(detail => fitsAt(level, selection(low), detail), tiers);
+      tooLarge = order.filter(index => kept.includes(index) && !fitsAt(level, new Set([index]), false));
+      picked = new Set();
+      for (const index of order) {
+        if (!tooLarge.includes(index) && fitsAt(level, new Set([...picked, index]), false, tooLarge)) picked.add(index);
+      }
+      low = picked.size;
+      indexed = indexDetail(detail => fitsAt(level, picked, detail, tooLarge), tiers);
     }
     const frame = candidate => mark(low === order.length ? candidate
-      : withPreferences(candidate, selection(low), preferences.length, indexed));
+      : withPreferences(candidate, picked, preferences.length, indexed, tooLarge));
     const attempt = bestLevel(richer, levels.length, steps, leanest, candidate => deliver(frame(candidate)), fits);
     if (attempt) return attempt;
     // Not even the leanest entry fits beside the hard rules (a long role,
@@ -318,28 +336,35 @@ const NOT_HELD = Object.freeze({ preferences_not_held: 'hard rules fill half the
 // details come back as they fit, as for any frame. Whether a body
 // was given is the base's own record, so a frame that was not confirmed has
 // given nothing. A complete frame of the same set may not fit: a hard rule's
-// body is worth more than that cap (#1102 review). Null where the base
-// spelled out none, or where even the given ones no longer fit.
+// body is worth more than that cap (#1102 review). Null where nothing is
+// owed that fits and the base gave none, or where even the given ones no
+// longer fit: the search below decides.
 function owedHardRules({ preferences, kept, held, bounded, levels, steps, leanest, deliver, fits, mark, tiers }) {
   const given = kept.filter(index => heldStatus(preferences[index], held) === 'listed');
   const owed = kept.filter(index => !given.includes(index));
-  if (!given.length) return null;
-  const build = (count, index) => candidate => mark(withPreferences(candidate,
-    new Set([...given, ...owed.slice(0, count)]), preferences.length, index));
   const lean = bounded.at(-1);
-  const count = largestCount(0, owed.length, middle => fits(deliver(build(middle, false)(lean))));
-  if (owed.length) {
+  const build = (added, index, tooLarge) => candidate => mark(withPreferences(candidate,
+    new Set([...given, ...added]), preferences.length, index, tooLarge));
+  // Each owed rule in rank order: added while the frame still fits, passed
+  // over where it does not, and named too large (no longer owed) where it does
+  // not fit even with nothing else added.
+  const tooLarge = owed.filter(index => !fits(deliver(build([index], false, [])(lean))));
+  const added = [];
+  for (const index of owed) {
+    if (!tooLarge.includes(index) && fits(deliver(build([...added, index], false, tooLarge)(lean)))) added.push(index);
+  }
+  if (added.length) {
     let named = null;
     indexDetail(detail => {
-      const attempt = deliver(build(count, detail)(lean));
+      const attempt = deliver(build(added, detail, tooLarge)(lean));
       if (!fits(attempt)) return false;
       named = attempt;
       return true;
     }, tiers);
-    const attempt = named ?? deliver(build(count, false)(lean));
-    return fits(attempt) ? attempt : null;
+    return named ?? deliver(build(added, false, tooLarge)(lean));
   }
-  return bestLevel(bounded, levels.length, steps, leanest, candidate => deliver(build(count, false)(candidate)), fits);
+  return given.length ? bestLevel(bounded, levels.length, steps, leanest, candidate => deliver(build([], false, tooLarge)(candidate)), fits)
+    : null;
 }
 
 // The largest count in [low, high] that `accepts`, given that `low` does.
@@ -564,15 +589,16 @@ function withoutPreferenceIds(value) {
     effective_preferences: value.effective_preferences.map(({ id: _id, item_kind: _kind, ...item }) => item) });
 }
 
-function withPreferences(level, selected, total, indexed) {
+// `tooLarge`: hard rules left out because none fits this host's entry on its own.
+function withPreferences(level, selected, total, indexed, tooLarge = []) {
   return copyPreferenceScope(level, withDeliveredHabits({ ...withoutCompleteClaims(level),
-    ...selectedPreferences(level, selected, total, indexed) }));
+    ...selectedPreferences(level, selected, total, indexed, tooLarge) }));
 }
 
 // The listed subset and what it leaves out: its count, its one-line index when
 // that fits (preference-index.js, rec#137), and the read that expands it, named
 // only where the reader can serve it (taskPreferenceRead, rec#128).
-function selectedPreferences(value, selected, total, indexed = false) {
+function selectedPreferences(value, selected, total, indexed = false, tooLarge = []) {
   const read = taskPreferenceRead(value);
   const index = indexed ? preferenceIndex(value.effective_preferences, selected, indexed) : [];
   return { effective_preferences: value.effective_preferences.filter((_, index) => selected.has(index)),
@@ -580,6 +606,7 @@ function selectedPreferences(value, selected, total, indexed = false) {
       ...(value.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
         ? { includes_always_inline: true } : {}),
       ...(index.length ? { index } : {}),
+      ...(tooLarge.length ? { too_large: tooLarge.map(index => value.effective_preferences[index].preference_key) } : {}),
       ...(read ? { read } : {}) } };
 }
 
@@ -615,8 +642,6 @@ function reducedDetails(leanest, steps) {
   return copyPreferenceScope(leanest, steps.reduce((value, step) => step(value) ?? value, leanest));
 }
 
-const withContinuity = (value, field, view) => ({ ...value, project_agent_context: { ...value.project_agent_context, [field]: view } });
-const present = values => Object.fromEntries(Object.entries(values).filter(([, item]) => item !== undefined));
 
 // Each step returns the entry with one detail reduced to what it counts and
 // the call that reads it, or null when there is nothing to reduce. The role is
@@ -652,46 +677,9 @@ const DETAIL_STEPS = [
     return conflicts?.length ? { ...withoutCompleteClaims(value),
       active_conflicts_omitted: { count: conflicts.length, ...(read ? { read } : {}) } } : null;
   },
-  // Where the hard rules still do not fit, the pointers above give way to
-  // them too, down to what a later call needs: each keeps its read, which
-  // returns what is left out (and the rules by their fuli://rules section).
-  // Each makes its pointer from the detail as it is, reduced or not, so any
-  // subset still applies on its own. An entry whose hard rules fit never
-  // gets this far.
-  value => value.project_agent_context?.global_memory ? withContinuity(value, 'global_memory',
-    leanMemoryPointer(value.project_agent_context.global_memory, memoryRead(value, null))) : null,
-  value => value.project_agent_context?.memory ? withContinuity(value, 'memory',
-    leanMemoryPointer(value.project_agent_context.memory, memoryRead(value, value.context?.personal_project_id ?? null))) : null,
-  value => {
-    const recall = value.task_knowledge_recall;
-    if (!recall?.facts?.length && !recall?.entities?.length && !recall?.knowledge_index && !recall?.items_omitted) return null;
-    const { status, items_omitted: count, read } = recall.read ? recall : recallPointer(recall);
-    return { ...value, task_knowledge_recall: { status, items_omitted: count, read } };
-  },
-  // The recent conversation, whose messages have already given way: its ID
-  // and revision, and the call that resumes it.
-  value => {
-    const conversation = value.conversation;
-    if (!conversation?.conversation_id || !conversation.recovery || typeof value.taskContextToken !== 'string') return null;
-    return { ...value, conversation: present({ status: conversation.status, conversation_id: conversation.conversation_id,
-      revision: conversation.revision, read: { tool: 'resume_agent_conversation',
-        arguments: { taskContextToken: value.taskContextToken, conversationId: conversation.conversation_id } } }) };
-  },
-  value => {
-    const managers = value.project_management_context?.managers;
-    return managers?.length ? { ...value, project_management_context: { ...value.project_management_context,
-      managers: managers.map(manager => present({ agent_id: manager.agent_id, name: manager.name,
-        guidance: manager.guidance?.rules ? { rules: manager.guidance.rules } : undefined, read: managerRead(manager) })) } }
-      : null;
-  }
+  // Where the hard rules still do not fit (entry-hard-rule-room.js).
+  ...HARD_RULE_ROOM_STEPS
 ];
-
-// A layer at its least: its revision (a checkpoint names the one it read),
-// that it must be read in full before it is written, and that read.
-function leanMemoryPointer(memory, read) {
-  return present({ revision: memory.revision, view: 'omitted', requiresFullReadBeforeWrite: memory.requiresFullReadBeforeWrite,
-    read });
-}
 
 // A layer's preview without its notes: its scope, revision and rules stay,
 // so a checkpoint still names the revision it read (task-context-view.js).

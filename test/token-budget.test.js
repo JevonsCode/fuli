@@ -455,7 +455,9 @@ const BASELINE = Object.freeze({
   // first frame could not spell out are owed and come first on the next turn, with the details
   // still pointers: 8,665 -> 5,646 bytes, all 8 given; memory comes back the turn after (8,887).
   codexWorkingEntryBytes: 8964,
-  codexWorkingNextTurnBytes: 5646,
+  // #1102 review: a manager keeps its one trigger sentence and rules version inline (#407) when the
+  // details give way for hard rules: 5,646 -> 5,756 bytes.
+  codexWorkingNextTurnBytes: 5756,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
   // new (small talk, a duplicate, a usage-only weight change) adds nothing at all; a turn that

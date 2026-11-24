@@ -42,6 +42,15 @@ function sentExactly(turn, texts) {
   return wanted.length > 0 && turn.sentMessages.length === wanted.length && wanted.every(text => turn.sentMessages.includes(text));
 }
 const sentWholeWindow = turn => sentExactly(turn, turn.windowMessages);
+// Every one of `texts` the uncached entry holds was sent, and nothing but
+// `texts`. Where the host bounds its entry (Codex, Claude Code), the uncached
+// entry may itself drop the oldest messages to fit, while a delta has room to
+// resend one more of the lost ones: that is still the lost messages resent.
+function sentLost(turn, texts) {
+  const of = shown => texts.some(text => text === shown || (shown.endsWith('…') && text.startsWith(shown.slice(0, -1))));
+  const wanted = turn.windowMessages.filter(of);
+  return wanted.length > 0 && wanted.every(text => turn.sentMessages.includes(text)) && turn.sentMessages.every(of);
+}
 
 // C (Codex) opens the conversation; H (Claude Code) joins it by the pointer
 // and an explicit resume.
@@ -132,7 +141,7 @@ export const SCENARIOS = {
     await c.turn(WORK, { record: false, note: 'C output lost again' });
     await c.turn(WORK, { preview: true, note: 'C recorded as preview only' });
     const resent = await c.turn(WORK, { note: 'C resend, recorded' });
-    world.check('failure: the lost messages are resent', sentExactly(resent, fromH));
+    world.check('failure: the lost messages are resent', sentLost(resent, fromH));
     await c.turn(WORK, { note: 'C settled' });
     const fromC = await talk(c, world, 'fromC');
     await h.turn(WORK, { record: false, note: 'H output lost' });

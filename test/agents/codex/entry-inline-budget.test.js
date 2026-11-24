@@ -4,7 +4,10 @@
 // entries, transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CODEX_ENTRY_INLINE_BYTES, codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
+import { CODEX_ENTRY_INLINE_BYTES, codexEntryBytes, codexLifecycleOutput } from '../../../src/agents/codex/lifecycle-event.js';
+import { lastHookContextCut } from '../../../src/agents/codex/context-cut.js';
+import { withOutdatedMcpNotice } from '../../../src/mcp/process-registry.js';
+import { DEBUG_MARK_NOTICE, withDebugMarkNotice } from '../../../src/debug-turns/trigger.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
@@ -163,4 +166,57 @@ test('a frame that was not recorded gave nothing: the next one still pays the ow
     hardGiven(given, first.frame);
     assert.equal(hardGiven(given, third.frame), 8);
     assert.equal(memoryShown(third.frame), false);
+  }));
+
+// The whole context Codex is given, with everything the hook appends after
+// the entry (an outdated-MCP notice, the #fulidebug line), stays under the
+// 9,253 bytes Codex was seen to keep whole.
+const SEEN_WHOLE_BYTES = 9253;
+const LONG_NOTICE = '3 open codex session(s) still have a FULI MCP connection on FULI 0.27.1, 0.27.2, 0.28.0, older than the '
+  + 'installed 0.29.0, which may not read this taskContextToken. If this session is one and a FULI call with it fails, ask the '
+  + 'person to restart this session\'s FULI MCP connection or open a new session, and meanwhile call get_collaboration_preferences '
+  + 'for a token that connection can read. / 有 3 个打开的会话的 FULI MCP 连接还是 0.27.1、0.27.2、0.28.0，早于已安装的 0.29.0，'
+  + '可能读不了本轮 token；如果本会话是其中之一，带它的 FULI 调用失败时，请用户重连本会话的 FULI MCP 或新开会话，'
+  + '在此之前先调 get_collaboration_preferences 换一个它能读的 token。';
+const DEBUG_PROMPT = '#fulidebug fix the export bug';
+const delivered = output => withDebugMarkNotice(withOutdatedMcpNotice(output, LONG_NOTICE), DEBUG_PROMPT)
+  .hookSpecificOutput.additionalContext;
+
+test('every Codex context with the longest appended notices stays under what Codex keeps whole', () =>
+  codexEntrySession(async session => {
+    assert.ok(bytes(LONG_NOTICE) > 600, `${bytes(LONG_NOTICE)} bytes of notice`);
+    const inlineBytes = codexEntryBytes(LONG_NOTICE, DEBUG_PROMPT);
+    assert.ok(inlineBytes < CODEX_ENTRY_INLINE_BYTES);
+    const items = realScalePreferences();
+    const entry = token => syntheticWorkingEntry({ items, sessionId: session.sessionId, token, sourceApplication: 'codex' });
+    const contexts = {};
+    contexts.full = delivered((await session.turn(await entry('task-1'), { inlineBytes })).output);
+    contexts.delta = delivered((await session.turn(await entry('task-2'), { inlineBytes })).output);
+    const task = async sessionId => ({ token: 'task-2', sessionId, sourceApplication: 'codex', checkpoint: {} });
+    const read = async (_name, parameters) => {
+      const value = await syntheticWorkingEntry({ items, sessionId: session.sessionId, token: parameters.taskContextToken,
+        sourceApplication: 'codex' });
+      return copyPreferenceScope(value, { ...value, preference_delivery: { status: 'complete' }, preferences_complete: true,
+        same_task_recovery_available: true, truncated: false });
+    };
+    contexts.hostLine = delivered(await codexLifecycleOutput('UserPromptSubmit', { ...session.input, isMeta: true }, read,
+      { delivery: session.delivery, currentTask: task, inlineBytes }));
+    // A compaction restore has nothing appended after it.
+    contexts.restore = (await codexLifecycleOutput('SessionStart', { session_id: session.sessionId, source: 'compact',
+      transcript_path: session.input.transcript_path }, read, { currentTask: task })).hookSpecificOutput.additionalContext;
+    for (const [kind, text] of Object.entries(contexts)) {
+      assert.ok(bytes(text) <= SEEN_WHOLE_BYTES, `${kind}: ${bytes(text)} bytes`);
+    }
+    assert.ok(contexts.full.endsWith(DEBUG_MARK_NOTICE) && contexts.full.includes(LONG_NOTICE));
+  }));
+
+test('a rollout whose last FULI context Codex cut is told apart from one it kept whole', () =>
+  codexEntrySession(async session => {
+    assert.equal(await lastHookContextCut(session.input.transcript_path), false, 'nothing recorded yet');
+    await session.turn(syntheticLargeEntry({ items: realScalePreferences().slice(0, 3), sessionId: session.sessionId,
+      conflicts: false, sourceApplication: 'codex' }));
+    assert.equal(await lastHookContextCut(session.input.transcript_path), false);
+    await session.host.inject(`Warning: truncated output (original token count: 2600)\n\nFuli task context…650 tokens truncated…}`);
+    assert.equal(await lastHookContextCut(session.input.transcript_path), true);
+    assert.equal(await lastHookContextCut('/synthetic/missing.jsonl'), false);
   }));

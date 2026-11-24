@@ -440,8 +440,15 @@ confirmed and every turn resent it whole.
 The Codex adapter now passes `inlineBytes` = `CODEX_ENTRY_INLINE_BYTES` =
 9,000 (`src/agents/codex/lifecycle-event.js`) to the same fit, for the task
 entry, the SessionStart restore and a host turn's refresh, as Claude Code
-passes `inlineChars`; the rest of the 10,000 is room for the notices appended
-after it. The fit measures the hook context, and the preferences' floor, in
+passes `inlineChars`. The whole context, with the notices the hook appends
+after the entry (an outdated-MCP notice, the `#fulidebug` line), is kept under
+`CODEX_CONTEXT_BYTES` = 9,200, below the 9,253 seen kept whole: a turn with
+notices gives the entry 9,200 less what they take (`codexEntryBytes`). These
+limits come from one computer's rollouts; another model or Codex
+configuration may keep less. When the hook finds that Codex cut the last FULI
+context it recorded anyway (its `Warning: truncated output` line,
+`codex/context-cut.js`), it logs `host_context_cut` in the diagnostics log
+and bounds that turn's entry to 70% of its limit. The fit measures the hook context, and the preferences' floor, in
 the host's unit (`inlineEntryFit`'s `measure`); a Chinese character is three
 bytes. Its frames now fit what Codex keeps, are confirmed from the rollout's
 hook record, and later turns are deltas. The read call is the same as Claude
@@ -453,7 +460,7 @@ rules do not all fit even with every detail reduced, the fit goes further
 before it leaves one out: the memory layers keep only their revision, the
 write rule and their read, the recall its count and search, the recent
 conversation its ID, revision and `resume_agent_conversation` read, a
-manager its name, rules and read (each a pointer with `view: "omitted"` or a
+manager its name, trigger sentence, rules and read (each a pointer with `view: "omitted"` or a
 `read`). Entries whose hard rules fit are unchanged. The real-scale working
 entry above then lists 5 of its 8 hard rules (8,964 bytes; 4 before); all 8
 would need 10,514 bytes. The rest of the frame is the label (about 1,000
@@ -466,9 +473,14 @@ it would not fit. It says the rest are among those left out
 ### Owed hard rules
 
 Where a session's complete frame cannot hold every hard rule (the fit's
-search finds no level for them all), the hard rules its confirmed base frame
-did not spell out are owed. Each later frame gives them first, in rank order,
-while the frame the session actually gets stays within the host's limit; the
+search finds no level for them all), the first frame tries them one by one in
+rank order and passes over one that does not fit, so a long one never keeps
+the shorter ones after it out. One that does not fit even alone is named in
+`preferences_omitted.too_large`, with a sentence to read it by key before
+acting. The hard rules its confirmed base frame did not spell out are owed.
+Each later frame gives them first, one by one in rank order, while the frame
+the session actually gets stays within the host's limit (one too large even
+then is named, not owed); the
 hard rules the base did give stay listed (a delta repeats none of them).
 Until every hard rule has been given, the reduced details (memory, recall,
 conversation, managers) stay pointers with their reads, in the frame that
@@ -483,7 +495,7 @@ complete frame holds (a delta of them may list more than any complete frame
 could): leaving a hard rule out costs more than a few thousand characters.
 Every frame still fits the limit, and the other preferences keep the cap.
 On the real-scale working entry above, the second turn gives the 3 owed hard
-rules in 5,646 bytes (8 of 8 given), the third brings the memory previews
+rules in 5,756 bytes (8 of 8 given), the third brings the memory previews
 back (8,887), the fourth the recall (4,456).
 
 A preference's `preference_qualifiers.instruction` that repeats its body (up

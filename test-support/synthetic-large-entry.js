@@ -379,12 +379,14 @@ export async function codexEntrySession(fn, { prompt = 'fix the export bug' } = 
     const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
       locate: async () => ({ path: host.path, adapter: codexPreferenceEvidence }) });
     const input = { session_id: sessionId, turn_id: 'synthetic-turn', transcript_path: host.path, cwd: directory, prompt };
-    const turn = async (entry, { record = true } = {}) => {
-      const output = await codexLifecycleOutput('UserPromptSubmit', input, async () => entry, { delivery });
+    // `inlineBytes`: the entry's limit on this turn, as the runner gives it (codexEntryBytes).
+    const turn = async (entry, { record = true, inlineBytes } = {}) => {
+      const output = await codexLifecycleOutput('UserPromptSubmit', input, async () => entry,
+        { delivery, ...(inlineBytes ? { inlineBytes } : {}) });
       const text = output.hookSpecificOutput.additionalContext;
       if (record) await host.inject(codexRecorded(text));
       await host.say('assistant', 'SYNTHETIC reply.');
-      return { text, frame: hookFrame(text) };
+      return { text, frame: hookFrame(text), output };
     };
     return await fn({ sessionId, host, delivery, turn, input });
   } finally { await rm(directory, { recursive: true, force: true }); }

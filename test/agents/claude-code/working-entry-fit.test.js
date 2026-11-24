@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../../../src/mcp/preference-delivery.js';
-import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL }
+import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL, TOO_LARGE_LABEL }
   from '../../../src/conversations/entry-inline-budget.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
@@ -107,8 +107,11 @@ test('a frame that leaves every preference out still carries its revision, count
     const first = await session.turn(await entry('task-1'));
     assert.ok(first.text.length <= INLINE_CHARS, `${first.text.length} chars`);
     assert.deepEqual(first.frame.effective_preferences, []);
+    // Each of the two hard rules is too long for the entry even alone: since #1102 the frame names
+    // them (too_large) and its label says to read them, rather than only counting them.
     assert.deepEqual(omittedShape(first.frame.preferences_omitted), { count: 7, includes_always_inline: true,
-      read: omittedRead('task-1') });
+      too_large: ['hard-1', 'hard-2'], read: omittedRead('task-1') });
+    assert.ok(first.text.includes(TOO_LARGE_LABEL));
     // A frame that lists none of them still names every one (rec#137).
     assert.equal(first.frame.preferences_omitted.index.length, 7);
     assert.match(first.frame.revision, /^[0-9a-f]{12}$/);
