@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { useAgentGrowth, waitingCount } from './agent-growth'
 import type { Waiting } from './fla-now'
@@ -36,11 +37,11 @@ const growthCount = computed(() => waitingCount(growth.value?.items ?? []))
       <RouterLink class="attention-item" :to="{ query: { task: others.taskId } }" data-attention="tasks">{{ taskText }}</RouterLink>
     </li>
     <li v-if="kitText">
-      <button type="button" class="attention-item" data-attention="kit" @click="emit('reveal', 'fla-kit')">{{ kitText }}</button>
+      <Button variant="link" class="attention-item" data-attention="kit" @click="emit('reveal', 'fla-kit')">{{ kitText }}</Button>
     </li>
     <li v-if="growthCount">
-      <button type="button" class="attention-item" data-attention="growth" @click="emit('reveal', 'fla-growth')">
-        {{ t('flaPage.attention.growth', { count: growthCount }) }}</button>
+      <Button variant="link" class="attention-item" data-attention="growth" @click="emit('reveal', 'fla-growth')">
+        {{ t('flaPage.attention.growth', { count: growthCount }) }}</Button>
     </li>
   </ul>
 </template>
@@ -48,9 +49,11 @@ const growthCount = computed(() => waitingCount(growth.value?.items ?? []))
 <style scoped>
 /* Short lines, not a card: each a warning dot and words that go where it is answered. */
 .attention { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0; padding: 0; list-style: none; }
+/* The two that open a section below are design-system Buttons drawn as these same lines. */
 .attention-item {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 24px; padding: 0; border: 0; color: var(--color-ink-soft);
-  background: none; font: inherit; font-size: var(--text-control); text-align: left; text-decoration: none; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 24px; padding: 0; border: 0;
+  border-radius: 0; color: var(--color-ink-soft); background: none; font: inherit; font-size: var(--text-control); letter-spacing: normal;
+  text-align: left; text-decoration: none; white-space: normal; cursor: pointer; user-select: none;
 }
 .attention-item::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); }
 .attention-item:hover { color: var(--color-ink); text-decoration: underline; text-underline-offset: 3px; }

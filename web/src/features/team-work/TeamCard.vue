@@ -197,11 +197,11 @@ const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.s
 .team-shares { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .team-share { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--radius-control); }
 .team-share + .team-share { box-shadow: 0 -1px 0 var(--color-border); }
-/* The viewer's share is not a card inside the card: same surface, its name a little stronger. */
-.team-share.is-self .team-share-name { font-weight: var(--weight-strong); }
 .team-share-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .team-share-name { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); text-decoration: none; -webkit-user-select: none; user-select: none; }
 .team-share-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* The viewer's share is not a card inside the card: same surface, its name a little stronger. */
+.team-share.is-self .team-share-name { font-weight: var(--weight-strong); }
 .team-share-role { color: var(--color-muted); font-size: var(--text-meta); }
 .team-share-state { margin-left: auto; }
 /* Two lines at most; the whole assignment is on hover (docs/fla-page.md). */

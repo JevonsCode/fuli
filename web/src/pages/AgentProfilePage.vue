@@ -8,6 +8,8 @@ import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-colo
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onMounted, ref, watch, type Component } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
+import { shapeOf } from "@/api/response-shape";
+import { z } from "zod";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
 import Breadcrumb from "@/components/Breadcrumb.vue";
@@ -60,6 +62,9 @@ import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/feature
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 import { usePageRefresh } from "@/layouts/page-refresh";
 import { pickerOrder, hasTemporaryOrigin, projectDisplayName } from '@/features/projects/project-origin'
+
+// The one task a built-in role's roster names: an object, normalized like a list item.
+const NAMED_TASK = shapeOf(z.looseObject({}));
 
 // The Workbench and the management sections load only when they are shown (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
@@ -259,7 +264,7 @@ async function readDetails(options: { keep?: boolean } = {}) {
   const reported = typeof person.workStatus === "string";
   const named = builtIn && reported ? person.currentTaskId ?? null : null;
   const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [
-    named ? getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(named)}?${new URLSearchParams({ personalSpaceId: person.personalSpaceId })}`)
+    named ? getJson(`/api/project-agent-tasks/${encodeURIComponent(named)}?${new URLSearchParams({ personalSpaceId: person.personalSpaceId })}`, NAMED_TASK)
       .then(task => [task]) : Promise.resolve([]),
     Promise.resolve([]),
   ] : [
