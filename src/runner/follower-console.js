@@ -7,7 +7,8 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { listenServer } from '../server/listen.js';
 import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
-import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, SYNC_PATH } from './follower-page.js';
+import { localRuntimeLine, prepareInBackground, readLocalRuntime } from './follower-local-runtime.js';
+import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
 import { followerLine, followerStatus } from './follower-status.js';
 import { deliverOutbox } from './outbox-delivery.js';
 import { RUNNER_PATHS, SAME_ORIGIN_HEADER } from './protocol.js';
@@ -48,8 +49,17 @@ const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-connection', 'te
 const INJECT_LIMIT = 4 * 1024 * 1024;
 
 
+// Which computer answers a path of this console: `local` (this computer's own
+// page and state) or `host` (carried over the pairing). The one place that
+// decides it; step 3c adds the pages and API of the scopes this computer owns,
+// decided by scope here as well.
+const OWN_PATHS = new Set([STATUS_PATH, BAND_PATH, SYNC_PATH, ADDRESS_PATH, PREPARE_PATH, LOCAL_PATH, `${LOCAL_PATH}/`]);
+export function whoAnswers(pathname) {
+  return OWN_PATHS.has(pathname) ? 'local' : 'host';
+}
+
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  createServer = createHttpServer, deliver = deliverOutbox }) {
+  createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
@@ -88,21 +98,7 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     }
     if (clients && await localSource(response, () =>
       handleClientConnectionRequest({ request, response, url, system: clients }))) return;
-    if (url.pathname === STATUS_PATH) {
-      const state = await status();
-      local(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
-        ...state, line: followerLine(state) });
-      return;
-    }
-    if (url.pathname === BAND_PATH) {
-      response.setHeader(SOURCE_HEADER, 'local');
-      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
-      response.end(BAND_SOURCE);
-      return;
-    }
-    if (url.pathname === SYNC_PATH) return void await syncNow(request, response, sameOrigin);
-    if (url.pathname === ADDRESS_PATH) return void await addHostAddress(request, response, sameOrigin);
-    if (url.pathname === LOCAL_PATH || url.pathname === `${LOCAL_PATH}/`) return void await page(response);
+    if (whoAnswers(url.pathname) === 'local') return void await own(request, response, url, sameOrigin);
     const host = store.host();
     const named = url.pathname.startsWith(REMOTE_PREFIX) ? namedHost(url.pathname, host) : null;
     if (named?.error) {
@@ -122,6 +118,43 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     const reached = host && !host.revokedAt ? await connection.connect() : null;
     if (!reached) return void await away(request, response, host, path);
     await relay(request, response, reached, path, host);
+  }
+
+  // This computer's own paths (whoAnswers): answered here, never by the host.
+  async function own(request, response, url, sameOrigin) {
+    if (url.pathname === STATUS_PATH) {
+      const state = await status();
+      local(response, 200, { kind: 'fuli-runner-console', pid, dataDir, version: FULI_VERSION,
+        ...state, line: followerLine(state) });
+      return;
+    }
+    if (url.pathname === BAND_PATH) {
+      response.setHeader(SOURCE_HEADER, 'local');
+      response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      response.end(BAND_SOURCE);
+      return;
+    }
+    if (url.pathname === SYNC_PATH) return void await syncNow(request, response, sameOrigin);
+    if (url.pathname === ADDRESS_PATH) return void await addHostAddress(request, response, sameOrigin);
+    if (url.pathname === PREPARE_PATH) return void prepareAgain(request, response, sameOrigin);
+    await page(response);
+  }
+
+  // 「重新准备」: this computer's own runtime, prepared again in the background
+  // (follower-local-runtime.js); answered at once with where it stands.
+  function prepareAgain(request, response, sameOrigin) {
+    if (request.method !== 'POST' || !sameOrigin) {
+      local(response, 405, { error: 'post_from_this_console' });
+      return;
+    }
+    let started = false;
+    try { started = prepare({ dataDir }); } catch (error) {
+      local(response, 500, { error: 'prepare_not_started', message: '没能开始准备本机运行时：'
+        + `${String(error?.message ?? error).slice(0, 200)}。请再按一次「重新准备」。 / The preparation could not be started; press Prepare again.` });
+      return;
+    }
+    const localRuntime = started ? { state: 'preparing', since: new Date().toISOString() } : readLocalRuntime(dataDir);
+    local(response, 202, { started, localRuntime, runtimeLine: localRuntimeLine(localRuntime) });
   }
 
   // The follower's own page: what this computer follows, what runs where, and what waits.

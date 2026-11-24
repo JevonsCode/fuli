@@ -2,15 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { once } from 'node:events';
-import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { runRoutesCommand } from '../src/cli/routes-command.js';
-import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
-import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { runRunnerCommand } from '../src/cli/runner-command.js';
 import { callScope, openRoutes, routeOfCall } from '../src/runner/call-routes.js';
+import { writeRecord } from '../src/runner/follower-local-runtime.js';
 import { hostOwner, LOCAL_OWNER, RoutesStore, scopeName, TASK_OWNER_DAYS } from '../src/runner/routes-store.js';
 import { answerWithIssuer, issuedToken, tokenIssuedHere, withIssuedToken } from '../src/runner/task-issuer.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -107,7 +104,7 @@ test('scope names are checked at the boundary', () => {
   for (const bad of ['', 'project:', 'everything', 'project:\u0000x', 42, null]) assert.equal(scopeName(bad), null, String(bad));
 });
 
-test('fuli routes lists, follows the paired host only, and refuses every local route until owning scopes is built', async (t) => {
+test('fuli routes lists, follows the paired host only, and refuses every local route until owning projects opens', async (t) => {
   const dataDir = dataDirectory(t);
   const lines = [];
   const write = (line) => lines.push(line);
@@ -124,13 +121,20 @@ test('fuli routes lists, follows the paired host only, and refuses every local r
   await assert.rejects(runRoutesCommand(['follow', 'global', 'aaaa', '--data-dir', dataDir], { write }),
     { code: 'unknown_host' }, 'a fingerprint prefix needs 8 characters at least');
   await assert.rejects(runRoutesCommand(['follow', 'everything', 'Host A', '--data-dir', dataDir], { write }), TypeError);
-  // Owning a scope on a follower is not built yet (step 3): refused whatever this computer has, a FULI of its
-  // own included, so no store of this version holds a second owner for a scope; `global` never.
+  // Owning a project on a follower is not open yet (step 3a): refused whatever this computer has, each time
+  // with the reason that holds and what to do now, so no store of this version holds a second owner for a
+  // scope; `global` never.
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
   await assert.rejects(runRoutesCommand(['local', 'project:example.test/team/widgets', '--data-dir', dataDir], { write }),
-    (error) => error.code === 'local_route_not_yet' && /fuli routes follow/.test(error.message));
+    (error) => error.code === 'project_on_host' && /already on Host A/.test(error.message) && /Host A 上已经有了/.test(error.message),
+    'a project the host has: moving it is a later step');
+  await assert.rejects(runRoutesCommand(['local', 'project:example.test/team/new-one', '--data-dir', dataDir], { write }),
+    (error) => error.code === 'local_runtime_not_ready' && /never prepared/.test(error.message) && /fuli start/.test(error.message),
+    'a new project while this computer\'s runtime is not prepared: what is missing, and how to get it');
   await assert.rejects(runRoutesCommand(['local', 'global', '--data-dir', dataDir], { write }),
-    { code: 'global_has_one_owner' });
+    (error) => error.code === 'global_has_one_owner' && /D1/.test(error.message) && /只有一个所有者/.test(error.message));
+  await assert.rejects(runRoutesCommand(['local', 'default', '--data-dir', dataDir], { write }),
+    (error) => error.code === 'default_stays' && /Host A/.test(error.message));
   const routes = openRoutes(dataDir);
   assert.ok(routes.all().every((row) => row.owner !== LOCAL_OWNER), 'nothing was written');
   routes.close();
@@ -196,58 +200,65 @@ test('a token says which FULI issued it, and the host gets its own token back', 
 });
 
 // Design §7.1, review of #1075: a scope this computer already has data of is not followed elsewhere.
-// The console here is the real route (graph-api-router.js) over loopback, with a stub of the app behind it.
-async function ownConsole(t, dataDir, { projects = [], fail = null } = {}) {
-  const asked = [];
-  const app = { config: { personal: { spaceId: 'space-synthetic' } }, listPersonalProjects: async (input) => {
-    asked.push(input);
-    if (fail) throw Object.assign(new Error('synthetic failure'), { status: fail });
-    return projects;
-  } };
-  const server = createServer((request, response) => {
-    const url = new URL(request.url, 'http://127.0.0.1');
-    handleGraphApiRequest({ request, response, url, app }).then((handled) => {
-      if (!handled) { response.writeHead(404); response.end(); }
-    }).catch((error) => { response.writeHead(error.status ?? 500, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ error: 'synthetic_failure' })); });
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  writeFileSync(path.join(dataDir, 'runtime-settings.json'),
-    JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS, ports: { ...DEFAULT_RUNTIME_SETTINGS.ports, console: server.address().port } }));
+// Step 3a: this computer's projects are asked of its own Provider, never of the console port, which on a
+// follower answers with the host's (the host's list would let a local project be followed and hidden).
+const PROVIDER = 'http://127.0.0.1:65530';
+const readConfig = () => ({ personal: { spaceId: 'space-synthetic', providerUrl: PROVIDER, accessToken: 'synthetic-token' } });
+
+function ownGraph(dataDir, { projects = [], status = 200, away = false } = {}) {
   writeFileSync(path.join(dataDir, 'graph-runtime.json'), '{"synthetic":true}');
-  return asked;
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(String(url));
+    if (away) throw new TypeError('fetch failed');
+    return new Response(JSON.stringify(status === 200 ? projects : { detail: 'synthetic failure' }),
+      { status, headers: { 'content-type': 'application/json' } });
+  };
+  return { asked, fetchImpl };
 }
 
-const readConfig = () => ({ personal: { spaceId: 'space-synthetic' } });
-
-test('fuli routes follow refuses a scope this computer\'s own FULI already has, asking its real console route', async (t) => {
+test('fuli routes follow refuses a project this computer\'s own graph already has, asking its own Provider', async (t) => {
   const dataDir = dataDirectory(t);
-  const asked = await ownConsole(t, dataDir, { projects: [{ project_id: 'widgets' }, { project_id: 'notes' }] });
+  const { asked, fetchImpl } = ownGraph(dataDir, { projects: [{ project_id: 'widgets' }, { project_id: 'notes' }] });
   const write = () => {};
-  await assert.rejects(runRoutesCommand(['follow', 'project:widgets', 'Host A', '--data-dir', dataDir], { write, readConfig }),
+  await assert.rejects(runRoutesCommand(['follow', 'project:widgets', 'Host A', '--data-dir', dataDir], { write, readConfig, fetchImpl }),
     (error) => error.code === 'scope_has_local_data' && /already has project widgets/.test(error.message));
-  assert.deepEqual(asked, [{ personalSpaceId: 'space-synthetic' }], 'this data directory\'s own personal space');
-  await assert.rejects(runRoutesCommand(['follow', 'default', 'Host A', '--data-dir', dataDir], { write, readConfig }),
-    { code: 'scope_has_local_data' });
-  await runRoutesCommand(['follow', 'project:gadgets', 'Host A', '--data-dir', dataDir], { write, readConfig });
+  assert.equal(asked.length, 1);
+  assert.ok(asked[0].startsWith(`${PROVIDER}/v1/personal-projects?`) && asked[0].includes('personal_space_id=space-synthetic'),
+    'this data directory\'s own Provider and personal space, not the console port');
+  await assert.rejects(runRoutesCommand(['follow', 'default', 'Host A', '--data-dir', dataDir], { write, readConfig, fetchImpl }),
+    { code: 'scope_has_local_data' }, 'a graph of its own that this computer did not prepare holds the person\'s data');
+  await runRoutesCommand(['follow', 'project:gadgets', 'Host A', '--data-dir', dataDir], { write, readConfig, fetchImpl });
   const routes = openRoutes(dataDir);
   assert.deepEqual(routes.all().map((row) => row.scope).filter((scope) => scope.startsWith('project:')), ['project:gadgets']);
   routes.close();
 });
 
-test('a console that cannot be reached and one that answers with an error are said apart', async (t) => {
+test('a stopped graph is answered by what the preparation found in it; one never checked is said as that', async (t) => {
+  const prepared = dataDirectory(t);
+  const { fetchImpl } = ownGraph(prepared, { away: true });
+  writeRecord(prepared, { state: 'ready', at: '2026-11-24T08:00:00.000Z', createdHere: true, running: false, projects: ['notes'] });
+  await assert.rejects(runRoutesCommand(['follow', 'project:notes', 'Host A', '--data-dir', prepared],
+    { write: () => {}, readConfig, fetchImpl }), { code: 'scope_has_local_data' });
+  await runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', prepared], { write: () => {}, readConfig, fetchImpl });
+  // A graph it made itself and found empty holds none of the person's data: following `global` hides nothing.
+  writeRecord(prepared, { state: 'ready', at: '2026-11-24T08:00:00.000Z', createdHere: true, running: false, projects: [] });
+  await runRoutesCommand(['follow', 'global', 'Host A', '--data-dir', prepared], { write: () => {}, readConfig, fetchImpl });
+
+  const unchecked = dataDirectory(t);
+  const away = ownGraph(unchecked, { away: true });
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', unchecked],
+    { write: () => {}, readConfig, fetchImpl: away.fetchImpl }),
+  (error) => error.code === 'local_fuli_not_running' && /not prepared yet/.test(error.message));
+});
+
+test('a Provider that answers with an error and settings that cannot be read are said apart', async (t) => {
   const refusing = dataDirectory(t);
-  await ownConsole(t, refusing, { fail: 503 });
+  const { fetchImpl } = ownGraph(refusing, { status: 503 });
   await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', refusing],
-    { write: () => {}, readConfig }), (error) => error.code === 'local_fuli_refused' && /HTTP 503/.test(error.message));
-  const away = dataDirectory(t);
-  writeFileSync(path.join(away, 'graph-runtime.json'), '{"synthetic":true}');
-  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', away], { write: () => {}, readConfig,
-    fetchImpl: async () => { throw new TypeError('fetch failed'); } }), { code: 'local_fuli_not_running' });
-  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', away], { write: () => {},
-    readConfig: () => { throw new Error('synthetic: unreadable'); } }), { code: 'local_fuli_unreadable' });
+    { write: () => {}, readConfig, fetchImpl }), (error) => error.code === 'local_fuli_refused' && /HTTP 503/.test(error.message));
+  await assert.rejects(runRoutesCommand(['follow', 'project:gizmos', 'Host A', '--data-dir', refusing], { write: () => {},
+    fetchImpl, readConfig: () => { throw new Error('synthetic: unreadable'); } }), { code: 'local_fuli_unreadable' });
 });
 
 // Review of #1075: a conversation begun on a follower and continued on the host carries the prefixed token.

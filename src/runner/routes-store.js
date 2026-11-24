@@ -13,7 +13,7 @@ import { sha256Bytes } from '../security/digest.js';
 // **One writer per scope.** A read-only copy of a scope another computer owns
 // may also be kept here, with the time it was last brought up to date; the
 // columns are here so that copy needs no format change when it arrives
-// (step 3). Nothing writes them yet, and `fuli routes list` shows them when
+// (step 3c, 4). Nothing writes them yet, and `fuli routes list` shows them when
 // they are set.
 export const ROUTES_FILE = 'runner/routes.sqlite';
 // How long a task's owner is kept after its token was last used: as long as an offline task token lasts.

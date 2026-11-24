@@ -186,14 +186,34 @@ locally. This is a later step; until then a follower owns no project, so nothing
 A data directory in today's runner mode (pairing, no runtime) becomes: a FULI with routes
 `global → host` and `default → host`. Nothing to do for the person; the first start after the update
 sets up the local runtime in the background, and nothing is routed to it until the person makes a
-scope local.
+scope local. (Step 3a: the console's start, or the setup `fuli update` runs, starts `fuli runner
+prepare-local`; Neo4j is installed, checked and stopped again until a scope is local; see
+docs/runner.md "This computer's own runtime".)
 
 ## 11. Order of work
 
 1. **Follower console and safe desktop start** (fixes §1.1 and §1.2 for today's runners), with the
    follower's own state visible and its cache no longer expiring. — **done** (this version).
 2. Routes store, router in the MCP entry, tokens with issuer; `default → host` reproduces today. — **done**: `runner/routes.sqlite`, `fuli routes`, per-call routing in the follower's MCP server and task owners. `fuli routes local` is refused until step 3 for every scope, and `global` is never local on a follower (D1, D2).
-3. Local projects on a follower (`project:Y → local`), global from the host (D1, D2).
+3. Local projects on a follower (`project:Y → local`), global from the host (D1, D2). In three parts:
+   - **3a. The follower's own runtime and what it shows.** — **done**: the first start of a follower's
+     console with this version prepares its own runtime in the background (`fuli runner
+     prepare-local`: disk checked first, personal graph set up without a console, checked, then
+     stopped again while no scope is local), and says where it stands in the state band, `/local`,
+     `fuli status` and `fuli routes list`, with each project's owner (「本机 / 主机 …」). The console
+     port has one listener, the follower console; which computer answers a path is one function
+     (`whoAnswers`), which 3c extends by scope. `fuli routes local` stays refused, each time with the
+     reason that holds and what to do now. `fuli routes follow` asks this computer's own Provider for
+     its projects (it asked the console port, which a follower relays to the host).
+   - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
+     profile, the FLA roster) from its owner and merges it with the project's own, global first, as one
+     FULI does (D2); the task entry's own writes to `global` go to its owner. Open: how — one candidate
+     is a read-only copy of `global` in the follower's graph, brought up to date while the host
+     answers, with writes stopped at the router and sent to the owner (also the answer for D4).
+   - **3c. Making a project local.** `fuli routes local project:<id>` for a project the host does not
+     have, the follower's MCP server answering a local scope's calls itself (task entry, search,
+     checkpoints, preferences, `fuli_call` tools that name a project), tokens issued by the follower,
+     the console serving a local scope's pages by scope, Neo4j kept running while a scope is local.
 4. Owner-side grants; console listing.
 5. Moving a scope (D3), FLA split (D4).
 

@@ -88,15 +88,26 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   this computer knows. A folder of no known project is `default`.
 - `fuli routes follow` first checks that this computer has no data of that scope already (design
   §7.1): on a computer with a FULI of its own, `global` and `default` are refused, and a project is
-  refused when that FULI has it (`scope_has_local_data`). It asks the running FULI for the projects of
-  this data directory's personal space and says apart a FULI it cannot reach
-  (`local_fuli_not_running`), one that answered with an error (`local_fuli_refused`) and settings it
-  cannot read (`local_fuli_unreadable`). Moving a scope between computers is a later step.
-- `fuli routes local SCOPE` is refused (`local_route_not_yet`) until owning a scope on a computer
-  that follows a host is built (the next step), whatever this computer has: a FULI of its own beside
-  a pairing is normal, and a route written now would give that scope a second owner once the next
-  step arrives. `global` is never routed to a follower (`global_has_one_owner`): habits, profile and
-  the FLA roster have one owner, the computer it follows (D1, D2).
+  refused when that FULI has it (`scope_has_local_data`). A graph this computer prepared for itself
+  and found empty (see "This computer's own runtime") is no FULI of its own here. The projects are
+  asked of this computer's own Provider directly, never of the console port: on a follower that port
+  answers with the host's pages and API, so asking it asked the host (fixed in step 3a). While the
+  Provider is stopped (no scope is this computer's), what the preparation found in the graph is the
+  answer; nothing starts that graph on a follower but the preparation. A graph that was never checked
+  and does not answer (`local_fuli_not_running`), one that answered with an error
+  (`local_fuli_refused`) and settings it cannot read (`local_fuli_unreadable`) are said apart.
+  Moving a scope between computers is a later step.
+- `fuli routes local SCOPE` is not open yet (step 3c): it is refused, with the reason that holds here
+  and what the person can do now, and nothing is written. `global` is never routed to a follower
+  (`global_has_one_owner`: habits, profile, the FLA roster and Jefa's board have one owner, the
+  computer it follows; D1, D2); `default` stays where new folders go (`default_stays`); a project the
+  host already has is a later step (`project_on_host`, moving a scope, design §7); while this
+  computer's own runtime is not ready the refusal says what is missing (`local_runtime_not_ready`:
+  never prepared, being prepared, not enough disk, or the last attempt failed); and with the runtime
+  ready, `local_route_not_yet`.
+- `fuli routes list` also lists each project this computer knows of that has no route of its own and
+  goes as new folders do, with the computer it belongs to, and this computer's runtime state.
+  `fuli status`, `fuli runner status`, the state band and `/local` say per project 「本机 / 主机 …」.
 - Each call is routed before anything is sent: by the scope of the folder it names (`global`
   without one), or by the computer that entered the task its token names, so a checkpoint goes
   back to the computer that entered the task whatever the routes became. A call whose owner this
@@ -118,9 +129,36 @@ one owner: this computer or the paired host. A computer with no routes owns ever
   where it looks (`task_issuer_unknown`), never that the token is another FULI's.
 - A computer that follows nothing loads none of the router's modules.
 
+## This computer's own runtime
+
+Every FULI is a complete FULI (docs/runner-roles-design.md §2), so a computer that follows a host gets
+its own graph runtime too (step 3a). The first time its console starts with this version — `fuli
+start`, FULI.app, or the setup `fuli update` runs — it prepares that runtime in the background:
+`fuli runner prepare-local`, a detached process writing to `logs/runner-local-runtime.log`. Nothing
+for the person to do, and nothing is routed to it until a project is made this computer's (step 3c):
+the calls that go to the host are not affected by a preparation that is under way or failed.
+
+- It is the setup a first start does, personal graph only (native Neo4j and the Provider), without a
+  console: the console port stays the follower console's, the one listener there.
+- Before anything is downloaded it checks the free disk space (at least 3 GB); below that it says how
+  much is free and how much is needed, and downloads nothing.
+- Once set up, it asks the graph which projects it holds, then **stops Neo4j and the Provider again**
+  while no scope is this computer's: a follower may be a light computer. It stays running only while
+  a scope is this computer's (from step 3c).
+- `runner/local-runtime.json` records the outcome (process state, not FULI data: without it the next
+  start prepares again). A failed or cut-short preparation is tried again at the next start of the
+  console, or at once with 「重新准备 / Prepare again」 on `/local` (`POST /__fuli-follower/prepare-local`,
+  from that page only); never in a loop.
+- Where it stands is said in the state band (「本机运行时已备好（未运行）」), on `/local`, in
+  `fuli status`, `fuli runner status` and `fuli routes list`: not prepared, being prepared, prepared
+  and not running (no project is this computer's yet), not enough disk, or failed with its reason.
+- `fuli runner join` takes a data directory with a graph this computer prepared and found empty, so
+  joining again after a revoke or `leave` still works; a graph with the person's data is refused as
+  before. Starting the data directory as its own FULI (after `leave`) forgets the record.
+
 ## The console on a runner
 
-A runner has no knowledge of its own yet, but it has a console of its own: `fuli start` (and
+A runner has a console of its own: `fuli start` (and
 FULI.app's start) runs `fuli runner console`, which listens on this computer's loopback at its usual
 console port (2727 unless Settings say otherwise).
 
@@ -165,9 +203,13 @@ the host's console is one page application that reads its own absolute paths.
   entry reaches nothing.
 - 「现在重试」 (`POST /__fuli-follower/sync`) delivers the outbox now. It is taken only from this
   computer's own page (its own `Origin`); a program on this computer has `fuli runner sync`.
+- Which computer answers a path is decided in one place (`whoAnswers` in
+  `src/runner/follower-console.js`): this computer's own paths here, every other one on the host. The
+  pages and API of the projects this computer owns join it there, by scope, in step 3c.
 - `fuli status`, `fuli stop`, `fuli restart` and `fuli open` manage this entry; FULI.app starts it
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
-  runner sets up its clients only. A runner never gets a graph runtime by accident.
+  runner sets up its clients and starts the background preparation of its own runtime (above); it
+  never starts a second console or writes over the pairing.
 - **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
   (`src/runner/runner-mode.js`). A paired computer that a start or `fuli setup` later wrote a
   runtime file for used to stop counting as a runner, and its clients then silently used an empty
@@ -650,6 +692,10 @@ so `leave` keeps them as they are and says so; they do nothing until this
 computer joins a host again.
 
 ## Data format
+
+Step 3a changes no store: `runner/local-runtime.json` is process state (the outcome of the last
+preparation, see "This computer's own runtime"), and the follower's own graph is an ordinary FULI
+graph made by the same setup as any first start.
 
 A runner whose Tonborg chooses executors adds `runner/routing.sqlite`
 (`runner-routing`, version 1): its decisions and their reported outcomes, which

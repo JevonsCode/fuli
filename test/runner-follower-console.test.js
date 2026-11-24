@@ -588,12 +588,12 @@ test('a pairing, not a missing runtime file, makes a computer follow its host', 
 
   const written = [];
   const result = await runSetupCommand(['--data-dir', dataDir, '--yes'], { write: (line) => written.push(line),
-    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }], prepareLocalRuntime: () => false,
     planSetup: () => assert.fail('a computer that follows a host plans no graph runtime') });
   assert.equal(result.status, 'runner');
   // `fuli update` runs `fuli setup --yes --connected-only` with the new version: the pairing stays.
   const updated = await runSetupCommand(['--data-dir', dataDir, '--yes', '--connected-only'], { write: () => {},
-    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }], prepareLocalRuntime: () => false,
     planSetup: () => assert.fail('an update never sets a FULI up over the pairing') });
   assert.equal(updated.status, 'runner');
   assert.equal(isRunnerDataDirectory(dataDir), true);
@@ -603,7 +603,7 @@ test('fuli setup on a runner sets up its clients only', async (t) => {
   const dataDir = runnerDataDir(t);
   const written = [];
   const result = await runSetupCommand(['--data-dir', dataDir, '--yes'], { write: (line) => written.push(line),
-    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }],
+    setupRunnerClients: async () => [{ id: 'codex', label: 'Codex', status: 'connected' }], prepareLocalRuntime: () => false,
     planSetup: () => assert.fail('a runner plans no graph runtime') });
   assert.equal(result.status, 'runner');
   assert.equal(result.exitCode, 0);

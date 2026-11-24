@@ -109,8 +109,26 @@ export function describeRoutes(routes, { hostName = null, hostFingerprint = null
   const rows = listed.length ? listed
     : [{ scope: GLOBAL_SCOPE, owner: LOCAL_OWNER, replica: false, replicaSyncedAt: null, updatedAt: null },
       { scope: DEFAULT_SCOPE, owner: LOCAL_OWNER, replica: false, replicaSyncedAt: null, updatedAt: null }];
-  return rows.map((row) => ({ ...row,
-    ownerName: row.owner === LOCAL_OWNER ? 'this computer'
-      : hostFingerprint && row.owner === hostOwner(hostFingerprint) ? (hostName ?? 'the paired host')
-        : `a host this computer is no longer paired with (${row.owner})` }));
+  return rows.map((row) => ({ ...row, ...whoOwns(row.owner, { hostName, hostFingerprint }) }));
+}
+
+// Each project this computer knows of, and which computer it belongs to now:
+// its own route, else `default`'s. byDefault: no route of its own names it, so
+// it goes wherever new folders go. What `fuli routes list`, `fuli status` and
+// the console show as 「本机 / 主机 …」 per project.
+export function projectOwners(routes, store, { hostName = null, hostFingerprint = null } = {}) {
+  const routed = new Set(routes.all().map((row) => row.scope));
+  const ids = [...new Set(knownProjects(store, routes).map((project) => project.id))].sort();
+  return ids.map((id) => {
+    const scope = `${PROJECT_PREFIX}${id}`;
+    return { id, scope, byDefault: !routed.has(scope), ...whoOwns(routes.owner(scope), { hostName, hostFingerprint }) };
+  });
+}
+
+// Whose a scope is, as people read it. where: `local`, `host` (the paired
+// host) or `unpaired` (a host this computer is no longer paired with).
+function whoOwns(owner, { hostName, hostFingerprint }) {
+  if (owner === LOCAL_OWNER) return { where: 'local', ownerName: 'this computer' };
+  if (hostFingerprint && owner === hostOwner(hostFingerprint)) return { where: 'host', ownerName: hostName ?? 'the paired host' };
+  return { where: 'unpaired', ownerName: `a host this computer is no longer paired with (${owner})` };
 }
