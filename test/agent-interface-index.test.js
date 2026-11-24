@@ -39,7 +39,44 @@ test('route finds the entry by its listed route or a real request path, with its
       assert.deepEqual(detail.uiMutationParity, [agentInterfaceCatalog().uiMutationParity
         .find(entry => entry.route === 'POST /api/peer/devices/:nodeId/revoke')]);
     }
+    assert.equal((await list({ route: 'POST /api/peer/join/' })).structuredContent.uiMutationParity[0].route,
+      'POST /api/peer/join');
   });
+});
+
+test('a read route points to its domain, and a route without its method says how to write it', async () => {
+  await connected(async list => {
+    const read = (await list({ route: 'GET /api/project-agents/synthetic-agent/memory/' })).structuredContent;
+    assert.deepEqual([read.readRoute, read.route, read.domain],
+      [true, 'GET /api/project-agents/:agentId/memory', 'agent-memory']);
+    assert.match(read.message, /read route/);
+    assert.equal(read.uiMutationParity, undefined);
+    const bare = (await list({ route: '/api/peer/join' })).structuredContent;
+    assert.equal(bare.found, false);
+    assert.match(bare.message, /METHOD \/api\//);
+  });
+});
+
+test('a tool schema and a route group name the domains that list their tools', async () => {
+  await connected(async list => {
+    assert.deepEqual((await list({ toolName: 'find_agents' })).structuredContent.domains, ['roundtable', 'standing-assignments']);
+    const outside = await list({ toolName: 'message_agent' });
+    assert.equal(outside.structuredContent.tools[0].name, 'message_agent');
+    assert.equal(Object.hasOwn(outside.structuredContent, 'domains'), false);
+    assert.deepEqual((await list({ area: 'roundtable' })).structuredContent.domains, ['roundtable']);
+    assert.equal(Object.hasOwn((await list({ area: 'agent-pins' })).structuredContent, 'domains'), false);
+  });
+});
+
+test('list_agent_interfaces describes the index and every argument in both profiles', async () => {
+  const { CHAT_LISTING } = await import('../src/mcp/chat-listing.js');
+  const definition = listAgentTools().find(tool => tool.name === 'list_agent_interfaces');
+  for (const description of [definition.description, CHAT_LISTING.list_agent_interfaces.description]) {
+    assert.match(description, /No arguments: index/);
+    assert.match(description, /domain, area or route: one part/);
+    assert.match(description, /toolName: its (full|complete) schema/);
+  }
+  for (const name of ['domain', 'area', 'route']) assert.ok(definition.inputSchema.properties[name].description, name);
 });
 
 test('a name that is not there says so and lists the names that are', async () => {

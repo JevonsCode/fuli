@@ -26,7 +26,10 @@ export function agentToolCatalogResult(catalog, definitions, { toolName, domain,
   const detail = [domain, area, route].some(value => value !== undefined);
   // The index names every tool: in its domain, its area's agent entries, or otherTools.
   const named = detail || toolName ? null : new Set([...Object.values(catalog.domains), ...Object.values(catalog.areaTools)].flat());
-  const value = toolName ? { tools, invocation: CALL_GUIDANCE, call: dispatchCall(toolName, requiredInput(tools[0])) }
+  // The domains that name this tool, where its read workflow and guidance are.
+  const domains = toolName ? Object.keys(catalog.domains).filter(domain => catalog.domains[domain].includes(toolName)) : [];
+  const value = toolName ? { tools, invocation: CALL_GUIDANCE, call: dispatchCall(toolName, requiredInput(tools[0])),
+    ...(domains.length ? { domains } : {}) }
     : detail ? catalog : { ...catalog, otherTools: tools.map(({ name }) => name).filter(name => !named.has(name)),
       discovery: 'otherTools are the tools no domain or areaTools names. Use toolName to read one complete schema, then run '
         + 'that tool with fuli_call(toolName, input) where it is not listed.' };

@@ -262,8 +262,11 @@ const BASELINE = Object.freeze({
   // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
   // Both together: 191,752 B, measured on the merge.
   // list_agent_interfaces takes domain, area or route for one part of the catalog it no longer
-  // returns whole (its description is unchanged): 191,752 -> 191,921 B (+169 B), measured.
-  fullToolSchemaBytes: 191921,
+  // returns whole: 191,752 -> 191,921 B (+169 B), measured. Its description then says what each
+  // argument returns, and each new argument gets a three-word description (shown with the
+  // schema list_agent_interfaces(toolName) returns): 191,921 -> 192,016 B (+95 B), measured.
+  // The chat description says the same in as many bytes: chat stays 7,408 B.
+  fullToolSchemaBytes: 192016,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.
