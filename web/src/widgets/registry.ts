@@ -6,7 +6,7 @@ import { defineAsyncComponent, type Component } from 'vue'
 // widget is and which slots may hold it; the layout (layout.ts) says what each
 // slot shows. Moving a widget is a layout change, never a page edit.
 // The FLA page's column has three places, in its reading order (docs/fla-page.md):
-// fla.overview (the work on its hands), fla.history (where and in which line it
+// fla.overview (the work on its hands), fla.history (where, when and in which line it
 // worked) and fla.profile (what it learned, its starter kit). Its own sections
 // 最近做完 and 负责什么 sit between them.
 export const SLOT_IDS = ['shell.aboveDock', 'fla.overview', 'fla.history', 'fla.profile'] as const
@@ -39,6 +39,10 @@ export const WIDGETS = {
   'fla-kit': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
     slots: ['fla.overview', 'fla.profile'],
+  },
+  'fla-activity': {
+    component: defineAsyncComponent(() => import('@/features/fla-page/FlaActivity.vue')),
+    slots: ['fla.history', 'fla.profile'],
   },
   'workstream-ledger': {
     component: defineAsyncComponent(() => import('@/features/projects/WorkstreamLedgerWidget.vue')),

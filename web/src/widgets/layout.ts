@@ -7,7 +7,7 @@ export type WidgetLayout = Record<SlotId, string[]>
 export const DEFAULT_LAYOUT: WidgetLayout = {
   'shell.aboveDock': ['team-island'],
   'fla.overview': ['fla-blocked', 'fla-sheets'],
-  'fla.history': ['fla-work-locations', 'workstream-ledger'],
+  'fla.history': ['fla-work-locations', 'fla-activity', 'workstream-ledger'],
   'fla.profile': ['fla-growth', 'fla-kit'],
 }
 
