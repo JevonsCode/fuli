@@ -343,6 +343,21 @@ export function localRuntimeStep(state) {
   return 'Start FULI on this computer (`fuli start`, or open FULI.app); the preparation runs in the background.';
 }
 
+// localRuntimeStep in Chinese, step for step.
+export function localRuntimeStepZh(state) {
+  if (state.state === 'preparing') return '准备会自己完成，不用做什么。';
+  if (state.state === 'ready' || state.state === 'existing') return null;
+  const press = '在这台电脑的控制台页面按「重新准备 / Prepare again」（或运行 `fuli runner prepare-local`）。';
+  if (state.state === 'failed' && state.code === 'disk_low') {
+    return `在这块磁盘上腾出 ${gigabytes(state.needBytes - state.freeBytes)} GB 以上；下次启动 FULI 会再试，或者现在就${press}`;
+  }
+  if (state.state === 'failed') {
+    return `原因写在数据目录的 ${LOG_FILE} 里。`
+      + (retriesByItself(state) ? `下次启动 FULI 会再试，或者现在就${press}` : `然后${press}`);
+  }
+  return '启动这台电脑上的 FULI（`fuli start` 或打开 FULI.app），准备会在后台进行。';
+}
+
 // Why `fuli runner join` and `fuli routes follow global` wait while a preparation is under way:
 // the graph it is making is not yet known to hold nothing of the person's.
 export const PREPARING_WAIT = {

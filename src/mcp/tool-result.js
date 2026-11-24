@@ -154,7 +154,7 @@ export function errorToolResult(error) {
     ? applicationErrorMessage(error)
     : unexpected.message;
   const validationErrors = controlled ? reportedValidationErrors(error) : [];
-  const next = NEXT_STEPS[code];
+  const next = (controlled && typeof error.next === 'string' && error.next) || NEXT_STEPS[code];
   const structuredContent = {
     error: {
       code,
@@ -202,8 +202,9 @@ function uncontrolledFailure(error) {
 // The one thing to do next, by code, for the failures an Agent meets most:
 // said in the result so it never has to guess from a code.
 const NEXT_STEPS = Object.freeze({
-  fuli_not_running: 'Tell the person FULI is not running and ask them to open it (the FULI app); retry once it is.',
-  fuli_timeout: 'Retry once with exactly the same arguments; if it times out again, tell the person FULI is slow to answer.',
+  fuli_not_running: 'Run `fuli start`, then `fuli status` to confirm; retry once FULI runs.',
+  fuli_timeout: 'Retry once with exactly the same arguments; if it times out again, FULI is slow because this computer is busy: '
+    + 'do not restart it, carry on without it and tell the person once that FULI is slow to answer.',
   fuli_connection_lost: 'Retry once with exactly the same arguments; a write that already finished is not repeated.',
   provider_unavailable: 'FULI is running but its knowledge service is not ready (starting or stopped). Wait a moment and retry once; '
     + 'if it stays unavailable, tell the person to check FULI\'s status page.',

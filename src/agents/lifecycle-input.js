@@ -1,5 +1,9 @@
 const MAX_HOOK_INPUT_BYTES = 256 * 1024;
 
+// A payload over the limit: still a TypeError to every caller, told apart
+// only where the hook's own input, not FULI, is the failure (lifecycle-failure.js).
+export class HookInputTooLarge extends TypeError {}
+
 // Hosts that pipe the payload through Windows PowerShell with a UTF-8
 // $OutputEncoding (Cursor's CLI does) prepend a byte order mark. One leading
 // BOM is transport framing, not JSON; anything else must still be valid JSON.
@@ -13,7 +17,7 @@ export async function readHookInput(stream = process.stdin) {
   let size = 0;
   for await (const chunk of stream) {
     size += chunk.length;
-    if (size > MAX_HOOK_INPUT_BYTES) throw new TypeError('Hook input exceeds limit');
+    if (size > MAX_HOOK_INPUT_BYTES) throw new HookInputTooLarge('Hook input exceeds limit');
     chunks.push(chunk);
   }
   return parseHookInput(Buffer.concat(chunks));

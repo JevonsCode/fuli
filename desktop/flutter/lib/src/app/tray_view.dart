@@ -29,7 +29,8 @@ TrayView trayViewOf(FuliSnapshot? snapshot,
   }
   return TrayView(
     icon: switch (snapshot.condition) {
-      FuliCondition.ok => TrayIcon.ok,
+      // A busy computer needs nothing from the person: the tooltip says it is slow.
+      FuliCondition.ok || FuliCondition.busy => TrayIcon.ok,
       FuliCondition.needsPerson => TrayIcon.needsPerson,
       _ => TrayIcon.broken,
     },

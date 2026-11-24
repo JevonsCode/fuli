@@ -88,7 +88,7 @@ class TopLine extends StatelessWidget {
 
   static Color _dotColour(FuliCondition? condition) => switch (condition) {
         FuliCondition.ok => FuliColors.success,
-        FuliCondition.needsPerson => FuliColors.warning,
+        FuliCondition.needsPerson || FuliCondition.busy => FuliColors.warning,
         FuliCondition.degraded => FuliColors.danger,
         _ => FuliColors.faint,
       };

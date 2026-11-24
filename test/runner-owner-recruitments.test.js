@@ -26,7 +26,8 @@ function application(recruitments) {
 test('each recruitment waiting for the host is one recruit op under an id its recruitment decides, queued once', async () => {
   const store = new RunnerStore(':memory:');
   store.saveHost(HOST);
-  const app = application([recruitment('r-1'), recruitment('r-2'), recruitment('r-3', { status: 'fulfilled' }),
+  const app = application([recruitment('r-1', { task_id: 'task-1', trigger_source_application: 'cursor',
+    proposed_profile: { name: 'Lead r-1', responsibility: 'Lead the project', agent_type: 'temporary' } }), recruitment('r-2'), recruitment('r-3', { status: 'fulfilled' }),
     recruitment('r-4', { reason_code: 'hr_unavailable' })]);
   const first = await queueOwnerRecruitments({ app, store, sourceApplication: 'codex', sessionId: 'session-1' });
   assert.equal(first.queued, 2, 'only those blocked on the owner');
@@ -34,7 +35,8 @@ test('each recruitment waiting for the host is one recruit op under an id its re
   const entry = store.entry(first.waiting[0].id);
   assert.equal(entry.tool, 'global_writes');
   assert.deepEqual(entry.input.ops, [{ kind: 'recruit', v: 1, input: { recruitmentId: 'r-1', proposedAgentId: 'agent-r-1',
-    profile: { name: 'Lead r-1', responsibility: 'Lead the project' }, occupation: { role: 'engineering', tags: ['testing'] },
+    taskId: 'task-1', recruitmentSourceApplication: 'cursor',
+    profile: { name: 'Lead r-1', responsibility: 'Lead the project', agent_type: 'temporary' }, occupation: { role: 'engineering', tags: ['testing'] },
     reason: 'The project needs a lead', projectName: 'Widgets' } }]);
   const again = await queueOwnerRecruitments({ app, store, sourceApplication: 'codex', sessionId: 'session-1' });
   assert.equal(again.queued, 0);

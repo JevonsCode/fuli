@@ -24,7 +24,8 @@ const _updatePoll = Duration(seconds: 3);
 const _updateGiveUp = Duration(minutes: 15);
 
 /// How long to wait before the next check: 15 s while the window is visible,
-/// 120 s while it is hidden, doubled for each repeated connection failure.
+/// 120 s while it is hidden, doubled for each repeated connection failure or
+/// check that found the computer too busy to answer.
 Duration pollDelay({required bool visible, required int failures}) {
   final base = visible ? _visiblePoll : _hiddenPoll;
   final factor = failures <= 1 ? 1 : (1 << (failures - 1)).clamp(1, _maxBackoff);
@@ -46,6 +47,13 @@ typedef ApiFactory = FuliApi Function(int port);
 /// outcome of the last one.
 const maxRestarts = 3;
 const restartWindow = Duration(minutes: 10);
+
+/// How long a console that holds its port may go without answering at all
+/// before the window offers to restart it; until then the computer is busy
+/// (FuliCondition.busy). On 11-24, under load 14-22, the console still
+/// answered its health every 1-3 minutes while the doctor timed out. The
+/// client sessions' automatic start waits as long (console-autostart.js).
+const slowPatience = Duration(minutes: 5);
 
 class FuliController extends ChangeNotifier {
   FuliController({
@@ -86,6 +94,18 @@ class FuliController extends ChangeNotifier {
   bool _startOnOpen = false;
   final _restarts = <DateTime>[];
   int _failures = 0;
+  // Checks in a row since the console last answered while it held its port
+  // (busy, and after [slowPatience] still unanswered); they stretch the poll
+  // as failures do until the first answer, so a computer that stays busy is
+  // not handed a `fuli status` every 15 s once the patience runs out.
+  int _unansweredChecks = 0;
+  // Doctors in a row that did not answer in time, and how many checks still
+  // skip it (0, 1, 3, then 7 after each): the light health check stands in, so
+  // a busy computer is not handed the heaviest check every few seconds.
+  int _doctorTimeouts = 0;
+  int _doctorSkips = 0;
+  // Since when the console has not answered at all while holding its port.
+  DateTime? _unansweredSince;
   // The port `fuli status` reported when it differs from the settings file.
   int? _runtimePort;
   Timer? _timer;
@@ -317,6 +337,7 @@ class FuliController extends ChangeNotifier {
     // FULI running without an answering console is checked on the normal
     // schedule: backing off would leave the page stale for minutes (11-03).
     _failures = snapshot.reached || snapshot.running ? 0 : _failures + 1;
+    _unansweredChecks = _unansweredSince != null ? _unansweredChecks + 1 : 0;
     if (snapshot.condition != FuliCondition.notRunning) _stoppedByPerson = false;
     if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _startOnOpen || _pending != null)) {
       unawaited(notifier.notify('FULI', snapshot.sentence(strings)));
@@ -324,10 +345,15 @@ class FuliController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// How long the next scheduled check waits.
+  @visibleForTesting
+  Duration get pollInterval =>
+      pollDelay(visible: _visible, failures: _failures > _unansweredChecks ? _failures : _unansweredChecks);
+
   void _schedule() {
     _timer?.cancel();
     if (!_polling || _disposed) return;
-    _timer = Timer(pollDelay(visible: _visible, failures: _failures), () {
+    _timer = Timer(pollInterval, () {
       // A running operation checks again when it ends.
       if (_pending == null) unawaited(refresh());
     });
@@ -337,9 +363,14 @@ class FuliController extends ChangeNotifier {
     final installed = await runtime.locate();
     final port = await consolePort();
     final api = apiFor(port);
+    if (_doctorSkips > 0 && _snapshot?.running == true) {
+      _doctorSkips--;
+      return _withoutDoctor(api, port, installed, retried);
+    }
     try {
       final report = await api.doctor();
       _consoleDown = false;
+      _answered();
       return FuliSnapshot(
         condition: conditionOf(report.overall),
         port: port,
@@ -349,7 +380,8 @@ class FuliController extends ChangeNotifier {
         version: report.version,
       );
     } on FuliHttpError catch (error) {
-      if (error.status == 404) return _withoutDoctor(api, port, installed);
+      _answered();
+      if (error.status == 404) return _withoutDoctorRoute(api, port, installed);
       _checkLog.failed(_now(), 'http-${error.status}', '$error');
       return _consoleFailed(port, installed, '$error');
     } on FormatException catch (error) {
@@ -358,57 +390,77 @@ class FuliController extends ChangeNotifier {
     } on FuliUnreachable catch (error) {
       final timedOut = error.reason == 'timeout';
       _checkLog.failed(_now(), timedOut ? 'doctor-timeout' : 'unreachable', error.reason);
-      if (timedOut) {
-        final answered = await _healthAfterSlowDoctor(api, port, installed);
-        if (answered != null) return answered;
-      }
-      final report = installed ? await runtime.status() : const RuntimeReport(RuntimeState.notFound);
-      final reported = report.consolePort;
-      if (report.running && reported != null && reported != port && !retried) {
-        _runtimePort = reported;
-        return _inspect(retried: true);
-      }
-      if (!report.running) _runtimePort = null;
-      _consoleDown = report.running && report.consoleStopped;
-      return FuliSnapshot(
-        condition: switch (report.state) {
-          RuntimeState.notFound => FuliCondition.notFound,
-          RuntimeState.running || RuntimeState.degraded => FuliCondition.degraded,
-          _ => FuliCondition.notRunning,
-        },
-        port: port,
-        installed: report.state != RuntimeState.notFound,
-        running: report.running,
-        problem: report.running
-            ? strings.noAnswer
-            : report.autostartGaveUpAt != null
-                ? strings.autostartGaveUp(strings.clockOf(report.autostartGaveUpAt!))
-                : null,
-        reached: false,
-        crashed: report.crashed,
-      );
+      if (!timedOut) return _fromRuntime(port, installed, retried);
+      _doctorTimeouts++;
+      _doctorSkips = (1 << (_doctorTimeouts - 1)).clamp(1, _maxBackoff) - 1;
+      return _withoutDoctor(api, port, installed, retried);
     }
   }
 
-  // The doctor's checks can wait on the graph (a paused Neo4j, rec#70): a
-  // doctor that times out while the health route answers at once is a slow
-  // check, not a console that does not answer. The last answer stays shown.
-  Future<FuliSnapshot?> _healthAfterSlowDoctor(FuliApi api, int port, bool installed) async {
-    final HealthInfo health;
+  void _answered() {
+    _doctorTimeouts = 0;
+    _doctorSkips = 0;
+    _unansweredSince = null;
+  }
+
+  // The doctor did not answer in time, or is skipped after it did not. Its
+  // checks can wait on the graph (a paused Neo4j, rec#70) or on a busy
+  // computer: a health route that answers makes it a slow check, and the last
+  // answer stays shown. A health route that times out too still means a
+  // process holds the port (a stopped console refuses at once), so the
+  // computer is busy: the window says so and waits, without starting a
+  // `fuli status` there, until [slowPatience] has passed without one answer.
+  Future<FuliSnapshot> _withoutDoctor(FuliApi api, int port, bool installed, bool retried) async {
     try {
-      health = await api.health();
+      final health = await api.health();
+      _unansweredSince = null;
+      final last = _snapshot;
+      if (last != null && last.reached && last.port == port) return last;
+      return FuliSnapshot(
+        condition: health.ready ? FuliCondition.ok : FuliCondition.degraded,
+        port: port,
+        installed: installed,
+        running: true,
+        version: health.version,
+      );
     } on Exception catch (error) {
       _checkLog.failed(_now(), 'health', '$error');
-      return null;
+      if (!(error is FuliUnreachable && error.reason == 'timeout')) return _fromRuntime(port, installed, retried);
     }
-    final last = _snapshot;
-    if (last != null && last.reached && last.port == port) return last;
+    final since = _unansweredSince ??= _now();
+    if (_now().difference(since) >= slowPatience) return _fromRuntime(port, installed, retried);
+    return FuliSnapshot(condition: FuliCondition.busy, port: port, installed: installed, running: true, reached: false);
+  }
+
+  // What `fuli status` says when the console did not answer.
+  Future<FuliSnapshot> _fromRuntime(int port, bool installed, bool retried) async {
+    final report = installed ? await runtime.status() : const RuntimeReport(RuntimeState.notFound);
+    final reported = report.consolePort;
+    if (report.running && reported != null && reported != port && !retried) {
+      _runtimePort = reported;
+      return _inspect(retried: true);
+    }
+    if (!report.running) {
+      _runtimePort = null;
+      _unansweredSince = null;
+    }
+    _consoleDown = report.running && report.consoleStopped;
     return FuliSnapshot(
-      condition: health.ready ? FuliCondition.ok : FuliCondition.degraded,
+      condition: switch (report.state) {
+        RuntimeState.notFound => FuliCondition.notFound,
+        RuntimeState.running || RuntimeState.degraded => FuliCondition.degraded,
+        _ => FuliCondition.notRunning,
+      },
       port: port,
-      installed: installed,
-      running: true,
-      version: health.version,
+      installed: report.state != RuntimeState.notFound,
+      running: report.running,
+      problem: report.running
+          ? strings.noAnswer
+          : report.autostartGaveUpAt != null
+              ? strings.autostartGaveUp(strings.clockOf(report.autostartGaveUpAt!))
+              : null,
+      reached: false,
+      crashed: report.crashed,
     );
   }
 
@@ -421,7 +473,7 @@ class FuliController extends ChangeNotifier {
       );
 
   // An older FULI without /api/system/doctor: health and version only.
-  Future<FuliSnapshot> _withoutDoctor(FuliApi api, int port, bool installed) async {
+  Future<FuliSnapshot> _withoutDoctorRoute(FuliApi api, int port, bool installed) async {
     final HealthInfo health;
     try {
       health = await api.health();
@@ -552,23 +604,26 @@ class FuliController extends ChangeNotifier {
     if (_pending != null) return Future.value();
     _runtimePort = null;
     _failures = 0;
+    _unansweredChecks = 0;
+    _doctorSkips = 0;
     _notice = null;
     if (!_disposed) notifyListeners();
     return refresh();
   }
 
-  /// Stops FULI and starts it again: the fix when it runs but its console
-  /// does not answer.
+  /// The fix when FULI runs but its console has not answered for long: a
+  /// start replaces only that console, after giving it one more chance to
+  /// answer (src/setup/graph-runtime.js), and keeps the graph database and
+  /// Provider running, so it takes seconds rather than a whole restart. It
+  /// holds the start lock, so Agents are told FULI is starting, never that
+  /// the person stopped it.
   Future<void> restart() {
     _stoppedByPerson = false;
     return _bringUp(strings.restarting, () async {
-      final stopped = await _call(runtime.stop);
-      final stopError = stopped.error;
-      if (stopError != null) {
-        _notice = Notice(strings.stopFailed(stopError), error: true);
-        return;
-      }
       _runtimePort = null;
+      // The replaced console's silence is not the new one's.
+      _answered();
+      _unansweredChecks = 0;
       _notice = await _startFailure(await _call(() => runtime.start(onStage: _enterStage))) ?? _notice;
     });
   }

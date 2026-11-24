@@ -572,6 +572,18 @@ function unfinished(database) {
     .map((row) => row.migration_id);
 }
 
+// Whether an open store is exactly at its format's version with no migration
+// left unfinished: what openFormattedDatabase would use as it is, without the
+// lock, backup or change a migration takes.
+export function atCurrentVersion(database, format) {
+  return userVersion(database) === format.version && !unfinished(database).length;
+}
+
+// SQLITE_BUSY or SQLITE_LOCKED: another connection holds the store for now.
+export function sqliteBusy(error) {
+  return error?.errcode === 5 || error?.errcode === 6;
+}
+
 export function userVersion(database) {
   return database.prepare('PRAGMA user_version').get().user_version;
 }

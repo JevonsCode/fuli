@@ -23,6 +23,8 @@ class DemoFuliApi implements FuliApi {
   bool reachable = true;
   // The doctor times out (its checks wait on a paused graph) while the rest answers.
   bool doctorSlow = false;
+  // Nothing answers in time, though the console holds its port: a busy computer.
+  bool slow = false;
   String? latest;
   MigrationPlan plan;
   List<AttentionNotice> attention = const [];
@@ -35,6 +37,7 @@ class DemoFuliApi implements FuliApi {
   void _call(String request) {
     requests.add(request);
     if (!reachable) throw const FuliUnreachable('connection refused');
+    if (slow) throw const FuliUnreachable('timeout');
   }
 
   @override

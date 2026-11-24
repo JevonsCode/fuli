@@ -446,8 +446,37 @@ void main() {
     await tester.tap(find.text('重启 FULI'));
     await tester.pump();
     await tester.pump();
-    expect(runtime.calls.where((call) => call != 'status'), ['stop', 'start']);
+    expect(runtime.calls.where((call) => call != 'status'), ['start']);
   });
+
+  for (final strings in const [Strings(chinese: true), Strings(chinese: false)]) {
+    testWidgets('a busy computer says so and offers no restart, then the window comes back (${strings.chinese ? 'zh' : 'en'})',
+        (tester) async {
+      final api = DemoFuliApi();
+      final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+      final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: strings);
+      await tester.pumpWidget(
+          FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: strings, opener: RecordingOpener())));
+      api.slow = true;
+      await controller.refresh();
+      await tester.pump();
+      expect(find.text(strings.statusBusy), findsOneWidget);
+      expect(find.text(strings.statusDegraded), findsNothing);
+      expect(find.text(strings.noAnswer), findsNothing);
+      expect(find.text(strings.restartFuli), findsNothing);
+      expect(find.descendant(of: primary, matching: find.byType(FilledButton)), findsNothing);
+
+      api.slow = false;
+      await controller.refresh();
+      // The sentence cross-fades (TopLine's AnimatedSwitcher): built, faded, then the old one removed.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(find.text(strings.statusBusy), findsNothing);
+      expect(find.text(strings.statusOk), findsOneWidget);
+      expect(runtime.calls.where((call) => call == 'start' || call == 'stop'), isEmpty);
+    });
+  }
 
   testWidgets('without FULI the primary place opens the install page', (tester) async {
     final (api, runtime) = demoScenario('notfound');
