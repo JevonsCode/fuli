@@ -15,7 +15,7 @@ import { GLOBAL_WRITES_ENTRY } from './protocol.js';
 //
 // Run once when an entry of a project here is answered without an FLA
 // (runner-mcp.js). app: this computer's own application (local-scope-server.js).
-const RECRUITMENT_ON_OWNER = 'recruitment_on_owner';
+export const RECRUITMENT_ON_OWNER = 'recruitment_on_owner';
 // The host's owner-hire request: ids at most 128, and what it reads of the reason and the project's name
 // (host-global-writes.js); a longer one is cut here rather than refused there for good.
 const MAX_ID = 128;

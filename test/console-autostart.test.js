@@ -445,3 +445,35 @@ test('a recorded console counts as running only when it answers as itself', asyn
   assert.equal(await consoleAutostart({ dataDir: silent, launcher, waitsForPerson: () => false }).check(), 'unanswered');
   assert.equal(launcher.starts, 0);
 });
+
+// A follower that owns a project records its own console (runner/follower-runtime-broker.js): that
+// console answers for itself at its status path, while its /api/health is the host's, carried over the pairing.
+test('a session beside a follower’s own console keeps it as running, and starts it again only once it is gone', async t => {
+  const dataDir = dataDirectory(t);
+  const server = createServer((request, response) => {
+    response.setHeader('content-type', 'application/json');
+    if (request.url === '/__fuli-runner/status') response.end(JSON.stringify({ kind: 'fuli-runner-console', pid: process.pid }));
+    else if (request.url === '/api/health') response.end(JSON.stringify({ service: 'fuli-local-console', pid: 1 }));
+    else { response.statusCode = 404; response.end('{}'); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const state = join(dataDir, 'graph-runtime-state.json');
+  writeFileSync(state, JSON.stringify({ version: 4, pid: process.pid, url, port: server.address().port, follower: true }));
+  const clock = { at: Date.parse('2026-11-06T08:00:00Z') };
+  const launcher = { starts: 0, start() { this.starts += 1; } };
+  const autostart = consoleAutostart({ dataDir, launcher, now: () => clock.at, waitsForPerson: () => false });
+  // An MCP session open for 12 minutes, checking as superviseConsole does.
+  for (const end = clock.at + 12 * MINUTE; clock.at < end; clock.at += CONSOLE_AUTOSTART_LIMITS.checkEveryMs) {
+    assert.equal(await autostart.check(), 'running');
+  }
+  assert.equal(launcher.starts, 0);
+  const record = readConsoleAutostart(dataDir);
+  assert.deepEqual(record.starts, []);
+  assert.equal(record.held ?? null, null, 'never gave up');
+  // The follower's console process ended without clearing its address: started again at once.
+  writeFileSync(state, JSON.stringify({ version: 4, pid: 2 ** 30, url, follower: true }));
+  assert.equal(await autostart.check(), 'started');
+  assert.equal(launcher.starts, 1);
+});

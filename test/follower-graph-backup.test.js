@@ -7,6 +7,7 @@ import test from 'node:test';
 import { createDeviceCertificate } from '../packages/roundtable/src/peer/device-identity.js';
 import { runGraphDataCommand } from '../src/cli/graph-data-command.js';
 import { openRoutes } from '../src/runner/call-routes.js';
+import { followerGraphMaintenance } from '../src/runner/follower-graph-backup.js';
 import { readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
 import { RunnerStore, RUNNER_FILE } from '../src/runner/runner-store.js';
 import { ownIssuer } from '../src/runner/task-issuer.js';
@@ -49,4 +50,19 @@ test('the follower exports its identity and accepts only a person’s same-compu
   assert.equal(readGlobalCopyRecord(dir).digest, null);
   assert.equal(readGlobalCopyRecord(dir).contentDigest, null);
   assert.ok(readGlobalCopyRecord(dir).dueSoon);
+});
+
+test('the follower’s backup list says each backup’s size and all of them together, and deletes none', async t => {
+  const backups = { followerBackups: async () => [{ name: 'follower-b', bytes: 300 }, { name: 'follower-a', bytes: 200 }],
+    status: () => null };
+  const handle = followerGraphMaintenance({ graphRuntimeConfigPath: 'synthetic' }, { backups, formats: {},
+    projects: async () => ({ projects: ['sample'] }) });
+  let status;
+  let body;
+  await handle({ method: 'GET' }, { writeHead(code) { status = code; }, end(text) { body = JSON.parse(text); } },
+    new URL('http://127.0.0.1/__fuli-follower/graph-backups'), ['sample', 'gone']);
+  assert.equal(status, 200);
+  assert.deepEqual(body.backups.map(item => item.bytes), [300, 200]);
+  assert.equal(body.totalBytes, 500);
+  assert.deepEqual(body.missingProjects, ['gone']);
 });

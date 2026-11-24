@@ -230,7 +230,15 @@ async function leaveHost(dataDir, write, { force = false, remove = rmSync, setAs
   if (stayed.length) write('Close the clients here, then delete those files yourself if you want them gone.');
   if (aside?.released) {
     write(`The host replica was released. Local projects remain here. Full offline backup: ${aside.folder}.`);
-    write('Pending recruitments waiting for the former host can be cancelled and requested again on this computer.');
+    // Counted before the release; said only when there are some (null: they could not be counted).
+    const waiting = aside.waitingRecruitments;
+    if (waiting === null || waiting === undefined) {
+      write('Recruitments that were waiting for the former host to make their FLA could not be counted; any still '
+        + 'blocked have to be cancelled and requested again on this computer.');
+    } else if (waiting > 0) {
+      write(`${waiting} recruitment(s) were waiting for the former host to make their FLA; cancel them and request `
+        + 'them again on this computer.');
+    }
   } else if (aside) {
     write(`This computer's graph held only ${host.name}'s copy of global; it was set aside, not deleted, in ${aside.folder}. `
       + 'The next start makes a graph of this computer\'s own.');

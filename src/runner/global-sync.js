@@ -47,7 +47,10 @@ import { GLOBAL_SCOPE } from './routes-store.js';
 // `verify` imports the envelope even when the digests match (the import is
 // idempotent and writes back whatever differs from the host's): the preparation's
 // syncs and, on a copy-only follower, periodic verification. A computer with
-// local projects instead compares its live content digest with the last import.
+// local projects instead compares its live content digest with the last import,
+// read (the whole copy, scope_replica_summary.py) only on a verifying round or
+// after its last import did not finish or was refused; a restore forgets the
+// digest (forgetDigest), so the next round imports anyway.
 const ASK_MS = 30_000;
 // How often a running process looks whether a sync is due: a small file first, and
 // only when it names a running Provider, one request to it on loopback.
@@ -159,6 +162,11 @@ export async function syncGlobalCopy({ dataDir, store, connection, hostSpace, ow
   }
 }
 
+// The last import here timed out, was interrupted or was refused: the copy may not be what was recorded.
+function importDidNotFinish(last) {
+  return (last?.outcome === 'waiting' && last.reason === IMPORT_UNFINISHED) || (last?.outcome === 'refused' && last.by === 'here');
+}
+
 // Whether an import's counts (scope_import.py) say it wrote anything.
 function wrote(imported) {
   const counts = [imported?.nodes, imported?.relationships];
@@ -266,7 +274,7 @@ export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYN
   health = (configPath) => localGraphHealth(configPath), sync = syncGlobalCopy, now = Date.now,
   importInto = null, providerRecorded = () => localProviderRecorded(dataDir), owed = copyCatchUp,
   prepare = prepareInBackground, owns = ownsLocalProjects, queueRecruitments, deliver = deliverOutbox,
-  replicaSummary = localGraphReplicaSummary }) {
+  replicaSummary = localGraphReplicaSummary, lease = null }) {
   const configPath = join(dataDir, 'graph-runtime.json');
   let lastRound = null;
   let lastConnection = null;
@@ -286,27 +294,40 @@ export function startGlobalSync({ dataDir, store, connection, every = GLOBAL_SYN
     if (prepared.state !== 'ready' || prepared.space?.state !== 'same') return null;
     busy = true;
     try {
+      // A computer with projects of its own syncs inside its broker's lease (follower-runtime-broker.js),
+      // so the runtime does not go to sleep under an import; only while it runs anyway, and nothing
+      // is started beside the broker for a copy owed.
+      if (lease && owns(dataDir)) {
+        if (!providerRecorded() || !due()) return null;
+        return await lease(() => syncRound(true));
+      }
       const own = providerRecorded() ? await health(configPath) : { unreachable: true };
       if (own.unreachable) return await owedCopy(record);
-      if (own.refused || own.globalReplica !== true || !due()) return null;
-      const roundStarted = now();
-      const local = owns(dataDir);
-      if (local) await queueRecruitments?.();
-      const hello = await connection.hello();
-      if (local && hello) {
-        await deliver({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) });
-        lastConnection = connection.current;
-      }
-      const hostSpace = hello ? hostSpaceFrom(hello) : { known: false, reason: 'host_unreachable' };
-      const outcome = await sync({ dataDir, store, connection, hostSpace, ownFormats: own,
-        localSpaceId: localGraphSpaceId(configPath), importInto: importInto ?? ((input) => localGraphImport(configPath, input)),
-        now, verify: rounds % VERIFY_EVERY === 0, ...(local ? { replicaSummary: () => replicaSummary(configPath) } : {}) });
-      rounds += 1;
-      lastRound = { at: roundStarted, unreachable: outcome?.reason === 'host_unreachable' };
-      return outcome;
+      return await syncRound(false, own);
     } finally {
       busy = false;
     }
+  }
+  async function syncRound(leased, known = null) {
+    const own = known ?? await health(configPath);
+    if (own.unreachable || own.refused || own.globalReplica !== true || !due()) return null;
+    const roundStarted = now();
+    const local = leased || owns(dataDir);
+    if (local) await queueRecruitments?.();
+    const hello = await connection.hello();
+    if (local && hello) {
+      await deliver({ store, connection, onWritesApplied: () => requestSyncSoon(dataDir) });
+      lastConnection = connection.current;
+    }
+    const hostSpace = hello ? hostSpaceFrom(hello) : { known: false, reason: 'host_unreachable' };
+    const verify = rounds % VERIFY_EVERY === 0;
+    const compare = local && (verify || importDidNotFinish(readGlobalCopyRecord(dataDir).last));
+    const outcome = await sync({ dataDir, store, connection, hostSpace, ownFormats: own,
+      localSpaceId: localGraphSpaceId(configPath), importInto: importInto ?? ((input) => localGraphImport(configPath, input)),
+      now, verify, ...(compare ? { replicaSummary: () => replicaSummary(configPath) } : {}) });
+    rounds += 1;
+    lastRound = { at: roundStarted, unreachable: outcome?.reason === 'host_unreachable' };
+    return outcome;
   }
   async function owedCopy(record) {
     if (now() - catchUp.at < catchUp.waitMs || !owed(dataDir, record)) return null;

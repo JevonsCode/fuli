@@ -1,4 +1,4 @@
-import { existsSync, rmSync, watchFile, unwatchFile } from 'node:fs';
+import { existsSync, rmSync, statSync, watchFile, unwatchFile } from 'node:fs';
 import { join } from 'node:path';
 
 import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.js';
@@ -9,6 +9,18 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { holdPreparationLock, readLocalRuntime } from './follower-local-runtime.js';
 import { LEFT_MARKER } from './runner-mode.js';
 import { ownsLocalProjects, OWNED_PROJECT_MARKER } from './owned-project-routes.js';
+
+// A restart of the follower console replaces only the console (as `fuli restart`
+// does on a host since it replaces only an unresponsive console): the closing
+// one leaves Neo4j and the Provider running while this file is fresh, and the
+// new one takes them over (native-runtime/runtime.js keeps running processes).
+export const CONSOLE_RESTART_MARKER = join('runner', 'console-restarting');
+const RESTART_FRESH_MS = 2 * 60_000;
+
+export function restarting(dataDir, now = Date.now()) {
+  const stat = statSync(join(dataDir, CONSOLE_RESTART_MARKER), { throwIfNoEntry: false });
+  return Boolean(stat && now - stat.mtimeMs < RESTART_FRESH_MS);
+}
 
 // Every start and stop competes for the same cross-process lock as import and
 // leave. A busy transition is retried by the broker or by the next caller.
@@ -89,6 +101,6 @@ export function createFollowerBroker({ paths, url, owns = ownsLocalProjects, rea
     await starting?.catch(() => {});
     if (!active) return;
     await active.broker.close();
-    try { if (owns(paths.dataDir)) await active.guarded.stopDatabases(); } finally { clearAddress(); }
+    try { if (owns(paths.dataDir) && !restarting(paths.dataDir)) await active.guarded.stopDatabases(); } finally { clearAddress(); }
   } };
 }

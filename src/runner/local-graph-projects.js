@@ -4,6 +4,7 @@ import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { RECRUITMENT_ON_OWNER } from './owner-recruitments.js';
 
 // What this computer's own graph holds of the person's, asked of its own
 // Provider directly, and the one write a follower makes to it (a copy's import). On a computer that follows a host, the console port
@@ -68,6 +69,15 @@ export function localGraphReplicaSummary(configPath, options = {}) {
 export function localGraphRelease(configPath, owner, options = {}) {
   return askOwnProvider(configPath, options, (provider, personalSpaceId) =>
     provider.releaseScope({ personalSpaceId, owner }));
+}
+
+// The recruitments still waiting for the host to make their FLA (owner-recruitments.js): { count }.
+export function localGraphWaitingRecruitments(configPath, options = {}) {
+  return askOwnProvider(configPath, { timeoutMs: 3000, ...options }, async (provider, personalSpaceId) => {
+    const listed = await provider.listProjectAgentRecruitments({ personalSpaceId, status: 'blocked' });
+    const rows = Array.isArray(listed) ? listed : listed?.recruitments ?? listed?.items ?? [];
+    return { count: rows.filter(row => row?.status === 'blocked' && row.reason_code === RECRUITMENT_ON_OWNER).length };
+  });
 }
 
 // The personal space ID this computer's graph was made under, or null when none was made.

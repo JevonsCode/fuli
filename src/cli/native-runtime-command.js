@@ -14,7 +14,7 @@ import { writeLine } from './terminal-io.js';
 
 export function parseNativeRuntimeOptions(args = []) {
   const [action, ...flags] = args;
-  if (!['status', 'start', 'stop', 'install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires install, update, rollback, uninstall, unlock or recover.');
+  if (!['status', 'start', 'stop', 'install', 'update', 'rollback', 'uninstall', 'unlock', 'recover'].includes(action)) throw new Error('graph runtime requires status, start, stop, install, update, rollback, uninstall, unlock or recover.');
   const result = { action, preview: false, yes: false, dataDir: null, expect: null, backOut: false, abandonImport: false, keepNewer: false, json: false }, seen = new Set();
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i];

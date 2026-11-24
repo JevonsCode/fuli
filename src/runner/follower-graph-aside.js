@@ -3,7 +3,7 @@ import { cp, mkdir, rename, rmdir } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import { diskFree, diskSize, recoveryFolder, recoveryStamp, setAsideInto } from '../native-runtime/recovered-dir.js';
-import { writeJsonFileAtomic } from '../storage/json-file.js';
+import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 
 // A follower's own graph that an earlier preparation made under a space ID of
 // its own, with nothing of the person's in it, is set aside, never deleted,
@@ -77,7 +77,23 @@ export async function copyGraphBeforeRelease(paths, at, { free = diskFree } = {}
   const saved = join(folder, relative(root, paths.nativePersonalDir));
   await cp(paths.nativePersonalDir, saved, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
   await cp(paths.graphRuntimeConfigPath, join(folder, CONFIG));
+  const bytes = copiedBytes(folder, saved);
   writeJsonFileAtomic(join(folder, NOTE), { kind: 'before-replica-release', copiedAt: new Date(at).toISOString(),
+    complete: true, bytes, instance: relative(folder, saved),
     why: 'Full offline graph copy before the host replica was released.' });
-  return { folder };
+  return { folder, bytes };
+}
+
+// A copy this leave made before (copyGraphBeforeRelease) that is still whole: its note says it
+// finished, and the instance and settings in it are still the size they were copied at. null otherwise.
+export function wholeCopyBeforeRelease(folder) {
+  const note = readJsonFile(join(folder, NOTE), null);
+  if (note?.kind !== 'before-replica-release' || note.complete !== true || !Number.isInteger(note.bytes)
+    || typeof note.instance !== 'string' || note.instance.startsWith('..')) return null;
+  const saved = join(folder, note.instance);
+  return existsSync(saved) && copiedBytes(folder, saved) === note.bytes ? { folder, bytes: note.bytes } : null;
+}
+
+function copiedBytes(folder, saved) {
+  return diskSize(saved) + diskSize(join(folder, CONFIG));
 }

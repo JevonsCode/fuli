@@ -18,7 +18,10 @@ export function followerGraphMaintenance(paths, { backups = consoleGraphBackup(p
       }
     } else if (request.method === 'GET') {
       const local = await projects(paths.graphRuntimeConfigPath).catch(() => ({}));
-      return sendJson(response, 200, { backups: await backups.followerBackups(), job: backups.status(),
+      // Each backup's size and all of them together, for the page to show: nothing deletes them by itself.
+      const listed = await backups.followerBackups();
+      return sendJson(response, 200, { backups: listed, totalBytes: listed.reduce((sum, item) => sum + (item.bytes ?? 0), 0),
+        job: backups.status(),
         missingProjects: local.projects ? ids.filter(id => !local.projects.includes(id)) : null });
     } else if (request.method === 'POST') {
       const { action, name } = await readJson(request);

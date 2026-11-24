@@ -14,7 +14,7 @@ import { holdPreparationLock, writeRecord } from '../src/runner/follower-local-r
 import { followerConsolePage } from '../src/runner/follower-page.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { followerLine, followerStatus } from '../src/runner/follower-status.js';
-import { COPY_FILE, globalCopyLine, readGlobalCopyRecord } from '../src/runner/global-copy-state.js';
+import { COPY_FILE, globalCopyLine, IMPORT_UNFINISHED, readGlobalCopyRecord, recordGlobalCopy } from '../src/runner/global-copy-state.js';
 import { DIGEST_REFUSAL_AGAIN_MS, startGlobalSync, syncFromPreparation, syncGlobalCopy } from '../src/runner/global-sync.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
@@ -587,4 +587,72 @@ test('a project owner compares replica content with its last import before fetch
   assert.equal((await sync()).corrected, true);
   assert.equal(imports, 2);
   assert.equal(checks, 2);
+});
+
+test('a project owner reads its copy’s content summary only on a verifying round or after an import that did not finish', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  let clock = 0;
+  const synced = [];
+  const leased = [];
+  const connection = { current: null, hello: async () => ({ space: { id: HOST_SPACE_ID, providerId: 'local-personal' },
+    formats: { graph: 25, replicaProtocol: 1 } }) };
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  let outcome = { outcome: 'synced' };
+  const loop = startGlobalSync({ dataDir, store, connection, every: 10 * 60_000, tick: 3_600_000, now: () => clock,
+    health: async () => ({ ...FORMATS, globalReplica: true }), providerRecorded: () => true, owed: () => assert.fail('nothing owed'),
+    prepare: () => assert.fail('nothing started beside the broker'), owns: () => true, deliver: async () => ({}),
+    lease: async action => { leased.push(clock); return action(); },
+    sync: async (input) => { synced.push(input); return outcome; } });
+  try {
+    for (let round = 0; round < 7; round += 1) {
+      clock = round * 10 * 60_000;
+      await loop.round();
+    }
+    assert.deepEqual(synced.map(input => Boolean(input.replicaSummary)), [true, false, false, false, false, false, true],
+      'every VERIFY_EVERY-th round only');
+    assert.equal(leased.length, 7, 'each round inside the broker’s lease');
+    recordGlobalCopy(dataDir, { last: { at: '2026-11-24T09:00:00.000Z', outcome: 'waiting', reason: IMPORT_UNFINISHED } });
+    clock += 10 * 60_000;
+    await loop.round();
+    assert.equal(Boolean(synced.at(-1).replicaSummary), true, 'after an import that did not finish');
+    recordGlobalCopy(dataDir, { last: { at: '2026-11-24T09:10:00.000Z', outcome: 'synced' } });
+    clock += 10 * 60_000;
+    await loop.round();
+    assert.equal(Boolean(synced.at(-1).replicaSummary), false);
+  } finally {
+    loop.close();
+    store.close();
+  }
+});
+
+test('a project owner’s sync waits for its broker: a sleeping runtime is not started for it', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const synced = [];
+  const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
+  const loop = startGlobalSync({ dataDir, store, connection: { current: null, hello: async () => null }, tick: 3_600_000,
+    health: async () => ({ unreachable: true }), providerRecorded: () => true, owns: () => true,
+    owed: () => assert.fail('a copy owed is the broker’s'), prepare: () => assert.fail('nothing started beside the broker'),
+    lease: async () => null, sync: async (input) => { synced.push(input); return { outcome: 'synced' }; } });
+  try {
+    assert.equal(await loop.round(), null);
+    assert.equal(synced.length, 0);
+  } finally {
+    loop.close();
+    store.close();
+  }
+});
+
+test('leaving with projects here names the recruitments still waiting for the host only when there are some', async (t) => {
+  for (const [waiting, said] of [[0, null], [3, /3 recruitment\(s\) were waiting for the former host .*cancel them/],
+    [null, /could not be counted/]]) {
+    const dataDir = followerDir(t, 'a'.repeat(64));
+    const lines = [];
+    const left = await runRunnerCommand(['leave', '--data-dir', dataDir], { env: {}, write: (line) => lines.push(line),
+      setAsideCopy: async (_paths, { finish }) => { finish(true); return { folder: 'synthetic-copy', released: true, waitingRecruitments: waiting }; } });
+    const text = lines.join('\n');
+    assert.equal(left.exitCode, 0, text);
+    assert.match(text, /The host replica was released\. Local projects remain here\./);
+    if (said) assert.match(text, said, String(waiting));
+    else assert.doesNotMatch(text, /recruitment/i, 'none waiting: not mentioned');
+  }
 });

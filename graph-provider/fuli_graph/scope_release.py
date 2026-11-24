@@ -53,6 +53,7 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
         for relationship in classification.relationships:
             if relationship.element_id in named:
                 kept.update(nodes.intersection((relationship.start, relationship.end)))
+        kept |= _occupations_named(classification, nodes, kept)
         gone = nodes - kept
         kept_links = [element for element, start, end in links if start not in gone and end not in gone]
         await _each(transaction, f'MATCH (item) WHERE elementId(item) = element REMOVE {_MARKER}', kept)
@@ -63,6 +64,23 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
     return {'owner': owner,
             'kept': {'nodes': len(kept), 'relationships': len(kept_links)},
             'deleted': {'nodes': len(gone), 'relationships': len(links) - len(kept_links)}}
+
+
+def _occupations_named(classification, nodes: set[str], kept: set[str]) -> set[str]:
+    """The copied catalog occupations a record that stays names by key (an FLA kept
+    here, a recruitment of this computer's own): its role and tags are keys, not
+    links, so held_here does not reach them, and without them the FLA's custom
+    occupation would no longer be active here."""
+    keys = set()
+    for element, node in classification.nodes.items():
+        if element in kept or not node.properties.get(OWNER):
+            role = node.properties.get('occupation_role')
+            if isinstance(role, str):
+                keys.add(role)
+            keys.update(tag for tag in node.properties.get('occupation_tags') or () if isinstance(tag, str))
+    return {element for element in nodes
+            if (node := classification.nodes.get(element)) is not None
+            and node.label == 'FuliOccupation' and node.properties.get('key') in keys}
 
 
 async def _unread_copies(transaction, owner: str, read: set[str], session_id: str) -> set[str]:

@@ -4,7 +4,9 @@ import { request as httpsRequest } from 'node:https';
 import { isRuntimeLeasePath } from '../http/runtime-lease-api.js';
 import { FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH } from './follower-maintenance-paths.js';
 import { inspectProjectRequest } from './console-scope-paths.js';
+import { handleDelegatedRequest } from '../http/agent-delegation-gate.js';
 import { handleClientConnectionRequest } from '../http/client-connection-api-router.js';
+import { isCrossSiteNavigation, rejectRequestOutsidePolicy } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
@@ -66,7 +68,8 @@ export function whoAnswers(pathname, { ids = [], projectId = null, method = 'GET
 }
 
 export async function startFollowerConsole({ dataDir, port, store, connection, clients = null, pid = process.pid,
-  projectIds = () => [], localApi = null, runtimeStatus = () => null, createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now }) {
+  projectIds = () => [], localApi = null, runtimeStatus = () => null, createServer = createHttpServer, deliver = deliverOutbox, prepare = prepareInBackground, now = Date.now,
+  inspect = inspectProjectRequest }) {
   let authorities = new Set();
   const server = createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
@@ -131,16 +134,25 @@ export async function startFollowerConsole({ dataDir, port, store, connection, c
     }
     if (clients && await localSource(response, () =>
       handleClientConnectionRequest({ request, response, url, system: clients }))) return;
+    // Read only while a project is routed here: a follower that routes nothing here relays as before.
     const ids = projectIds();
-    const scoped = ids.length ? await inspectProjectRequest(request, url) : { request };
+    const scoped = ids.length ? await inspect(request, url, ids) : { request };
     request = scoped.request;
+    if (scoped.refusal) return local(response, 409, { error: scoped.refusal.code, message: scoped.refusal.message });
     if (whoAnswers(url.pathname, { ids, projectId: scoped.projectId, method: request.method }) === 'local') {
       if (OWN_PATHS.has(url.pathname)) return void await own(request, response, url, sameOrigin);
       response.setHeader(SOURCE_HEADER, 'local');
+      // The main console's own policy (a JSON body, no other site's script or frame), and no
+      // other site's link reaches this computer's data either.
+      if (rejectRequestOutsidePolicy({ request, response, authority: request.headers.host })) return;
+      if (isCrossSiteNavigation(request)) return local(response, 403, { error: 'cross_site' });
       if ([FOLLOWER_GRAPH_PATH, FOLLOWER_FORMAT_PATH].includes(url.pathname) && request.method !== 'GET' && !sameOrigin) {
         return local(response, 403, { error: 'post_from_this_console' });
       }
-      return void await localApi.handle(request, response, url, ids);
+      // An FLA's change for the person (rec#11 D-81) is not made here: this computer keeps no
+      // record of AI permissions, so every delegated request is refused, as on a console without them.
+      return void await handleDelegatedRequest({ request, response, delegation: null, agentAccessEnabled: () => false,
+        handle: () => localApi.handle(request, response, url, ids) });
     }
     const host = store.host();
     const named = url.pathname.startsWith(REMOTE_PREFIX) ? namedHost(url.pathname, host) : null;

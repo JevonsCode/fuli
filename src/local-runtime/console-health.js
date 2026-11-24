@@ -32,3 +32,18 @@ export async function consoleHealthAnswer(url, expectedPid, stateVersion = 3, ti
   if (expectedVersion !== null || response.status !== 404 || stateVersion !== 2) return 'unanswered';
   return (await fetch(`${url}/api/state`, { signal })).ok ? 'ready' : 'unanswered';
 }
+
+// A follower's console records itself in graph-runtime-state.json with
+// `follower: true` once a project is routed to it (runner/follower-runtime-broker.js).
+// Its /api/health is the host's, carried over the pairing, so it is asked at
+// its own status path instead, which names it and its PID: ready | unanswered,
+// rejecting as consoleHealthAnswer does when nothing answered.
+export const FOLLOWER_STATUS_PATH = '/__fuli-runner/status';
+
+export async function recordedConsoleAnswer(state, timeoutMs = CONSOLE_HEALTH_TIMEOUT_MS) {
+  if (state?.follower !== true) return consoleHealthAnswer(state.url, state.pid, state.version, timeoutMs);
+  const response = await fetch(`${state.url}${FOLLOWER_STATUS_PATH}`, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!response.ok) return 'unanswered';
+  const body = await response.json();
+  return body?.kind === 'fuli-runner-console' && body.pid === state.pid ? 'ready' : 'unanswered';
+}

@@ -13,7 +13,7 @@ import pytest
 
 from fuli_graph.provider_values import graphiti_group_id
 from test_follower_space_neo4j import (  # noqa: F401
-    HABIT, alone, follower_settings, host_global, no_personal_space, snapshot, strict, take_space,
+    HABIT, alone, driver_of, follower_settings, host_global, no_personal_space, snapshot, strict, take_space,
 )
 from test_ai_review_neo4j import _commit_project_entity
 from test_replica_write_guard_neo4j import personal_tag, episode
@@ -125,3 +125,51 @@ async def test_a_graph_without_copies_has_nothing_to_release(alone):  # noqa: F8
             assert await snapshot(driver, space) == before
         finally:
             await cleanup(driver, space, group)
+
+
+async def occupations_and_tag(client, space):
+    """Two custom occupations on the host; the FLA a follower's project will be staffed with has one."""
+    await personal_tag(client, space)
+    keys = []
+    for name in ('Synthetic ledger keeper', 'Synthetic unused role'):
+        created = await client.post('/v1/occupations', json={
+            'personal_space_id': space, 'name_en': name, 'description_en': f'{name}, for a test.'})
+        assert created.status_code == 200, created.text
+        keys.append(created.json()['key'])
+    await driver_of(client).execute_query('''
+        MATCH (:FuliSpace {id: $space})-[:HAS_PROJECT_AGENT_IDENTITY]->(agent:FuliProjectAgent {agent_id: 'scope-lead'})
+        SET agent.occupation_role = $key''', space=space, key=keys[0])
+    return keys
+
+
+@pytest.mark.asyncio
+async def test_a_release_keeps_the_custom_occupation_a_kept_fla_names(alone, strict):  # noqa: F811
+    settings = fixture_settings()
+    keys = []
+
+    async def seed(client, space):
+        keys.extend(await occupations_and_tag(client, space))
+
+    space_id, envelope = await host_global(settings, seed=seed)
+    group = graphiti_group_id(settings.provider_id, 'personal', space_id)
+    async with provider_client(follower_settings()) as (client, _):
+        driver = await no_personal_space(client)
+        try:
+            await follower_with_local_project(client, settings, space_id, envelope)
+            await checked(await client.post('/v1/project-agent-assignments', json={
+                'personal_space_id': space_id, 'personal_project_id': LOCAL, 'agent_id': 'scope-lead',
+                'idempotency_key': f'assign-{uuid4()}', 'responsibility': 'Keep the sample.',
+                'work_kinds': ['implementation'], 'capabilities': ['coding'], 'reason': 'Synthetic staffing.'}))
+            await release(client, space_id)
+            records, _, _ = await driver.execute_query('''
+                MATCH (:FuliSpace {id: $space})-[:HAS_OCCUPATION]->(occupation:FuliOccupation)
+                WHERE occupation.key IN $keys
+                RETURN occupation.key AS key, occupation.status AS status,
+                       [name IN keys(occupation) WHERE name STARTS WITH 'fuli_replica'] AS marker''',
+                space=space_id, keys=keys)
+            found = {row['key']: (row['status'], row['marker']) for row in records}
+            assert found == {keys[0]: ('active', [])}, "the kept FLA's occupation stays, its own now; the other goes"
+            listed = await checked(await client.get('/v1/occupations', params={'personal_space_id': space_id}))
+            assert keys[0] in [item['key'] for item in listed]
+        finally:
+            await cleanup(driver.maintenance(), space_id, group)

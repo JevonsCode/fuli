@@ -1,13 +1,33 @@
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { writeTextFileAtomic } from '../storage/json-file.js';
-import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore } from './routes-store.js';
+import { LOCAL_OWNER, PROJECT_PREFIX, ROUTES_FILE, RoutesStore, routesAsTheyAre } from './routes-store.js';
+
+// Read again only when the routes file or its write-ahead log changed: the
+// follower console asks on every request, and a follower that routes nothing
+// here pays one stat for it (none opens the store while it does not exist).
+const read = new Map();
 
 export function localProjectIds(dataDir) {
-  const routes = new RoutesStore(join(dataDir, ROUTES_FILE));
+  const path = join(dataDir, ROUTES_FILE);
+  const seen = [path, `${path}-wal`].map(file => {
+    const stat = statSync(file, { throwIfNoEntry: false });
+    return stat ? `${stat.mtimeMs}:${stat.size}` : '-';
+  }).join('|');
+  if (seen.startsWith('-|')) return [];
+  const kept = read.get(dataDir);
+  if (kept?.seen === seen) return kept.ids;
+  // Read-only, so reading changes neither file and what was seen stays the key; a store that
+  // needs its migration (or is held right now) is opened as before and not kept.
+  let asTheyAre = null;
+  try { asTheyAre = routesAsTheyAre(path); } catch { asTheyAre = null; }
+  const routes = asTheyAre ?? new RoutesStore(path);
   try {
-    return routes.all().filter(row => row.owner === LOCAL_OWNER && row.scope.startsWith(PROJECT_PREFIX))
+    const ids = routes.all().filter(row => row.owner === LOCAL_OWNER && row.scope.startsWith(PROJECT_PREFIX))
       .map(row => row.scope.slice(PROJECT_PREFIX.length));
+    if (asTheyAre) read.set(dataDir, { seen, ids });
+    return ids;
   } finally { routes.close(); }
 }
 

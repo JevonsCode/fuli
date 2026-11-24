@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, request as httpRequest } from 'node:http';
+import { createServer, createServer as createServerReal, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -13,6 +13,7 @@ import { runSetupCommand } from '../src/cli/setup-command.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { createFollowerLocalApi } from '../src/runner/follower-local-api.js';
 import { BAND_SOURCE } from '../src/runner/follower-band.js';
+import { inspectProjectRequest } from '../src/runner/console-scope-paths.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH, whoAnswers } from '../src/runner/follower-console.js';
 import { ADDRESS_PATH, followerConsolePage, LOOK_TRIES, SYNC_PATH } from '../src/runner/follower-page.js';
 import { capabilityLines } from '../src/runner/follower-runtime.js';
@@ -63,7 +64,7 @@ const NOWHERE = Object.freeze({ connect: async () => null, hello: async () => nu
 
 // A host listener with one paired runner, and that runner's console entry.
 // nowhere: the entry's connection never reaches anything.
-async function pairedRunner(t, { clients = null, nowhere = false, localApi = null, projectIds } = {}) {
+async function pairedRunner(t, { clients = null, nowhere = false, localApi = null, projectIds, inspect } = {}) {
   const [host, runner] = await Promise.all([identity(), identity()]);
   const consoleSide = await hostConsole(t);
   const hostStore = new RunnerHostStore(':memory:');
@@ -90,7 +91,7 @@ async function pairedRunner(t, { clients = null, nowhere = false, localApi = nul
   const connection = nowhere ? NOWHERE : createHostConnection({ store, identity: runner,
     lookUp: async () => { looked.mdns += 1; return []; } });
   const delivered = [];
-  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients, localApi, projectIds,
+  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection, clients, localApi, projectIds, inspect,
     deliver: async () => { delivered.push('once'); return { delivered: 0, refused: 0, ...store.outbox() }; } });
   t.after(async () => {
     await entry.close();
@@ -720,12 +721,164 @@ test('the local lease endpoints and merged project list use only this computer�
     open: async () => { opens++; return { listPersonalProjects: async () => [{ project_id: 'sample' }, { project_id: 'unrouted' }] }; } });
   const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi });
   const lease = entry.url + '/api/system/runtime/leases';
-  assert.equal((await (await fetch(lease, { method: 'POST', body: '{}' })).json()).leaseId, 'sample');
-  assert.equal((await (await fetch(lease + '/sample', { method: 'PATCH' })).json()).refreshed, true);
+  const json = { 'content-type': 'application/json' };
+  assert.equal((await (await fetch(lease, { method: 'POST', body: '{}', headers: json })).json()).leaseId, 'sample');
+  assert.equal((await (await fetch(lease + '/sample', { method: 'PATCH', body: '{}', headers: json })).json()).refreshed, true);
   assert.equal((await (await fetch(lease + '/sample', { method: 'DELETE' })).json()).released, true);
   assert.deepEqual(calls, ['acquire']);
   assert.equal(opens, 0);
   const list = await (await fetch(entry.url + '/api/personal-projects')).json();
   assert.deepEqual(list.map(row => [row.project_id, row.owner]), [['from-host', 'host'], ['sample', 'this_computer']]);
   assert.equal(opens, 1);
+});
+
+// A local API that only records what reached it.
+function recordingApi() {
+  const handled = [];
+  return { handled, async handle(request, response, url) {
+    handled.push([request.method, url.pathname]);
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"here":true}');
+  } };
+}
+
+test('this computer’s own API refuses an FLA’s delegated change and keeps the console’s request policy', async (t) => {
+  const api = recordingApi();
+  const { entry, consoleSide } = await pairedRunner(t, { localApi: api, projectIds: () => ['sample'] });
+  const json = { 'content-type': 'application/json' };
+  const delegated = await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`, { method: 'POST',
+    headers: { ...json, [DELEGATION_HEADER]: 'synthetic' }, body: '{}' });
+  assert.equal(delegated.status, 503);
+  assert.equal((await delegated.json()).code, 'delegation_unavailable');
+  const forwarded = await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`, {
+    headers: { [DELEGATION_HEADER]: 'synthetic', 'x-forwarded-for': '192.0.2.7' } });
+  assert.equal((await forwarded.json()).code, 'local_user_only');
+  for (const path of ['/__fuli-follower/graph-backups', '/__fuli-follower/graph-format']) {
+    const answer = await fetch(entry.url + path, { method: 'POST', body: '{"action":"backup"}',
+      headers: { ...json, origin: entry.url, [DELEGATION_HEADER]: 'synthetic' } });
+    assert.equal(answer.status, 503, path);
+    assert.equal((await fetch(entry.url + path, { method: 'POST', body: '{}',
+      headers: { ...json, origin: 'http://example.test' } })).status, 403, `${path}: another site`);
+    assert.equal((await fetch(entry.url + path, { method: 'POST', body: '{}', headers: json })).status, 403,
+      `${path}: no Origin is not this console's page`);
+  }
+  const plain = await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`, { method: 'POST', body: '{}' });
+  assert.equal(plain.status, 415, 'a write that is not JSON');
+  const crossSite = await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`,
+    { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } });
+  assert.equal(crossSite.status, 403, 'another site’s link reaches nothing of this computer’s data');
+  const script = await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`,
+    { headers: { 'sec-fetch-site': 'cross-site' } });
+  assert.equal(script.status, 403);
+  assert.deepEqual(api.handled, []);
+  assert.equal(consoleSide.seen.length, 0, 'nothing was carried to the host');
+  assert.equal((await fetch(`${entry.url}/api/project-agent-tasks?personalProjectId=sample`, { method: 'POST',
+    body: '{}', headers: json })).status, 200);
+  assert.deepEqual(api.handled, [['POST', '/api/project-agent-tasks']]);
+});
+
+test('only a loopback socket under this console’s own name reaches it', async (t) => {
+  let handler;
+  const createServer = (listener) => { handler = listener; return createServerReal(listener); };
+  const dataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'fuli-follower-')));
+  const store = new RunnerStore(path.join(dataDir, 'runner', 'runner.sqlite'));
+  const api = recordingApi();
+  const entry = await startFollowerConsole({ dataDir, port: 0, store, connection: NOWHERE, localApi: api,
+    projectIds: () => ['sample'], createServer });
+  t.after(async () => { await entry.close(); store.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  const host = new URL(entry.url).host;
+  for (const remoteAddress of ['192.0.2.5', '::ffff:192.0.2.5']) {
+    const answer = fakeResponse();
+    handler({ method: 'GET', url: '/api/project-agent-tasks?personalProjectId=sample', headers: { host },
+      socket: { remoteAddress } }, answer);
+    await answer.done;
+    assert.equal(answer.status, 403, remoteAddress);
+  }
+  assert.deepEqual(api.handled, []);
+});
+
+function fakeResponse() {
+  let finish;
+  const response = { status: null, headers: {}, headersSent: false, done: new Promise(resolve => { finish = resolve; }),
+    setHeader(name, value) { this.headers[name] = value; }, removeHeader(name) { delete this.headers[name]; },
+    writeHead(status) { this.status = status; this.headersSent = true; }, end() { finish(); }, destroy() { finish(); } };
+  return response;
+}
+
+test('a request naming a project of this computer is answered here or refused here, never carried to the host', async (t) => {
+  const api = recordingApi();
+  const { entry, consoleSide } = await pairedRunner(t, { localApi: api, projectIds: () => ['sample'] });
+  const json = { 'content-type': 'application/json' };
+  const send = (path, { method = 'GET', body } = {}) => fetch(entry.url + path,
+    { method, headers: json, ...(body === undefined ? {} : { body }) });
+  const cases = [
+    // [path, options, status, refusal code or where it went]
+    ['/api/capture', { method: 'POST', body: '{"personalProjectId":"sample","text":"x"}' }, 200, 'here'],
+    ['/api/knowledge/items?projectId=sample', {}, 200, 'here'],
+    ['/api/knowledge/items/synthetic?projectId=sample', { method: 'PATCH', body: '{}' }, 200, 'here'],
+    ['/api/project-agent-name-changes?personalProjectId=sample', {}, 200, 'here'],
+    ['/api/project-agent-executor-actuals', { method: 'POST', body: '{"project_id":"sample"}' }, 200, 'here'],
+    ['/api/personal-projects', { method: 'PUT', body: '{"project":"sample"}' }, 200, 'here'],
+    ['/api/data-format?personalProjectId=sample', {}, 409, 'not_served_here'],
+    ['/api/project-agents', { method: 'POST', body: '{"personalProjectId":"sample"}' }, 409, 'not_served_here'],
+    ['/api/personal-projects/sample/archive', { method: 'POST', body: '{}' }, 409, 'not_served_here'],
+    ['/api/capture', { method: 'POST', body: '{"personalProjectId":"sample",' }, 409, 'body_unreadable'],
+    ['/api/capture', { method: 'POST', body: JSON.stringify({ personalProjectId: 'sample', text: 'x'.repeat(1024 * 1024) }) },
+      409, 'body_too_large'],
+    ['/api/capture?projectId=elsewhere', { method: 'POST', body: '{"personalProjectId":"sample"}' }, 409, 'projects_on_both'],
+    ['/api/capture', { method: 'POST', body: '{"personalProjectId":"elsewhere"}' }, 200, 'host'],
+    ['/api/data-format', {}, 200, 'host'],
+    ['/api/capture', { method: 'POST', body: JSON.stringify({ text: 'y'.repeat(1024 * 1024 + 10) }) }, 200, 'host']
+  ];
+  for (const [path, options, status, where] of cases) {
+    const hostSeen = consoleSide.seen.length;
+    const handled = api.handled.length;
+    const answer = await send(path, options);
+    const body = await answer.json();
+    assert.equal(answer.status, status, path);
+    if (where === 'here') assert.equal(api.handled.length, handled + 1, path);
+    else if (where === 'host') assert.equal(consoleSide.seen.length, hostSeen + 1, path);
+    else {
+      assert.equal(body.error, where, path);
+      assert.equal(consoleSide.seen.length, hostSeen, `${path}: not carried to the host`);
+      assert.equal(api.handled.length, handled, `${path}: not answered here`);
+    }
+  }
+});
+
+test('a follower with no project routed here never reads a request to decide where it goes', async (t) => {
+  let inspected = 0;
+  const api = recordingApi();
+  const { entry, consoleSide } = await pairedRunner(t, { localApi: api, projectIds: () => [],
+    inspect: async (...args) => { inspected++; return inspectProjectRequest(...args); } });
+  for (const [path, method, body] of [['/api/capture', 'POST', '{"personalProjectId":"sample"}'],
+    ['/api/personal-projects/sample/history', 'GET'], ['/api/personal-projects', 'GET'],
+    ['/api/system/runtime/leases', 'POST', '{}'], ['/api/capture', 'POST', '{"personalProjectId":"sample",']]) {
+    const answer = await fetch(entry.url + path, { method, headers: { 'content-type': 'application/json' }, body });
+    assert.equal(answer.status, 200, path);
+  }
+  assert.equal(inspected, 0);
+  assert.deepEqual(api.handled, []);
+  assert.equal(consoleSide.seen.length, 5);
+});
+
+test('the merged project list answers the host’s projects without waiting long for this computer’s', async t => {
+  const hostList = { getText: async () => ({ status: 200, text: JSON.stringify([{ project_id: 'from-host' }]) }) };
+  const asleep = { current: async () => ({ withLease: () => new Promise(() => {}) }) };
+  const waiting = createFollowerLocalApi({ paths: {}, broker: () => asleep, store: { host: () => ({ name: 'Host A' }) },
+    connection: hostList, localListWaitMs: 50, open: async () => assert.fail('not reached') });
+  const { entry } = await pairedRunner(t, { projectIds: () => ['sample'], localApi: waiting });
+  const answer = await fetch(entry.url + '/api/personal-projects');
+  assert.equal(answer.headers.get('x-fuli-local-projects'), 'unavailable');
+  assert.equal(answer.headers.get('x-fuli-host-projects'), null);
+  assert.deepEqual((await answer.json()).map(row => [row.project_id, row.owner]), [['from-host', 'host']]);
+
+  const none = createFollowerLocalApi({ paths: {}, broker: () => null, store: { host: () => null },
+    connection: { getText: async () => ({ reachable: false }) }, open: async () => assert.fail('not reached') });
+  const away = await pairedRunner(t, { projectIds: () => ['sample'], localApi: none });
+  const empty = await fetch(away.entry.url + '/api/personal-projects');
+  assert.equal(empty.headers.get('x-fuli-host-projects'), 'unavailable');
+  assert.equal(empty.headers.get('x-fuli-local-projects'), 'unavailable');
+  assert.deepEqual(await empty.json(), []);
+  assert.equal((await fetch(away.entry.url + '/api/project-agent-tasks?personalProjectId=sample')).status, 503);
 });
