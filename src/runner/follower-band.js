@@ -16,7 +16,7 @@
 //                         computer owns, as it stood at that time
 //   unavailable           the owner is away and nothing is kept for it
 //
-// Nothing serves `replica` yet: a follower owns no scope until step 3. The band
+// Nothing serves `replica` yet: a follower owns no scope until step 3c. The band
 // shows it already, because the band is shipped with the follower and the copy
 // will be served by the computer that owns the scope.
 //

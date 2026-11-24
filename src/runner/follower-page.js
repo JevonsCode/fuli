@@ -1,4 +1,5 @@
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
+import { localRuntimeLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
@@ -12,9 +13,10 @@ import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js
 // own, and this page must open while the host is away.
 export const SYNC_PATH = '/__fuli-follower/sync';
 export const ADDRESS_PATH = '/__fuli-follower/host-address';
+export const PREPARE_PATH = '/__fuli-follower/prepare-local';
 // Whose data a capability reads: the computer that owns the scope, this
 // computer's own, or this computer's read-only copy of another's
-// (docs/runner-roles-design.md §3; nothing is a copy until step 3).
+// (docs/runner-roles-design.md §3; nothing is a copy until step 3c).
 const WHERE = { host: { zh: '主机', en: 'the host' }, local: { zh: '本机', en: 'this computer' },
   replica: { zh: '本机只读副本', en: 'a read-only copy here' } };
 const OFFLINE = {
@@ -48,6 +50,8 @@ export function followerConsolePage({ status, hostPath, requested = null }) {
   <h1>这台电脑 <span class="beta" title="测试中的功能 · In testing">Beta</span></h1>
   ${requested ? requestedPage(host, requested) : ''}
   ${host ? hostSection(host, hostPath) : notPaired()}
+  ${host && status.localRuntime ? runtimeSection(status.localRuntime) : ''}
+  ${host && Array.isArray(status.projects) ? projectsSection(status.projects) : ''}
   <h2>什么跑在哪里 <span class="en">Where each capability runs</span></h2>
   <table>
     <thead><tr><th>功能 <span class="en">Capability</span></th><th>在哪里 <span class="en">Runs on</span></th>
@@ -115,6 +119,40 @@ function addAddress(host, { hidden = false } = {}) {
   </form>
   <p data-address-outcome class="note" hidden></p>
 </div>`;
+}
+
+// This computer's own runtime (step 3a): prepared in the background, nothing
+// routed to it yet. A preparation that did not succeed or never ran offers the
+// one next step, 「重新准备」, as a button; the same is `fuli start` in a terminal.
+function runtimeSection(state) {
+  const line = localRuntimeLine(state);
+  const again = state.state === 'failed' || state.state === 'not_prepared';
+  return `<h2>本机运行时 <span class="en">This computer's own runtime</span>
+  ${again ? '<button type="button" data-prepare>重新准备 / Prepare again</button>' : ''}</h2>
+<p data-runtime>${escape(line.zh)}</p>
+<p class="note en" data-runtime-en>${escape(line.en)}</p>
+${state.state === 'failed' && state.code !== 'disk_low' && state.message
+    ? `<p class="note">${escape(state.message)}</p>` : ''}
+<p data-prepare-outcome class="note" hidden></p>`;
+}
+
+// Which computer each project this computer knows of belongs to now.
+function projectsSection(projects) {
+  const body = projects.length ? `<table>
+    <thead><tr><th>项目 <span class="en">Project</span></th><th>归哪台电脑 <span class="en">Belongs to</span></th></tr></thead>
+    <tbody>${projects.map(projectRow).join('')}</tbody></table>`
+    : '<p class="note">这台电脑还没进过任何项目的文件夹。 / No project folder has been worked in here yet.</p>';
+  return `<h2>项目归哪台电脑 <span class="en">Which computer each project belongs to</span></h2>
+${body}
+<p class="note">新的项目文件夹按默认跟随主机。 / A new project folder follows the host, as new folders do.</p>`;
+}
+
+function projectRow(project) {
+  const where = project.where === 'local' ? { zh: '本机', en: 'this computer', kind: 'local' }
+    : project.where === 'host' ? { zh: `主机 ${project.ownerName}`, en: `the host ${project.ownerName}`, kind: 'host' }
+      : { zh: '已不再配对的主机', en: 'a host no longer paired', kind: 'host' };
+  return `<tr><td><code>${escape(project.id)}</code></td><td><span class="where ${where.kind}">${escape(where.zh)}</span>`
+    + ` <span class="en">${escape(where.en)}${project.byDefault ? ' · 按默认 / as new folders go' : ''}</span></td></tr>`;
 }
 
 function notPaired() {
@@ -250,6 +288,26 @@ const PAGE_SCRIPT = [
   '        + " / Still no answer there: check that both computers are on one LAN or VPN.";',
   '    } catch {',
   '      tell(result, NO_ANSWER);',
+  '    }',
+  '  });',
+  '}',
+  '',
+  '// 「重新准备」: this computer\'s own runtime, prepared again in the background.',
+  'const prepare = document.querySelector("[data-prepare]");',
+  'if (prepare) {',
+  '  const said = document.querySelector("[data-prepare-outcome]");',
+  '  prepare.addEventListener("click", async () => {',
+  '    prepare.disabled = true;',
+  '    try {',
+  `      const answer = await fetch(${JSON.stringify(PREPARE_PATH)}, { method: "POST", headers: { "content-type": "application/json" } });`,
+  '      const body = await answer.json();',
+  '      if (!answer.ok) { tell(said, body); prepare.disabled = false; return; }',
+  '      document.querySelector("[data-runtime]").textContent = body.runtimeLine.zh;',
+  '      document.querySelector("[data-runtime-en]").textContent = body.runtimeLine.en;',
+  '      prepare.hidden = true;',
+  '    } catch {',
+  '      tell(said, NO_ANSWER);',
+  '      prepare.disabled = false;',
   '    }',
   '  });',
   '}',

@@ -7,6 +7,7 @@ import { entryState } from '../agent-kits/client-detection.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { forgetFollowerRuntime, localRuntimeLine, prepareInBackground, readLocalRuntime } from '../runner/follower-local-runtime.js';
 import { setUpRunnerClients } from './runner-command.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import {
@@ -29,6 +30,8 @@ export async function runSetupCommand(args, dependencies = {}) {
   // A runner (docs/runner.md) has no FULI of its own to set up: only its clients, which use the host.
   const dataDir = resolveSetupPaths({ dataDir: options.dataDir, env: dependencies.env ?? process.env }).dataDir;
   if ((dependencies.isRunner ?? isRunnerDataDirectory)(dataDir)) return setUpRunner(options, dataDir, dependencies);
+  // This data directory's own FULI from now on: a follower's record of its graph no longer says what it holds.
+  (dependencies.forgetFollowerRuntime ?? forgetFollowerRuntime)(dataDir);
   const planSetup = dependencies.planSetup ?? planLocalSetup;
   const applySetup = dependencies.applySetup ?? applyLocalSetup;
   const confirm = dependencies.confirm
@@ -88,6 +91,11 @@ async function setUpRunner(options, dataDir, dependencies) {
     : await (dependencies.setupRunnerClients ?? setUpRunnerClients)({ dataDir, env: dependencies.env ?? process.env, write });
   for (const agent of agents) write(`  ${agent.label ?? agent.id}: ${agent.status}`);
   for (const agent of agents) for (const step of agent.nextSteps ?? []) write(`  ${agent.label ?? agent.id}: ${step}`);
+  // Its own runtime, prepared in the background (docs/runner-roles-design.md §10); nothing is routed to it yet.
+  const prepared = (dependencies.prepareLocalRuntime ?? prepareInBackground)({ dataDir });
+  if (prepared) write('This computer\'s own runtime (Neo4j and the Provider) is being prepared in the background; '
+    + 'calls keep going to the host. `fuli status` says when it is ready.');
+  else write(localRuntimeLine((dependencies.readLocalRuntime ?? readLocalRuntime)(dataDir)).en);
   return { status: 'runner', agents, exitCode: agents.every(({ status }) => status === 'connected') ? 0 : 1 };
 }
 

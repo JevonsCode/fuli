@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import { openRoutes, projectOwners } from './call-routes.js';
+import { localRuntimeShort, readLocalRuntime } from './follower-local-runtime.js';
 import { routingRoleState } from './routing-setup.js';
 import { runnerVersionSkew, runningRunnerVersions } from './version-skew.js';
 import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
@@ -16,7 +18,7 @@ import { OFFLINE_TOKEN_DAYS } from './runner-store.js';
 // Where: `host` (the computer that owns the scope), `local` (this computer's
 // own) or `replica` (this computer's read-only copy of a scope another computer
 // owns, with `syncedAt`) — the three answers of docs/runner-roles-design.md §3;
-// nothing is a copy until a follower owns a scope (step 3). Offline: `cached`
+// nothing is a copy until a follower owns a scope (step 3c). Offline: `cached`
 // (the host's last answer, marked offline), `queued` (kept here and delivered
 // when the host answers), `works` (it never needed the host) or `unavailable`.
 export const CAPABILITIES = Object.freeze([
@@ -75,8 +77,24 @@ export async function followerStatus({ store, connection, dataDir = null, reach 
     outbox: store.outbox(),
     versions: { host: hostVersion, runner: runnerVersions, skew: runnerVersionSkew({ hostVersion, runnerVersions }) },
     cache: keptHere(store),
-    capabilities: capabilities(dataDir)
+    capabilities: capabilities(dataDir),
+    ...(dataDir ? ownSide({ dataDir, store, host: after }) : {})
   };
+}
+
+// This computer's own side (step 3a): its runtime, and which computer each
+// project it knows of belongs to now. Read here, never asked of the host.
+function ownSide({ dataDir, store, host }) {
+  const localRuntime = readLocalRuntime(dataDir);
+  let routes;
+  try { routes = openRoutes(dataDir); } catch (error) {
+    return { localRuntime, projects: null, routesProblem: String(error?.code ?? error?.message ?? error).slice(0, 200) };
+  }
+  try {
+    return { localRuntime, projects: projectOwners(routes, store, { hostName: host.name, hostFingerprint: host.fingerprint }) };
+  } finally {
+    routes.close();
+  }
 }
 
 // What the cache holds against its bounds, and how long an offline task token
@@ -117,8 +135,9 @@ export function followerLine(status) {
   // When the host last answered anything this computer asked: when it was last reached, not when
   // data was last exchanged, and named so.
   const reachedAt = status.host.lastSeenAt ?? status.host.answeredAt;
+  const own = localRuntimeShort(status.localRuntime);
   return {
-    zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}`,
-    en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting`
+    zh: `跟随 ${name} · ${where.zh} · 上次连上 ${reachedAt ?? '还没有'} · 待送 ${status.outbox.queued}${own ? ` · ${own.zh}` : ''}`,
+    en: `Following ${name} · ${where.en} · last reached ${reachedAt ?? 'never'} · ${status.outbox.queued} waiting${own ? ` · ${own.en}` : ''}`
   };
 }

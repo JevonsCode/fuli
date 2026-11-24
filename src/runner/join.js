@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
 import { ApplicationError } from '../app/application-error.js';
+import { graphHoldsNothingOfThePerson, PREPARING_WAIT, readLocalRuntime } from './follower-local-runtime.js';
 import { pinnedFetch } from './host-connection.js';
 import { displayName, parseInvitation, RUNNER_PATHS } from './protocol.js';
 import { hostOwner, ROUTES_FILE, RoutesStore } from './routes-store.js';
@@ -23,7 +24,13 @@ const PAIR_TIMEOUT_MS = 8000;
 // or were refused; joining drops them (runner-store.js saveHost).
 export async function joinHost({ dataDir, invitation: text, name = null, force = false,
   loadIdentity = () => loadDeviceIdentity(join(dataDir, 'peer')) }) {
-  if (existsSync(join(dataDir, 'graph-runtime.json'))) {
+  // A graph this computer prepared for itself while it followed a host, with nothing of the person's in it
+  // (follower-local-runtime.js), hides nothing: joining again (after a revoke, or `fuli runner leave`) works.
+  const prepared = existsSync(join(dataDir, 'graph-runtime.json')) ? readLocalRuntime(dataDir) : null;
+  if (prepared?.state === 'preparing') {
+    throw new ApplicationError('local_runtime_preparing', `${PREPARING_WAIT.en}\n${PREPARING_WAIT.zh}`);
+  }
+  if (prepared && !graphHoldsNothingOfThePerson(prepared)) {
     throw new ApplicationError('runner_has_own_fuli', 'This data directory holds a FULI of its own, and joining a host '
       + 'follows it for everything, which would hide that FULI. Owning some of your FULI here and following another '
       + 'computer for the rest is a later step (docs/runner-roles-design.md); until then, join from a data directory '

@@ -19,7 +19,7 @@ import { parseSetupOptions } from '../setup/options.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import { localConsoleUrl } from './console-url.js';
-import { capabilityLines, serveFollowerConsole } from '../runner/follower-runtime.js';
+import { capabilityLines, ownSideLines, serveFollowerConsole } from '../runner/follower-runtime.js';
 import { followerStatus, keptLine } from '../runner/follower-status.js';
 import { writeLine } from './terminal-io.js';
 
@@ -45,6 +45,9 @@ const USAGE = `fuli runner <action>  (Beta. Runners: other computers whose clien
                                   (--force: also when checkpoints never reached the host)
     console [--port PORT]         serve this computer's console: its own state, and the host's
                                   pages over the pairing (fuli start runs it)
+    prepare-local                 prepare this computer's own runtime (Neo4j and the Provider), check
+                                  that it starts, and stop it again while no scope is this computer's
+                                  (the console runs it in the background; nothing is routed to it yet)
   Every action takes --data-dir DIR.`;
 // What a runner keeps (runner-store.js), said where it pairs.
 const KEPT_HERE = 'Kept here: the host\'s last answers to read-only calls (shown, marked offline, while the host is away; '
@@ -92,6 +95,11 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
     const served = await serveFollowerConsole({ dataDir: paths().dataDir, port });
     write(`Runner console: ${served.url}`);
     return new Promise(() => {});
+  }
+  if (action === 'prepare-local') {
+    const { prepareFollowerRuntime } = await import('../runner/follower-runtime-prepare.js');
+    const record = await prepareFollowerRuntime({ dataDir: paths().dataDir, env, write });
+    return { exitCode: record?.state === 'ready' || record?.state === 'preparing' ? 0 : 1 };
   }
   if (action === 'leave') return leaveHost(paths().dataDir, write, { force: rest.includes('--force'), remove });
   if (action === 'status' || action === 'sync' || action === 'add-address') {
@@ -142,6 +150,7 @@ export async function runRunnerCommand(args, { env = process.env, fetchImpl = fe
         if (delivering) write(`Delivered ${outbox.delivered}, refused ${outbox.refused}.`);
         write(`Outbox: ${outbox.queued} waiting${outbox.failed.length ? `, ${outbox.failed.length} refused by the host` : ''}.`);
         for (const entry of outbox.failed) write(`  ${entry.queuedAt} ${entry.tool}: ${entry.reason}`);
+        for (const line of ownSideLines(state)) write(line);
         for (const line of capabilityLines(state.capabilities)) write(line);
         write(keptLine(state.cache).en);
         return { exitCode: reached ? 0 : 1 };
