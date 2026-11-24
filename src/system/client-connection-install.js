@@ -1,6 +1,5 @@
-import { detectAgents } from '../agent-kits/client-detection.js';
-import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
-import { installAgent } from '../setup/install-agent.js';
+import { detectClients } from '../agent-kits/client-detection.js';
+import { componentFailure, installAgent } from '../setup/install-agent.js';
 import { assertJsonObject } from '../validation/values.js';
 
 // What the person reads when a client that writes its cached configuration back is (or may be) running.
@@ -8,11 +7,16 @@ export const CLIENT_RUNNING = '客户端正在运行，会把旧配置写回：�
   + ' The client is running and would write its old configuration back: quit it fully, or use Restart and update in Client connection.';
 
 // The console's one-click connection: agent-installer writes a client it
-// found on this machine that FULI may set up by itself. Without
+// found on this machine that FULI may set up by itself, or one the person
+// described by hand (custom-clients.js), whose file it creates when it is
+// not there yet. Without
 // agent-installer nothing is written and the answer says why. apps: the
 // client apps that write their cached configuration back (src/agents/client-apps.js):
 // one of them is written only when it is known to be closed (rec#106).
-export function createClientInstaller({ installer, install = installAgent, apps = {} }) {
+// customClients: the custom-client store (custom-clients.js); a client that is
+// not built in is written only when the person added it here.
+export function createClientInstaller({ installer, install = installAgent, apps = {}, customClients = NO_CUSTOM_CLIENTS,
+  presence = null }) {
   let busy = false;
   return async (input) => {
     assertJsonObject(input, 'Client connection');
@@ -26,10 +30,10 @@ export function createClientInstaller({ installer, install = installAgent, apps 
       if (app && await app.running().catch(() => null) !== false) {
         return { id: input.clientId, status: 'failed', restartRequired: false, reason: 'client_running', message: CLIENT_RUNNING };
       }
-      const detected = await detectAgents(installer);
+      const detected = await detectClients(installer, { presence });
       const result = detected.status === 'available'
-        ? await install(installer, connectable(detected.agents, input.clientId))
-        : { status: 'failed', reason: 'client_component_unavailable', message: CLIENT_COMPONENT_UNAVAILABLE };
+        ? await install(installer, connectable(detected.clients, input.clientId, customClients.removable()))
+        : componentFailure({ id: input.clientId }, detected);
       // Do not expose config/backup paths or raw filesystem diagnostics over HTTP.
       return { id: input.clientId, status: result.status, restartRequired: result.status === 'connected',
         ...(result.reason ? { reason: result.reason, message: result.message } : {}) };
@@ -37,8 +41,14 @@ export function createClientInstaller({ installer, install = installAgent, apps 
   };
 }
 
-function connectable(agents, clientId) {
-  const agent = agents.find(({ id }) => id === clientId);
-  if (!agent?.available || agent.manualOnly) throw new TypeError('Client is unavailable for automatic connection');
-  return agent;
+const NO_CUSTOM_CLIENTS = Object.freeze({ removable: () => new Set() });
+
+function connectable(clients, clientId, added) {
+  const client = clients.find(({ id }) => id === clientId);
+  // A built-in client must be on this machine; the person said where a client they added here keeps its file.
+  // Another product's extension in the shared directory is not FULI's to write.
+  if (!client || client.manual || (client.builtin ? !client.detected : !added.has(client.id))) {
+    throw new TypeError('Client is unavailable for automatic connection');
+  }
+  return { id: client.id, label: client.label };
 }

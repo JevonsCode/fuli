@@ -13,7 +13,7 @@ const conversation = { id: 'conversation-a', summary: 'Prepare a new page', stat
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { ...optionSelectStubs } } })
+    projects: [{ project_id: 'project-a', personal_space_id: 'space', profile: { name: 'Project A' } }, { project_id: 'project-b', personal_space_id: 'space', profile: { name: 'Project B' } }] }, global: { stubs: { ...optionSelectStubs } } })
 }
 async function open(wrapper: ReturnType<typeof render>, selector?: string) {
   // The panel itself is always shown and loads on display; only nested settings still open.
@@ -354,5 +354,115 @@ it('explains a scrubbed current revision in English without showing old content'
   await open(wrapper)
   expect(wrapper.get('[data-memory-scrubbed]').text()).toBe('The current working-memory text was cleared with a source deletion (revision 8); it does not fall back to an older version. Rewrite it at the end of this task with expectedRevision 8.')
   expect(wrapper.find('.memory-summary').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+// 11-19: a task result opens the exact checkpoint that wrote it, with its client
+// and session; a missing or moved source never shows another record.
+const claudeSource = { sequence: 3, event_id: 'synthetic-claude:summary', client: 'claude_code', session_id: 'synthetic-claude-session' }
+const codexSource = { sequence: 5, event_id: 'synthetic-codex:summary', client: 'codex', session_id: 'synthetic-codex-session' }
+async function openTasks(tasks: unknown[]) {
+  const wrapper = render()
+  await open(wrapper)
+  postJson.mockResolvedValueOnce({ events: [], has_more: false, digest: { entries: [], omitted: 0, tasks } })
+  await wrapper.get('[data-read-conversation]').trigger('click')
+  await flushPromises()
+  return wrapper
+}
+it('opens the exact checkpoint of each task result, even when two clients wrote the same words', async () => {
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Same words', source: claudeSource },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Same words', source: codexSource }])
+  expect(wrapper.get('[data-conversation-digest]').text()).toContain('Agent 收尾时写的工作小结')
+  let resolve!: (value: unknown) => void
+  postJson.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  await wrapper.findAll('[data-digest-task]')[1].get('[data-view-source]').trigger('click')
+  expect(wrapper.findAll('[data-digest-task]')[1].text()).toContain('正在读取这条小结的原记录')
+  expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', { ...scope, mode: 'events',
+    conversationId: 'conversation-a', after: 4, limit: 1, eventId: 'synthetic-codex:summary' }, expect.objectContaining({ schema: expect.anything() }))
+  resolve({ source_check: 'verified', events: [{ ...codexSource, content: 'Same words', kind: 'checkpoint', role: 'summary' }] })
+  await flushPromises()
+  const record = wrapper.findAll('[data-digest-task]')[1].get('[data-source-record]')
+  expect(record.text()).toContain('任务小结（checkpoint #5）')
+  expect(record.text()).toContain('Codex')
+  expect(record.text()).toContain('synthetic-codex-session')
+  expect(wrapper.findAll('[data-digest-task]')[0].find('[data-source-record]').exists()).toBe(false)
+})
+it('says unavailable when the source is gone or another event answers, and unknown when none was kept', async () => {
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Older words', source: null },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Moved', source: codexSource },
+    { at: '2026-11-18T21:02:00Z', status: 'completed', summary: 'Next one', source: claudeSource }])
+  const rows = () => wrapper.findAll('[data-digest-task]')
+  expect(rows()[0].find('[data-view-source]').exists()).toBe(false)
+  // Neutral: a missing source may be an older result or a write with no single matching checkpoint.
+  expect(rows()[0].get('[data-source-unknown]').text()).toBe('来源未知')
+  setLocale('en-US', { persist: false })
+  await flushPromises()
+  expect(rows()[0].get('[data-source-unknown]').text()).toBe('Source unknown')
+  setLocale('zh-CN', { persist: false })
+  await flushPromises()
+  postJson.mockResolvedValueOnce({ source_check: 'unavailable', events: [] })
+  await rows()[1].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[1].get('[data-source-unavailable]').text()).toContain('原记录不可用')
+  // An older Provider that ignores eventId returns whatever comes next: never shown as the original.
+  postJson.mockResolvedValueOnce({ events: [{ sequence: 4, event_id: 'synthetic-other', content: 'Someone else', kind: 'message',
+    role: 'user', client: 'codex', session_id: 'x' }] })
+  await rows()[2].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[2].find('[data-source-record]').exists()).toBe(false)
+  expect(rows()[2].text()).not.toContain('Someone else')
+  expect(rows()[2].find('[data-source-unavailable]').exists()).toBe(true)
+})
+it('lets a failed source read be tried again', async () => {
+  const wrapper = await openTasks([{ at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Words', source: claudeSource }])
+  postJson.mockRejectedValueOnce(new Error('offline'))
+  await wrapper.get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-digest-task]').text()).toContain('原记录读取失败')
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...claudeSource, content: 'Words', kind: 'checkpoint', role: 'summary' }] })
+  await wrapper.get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-source-record]').text()).toContain('Claude Code')
+})
+it('shows the original only when sequence, event ID, client, session and checkpoint kind all match', async () => {
+  const deleted = { sequence: 2, event_id: 'synthetic-deleted:summary', client: 'codex', session_id: 'synthetic-codex-session' }
+  const wrapper = await openTasks([
+    { at: '2026-11-18T21:00:00Z', status: 'completed', summary: 'Words', source: claudeSource },
+    { at: '2026-11-18T21:01:00Z', status: 'completed', summary: 'Words', source: codexSource },
+    { at: '2026-11-18T21:02:00Z', status: 'completed', summary: 'Gone', source: deleted }])
+  const rows = () => wrapper.findAll('[data-digest-task]')
+  // Same sequence and ID, written by another client or session: not the original.
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...claudeSource, client: 'codex', content: 'Words', kind: 'checkpoint' }] })
+  await rows()[0].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[0].find('[data-source-unavailable]').exists()).toBe(true)
+  // A plain message at that place is not the task result.
+  postJson.mockResolvedValueOnce({ source_check: 'verified', events: [{ ...codexSource, content: 'Words', kind: 'message' }] })
+  await rows()[1].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[1].find('[data-source-unavailable]').exists()).toBe(true)
+  // The event was deleted: after:1/limit:1 now finds sequence 3, which is never shown as the original.
+  postJson.mockResolvedValueOnce({ events: [{ sequence: 3, event_id: 'synthetic-next:summary', client: 'codex',
+    session_id: 'synthetic-codex-session', content: 'The next one', kind: 'checkpoint' }] })
+  await rows()[2].get('[data-view-source]').trigger('click')
+  await flushPromises()
+  expect(rows()[2].find('[data-source-record]').exists()).toBe(false)
+  expect(rows()[2].text()).not.toContain('The next one')
+  expect(rows()[2].find('[data-source-unavailable]').exists()).toBe(true)
+})
+
+it('offers named projects by name and the FLA\'s temporary projects by number, never their generated name', async () => {
+  postJson.mockResolvedValue({ conversations: [] })
+  const temporary = { project_id: `temporary-${'a'.repeat(64)}`, personal_space_id: 'space', scope_type: 'temporary' as const, profile: { name: '临时任务 / Temporary task' } }
+  const wrapper = mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
+    projects: [{ project_id: 'project-a', personal_space_id: 'space', profile: { name: 'Project A' } }, temporary] }, global: { stubs: { ...optionSelectStubs } } })
+  await open(wrapper)
+  // The fold itself is OptionCombobox's (its spec); this spec stubs it as a native select.
+  const labels = wrapper.findAll('select option').map(option => option.text())
+  expect(labels).toContain('Project A')
+  expect(labels).toContain('#aaaaaaaa')
+  expect(labels.join(' ')).not.toContain('Temporary task')
   wrapper.unmount()
 })

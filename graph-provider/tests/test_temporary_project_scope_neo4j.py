@@ -54,6 +54,44 @@ async def test_temporary_scope_binding_is_idempotent_and_rejects_wrong_lifecycle
 
 
 @pytest.mark.asyncio
+async def test_a_project_with_no_saved_policy_hires_without_asking_and_a_save_without_the_switch_keeps_it():
+    async with provider_client(fixture_settings()) as (client, _):
+        space = await client.post('/v1/spaces', json={'name': 'Synthetic unasked staffing', 'kind': 'personal'})
+        space_id = space.json()['id']
+        token = 'fuli-task-unasked-staffing'
+        await create_context(client, space_id, token, 'unasked-staffing-session')
+        project = await client.post('/v1/temporary-projects/ensure', json=scope_request(space_id, token))
+        assert project.status_code == 200, project.text
+        scope = {'personal_space_id': space_id, 'personal_project_id': project.json()['project_id']}
+        hr = await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space_id})
+        assert hr.status_code == 200, hr.text
+        payload = {**scope, 'idempotency_key': 'synthetic-unasked-staffing',
+            'title': 'Synthetic unasked verification', 'objective': 'Verify a hire that waits for nobody.',
+            'work_kind': 'verification', 'source_application': 'codex', 'source_session_id': 'synthetic-session',
+            'staffing_intent': 'temporary', 'duration': 'one_off', 'routing_reason': 'Synthetic acceptance.'}
+        route = await client.post('/v1/project-agent-tasks', json=payload)
+        assert route.status_code == 200, route.text
+        # Hired, not only unasked: executor authorization can still block the work itself.
+        assert route.json()['task']['status'] in {'queued', 'blocked'}
+        assert route.json()['task']['lead_agent_id']
+        assert route.json()['recruitment']['confirmation_mode'] == 'automatic'
+
+        # The person turns asking on; a later save that does not state the switch keeps it.
+        asking = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'ask_before_recruitment': True, 'auto_reuse_previous_agent': True})
+        assert asking.status_code == 200, asking.text
+        unstated = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'auto_reuse_previous_agent': False})
+        assert unstated.status_code == 200, unstated.text
+        assert unstated.json()['ask_before_recruitment'] is True
+        read = await client.get('/v1/project-agent-coordination-policy', params=scope)
+        assert read.json()['ask_before_recruitment'] is True and read.json()['auto_reuse_previous_agent'] is False
+        waits = await client.post('/v1/project-agent-tasks', json={**payload, 'idempotency_key': 'synthetic-asked-staffing'})
+        assert waits.status_code == 200, waits.text
+        assert waits.json()['task']['status'] == 'awaiting_recruitment'
+
+
+@pytest.mark.asyncio
 async def test_temporary_scope_preserves_hr_gate_then_adopts_task_only_agent_and_checkpoints():
     async with provider_client(fixture_settings()) as (client, _):
         space = await client.post('/v1/spaces', json={'name': 'Synthetic temporary staffing', 'kind': 'personal'})
@@ -65,6 +103,10 @@ async def test_temporary_scope_preserves_hr_gate_then_adopts_task_only_agent_and
         scope = {'personal_space_id': space_id, 'personal_project_id': project.json()['project_id']}
         hr = await client.post('/v1/project-agents/system-hr', params={'personal_space_id': space_id})
         assert hr.status_code == 200, hr.text
+        # A project asks before a hire only once the person turned asking on.
+        policy = await client.put('/v1/project-agent-coordination-policy', json={
+            **scope, 'ask_before_recruitment': True, 'auto_reuse_previous_agent': True})
+        assert policy.status_code == 200, policy.text
         payload = {**scope, 'idempotency_key': 'synthetic-temporary-staffing',
             'title': 'Synthetic temporary verification', 'objective': 'Verify isolated task lifecycle.',
             'work_kind': 'verification', 'source_application': 'codex', 'source_session_id': 'synthetic-session',

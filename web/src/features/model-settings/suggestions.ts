@@ -39,7 +39,8 @@ export interface RoleSuggestion {
   requestId: string
   evidenceVersion: string
   gate: { status: 'suggestion_only'; role: string; operation: string }
-  modelReceipt: { requestedModel: string | null; actualModel: string | null; fallbackReason?: string | null }
+  // Absent on a record made without asking the model (a Dreaming run with nothing new to read).
+  modelReceipt?: { requestedModel: string | null; actualModel: string | null; fallbackReason?: string | null }
   // A newer suggestion for the same subject was recorded since.
   stale?: 'newer'
   // A permanent delete of knowledge cleared its words (rec#10 D-30.9).
@@ -64,14 +65,19 @@ export const readScoreCard = (entry: RoleSuggestion, signal?: AbortSignal) => ge
 function suggestionState(entry: RoleSuggestion): SuggestionState {
   if (entry.status === 'suggested') return entry.stale === 'newer' ? 'newer' : 'suggested'
   if (entry.status === 'superseded') return 'superseded'
-  return entry.status === 'inline' || entry.modelReceipt.fallbackReason ? 'fallback' : 'stopped'
+  return entry.status === 'inline' || entry.modelReceipt?.fallbackReason ? 'fallback' : 'stopped'
 }
+
+// A Dreaming run that found no new sessions asked no model and showed nothing: it is no row of this
+// record (the Dreaming card says when Dreaming last ran), as the recent notices leave it out too.
+const NOT_ASKED = new Set(['nothing_to_read'])
+export const askedModel = (entry: RoleSuggestion) => !NOT_ASKED.has(entry.status)
 
 // A suggestion as recorded, whether or not a newer one followed.
 export const isSuggestion = (state: SuggestionState) => state === 'suggested' || state === 'newer'
 
 const suggestionModel = (entry: RoleSuggestion) =>
-  entry.suggestedBy?.model ?? entry.modelReceipt.actualModel ?? entry.modelReceipt.requestedModel ?? null
+  entry.suggestedBy?.model ?? entry.modelReceipt?.actualModel ?? entry.modelReceipt?.requestedModel ?? null
 
 // What was suggested, in one line; empty when nothing was. A permanent
 // delete of knowledge cleared the words of a record (D-30.9): it says so.

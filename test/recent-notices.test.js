@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { recentNotices } from '../src/notices/recent-notices.js';
 import { handleNoticesRequest } from '../src/http/notices-api-router.js';
+import { createAgentDelegation } from '../src/agent-delegation/port.js';
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z');
 const SPACE = 'synthetic-space';
@@ -47,10 +48,18 @@ function syntheticApp(overrides = {}) {
   };
 }
 
-const delegation = { read: () => ({ operations: [
-  { id: 7, at: ago(0.6), status: 'applied', reason: 'Approve all projects for Dreaming' },
-  { id: 8, at: ago(0.7), status: 'refused', reason: 'Refused one' }
-] }) };
+// The real delegation port's log, so the notice reads the record shape it writes.
+function recordedDelegation() {
+  const times = [ago(0.6), ago(0.7)];
+  const port = createAgentDelegation(null, { now: () => times.shift() });
+  const entry = { route: 'POST /api/dreaming/projects', category: 'organisation', undo: 'Synthetic undo', access: 'agent_delegable' };
+  const call = reason => ({ actor: { agentId: 'synthetic-fla', projectId: null, client: 'codex', sessionId: 'synthetic-session' },
+    reason, bodyFields: ['projects'] });
+  port.record({ id: '7', entry, path: '/api/dreaming/projects', call: call('Approve all projects for Dreaming'), status: 200 });
+  port.record({ id: '8', entry, path: '/api/dreaming/projects', call: call('Refused one'), status: 403 });
+  return port;
+}
+const delegation = recordedDelegation();
 const system = { cachedVersionStatus: () => ({ updateAvailable: true, latestVersion: '9.9.9', checkedAt: ago(0.01) }) };
 
 test('recent notices gather what changed in the last two weeks, newest first, each with its place to act', async () => {

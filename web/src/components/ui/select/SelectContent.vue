@@ -37,7 +37,7 @@ const popupTarget = usePopupTarget()
       data-slot="select-content"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="cn(
-        'bg-popover text-popover-foreground data-[state=open]:animate-popover-in relative z-(--z-popover) max-h-(--reka-select-content-available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border shadow-(--shadow-popover)',
+        'bg-popover text-popover-foreground data-[state=open]:animate-popover-in relative z-(--z-dialog) max-h-(--reka-select-content-available-height) min-w-32 overflow-x-hidden overflow-y-auto rounded-md border shadow-(--shadow-popover)',
         position === 'popper'
           && 'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
         props.class,

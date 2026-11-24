@@ -6,21 +6,18 @@ from fastapi import HTTPException
 
 from .project_agent_access import authorize_project_agent
 from .project_agent_models import ProjectAgentProfile
+from .project_agent_recruitment_occupation import recruitment_occupation
 from .project_agent_task_models import ProjectAgentParallelPlan
-from .store_project_agents import SYSTEM_HR_AGENT_ID
+from .fixed_roles import SYSTEM_HR_AGENT_ID, SYSTEM_ROLE_AGENT_IDS, system_role_capability
 from .system_hr_identity import LEGACY_HR_AGENT_ID
 from .project_agent_hierarchy import reporting_parent, direct_reports
 from .client_coverage import covers_client
 
 
-IMPLICIT_PEER_AGENT_IDS = frozenset({
-    'employee.jefa',
-    'employee.tonborg',
-    'employee.assistant',
-    SYSTEM_HR_AGENT_ID.casefold(),
-    LEGACY_HR_AGENT_ID.casefold(),
-})
-IMPLICIT_PEER_CAPABILITIES = frozenset({'fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg', 'fuli.employee:assistant'})
+IMPLICIT_PEER_AGENT_IDS = frozenset(
+    agent_id.casefold() for agent_id in (*SYSTEM_ROLE_AGENT_IDS, LEGACY_HR_AGENT_ID)
+)
+IMPLICIT_PEER_CAPABILITIES = frozenset(system_role_capability(agent_id) for agent_id in SYSTEM_ROLE_AGENT_IDS)
 IMPLICIT_PEER_AGENT_TYPES = frozenset({'hr'})
 # Routing reasons produced inside a configured project team roster.
 TEAM_ROUTING_REASONS = frozenset({'project_team_lead', 'project_team_member', 'project_team_gap', 'project_sub_team_lead', 'project_sub_team_gap'})
@@ -69,6 +66,16 @@ class StoreProjectAgentTaskStaffing:
             row for row in assignment_rows
             if self._agent_client_allowed(row, request.source_application)
         ]
+        # A temporary Agent and a project's first lead are always hired, so they need no policy.
+        policy = None if request.staffing_intent in {'temporary', 'default_lead'} else (
+            await self.get_project_agent_coordination_policy(
+                actor, request.personal_space_id, request.personal_project_id))
+        if request.staffing_intent == 'new_durable':
+            idle = self._idle_same_occupation(rows, request, policy)
+            if idle:
+                return [idle], rows, 'idle_same_occupation', [
+                    f"an idle {idle['occupation_role']} Agent is already on this project; reused instead of recruiting",
+                ]
         if request.staffing_intent in {'new_durable', 'temporary', 'default_lead'}:
             return (
                 [],
@@ -79,11 +86,6 @@ class StoreProjectAgentTaskStaffing:
                 ['project requires an accountable lead' if request.staffing_intent == 'default_lead'
                  else 'user explicitly requested recruitment'],
             )
-        policy = await self.get_project_agent_coordination_policy(
-            actor,
-            request.personal_space_id,
-            request.personal_project_id,
-        )
         if not policy.auto_reuse_previous_agent:
             return [], rows, 'manual_agent_selection', [
                 'project policy requires an explicit @Agent selection',
@@ -293,6 +295,42 @@ class StoreProjectAgentTaskStaffing:
         return bool(required) or request.work_kind.casefold() in {
             item.casefold() for item in row.get('work_kinds', [])
         }
+
+    @classmethod
+    def _idle_same_occupation(cls, rows, request, policy):
+        """The Agent already on the project who takes a request for a new durable one.
+
+        Bole hires only when nobody of that occupation is free (Jevons 11-17):
+        the same occupation, every required capability, and nothing under way
+        in this project (active_task_count: no queued, running or
+        awaiting-review task and no live session). Never a fixed role, and
+        never the Agent that asked. In a team with sub-teams the Agent must
+        report to the coordinator of the request, as every task participant does.
+        Nobody is reused when the project wants each Agent picked by name
+        (auto_reuse_previous_agent off), or when the request names the Agent it
+        wants (a recruitment profile or occupation tags): those still hire.
+        """
+        if (not policy.auto_reuse_previous_agent or request.recruitment_profile
+                or (request.recruitment_occupation and request.recruitment_occupation.tags)):
+            return None
+        try:
+            occupation = recruitment_occupation(request).role
+        except HTTPException:
+            # No occupation can be named: the recruitment that follows says so.
+            return None
+        required = {item.casefold() for item in request.required_capabilities}
+        coordinator = request.coordinator_agent_id
+        grouped = bool(getattr(policy, 'sub_teams', []))
+        for row in rows:
+            if (row.get('occupation_role') == occupation
+                    and not cls._metric_int(row.get('active_task_count'))
+                    and row['agent_id'] != coordinator
+                    and not cls._is_implicit_peer(row)
+                    and required.issubset({item.casefold() for item in row.get('capabilities', [])})
+                    and not (grouped and coordinator
+                             and reporting_parent(policy, row['agent_id']) != coordinator)):
+                return row
+        return None
 
     @classmethod
     def _implicit_owner_allowed(cls, row, request):

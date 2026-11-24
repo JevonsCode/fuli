@@ -154,6 +154,27 @@ Claude Code, Codex, OpenCode, Cursor, DeepSeek Harness, Claude Desktop, Gemini C
 and Antigravity connect from the console (Settings › Clients) with one click. Other MCP clients run
 `fuli connect` for a standard configuration. What each client supports, such as capturing
 conversations, is in [Connect a client](docs/client-connections.md).
+
+What FULI puts into a client, and what each part gives you. An MCP entry alone is enough to use
+FULI; the rest makes it automatic. Each client's tile in Settings › Clients lists the parts it has.
+
+| Part | What it gives you | Without it |
+| --- | --- | --- |
+| MCP entry | FULI's tools: memory, search, saving knowledge, FLAs | FULI cannot be used in that client |
+| Lifecycle hooks (or a plugin) | Each task starts with your context and closes with a checkpoint by itself; conversations are captured | The Agent follows FULI's instructions, with no guarantee; nothing is captured by itself |
+| Skills | Teach the Agent how to use FULI | A client that hides the MCP server's instructions may not know how |
+| Client extras | Claude Code's permission allowlist, Codex's instruction block and `/fla` menu | Those conveniences only |
+
+| Client | MCP | Hooks or plugin | Skills | Extras |
+| --- | --- | --- | --- | --- |
+| Claude Code | ✓ | ✓ | ✓ | permissions |
+| Codex | ✓ | ✓ | ✓ | instructions, `/fla` menu |
+| Cursor | ✓ | ✓ (completion reminder only) | ✓ | |
+| OpenCode 2.x | ✓ | plugin | ✓ | |
+| OpenCode without the plugin | ✓ | | ✓ | |
+| DeepSeek Harness | in its bundle | plugin | ✓ | |
+| Claude Desktop, Gemini CLI, Qwen Code, Kiro, Antigravity | ✓ | | | |
+| A client you add yourself | ✓ | | | |
 </details>
 
 <details>

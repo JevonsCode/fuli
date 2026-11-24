@@ -1,5 +1,5 @@
 import { CLIENT_PACK_FORMAT } from '../setup/agents/client-pack-store.js';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { COORDINATOR_FORMAT } from '../../packages/roundtable/src/peer/coordinator-store.js';
@@ -12,9 +12,15 @@ import { AGENT_APP_FORMAT } from '../agent-apps/store.js';
 import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
 import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
 import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
+import { AGENT_INTRODUCTIONS_FILE, AGENT_INTRODUCTIONS_FORMAT } from '../agent-introductions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
+import { VISITOR_ACCESS_FORMAT } from '../visitor-access/store.js';
+import { RUNNER_HOST_FILE, RUNNER_HOST_FORMAT } from '../runner/host-store.js';
+import { ROUTES_FILE, ROUTES_FORMAT } from '../runner/routes-store.js';
+import { ROUTING_LEDGER_FILE, ROUTING_LEDGER_FORMAT } from '../runner/routing-ledger.js';
+import { RUNNER_FILE, RUNNER_FORMAT } from '../runner/runner-store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
@@ -26,6 +32,7 @@ import { AGENT_ACCESS_POLICY_FORMAT } from '../graphiti/agent-access-policy.js';
 import { CAPTURE_CHANGE_PREVIEW_FORMAT } from '../graphiti/capture-change-confirmation.js';
 import { CAPTURE_ONBOARDING_FORMAT } from '../graphiti/capture-onboarding.js';
 import { FIRST_RUN_GUIDE_FORMAT } from '../graphiti/first-run-guide.js';
+import { ADVANCED_AREAS_FORMAT } from '../advanced-areas/advanced-areas.js';
 import { CAPTURE_POLICY_FORMAT } from '../graphiti/capture-policy.js';
 import { CAPTURE_SESSION_PAUSE_FORMAT } from '../graphiti/capture-session-pause.js';
 import { RECALL_POLICY_FORMAT } from '../graphiti/recall-policy.js';
@@ -46,6 +53,7 @@ import { FORMAT_NOTICE_DELIVERY_FORMAT } from './notice-delivery.js';
 import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
+import { PROJECT_IDENTITY_CACHE_FILE, PROJECT_IDENTITY_CACHE_FORMAT } from '../system/project-identity-cache.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
 import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption-store.js';
@@ -89,6 +97,8 @@ const sqliteStores = () => [
   ['agent-workflows.sqlite', AGENT_WORKFLOWS_FORMAT],
   // Which knowledge items the automatic task-entry recall showed and which the Agent reported using (rec#63); ids only.
   ['recall-impressions.sqlite', RECALL_IMPRESSIONS_FORMAT],
+  // Which FLAs introduced themselves to the person and who last owned each project's tasks; ids and names only.
+  [AGENT_INTRODUCTIONS_FILE, AGENT_INTRODUCTIONS_FORMAT],
   // Each Agent's look as the person chose it, every earlier choice kept (rec#11 D-89).
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
   // Which recommended Skills and MCP servers of its occupation kit each FLA uses, every answer kept.
@@ -99,6 +109,15 @@ const sqliteStores = () => [
   ['work-surfaces.sqlite', WORK_SURFACES_FORMAT],
   // Each console change an FLA made for the person under their AI permissions (rec#11 D-81); never pruned.
   ['agent-delegation.sqlite', AGENT_DELEGATION_FORMAT],
+  // Each visiting requester's mode and every read a visitor made of a shared project; reads kept 90 days.
+  ['visitor-access.sqlite', VISITOR_ACCESS_FORMAT],
+  // The runners a host invited and paired, and the outbox entries each replayed (docs/runner.md).
+  [RUNNER_HOST_FILE, RUNNER_HOST_FORMAT],
+  // A runner's host, its last answers, offline task tokens and outbox (docs/runner.md).
+  [RUNNER_FILE, RUNNER_FORMAT],
+  // What a runner's own Tonborg chose there and how each choice did, kept until `fuli runner leave` (docs/runner.md).
+  [ROUTING_LEDGER_FILE, ROUTING_LEDGER_FORMAT],
+  [ROUTES_FILE, ROUTES_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
   ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],
@@ -124,12 +143,16 @@ const jsonStores = () => [
   ['capture-onboarding.json', CAPTURE_ONBOARDING_FORMAT],
   // Whether the console's first-run guide is still open (clients, start at login, capture).
   ['first-run-guide.json', FIRST_RUN_GUIDE_FORMAT],
+  // Which advanced console areas this installation has used; an id is only ever added.
+  ['advanced-areas.json', ADVANCED_AREAS_FORMAT],
   ['external-knowledge/bindings.json', EXTERNAL_KNOWLEDGE_FORMAT],
   ['external-knowledge/conflict-policies.json', CONFLICT_POLICY_FORMAT],
   // The built-in Agents' model settings, saved from the console (rec#8); keys are only named here.
   ['model-backends.json', MODEL_BACKEND_CONFIG_FORMAT],
   ['model-secrets.json', MODEL_SECRETS_FORMAT],
   ['client-connection-observations.json', CLIENT_CONNECTION_HISTORY_FORMAT],
+  // A runner's copy of the host's last `fuli whoami` answer, shown marked offline (rec#145).
+  [PROJECT_IDENTITY_CACHE_FILE, PROJECT_IDENTITY_CACHE_FORMAT],
   ['format-operations.json', FORMAT_OPERATIONS_FORMAT],
   ['format-notice-delivery.json', FORMAT_NOTICE_DELIVERY_FORMAT],
   ['format-apply-receipts.json', APPLY_RECEIPTS_FORMAT],
@@ -190,6 +213,15 @@ const logStores = () => [
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
   'unreadable', 'upgrade_on_open', 'unversioned', 'current', 'empty', 'absent'];
 
+// Whether FULI already kept data in this directory: one of its SQLite stores
+// or per-session record directories other than `except`, all created by use.
+// The JSON files setup writes (settings, runtime configuration) do not count,
+// so a new installation reads as one that kept nothing yet.
+export function keptDataBefore(dataDir, except = []) {
+  return [...sqliteStores(), ...jsonDirectories()].some(([label]) => !except.includes(label)
+    && existsSync(join(dataDir, label)));
+}
+
 // The single-file stores of one data directory: each kind's engine can
 // preview, apply, undo and restore them (migration-plan.js).
 export function localStoreFiles(dataDir) {
@@ -224,6 +256,6 @@ function inspectJsonDirectory(directory, format) {
     .filter(([, count]) => count));
   const state = STATE_ORDER.find((candidate) => counts[candidate]) ?? 'empty';
   return { store: format.store, kind: 'json-records', target: format.supported, version: null,
-    ledger: [], steps: [], state, note: `${records.length} records: ${Object.entries(counts)
+    ledger: [], steps: [], state, counts, note: `${records.length} records: ${Object.entries(counts)
       .map(([name, count]) => `${count} ${name}`).join(', ') || 'none'}` };
 }

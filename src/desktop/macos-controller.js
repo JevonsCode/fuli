@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { isMainModule } from '../system/main-module.js';
-import { runTrayAction } from './desktop-controller.js';
+import { runTrayAction, stageReporter } from './desktop-controller.js';
 
 // The macOS app's entry for its desktop client
 // (desktop/flutter/lib/src/runtime/macos_app_runtime.dart):
@@ -25,8 +25,11 @@ export function loadMacosAppContext({ packageRoot = PACKAGE_ROOT, env = process.
 
 if (isMainModule(import.meta.url)) {
   try {
-    if (process.argv.length !== 3) throw new Error('Expected exactly one action.');
-    const result = await runTrayAction(process.argv[2], loadMacosAppContext());
+    // One action; `recover-start` and `abandon-import-start` also take the digest of the plan the person confirmed.
+    if (process.argv.length !== (/^(?:recover|abandon-import|keep-newer)-start$/.test(process.argv[2]) ? 4 : 3)) throw new Error('Expected exactly one action.');
+    const result = await runTrayAction(process.argv[2], loadMacosAppContext(),
+      { onStage: stageReporter(process.env),
+        recoveryDigest: process.argv[3] ?? null });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

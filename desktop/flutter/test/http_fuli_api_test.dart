@@ -47,6 +47,48 @@ void main() {
     expect(open.map((notice) => (notice.id, notice.title)), [('r1', 'Pick a staging host')]);
   });
 
+  test('reads the glance, leaving out the rows it cannot read', () async {
+    final api = apiAnswering((_) => json({
+          'assistants': {
+            'rows': [
+              {
+                'name': 'Synthetic Lead',
+                'working': true,
+                'at': '2026-11-16T04:00:00.000Z',
+                'project': 'Synthetic App',
+                'task': 'Synthetic task',
+                'link': 'fuli://agents/s/lead',
+              },
+              {'working': true, 'link': 'fuli://agents/s/nameless'},
+              {'name': 'Synthetic Tester', 'project': null, 'task': '', 'link': 'fuli://agents/s/tester'},
+              'not a row',
+            ],
+            'more': 3,
+            'link': 'fuli://project-agents',
+          },
+          'roundtables': {
+            'rows': [
+              {'subject': 'Review round', 'replying': true, 'waitingFor': ['Synthetic Tester', 7], 'link': 'fuli://roundtables/t1'},
+              {'subject': 'No link'},
+            ],
+          },
+        }));
+    final glance = await api.glance();
+    expect(requests.single.url.toString(), 'http://127.0.0.1:$port/api/desktop/glance');
+    expect(glance.assistants.rows.map((row) => (row.name, row.working, row.at?.toUtc().hour, row.project, row.task, row.link)), [
+      ('Synthetic Lead', true, 4, 'Synthetic App', 'Synthetic task', 'fuli://agents/s/lead'),
+      ('Synthetic Tester', false, null, null, null, 'fuli://agents/s/tester'),
+    ]);
+    expect((glance.assistants.more, glance.assistants.link), (3, 'fuli://project-agents'));
+    expect(glance.roundtables.rows.map((row) => (row.subject, row.replying, row.waitingFor.join('+'), row.link)), [
+      ('Review round', true, 'Synthetic Tester', 'fuli://roundtables/t1'),
+    ]);
+    expect((glance.roundtables.more, glance.roundtables.link), (0, null));
+
+    final empty = await apiAnswering((_) => json([])).glance();
+    expect([...empty.assistants.rows, ...empty.roundtables.rows], isEmpty);
+  });
+
   test('POSTs JSON bodies with a JSON content type', () async {
     final api = apiAnswering((request) => switch (request.url.path) {
           '/api/system/doctor/repair' => json({

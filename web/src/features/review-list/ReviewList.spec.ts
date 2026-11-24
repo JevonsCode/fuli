@@ -11,6 +11,7 @@ vi.mock('vue-router', async importOriginal => ({ ...await importOriginal<typeof 
 import { useConsoleStore } from '@/stores/console'
 import ReviewList from './ReviewList.vue'
 import TonborgDelegationSwitch from './TonborgDelegationSwitch.vue'
+import { reviewListMessages } from '@/i18n/messages/review-list'
 
 // rec#96, synthetic data only.
 const basis = { existence_reason: 'Synthetic.', quadrant_reason: 'Synthetic.', proposed_by: { kind: 'agent', label: 'Synthetic Agent' } }
@@ -339,13 +340,50 @@ describe('交给 Tonborg 确认', () => {
     expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
   })
 
-  it('cannot be turned on without Tonborg\'s own model and says where to connect one', async () => {
-    getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: { connected: false, status: 'suggestion', reason: 'not_configured' } })
+  it('turns on without Tonborg\'s own model, says the current session confirms for it, and still links to connecting one', async () => {
+    const noModel = { connected: false, sessionStandsIn: true, status: 'suggestion', reason: 'not_configured' }
+    getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: noModel })
+    putJson.mockResolvedValue({ enabled: true, changedAt: '2026-11-17T00:00:00Z', revision: 1, model: noModel })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
-    expect(wrapper.get('[data-slot=switch]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('需要先给 Tonborg 接一个模型')
+    expect(wrapper.get('[data-slot=switch]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Tonborg 还没接模型：打开后，由你当时的 AI 会话替它确认')
     expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/models')
+    await wrapper.get('[data-slot=switch]').trigger('click'); await flushPromises()
+    expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 0,
+      language: 'zh-CN' }, expect.anything())
+    expect(wrapper.text()).toContain('Tonborg 没接模型：由你当时的 AI 会话替它确认，没有会话时不会进行')
+    // The same switch hands over the lead session's acceptance of its own task.
+    expect(wrapper.get('[data-tonborg-acceptance]').text()).toBe('也包括验收：另一个助手验证通过后，负责的会话可以验收自己的任务。')
+  })
+
+  it('with a model of Tonborg configured but off, says the session only suggests and names no acceptance', async () => {
+    const modelOff = { connected: false, sessionStandsIn: false, status: 'suggestion', reason: 'not_configured' }
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: modelOff })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Tonborg 配了模型，但现在不能用来确认：会话的回答只当建议')
+    expect(wrapper.text()).not.toContain('替它确认')
+    expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
+  })
+
+  it('says nothing about acceptance while Tonborg has its own model', async () => {
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: { connected: true, status: 'automatic', reason: null } })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.find('[data-tonborg-acceptance]').exists()).toBe(false)
+  })
+
+  it('keeps every switch line within 100 characters in both languages', () => {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      const lines = Object.entries(reviewListMessages[locale].delegation)
+        .filter(([key, text]) => typeof text === 'string' && /Hint$|Acceptance$/.test(key))
+      expect(lines.length).toBe(6)
+      for (const [key, text] of lines) {
+        const shown = (text as string).replace("@:{'roleNames.tonborg'}", 'Tonborg')
+        expect([...shown].length, `${locale} ${key}`).toBeLessThanOrEqual(100)
+      }
+    }
   })
 
   it('turns on with the revision it read and reports the change', async () => {
@@ -360,7 +398,7 @@ describe('交给 Tonborg 确认', () => {
     expect(wrapper.text()).toContain('Tonborg 正在替你确认')
   })
 
-  it('rec#124: says how many projects Tonborg can confirm in, and links to where projects are approved', async () => {
+  it('rec#124: says how many projects Tonborg can confirm in, and every notice opens the project choice in one step', async () => {
     const reach = { projects: 3, blockedProjectIds: ['beta', 'gamma'], unassignedAllowed: true }
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach,
       model: { connected: true, status: 'automatic', reason: null } })
@@ -368,18 +406,20 @@ describe('交给 Tonborg 确认', () => {
     await flushPromises()
     const notice = onList.get('[data-tonborg-reach]')
     expect(notice.attributes('data-tone')).toBe('warning')
-    expect(notice.text()).toContain('3 个项目里只有 1 个批准发给 Tonborg 的模型，其余仍等你确认。')
+    expect(notice.text()).toContain('批准发给 Tonborg 的模型的：正式项目 1/3 个。没批准的仍等你确认。')
     expect(onList.text()).not.toContain('正在替你确认')
     const links = onList.findAllComponents(RouterLinkStub)
-    expect(links.map(link => [link.text(), link.props('to')])).toEqual([['去批准', { path: '/models', query: { details: 'tonborg' } }]])
+    const choose = { path: '/models', query: { edit: 'tonborg', focus: 'projects' } }
+    expect(links.map(link => [link.text(), link.props('to')])).toEqual([['去选项目', choose]])
 
-    // None approved: said plainly. In Tonborg's own details the 编辑 button is right there, so no link.
+    // None approved: said plainly. In Tonborg's own details too the notice carries its action (11-23).
     getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach: { ...reach, blockedProjectIds: ['alpha', 'beta', 'gamma'], unassignedAllowed: false },
       model: { connected: true, status: 'automatic', reason: null } })
     const inSettings = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
-    expect(inSettings.get('[data-tonborg-reach]').text()).toBe('没有内容批准发给 Tonborg 的模型，它什么都确认不了，都等你确认。')
-    expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
+    expect(inSettings.get('[data-tonborg-reach]').text()).toContain('没有内容批准发给 Tonborg 的模型，它什么都确认不了，都等你确认。')
+    expect(inSettings.find('[data-tonborg-approve-link]').exists()).toBe(true)
+    expect(inSettings.findComponent(RouterLinkStub).props('to')).toEqual(choose)
   })
 
   it('rec#124: off, it keeps its usual hint whatever the model may read', async () => {

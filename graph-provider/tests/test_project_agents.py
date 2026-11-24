@@ -14,7 +14,8 @@ from fuli_graph.project_agent_models import (
     ProjectAgentUpsert,
 )
 from fuli_graph.project_agent_names import unique_nickname
-from fuli_graph.store_project_agents import SYSTEM_HR_AGENT_ID, StoreProjectAgents
+from fuli_graph.fixed_roles import SYSTEM_COORDINATOR_AGENT_ID, SYSTEM_HR_AGENT_ID, SYSTEM_JUDGMENT_AGENT_ID
+from fuli_graph.store_project_agents import StoreProjectAgents
 
 
 @pytest.mark.asyncio
@@ -634,18 +635,21 @@ async def test_only_bole_system_identity_can_use_hr_type():
 
 
 @pytest.mark.asyncio
-async def test_bole_cannot_be_deactivated_through_profile_upsert():
-    profile = project_agent_profile().model_copy(update={
-        'agent_type': 'hr', 'status': 'inactive',
-    })
-    with pytest.raises(HTTPException, match='project manager and AR must remain active'):
-        await StoreStub(SequentialDriver([])).upsert_project_agent(
+@pytest.mark.parametrize('agent_id, agent_type, status', [
+    (SYSTEM_HR_AGENT_ID, 'hr', 'inactive'),
+    (SYSTEM_COORDINATOR_AGENT_ID, 'coordinator', 'inactive'),
+    # Astro's profile takes no upsert at all, and no upsert archives anyone: those two are refused earlier.
+    (SYSTEM_JUDGMENT_AGENT_ID, 'durable', 'inactive'),
+])
+async def test_no_fixed_role_can_be_switched_off_through_profile_upsert(agent_id, agent_type, status):
+    profile = project_agent_profile().model_copy(update={'agent_type': agent_type, 'status': status})
+    driver = SequentialDriver([])
+    with pytest.raises(HTTPException, match='fixed roles must remain active'):
+        await StoreStub(driver).upsert_project_agent(
             {'id': 'principal-1'},
-            ProjectAgentUpsert(
-                personal_space_id='personal-space', agent_id=SYSTEM_HR_AGENT_ID,
-                profile=profile,
-            ),
+            ProjectAgentUpsert(personal_space_id='personal-space', agent_id=agent_id, profile=profile),
         )
+    assert driver.calls == [], 'refused before the graph is read'
 
 
 @pytest.mark.asyncio

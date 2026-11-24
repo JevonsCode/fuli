@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import Query
+from fastapi import HTTPException, Query
 
 from .models import SourceApplication
 from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskCheckpointAmendment, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim, SessionTurnReceiptClaim, SessionHintClaim
@@ -20,6 +21,14 @@ def register_task_context_routes(application, store, Actor):
         return await store.recent_agent_sessions(
             actor, personal_space_id, project_agent_id, personal_project_id, limit,
         )
+
+    @application.get('/v1/task-context-agents/recent')
+    async def recent_agents(actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        since: datetime):
+        if since.tzinfo is None:
+            raise HTTPException(status_code=422, detail='since needs a time zone')
+        return await store.recent_working_agents(actor, personal_space_id, since)
 
     @application.get('/v1/task-context-sessions/current')
     async def current_context(actor: Actor,

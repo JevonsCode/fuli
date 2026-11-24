@@ -3,6 +3,9 @@ export const routeMessages = {
     overview: {
       title: '工作台',
     },
+    today: {
+      title: '今天',
+    },
     preferences: {
       title: '偏好',
     },
@@ -60,6 +63,9 @@ export const routeMessages = {
   'en-US': {
     overview: {
       title: 'Workspace',
+    },
+    today: {
+      title: 'Today',
     },
     preferences: {
       title: 'Preferences',

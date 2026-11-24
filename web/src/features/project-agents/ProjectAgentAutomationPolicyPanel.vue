@@ -5,7 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { getJson, patchJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { t } from '@/i18n'
-import { agentResponsibility } from '@/features/agent-profile/profile-model'
+import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
 import type { ProjectAgentCoordinationPolicy, ProjectAgentRecord, ProjectSubTeamPolicy } from '@/types'
 import { OptionCombobox } from '@/components/ui/combobox'
 
@@ -43,9 +43,10 @@ const leaderOptions = computed(() => [
 ])
 const members = computed(() => eligible.value.filter(agent => agent.agentId !== teamLead.value))
 const unavailableMembers = computed(() => teamMembers.value.filter(id => !members.value.some(agent => agent.agentId === id))
-  .map(id => ({ id, name: (props.agents ?? []).find(agent => agent.agentId === id)?.profile.displayName
-    || (props.agents ?? []).find(agent => agent.agentId === id)?.profile.name
-    || t('projectAgents.team.unavailableMember') })))
+  .map(id => {
+    const agent = (props.agents ?? []).find(candidate => candidate.agentId === id)
+    return { id, name: (agent && agentDisplayName(agent)) || t('projectAgents.team.unavailableMember') }
+  }))
 const selectedLead = computed(() => eligible.value.find(agent => agent.agentId === policy.value.teamLeadAgentId))
 const selectedMembers = computed(() => eligible.value.filter(agent => policy.value.teamMemberAgentIds?.includes(agent.agentId)))
 const teamDirty = computed(() => teamLead.value !== (policy.value.teamLeadAgentId ?? '')
@@ -88,7 +89,7 @@ const policySummary = computed(() => {
     `${t('projectAgents.team.lead')} ${selectedLead.value ? label(selectedLead.value) : t('projectAgents.team.noLead')}`,
   ].join(' · ')
 })
-function label(agent: ProjectAgentRecord) { return agent.profile.displayName || agent.profile.name }
+function label(agent: ProjectAgentRecord) { return agentDisplayName(agent) }
 function resetTeam() {
   teamLead.value = policy.value.teamLeadAgentId ?? ''
   teamMembers.value = [...(policy.value.teamMemberAgentIds ?? [])]
@@ -188,7 +189,7 @@ function defaultPolicy(): ProjectAgentCoordinationPolicy {
   return {
     personalSpaceId: props.personalSpaceId,
     personalProjectId: props.personalProjectId,
-    askBeforeRecruitment: true,
+    askBeforeRecruitment: false,
     autoReusePreviousAgent: true,
     autoGrowTeam: true,
     updatedAt: null,
@@ -208,7 +209,7 @@ function normalizePolicy(value: unknown): ProjectAgentCoordinationPolicy {
       || props.personalProjectId,
     askBeforeRecruitment: booleanValue(
       record.askBeforeRecruitment ?? record.ask_before_recruitment,
-      true,
+      false,
     ),
     autoReusePreviousAgent: booleanValue(
       record.autoReusePreviousAgent ?? record.auto_reuse_previous_agent,

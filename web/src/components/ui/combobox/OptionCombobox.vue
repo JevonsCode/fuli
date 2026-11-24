@@ -8,6 +8,12 @@
 // `loading` shows an inline indicator above the options it already has.
 // `freeText` (single): what is typed is the value too, so a value outside the
 // options stays (a model name the list does not have); the options are suggestions.
+// `searchOnServer` (single): the page reads the options for the typed text it
+// gets from `search`, so the list is not filtered again here; `emptyLabel` and
+// `loadingLabel` then say what was searched and what is being read.
+// `foldGroup`: the heading of a group that opens folded into one row with how
+// many of it are chosen (「临时项目 1/12」); the row opens it, and typing shows
+// its matches as usual; `foldShown` is emitted each time its members come into view.
 import type { HTMLAttributes } from "vue"
 import { ComboboxInput } from "reka-ui"
 import { computed, ref, useId, watch } from "vue"
@@ -17,6 +23,7 @@ import { cn } from "@/lib/class-names"
 import { FIELD_HEIGHT, type ControlSize } from "../control-size"
 import { FIELD_FOCUS_WITHIN, FIELD_LOOK } from "../field-look"
 import UiIcon from "@/ui/UiIcon.vue"
+import { Button } from "../button"
 import { fromItemValue, groupOptions, optionSearchText, toItemValue, type SelectOption } from "../select/option"
 import SelectionActions from "../select/SelectionActions.vue"
 import { TagsInput, TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputItemText } from "../tags-input"
@@ -48,6 +55,10 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   loading?: boolean
   freeText?: boolean
+  searchOnServer?: boolean
+  emptyLabel?: string
+  loadingLabel?: string
+  foldGroup?: string
   required?: boolean
   name?: string
   controlId?: string
@@ -55,10 +66,10 @@ const props = withDefaults(defineProps<{
   class?: HTMLAttributes["class"]
 }>(), {
   multiple: false, searchable: true, field: false, placeholder: undefined, allLabel: undefined, summary: undefined, maxChips: 2, hint: undefined,
-  disabled: false, loading: false, freeText: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
+  disabled: false, loading: false, freeText: false, searchOnServer: false, emptyLabel: undefined, loadingLabel: undefined, foldGroup: undefined, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
 })
 
-const emit = defineEmits<{ "update:modelValue": [value: V] }>()
+const emit = defineEmits<{ "update:modelValue": [value: V]; search: [text: string]; foldShown: [] }>()
 defineSlots<{ actions?: () => unknown }>()
 
 // TagsInput adds typed text as a chip on its delimiter; chips here only come from the list.
@@ -93,11 +104,26 @@ function labelOf(itemValue: unknown) {
 // list is open and the person is typing.
 const fieldText = ref("")
 const open = ref(false)
+// What the person typed into the list's search (input events only: reka also writes the chosen
+// label into the field, which is not a search), and whether the folded group was opened; both
+// reset when the list closes.
+const searchText = ref("")
+const unfolded = ref(false)
+// Closing clears what was typed; an opened folded group stays open for as long as this
+// field is on the page, so reopening the list returns to where the person was.
+watch(open, (isOpen) => { if (!isOpen) searchText.value = "" })
+const foldedCount = (options: readonly SelectOption[]) => {
+  const chosen = props.multiple ? chosenValues.value : [props.modelValue as string]
+  return `${options.filter(option => chosen.includes(option.value)).length}/${options.length}`
+}
+watch(() => Boolean(props.foldGroup) && open.value && (unfolded.value || Boolean(searchText.value.trim())), (shown) => { if (shown) emit("foldShown") })
+const folds = (heading: string | undefined) => Boolean(props.foldGroup) && heading === props.foldGroup && !searchText.value.trim()
 const chosenLabel = computed(() => props.multiple ? "" : labelOf(itemModel.value))
 watch(chosenLabel, (label) => { if (!open.value) fieldText.value = label })
 
 // Free text: the typed text, or the option whose label it is (picking one shows its label).
 function typed(text: string) {
+  if (props.searchOnServer) emit("search", text)
   if (!props.freeText || props.multiple) return
   emit("update:modelValue", (props.options.find(option => option.label === text)?.value ?? text) as V)
 }
@@ -133,6 +159,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
       :required="required"
       open-on-click
       :reset-search-term-on-blur="!freeText"
+      :ignore-filter="searchOnServer"
       @update:open="open = $event"
       @update:model-value="choose"
     >
@@ -155,6 +182,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
               :readonly="!searchable"
               :aria-label="field ? undefined : label"
               @keydown.enter.prevent
+              @input="searchText = ($event.target as HTMLInputElement).value"
             />
           </ComboboxInput>
           <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground" :aria-label="t('ui.select.open')"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
@@ -169,15 +197,23 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
             :readonly="!searchable"
             :aria-label="field ? undefined : label"
             @update:model-value="typed"
+            @input="searchText = ($event.target as HTMLInputElement).value"
           />
           <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground" :aria-label="t('ui.select.open')"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
         </template>
       </ComboboxAnchor>
       <ComboboxList class="w-(--reka-popper-anchor-width) min-w-56">
         <ComboboxViewport :aria-busy="loading || undefined">
-          <GrowthLoading v-if="loading" variant="inline" class="px-2 py-1.5" :label="t('ui.select.loading')" />
-          <ComboboxEmpty v-else>{{ options.length ? t('ui.select.noMatches') : t('ui.select.noOptions') }}</ComboboxEmpty>
-          <ComboboxGroup v-for="group in groups" :key="group.heading ?? ''" :heading="group.heading">
+          <GrowthLoading v-if="loading" variant="inline" class="px-2 py-1.5" :label="loadingLabel ?? t('ui.select.loading')" />
+          <ComboboxEmpty v-else>{{ emptyLabel ?? (options.length ? t('ui.select.noMatches') : t('ui.select.noOptions')) }}</ComboboxEmpty>
+          <template v-for="group in groups" :key="group.heading ?? ''">
+          <Button v-if="folds(group.heading)" variant="ghost" size="sm" class="w-full justify-start gap-2 px-2 font-normal"
+            :aria-expanded="unfolded" data-option-fold @pointerdown.prevent @click="unfolded = !unfolded">
+            <span class="min-w-0 flex-1 truncate">{{ group.heading }}</span>
+            <span class="text-xs text-muted-foreground tabular-nums" data-option-fold-count>{{ foldedCount(group.options) }}</span>
+            <UiIcon :name="unfolded ? 'chevron-up' : 'chevron-down'" :size="14" class="text-muted-foreground" />
+          </Button>
+          <ComboboxGroup v-if="!folds(group.heading) || unfolded" :heading="folds(group.heading) ? undefined : group.heading">
             <ComboboxItem
               v-for="option in group.options"
               :key="option.value"
@@ -193,6 +229,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
               <ComboboxItemIndicator><UiIcon name="check" :size="16" class="text-primary" /></ComboboxItemIndicator>
             </ComboboxItem>
           </ComboboxGroup>
+          </template>
         </ComboboxViewport>
         <SelectionActions v-if="multiple" :options="options" :model-value="chosenValues" :disabled="disabled" @update:model-value="emitValues">
           <slot name="actions" />

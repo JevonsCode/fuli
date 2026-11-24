@@ -22,9 +22,11 @@ import OpenInAppButton from '@/features/open-in-app/OpenInAppButton.vue'
 import { shellPageTools } from '@/features/webmcp/shell-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { useVisitAwaiting } from '@/features/visit-requests/useVisitAwaiting'
 import { useReviewList } from '@/features/review-list/review-store'
-import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
+import { offeredVersion, refreshVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
+import { shown } from '@/features/advanced-areas/advanced-areas'
 import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
@@ -52,7 +54,7 @@ import { measureScrollbarSize } from './scrollbar-size'
 const store = useConsoleStore()
 const route = useRoute()
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const destinations = computed(() => navDestinations({ spaceId: activeSpaceId.value || 'current' }))
+const destinations = computed(() => navDestinations({ spaceId: activeSpaceId.value || 'current', shown }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
@@ -63,7 +65,7 @@ const inboxActive = computed(() => route.path === '/inbox' || route.path.startsW
 const router = useRouter()
 // What every page offers the browser's AI agent (WebMCP) where the browser supports it.
 usePageTools(() => shellPageTools({ router, spaceId: () => activeSpaceId.value }))
-// The mark and the wordmark: on 工作台 they play the mark's effect; on any other
+// The mark and the wordmark: on 今天 they play the mark's effect; on any other
 // page they go back to it (Jevons 11-04).
 const brand = ref<InstanceType<typeof BrandEasterEgg> | null>(null)
 const onHome = computed(() => route.path === '/')
@@ -81,7 +83,8 @@ const settingsLabel = computed(() => t(clientsNeedUpdate.value ? 'shell.settings
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
 // The 圆桌 icon animates while an Agent is replying in one of its conversations.
-const roundtableLive = useRoundtableLive(activeSpaceId)
+// While 圆桌 is not shown, nothing reads its list and its icon stays still.
+const roundtableLive = useRoundtableLive(activeSpaceId, computed(() => shown('roundtable')))
 const liveDockKey = computed(() => roundtableLive.value ? 'chat' : null)
 const dockFolded = computed(() => destination.value?.placement === 'dock' && destination.value.key !== 'constellation')
 const runtimeReady = computed(() => store.runtimeStatus === 'ready')
@@ -120,6 +123,12 @@ watch(activeSpaceId, (id) => { attention.setSpace(id); review.setSpace(id) }, { 
 let attentionTimer: ReturnType<typeof setInterval> | undefined
 let reviewTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
+// Another computer's request arrives while the page is open: read with the assistants' requests, so 等你拍板 shows it without a reload.
+const visitsAwaiting = useVisitAwaiting()
+function refreshWaiting() {
+  refreshAttention()
+  if (document.visibilityState === 'visible') void visitsAwaiting.load()
+}
 // The knowledge read is larger, so it refreshes less often; the 待决策 page refreshes it on open.
 function refreshReview() { if (document.visibilityState === 'visible' && !review.loading) void review.refresh() }
 // The top bar's one refresh reads the console again, the waiting requests (the whole
@@ -139,25 +148,30 @@ async function refreshConsole() {
   } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
-// the version opens 设置 › 系统 › 版本与更新, where it installs.
-const latestVersion = ref<string | null>(null)
+// the version opens 设置 › 系统 › 版本与更新, where it installs. The dot shows the
+// console's shared answer, so 设置's channel switch and 「检查更新」 move it too; an
+// open console asks npm again every hour (the server's cached answer is up to 6 h old).
+const latestVersion = offeredVersion
 const versionRequest = new AbortController()
+const VERSION_RECHECK_MS = 60 * 60 * 1000
+let versionTimer: ReturnType<typeof setInterval> | undefined
+// Version checks are advisory and never interrupt the console.
+const recheckVersion = (fresh: boolean) => void refreshVersionStatus(versionRequest.signal, { fresh }).catch(() => {})
 onMounted(() => {
   measureScrollbarSize()
-  void readVersionStatus(versionRequest.signal)
-    .then((status) => { latestVersion.value = offersUpdate(status) ? status.latestVersion : null })
-    // Version checks are advisory and never interrupt the console.
-    .catch(() => {})
+  recheckVersion(false)
+  versionTimer = setInterval(() => recheckVersion(true), VERSION_RECHECK_MS)
   if (store.runtimeStatus === 'idle') void store.refresh()
-  attentionTimer = setInterval(refreshAttention, 30000)
+  attentionTimer = setInterval(refreshWaiting, 30000)
   reviewTimer = setInterval(refreshReview, 300000)
-  document.addEventListener('visibilitychange', refreshAttention)
+  document.addEventListener('visibilitychange', refreshWaiting)
 })
 onBeforeUnmount(() => {
   versionRequest.abort()
+  clearInterval(versionTimer)
   clearInterval(attentionTimer)
   clearInterval(reviewTimer)
-  document.removeEventListener('visibilitychange', refreshAttention)
+  document.removeEventListener('visibilitychange', refreshWaiting)
   attention.setSpace('')
   review.setSpace('')
 })

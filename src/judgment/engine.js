@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { parse, parseAnswer } from './service.js';
 import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProvenance, pendingRecord,
-  TONBORG_OPERATIONS } from './backend.js';
+  sessionStandsIn, TONBORG_OPERATIONS } from './backend.js';
 import { assessRouting } from './routing.js';
 import { assessAcceptance } from './acceptance.js';
 import { recoverInterruptedWrites } from './review-recovery.js';
+import { FIXED_ROLES, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { arraySchema, enumSchema, objectSchema } from '../agent-tools/schema.js';
@@ -15,6 +16,7 @@ import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
 import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
 import { ASK_FIELDS, askProperties, guessProperty, softAsk } from './question-options.js';
+import { askInParts } from '../model-backends/ask-in-parts.js';
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 import { coversClient } from '../agents/source-applications.js';
@@ -25,13 +27,20 @@ const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullab
   limit: z.number().int().min(1).max(10).default(10) }).strict();
 // Every review is asked, for each candidate, its best guess of what the
 // person would do, why it is unsure, and the one question that asks them
-// (question-options.js). asked: false is the schema an answer's verdict is
-// checked with: the guess, which a delegated review (rec#96) must give, and
-// its doubt and question apart.
+// (question-options.js). The schema the model port checks an answer with
+// takes doubt and question as any text or null, as softAsk reads them, so
+// the port never refuses what a review would only replace. asked: false is
+// the schema an answer's verdict is checked with: the guess, which a
+// delegated review (rec#96) must give, and its doubt and question apart.
 const reviewSchema = (candidates, { delegated = false, asked = true } = {}) => objectSchema({ decisions: arraySchema(objectSchema({
-  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties, ...(asked ? askProperties : guessProperty) },
-['target', ...VERDICT_FIELDS, ...(asked ? ASK_FIELDS : delegated ? ['guess'] : [])]),
+  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties, ...guessProperty(delegated),
+  ...(asked ? askProperties : {}) }, ['target', ...VERDICT_FIELDS, ...(asked || delegated ? ['guess'] : []), ...(asked ? ASK_FIELDS : [])]),
 { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
+// The port checks a review's verdicts one by one, by candidate (decision-contract.js
+// batchCheck): the verdicts that pass are used, the rest asked again once on their own.
+const REVIEW_ITEMS = Object.freeze({ field: 'decisions', key: 'target' });
+// How many times candidates whose verdicts failed the check are asked again in the same review.
+const RECHECK_ROUNDS = 1;
 export const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 // A record of this request whose execution is final is never applied again.
 const SETTLED = Object.freeze(['applied', 'stale', 'failed', 'undone']);
@@ -49,8 +58,9 @@ const reviewPolicy = (store, space, project) => {
 };
 
 // trust: whether Tonborg's configured model may apply a review by itself
-// (src/model-backends/role-trust.js, rec#10 D-36); without one, every review
-// is a suggestion.
+// (src/model-backends/role-trust.js, rec#10 D-36), and whether the current
+// session may stand in for Tonborg; without one, every review is a suggestion
+// and no session stands in.
 export function createJudgmentEngine({ app, judge = createJudgmentBackend(), trust = null } = {}) {
   // The capture switch is part of the gate (rec#10 D-36.7): while recording is
   // off for the review's scope, a trusted model's approval is a suggestion too.
@@ -67,8 +77,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     evidenceVersion: fingerprint(call.data), policyVersion: policyVersion(call.policy) }));
   async function authorize(input, policy, { ensureAssignment = false } = {}) {
     const agents = await app.listProjectAgents({ personalSpaceId: input.personalSpaceId });
-    const tonborg = agents.find(agent => agent.agentId === 'employee.tonborg');
-    if (tonborg?.profile.status !== 'active' || !tonborg.profile.capabilities?.includes('fuli.employee:tonborg')) {
+    const tonborg = agents.find(agent => agent.agentId === TONBORG_AGENT_ID);
+    if (tonborg?.profile.status !== 'active' || !tonborg.profile.capabilities?.includes(FIXED_ROLES.tonborg.capability)) {
       throw new EmployeeError('Tonborg is unavailable', 403, 'judgment_agent_unavailable');
     }
     if (!coversClient(tonborg.profile.allowedClients, policy.client)) {
@@ -78,7 +88,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
   }
   // taskScope carries only the work kind, session and workflow the caller actually knows.
   const readPreferences = (project, taskScope = {}) => readJudgmentPreferences(app, { personalProjectId: project,
-    projectAgentId: project ? 'employee.tonborg' : null, taskScope });
+    projectAgentId: project ? TONBORG_AGENT_ID : null, taskScope });
   // memory, memoryRevision and feedback are Tonborg's own: its model reads
   // them, a session's work package leaves them out (session-package.js, D-58).
   async function context(service, input, policy = service.store().policy(input.personalSpaceId, input.personalProjectId ?? ''), taskScope = {}) {
@@ -87,7 +97,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const preferences = await readPreferences(project, taskScope);
     let memory = null;
     if (project) {
-      try { memory = await app.inspectProjectAgentMemory({ personalSpaceId: input.personalSpaceId, personalProjectId: project, agentId: 'employee.tonborg', limit: 1 }); }
+      try { memory = await app.inspectProjectAgentMemory({ personalSpaceId: input.personalSpaceId, personalProjectId: project, agentId: TONBORG_AGENT_ID, limit: 1 }); }
       catch (error) { if (![403, 404].includes(error.status)) throw error; }
     }
     return { preferences, memory: memory?.current?.memory ?? null,
@@ -110,7 +120,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     }
     const token = store.claim(space, project), lease = { project, token };
     const records = [];
-    let run, cursor, page, offset, candidates = [], visited, evidenceContext, hold, handedOff = false;
+    let run, cursor, page, offset, candidates = [], visited, evidenceContext, hold, handedOff = false, notReviewed = 0;
     const cursorKey = `review-offset:${project}`, visitedKey = `review-visited:${project}`;
     try {
       const policy = reviewPolicy(store, space, project);
@@ -133,86 +143,110 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy), { exceptRequest: cacheKey })).slice(0, input.limit));
       records.push(...recovered.filter(record => !candidates.some(candidate => candidate.candidate_key === record.target)));
       if (candidates.length) {
-        const schema = reviewSchema(candidates);
-        const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: cacheKey, resume: input,
-          scope: { personalSpaceId: space, personalProjectId: project || null }, instructions: reviewInstructions(policy),
-          example: REVIEW_EXAMPLE, schema, data: { policy, ...evidenceContext, candidates }, execution });
-        // A handed-off review leaves its candidates unvisited for the session's answer.
-        if (answer.pending) {
-          handedOff = true;
-          records.push(store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', title: 'Tonborg review',
-            ...pendingRecord(answer), policy }, `pending:${answer.pending.packageId}`));
-        }
-        const trustKey = answer.pending ? null : reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null });
-        const gate = trustKey && gateOf(trustKey);
-        // rec#26: one model request judges the whole batch, so injected text in
-        // any candidate may have steered every verdict of that answer.
-        const signals = new Map(candidates.map(c => [c.candidate_key, injectionSignals(c)]));
-        const batchInjected = [...signals.values()].some(found => found.length);
-        for (const decision of answer.pending ? [] : reviewDecisions(answer.value, candidates, policy.delegated)) {
-          const candidate = candidates.find(c => c.candidate_key === decision.target);
-          // The person may have permanently deleted it while the model answered (rec#5 C9).
-          if (store.forgets(decision.target, space)) continue;
-          const protectedItem = Boolean(candidate.requires_attention || candidate.negative_evidence_count > 0
-            || candidate.reasons?.includes('conflict_or_attention'));
-          const aiReview = reviewDisposition(decision, { protectedItem, injection: signals.get(decision.target), batchInjected, gate, policy });
-          const outcome = aiReview.interceptions.some(reason => reason !== 'manual_policy') ? 'escalate' : decision.outcome;
-          let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
-            title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
-            outcome, aiReview, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
-            ...(decision.guess ? { guess: decision.guess } : {}), ...(decision.doubt ? { doubt: decision.doubt } : {}),
-            ...(policy.delegated ? { delegated: true } : {}),
-            // The sentence of an answer injected text may have steered is not shown: FULI writes the question itself.
-            ...(decision.question && !batchInjected ? { question: decision.question } : {}),
-            memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
-            ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
-          // Already settled by an interrupted run of this request: never apply twice.
-          if (SETTLED.includes(record.execution.status)) { records.push(record); continue; }
-          // A rerun applies a stored decision only while the gate still passes now.
-          if (record.aiReview?.state === 'ai_reviewed' && aiReview.state === 'ai_reviewed') {
-            const current = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset: Math.max(0, offset - records.filter(r => r.execution.status === 'applied').length) });
-            const fresh = current.candidates.find(c => c.candidate_key === decision.target);
-            if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(reviewPolicy(store, space, project)) !== policyVersion(policy)) {
-              record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' }, lease);
-            } else if (fingerprint(await readPreferences(project || null)) !== fingerprint(evidenceContext.preferences)) {
-              // The approval was judged against the receipt it saw; a changed or unreadable receipt defers the write.
-              record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Review again.' }, lease);
-            } else {
-              try {
-                await authorize(input, policy);
-                // rec#10 D-36.11: the role's mode, model and egress approval and the capture switch are read
-                // again under the trust store's lock, and the write intent is stored inside it, so a switch to
-                // 「只给建议」 while this batch ran stops every write whose intent is not stored yet. A refusal
-                // is stale and the next review makes it a suggestion. The intent is stored before the
-                // Provider write, so a restart settles it (rec#8 C11).
-                if (!trust) throw Object.assign(new Error('not_configured'), { status: 409, code: 'not_configured' });
-                record = trust.commit(trustKey, () => {
-                  const capture = automaticWriteDecision(app, project || null);
-                  if (!capture.allowed) throw Object.assign(new Error(capture.reason), { status: 409, code: 'capture_off' });
-                  return store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
-                    aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
-                });
-                const receipt = await app.recordKnowledgeReviewProgress({ personalSpaceId: space, reviewId: run.review_id,
-                  candidateKey: decision.target, outcome: 'ai_reviewed', aiReviewEvidenceToken: candidate.ai_review_evidence_token,
-                  // Delegated: the pending item becomes Tonborg's agent confirmation, never the person's.
-                  confirmAsAgent: Boolean(policy.delegated) && (candidate.confirmation_status ?? 'pending') === 'pending',
-                  aiAssessment: { outcome: 'approve', summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
-                    client: answer.client, model: answer.model ?? null, session_id: answer.sessionId ?? null },
-                  note: `Tonborg ${record.id}: ${decision.summary}`.slice(0, 2000) });
-                record = store.execute(space, record.id, 'applied', { reviewId: run.review_id, outcome: receipt.outcome }, lease);
-              } catch (error) {
-                if (!store.owns(space, project, token)) throw error;
-                record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'review_write_failed' }, lease);
+        // Each model call of this review, with the candidates it saw and the
+        // verdicts of theirs that passed. A call whose verdicts for some
+        // candidates failed FULI's check is followed by one more for just
+        // those, told what failed; the rest of the batch stands.
+        const parts = [];
+        let failedChecks = [];
+        const look = async (asked, again) => {
+          const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: again ? `${cacheKey}:again` : cacheKey, resume: input,
+            scope: { personalSpaceId: space, personalProjectId: project || null }, instructions: reviewInstructions(policy),
+            example: REVIEW_EXAMPLE, schema: reviewSchema(asked, { delegated: Boolean(policy.delegated) }), items: REVIEW_ITEMS,
+            data: { policy, ...evidenceContext, candidates: asked, ...(again ? { failedChecks } : {}) },
+            // A second look is never handed to a session: what it cannot judge waits for the next review.
+            ...(again ? { inline: true } : { execution }) });
+          // A handed-off review leaves its candidates unvisited for the session's answer.
+          if (answer.pending) {
+            handedOff = true;
+            records.push(store.record(space, { personalProjectId: project || null, kind: 'review', target: 'review', title: 'Tonborg review',
+              ...pendingRecord(answer), policy }, `pending:${answer.pending.packageId}`));
+            return [];
+          }
+          const rejected = new Map(answer.rejectedItems.map(item => [item.key, item.issues]));
+          const passed = asked.filter(candidate => !rejected.has(candidate.candidate_key));
+          parts.push({ answer, asked, decisions: passed.length ? reviewDecisions(answer.value, passed, policy.delegated) : [] });
+          failedChecks = [...rejected].map(([target, issues]) => ({ target, issues }));
+          return asked.filter(candidate => rejected.has(candidate.candidate_key));
+        };
+        // A second look that fails costs only its own candidates.
+        const unanswered = await askInParts(candidates, asked => (parts.length ? look(asked, true).catch(() => asked) : look(asked, false)),
+          { split: part => [part], rounds: RECHECK_ROUNDS });
+        // Left for the next review: no verdict of theirs passed the check this time.
+        notReviewed = unanswered.length;
+        for (const { answer, asked: batch, decisions } of parts) {
+          const trustKey = reviewTrustKey(answer, { personalSpaceId: space, personalProjectId: project || null }, policy);
+          const gate = gateOf(trustKey);
+          // rec#26: one model request judges the whole batch, so injected text in
+          // any candidate it saw may have steered every verdict of that answer.
+          const signals = new Map(batch.map(c => [c.candidate_key, injectionSignals(c)]));
+          const batchInjected = [...signals.values()].some(found => found.length);
+          for (const decision of decisions) {
+            const candidate = candidates.find(c => c.candidate_key === decision.target);
+            // The person may have permanently deleted it while the model answered (rec#5 C9).
+            if (store.forgets(decision.target, space)) continue;
+            const protectedItem = Boolean(candidate.requires_attention || candidate.negative_evidence_count > 0
+              || candidate.reasons?.includes('conflict_or_attention'));
+            const aiReview = reviewDisposition(decision, { protectedItem, injection: signals.get(decision.target), batchInjected, gate, policy });
+            const outcome = aiReview.interceptions.some(reason => reason !== 'manual_policy') ? 'escalate' : decision.outcome;
+            let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
+              title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
+              outcome, aiReview, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
+              ...(decision.guess ? { guess: decision.guess } : {}), ...(decision.doubt ? { doubt: decision.doubt } : {}),
+              ...(policy.delegated ? { delegated: true } : {}),
+              // The sentence of an answer injected text may have steered is not shown: FULI writes the question itself.
+              ...(decision.question && !batchInjected ? { question: decision.question } : {}),
+              memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
+              ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
+            // Already settled by an interrupted run of this request: never apply twice.
+            if (SETTLED.includes(record.execution.status)) { records.push(record); continue; }
+            // A rerun applies a stored decision only while the gate still passes now.
+            if (record.aiReview?.state === 'ai_reviewed' && aiReview.state === 'ai_reviewed') {
+              const current = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset: Math.max(0, offset - records.filter(r => r.execution.status === 'applied').length) });
+              const fresh = current.candidates.find(c => c.candidate_key === decision.target);
+              if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(reviewPolicy(store, space, project)) !== policyVersion(policy)) {
+                record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' }, lease);
+              } else if (fingerprint(await readPreferences(project || null)) !== fingerprint(evidenceContext.preferences)) {
+                // The approval was judged against the receipt it saw; a changed or unreadable receipt defers the write.
+                record = store.execute(space, record.id, 'stale', { reason: 'Scoped preferences changed. Review again.' }, lease);
+              } else {
+                try {
+                  await authorize(input, policy);
+                  // rec#10 D-36.11: the role's mode, model and egress approval and the capture switch are read
+                  // again under the trust store's lock, and the write intent is stored inside it, so a switch to
+                  // 「只给建议」 while this batch ran stops every write whose intent is not stored yet. A refusal
+                  // is stale and the next review makes it a suggestion. The intent is stored before the
+                  // Provider write, so a restart settles it (rec#8 C11).
+                  if (!trust) throw Object.assign(new Error('not_configured'), { status: 409, code: 'not_configured' });
+                  record = trust.commit(trustKey, () => {
+                    const capture = automaticWriteDecision(app, project || null);
+                    if (!capture.allowed) throw Object.assign(new Error(capture.reason), { status: 409, code: 'capture_off' });
+                    return store.execute(space, record.id, 'applying', { reviewId: run.review_id, candidateKey: decision.target,
+                      aiReviewEvidenceToken: candidate.ai_review_evidence_token }, lease);
+                  });
+                  const receipt = await app.recordKnowledgeReviewProgress({ personalSpaceId: space, reviewId: run.review_id,
+                    candidateKey: decision.target, outcome: 'ai_reviewed', aiReviewEvidenceToken: candidate.ai_review_evidence_token,
+                    // Delegated: the pending item becomes Tonborg's agent confirmation, never the person's.
+                    confirmAsAgent: Boolean(policy.delegated) && (candidate.confirmation_status ?? 'pending') === 'pending',
+                    aiAssessment: { outcome: 'approve', summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
+                      client: answer.client, model: answer.model ?? null, session_id: answer.sessionId ?? null },
+                    note: `Tonborg ${record.id}: ${decision.summary}`.slice(0, 2000) });
+                  record = store.execute(space, record.id, 'applied', { reviewId: run.review_id, outcome: receipt.outcome }, lease);
+                } catch (error) {
+                  if (!store.owns(space, project, token)) throw error;
+                  record = store.execute(space, record.id, error.status === 409 ? 'stale' : 'failed', { reason: error.code ?? 'review_write_failed' }, lease);
+                }
               }
             }
+            records.push(record);
           }
-          records.push(record);
         }
       }
       const remaining = Math.max(0, (page.total_candidate_count ?? 0) - records.filter(r => r.execution.status === 'applied').length);
-      const result = { recordIds: records.map(r => r.id), remaining };
+      // notReviewed: candidates of this batch with no verdict that passed; they stay queued for the next review.
+      const result = { recordIds: records.map(r => r.id), remaining, ...(notReviewed ? { notReviewed } : {}) };
       if (!handedOff) store.writeSetting(space, cacheKey, result, 0);
-      return { ...asked(store, records, space), records, remaining };
+      return { ...asked(store, records, space), records, remaining, ...(notReviewed ? { notReviewed } : {}) };
     } catch (error) {
       // A run that lost its scope to a newer one records nothing, so the
       // owner's result stands; an unconfirmed interrupted write waits for a retry.
@@ -275,7 +309,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const input = parse(reviewInput, raw); await service.scope(input);
     return reviewAcrossScopes(service, input, true);
   }, assess: (service, input) => assessRouting({ app, decide, context, service, input }),
-  accept: (service, input) => assessAcceptance({ app, decide, context, service, input }),
+  accept: (service, input) => assessAcceptance({ app, decide, context, service, trust, input }),
   // A session answered a handed-off judgment: rerun the same operation, which
   // uses that answer only while its evidence and policy are unchanged.
   // execution names the role_work execution that may use the answer.
@@ -284,7 +318,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     if (operation === TONBORG_OPERATIONS.review) return review(service, input, { localOnly: true, execution });
     if (operation === TONBORG_OPERATIONS.routing) return assessRouting({ app, decide: executing, context, service, input });
     if (operation === TONBORG_OPERATIONS.acceptance) {
-      return assessAcceptance({ app, decide: executing, context, service, input: { ...input, taskContextToken: session.taskContextToken } });
+      return assessAcceptance({ app, decide: executing, context, service, trust,
+        input: { ...input, taskContextToken: session.taskContextToken } });
     }
     throw new TypeError(`Unknown Tonborg operation: ${operation}`);
   } };
@@ -294,10 +329,12 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
 const asked = (store, records, space) => judgmentHumanInteraction(records, space, { language: store.delegation(space).language });
 
 // A verdict is checked whole; its doubt and question apart, so a missing or
-// odd one falls back to FULI's own wording and never fails the verdict.
+// odd one falls back to FULI's own wording and never fails the verdict. A
+// field the schema does not list is dropped, as the model port reads it.
 function reviewDecisions(value, candidates, delegated) {
   const raw = Array.isArray(value?.decisions) ? value.decisions.map(softAsk) : null;
-  const parsed = parseAnswer(jsonSchemaToZod(reviewSchema(candidates, { delegated, asked: false })), raw ? { ...value, decisions: raw.map(part => part.verdict) } : value);
+  const parsed = parseAnswer(jsonSchemaToZod(reviewSchema(candidates, { delegated, asked: false }), { unknownKeys: 'strip' }),
+    raw ? { ...value, decisions: raw.map(part => part.verdict) } : value);
   const decisions = parsed.decisions.map((decision, index) => ({ ...decision, ...raw[index].ask }));
   if (decisions.length !== candidates.length || new Set(decisions.map(d => d.target)).size !== candidates.length
     || decisions.some(d => !candidates.some(c => c.candidate_key === d.target))) throw new TypeError('Judgment targets do not match evidence');
@@ -305,12 +342,17 @@ function reviewDecisions(value, candidates, delegated) {
 }
 
 // What the trust gate asks about an answer: the configured connection and
-// model that gave it, or none when the current session or a legacy CLI answered.
-function reviewTrustKey(answer, scope) {
+// model that gave it, or none when the current session or a legacy CLI
+// answered. handedOver: 「交给 Tonborg 确认」 is on and the session answered
+// with no model behind Tonborg (a session answer after a model failed carries
+// that model's receipt, and stays a suggestion).
+function reviewTrustKey(answer, scope, policy) {
   const byModel = answer.judgedBy?.mode === 'model_api';
+  const handedOver = Boolean(policy.delegated) && sessionStandsIn(answer);
   return { role: 'tonborg', operation: TONBORG_OPERATIONS.review, scope,
     connection: byModel ? answer.modelReceipt?.connectionIdentity ?? null : null,
-    model: byModel ? answer.modelReceipt?.requestedModel ?? null : null };
+    model: byModel ? answer.modelReceipt?.requestedModel ?? null : null,
+    ...(handedOver ? { handedOver: true } : {}) };
 }
 
 // rec#10 D-24, D-36: what the host does with one review verdict. The model's own

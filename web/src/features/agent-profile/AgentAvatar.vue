@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { t } from '@/i18n'
 import { agentAvatarUrl, defaultAvatarUrl } from './agent-avatar'
+import { isRemoteAgentId, remoteAvatarUrl, remoteFaces } from './remote-faces'
 import { builtInRole, roleName } from './role-names'
 
 // Every FLA and built-in role face in the console (Jevons 11-08: 「这种头像你可以都
@@ -25,6 +26,8 @@ const props = withDefaults(defineProps<{
 }>(), { name: null, link: true })
 
 const LONG_PRESS_MS = 500
+const COMPACT_RING_PX = 20
+const REMOTE_NAME_CHARS = 80
 const MOVE_TOLERANCE = 8
 const CONTROL = 'a[href], button, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], label, summary'
 
@@ -33,13 +36,32 @@ const insideControl = ref(true)
 const hidden = ref(true)
 const failed = ref(false)
 
-const id = computed(() => !props.agentId.includes('.') && employeeAvatarUrl(props.agentId) ? `employee.${props.agentId}` : props.agentId)
-const src = computed(() => failed.value ? defaultAvatarUrl(id.value) : agentAvatarUrl(id.value))
-const role = computed(() => builtInRole(id.value))
+// An FLA on another computer (`peer:` address) shows the face it has there, a
+// ring on its frame (`data-agent-remote`, below) and the computer in its name. It
+// has no page or menu here, so it is never a link and never the portrait menu's.
+const remote = computed(() => isRemoteAgentId(props.agentId))
+const id = computed(() => !remote.value && !props.agentId.includes('.') && employeeAvatarUrl(props.agentId) ? `employee.${props.agentId}` : props.agentId)
+const src = computed(() => remote.value ? remoteAvatarUrl(id.value) : failed.value ? defaultAvatarUrl(id.value) : agentAvatarUrl(id.value))
+const role = computed(() => remote.value ? null : builtInRole(id.value))
 const label = computed(() => props.name?.trim() || (role.value ? roleName(role.value) : ''))
-const standalone = computed(() => props.link && !insideControl.value)
+const standalone = computed(() => props.link && !insideControl.value && !remote.value)
 const focusable = computed(() => standalone.value && !hidden.value && Boolean(label.value))
+const remoteLabel = computed(() => {
+  if (!remote.value) return ''
+  const face = remoteFaces.value.get(id.value)
+  const name = label.value || face?.name || t('roundtable.unknownAgent')
+  // A sender's name from another computer already ends with that computer.
+  const who = face?.device && !name.endsWith(face.device) ? `${name} · ${face.device}` : name
+  return t('agentProfiles.remoteFace', { name: who.length > REMOTE_NAME_CHARS ? `${who.slice(0, REMOTE_NAME_CHARS - 1)}…` : who })
+})
+// Below this width the dashed ring would read as dots; the ring turns plain there.
+const ring = ref<'framed' | 'compact'>('framed')
+function measureRing() {
+  const width = element.value?.getBoundingClientRect().width ?? 0
+  ring.value = width > 0 && width < COMPACT_RING_PX ? 'compact' : 'framed'
+}
 watch(id, () => { failed.value = false })
+watch(remote, value => { if (value) measureRing() })
 
 // The menu keys open the portrait menu under the face themselves: not every WebView
 // turns them into a contextmenu event. With no point, the menu opens under the face.
@@ -93,13 +115,15 @@ onMounted(() => {
   const parent = element.value?.parentElement
   insideControl.value = Boolean(parent?.closest(CONTROL))
   hidden.value = Boolean(parent?.closest('[aria-hidden="true"]'))
+  if (remote.value) measureRing()
 })
 onBeforeUnmount(endPress)
 </script>
 
 <template>
-  <img ref="element" class="agent-avatar" :src="src" :alt="focusable ? label : ''" draggable="false"
-    :data-agent-portrait="id" :data-agent-link="standalone || undefined"
+  <img ref="element" class="agent-avatar" :src="src" :alt="remote ? (hidden ? '' : remoteLabel) : focusable ? label : ''" draggable="false"
+    :title="remote ? remoteLabel : undefined" :data-agent-remote="remote ? ring : undefined"
+    :data-agent-portrait="remote ? undefined : id" :data-agent-link="standalone || undefined"
     :role="focusable ? 'link' : undefined" :tabindex="focusable ? 0 : undefined"
     :aria-label="focusable ? t('contextMenu.openAgent', { name: label }) : undefined"
     @error="failed = true" @click="onClick" @keydown="onKey" @contextmenu="onContextMenu"
@@ -112,4 +136,23 @@ onBeforeUnmount(endPress)
 .agent-avatar[data-agent-link] { cursor: pointer; }
 /* Inside the face: the frame around it often clips, and an outside ring would be cut. */
 .agent-avatar:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+</style>
+
+<style>
+/* An FLA on another computer: the picture stays its own; its frame gets a dashed
+   ring in the quiet ink, just outside, so nothing moves and the frame's clipping
+   cannot cut it. The frame is the face's only-child wrapper (as the portrait
+   shake assumes); a face without one carries the ring itself. Small faces get a
+   plain 1px ring, which still reads where dashes would turn to dots. Status marks
+   use colour dots and badges, never a ring in this ink. */
+:where(*):has(> img.agent-avatar[data-agent-remote]:only-child),
+img.agent-avatar[data-agent-remote]:not(:only-child) {
+  outline: 1.5px dashed var(--color-muted);
+  outline-offset: 1.5px;
+}
+:where(*):has(> img.agent-avatar[data-agent-remote="compact"]:only-child),
+img.agent-avatar[data-agent-remote="compact"]:not(:only-child) {
+  outline: 1px solid var(--color-muted);
+  outline-offset: 1px;
+}
 </style>

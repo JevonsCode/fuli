@@ -5,7 +5,7 @@ import {
   normalizeMcpSourceApplication
 } from './session-id.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
-import { nativeSessionFromEnv } from '../agents/native-session-env.js';
+import { hostNamesSessions, nativeSessionFromEnv } from '../agents/native-session-env.js';
 import { agentHostRequestContext } from '../app/agent-request-context.js';
 
 export async function prepareDirectAgentToolCall({
@@ -31,7 +31,8 @@ export async function prepareDirectAgentToolCall({
       parsed.data,
       nativeThreadId,
       authoritativeHostSessionId,
-      source
+      source,
+      { hostNamesSessions: hostNamesSessions(source) }
     )
   };
 }

@@ -1,9 +1,11 @@
 import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
 import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
-import { GROUP_DISCUSSION_TABLES, createGroupDiscussionStore } from './group-discussion-store.js';
+import { GROUP_DISCUSSION_JOIN_COLUMNS, GROUP_DISCUSSION_JOIN_TABLES, GROUP_DISCUSSION_TABLES,
+  createGroupDiscussionStore } from './group-discussion-store.js';
 import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thread-subscriptions.js';
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
+import { WAKE_ATTEMPT_TABLES, WAKE_ATTEMPT_USAGE_COLUMNS, createWakeAttemptStore } from './wake-attempt-store.js';
 
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
@@ -56,6 +58,51 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/7-wake-process', to: 7, kind: 'add-columns', table: 'messages',
     summary: 'which process each roundtable wake started, so a lost wake is released only after it ended',
     columns: { wake_process_evidence: 'TEXT', wake_pid: 'TEXT', wake_pid_identity: 'TEXT' }
+  }, {
+    // rec#129: a join code, short or long life and a round limit per discussion.
+    id: 'roundtable/8-group-discussion-join-codes', to: 8, kind: 'add-columns', table: 'group_discussions',
+    summary: 'each group discussion\'s join code, lifetime, round limit, host-led rounds and topic',
+    columns: GROUP_DISCUSSION_JOIN_COLUMNS
+  }, {
+    id: 'roundtable/9-group-discussion-joins', to: 9, kind: 'add-table', table: 'group_discussion_joins',
+    summary: 'members who joined a group discussion by code, and the client and model of each message',
+    create: GROUP_DISCUSSION_JOIN_TABLES
+  }, {
+    // Why a wake did not answer, kept where it ran (wake-attempt-store.js).
+    id: 'roundtable/10-wake-attempts', to: 10, kind: 'add-table', table: 'wake_attempts',
+    summary: 'each wake an ask started: client, resumed or new session, failure code, exit code and a redacted output summary',
+    create: WAKE_ATTEMPT_TABLES
+  }, {
+    // The model and tokens each woken client reported for that wake, answered
+    // or failed; null when it reported none. Older attempts carry none.
+    id: 'roundtable/11-wake-attempt-usage', to: 11, kind: 'add-columns', table: 'wake_attempts',
+    summary: 'the model and tokens a woken client reported for each wake',
+    columns: WAKE_ATTEMPT_USAGE_COLUMNS
+  }, {
+    // The runner (docs/runner.md) whose call sent an ask, by its certificate
+    // fingerprint, and whether the ask came from another computer ('runner',
+    // 'remote': it was woken read-only with only FULI's MCP server, and so was
+    // every ask made in that wake); null for this computer's own and older ones.
+    id: 'roundtable/12-message-runner', to: 12, kind: 'add-columns', table: 'messages',
+    summary: 'which runner (another computer of the person) sent each ask, and whether it came from another computer',
+    columns: { from_runner: 'TEXT', origin: 'TEXT' }
+  }, {
+    // The native session an ask named (message_agent conversation): only that
+    // client and session, or one FULI handed it to, see and answer it. Apart
+    // from to_client/to_session (where it was delivered) and the reply's
+    // from_client/from_session (who answered). Null for an ask that named none.
+    id: 'roundtable/13-message-target-session', to: 13, kind: 'add-columns', table: 'messages',
+    summary: 'the client and native session an ask named, apart from where it was delivered and who answered',
+    columns: { target_client: 'TEXT', target_session: 'TEXT' }
+  }, {
+    // A chat wake's ask is answered in its chat, never with reply_agent_message
+    // (chat-wake.js): the chat it woke for and the last message it was about,
+    // so it stops waiting once its recipient has read that far (rec#146 item 1).
+    // Set only by FULI's own chat wake, never read from a body any Agent can
+    // write (review of #1076). Null for every other ask and for older ones.
+    id: 'roundtable/14-message-chat-wake', to: 14, kind: 'add-columns', table: 'messages',
+    summary: 'the chat and the last chat message each chat-wake ask was about, so it stops waiting once that chat is read',
+    columns: { chat_wake_chat_id: 'TEXT', chat_wake_through: 'INTEGER' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -71,6 +118,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
   const discussions = createGroupDiscussionStore(database, chat);
   const subscriptions = createThreadSubscriptionStore(database, chat);
   const desktopInboxes = createDesktopInboxStore(database);
+  const wakeAttempts = createWakeAttemptStore(database, now);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
     let result;
@@ -86,6 +134,7 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     discussions,
     subscriptions,
     desktopInboxes,
+    wakeAttempts,
     transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();
@@ -101,19 +150,28 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
         FROM threads t WHERE t.space_id = ? AND (? IS NULL OR t.project_id = ?)
         ORDER BY t.updated_at DESC LIMIT ?`).all(spaceId, projectId, projectId, limit);
     },
+    // Whether this space ever had a thread, an Agent chat or a group discussion.
+    used(spaceId) {
+      return database.prepare(`SELECT EXISTS(SELECT 1 FROM threads WHERE space_id = ?1)
+        OR EXISTS(SELECT 1 FROM agent_chats WHERE scope = ?1)
+        OR EXISTS(SELECT 1 FROM group_discussions WHERE scope = ?1) AS used`).get(spaceId).used === 1;
+    },
     appendMessage(threadId, message) {
       return transaction(() => {
         const at = now();
         const seq = (database.prepare('SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ?').get(threadId).seq) + 1;
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
-          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status, from_runner, origin,
+          target_client, target_session, chat_wake_chat_id, chat_wake_through)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
           message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
-          message.delivery ?? null);
+          message.delivery ?? null, message.from?.runner ?? null, message.origin ?? null,
+          message.target?.client ?? null, message.target?.session ?? null,
+          message.chatWake?.chatId ?? null, message.chatWake?.through ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
@@ -230,10 +288,42 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     },
     // Questions waiting for this Agent that no delivery is currently answering
     // (one a sender's session stands in for still waits: the Agent may answer first).
-    pendingFor(spaceId, agentId, limit = 5) {
+    // viewer ({ client, session }): an ask that named another native session is
+    // left out before the limit, so others' named asks never crowd this one's out.
+    // A queued ask nobody answered before `before` (an ISO instant) and no wake
+    // is running for: it becomes `expired`, with the reason kept beside it
+    // (rec#146 item 1). The row, its body and its thread stay; a late reply
+    // still answers it, and get_agent_message_status says what happened. An
+    // ask to or from another device (via peer) keeps its own deadline and its
+    // device's status, so it is never expired here (review of #1076).
+    // Returns how many changed.
+    expireQueuedAsks(spaceId, before, reason) {
+      return database.prepare(`UPDATE messages SET status = 'expired', error = ?, updated_at = ?
+        WHERE kind = 'ask' AND status = 'queued' AND execution_claim IS NULL AND created_at < ?
+          AND (via IS NULL OR via != 'peer')
+          AND thread_id IN (SELECT id FROM threads WHERE space_id = ?)`).run(reason, now(), before, spaceId).changes;
+    },
+    // The queued chat-wake asks, for the caller to check against the chat each
+    // woke for (chat_wake_chat_id, set only by FULI's chat wake).
+    queuedChatWakes(spaceId) {
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
-        WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
-        ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, limit);
+        WHERE t.space_id = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in') AND m.execution_claim IS NULL
+          AND m.chat_wake_chat_id IS NOT NULL`).all(spaceId);
+    },
+    // `since` (an ISO instant, created_at is one): a task entry reads only the
+    // questions newer than this, so one nobody answered for weeks never takes
+    // one of the five slots from a live one even before it is expired
+    // (rec#146 item 1). An explicit read passes none.
+    pendingFor(spaceId, agentId, limit = 5, viewer = null, { since = null } = {}) {
+      const client = viewer?.client ?? null;
+      const session = viewer?.session ?? null;
+      return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ?1 AND m.to_agent = ?2 AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
+          AND (?9 IS NULL OR m.created_at >= ?9)
+          AND (m.target_session IS NULL OR (?3 IS NOT NULL AND (
+            (m.target_session = ?4 AND (m.target_client IS NULL OR m.target_client = ?5))
+            OR (m.to_session = ?6 AND m.to_client = ?7))))
+        ORDER BY m.created_at LIMIT ?8`).all(spaceId, agentId, session, session, client, session, client, limit, since);
     },
     // Replies (or stand-in handbacks) addressed to this Agent in one project, in
     // one of the given delivery states. A handback names its project itself.

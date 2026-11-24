@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { modelFetch } from './model-fetch.js';
 
+import { STREAM_STALL_MS } from './adapters/exchange.js';
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
 import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionHealthIdentity, connectionIdentity } from './config.js';
@@ -47,9 +48,10 @@ const KEY_REFUSALS = Object.freeze({ secret_store_insecure: 'secret_store_insecu
   secret_endpoint_mismatch: 'key_endpoint_mismatch', secret_endpoint_unbound: 'key_endpoint_mismatch' });
 
 // builtinEmbed({ model, texts, signal }): the local graph service's own model
-// (adapters/builtin-embeddings.js); null where there is none.
+// (adapters/builtin-embeddings.js); null where there is none. streamStallMs:
+// how long a stream whose answer began may go quiet (adapters/exchange.js).
 export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = modelFetch, wait = delay,
-  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms), builtinEmbed = null }) {
+  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms), builtinEmbed = null, streamStallMs = STREAM_STALL_MS }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
 
@@ -87,7 +89,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
   // result without an answer, to which each ending adds its receipt.
   function callRecord(empty) {
     const call = { startedAt: now().getTime(), attempts: [], target: null, roleConfig: null, mode: null, reportedConfidence: null };
-    call.receipt = (status, { reason = null, failure = null } = {}) => {
+    // rejectedItems: how many keys of a batch the completed answer left out (decision-contract.js).
+    call.receipt = (status, { reason = null, failure = null, rejectedItems = 0 } = {}) => {
       const { target, attempts } = call;
       const fallbackEligible = failure ? isFallbackEligible(failure, call.roleConfig) : false;
       return {
@@ -98,7 +101,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         connectionIdentity: target ? connectionIdentity(target.id, target) : null,
         actualModel: attempts.findLast(attempt => attempt.actualModel)?.actualModel ?? null,
         outputMode: attempts.length ? call.mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
-        reportedConfidence: call.reportedConfidence, durationMs: now().getTime() - call.startedAt
+        reportedConfidence: call.reportedConfidence, durationMs: now().getTime() - call.startedAt,
+        ...(rejectedItems ? { rejectedItems } : {})
       };
     };
     call.notConfigured = reason => ({ ...empty, modelReceipt: call.receipt('not_configured', { reason }) });
@@ -110,7 +114,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
   // An attempt as the ledger keeps it before it goes out: metadata only,
   // never prompt text, texts or vectors. Reserves its ceiling in the role's
   // window and answers the reason it may not start, or null.
-  function reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens, remainingMs }) {
+  function reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens, remainingMs, callerDeadline = false }) {
     const { target, roleConfig } = call;
     const attemptStarted = now();
     const pending = {
@@ -120,7 +124,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       healthIdentity: connectionHealthIdentity(target.id, target), protocol: target.protocol,
       endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: call.mode,
       startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + maxOutputTokens,
-      costCurrency: target.pricing?.currency ?? null
+      costCurrency: target.pricing?.currency ?? null, callerDeadline
     };
     const blocked = ledger.reserve({ attempt: pending, ceilingCost: ceilingCost(target.pricing, inputTokens, maxOutputTokens),
       expiresAt: new Date(attemptStarted.getTime() + remainingMs + RESERVATION_GRACE_MS).toISOString(),
@@ -140,7 +144,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     const { target, roleConfig, attempts, startedAt } = call;
 
     const contract = decisionContract(request);
-    const prompt = decisionPrompt(request, contract.providerSchema);
+    const prompt = decisionPrompt(request, { schema: contract.providerSchema, rules: contract.schema });
     const limits = callLimits(roleConfig.budget, request.budget);
     const deadline = startedAt + limits.timeoutMs;
     const formatKey = `${target.protocol} ${target.endpoint} ${target.model}`;
@@ -161,25 +165,28 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
 
       const { pending, attemptStarted, blocked } = reserveAttempt(request, call,
-        { purpose, inputTokens, maxOutputTokens: outputTokens, remainingMs });
+        { purpose, inputTokens, maxOutputTokens: outputTokens, remainingMs, callerDeadline: limits.callerDeadline });
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
       const attemptSignal = timeoutSignal(remainingMs);
       try {
         result = await adapter.call({ connection: target, secret, request, mode: call.mode, signal: attemptSignal,
-          prompt: outgoing, maxOutputTokens: outputTokens, fetchImpl });
+          prompt: outgoing, maxOutputTokens: outputTokens, fetchImpl, stallMs: streamStallMs });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
         throw error;
       }
       const verdict = !result.ok ? { failure: result.failure }
         : result.payload !== undefined ? contract.validatePayload(result.payload) : contract.validateReply(result.reply);
+      // A batch answer some items of which failed is used for the rest, and
+      // still recorded as an answer that did not pass: invalid_items.
       const attempt = {
         ...pending, actualModel: result.actualModel, durationMs: now().getTime() - attemptStarted.getTime(),
         outcome: verdict.ok ? 'succeeded' : verdict.issues ? 'invalid_output' : 'failed',
         failureClass: verdict.ok ? null : verdict.failure?.failureClass ?? 'configuration',
-        failureReason: verdict.ok ? null : verdict.failure?.reason ?? 'invalid_output',
+        failureReason: verdict.ok ? null : verdict.failure?.reason ?? (verdict.partial ? 'invalid_items' : 'invalid_output'),
+        formatIssues: verdict.codes ?? null,
         usage: result.usage, estimatedCost: estimateCost(result.usage, target.pricing)
       };
       if (verdict.ok && result.actualModel === target.model && adapter.observesLocalBuild?.(target)) {
@@ -196,10 +203,18 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         // JSON outside the schema means the endpoint took the schema and ignored
         // it, as some gateways do: later calls get it in the prompt.
         if (verdict.offSchema && call.mode === 'json_schema') promptOnly.add(formatKey);
+        // The items that passed are the answer; the caller asks again for the
+        // rest, on their own, rather than this call repairing the whole batch.
+        if (verdict.partial) {
+          call.reportedConfidence = result.reportedConfidence ?? null;
+          const { value, rejected } = verdict.partial;
+          return { envelope: decisionEnvelope(request, value, rejected),
+            modelReceipt: call.receipt('completed', { rejectedItems: rejected.length }) };
+        }
         if (!adapter.repairable || repairs >= REPAIR_LIMIT) return stop('configuration', 'invalid_output');
         repairs += 1;
         purpose = 'repair';
-        turns = repairTurns(turns, result.reply ?? '', verdict.issues, prompt.schema);
+        turns = repairTurns(turns, result.reply ?? '', verdict.issues, prompt.rules);
         continue;
       }
       const { failure } = verdict;
@@ -255,7 +270,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     for (;;) {
       const remainingMs = deadline - now().getTime();
       if (remainingMs < MIN_ATTEMPT_MS) return stop('transient', 'timeout');
-      const { pending, attemptStarted, blocked } = reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens: 0, remainingMs });
+      const { pending, attemptStarted, blocked } = reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens: 0, remainingMs,
+        callerDeadline: limits.callerDeadline });
       if (blocked) return stop('budget_exhausted', blocked);
       let result;
       try {
@@ -347,6 +363,12 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       const settings = this.roles().roles.find(entry => entry.role === role);
       return settings?.state === 'enabled' && settings.allowedOperations.includes(operation) ? settings : null;
     },
+    // Whether the person configured a model for the role at all: enabled or
+    // disabled, whatever operations it allows. A file that does not validate
+    // counts as configured, so nothing reads it as having no model.
+    hasModel(role) {
+      return this.roles().roles.find(entry => entry.role === role)?.state !== 'not_configured';
+    },
     // Whether the whole request would still be allowed out now, for a role
     // that rechecks before it shows a late answer. A role that is gone,
     // disabled or no longer allowed the operation allows nothing.
@@ -376,11 +398,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // that says whether it answers (scope 'connection'): a newer answer
     // supersedes an older network failure, and a newer network failure
     // reaches every role on it. An answer that would not validate still came
-    // from a working model, so only a failed call counts as failing.
+    // from a working model, so only a failed call counts as failing. A
+    // timeout under a time limit a hot-path caller tightened (budget.hotPath:
+    // it would not wait, rec#139) is passed over: the attempt before it decides.
     health(role, connectionId, connection) {
       if (!connection) return null;
       const identity = connectionHealthIdentity(connectionId, connection);
-      const own = ledger.lastAttempt({ healthIdentity: identity, role });
+      const own = ledger.lastAttempt({ healthIdentity: identity, role, skipCallerTimeouts: true });
       if (own?.outcome === 'failed' && !CONNECTIVITY_REASONS.includes(own.failureReason)) return failingHealth(own, 'role');
       const shared = ledger.lastAttempt({ healthIdentity: identity, connectivityReasons: CONNECTIVITY_REASONS });
       if (!shared) return { status: 'unknown', at: null, reason: null, scope: null };
@@ -398,12 +422,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     },
     // A current-session answer to a work package is an attempt too, kept on
     // its own channel. Its usage is what the session reported, else unknown.
-    recordSessionAttempt({ request, attemptId, attemptNumber, startedAt, durationMs, outcome, usage = null }) {
+    recordSessionAttempt({ request, attemptId, attemptNumber, startedAt, durationMs, outcome, usage = null, formatIssues = null }) {
       return ledger.record({ requestId: request.requestId, attemptId, attemptNumber, purpose: attemptNumber > 1 ? 'repair' : 'initial',
         channel: 'session', role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
         personalProjectId: request.scope.personalProjectId, connectionId: null, protocol: null, endpointHost: null,
         requestedModel: null, actualModel: null, outputMode: null, startedAt, durationMs, outcome,
         failureClass: outcome === 'succeeded' ? null : 'configuration', failureReason: outcome === 'succeeded' ? null : 'invalid_output',
+        formatIssues,
         usage: reportedUsage({ ...usage, definition: usage ? 'session_reported' : null }),
         budgetCeilingTokens: 0, estimatedCost: null, costCurrency: null });
     },

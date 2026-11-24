@@ -94,7 +94,7 @@ test('the fixed assistant receives an unclaimed conversation in its global scope
   assert.equal(result.agent_receipt.owner.agent_id, 'employee.assistant');
   assert.deepEqual([writes.length, hires.length], [0, 0]);
   assert.deepEqual(result.triage_candidates, { projects: [], topics: [],
-    label_with: 'checkpoint_task_knowledge.triage' });
+    label_with: 'checkpoint_task_knowledge.triage', continue_with: 'list_agent_conversations.topic' });
 });
 
 test('a registered project named at the start of the prompt is matched', async () => {
@@ -109,6 +109,15 @@ test('a registered project named at the start of the prompt is matched', async (
     assert.equal((await run({ taskPrompt })).context.personal_project_id, null);
   }
   assert.equal(writes.length, 0);
+});
+
+test('a project a person named whose ID only starts like a temporary one is matched, not opened again', async () => {
+  const { run, writes } = fixture();
+  const first = await run({ taskPrompt: '新项目：Conversation notes\n整理会议记录' });
+  assert.equal(first.context.personal_project_id, 'conversation-notes');
+  const again = await run({ taskPrompt: 'Conversation notes: add the agenda' });
+  assert.equal(again.context.personal_project_id, 'conversation-notes');
+  assert.equal(writes.length, 1);
 });
 
 test('a new-project prefix creates exactly one registered project', async () => {

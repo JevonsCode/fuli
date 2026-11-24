@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
 import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
 import { builtInClientPack } from '../test-support/client-packs.js';
@@ -110,6 +110,13 @@ test('Claude host-notification envelopes and system deliveries refresh the curre
     assert.match(context, /"taskContextToken":"fuli-task-a"/);
     assert.doesNotMatch(context, /fuli-task-new-entry/);
   }
+  // The host's own mark decides over the envelope's shape: an envelope it
+  // marks as not its own delivery is a person's prompt.
+  for (const mark of [{ isMeta: false }, { is_meta: false }]) {
+    const f = refreshFixture();
+    await f.submit(shellNotification, mark);
+    assert.deepEqual(f.calls.map(([name]) => name), ['begin_task_context'], JSON.stringify(mark));
+  }
   // Anything else is a prompt and enters as before.
   for (const prompt of ['Synthetic user task.', 'Please inspect ' + shellNotification, shellNotification + '\nNow do another task',
     shellNotification + shellNotification, '<task-notification><task-id> </task-id></task-notification>', '<task-notification><task-id>',
@@ -164,7 +171,10 @@ test('Claude refresh turns with nothing to re-read say so and start no task', as
     const context = (await f.submit(shellNotification)).hookSpecificOutput.additionalContext;
     assert.match(context, expected, label);
     assert.match(context, /FULI：本轮没有建立有效的任务上下文.*FULI: no valid task context is established for this turn/, label);
-    assert.match(context, /no task was created or switched\. If this turn is new work, start a task explicitly/, label);
+    // A closed task gets the way to continue it in one call; every other case the way to start (coordinator, from real use).
+    assert.match(context, label === 'closed task'
+      ? /no task was created or switched\. The task this session was working on was closed when its last turn ended.*call get_collaboration_preferences now/
+      : /no task was created or switched\. If this turn is new work, start a task explicitly/, label);
     // The old token is never presented as this turn's task.
     assert.doesNotMatch(context, /fuli-task-a|private Provider detail|keep using/, label);
     assert.ok(f.calls.every(([name]) => name !== 'begin_task_context'), label);
@@ -602,4 +612,19 @@ test('Claude task entry ends only the turns held when it started; a turn held wh
   assert.deepEqual(provider.checkpointed, ['fuli-task-synthetic-b']);
   assert.deepEqual(provider.calls.filter(([name]) => name !== 'read_task_preferences'), [
     ['begin_task_context', null], ['verify_task_checkpoint', null], ['checkpoint_task_knowledge', 'fuli-task-synthetic-b']]);
+});
+
+// Coordinator, from real use: a background task finished after the Stop hook
+// closed the session's task, so the middle of a long task had no token and no
+// checkpoint. The notification turn says how to continue in one call and that
+// the closed token cannot checkpoint, and still starts nothing on its own.
+test('a notification after the task was closed says how to continue it, and starts nothing itself', async () => {
+  const owned = { token: 'fuli-task-a', sessionId: input.session_id, sourceApplication: 'claude_code', checkpoint: { phase: 'complete' } };
+  const f = refreshFixture({ task: owned });
+  const context = (await f.submit(shellNotification)).hookSpecificOutput.additionalContext;
+  assert.match(context, /its taskContextToken can no longer checkpoint/);
+  assert.match(context, /call get_collaboration_preferences now \(projectPath = current working directory, taskPrompt = one line/);
+  assert.match(context, /use the taskContextToken it returns for everything in this turn, the checkpoint included/);
+  assert.doesNotMatch(context, /fuli-task-a/);
+  assert.ok(f.calls.every(([name]) => name !== 'begin_task_context'));
 });

@@ -21,7 +21,7 @@ export async function handleCliPathRequest({ request, response, url, system }) {
     sendJson(response, 200, control ? control.status() : { supported: false, enabled: false });
     return true;
   }
-  if (refuseRemoteDecision(request, response, 'The terminal commands are changed only on this computer')) return true;
+  if (refuseRemoteDecision(request, response, 'The terminal commands are changed only on this computer', { directHost: true })) return true;
   if (!control) {
     sendJson(response, 404, { error: 'Only the desktop app puts its commands on PATH', code: 'cli_path_unavailable' });
     return true;

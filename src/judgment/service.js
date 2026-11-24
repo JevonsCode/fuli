@@ -6,7 +6,9 @@ import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { agentJudgmentView } from './agent-view.js';
 import { acceptanceReviewVerdicts, judgedAcceptances } from './review-verdicts.js';
+import { recordRunnerDecision, recordRunnerOutcome, RUNNER_DECISION_SCHEMA, RUNNER_OUTCOME_SCHEMA } from './runner-routing.js';
 import { taskKnowledgeReader } from '../graphiti/knowledge-reader.js';
+import { projectDisplayName } from '../graphiti/project-display-name.js';
 
 const id = z.string().trim().min(1).max(256);
 // client: the client Tonborg is enabled for and the CLI an opted-in legacy
@@ -63,7 +65,9 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     const wanted = text.toLowerCase();
     try {
       return (await projects(personalSpaceId))
-        .filter(project => String(project.profile?.name ?? '').toLowerCase().includes(wanted))
+        // Its own name, or how a temporary one is shown in either language (「临时项目 #…」).
+        .filter(project => [project.profile?.name, projectDisplayName(project, 'zh-CN'), projectDisplayName(project, 'en-US')]
+          .some(name => String(name ?? '').toLowerCase().includes(wanted)))
         .map(projectIdOf);
     } catch {
       return [];
@@ -141,6 +145,18 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       // A picked choice is recorded as its own answer, whatever the relaying Agent sent (rec#99).
       if (relay) checkRelayedChoice(store().get(parsed.personalSpaceId, parsed.decisionId), parsed, relay.personWords, language(parsed.personalSpaceId));
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision, relay); },
+    // An outbox entry of a runner's own Tonborg, which the host's runner routes apply once per id:
+    // kind 'decision' or 'outcome'; runner: { fingerprint, name }. Another space's entry is refused for good.
+    async runnerRouting(kind, input, runner) {
+      const parsed = parse(kind === 'decision' ? RUNNER_DECISION_SCHEMA : RUNNER_OUTCOME_SCHEMA, input);
+      if (parsed.personalSpaceId !== app.config.personal.spaceId) throw new InvalidInputError('personalSpaceId is not this FULI\'s personal space');
+      // A project the runner names is checked as a judgment made here is: one
+      // this FULI does not have, or archived, never reaches Tonborg's ledger.
+      // An outcome names no project; it is held to the decision it reports on.
+      if (kind === 'decision') await scope(parsed);
+      else await prepareStore(parsed.personalSpaceId);
+      return kind === 'decision' ? recordRunnerDecision(store(), parsed, runner) : recordRunnerOutcome(store(), parsed, runner);
+    },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
     async assess(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.assess(service, input); },

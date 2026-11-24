@@ -3,6 +3,7 @@
 import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
+import { runnerRuntimeConfig, runnerSessionStartContext } from '../../runner/runner-mode.js';
 import { isMainModule } from '../../system/main-module.js';
 import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
@@ -125,6 +126,26 @@ async function main() {
   const args = process.argv.slice(2);
   const event = args[args.indexOf('--event') + 1];
   const startedAt = Date.now();
+  // A runner's Cursor enters tasks through FULI's MCP server on the host
+  // (docs/runner.md). Cursor's beforeSubmitPrompt can only show text to the
+  // person, not the model, so the instruction the other clients get at a prompt
+  // goes in at sessionStart, its one model-visible hook output. It names
+  // Cursor's own session, as the hook on a host does: Cursor gives its MCP
+  // server none, and an entry without it gets no task token.
+  if (runnerRuntimeConfig(args)) {
+    let sessionId = null;
+    if (event === 'sessionStart') {
+      try {
+        const input = await readHookInput();
+        sessionId = input?.conversation_id ?? input?.session_id ?? null;
+      } catch {
+        sessionId = null;
+      }
+    }
+    process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt' ? { continue: true }
+      : event === 'sessionStart' ? { additional_context: runnerSessionStartContext(sessionId) } : {})}\n`);
+    return;
+  }
   try {
     await runCursorLifecycleHook(args);
   } catch (error) {

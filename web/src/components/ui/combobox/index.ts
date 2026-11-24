@@ -11,10 +11,17 @@
 // - OptionCombobox takes `size` sm | md | lg (default md) from the control
 //   size scale (../control-size.ts): the field is exactly that height, with
 //   or without chips.
+// - OptionCombobox `searchOnServer` (single) passes reka-ui's ignoreFilter and
+//   emits `search` with the typed text, for a list the page reads per query
+//   (the LAN roundtable's 添加项目); `emptyLabel` / `loadingLabel` replace the
+//   generic empty and loading text.
+// - OptionCombobox `foldGroup` folds the options of one group heading into a
+//   row with its chosen count until the row is opened or something is typed
+//   (temporary projects, features/projects/project-scope-choices.ts).
 // - `cn` comes from @/lib/class-names; the chevron and check mark are FULI's
 //   (UiIcon), not lucide.
 // - ComboboxList has the FULI popover look, as Select and DropdownMenu: card
-//   surface, hairline border, popover shadow, the control radius, --z-popover
+//   surface, hairline border, popover shadow, the control radius, --z-dialog (above a dialog it opens in)
 //   stacking, the available-height cap, column layout for a footer, and start
 //   alignment under the field. tw-animate-css is not used: it opens on the
 //   shared spring (animate-popover-in), which both reduced-motion switches zero.

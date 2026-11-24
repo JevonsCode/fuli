@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { logSuggestionView, orderSuggestions, type RoleSuggestion } from './suggestions'
+import { askedModel, logSuggestionView, orderSuggestions, type RoleSuggestion } from './suggestions'
 
 // Synthetic suggestions only, in the shape the suggestion log returns.
 const base = (overrides: Partial<RoleSuggestion>): RoleSuggestion => ({
@@ -12,6 +12,15 @@ const base = (overrides: Partial<RoleSuggestion>): RoleSuggestion => ({
 const view = (overrides: Partial<RoleSuggestion>) => logSuggestionView(base(overrides))
 
 describe('role suggestions', () => {
+  // Real data on 0.27.12: a Dreaming run with nothing new to read is recorded without a model receipt,
+  // and reading its state threw, which stopped the whole model page from updating.
+  it('leave out a Dreaming run that asked no model, and read any record without a receipt instead of failing', () => {
+    const { modelReceipt: _none, ...bare } = base({ id: 7, role: 'assistant', operation: 'dreaming', status: 'nothing_to_read' })
+    const failed = base({ id: 8, role: 'assistant', operation: 'dreaming', status: 'model_failed', reason: 'network' })
+    expect([bare, failed].filter(askedModel).map(entry => entry.id)).toEqual([8])
+    expect(logSuggestionView(bare)).toMatchObject({ state: 'stopped', model: null })
+  })
+
   it('maps every result to the state recorded at the time', () => {
     expect(['suggested', 'superseded', 'inline', 'stopped', 'paused', 'failed'].map(status => view({ status }).state))
       .toEqual(['suggested', 'superseded', 'fallback', 'stopped', 'stopped', 'stopped'])

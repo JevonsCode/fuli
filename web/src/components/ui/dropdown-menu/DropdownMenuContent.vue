@@ -34,7 +34,7 @@ const popupTarget = usePopupTarget()
     <DropdownMenuContent
       data-slot="dropdown-menu-content"
       v-bind="{ ...$attrs, ...forwarded }"
-      :class="cn('z-(--z-popover) max-h-(--reka-dropdown-menu-content-available-height) min-w-40 origin-(--reka-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-(--shadow-popover) data-[state=open]:animate-popover-in', props.class)"
+      :class="cn('z-(--z-dialog) max-h-(--reka-dropdown-menu-content-available-height) min-w-40 origin-(--reka-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-(--shadow-popover) data-[state=open]:animate-popover-in', props.class)"
     >
       <slot />
     </DropdownMenuContent>

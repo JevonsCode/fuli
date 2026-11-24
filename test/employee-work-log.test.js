@@ -1,3 +1,4 @@
+import { withCheckpointSaveStatus } from '../src/graphiti/checkpoint-save-status.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflows.js';
@@ -30,9 +31,13 @@ test('work results survive checkpointing even without a new distilled memory rev
   assert.deepEqual(stored.checkpoint.workLog, workLog);
   assert.equal(stored.agentMemory, null);
   assert.equal((await checkpointTaskKnowledge(app, { ...input, workLog })).replayed, true);
-  await assert.rejects(checkpointTaskKnowledge(app, {
+  // Changed content on the closed task is refused before any write, as the
+  // task_closed status an Agent can act on (checkpoint-save-status.js).
+  const refused = await withCheckpointSaveStatus(checkpointTaskKnowledge(app, {
     ...input, workLog: { ...workLog, status: 'completed' }
-  }), /different input/);
+  }));
+  assert.deepEqual([refused.status, refused.reason], ['checkpoint_not_saved', 'task_closed']);
+  assert.deepEqual(app.taskContextRegistry.context(task.token, 'codex').checkpoint.workLog, workLog);
 });
 
 test('cross-client memory projection includes work history when distilled memory is empty', () => {

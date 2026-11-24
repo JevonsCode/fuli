@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
-import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-event.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from '../src/agents/codex/conversation-transcript.js';
 import { syncConversationTranscript } from '../src/conversations/sync-transcript.js';
 import { beginConversation } from '../src/graphiti/agent-conversations.js';

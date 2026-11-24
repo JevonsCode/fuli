@@ -4,7 +4,8 @@ Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, d
 
 ## Product Boundaries
 
-- Prefer plain JavaScript for application code unless another language has a clear technical advantage.
+- Language: where a piece of code is on a path whose speed or start-up time people feel (hooks that run on every prompt, the MCP forwarding shell, parsing and search hot paths, the desktop shell), prefer Rust (Jevons 11-13). Move to it piece by piece: rewrite a part when it is being changed anyway, behind the port it already has, and only with a before/after measurement of the real entry end to end. Everything else stays plain JavaScript (and Python in the Provider); do not rewrite working code only to change its language.
+- A Rust part ships for every platform FULI supports (Windows x64, macOS arm64, Linux for the npm install) or keeps its JavaScript fallback, and its build is part of CI before it is relied on.
 - Keep the local-first, human-authoritative, query-on-demand product principles intact.
 - Preserve temporal history; current answers and historical records are separate concerns.
 
@@ -44,3 +45,4 @@ Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, d
 - Reuse `web/src/components/GrowthLoading.vue` for visible pending operations. Use the default page variant for initial views, `compact` for sections, and `inline` for actions.
 - Loading labels must describe the actual action and its object in Chinese and English. When the awaited request changes, update the label from real request state; do not invent progress or backend stages.
 - Show one indicator per pending operation, preserve useful loaded content during refresh, and keep the shared live-status and reduced-motion behavior.
+- A wait that can run long says under the label, through `GrowthLoading`'s `detail` line, what it is waiting on and how long it will wait. Keep it to one short line from real state; do not add a second indicator, a progress bar or a paragraph. A start reports its real steps through `src/local-runtime/startup-stage.js`; the terminal and the desktop window both read those ids, so new startup copy belongs there and in the client's own `Strings`, not in a third place.

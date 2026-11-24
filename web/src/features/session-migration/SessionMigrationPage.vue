@@ -5,7 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { ApiError, apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -278,7 +278,7 @@ watch([spaceId, sessionId, client, projectId], () => {
                 </Button>
               </span>
             </div>
-            <PageColumns role="list">
+            <PageStack role="list">
               <div v-for="item in preview.items" :key="itemKey(item)" role="listitem" class="min-w-0">
                 <!-- A chosen item lifts as a card; there is no side accent. -->
                 <div class="flex min-w-0 items-start gap-3 rounded-lg border bg-card p-4 transition-[border-color,box-shadow]"
@@ -307,7 +307,7 @@ watch([spaceId, sessionId, client, projectId], () => {
                   </div>
                 </div>
               </div>
-            </PageColumns>
+            </PageStack>
             <div v-if="preview.next_offset != null" class="flex flex-wrap items-center gap-3" data-migration-more>
               <Button type="button" variant="outline" size="sm" :loading="loadingMore"
                 :loading-label="t('sessionMigration.loadingMore')" @click="loadMore">

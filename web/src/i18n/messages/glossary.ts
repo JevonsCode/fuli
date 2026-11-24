@@ -53,10 +53,19 @@ export const glossaryMessages = {
     setting: {
       agentNamingStyle: '新建 Agent 时的取名规则，一开始显示 FULI 自己的规则，你可以改成想要的风格。改过之后，负责招聘的 Agent 按它起名，FULI 只保证名字不和已有 Agent 重复；重名就换一个同风格的，实在想不出会告诉你。不改或恢复默认，就由 FULI 生成名字。已有 Agent 不改名。',
       topicPromotion: '还没归到项目的对话，如果同一个话题 2 天里聊了 3 次以上，开着这项时 @:{\'roleNames.astro\'} 直接把它建成项目、配好负责人，并在回执里告诉你；你可以点链接改名、换上级或撤销（撤销后项目归档，话题再多聊几次才会再升级）。关掉时只提建议，由你在控制台决定。',
+      clientPart: {
+        mcp: 'FULI 的工具：记忆、检索、存知识、FLA。没有它，这个客户端里用不了 FULI。',
+        hooks: '每次任务自动带上你的上下文、自动收尾并记录对话（Cursor 只有完成提醒）。',
+        plugin: '这个客户端用插件做自动进入与收尾，也自动记录对话。',
+        skills: '教客户端里的 Agent 怎么用 FULI。',
+        instructions: '写进客户端全局说明的几行，告诉它每次先找 FULI。',
+        permissions: '任务开头和收尾的两个 FULI 工具不必每次问你。',
+        prompts: '输入 /fla 就能从菜单里选一位 FLA。',
+      },
       diagnostics: '一个 JSON 文件，装着开发者排查 FULI 问题需要的东西：版本和安装方式、系统和 Node 版本、不含个人内容的设置、体检结果和每个日志的最后约 400 行。用户目录、用户名、邮箱、令牌、密钥和网址参数在离开这台电脑前就被隐藏；不含知识、对话记录、记忆和项目内容。在设置的「系统」里生成，先预览再导出。',
     },
     destination: {
-      constellation: '打开 FULI 的第一页：当前工作、等你处理的事和最近完成的工作。',
+      constellation: '打开 FULI 的第一页「今天」：等你拍板的事、今天做了什么、复利账单和正在干活的助手。',
       agents: 'FLAs（FuLi Agents）：你的 Agent 团队，包括全部 FLA、编排、服务和职业。悬停可看到你置顶的 FLA。',
       chat: '圆桌：Agent 之间的讨论，以及等你决定的请求。',
       projects: '只在本机的个人项目。',
@@ -177,10 +186,19 @@ export const glossaryMessages = {
     setting: {
       agentNamingStyle: 'The naming rule for new Agents. It starts as FULI\'s own rule, and you can change it to the style you want. Once changed, the recruiting Agent names each new Agent in it and FULI only makes sure no other Agent already has the name; on a clash it picks another in the same style, and tells you if it cannot find one. Leave the default or restore it and FULI generates the names. Existing Agents keep their names.',
       topicPromotion: 'When conversations that belong to no project keep returning to one topic (3 times over 2 days), @:{\'roleNames.astro\'} forms the project and its lead by itself and says so in the receipt; its link lets you rename it, move it under another project or undo it (an undo archives the project, and the topic needs a few more conversations before it grows again). Turned off, @:{\'roleNames.astro\'} only suggests and you decide in the console.',
+      clientPart: {
+        mcp: 'FULI\'s tools: memory, search, saving knowledge, FLAs. Without it, no FULI in this client.',
+        hooks: 'Tasks bring your context in, close and record by themselves (Cursor: a completion reminder only).',
+        plugin: 'This client starts and closes tasks through a plugin, and its conversations are recorded.',
+        skills: 'Teaches the Agent in the client how to use FULI.',
+        instructions: 'A few lines in the client\'s global instructions telling it to ask FULI first.',
+        permissions: 'FULI\'s task-start and checkpoint tools run without asking you each time.',
+        prompts: 'Type /fla to pick an FLA from a menu.',
+      },
       diagnostics: 'One JSON file with what the developers need to diagnose FULI: its version and install kind, the OS and Node versions, settings without personal values, the health check and about the last 400 lines of each log. Home folder, user name, emails, tokens, keys and URL parameters are hidden before anything leaves this computer; it holds no knowledge, conversations, memory or project content. Create it under Settings › System, preview it, then export it.',
     },
     destination: {
-      constellation: 'The first page of FULI: current work, what needs you and what was just finished.',
+      constellation: 'The first page of FULI, Today: what needs your call, what was done today, the statement and who is working.',
       agents: 'FLAs (FuLi Agents): your Agent team, with every FLA, orchestration, services and occupations. Hover to see the FLAs you pinned.',
       chat: 'Roundtable: discussions between Agents, and the requests waiting for your decision.',
       projects: 'Your private projects on this computer.',

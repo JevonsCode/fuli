@@ -8,12 +8,15 @@ import PageOutline from '@/components/PageOutline.vue'
 import { Button } from '@/components/ui/button'
 import BuiltinEmbeddingDialog from '@/features/model-settings/BuiltinEmbeddingDialog.vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
-import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
+import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
+import { linkedModelDetails, linkedModelEdit, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
 import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import ModelUseDetails from '@/features/model-settings/ModelUseDetails.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import RetrievalTermsCard from '@/features/model-settings/RetrievalTermsCard.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
@@ -37,13 +40,15 @@ import { UiNotice } from '@/ui'
 // action. Lists, facts, trust and history open in 「查看详情」. A model that did
 // not answer says why where it shows, with 「测试连接」 and, where something
 // can run again, 「重试」; a test reads the settings again so every place
-// agrees. Then what the roles suggested and their usage. A save is accepted
+// agrees, the top bar's model button included (both show one copy of the
+// settings, latest-model-roles). Then what the roles suggested and their usage. A save is accepted
 // only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const pageRoot = ref<HTMLElement | null>(null)
-const payload = ref<ModelRolesPayload | null>(null)
+// The one copy the top bar's model button shows too: what either reads, both show.
+const payload = latestModelRoles
 const loading = ref(true)
 const loadError = ref('')
 const editing = ref<ModelRoleId | null>(null)
@@ -100,13 +105,32 @@ async function load() {
   }
 }
 
-function edit(role: ModelRoleId) {
+// The part of the settings form to open at; a use's 去授权 asks for its projects (rec issue 143).
+const editingFocus = ref<'projects' | null>(null)
+function edit(role: ModelRoleId, focus: 'projects' | null = null) {
   stale.value = false
   closeDetails()
+  editingFocus.value = focus
   editing.value = role
 }
+// A link into a role's settings form (「去选项目」 under 交给 Tonborg 确认) opens it
+// at the part it names once the roles are read; the address then drops the link.
+watch([payload, () => route.query.edit], ([value]) => {
+  const linked = value ? linkedModelEdit(route.query) : null
+  if (!linked) return
+  edit(linked.role, linked.focus)
+  const { edit: _role, focus: _focus, ...query } = route.query
+  void router.replace({ query, hash: '' })
+}, { immediate: true })
 
 const openUse = (use: ModelUseId) => { details.value = useRole(use) }
+// A usage row's 「查看并测试」: that model's row in 模型, with its 「测试连接」 focused.
+function showModel(connectionId: string) {
+  const row = [...pageRoot.value?.querySelectorAll<HTMLElement>('[data-model-connection-id]') ?? []]
+    .find(entry => entry.dataset.modelConnectionId === connectionId)
+  row?.scrollIntoView({ block: 'center' })
+  row?.querySelector<HTMLElement>('[data-model-connection-check]')?.focus({ preventScroll: true })
+}
 
 // A save whose change could not be written to the change history says so (rec#11 D-42).
 const historyNote = (next: ModelRolesPayload) => (next.history === 'not_recorded' ? t('modelSettings.history.notRecorded') : '')
@@ -140,8 +164,11 @@ async function saved(next: ModelRolesPayload) {
 
 // A changed file closes the form; one that stopped validating keeps it open,
 // read again and locked, until the file is repaired.
+// The role whose edit was not saved because the settings changed meanwhile: 「重新编辑」 opens it again.
+const staleRole = ref<ModelRoleId | null>(null)
 async function conflict(code: ConfigConflict) {
   if (code === 'model_config_changed') {
+    staleRole.value = editing.value
     editing.value = null
     stale.value = true
   }
@@ -189,8 +216,19 @@ onBeforeUnmount(() => {
           </div>
           <UiNotice v-if="payload.state === 'invalid'" tone="error" data-model-config-invalid>
             {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
+            <!-- The file is fixed outside the console: the person's AI does it ("让 AI 来做"), then it is read again here. -->
+            <template #actions>
+              <AiHelpButton term="task.models" />
+              <Button size="sm" variant="outline" :loading="loading" :loading-label="t('modelSettings.loading')" data-model-config-reload
+                @click="load()">{{ t('modelSettings.readAgain') }}</Button>
+            </template>
           </UiNotice>
-          <UiNotice v-if="stale" tone="error" data-model-stale>{{ t('modelSettings.changed') }}</UiNotice>
+          <UiNotice v-if="stale && staleRole" tone="error" data-model-stale>
+            {{ t('modelSettings.changed') }}
+            <template #actions>
+              <Button size="sm" variant="outline" data-model-stale-edit @click="edit(staleRole)">{{ t('modelSettings.editAgain') }}</Button>
+            </template>
+          </UiNotice>
           <ModelList :payload="payload" @open="openUse" @checked="load()" />
         </section>
 
@@ -207,8 +245,12 @@ onBeforeUnmount(() => {
               @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" @builtin="builtinOpen = true" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
               @edit="edit('assistant')" @details="details = 'assistant'" @checked="load()" />
-            <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
-            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
+            <AdvancedOnly area="tidy">
+              <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" :settings-open="editing === 'assistant'"
+                @edit="edit('assistant')" @authorize="edit('assistant', 'projects')" @checked="load()" />
+            </AdvancedOnly>
+            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" :settings-open="editing === 'assistant'"
+              @edit="edit('assistant')" @authorize="edit('assistant', 'projects')" @checked="load()" />
             <ModelRoleCard v-for="role in (['jefa', 'tonborg', 'bole'] as const)" :key="role" :view="view(role)" :locked="locked"
               :editing="editing === role" @edit="edit(role)" @details="details = role" @checked="load()" />
           </div>
@@ -217,14 +259,14 @@ onBeforeUnmount(() => {
         <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
           :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
 
-        <ModelUsage />
+        <ModelUsage :roles="payload" @model="showModel" />
 
         <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
-          @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" />
+          @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" @checked="load()" />
         <BuiltinEmbeddingDialog :open="builtinOpen" @close="builtinOpen = false" @changed="settingsChanged()"
           @own="builtinOpen = false; edit(SEMANTIC_ROLE)" />
-        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
-          @close="editing = null" @saved="saved" @conflict="conflict" />
+        <ModelRoleDialog :role="editing" :payload="payload" :projects="projects" :projects-loaded="Boolean(store.state)"
+          :focus="editingFocus" @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>
     </div>
     <PageOutline :content="pageRoot" />

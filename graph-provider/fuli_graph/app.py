@@ -14,6 +14,7 @@ from .auth import (
 from .client_version_note import install_client_version_note
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
+from .temporary_project_sources import TemporaryProjectSource, temporary_project_sources
 from .publication_submission_models import PublicationSubmissionDecision
 from .graph_models import GraphResult
 from .knowledge_usage_models import KnowledgeUsageCreate, KnowledgeUsageResult
@@ -125,6 +126,9 @@ from .project_agent_routes import register_project_agent_routes
 from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_hard_delete_routes import register_knowledge_hard_delete_routes
 from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_route
+from .knowledge_statement import register_knowledge_statement_route
+from .knowledge_statement_days import register_knowledge_statement_days_route
+from .knowledge_statement_items import register_knowledge_statement_items_route
 from .builtin_embedding_routes import register_builtin_embedding_routes
 from .knowledge_semantic_index import register_knowledge_semantic_routes
 from .knowledge_duplicates import register_knowledge_duplicate_routes
@@ -148,6 +152,7 @@ from .workflow_candidates import (
 from .workflow_observations import record_workflow_transition_observation
 from .graph_format import GraphFormatUnavailable, inspect_graph_format
 from .graph_format_routes import register_graph_format_routes
+from .scope_export import register_scope_export_route
 from .runtime import GraphitiRuntime
 from .store import GraphStore
 
@@ -311,6 +316,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> list[PersonalProjectRecord]:
         return await store.list_personal_projects(actor, personal_space_id)
 
+    # Before /v1/personal-projects/{project_id}, which would take this path as an ID.
+    @application.get('/v1/personal-projects/temporary-sources', response_model=list[TemporaryProjectSource])
+    async def list_temporary_project_sources(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+    ) -> list[TemporaryProjectSource]:
+        return await temporary_project_sources(store, actor, personal_space_id)
+
     @application.get(
         '/v1/personal-projects/{project_id}',
         response_model=PersonalProjectRecord,
@@ -328,11 +341,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_item_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
+    register_knowledge_statement_route(application, store, Actor)
+    register_knowledge_statement_days_route(application, store, Actor)
+    register_knowledge_statement_items_route(application, store, ReviewAwareActor)
     register_knowledge_semantic_routes(application, store, Actor)
     register_builtin_embedding_routes(application, resolved_settings, Actor)
     register_knowledge_duplicate_routes(application, store, Actor)
     register_preference_organizing_routes(application, store, Actor)
     register_knowledge_retrieval_routes(application, store, Actor)
+    register_scope_export_route(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(

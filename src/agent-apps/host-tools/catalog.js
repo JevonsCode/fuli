@@ -69,6 +69,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   group_discussion: PEERS,
   find_agents: EGRESS,
   message_agent: PEERS,
+  visit_shared_lead: PEERS,
   read_agent_messages: EGRESS,
   reply_agent_message: PEERS,
   read_agent_thread: EGRESS,
@@ -124,6 +125,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   read_diagnostic_events: UNSCOPED,
   // Reads files under the data directory, outside any app's space.
   read_old_data: UNSCOPED,
+  // The person's whole statement: counts across every project and FLA.
+  read_compounding_statement: UNSCOPED,
   // Public upstream text plus the space's own answers, read by occupation or Agent.
   read_occupation_kit: UNSCOPED,
   explain_settings: UNSCOPED,
@@ -202,7 +205,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   list_project_agent_routing_learning: UNSCOPED,
   ignore_project_agent_routing_learning: UNSCOPED,
   reset_project_agent_routing_learning: UNSCOPED,
-  list_workflow_candidates: UNSCOPED,
   revise_personal_knowledge: UNSCOPED,
   reassign_personal_knowledge: UNSCOPED,
   preview_personal_project_action: UNSCOPED,

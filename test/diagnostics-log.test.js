@@ -4,8 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { moveCommand } from '../src/text/terminal-command.js';
+
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
-import { runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-hook.js';
+import { runAsRunnerCall } from '../src/app/agent-request-context.js';
+import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js';
+import { runCodexLifecycleCommand } from '../src/agents/codex/lifecycle-event.js';
 import { runOpenCodeLifecycleCommand } from '../src/agents/opencode/lifecycle-hook.js';
 import { formatDiagnostics, runDiagnosticsCommand } from '../src/cli/diagnostics-command.js';
 import { inspectLocalStores } from '../src/data-format/local-stores.js';
@@ -132,7 +136,7 @@ test('only a controlled error\'s message reaches the HTTP and MCP writers; any o
     ['mcp', 'read_diagnostic_events', 'refused', 'not_found']
   ]);
   assert.deepEqual(events.map(({ reason }) => reason), ['HTTP 500: internal error',
-    'HTTP 400: limit must be a whole number', 'Tool execution failed', 'No such synthetic record']);
+    'HTTP 400: limit must be a whole number', 'Tool execution failed (TypeError)', 'No such synthetic record']);
   assert.equal(events[2].correlationId, 'synthetic-session');
   const text = JSON.stringify(events);
   assert.equal(text.includes('SYNTHETIC') || text.includes('SyntheticPass'), false);
@@ -196,11 +200,11 @@ test('an empty or unreadable log never reads as healthy', async (t) => {
   }
 });
 
-function fakeExchange({ method = 'GET', path = '/api/diagnostics/events', remoteAddress = '127.0.0.1' } = {}) {
+function fakeExchange({ method = 'GET', path = '/api/diagnostics/events', remoteAddress = '127.0.0.1', headers = {} } = {}) {
   const response = { headers: {}, status: null, body: null,
     setHeader(name, value) { this.headers[name.toLowerCase()] = value; },
     writeHead(status) { this.status = status; }, end(body) { this.body = JSON.parse(body); } };
-  return { request: { method, socket: { remoteAddress } }, response, url: new URL(path, 'http://127.0.0.1') };
+  return { request: { method, headers, socket: { remoteAddress } }, response, url: new URL(path, 'http://127.0.0.1') };
 }
 
 test('GET /api/diagnostics/events answers this computer only, with the filters it was given', async (t) => {
@@ -228,6 +232,22 @@ test('GET /api/diagnostics/events answers this computer only, with the filters i
   assert.equal(filtered.response.body.total, 1);
 });
 
+test('the Issue report is loopback-only, read-only, uncached and independent of a graph or space', async () => {
+  const path = '/api/diagnostics/issue-report?locale=zh-CN';
+  let calls = 0;
+  const readIssueReport = locale => { calls++; assert.equal(locale, 'zh-CN'); return '## FULI'; };
+  for (const [extra, expected] of [[{ remoteAddress: '192.0.2.1' }, 403], [{ headers: { 'x-fuli-runner': 'paired' } }, 403],
+    [{ headers: { forwarded: 'for=127.0.0.1' } }, 403], [{ headers: { [DELEGATION_HEADER]: 'declared' } }, 403],
+    [{ method: 'POST' }, 405], [{ remoteAddress: '::1' }, 200], [{}, 200]]) {
+    const exchange = fakeExchange({ path, ...extra });
+    assert.ok(await handleDiagnosticEventsRequest({ ...exchange, readIssueReport }));
+    assert.equal(exchange.response.status, expected);
+    assert.equal(exchange.response.headers['cache-control'], 'no-store');
+    if (expected === 200) assert.deepEqual(exchange.response.body, { markdown: '## FULI' });
+  }
+  assert.equal(calls, 2);
+});
+
 test('read_diagnostic_events reads the same answer and is refused without a local log', async (t) => {
   const directory = await dataDir(t);
   const log = diagnosticEventLog(directory);
@@ -235,6 +255,33 @@ test('read_diagnostic_events reads the same answer and is refused without a loca
   const answer = DIAGNOSTIC_HANDLERS.read_diagnostic_events({ diagnosticEvents: log }, { component: 'http' });
   assert.equal(answer.total, 1);
   assert.throws(() => DIAGNOSTIC_HANDLERS.read_diagnostic_events({}, {}), { code: 'diagnostics_unavailable' });
+  assert.throws(() => runAsRunnerCall('paired', () => DIAGNOSTIC_HANDLERS.read_diagnostic_events({
+    get diagnosticEvents() { return assert.fail('the host log must not be opened'); }
+  }, {})), { code: 'local_user_only', status: 403 });
+});
+
+test('the local Agent receives only sanitized event fields from an older log, with stable paging', async (t) => {
+  const directory = await dataDir(t);
+  const log = diagnosticEventLog(directory);
+  log.record(failure());
+  log.record(failure());
+  const [first, second] = await lines(directory);
+  const earlier = { ...first, at: '2026-01-01T00:00:00.000Z' };
+  const later = { ...second, at: '2026-02-01T00:00:00.000Z', version: '0.26.1', level: 'changed',
+    reason: SECRETS.password, correlationId: SECRETS.apiKey, operation: 'GET ' + SECRETS.query,
+    prompt: 'private example conversation', context: { file: SECRETS.path } };
+  await writeFile(join(directory, 'diagnostics', 'events.jsonl'), [earlier, later].map(row => JSON.stringify(row)).join('\n') + '\n');
+  const query = input => DIAGNOSTIC_HANDLERS.read_diagnostic_events({ diagnosticEvents: log }, input);
+  const page = query({ limit: 1 });
+  assert.equal(page.total, 2);
+  assert.deepEqual(page.counts.level, { error: 2 });
+  assert.equal(page.events[0].id, later.id);
+  assert.equal(page.events[0].version, '0.26.1');
+  assert.equal(page.events[0].level, 'error');
+  assert.equal(page.events[0].reason, '[redacted:credential_assignment]');
+  assert.match(page.events[0].operation, /example\.test\/api\/search\?q=…&token=…/);
+  for (const field of ['prompt', 'context', 'correlationId']) assert.equal(field in page.events[0], false);
+  assert.equal(query({ limit: 1, cursor: page.nextCursor }).events[0].id, earlier.id);
 });
 
 test('fuli diagnostics reads the data directory without the console', async (t) => {
@@ -253,6 +300,25 @@ test('fuli diagnostics reads the data directory without the console', async (t) 
   await assert.rejects(runDiagnosticsCommand(['--data-dir', directory, '--level', 'info'], { env: {}, write: () => {} }),
     InvalidInputError);
   await assert.rejects(runDiagnosticsCommand(['--unknown'], { env: {}, write: () => {} }), /Usage: fuli diagnostics/);
+  assert.doesNotMatch(printed, /Graph runtime recoveries/);
+  // What a graph runtime recovery did is kept beside what it set aside; the text points there.
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(directory, 'native-runtime', 'recovered'), { recursive: true });
+  for (const stamp of ['2026-11-01T00-00-00-000Z', '2026-11-02T00-00-00-000Z']) {
+    await writeFile(join(directory, 'native-runtime', 'recovered', `recovery-${stamp}.json`), '{}');
+  }
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /Graph runtime recoveries: 2; the latest is recorded in .*recovery-2026-11-02T00-00-00-000Z\.json/);
+  assert.doesNotMatch(printed, /图谱数据/);
+  // Graph data a recovery moved aside: where, which graph, and how to move it back.
+  const moved = join(directory, 'native-runtime', 'recovered', '2026-11-02T00-00-00-000Z', 'workspace', 'data', 'databases', 'neo4j');
+  await mkdir(moved, { recursive: true });
+  printed = '';
+  await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
+  assert.match(printed, /recovered 文件夹里有挪开的图谱数据，自动清理不会删它们/);
+  assert.match(printed, /2026-11-02T00-00-00-000Z · 0 KB · workspace/);
+  assert.ok(printed.includes(moveCommand(moved, join(directory, 'native-runtime', 'workspace', 'data', 'databases', 'neo4j'))));
 });
 
 test('migrate status lists the diagnostics log as absent until a failure is recorded', async (t) => {

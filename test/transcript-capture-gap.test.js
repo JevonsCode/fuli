@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
+import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-event.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../src/graphiti/capture-policy.js';
 import { notRecordedEvent, notRecordedReason, transcriptCaptureLedger, TURN_UNRESOLVED, UNATTRIBUTABLE }
   from '../src/conversations/transcript-capture-gap.js';

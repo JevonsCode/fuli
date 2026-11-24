@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { BOLE_AGENT_ID, JEFA_AGENT_ID, TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
 import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 
-const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
+const DEFAULT_PINS = Object.freeze([BOLE_AGENT_ID, JEFA_AGENT_ID, TONBORG_AGENT_ID]);
 const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
 // A record's latest execution status and receipt, as get() reports them.
 const LATEST_EXECUTION = 'FROM judgment_execution e WHERE e.decision = r.id ORDER BY e.id DESC LIMIT 1';
@@ -15,10 +16,13 @@ const LATEST_STATUS = `COALESCE((SELECT e.status ${LATEST_EXECUTION}), 'not_appl
 const HUMAN_NEEDED = `(json_extract(r.body,'$.outcome') IN ('escalate','failed') OR ${LATEST_STATUS} IN ('stale','failed')
   OR (${LATEST_STATUS} = 'not_applied' AND json_extract(r.body,'$.policy.mode') = 'manual'))`;
 // The words a person searches records by: title, objective, conclusion,
-// evidence, source, project id, and the latest feedback and receipt reasons.
+// evidence, source, project id, the reason of the feedback a record stands on
+// (the person's latest, else the latest report: standingFeedback below) and
+// the latest receipt reason.
 const SEARCHED_TEXT = ["json_extract(r.body,'$.title')", "json_extract(r.body,'$.objective')", "json_extract(r.body,'$.summary')",
   "json_extract(r.body,'$.evidence')", "json_extract(r.body,'$.client')", "json_extract(r.body,'$.model')", 'r.project',
-  '(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id ORDER BY f.revision DESC LIMIT 1)',
+  `(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id
+    ORDER BY (f.relayed_by IS NULL OR f.person_words IS NOT NULL) DESC, f.revision DESC LIMIT 1)`,
   `json_extract((SELECT e.receipt ${LATEST_EXECUTION}), '$.reason')`];
 const DELEGATION_KEY = 'review-delegation';
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
@@ -119,11 +123,13 @@ export class JudgmentStore {
     const body = this.#clean(space, JSON.parse(row.body));
     const feedbackHistory = this.db.prepare('SELECT revision,vote,reason,created_at AS createdAt,relayed_by AS relayedBy,person_words AS personWords FROM judgment_feedback WHERE decision=? ORDER BY revision').all(id)
       .map(({ relayedBy, personWords, ...value }) => ({ ...(body.hard_deleted ? { ...value, reason: '' } : value),
-        ...(personWords !== null ? { decidedBy: 'person', relayedBy, personWords: body.hard_deleted ? '' : personWords } : {}) }));
+        ...(personWords !== null ? { decidedBy: 'person', relayedBy, personWords: body.hard_deleted ? '' : personWords }
+          // A runner's report of how its own choice did (runner-routing.js), not a vote of the person.
+          : relayedBy ? { reportedBy: relayedBy } : {}) }));
     const executionHistory = this.db.prepare('SELECT status,receipt,created_at AS createdAt FROM judgment_execution WHERE decision=? ORDER BY id').all(id)
       .map(value => ({ ...value, receipt: this.#clean(space, JSON.parse(value.receipt)) }));
     return { ...body, id, createdAt: row.created_at, feedbackHistory, executionHistory,
-      feedback: feedbackHistory.at(-1) ?? { revision: 0, vote: null, reason: '' },
+      feedback: standingFeedback(feedbackHistory),
       execution: executionHistory.at(-1) ?? { status: 'not_applied' } };
   }
   // One page of records, newest first. after: the id of the previous page's
@@ -214,7 +220,26 @@ export class JudgmentStore {
       AND json_extract(value,'$.mode') IN ('shared','autonomous')) OR (key=? AND json_extract(value,'$.enabled')=1))
       LIMIT 1`).get(space, DELEGATION_KEY)?.enabled === 1;
   }
-  // relay: the FLA that relayed the person's vote and their words (rec#80), or null.
+  // Whether automatic confirmation was ever in use here: 「交给 Tonborg 确认」
+  // switched at any time, a judgment policy set, or a review Tonborg made with
+  // delegation on. Metadata only, like pins: readable while text recovery waits.
+  automaticConfirmationUsed(space) {
+    return this.db.prepare(`SELECT EXISTS(SELECT 1 FROM judgment_settings WHERE space=?1 AND (key=?2
+      OR (key LIKE 'policy:%' AND value <> 'null'))) OR EXISTS(SELECT 1 FROM judgment_records WHERE space=?1
+      AND json_extract(body,'$.kind')='review' AND json_extract(body,'$.delegated')=1) AS used`)
+      .get(space, DELEGATION_KEY).used === 1;
+  }
+  // How many judgments Tonborg applied in [from, to), and how many the person
+  // undid there (the undo is its own receipt). Counts only, like pins:
+  // readable while text recovery waits.
+  executionCounts(space, from, to) {
+    return this.db.prepare(`SELECT COUNT(DISTINCT CASE WHEN e.status='applied' THEN e.decision END) AS applied,
+      COUNT(DISTINCT CASE WHEN e.status='undone' THEN e.decision END) AS undone
+      FROM judgment_execution e JOIN judgment_records r ON r.id = e.decision
+      WHERE r.space=? AND e.status IN ('applied','undone') AND e.created_at >= ? AND e.created_at < ?`).get(space, from, to);
+  }
+  // relay: the FLA that relayed the person's vote and their words (rec#80), or a runner's
+  // report of its own choice ({ relayedBy: 'runner:<fingerprint>', personWords: null }), or null.
   feedback(space, id, vote, reason, expectedRevision, relay = null) {
     return this.transaction(() => {
       const decision = this.get(space, id);
@@ -268,6 +293,12 @@ export class JudgmentStore {
       return changed;
     }));
   }
+  // The record a request key holds, or null.
+  recordFor(space, requestKey) {
+    this.#assertRecovery(space);
+    const row = this.db.prepare('SELECT id FROM judgment_records WHERE space=? AND request_key=?').get(space, requestKey);
+    return row ? this.get(space, row.id) : null;
+  }
   // The records one request created, as request key prefix (its own items).
   requestRecords(space, requestKey) {
     this.#assertRecovery(space);
@@ -297,4 +328,16 @@ export class JudgmentStore {
     });
   }
   close() { if (!this.closed) { this.closed = true; this.db.close(); } }
+}
+
+// The feedback a record stands on, with the revision the next one writes over.
+// The person's own vote is that feedback: a machine's report of how its choice
+// did (a runner's, runner-routing.js) is kept in the history and shown there,
+// but never takes the person's place as what Tonborg reads next time. Without
+// a vote of theirs the latest report stands, which is all there is.
+function standingFeedback(history) {
+  const latest = history.at(-1);
+  if (!latest) return { revision: 0, vote: null, reason: '' };
+  const person = history.findLast(entry => !entry.reportedBy);
+  return person ? { ...person, revision: latest.revision } : latest;
 }

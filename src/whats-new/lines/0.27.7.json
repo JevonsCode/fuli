@@ -1,0 +1,13 @@
+{
+  "version": "0.27.7",
+  "zh": [
+    "新对话的第一条回复会说：FULI 这次带上了你的几条习惯，点开能看是哪几条。",
+    "没用过的进阶功能先收起来了，用到时自己出现；设置 › 系统 里也能手动打开。",
+    "第一次接入客户端更顺：新开对话就能用，接不上会说原因，没找到可以再找一次。"
+  ],
+  "en": [
+    "The first reply of a new chat says how many of your habits FULI handed over, with the list.",
+    "Advanced features you have not used are tucked away; they appear when used, or from Settings.",
+    "Connecting clients is smoother: new chats just work, failures say why, and you can look again."
+  ]
+}

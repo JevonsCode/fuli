@@ -109,8 +109,8 @@ test('a category the person took back, or an off-by-default one, refuses before 
   assert.equal(off.ran, false);
   assert.equal(off.sent.statusCode, 403);
   assert.equal(off.sent.body.code, 'delegation_category_off');
-  assert.match(off.sent.body.error, /设置 › AI 权限/);
-  assert.match(off.sent.body.error, /Settings › AI permissions/);
+  assert.match(off.sent.body.error, /设置 › AI 能做什么 › 项目/);
+  assert.match(off.sent.body.error, /Settings › What AI may do › Projects/);
   const lan = await gate(port, 'POST', '/api/peer/join');
   assert.deepEqual([lan.ran, lan.sent.body.code], [false, 'delegation_category_off']);
   port.setCategory('lan_roundtable', true);
@@ -154,6 +154,23 @@ test('local-user-only changes stay refused even when the policy file is tampered
   assert.deepEqual([tool.ran, tool.sent.body.code], [false, 'agent_tool_route']);
   assert.deepEqual(port.read().operations, []);
   assert.equal(port.read().categories.some(({ id }) => id === 'local_user_only'), false);
+});
+
+test('a refusal the person can undo links the console page that turns it on, at the console\'s current address', async (t) => {
+  let address = 'http://127.0.0.1:2799';
+  const port = createAgentDelegation(dataDir(t), { now: () => '2026-11-03T08:00:00.000Z', consoleUrl: () => address });
+  cleanup(t).ports.push(port);
+  port.setCategory('projects', false);
+  const off = await gate(port, 'POST', '/api/personal-projects/app/parent');
+  assert.equal(off.sent.body.code, 'delegation_category_off');
+  assert.ok(off.sent.body.error.endsWith(' http://127.0.0.1:2799/settings?tab=ai'), off.sent.body.error);
+  address = 'http://127.0.0.1:2800';
+  const access = await gate(port, 'PATCH', '/api/recall-policy', { agentAccess: false });
+  assert.equal(access.sent.body.code, 'agent_access_disabled');
+  assert.ok(access.sent.body.error.endsWith(' http://127.0.0.1:2800/settings?tab=ai'), access.sent.body.error);
+  // Without an address the refusal still names the page, and carries no broken link.
+  const plain = await gate(delegation(t), 'PATCH', '/api/recall-policy', { agentAccess: false });
+  assert.ok(plain.sent.body.error.endsWith('Settings › What AI may do › Agent access.'), plain.sent.body.error);
 });
 
 test('the gate passes the person\'s own requests and refuses delegation from another computer or with Agent access off', async (t) => {
@@ -341,6 +358,23 @@ test('the gate runs a relayed decision only with the words in its header and rec
   port.setCategory('decisions', false);
   const off = await gate(port, 'POST', '/api/judgment/feedback', { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
   assert.deepEqual([off.ran, off.sent.body.code], [false, 'delegation_category_off']);
+});
+
+test('an FLA turns 「交给 Tonborg 确认」 on only with the person\'s words, never on its own', async (t) => {
+  // It hands Tonborg's confirmations (and with no model, the session's) over: the person's say-so.
+  const { app, reads } = relayApp(async () => assert.fail('nothing is sent without the person\'s words'), ['先看看待决策']);
+  const turnOn = (input) => callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'PUT /api/judgment/delegation', body: { personalSpaceId: 'space-a', enabled: true, expectedRevision: 0 },
+    reason: 'Tonborg has no model, so the session can confirm', ...input });
+  await assert.rejects(turnOn({}), { code: 'person_words_required' });
+  await assert.rejects(turnOn({ personWords: '交给 Tonborg 确认吧' }), { code: 'person_words_not_found' });
+  assert.equal(reads.length, 1);
+  // The console's gate refuses the same change sent without words, with model settings on.
+  const port = delegation(t);
+  const bare = await gate(port, 'PUT', '/api/judgment/delegation');
+  assert.deepEqual([bare.ran, bare.sent.statusCode, bare.sent.body.code], [false, 400, 'person_words_required']);
+  const relayed = await gate(port, 'PUT', '/api/judgment/delegation', { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
+  assert.equal(relayed.ran, true);
 });
 
 test('the real console keeps a relayed batch confirmation as the person\'s, relayed by the FLA', async (t) => {

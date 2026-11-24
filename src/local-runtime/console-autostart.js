@@ -7,7 +7,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { checkLocalConsoleHealth } from './console-health.js';
 import { acquireConsoleStartLock, readConsoleAutostart, updateConsoleAutostart } from './console-autostart-record.js';
 import { installedConsoleLauncher } from './installed-console-launcher.js';
-import { isProcessAlive } from './processes.js';
+import { isOwnProcessRunning } from './processes.js';
 
 // A client session's MCP process starts the FULI console when it is not
 // running, and keeps checking while the session stays open (rec#94), the way
@@ -124,7 +124,7 @@ export function superviseConsole({ dataDir, env = process.env, limits = CONSOLE_
 async function recordedConsoleState(dataDir) {
   let state;
   try { state = readJsonFile(join(dataDir, 'graph-runtime-state.json'), null); } catch { return 'down'; }
-  if (!Number.isInteger(state?.pid) || !isProcessAlive(state.pid)) return 'down';
+  if (!Number.isInteger(state?.pid) || !isOwnProcessRunning(state.pid)) return 'down';
   if (typeof state.url !== 'string') return 'unanswered';
   return await checkLocalConsoleHealth(state.url, state.pid, state.version, CONSOLE_HEALTH_CHECK_MS) ? 'ready' : 'unanswered';
 }

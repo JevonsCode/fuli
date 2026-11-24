@@ -92,11 +92,36 @@ test('task and assignment locks intersect and the task model strategy constrains
   app.getProjectAgent = async () => ({ profile: { allowedClients: ['codex'], executorPolicy: { mode: 'flexible' } },
     assignments: [{ personalProjectId: 'p', status: 'active', executorPolicyOverride: { mode: 'locked', lockedExecutorIds: ['space', 'other'] } }] });
   app.viewProjectAgentTask = async () => ({ personalProjectId: 'p', executorPolicy: { mode: 'locked', lockedExecutorIds: ['space'] },
-    effectiveModelStrategy: { mode: 'deep', reasoningEffort: 'high', capabilityHints: ['reasoning'] }, requiredCapabilities: ['verification'] });
+    effectiveModelStrategy: { mode: 'deep', reasoningEffort: 'high', capabilityHints: ['reasoning'] },
+    // What the task's Agent must know does not limit executors; its executor hints do.
+    requiredCapabilities: ['synthetic agent skill'], executorCapabilityHints: ['verification'] });
   assert.equal((await service.assess({ ...routingInput, taskId: 'task' })).selection.executorId, 'space');
   const data = JSON.parse(prompt().split('\nDATA:\n')[1]);
   assert.deepEqual(data.eligible.map(e => e.executorId), ['space']);
   assert.deepEqual(data.eligible[0].models.map(m => m.model), ['model']);
+});
+test('the judgment reads the last 30 days of client and model usage beside its evidence; its answer contract stays', async t => {
+  const { service, app, prompt } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const windows = [];
+  app.recallImpressions = { entriesByClientModel: async ({ personalSpaceId, from, to }) => {
+    windows.push({ personalSpaceId, days: (Date.parse(to) - Date.parse(from)) / 86_400_000 });
+    return [{ client: 'codex', model: 'synthetic-model', entries: 3 }, { client: 'claude-code', model: null, entries: 1 }];
+  } };
+  app.roundtable = { wakeUsage: async () => [{ client: 'claude_code', model: null, wakes: 2, failedWakes: 1,
+    inputTokens: null, outputTokens: null, tokenWakes: 0 }] };
+  const result = await service.assess(routingInput);
+  assert.equal(result.selection.executorId, 'space');
+  assert.deepEqual(windows, [{ personalSpaceId: 's', days: 30 }]);
+  const data = JSON.parse(prompt().split('\nDATA:\n')[1]);
+  assert.equal(data.recentUsage.days, 30);
+  // How wakes ended rides along; a task entry records no outcome.
+  assert.deepEqual(data.recentUsage.rows, [{ client: 'claude_code', model: null, taskEntries: 1, wakes: 2, failedWakes: 1 },
+    { client: 'codex', model: 'synthetic-model', taskEntries: 3, wakes: 0, failedWakes: 0 }]);
+  // A source that cannot be read leaves the input out; the judgment still answers.
+  const quiet = routingFixture(t, { executors: [availableExecutor('space')] });
+  quiet.app.recallImpressions = { entriesByClientModel: () => { throw new Error('synthetic store down'); } };
+  assert.equal((await quiet.service.assess(routingInput)).selection.executorId, 'space');
+  assert.equal('recentUsage' in JSON.parse(quiet.prompt().split('\nDATA:\n')[1]), false);
 });
 test('judgment client cannot read another Agent history through a different eligible client', async t => {
   const { service, app } = routingFixture(t, { executors: [availableExecutor('space', 'claude_code')], allowedClients: ['claude_code'] });
@@ -195,4 +220,45 @@ test('an unknown request field is named only as unknown field; its caller-chosen
   assert.equal(structuredContent.error.code, 'invalid_input');
   assert.match(structuredContent.error.message, /request: unknown field/);
   assert.equal(JSON.stringify({ structuredContent, content }).includes('sk-synthetic'), false);
+});
+
+test('with no executor to choose, the escalation names the check that left none instead of a bare failure', async t => {
+  const capable = { ...availableExecutor('space'), capabilities: ['read', 'code_review'] };
+  // A name some executor lists, but none that is ready now, is a real requirement: the person hears which.
+  const busy = { ...availableExecutor('busy'), capabilities: ['deploy'], healthStatus: 'unhealthy' };
+  const missing = routingFixture(t, { executors: [capable, busy] });
+  const unmatched = await missing.service.assess({ ...routingInput, requestId: 'caps', requiredCapabilities: ['Deploy', 'read'] });
+  assert.equal(unmatched.disposition, 'ask_user');
+  assert.equal(unmatched.outcome, 'escalate');
+  assert.match(unmatched.summary, /required capability \(deploy, read\)/);
+  assert.deepEqual(unmatched.evidence, ['Offered: read, code_review']);
+  assert.equal(missing.prompt(), undefined, 'no model is asked to choose from nothing');
+
+  const offline = routingFixture(t, { executors: [{ ...capable, permissionStatus: 'revoked' }] });
+  assert.match((await offline.service.assess({ ...routingInput, requestId: 'offline' })).summary, /^No executor is registered, authorized/);
+
+  const hinted = routingFixture(t, { executors: [capable], strategy: { mode: 'adaptive', capabilityHints: ['architecture'] } });
+  const strategy = await hinted.service.assess({ ...routingInput, requestId: 'hints' });
+  assert.match(strategy.summary, /model this Agent may use under its model strategy/);
+  assert.match(strategy.evidence[0], /hints architecture/);
+
+  const ruled = routingFixture(t, { executors: [capable], rules: [{ status: 'active', scope: 'project', personalProjectId: 'p', executorIds: ['elsewhere'] }] });
+  const rule = await ruled.service.assess({ ...routingInput, requestId: 'rule' });
+  assert.match(rule.summary, /routing rule for this work allows no ready executor/);
+  assert.deepEqual(rule.evidence, ['Allowed: elsewhere', 'Ready: space']);
+});
+
+test('a required capability no registered executor lists is the caller\'s mistake: refused at once with the names there are, and nothing recorded', async t => {
+  const executors = [{ ...availableExecutor('space'), capabilities: ['read', 'Code_Review'] }, { ...availableExecutor('off'), capabilities: ['gpu'], permissionStatus: 'revoked' }];
+  const { service, prompt } = routingFixture(t, { executors });
+  await assert.rejects(service.assess({ ...routingInput, requestId: 'free-text', requiredCapabilities: ['read', 'edit the card template'] }), error => {
+    assert.equal(error.code, 'invalid_input');
+    assert.equal(error.message, 'requiredCapabilities[1]: no registered executor lists this capability. Pass only names from this list, or none: code_review, gpu, read');
+    assert.equal(error.message.includes('edit the card'), false, 'the message never repeats the value');
+    return true;
+  });
+  assert.equal(prompt(), undefined);
+  assert.deepEqual((await service.records({ personalSpaceId: 's', personalProjectId: 'p' })).records, [], 'nothing waits for the person');
+  const fixed = await service.assess({ ...routingInput, requestId: 'fixed', requiredCapabilities: ['CODE_REVIEW'] });
+  assert.equal(fixed.selection.executorId, 'space', 'names match ignoring case, as before');
 });

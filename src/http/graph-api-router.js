@@ -1,5 +1,6 @@
 import { relayedDecision } from '../agent-delegation/delegation-header.js';
 import { readJson, sendJson } from './response.js';
+import { isForwardedConsoleRequest, isLoopbackAddress } from './request-policy.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
 import { handleTaskEventsRequest } from './task-events-api-router.js';
@@ -10,10 +11,12 @@ import { handleAgentGrowthRequest } from './agent-growth-api-router.js';
 import { handleTaskVerificationRequest } from './task-verification-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleReplyEchoRequest } from './reply-echo-api-router.js';
+import { handleWhoAmIRequest } from './whoami-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
-import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
+import { handleAdvancedAreasRequest, handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
+import { taskSessions } from '../graphiti/project-agent-task-sessions.js';
 
 // The Provider keeps a confirmer's label of at most this many characters.
 const CONFIRMER_LABEL_LIMIT = 160;
@@ -35,11 +38,13 @@ export async function handleGraphApiRequest({
   if (await handleAgentGrowthRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleTaskVerificationRequest({ request, response, url, app })) return true;
   if (await handleReplyEchoRequest({ request, response, url, app, ownerReads })) return true;
+  if (await handleWhoAmIRequest({ request, response, url, app })) return true;
   if (await handleKnowledgeItemRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
   if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
   if (await handleFirstRunGuideRequest({ request, response, url, app })) return true;
+  if (await handleAdvancedAreasRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;
@@ -211,6 +216,12 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  if (url.pathname === '/api/personal-projects/temporary-sources' && request.method === 'GET') {
+    sendJson(response, 200, await app.listTemporaryProjectSources({
+      personalSpaceId: url.searchParams.get('personalSpaceId') ?? undefined
+    }));
+    return true;
+  }
   const projectHistory = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/history$/);
   if (projectHistory && request.method === 'GET') {
     const limit = url.searchParams.get('limit');
@@ -238,6 +249,26 @@ export async function handleGraphApiRequest({
       status: url.searchParams.get('status'),
       capability: url.searchParams.get('capability')
     }));
+    return true;
+  }
+  // Every rename, and settling the names FLAs share (src/graphiti/agent-name-workflows.js).
+  if (url.pathname === '/api/project-agent-name-changes' && request.method === 'GET') {
+    sendJson(response, 200, await app.listAgentNameChanges({ personalSpaceId: url.searchParams.get('personalSpaceId') }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-changes/seen' && request.method === 'PUT') {
+    const { personalSpaceId, until } = await readJson(request);
+    sendJson(response, 200, await app.markAgentNameChangesSeen({ personalSpaceId, until }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-fixes' && request.method === 'GET') {
+    sendJson(response, 200, await app.agentNameFixPlan({ personalSpaceId: url.searchParams.get('personalSpaceId'),
+      keep: url.searchParams.getAll('keep') }));
+    return true;
+  }
+  if (url.pathname === '/api/project-agent-name-fixes/apply' && request.method === 'POST') {
+    const { personalSpaceId, keep, renames } = await readJson(request);
+    sendJson(response, 200, await app.applyAgentNameFixes({ personalSpaceId, keep, renames }));
     return true;
   }
   if (url.pathname === '/api/project-agent-pages' && request.method === 'GET') {
@@ -372,13 +403,15 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-agent-tasks' && request.method === 'GET') {
-    sendJson(response, 200, await app.listProjectAgentTasks({
+    const tasks = await app.listProjectAgentTasks({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
       agentId: url.searchParams.get('agentId'),
       status: url.searchParams.get('status'),
       limit: numberParam(url, 'limit', null)
-    }));
+    });
+    // The console shows which client each open task runs in (今天's 正在干活).
+    sendJson(response, 200, tasks.map((task) => ({ ...task, sessions: taskSessions(task) })));
     return true;
   }
   if (url.pathname === '/api/project-agent-task-pages' && request.method === 'GET') {
@@ -452,6 +485,16 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  // Where one FLA worked, for the console widget that shows it (rec#147). Read
+  // only: it counts conversation session records and opens nothing.
+  if (url.pathname === '/api/project-agent-work-locations' && request.method === 'GET') {
+    sendJson(response, 200, await app.viewAgentWorkLocations({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('personalProjectId'),
+      agentId: url.searchParams.get('agentId')
+    }));
+    return true;
+  }
   if (url.pathname === '/api/project-agent-activity' && request.method === 'POST') {
     sendJson(response, 200, await app.recordProjectAgentTaskActivity(await readJson(request)));
     return true;
@@ -464,10 +507,14 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-team' && request.method === 'GET') {
-    sendJson(response, 200, await app.getProjectTeam({
+    const team = await app.getProjectTeam({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId')
-    }));
+    });
+    // A project's lines name its work; like /api/workstreams they are read
+    // only on this computer (docs/workstreams.md). Over the LAN the team stands without them.
+    sendJson(response, 200, isLoopbackAddress(request.socket?.remoteAddress) && !isForwardedConsoleRequest(request)
+      ? team : { ...team, workstreams: undefined });
     return true;
   }
   if (url.pathname === '/api/project-agent-coordination-policy' &&

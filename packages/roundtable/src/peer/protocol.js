@@ -2,11 +2,20 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 
 export const PEER_PROTOCOL = 'peer/1';
+// A visitor's read-only question to a shared lead's project (the visiting
+// assistant): rides the same queue as a message but never wakes a client.
+export const PEER_QUERY_PROTOCOL = 'peer-query/1';
 export const PEER_LIMITS = Object.freeze({
   requestBytes: 64 * 1024,
   responseBytes: 1024 * 1024,
   messageChars: 16_000,
   queuePerNode: 100,
+  queryQueuePerNode: 20,
+  queryQueuePerSender: 4,
+  queryTtlSeconds: 60,
+  queryReplyBytes: 48 * 1024,
+  queryCount: 4,
+  queryChars: 200,
   directoryAgents: 50,
   defaultTtlSeconds: 30 * 60,
   maxTtlSeconds: 30 * 60,
@@ -58,6 +67,29 @@ export function canonicalTime(value) {
   return Number.isFinite(time) && new Date(time).toISOString() === value ? time : null;
 }
 
+// Text another device sent, as this computer shows it: without C0 and C1
+// control characters (terminal escapes), bidirectional marks and overrides,
+// zero-width and invisible filler characters, line and paragraph separators,
+// or tag characters.
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\u3164\ufeff\uffa0\u{e0000}-\u{e007f}]/gu;
+export function withoutControls(value) {
+  return value.replace(CONTROLS, '');
+}
+
+const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
+
+// At most `limit` user-perceived characters: an emoji or an accented letter is never cut in two.
+export function graphemePrefix(value, limit) {
+  let text = '';
+  let count = 0;
+  for (const { segment } of GRAPHEMES.segment(value)) {
+    if (count === limit) break;
+    text += segment;
+    count += 1;
+  }
+  return text;
+}
+
 export function shortFingerprint(fingerprint) {
   return fingerprint.slice(0, 24).toUpperCase().match(/.{4}/g).join(' ');
 }
@@ -76,6 +108,12 @@ export function canonicalJson(value) {
 
 export function sha256Hex(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+// Message IDs are chosen by senders, so the coordinator keys them per sending
+// device; a receiving device recomputes the key to tie a claim to its assertion.
+export function peerMessageKey(senderNode, messageId) {
+  return sha256Hex(`${senderNode}:${messageId}`);
 }
 
 export function coordinatorUrl(host, port) {
@@ -147,6 +185,70 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
   if (!Number.isSafeInteger(assertion.depth) || assertion.depth < 1 || assertion.depth > PEER_LIMITS.maxDepth) {
     throw new PeerError('budget_exceeded', 'This conversation reached its cross-device depth limit');
   }
+  checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.maxTtlSeconds, fail });
+  return assertion;
+}
+
+const QUERY_FIELDS = ['protocol', 'messageId', 'from', 'to', 'query', 'issuedAt', 'expiresAt', 'origin'];
+const QUERY_ACTIONS = new Set(['card', 'search', 'request', 'request_status', 'request_withdraw']);
+// Named by the plan for a later slice; refused by name until it exists.
+const LATER_QUERY_ACTIONS = new Set(['progress']);
+// A visit request (seconding C): the requester's own draft of the work.
+export const VISIT_REQUEST_LIMITS = Object.freeze({ titleChars: 160, whatChars: 4000, areas: 10, areaChars: 200 });
+const REQUEST_FIELDS = new Set(['title', 'what', 'expectedAreas']);
+const boundedText = (value, max) => typeof value === 'string' && value.trim() !== '' && value.length <= max;
+
+// A request carries a title, what to do and optionally the areas the
+// requester expects, each bounded here, before any queue holds it.
+export function validVisitRequest(request) {
+  const { titleChars, whatChars, areas, areaChars } = VISIT_REQUEST_LIMITS;
+  return Boolean(request) && typeof request === 'object' && !Array.isArray(request)
+    && Object.keys(request).every((key) => REQUEST_FIELDS.has(key))
+    && boundedText(request.title, titleChars) && boundedText(request.what, whatChars)
+    && (request.expectedAreas === undefined || (Array.isArray(request.expectedAreas) && request.expectedAreas.length <= areas
+      && request.expectedAreas.every((area) => boundedText(area, areaChars))));
+}
+const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+
+// A visitor's question: exactly these fields, no body, depth, conversation or
+// chat wake, a lifetime of at most a minute, and its queries bounded here, so
+// nothing larger reaches the coordinator's queue or the receiving device's search.
+export function validateQuery(assertion, { now = Date.now() } = {}) {
+  const fail = (message) => { throw new PeerError('invalid_query', message); };
+  if (!assertion || typeof assertion !== 'object' || assertion.protocol !== PEER_QUERY_PROTOCOL) fail('Unsupported query protocol');
+  if (!exactKeys(assertion, QUERY_FIELDS)) fail('A query carries exactly its protocol, identity, ends, question, times and origin');
+  if (!isOpaqueId(assertion.messageId)) fail('Invalid query identity');
+  const { from, to, query } = assertion;
+  if (!exactKeys(from, ['node', 'agentId', 'name']) || !isFingerprint(from.node) || !isOpaqueId(from.agentId)
+    || typeof from.name !== 'string' || from.name.length > 120) fail('Invalid sender');
+  if (!exactKeys(to, ['node', 'bindingId', 'agentId']) || !isFingerprint(to.node) || !isOpaqueId(to.bindingId) || !isOpaqueId(to.agentId)) {
+    fail('Invalid recipient');
+  }
+  if (from.node === to.node) fail('A device cannot query itself');
+  if (LATER_QUERY_ACTIONS.has(query?.action)) throw new PeerError('query_action_unsupported', 'This device does not answer progress yet', 422);
+  if (!QUERY_ACTIONS.has(query?.action)) fail('Unknown query action');
+  if (query.action === 'card' && !exactKeys(query, ['action'])) fail('A card query carries no queries');
+  if (query.action === 'search' && (!exactKeys(query, ['action', 'queries']) || !Array.isArray(query.queries)
+    || query.queries.length < 1 || query.queries.length > PEER_LIMITS.queryCount
+    || !query.queries.every((text) => typeof text === 'string' && text.trim() && text.length <= PEER_LIMITS.queryChars))) {
+    fail(`A search carries 1 to ${PEER_LIMITS.queryCount} queries of at most ${PEER_LIMITS.queryChars} characters`);
+  }
+  if (query.action === 'request' && (!exactKeys(query, ['action', 'request']) || !validVisitRequest(query.request))) {
+    fail('A request carries a title, what to do and at most 10 expected areas, each bounded');
+  }
+  if (query.action === 'request_status' && (!exactKeys(query, ['action', 'requestId']) || !isOpaqueId(query.requestId))) {
+    fail('A request status names one request id');
+  }
+  if (query.action === 'request_withdraw' && (!exactKeys(query, ['action', 'requestId']) || !isOpaqueId(query.requestId))) {
+    fail('A withdrawal names one request id');
+  }
+  checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.queryTtlSeconds, fail });
+  return assertion;
+}
+
+// The origin proof's outer shape and the signed lifetime, shared by messages and queries.
+function checkOriginAndLifetime(assertion, { now, maxSeconds, fail }) {
   const origin = assertion.origin;
   if (!origin || typeof origin.payload !== 'string' || typeof origin.signature !== 'string'
     || origin.payload.length > 4096 || origin.signature.length > 128 || Object.keys(origin).length !== 2) {
@@ -155,14 +257,13 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
   const issued = canonicalTime(assertion.issuedAt);
   const expires = canonicalTime(assertion.expiresAt);
   if (issued === null || expires === null) fail('Message times must be canonical UTC ISO timestamps');
-  if (!(issued <= now + 60_000) || !(expires > issued) || expires - issued > PEER_LIMITS.maxTtlSeconds * 1000) fail('Invalid message lifetime');
+  if (!(issued <= now + 60_000) || !(expires > issued) || expires - issued > maxSeconds * 1000) fail('Invalid message lifetime');
   if (expires <= now) throw new PeerError('message_expired', 'This message has expired', 410);
-  return assertion;
 }
 
 export function publicDirectoryEntry(entry) {
   if (!isOpaqueId(entry?.bindingId) || !isOpaqueId(entry?.agentId)) throw new PeerError('invalid_directory', 'Invalid shared Agent');
-  const text = (value, max) => typeof value === 'string' ? value.slice(0, max) : null;
+  const text = (value, max) => typeof value === 'string' ? graphemePrefix(withoutControls(value), max) : null;
   return { bindingId: entry.bindingId, agentId: entry.agentId, name: text(entry.name, 120) ?? entry.agentId,
     employeeNumber: text(entry.employeeNumber, 32), responsibility: text(entry.responsibility, 500),
     projectName: text(entry.projectName, 120),
@@ -171,5 +272,17 @@ export function publicDirectoryEntry(entry) {
     ...(entry.capabilities !== undefined ? { capabilities: (Array.isArray(entry.capabilities) ? entry.capabilities : [])
       .filter(c => typeof c === 'string').slice(0, 20).map(c => c.slice(0, 128)) } : {}),
     ...(entry.communicationOnly === true ? { communicationOnly: true } : {}),
+    ...(peerLook(entry.look) ? { look: peerLook(entry.look) } : {}),
     clients: (Array.isArray(entry.clients) ? entry.clients : []).filter((client) => isOpaqueId(client)).slice(0, 4) };
+}
+
+// The face a shared Agent has on its own computer, when the person re-rolled it:
+// the drawing's seed, so other computers draw the same face. Absent means its
+// default drawing from its agentId; anything else (an uploaded picture, a long
+// or control-carrying seed, a field an older or newer FULI sent) is dropped.
+const LOOK_SEED_CHARS = 64;
+export function peerLook(look) {
+  const seed = look?.kind === 'generated' ? look.seed : null;
+  if (typeof seed !== 'string' || !seed.trim() || seed.length > LOOK_SEED_CHARS || withoutControls(seed) !== seed) return null;
+  return { kind: 'generated', seed };
 }

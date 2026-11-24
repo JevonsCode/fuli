@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { changedExplanation, changesNewestFirst, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
+import { awaitsFirstConnection, canConnect, clientParts, withoutLifecycle, changedExplanation, changesNewestFirst, clientTiles, connectionSummary, offersRestart, shownClients, type ClientObservation, type ConnectionStatus } from './client-connection-model'
+import { settingsMessages } from '../../i18n/messages/settings'
 
 const client = (id: string, status: ClientObservation['status']): ClientObservation =>
   ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
@@ -11,11 +12,17 @@ describe('client connection summary', () => {
       customClients: [{ id: 'acme', label: 'Acme', detected: false, status: 'not_detected', mcpPaths: [], removable: true },
         { id: 'team', label: 'Team', detected: true, status: 'connected', mcpPaths: [], removable: false }] }
     expect(shownClients(observation).map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini'])
-    expect(connectionSummary(observation)).toEqual({ connected: 2, total: 5 })
+    expect(connectionSummary(observation)).toEqual({ connected: 2, total: 5, notInstalled: 1 })
+    // A client described by hand is a tile whatever its status, and FULI writes it before its file exists.
+    const tiles = clientTiles(observation)
+    expect(tiles.map(({ id }) => id)).toEqual(['codex', 'cursor', 'gemini', 'acme', 'team'])
+    expect(tiles.map(canConnect)).toEqual([true, true, true, true, true])
+    expect(canConnect(client('kiro', 'not_detected'))).toBe(false)
+    expect(tiles.map(awaitsFirstConnection)).toEqual([false, false, false, true, false])
   })
 
   it('is empty before the first answer', () => {
-    expect(connectionSummary(null)).toEqual({ connected: 0, total: 0 })
+    expect(connectionSummary(null)).toEqual({ connected: 0, total: 0, notInstalled: 0 })
   })
 })
 
@@ -50,5 +57,36 @@ describe('an outdated entry explained (rec#106)', () => {
     const shown = outdated({ changes: [...changes] })
     expect(changesNewestFirst(shown).map(({ detectedAt }) => detectedAt)).toEqual([changes[1].detectedAt, changes[0].detectedAt])
     expect(shown.changes[0]!.detectedAt).toBe(changes[0].detectedAt)
+  })
+})
+
+describe('client connection copy', () => {
+  it('keeps every 手动接入 / Add client string within 100 characters in both languages', () => {
+    const strings = (value: unknown, key: string): [string, string][] => typeof value === 'string' ? [[key, value]]
+      : Object.entries(value as Record<string, unknown>).flatMap(([name, inner]) => strings(inner, `${key}.${name}`))
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      for (const [key, text] of strings(settingsMessages[locale].connection.custom, locale)) {
+        expect([...text].length, key).toBeLessThanOrEqual(100)
+      }
+    }
+  })
+})
+
+describe('what FULI puts into a client', () => {
+  it('lists each part a client takes, MCP first, with its state, and says when nothing starts or closes a task by itself', () => {
+    const claudeCode = { components: { skills: 'current', permissions: 'current', hooks: 'outdated', mcp: 'current', prompts: 'unsupported' } }
+    expect(clientParts(claudeCode)).toEqual([{ part: 'mcp', state: 'current' }, { part: 'hooks', state: 'outdated' },
+      { part: 'skills', state: 'current' }, { part: 'permissions', state: 'current' }])
+    expect(withoutLifecycle(claudeCode)).toBe(false)
+    expect(withoutLifecycle({ components: { mcp: 'current' } })).toBe(true)
+    expect(withoutLifecycle({ components: { plugin: 'missing', skills: 'missing' } })).toBe(false)
+    // A client FULI is not in at all lists no parts and no note: its tile says so already.
+    expect(clientParts({ components: { mcp: 'missing', hooks: 'missing', skills: 'missing' } })).toEqual([])
+    expect(withoutLifecycle({ components: { mcp: 'missing' } })).toBe(false)
+    expect(clientParts({ components: { mcp: 'conflict' } })).toEqual([])
+    expect(clientParts({ components: { mcp: 'current', skills: 'missing' } })).toEqual([{ part: 'mcp', state: 'current' }, { part: 'skills', state: 'missing' }])
+    // Nothing known says nothing.
+    expect(clientParts({})).toEqual([])
+    expect(withoutLifecycle({})).toBe(false)
   })
 })

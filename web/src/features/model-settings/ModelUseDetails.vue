@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
+import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import { useConsoleStore } from '@/stores/console'
 import { UiDialog } from '@/ui'
 import ModelRoleCheck from './ModelRoleCheck.vue'
@@ -18,7 +19,7 @@ import { roleFacts, showsTrust } from './role-details'
 // of its settings, how its automatic operation runs, its change history, and
 // the connection test. Editing closes this and opens the form.
 const props = defineProps<{ view: ModelRoleView | null; payload: ModelRolesPayload; historyVersion: number; linkedPart?: ModelDetailsPart | null }>()
-const emit = defineEmits<{ close: []; edit: []; trustSaved: [payload: ModelRolesPayload]; changed: [] }>()
+const emit = defineEmits<{ close: []; edit: []; trustSaved: [payload: ModelRolesPayload]; changed: []; checked: [] }>()
 
 const locale = computed(() => currentLocale())
 const name = computed(() => (props.view ? roleName(props.view.role) : ''))
@@ -47,14 +48,16 @@ watch([() => props.view?.role, () => props.linkedPart, delegation], async ([, pa
           <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
         </div>
       </dl>
-      <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" ref="delegation" class="model-details-delegation" :personal-space-id="spaceId"
-        :data-model-details-linked="linkedPart === 'delegation' ? '' : undefined" @changed="emit('changed')" />
+      <AdvancedOnly area="tonborg">
+        <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" ref="delegation" class="model-details-delegation" :personal-space-id="spaceId"
+          :data-model-details-linked="linkedPart === 'delegation' ? '' : undefined" @changed="emit('changed')" />
+      </AdvancedOnly>
       <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
         :model="view.connection?.model ?? null" @saved="next => emit('trustSaved', next)" @changed="emit('changed')" />
       <ModelRoleHistory :role="view.role" :version="historyVersion" />
     </div>
     <template #footer>
-      <ModelRoleCheck v-if="view?.connection" class="model-details-check" :role="view.role" :model="view.connection.model" />
+      <ModelRoleCheck v-if="view?.connection" class="model-details-check" :role="view.role" :model="view.connection.model" @checked="emit('checked')" />
       <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-details-edit @click="emit('edit')">
         {{ t('modelSettings.edit') }}
       </Button>

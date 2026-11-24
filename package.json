@@ -1,6 +1,6 @@
 {
   "name": "fuli-context",
-  "version": "0.27.0",
+  "version": "0.29.0-beta.10",
   "description": "Local-first collaboration relationship graph for AI agents.",
   "type": "module",
   "files": [
@@ -29,7 +29,8 @@
     "skills/",
     "compose.graphiti.yml",
     "docs/judgment-and-autonomy.md",
-    "docs/client-connections.md"
+    "docs/client-connections.md",
+    "docs/runner.md"
   ],
   "bin": {
     "fl": "src/cli.js",
@@ -59,6 +60,7 @@
     "test:neo4j": "node --test --test-concurrency=1 test/agent-dismissal-acceptance.test.js test/conversation-hook-neo4j-acceptance.test.js test/project-agent-memory-acceptance.test.js test/task-memory-checkpoint-atomicity.test.js",
     "test:knowledge:live": "node acceptance/knowledge-live.js",
     "measure:context-delivery": "node acceptance/context-delivery-replay/run.js",
+    "measure:recall-rate": "node acceptance/recall-rate/run.js",
     "test:external-knowledge:live": "node scripts/validate-external-knowledge-live.js",
     "start": "node src/server.js",
     "graph:setup": "node src/graphiti/setup.js",
@@ -87,10 +89,11 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@agentclientprotocol/sdk": "1.5.0",
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.8",
     "@internationalized/date": "3.12.4",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@peculiar/x509": "2.1.0",
+    "bonjour-service": "1.4.4",
     "reflect-metadata": "0.2.2",
     "smol-toml": "1.9.1",
     "zod": "^4.6.7"
@@ -133,7 +136,7 @@
   },
   "overrides": {
     "@modelcontextprotocol/sdk": {
-      "@hono/node-server": "2.1.5"
+      "@hono/node-server": "2.1.8"
     },
     "brace-expansion": "$brace-expansion",
     "fast-uri": "3.1.9",

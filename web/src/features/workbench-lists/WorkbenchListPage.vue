@@ -18,6 +18,8 @@ import { knownNotice, noticePageShape, type Notice } from '@/features/overview/n
 import { normalizeOverviewTasks, overviewOwnerId, overviewTaskTitle } from '@/features/overview/overview-data'
 import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { projectDisplayName } from '@/features/projects/project-origin'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { createDebouncedAction } from '@/lib/debounce'
@@ -34,8 +36,7 @@ import '@/features/overview/workbench-card.css'
 // One workbench list on its own page (Jevons 11-06): 进行中, 最近完成 or
 // 最近你可能需要知道的事. Every list shares the shell (search, time range and
 // sort in one row, a virtual list read a page at a time, the URL as its state);
-// each declares its own filters (list-query.ts), folded under 「筛选」. The
-// workbench card grows into this page (styles/motion.css, data-list-morph).
+// each declares its own filters (list-query.ts), folded under 「筛选」.
 const PAGE_SIZE = 50
 const SEARCH_DELAY_MS = 300
 // Fixed row heights the virtual list lays out by: a task is one title line and
@@ -131,7 +132,7 @@ const sortOptions = computed(() => LIST_SORTS.map(value => ({ value, label: t(`o
 const searchLabel = computed(() => t(`overview.lists.search.${list.value}`))
 
 // Each declared filter's choices.
-const projectOptions = computed(() => projects.value.map(project => ({ value: project.project_id, label: projectDisplayName(project) })))
+const projectOptions = computed(() => projectScopeOptions(projects.value))
 const flaOptions = computed(() => roster.value.map(record => ({ value: record.agentId, label: agentDisplayName(record) })))
 function optionLabel(filter: ListFilter, value: string) {
   if (filter.key === 'status') return taskStatusLabel(value)
@@ -165,8 +166,8 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
 
 <template>
   <section class="view workbench-list-view" :data-workbench-list="list">
-    <Breadcrumb :parent="{ label: t('routes.overview.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
-    <div class="workbench-card workbench-list-card" :data-list-morph="list">
+    <Breadcrumb :parent="{ label: t('routes.today.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
+    <div class="workbench-card workbench-list-card">
       <div class="workbench-list-bar" role="search">
         <Input v-model="searchInput" type="search" class="workbench-list-search" maxlength="200" data-list-search
           :aria-label="searchLabel" :placeholder="searchLabel" @keydown.enter.prevent="searchSoon.flush()" />
@@ -188,6 +189,7 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
           <template v-for="field in filterFields" :key="field.filter.key">
             <OptionCombobox v-if="field.filter.multiple" class="workbench-list-filter" multiple :searchable="typeof field.filter.options === 'string'"
               :model-value="field.chosen" :options="field.options" :label="field.label" :placeholder="field.all" :max-chips="1"
+              :fold-group="field.filter.options === 'projects' ? temporaryGroupLabel() : undefined" @fold-shown="readTemporaryProjectSources()"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />
             <OptionSelect v-else class="workbench-list-filter" :model-value="field.chosen[0] ?? ''" :options="field.single" :label="field.label"
               :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />

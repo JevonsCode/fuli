@@ -4,8 +4,11 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { createGuestAccess } from './guest-access/runtime.js';
+import { createRunnerHost } from './runner/host-service.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
+import { createLifecycleHookCalls } from './agents/lifecycle-hook-calls.js';
 import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { recordHttpFailure } from './diagnostics/failure-records.js';
@@ -26,6 +29,7 @@ import {
 import { createServerApplication } from './server/application-lifecycle.js';
 import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
+import { fuliMcpServerEntry } from './agent-kits/fuli-mcp-entry.js';
 import { createSystemService } from './system/system-service.js';
 import { startDreamingScheduler } from './dreaming/scheduler.js';
 import { startRetrospectiveScheduler } from './retrospectives/scheduler.js';
@@ -38,6 +42,7 @@ import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-f
 import { personalGraphFormat } from './data-format/graph-format-client.js';
 import { holdDataDirectory } from './data-format/maintenance-lock.js';
 import { dataFormatMigrations as createDataFormatMigrations } from './data-format/migration-operations.js';
+import { consoleGraphBackup } from './data-format/console-graph-backup.js';
 import { consoleRestore } from './data-format/console-restore.js';
 import { knowledgeHardDelete as createKnowledgeHardDelete } from './knowledge-hard-delete/console-port.js';
 import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-check.js';
@@ -59,6 +64,7 @@ import { createEmbeddingModelStore, embeddingModelsDirectory } from './embedding
 import { createAgentDelegation } from './agent-delegation/port.js';
 import { createCodexFlaPromptSync } from './agents/codex/fla-prompts.js';
 import { readFlaMenuEntries } from './graphiti/fla-menu-reader.js';
+import { liveSourceConsoleUrl } from './graphiti/source-marker.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -111,7 +117,8 @@ export async function createServer(options = {}) {
   const dataFormatMigrations = options.dataFormatMigrations ?? (localOptions.runtimeConfigPath
     ? createDataFormatMigrations(dirname(localOptions.runtimeConfigPath),
       { graph: personalGraphFormat(dirname(localOptions.runtimeConfigPath)),
-        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)) }) : null);
+        restore: consoleRestore(dirname(localOptions.runtimeConfigPath)),
+        graphBackup: consoleGraphBackup(dirname(localOptions.runtimeConfigPath)) }) : null);
   for (const pruned of dataFormatMigrations?.prune() ?? []) {
     if (pruned.kind === 'prune_failed') console.warn(`Format backups were not pruned: ${pruned.reason}`);
   }
@@ -162,7 +169,10 @@ export async function createServer(options = {}) {
     : null);
   // What the person lets FLAs change for them, and each change made (rec#11 D-81).
   const agentDelegation = options.agentDelegation ?? (localOptions.runtimeConfigPath
-    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
+    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath), { consoleUrl: liveSourceConsoleUrl(localOptions.runtimeConfigPath) }) : null);
+  // Installed hooks of this data directory hand their calls to this console (lifecycle-hooks-api-router.js).
+  const lifecycleHooks = options.lifecycleHooks ?? (localOptions.runtimeConfigPath
+    ? createLifecycleHookCalls({ runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env }) : null);
   knowledgeHardDelete?.reconcile().catch((error) => {
     console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
   });
@@ -181,10 +191,12 @@ export async function createServer(options = {}) {
   let stopEmbeddingModelUpdates = () => {};
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
+  let guestAccess = null;
+  let runnerHost = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => guestAccess?.close(), () => runnerHost?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -265,6 +277,7 @@ export async function createServer(options = {}) {
       judgmentUndo,
       clientLinks,
       agentDelegation,
+      lifecycleHooks,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -338,9 +351,38 @@ export async function createServer(options = {}) {
   }) ?? (() => {});
   // Resumes only what the owner already turned on; console LAN access never enables it.
   if (application.peer && options.peer !== false) {
+    // FULI's own MCP server as the installer writes it for a client: an ask from another computer,
+    // answered only in this console, loads only this one (packages/roundtable deliver). Set here, in
+    // the console's composition root, so no hook or MCP process reaches the installer's packs.
+    if (localOptions.runtimeConfigPath) {
+      const paths = resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) });
+      application.fuliMcpServer = (client) => {
+        try { return fuliMcpServerEntry({ paths, runtimeConfigPath: localOptions.runtimeConfigPath, client }); } catch { return null; }
+      };
+    }
     peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
       onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
     peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
+    // Visit requests arrive through that runtime and run in this process only.
+    try { application.visitorAccess?.requests?.resume(); }
+    catch (error) { console.error(`Visit requests could not resume: ${error.code ?? error.message}`); }
+  }
+  // Guest links (rec issue 133): their own listener on port 2729 while a link is live, never the console's.
+  if (application.visitorAccess && application.roundtableHost) {
+    guestAccess = createGuestAccess({ visitorAccess: application.visitorAccess, host: application.roundtableHost,
+      onError: (error) => console.error(`Guest links: ${error.code ?? error.message}`) });
+    application.guestAccess = guestAccess;
+    void guestAccess.start();
+  }
+  // Runners (docs/runner.md): their own TLS listener on port 2730 while one is paired or invited.
+  if (localOptions.runtimeConfigPath && options.runners !== false) {
+    runnerHost = createRunnerHost({ app: application, dataDir: dirname(localOptions.runtimeConfigPath),
+      // A runner's console entry reaches this console through it (src/runner/console-relay.js).
+      consoleOrigin: () => (authority ? `http://${authority}` : null),
+      ...(system?.withGraphRuntimeLease ? { withLease: (owner, work) => system.withGraphRuntimeLease(owner, work) } : {}),
+      onError: (error) => console.error(`Runners: ${error.code ?? error.message}`) });
+    application.runnerHost = runnerHost;
+    void runnerHost.start();
   }
 
   let closing = null;
@@ -402,6 +444,7 @@ async function handleRequest({
   judgmentUndo,
   clientLinks,
   agentDelegation,
+  lifecycleHooks,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -446,7 +489,8 @@ async function handleRequest({
       readModelEvaluation,
       judgmentUndo,
       clientLinks,
-      agentDelegation
+      agentDelegation,
+      lifecycleHooks
     }) })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }

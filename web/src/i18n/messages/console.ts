@@ -14,6 +14,7 @@ export const consoleMessages = {
       detailsTitle: '更新没有完成',
       detailsCopy: 'FULI 记下的原因（原文）：',
       notStarted: '没能开始更新，FULI 没有改动。',
+      hostOnly: '更新只能在运行 FULI 的那台电脑上开始：在那台电脑的 FULI 应用或它本机的控制台里点同一个按钮。',
       macCopy: '会下载并校验 v{version}，关闭 FULI 窗口、换成新版本后自动重新打开。知识数据不会动，新版本起不来会自动换回原版本。',
       macSteps: {
         downloading: '正在下载 v{version} 的 Mac 安装包…',
@@ -27,9 +28,10 @@ export const consoleMessages = {
         download_failed: '没有更新：新版本没下载下来，请检查网络后再试。原来的版本没动。',
         checksum_mismatch: '没有更新：下载的安装包没通过校验，请稍后再试。原来的版本没动。',
         start_failed: '新版本没能启动，已自动换回原来的版本。',
-        rollback_failed: '新版本没能启动，换回原版本也没成功，请看详情。',
+        rollback_failed: '新版本没能启动，原来的版本也没能正常运行，请看详情。',
+        kept_new_version: '新版本没能正常启动，没有换回旧版本，新版本还装着，请看详情。',
       },
-      notBack: 'FULI 还没有重新应答，请稍后刷新这个页面。',
+      notBack: 'FULI 还没有重新应答。', reloadPage: '刷新页面',
       trayCopy: '会下载并校验 v{version} 的 Windows 安装包，关掉 FULI 和桌面客户端，换上新版本后再打开。页面会断开一会儿，完成后自动刷新。知识数据和旧版本都会保留，可以回退。',
       steps: {
         downloading: '正在下载 v{version} 的 Windows 安装包…',
@@ -76,6 +78,7 @@ export const consoleMessages = {
       detailsTitle: 'The update did not finish',
       detailsCopy: 'The reason FULI recorded:',
       notStarted: 'The update could not start; nothing was changed.',
+      hostOnly: 'An update starts only on the computer that runs FULI: click the same button in its FULI app or its own console there.',
       macCopy: 'Downloads and verifies v{version}, closes the FULI window, switches to the new version and opens it again. Your knowledge data stays put, and a new version that does not start is switched back.',
       macSteps: {
         downloading: 'Downloading the v{version} Mac installer…',
@@ -89,9 +92,10 @@ export const consoleMessages = {
         download_failed: 'Not updated: the new version could not be downloaded. Check the network and try again; nothing was changed.',
         checksum_mismatch: 'Not updated: the download did not pass verification. Try again later; nothing was changed.',
         start_failed: 'The new version did not start, so the previous version is back.',
-        rollback_failed: 'The new version did not start and switching back did not finish either; see the details.',
+        rollback_failed: 'The new version did not start, and the previous version is not running either; see the details.',
+        kept_new_version: 'The new version did not start properly and was kept, not switched back; see the details.',
       },
-      notBack: 'FULI has not answered again yet. Reload this page in a moment.',
+      notBack: 'FULI has not answered again yet.', reloadPage: 'Reload page',
       trayCopy: 'Downloads and verifies the v{version} Windows package, closes FULI and the desktop client, and reopens them on the new version. This page disconnects for a moment and reloads when done. Your knowledge and the previous version are kept, so you can go back.',
       steps: {
         downloading: 'Downloading the v{version} Windows package…',

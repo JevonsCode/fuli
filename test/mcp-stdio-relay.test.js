@@ -11,7 +11,7 @@ import { runStdioRelay } from '../src/mcp/stdio-relay.js';
 
 const fakeServer = fileURLToPath(new URL('./fixtures/relay-fake-mcp-server.js', import.meta.url));
 
-function relay(installed) {
+function relay(installed, { checkEveryMs = 60_000 } = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const messages = [];
@@ -25,25 +25,26 @@ function relay(installed) {
     }
   });
   const exits = [];
+  const ended = Promise.withResolvers();
   const handle = runStdioRelay({
-    target: () => ({ version: installed.version, command: process.execPath, args: [fakeServer, installed.version] }),
-    input, output, exit: code => exits.push(code), checkEveryMs: 60_000, readyWithinMs: 5_000
+    target: () => ({ version: installed.version, command: installed.command ?? process.execPath, args: [fakeServer, installed.version] }),
+    input, output, exit: code => { exits.push(code); ended.resolve(code); }, checkEveryMs, readyWithinMs: 5_000
   });
   const send = message => input.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
-  const reply = async id => {
+  const waitFor = async predicate => {
     for (let waited = 0; waited < 5_000; waited += 20) {
-      const found = messages.find(message => message.id === id);
+      const found = messages.find(predicate);
       if (found) return found;
       await new Promise(resolve => setTimeout(resolve, 20));
     }
-    throw new Error(`no reply to ${id}`);
+    throw new Error('No matching MCP message arrived');
   };
   const close = async () => {
     handle.stop();
     input.end();
     for (let waited = 0; waited < 5_000 && !exits.length; waited += 20) await new Promise(resolve => setTimeout(resolve, 20));
   };
-  return { send, reply, messages, exits, close };
+  return { send, reply: id => waitFor(message => message.id === id), waitFor, messages, exits, ended: ended.promise, close };
 }
 
 async function initialized(session) {
@@ -60,6 +61,19 @@ test('passes requests and answers through unchanged', async () => {
   assert.deepEqual((await session.reply(1)).result, { version: '1.0.0' });
   await session.close();
   assert.deepEqual(session.exits, [0]);
+});
+
+test('a client starting during the switch gets its initialize answer from the newly selected server', async t => {
+  const installed = { version: 'broken-1.0.0' };
+  const session = relay(installed);
+  t.after(session.close);
+  session.send({ id: 0, method: 'initialize', params: {} });
+  installed.version = '2.0.0';
+  assert.equal((await session.reply(0)).result.serverInfo.version, '2.0.0');
+  session.send({ method: 'notifications/initialized' });
+  session.send({ id: 1, method: 'tools/list' });
+  assert.equal((await session.reply(1)).result.version, '2.0.0');
+  assert.deepEqual(session.exits, []);
 });
 
 test('moves an open session to a newly installed version without the client noticing', async () => {
@@ -89,7 +103,18 @@ test('never moves while a request is still being answered', async () => {
   await session.close();
 });
 
-test('keeps the running version when the new one does not start, and does not retry it', async () => {
+test('losing the server during an actual tool call ends the connection without repeating the call', { timeout: 5_000 }, async t => {
+  const installed = { version: '1.0.0' };
+  const session = relay(installed);
+  t.after(session.close);
+  await initialized(session);
+  session.send({ id: 1, method: 'tools/call', params: { name: 'exit-before-reply' } });
+  installed.version = '2.0.0';
+  assert.equal(await session.ended, 4);
+  assert.equal(session.messages.some(message => message.id === 1), false);
+});
+
+test('keeps serving on the running version after the candidate exits', async () => {
   const installed = { version: '1.0.0' };
   const session = relay(installed);
   await initialized(session);
@@ -101,6 +126,26 @@ test('keeps the running version when the new one does not start, and does not re
   assert.ok(!session.messages.some(message => message.method === 'notifications/tools/list_changed'));
   assert.deepEqual(session.exits, []);
   await session.close();
+});
+
+test('open clients survive a missing update executable and switch when the same version becomes available', async t => {
+  const installed = { version: '1.0.0' };
+  const sessions = [relay(installed, { checkEveryMs: 150 }), relay(installed, { checkEveryMs: 150 })];
+  t.after(() => Promise.all(sessions.map(session => session.close())));
+  await Promise.all(sessions.map(initialized));
+  installed.version = '2.0.0';
+  installed.command = join(tmpdir(), 'fuli-relay-executable-that-does-not-exist');
+  for (const session of sessions) session.send({ id: 1, method: 'tools/call' });
+  for (const session of sessions) assert.equal((await session.reply(1)).result.version, '1.0.0');
+
+  delete installed.command;
+  await Promise.all(sessions.map(session => session.waitFor(message => message.method === 'notifications/tools/list_changed')));
+  for (const session of sessions) {
+    session.send({ id: 2, method: 'tools/list' });
+    assert.equal((await session.reply(2)).result.version, '2.0.0');
+    assert.equal(session.messages.filter(message => message.id === 1).length, 1);
+    assert.deepEqual(session.exits, []);
+  }
 });
 
 test('an in-place package names the version on disk and runs its own server script', () => {

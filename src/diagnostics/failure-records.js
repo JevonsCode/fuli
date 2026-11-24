@@ -1,5 +1,5 @@
 import { isControlledError } from '../app/application-error.js';
-import { errorCode, failureReason } from './safe-event.js';
+import { errorCode, failureReason, recordedFailureReason } from './safe-event.js';
 
 // The diagnostics events of the console's HTTP API and of MCP tool calls
 // (rec#73), recorded after the caller already has its answer. A missing log
@@ -14,6 +14,7 @@ export function recordHttpFailure(log, { request, error, status, startedAt }) {
     operation: `${request.method} ${pathOf(request.url)}`,
     outcome: status >= SERVER_ERROR ? 'failed' : 'refused',
     code: errorCode(error) ?? `http_${status}`,
+    httpStatus: status,
     reason: `HTTP ${status}: ${failureReason(error, 'internal error')}`,
     durationMs: Date.now() - startedAt
   }));
@@ -26,9 +27,25 @@ export function recordToolFailure(log, { toolName, error, sessionId = null, star
     operation: toolName,
     outcome: !isControlledError(error) || error.status >= SERVER_ERROR ? 'failed' : 'refused',
     code: isControlledError(error) ? errorCode(error) : 'internal_error',
-    reason: failureReason(error, 'Tool execution failed'),
+    reason: recordedFailureReason(error, 'Tool execution failed'),
     durationMs: Date.now() - startedAt,
     correlationId: sessionId
+  }));
+}
+
+// A roundtable wake that did not answer (packages/roundtable wake-failure.js):
+// codes, exit code and signal only. The client's output stays, redacted, in
+// the roundtable store of this computer.
+export function recordWakeFailure(log, { client, sessionMode, code, detail = null, exitCode = null, signal = null,
+  durationMs = null, remote = false }) {
+  return recorded(log, () => ({
+    component: 'roundtable',
+    operation: `wake ${client} ${sessionMode}`,
+    outcome: 'failed',
+    code: detail ?? code,
+    reason: `${remote ? 'A paired device\'s ask' : 'An ask'} could not wake ${client} in a ${sessionMode} session: ${code}`
+      + `${detail ? ` (${detail})` : ''}${exitCode === null ? '' : `, exit code ${exitCode}`}${signal ? `, signal ${signal}` : ''}`,
+    durationMs
   }));
 }
 

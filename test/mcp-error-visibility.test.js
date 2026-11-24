@@ -1,8 +1,15 @@
+import { fuliNotRunning } from '../src/app/fuli-not-running.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
+import { diagnosticEventLog } from '../src/diagnostics/event-log.js';
+import { diagnosticEventsAnswer } from '../src/diagnostics/query.js';
 import { createRetrievalApiConnector } from '../src/external-knowledge/connectors/retrieval-api.js';
 import {
   beginTaskContext,
@@ -13,6 +20,8 @@ import { resolvePersonalProjectPath } from '../src/graphiti/project-path-context
 import { setSessionCapturePause } from '../src/graphiti/session-capture-pause-request.js';
 import { switchSessionFuli } from '../src/graphiti/session-fuli-switch.js';
 import { readOwnSessionRecords } from '../src/graphiti/session-records.js';
+import { createMcpServer } from '../src/mcp/create-mcp-server.js';
+import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
 import { errorToolResult } from '../src/mcp/tool-result.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
 import { assertJsonObject, positiveInteger, requiredBinding, requiredString, uniqueTextArray } from '../src/validation/values.js';
@@ -49,9 +58,46 @@ test('MCP error results do not expose validation details for uncontrolled failur
   }];
   const result = errorToolResult(error);
 
+  // An error that only mentions a refused connection is a failure inside FULI:
+  // only the console connection says FULI is not running (review of #1076).
   assert.equal(result.structuredContent.error.code, 'internal_error');
-  assert.equal(result.structuredContent.error.message, 'Tool execution failed');
+  assert.doesNotMatch(result.structuredContent.error.message, /8787/);
   assert.equal(result.structuredContent.error.validationErrors, undefined);
+});
+
+// The coordinator's count: 32 get_collaboration_preferences failures, every
+// one "internal_error: Tool execution failed", with nothing to act on.
+test('an unanticipated failure says which kind it was and what to do next', () => {
+  const caused = (code, name = 'Error') => Object.assign(new TypeError('fetch failed'),
+    { cause: Object.assign(new Error('synthetic cause'), { code, name }) });
+  const cases = [
+    // FULI's own call to another local service was refused: not "FULI is not running".
+    [caused('ECONNREFUSED'), 'internal_error', /recorded where in its diagnostics/],
+    [Object.assign(new Error('synthetic'), { code: 'ENOENT', syscall: 'open', path: '/synthetic/missing.json' }), 'internal_error',
+      /recorded where in its diagnostics/],
+    // The console layer's own refusal (app/fuli-not-running.js).
+    [fuliNotRunning(), 'fuli_not_running', /not running, so nothing was done/],
+    [Object.assign(new Error('synthetic'), { name: 'TimeoutError' }), 'fuli_timeout', /whether it finished is unknown/],
+    [Object.assign(new Error('synthetic'), { name: 'AbortError' }), 'fuli_timeout', /in time/],
+    [caused('UND_ERR_HEADERS_TIMEOUT'), 'fuli_timeout', /in time/],
+    [caused('ECONNRESET'), 'fuli_connection_lost', /dropped/],
+    [new TypeError("Cannot read properties of undefined (reading 'x')"), 'internal_error', /recorded where in its diagnostics/]
+  ];
+  for (const [error, code, message] of cases) {
+    const { structuredContent: { error: shown } } = errorToolResult(error);
+    assert.equal(shown.code, code, error.message);
+    assert.match(shown.message, message);
+    assert.ok(shown.next?.length > 20, `${code} says what to do next`);
+    assert.doesNotMatch(JSON.stringify(shown), /synthetic cause|reading 'x'|missing\.json/, 'no message text of the error itself');
+  }
+});
+
+test('a knowledge service that is not ready says so and what to do', async () => {
+  const { ProviderRequestError } = await import('../src/graphiti/provider-client.js');
+  const { structuredContent: { error } } = errorToolResult(new ProviderRequestError('Graphiti provider is unavailable.',
+    { code: 'provider_unavailable' }));
+  assert.equal(error.code, 'provider_unavailable');
+  assert.match(error.next, /not ready/);
 });
 
 test('superseded task context tokens report a controlled not_found error', () => {
@@ -279,7 +325,7 @@ test('a genuine internal TypeError stays internal_error', () => {
     new TypeError('Provider did not return a durable task context')]) {
     const result = errorToolResult(error);
     assert.equal(result.structuredContent.error.code, 'internal_error');
-    assert.equal(result.structuredContent.error.message, 'Tool execution failed');
+    assert.match(result.structuredContent.error.message, /^Tool execution failed inside FULI/);
   }
 });
 
@@ -331,4 +377,39 @@ test('a registration\'s bad project or lead binding is internal_error; a preview
     assert.equal(code(() => assignments.preview({ ...request, [field]: null })), 'no error', `preview without ${field}`);
   }
   assert.equal(code(() => assignments.preview({ ...request, terms: [''] })), 'invalid_input', 'preview terms');
+});
+
+// rec#137: a checkpoint failed twice with only internal_error, and its failure
+// record said no more. An uncontrolled throw inside FULI's own checkpoint path
+// still answers internal_error, but its record names the class and the module
+// line that raised it, never the message or a value the call carried.
+test('an uncontrolled checkpoint failure leaves a record naming its class and FULI throw site', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'fuli-checkpoint-failure-'));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5 }));
+  const diagnosticEvents = diagnosticEventLog(directory);
+  // A Provider answer without the task's session: taskRecord's own TypeError.
+  const provider = { getTaskContext: async () => ({ token: 'fuli-task-synthetic', secret: 'fuliSYNTHETICvalue' }) };
+  const app = { config: { personal: { spaceId: 'synthetic-space' } }, diagnosticEvents,
+    taskContextRegistry: new ProviderTaskContextRegistry(provider, 'synthetic-space') };
+  app.checkpointTaskKnowledge = input => checkpointTaskKnowledge(app, input);
+  const server = createMcpServer(app, { env: {}, sourceApplication: 'claude_code', registerResources: false });
+  const client = new Client({ name: 'fuli-checkpoint-failure-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  t.after(async () => { await client.close(); await server.close(); });
+
+  const result = await client.callTool({ name: 'checkpoint_task_knowledge', arguments: {
+    taskContextToken: 'fuli-task-synthetic', disposition: 'retain_nothing', reason: '本轮没有新的长期知识。',
+    workLog: { status: 'incomplete', summary: '合成的未完成工作说明。'.repeat(12) } } });
+  assert.equal(result.structuredContent.error.code, 'internal_error');
+  assert.match(result.structuredContent.error.message, /^Tool execution failed inside FULI/);
+
+  const [event] = diagnosticEventsAnswer(diagnosticEvents).events;
+  assert.equal(event.component, 'mcp');
+  assert.equal(event.operation, 'checkpoint_task_knowledge');
+  assert.equal(event.code, 'internal_error');
+  assert.match(event.reason, /^Tool execution failed \(TypeError at src\/mcp\/provider-task-context-registry\.js:\d+\)$/);
+  assert.equal(JSON.stringify(event).includes('durable task context'), false, 'the message stays out');
+  assert.equal(JSON.stringify(event).includes('SYNTHETIC'), false);
 });

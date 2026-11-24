@@ -2,10 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { completePreferenceToolResult } from '../mcp/tool-result.js';
-import { blockedPreferenceDelivery, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../mcp/preference-delivery.js';
+import { blockedPreferenceRecovery, TASK_PREFERENCE_RESULT_LIMIT_BYTES } from '../mcp/preference-delivery.js';
 
 const COLLECTIONS = ['effective_preferences', 'active_conflicts', 'deferred_conflicts'];
-const REPEATED = new Set(['taskContextToken', 'task_context_token', 'checkpoint_required', 'agent_receipt',
+const REPEATED = new Set(['taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'agent_receipt',
   'context', 'project_scope', 'worker_run', 'same_task_recovery_available', 'truncated']);
 const CURSOR_BYTES = 32;
 const CURSOR_PLACEHOLDER = 'x'.repeat(43); // base64url encoding of 32 bytes
@@ -89,13 +89,13 @@ export function createTaskPreferencePager({ now = Date.now } = {}) {
         for (let end = 1; end <= units.length; end++) {
           const candidate = completePreferenceToolResult(page(start, end, units.length, units.length, CURSOR_PLACEHOLDER));
           if (candidate.structuredContent.preference_delivery.status !== 'blocked') continue;
-          if (end - 1 === start) return blockedPreferenceDelivery(full, 'delivery_budget');
+          if (end - 1 === start) return blockedPreferenceRecovery(full, 'delivery_budget');
           ranges.push([start, end - 1]);
           start = end - 1;
           // Retry this item on its own, including when it is the final item.
           end--;
         }
-        if (start === units.length) return blockedPreferenceDelivery(full, 'delivery_budget');
+        if (start === units.length) return blockedPreferenceRecovery(full, 'delivery_budget');
         ranges.push([start, units.length]);
         while (snapshots.size >= MAX_SNAPSHOTS) remove(snapshots.keys().next().value);
         state = { ranges, expires: now() + CURSOR_TTL_MS,

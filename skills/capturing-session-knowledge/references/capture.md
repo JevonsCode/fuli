@@ -86,9 +86,18 @@ like a task prompt ("front-end styling" becomes `frontend`) and an unknown one i
 preference is still kept.
 
 When the person asks to keep something for later ("remember", "keep this for later sessions",
-"from now on", 记住, 以后都…), task entry adds `remember_guidance` and the task is never auto-closed:
-record it with `checkpoint_task_knowledge` `remember` before finishing. Writing it into a repository
-file or the host's own memory files does not put it in FULI.
+"from now on", 记住, 以后都…) or states one of their own habits ("my habit", "one of my habits",
+我的习惯, 我的一个习惯, 我习惯), task entry adds `remember_guidance` and the task is never auto-closed:
+record it with `checkpoint_task_knowledge` `remember` before finishing. A stated habit is a
+`preference` with the person's exact words as `quote`, scope `global` unless they name a project.
+Writing it into a repository file or the host's own memory files does not put it in FULI.
+Broader talk ("I always", "I prefer", 我喜欢, 我总是) adds no guidance.
+
+When the person complains they already asked for it ("I already told you", "as I said",
+"didn't I say", 我已经说过了, 上次就讲过, 不是说过了吗, 说了多少遍, 你又…, or "I already did X,
+why didn't you Y" / 我已经…了，为什么你不/还…, 你为什么不…), that is a keep signal too: task entry
+adds `remember_guidance` and the task is never auto-closed. Follow the rule it names,
+`task_guidance.repeat_signal` (fuli://rules/task-entry/task_guidance); it is not repeated here.
 
 ## Route by Ownership
 
@@ -135,7 +144,8 @@ project creation returns `capture_disabled`, nothing was stored: automatic recor
 `reason` is `global_off` or `client_off` when the user switched it off, `project_off` when the user
 does not record this project, `project_unregistered` when the work is outside every registered
 project and such work is not recorded, and `policy_unavailable` when FULI could not read the
-capture settings or resolve the project. The receipt already says so; copy it unchanged. Do not
+capture settings or resolve the project. The receipt already says so (for a refused `remember`,
+that the habit or item was not kept); copy it unchanged. Do not
 retry, do not create a fallback record elsewhere, and do not describe the skipped write as stored.
 Edits the user submits in the FULI console still save, and existing knowledge may still be queried.
 
@@ -145,7 +155,7 @@ fallback tasks are closed as `retain_nothing` / `reported` at the next entry in 
 session, and hook-delivered tasks by Stop. Capture candidates, experiences, memory changes,
 explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
 still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
-A checkpoint is recorded once: a retry with different input is refused and never overwrites it.
+A checkpoint is recorded once: a retry with different input is refused and never overwrites it (on a closed task, as `checkpoint_not_saved` with `reason: task_closed`; use `amend: true` to correct it).
 If you checkpointed too early and the outcome changed later in the same task, call it again with
 the same token and `disposition`, `amend: true`, and only the corrected `reason` and `workLog`.
 FULI appends the correction and keeps the first record as history. Capture, `remember`,

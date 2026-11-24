@@ -77,8 +77,8 @@ async function promptsModule() {
 }
 
 const CONTEXT = { console: 'http://127.0.0.1:2999', area: 'Synthetic card', guide: 'https://example.test/models/' };
-// Words in the prompts that look like tool names but are protocol or field names.
-const NOT_TOOLS = new Set(['openai_embeddings', 'openai_chat']);
+// Words in the prompts that look like tool names but are protocol or field names, or a refusal's reason.
+const NOT_TOOLS = new Set(['openai_embeddings', 'openai_chat', 'client_running']);
 
 test('「让 AI 来做」 prompts name only real Agent tools and run_delegated_action routes, in both languages', async () => {
   const { AI_TASK_IDS, aiTaskPrompt } = await promptsModule();
@@ -100,6 +100,44 @@ test('「让 AI 来做」 prompts name only real Agent tools and run_delegated_a
       for (const [word] of prompt.matchAll(/\b[a-z]+(?:_[a-z]+)+\b/g)) {
         if (!NOT_TOOLS.has(word)) assert.ok(tools.has(word), `${task}/${locale}: ${word} is no FULI tool`);
       }
+    }
+  }
+});
+
+test('「添加客户端」\'s prompt opens this console\'s add link, never the add route an Agent may not call', async () => {
+  const source = readFileSync(join(WEB, 'features/settings/add-client-prompt.ts'), 'utf8');
+  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
+  const { addClientPrompt, addClientDraft, ADD_CLIENT_FORMATS } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+  // The console's one list of formats is the one the add route accepts.
+  const server = readFileSync(new URL('../src/agent-kits/custom-clients.js', import.meta.url), 'utf8');
+  assert.match(server, new RegExp(`CUSTOM_CLIENT_FORMATS = Object\\.freeze\\(\\[${ADD_CLIENT_FORMATS.map((format) => `'${format}'`).join(', ')}\\]\\)`));
+  // Adding a client is the person's own step (rec: 884e3b50).
+  assert.equal(interfaceForRoute('POST /api/system/client-connection/custom-clients').access, 'local_user_only');
+  for (const locale of ['zh-CN', 'en-US']) {
+    const prompt = addClientPrompt(locale, CONTEXT.console);
+    assert.doesNotMatch(prompt.split('\n')[0], /[<>]/, `${locale} opens with a placeholder`);
+    assert.ok(prompt.includes(`${CONTEXT.console}/settings?tab=clients&addClient=`), `${locale} opens the add link`);
+    assert.doesNotMatch(prompt, /\/api\//, `${locale} calls no console route`);
+    for (const format of ADD_CLIENT_FORMATS) assert.ok(prompt.includes(format), `${locale} names ${format}`);
+    // Tools showing up is not the end: the client proves it reaches FULI's task entry by its receipt (11-17).
+    assert.ok(prompt.includes('get_collaboration_preferences') && prompt.includes('agent_receipt.markdown'), `${locale} checks the receipt`);
+  }
+  assert.deepEqual(addClientDraft({ tab: 'clients', addClient: ' Acme ', mcpFile: '~/.acme/mcp.json', format: 'nope' }),
+    { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json', skillsDir: '' });
+  // A client with Skills names its folder too, so FULI's Skills reach it.
+  assert.equal(addClientDraft({ addClient: 'Acme', mcpFile: '~/.acme/mcp.json', skillsDir: ' ~/.acme/skills ' }).skillsDir, '~/.acme/skills');
+  for (const locale of ['zh-CN', 'en-US']) assert.ok(addClientPrompt(locale, CONTEXT.console).includes('&skillsDir=<skills>'));
+  assert.equal(addClientDraft({ tab: 'clients' }), null);
+});
+
+test('「让 AI 来做」 prompts are sent as they are: nothing in them is for the person to fill in', async () => {
+  const { AI_TASK_IDS, aiTaskPrompt } = await promptsModule();
+  for (const task of AI_TASK_IDS) {
+    for (const locale of ['zh-CN', 'en-US']) {
+      const prompt = aiTaskPrompt(task, locale, CONTEXT);
+      // The opening line states the whole request; a <placeholder> there would be the person's to replace.
+      assert.doesNotMatch(prompt.split('\n')[0], /[<>]/, `${task}/${locale} opens with a placeholder`);
+      assert.doesNotMatch(prompt, /<[^>]*[\u4e00-\u9fff][^>]*>|<(?:what|the|your|projects|clients)\b/i, `${task}/${locale} asks the person to fill something in`);
     }
   }
 });

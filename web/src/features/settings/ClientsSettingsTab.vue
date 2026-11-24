@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import PageColumns from '@/components/PageColumns.vue'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import PageStack from '@/components/PageStack.vue'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
@@ -46,10 +46,11 @@ function conversationApplicationLabel(application: ConversationSourceApplication
 
 <template>
   <div class="clients-tab">
-    <PageColumns>
-      <ClientConnectionSettings data-span="wide" />
-      <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title" data-span="wide">
-        <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}<AiHelpButton term="task.launchers" /></CardTitle></CardHeader>
+    <PageStack>
+      <ClientConnectionSettings />
+      <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title">
+        <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}<AiHelpButton term="task.launchers" /></CardTitle>
+          <CardDescription>{{ t('settings.conversationLaunchers.description') }}</CardDescription></CardHeader>
         <div class="conversation-launcher-columns">
         <div v-for="(column, side) in launcherColumns" :key="side" class="setting-list conversation-launcher-list">
           <article v-for="application in column" :key="application" class="conversation-launcher-row">
@@ -101,11 +102,16 @@ function conversationApplicationLabel(application: ConversationSourceApplication
         </div>
         </div>
       </Card>
-      <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title" data-span="wide">
+      <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
         <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
         <div class="setting-list">
           <label class="notification-url">
-            <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
+            <span>
+              <strong class="notification-url__head">{{ t('settings.notifications.needsPersonUrl') }}
+                <a class="notification-url__link" href="https://xn--8ovp9s.xn--m8txu.com/DingDongBuddy/" target="_blank" rel="noopener noreferrer" data-dingdong-link>{{ t('settings.notifications.dingdong') }}</a>
+              </strong>
+              <small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small>
+            </span>
             <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
               placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
               :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
@@ -114,12 +120,12 @@ function conversationApplicationLabel(application: ConversationSourceApplication
           </label>
         </div>
       </Card>
-    </PageColumns>
+    </PageStack>
 
     <!-- Less used: connecting by hand and the other ways in. Open cards, below. -->
     <section class="clients-more" aria-labelledby="settings-clients-more" data-clients-more>
       <h2 id="settings-clients-more" class="ui-group-label">{{ t('settings.clientsMore') }}</h2>
-      <PageColumns>
+      <PageStack>
         <ClientManualConnection />
         <NpmCopiesSettings />
         <Card v-if="form.flaSlashMenu !== undefined" as="section" class="settings-card" aria-labelledby="settings-fla-slash-menu-title" data-fla-slash-menu-card>
@@ -132,7 +138,7 @@ function conversationApplicationLabel(application: ConversationSourceApplication
         </Card>
         <ClientLinksSettings />
         <CliPathSettings />
-      </PageColumns>
+      </PageStack>
     </section>
   </div>
 </template>
@@ -167,6 +173,8 @@ function conversationApplicationLabel(application: ConversationSourceApplication
 .notification-url > span { display: grid; gap: 4px; }
 .notification-url strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 .notification-url small { color: var(--color-muted); font-size: 12px; }
+.notification-url__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.notification-url__link { font-size: 12px; font-weight: var(--weight-regular, 400); user-select: none; }
 .notification-url input { width: 100%; min-width: 0; }
 
 @container (max-width: 640px) {

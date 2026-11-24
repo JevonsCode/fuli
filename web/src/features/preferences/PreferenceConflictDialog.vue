@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { patchJson, postJson } from '@/api/client'
@@ -16,6 +18,7 @@ import {
   type PreferenceConflictAction,
 } from './preference-conflicts'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const props = defineProps<{
   conflict: PreferenceConflict | null
@@ -50,10 +53,7 @@ const splitProjects = computed(() => {
   )
 })
 const canSplit = computed(() => splitProjects.value.length > 0)
-const splitProjectOptions = computed(() => splitProjects.value.map((project) => ({
-  value: project.project_id,
-  label: project.profile.name,
-})))
+const splitProjectOptions = computed(() => projectScopeOptions(splitProjects.value))
 const differenceColumns = computed(() => {
   const difference = props.conflict?.difference
   if (!difference) return []
@@ -91,7 +91,7 @@ const impactPreview = computed(() => {
   return project
     ? t('preferences.dialog.impact.split', {
         item: item.title,
-        project: project.profile.name,
+        project: projectDisplayName(project),
       })
     : t('preferences.dialog.impact.chooseProject')
 })
@@ -371,7 +371,7 @@ function fail(message: string) {
           <UiSegmented v-model="splitItem" :label="t('preferences.dialog.splitRecordAria')"
             :options="[{ value: 'left', label: 'A' }, { value: 'right', label: 'B' }]" />
         </div>
-        <OptionCombobox v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" />
+        <OptionCombobox v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" />
       </section>
 
       <section class="conflict-impact-preview">

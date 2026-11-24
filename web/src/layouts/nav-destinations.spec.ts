@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 
-const all = navDestinations({ spaceId: 'personal-1' })
+const all = navDestinations({ spaceId: 'personal-1', shown: () => true })
 
 describe('nav destinations', () => {
   it('puts five destinations in the dock in sketch order and settings in the top bar', () => {
@@ -31,6 +31,16 @@ describe('nav destinations', () => {
     const match = activeDestination(all, path)
     expect(match?.key).toBe(destination)
     expect(activeSection(match, path)?.key).toBe(section)
+  })
+
+  it('leaves out what waits for an advanced area that is not shown', () => {
+    const fresh = navDestinations({ spaceId: 'personal-1', shown: () => false })
+    expect(fresh.filter(d => d.placement === 'dock').map(d => d.key)).toEqual(['constellation', 'agents', 'memory', 'projects'])
+    expect(fresh.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'tags'])
+    // Only that area's entries wait: 整理 shown, 圆桌 not.
+    const tidyOnly = navDestinations({ spaceId: 'personal-1', shown: area => area === 'tidy' })
+    expect(tidyOnly.some(d => d.key === 'chat')).toBe(false)
+    expect(tidyOnly.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
   })
 
   it('does not treat a shared prefix as ownership', () => {

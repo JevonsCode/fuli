@@ -2,6 +2,8 @@ const READ_TOOLS = new Set([
   'get_judgment_policy', 'list_judgments', 'get_agent_pins',
   'get_model_usage',
   'find_agents', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status',
+  // Reads a paired device's shared project; that device records the read.
+  'visit_shared_lead',
   'get_agent_quality_gate',
   'plan_agent_collaboration', 'list_agent_loans',
   'list_agent_conversations', 'read_agent_conversation', 'get_agent_conversation_policy',
@@ -11,6 +13,7 @@ const READ_TOOLS = new Set([
   'list_work_surfaces',
   'read_diagnostic_events',
   'read_old_data',
+  'read_compounding_statement',
   'list_tonborg_questions',
   'list_reply_echoes',
   'read_occupation_kit',
@@ -54,7 +57,6 @@ const READ_TOOLS = new Set([
   'list_project_agent_routing_learning',
   'get_agent_score_card',
   'resolve_knowledge_tags',
-  'list_workflow_candidates',
   'preview_personal_project_action',
   'get_graphiti_status'
 ]);
@@ -172,7 +174,7 @@ export function annotationsFor(name) {
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory' ||
       name === 'register_standing_assignment',
-    openWorldHint: name === 'agent_chat' || name === 'group_discussion' || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
+    openWorldHint: name === 'agent_chat' || name === 'group_discussion' || name === 'visit_shared_lead' || name === 'review_with_tonborg' || name === 'assess_agent_action' || name === 'assess_task_completion' || name === 'capture_session_knowledge' ||
       name === 'discover_external_knowledge_sources' ||
       name === 'create_external_knowledge_binding' ||
       name === 'check_external_knowledge_binding' ||

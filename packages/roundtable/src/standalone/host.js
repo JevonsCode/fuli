@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, sign } from 'node:crypto';
 import { resolve, sep } from 'node:path';
 
 import { assertRoundtableHost } from '../host.js';
+import { originProofVersion } from '../peer/origin-proof.js';
 import { RoundtableError } from '../errors.js';
 
 const MAX_ORIGIN_MS = 30 * 60 * 1000;
@@ -85,6 +86,8 @@ export function createStandaloneHost({ store, now = () => Date.now() }) {
     revokeDelegation: async ({ token }) => store.revokeDelegation(token),
 
     async issueRemoteOrigin({ taskContextToken, client, messageId, digest, targetNode, bindingId, expiresAt, purpose = 'execution' }) {
+      const version = originProofVersion(purpose);
+      if (!version) throw new RoundtableError('validation', 'A remote ask needs a known purpose');
       const row = task(taskContextToken, client);
       const sender = agent(row.agent_id);
       if (!sender) throw denied('The sending Agent is not active');
@@ -96,11 +99,11 @@ export function createStandaloneHost({ store, now = () => Date.now() }) {
         throw new RoundtableError('origin_conflict', 'This message ID already belongs to a different remote ask', { status: 409 });
       }
       const key = store.originKey();
-      const claims = { version: purpose === 'chat' ? 'fuli-chat-origin/1' : 'fuli-remote-origin/1', key_id: key.keyId,
+      const claims = { version, key_id: key.keyId,
         space_id: spaceId(), project_id: sender.agentId, agent_id: sender.agentId,
         task_hash: createHash('sha256').update(taskContextToken).digest('hex'), message_id: messageId, digest,
         target_node: targetNode, binding_id: bindingId, issued_at: new Date(now()).toISOString(), expires_at: expiresAt,
-        ...(purpose === 'chat' ? { purpose: 'chat' } : {}) };
+        ...(purpose === 'execution' ? {} : { purpose }) };
       const payload = Buffer.from(JSON.stringify(Object.fromEntries(Object.entries(claims).sort(([a], [b]) => a < b ? -1 : 1))));
       const privateKey = createPrivateKey({ key: { kty: 'OKP', crv: 'Ed25519', d: key.privateKey, x: key.publicKey }, format: 'jwk' });
       return { agent_id: sender.agentId, agent_name: sender.profile.name,

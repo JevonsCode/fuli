@@ -1,0 +1,106 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { setLocale } from '@/i18n'
+import type { AgentAttention } from '@/features/project-agents/attention-store'
+import { sparklinePoints, statementSeries, statementTiles, statementValue, statementWeek, statementWindow, weekRangeLabel, type Statement } from './statement'
+import { decisionRows, workingRows } from './today-model'
+import type { ProjectAgentTaskRecord } from '@/types'
+import type { TeamSheet } from '@/features/team-work/team-sheets'
+import type { VisitRequest } from '@/features/visit-requests/visit-request-shape'
+
+beforeEach(() => setLocale('zh-CN', { persist: false }))
+const request = (id: string) => ({ requestId: id }) as AgentAttention
+const visit = (id: string, state = 'awaiting_owner') => ({ id, state }) as VisitRequest
+const NO_VISITS = { awaiting: [], awaitingTotal: 0, reviews: [] }
+
+describe('等你拍板 rows', () => {
+  it('fills up to five in order: requests, the habits to confirm, then the disagreeing preferences', () => {
+    const { rows, more } = decisionRows({ requests: [request('a'), request('b')], requestTotal: 2, visits: NO_VISITS, reviewTotal: 4, conflicts: 1 })
+    expect(rows.map(row => row.kind)).toEqual(['request', 'request', 'review', 'conflicts'])
+    expect(more).toBe(0)
+  })
+
+  it('counts what no row stands for once five are shown', () => {
+    const four = ['a', 'b', 'c', 'd'].map(request)
+    const { rows, more } = decisionRows({ requests: four, requestTotal: 6, visits: NO_VISITS, reviewTotal: 3, conflicts: 2 })
+    expect(rows.map(row => row.kind)).toEqual(['request', 'request', 'request', 'request', 'review'])
+    expect(more).toBe(2 + 2)
+  })
+
+  it('puts other computers\' waiting requests first, then the assistants\' own, then finished runs to look at', () => {
+    const visits = { awaiting: [visit('w1'), visit('w2')], awaitingTotal: 7, reviews: [visit('r1', 'awaiting_review')] }
+    const { rows, more, visits: waiting } = decisionRows({ requests: [request('a')], requestTotal: 1, visits, reviewTotal: 2, conflicts: 0 })
+    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['w1', 'w2', 'request', 'r1', 'review'])
+    // Five more wait for the call than the newest two shown.
+    expect(more).toBe(5)
+    expect(waiting).toBe(7 + 1)
+  })
+
+  it('shows another computer\'s waiting request even when five assistants\' requests wait', () => {
+    const visits = { awaiting: [visit('w1')], awaitingTotal: 1, reviews: [] }
+    const five = ['a', 'b', 'c', 'd', 'e'].map(request)
+    const { rows, more } = decisionRows({ requests: five, requestTotal: 5, visits, reviewTotal: 0, conflicts: 0 })
+    expect(rows.map(row => row.kind === 'visit' ? row.item.id : row.kind)).toEqual(['w1', 'request', 'request', 'request', 'request'])
+    expect(more).toBe(1)
+  })
+})
+
+describe('正在干活 rows', () => {
+  it('keeps only work in progress, its own tasks first, then shared work the list did not have', () => {
+    const tasks = [
+      { taskId: 'run', status: 'running', leadAgentId: 'lead', personalProjectId: 'p', title: '在做' },
+      { taskId: 'stuck', status: 'blocked', leadAgentId: 'lead', personalProjectId: 'p', title: '卡住' },
+    ] as ProjectAgentTaskRecord[]
+    const sheets = [
+      { taskId: 'run', status: 'running', leadAgentId: 'lead', personalProjectId: 'p', title: '在做', shares: [] },
+      { taskId: 'team', status: 'running', leadAgentId: 'other', personalProjectId: null, title: ' 一起做 ', shares: [] },
+    ] as unknown as TeamSheet[]
+    expect(workingRows(tasks, sheets).map(row => [row.key, row.title, row.team])).toEqual([['run', '在做', false], ['team', '一起做', true]])
+  })
+})
+
+describe('复利账单', () => {
+  it('reads one local week from Monday 00:00 to the next Monday 00:00', () => {
+    const thursday = new Date(2026, 10, 12, 15, 30)
+    const week = statementWeek(thursday)
+    expect(new Date(week.from)).toEqual(new Date(2026, 10, 9))
+    expect(new Date(week.to)).toEqual(new Date(2026, 10, 16))
+    expect(new Date(statementWeek(thursday, 1).from)).toEqual(new Date(2026, 10, 2))
+    // Sunday still belongs to the week that started on Monday.
+    expect(new Date(statementWeek(new Date(2026, 10, 15, 23)).from)).toEqual(new Date(2026, 10, 9))
+  })
+
+  it('treats a section the server names unavailable as missing', () => {
+    const statement = { carried: { tasks: 3, clients: 2, items: 9 }, used: { times: 5, tasks: 1, cited: 1, applied: 1 }, unavailable: ['used'] } as Statement
+    expect(statementValue(statement, 'used', 'times')).toBeNull()
+    expect(statementTiles(statement).map(tile => tile.key)).toEqual(['carried'])
+  })
+
+  it('leaves out a second line that would count nothing', () => {
+    // Tasks from before clients were recorded: 「跨 0 个客户端」 says nothing.
+    const statement = { carried: { tasks: 115, clients: 0, items: 43 }, learned: { captured: 46, confirmedByYou: 0 } } as Statement
+    expect(statementTiles(statement).map(tile => [tile.key, tile.sub])).toEqual([['carried', null], ['learned', null]])
+  })
+
+  it('draws a trend only for two or more points that are not all zero', () => {
+    expect(sparklinePoints([], 96, 28)).toBeNull()
+    expect(sparklinePoints([7], 96, 28)).toBeNull()
+    expect(sparklinePoints([0, 0, 0], 96, 28)).toBeNull()
+    expect(sparklinePoints([1, 3], 96, 28)).toBe('2,26 94,2')
+    expect(sparklinePoints([5, 5], 96, 28)).toBe('2,14 94,14')
+  })
+
+  it('orders the running total oldest first', () => {
+    const statement = { series: [{ to: '2026-11-09T00:00:00Z', confirmed: 9 }, { to: '2026-11-02T00:00:00Z', confirmed: 4 }] } as Statement
+    expect(statementSeries(statement)).toEqual([4, 9])
+  })
+})
+
+describe('the week a statement names', () => {
+  it('is read back only when both bounds are instants, and named by its first and last day', () => {
+    const week = { from: new Date(2026, 10, 16).toISOString(), to: new Date(2026, 10, 23).toISOString() }
+    expect(statementWindow({ window: week } as Statement)).toEqual(week)
+    expect(statementWindow({ window: { from: 'x', to: week.to } } as Statement)).toBeNull()
+    expect(statementWindow({} as Statement)).toBeNull()
+    expect(weekRangeLabel(week)).toBe('11月16日 到 11月22日')
+  })
+})

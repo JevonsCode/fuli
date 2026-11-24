@@ -43,6 +43,7 @@ NODE_FIELDS = {
         'fuli_preference_agent_id': 'string?', 'fuli_preference_project_id': 'string?',
         'fuli_preference_project_ids': 'string[]?', 'fuli_preference_scope': 'preference_scope?',
         'fuli_profile_aspect': 'profile_aspect?', 'fuli_project_agent_id': 'string?',
+        'fuli_had_restricted_source': 'boolean?',
         'fuli_qualified_use_count': 'integer?', 'fuli_reasoning_summary': 'string?',
         'fuli_replaced_by_item_id': 'string?', 'fuli_replaced_by_item_kind': 'item_kind?',
         'fuli_requires_attention': 'boolean?', 'fuli_retrieval_context': 'string?',
@@ -105,7 +106,8 @@ NODE_FIELDS = {
     'FuliConversation': {
         'compacted_through': 'integer?', 'digest': 'string?', 'id': 'string',
         'last_activity': 'string', 'revision': 'integer', 'scope': 'string', 'serial': 'integer',
-        'status': 'conversation_status', 'summary': 'string', 'unfolded_bytes': 'integer?',
+        'status': 'conversation_status', 'summary': 'string', 'title': 'string?',
+        'title_session_id': 'string?', 'title_source_application': 'string?', 'unfolded_bytes': 'integer?',
     },
     'FuliConversationBinding': {
         'conversation_id': 'string', 'cursor': 'integer', 'id': 'string', 'serial': 'integer?',
@@ -114,6 +116,11 @@ NODE_FIELDS = {
         'created_at': 'datetime', 'digest': 'string', 'id': 'string', 'payload': 'string',
         'sequence': 'integer', 'session_id': 'string', 'source_application': 'string',
         'task_context_token': 'string',
+    },
+    'FuliConversationSession': {
+        'branch': 'string?', 'conversation_id': 'string', 'first_seen': 'string', 'id': 'string', 'last_seen': 'string',
+        'model': 'string?', 'scope': 'string', 'session_id': 'string', 'source_application': 'string',
+        'working_directory': 'string?',
     },
     'FuliConversationPolicy': {
         'id': 'string', 'policy': 'string',
@@ -144,6 +151,8 @@ NODE_FIELDS = {
         'b_description_en': 'string?', 'b_description_zh': 'string?', 'b_name_en': 'string?',
         'b_name_zh': 'string?', 'b_occupation_role': 'string?', 'b_occupation_updated_at': 'datetime?',
         'b_revision': 'integer?',
+        # graph/23-temporary-project-names
+        'b_name': 'string?', 'b_profile_json': 'string?', 'b_scope_type': 'string?',
         'b_fuli_ai_review_lock_version': 'integer?', 'b_fuli_confidence_score': 'float?',
         'b_fuli_distinct_task_count': 'integer?', 'b_fuli_inheritance_mode': 'string?',
         'b_fuli_inherited_project_ids': 'string[]?', 'b_fuli_qualified_use_count': 'integer?',
@@ -301,9 +310,11 @@ NODE_FIELDS = {
         'agent_id': 'string?', 'agent_type': 'project_agent_type?', 'archive_reason': 'string?',
         'archived_at': 'datetime?', 'canonical_agent_id': 'string?', 'capabilities': 'string[]?',
         'cleanup_eligible': 'boolean?', 'created_at': 'datetime|string?',
+        'display_name_key': 'string?', 'display_name_space_id': 'string?',
         'employee_number': 'integer?', 'employee_number_space_id': 'string?', 'id': 'string?',
         'legacy_agent_ids': 'string[]?', 'memory_scope': 'memory_scope?', 'merged_at': 'datetime?',
-        'name': 'string?', 'occupation_emoji': 'string?', 'occupation_migration_id': 'string?',
+        'name': 'string?', 'name_history_json': 'string?', 'occupation_emoji': 'string?',
+        'occupation_migration_id': 'string?',
         'occupation_recruitment_id': 'string?', 'occupation_role': 'string?',
         'occupation_source': 'string?', 'occupation_tags': 'string[]?',
         'occupation_updated_at': 'datetime?', 'profile_json': 'string?',
@@ -331,7 +342,7 @@ NODE_FIELDS = {
     },
     'FuliProjectAgentCoordinationPolicy': {
         'ask_before_recruitment': 'boolean?', 'auto_grow_team': 'boolean?',
-        'auto_reuse_previous_agent': 'boolean?', 'created_at': 'datetime?',
+        'auto_reuse_previous_agent': 'boolean?', 'confirm_before_hiring': 'boolean?', 'created_at': 'datetime?',
         'personal_project_id': 'string?', 'personal_space_id': 'string?', 'policy_id': 'string?',
         'sub_team_suggestion_threshold': 'integer?', 'sub_teams_json': 'string?',
         'team_lead_agent_id': 'string?', 'team_member_agent_ids': 'string[]?',
@@ -552,7 +563,7 @@ NODE_FIELDS = {
         'public_key': 'string', 'space_id': 'string',
     },
     'FuliSpace': {
-        'created_at': 'datetime?', 'description': 'string?', 'fla_employee_sequence': 'integer?',
+        'agent_renames_seen_at': 'datetime?', 'created_at': 'datetime?', 'description': 'string?', 'fla_employee_sequence': 'integer?',
         'group_id': 'string?', 'id': 'string', 'kind': 'space_kind', 'name': 'string?',
         'profile_json': 'string?', 'publication_key': 'string?', 'release_id': 'string?',
         'release_publisher_id': 'string?', 'release_publisher_name': 'string?',
@@ -693,6 +704,7 @@ RELATIONSHIP_FIELDS = {
         'fuli_origin_quadrant': 'quadrant?', 'fuli_preference_agent_id': 'string?',
         'fuli_preference_project_id': 'string?', 'fuli_preference_scope': 'preference_scope?',
         'fuli_profile_aspect': 'profile_aspect?', 'fuli_qualified_use_count': 'integer?',
+        'fuli_had_restricted_source': 'boolean?',
         'fuli_reasoning_summary': 'string?', 'fuli_replaced_by_item_id': 'string?',
         'fuli_replaced_by_item_kind': 'item_kind?', 'fuli_requires_attention': 'boolean?',
         'fuli_retrieval_context': 'string?', 'fuli_retrieval_hash': 'string?',

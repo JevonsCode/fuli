@@ -9,6 +9,9 @@ export type FlaGroupKey = 'attention' | 'working' | 'idle' | 'unknown' | 'inacti
 
 export const FLA_GROUP_ORDER: readonly FlaGroupKey[] = ['attention', 'working', 'idle', 'unknown', 'inactive']
 
+/** The order a link from 今天's 正在干活 asks for (`?view=work&first=working`): who is working comes first. */
+export const WORKING_FIRST_ORDER: readonly FlaGroupKey[] = ['working', ...FLA_GROUP_ORDER.filter(key => key !== 'working')]
+
 const WORK_GROUP: Record<WorkbenchStatus, FlaGroupKey> = {
   awaiting_review: 'attention',
   blocked: 'attention',
@@ -28,14 +31,14 @@ export function flaGroup(memberStatus: string, work: WorkbenchStatus | undefined
   return WORK_GROUP[work ?? 'unreported']
 }
 
-/** Rows in their given order, split into the non-empty groups in FLA_GROUP_ORDER. */
-export function groupFlas<T>(rows: readonly T[], groupOf: (row: T) => FlaGroupKey) {
+/** Rows in their given order, split into the non-empty groups in `order`. */
+export function groupFlas<T>(rows: readonly T[], groupOf: (row: T) => FlaGroupKey, order: readonly FlaGroupKey[] = FLA_GROUP_ORDER) {
   const groups = new Map<FlaGroupKey, T[]>()
   for (const row of rows) {
     const key = groupOf(row)
     groups.set(key, [...(groups.get(key) ?? []), row])
   }
-  return FLA_GROUP_ORDER.filter(key => groups.has(key)).map(key => ({ key, rows: groups.get(key)! }))
+  return order.filter(key => groups.has(key)).map(key => ({ key, rows: groups.get(key)! }))
 }
 
 /**

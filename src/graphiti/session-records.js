@@ -4,6 +4,7 @@ import { CATEGORY, CONFIRMATION } from '../agents/turn-receipt.js';
 import { notRecordedReason } from '../conversations/transcript-capture-gap.js';
 import { localClockTime } from '../text/clock-time.js';
 import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
+import { projectDisplayName } from './project-display-name.js';
 import { requiredBinding, requiredString } from '../validation/values.js';
 import { markdownLink } from '../text/markdown-link.js';
 
@@ -221,7 +222,11 @@ function stretchLabel(stretch) {
 
 function projectLabel(project) {
   if (!project) return '无项目';
-  return project.temporary ? '临时会话项目' : `项目 ${receiptText(project.name || project.id)}`;
+  const name = receiptText(projectDisplayName({
+    project_id: project.id, scope_type: project.temporary ? 'temporary' : undefined,
+    profile: { name: project.name }
+  }, 'zh-CN'));
+  return project.temporary ? name : `项目 ${name}`;
 }
 
 function clock(value) {

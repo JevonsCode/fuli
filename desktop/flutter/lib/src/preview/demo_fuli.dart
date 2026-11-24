@@ -1,4 +1,5 @@
 import '../api/fuli_api.dart';
+import '../api/glance.dart';
 import '../api/migration_plan.dart';
 import '../doctor/doctor_report.dart';
 import '../runtime/fuli_runtime.dart';
@@ -25,6 +26,8 @@ class DemoFuliApi implements FuliApi {
   String? latest;
   MigrationPlan plan;
   List<AttentionNotice> attention = const [];
+  // Null: a FULI from before the glance.
+  Glance? work;
   final List<String> requests = [];
   final List<String> _updateSteps = ['downloading', 'verifying', 'installing'];
   int _updateRead = 0;
@@ -38,6 +41,12 @@ class DemoFuliApi implements FuliApi {
   Future<List<AttentionNotice>> openAttention() async {
     _call('attention');
     return attention;
+  }
+
+  @override
+  Future<Glance> glance() async {
+    _call('glance');
+    return work ?? (throw const FuliHttpError(404, message: 'Not found'));
   }
 
   @override
@@ -128,11 +137,17 @@ class DemoRuntime implements FuliRuntime {
   Future<int> consolePort() async => port;
 
   @override
+  Future<String> logDirectory() async => '/fuli-data/logs';
+
+  @override
   Future<RuntimeReport> status() async => RuntimeReport(_state);
 
   @override
-  Future<RuntimeReport> start() async {
+  Future<RuntimeReport> start({StageListener? onStage}) async {
+    // The preview shows the shape of a real start: a step, the wait, the next.
+    onStage?.call('graph_start', null);
     await startTakes?.call();
+    onStage?.call('console_start', 60);
     api.reachable = true;
     return RuntimeReport(_state);
   }
@@ -147,7 +162,22 @@ class DemoRuntime implements FuliRuntime {
   bool get canChangePort => false;
 
   @override
-  Future<RuntimeReport> changePort() async => RuntimeReport(_state);
+  Future<RuntimeReport> changePort({StageListener? onStage}) async => RuntimeReport(_state);
+
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => start(onStage: onStage);
+
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async => RuntimeReport(_state);
+
+  @override
+  bool get recoversInTerminal => false;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) => start(onStage: onStage);
+
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => start(onStage: onStage);
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).

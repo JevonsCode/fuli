@@ -43,6 +43,10 @@ test('the one-click update reads the outcome from --result-file and passes the p
   await assert.rejects(runWindowsUpdateCommand(['--yes', '--result-file', '/out/result.json'], deps), /Another Fuli program/);
   assert.deepEqual(results[1][1], { status: 'failed',
     error: 'Another Fuli program runs on this data folder, so nothing was switched: console PID 40', blockers });
+  deps.update = async () => { throw Object.assign(new Error('v1.1.0 did not start (synthetic); the new one was kept.'), { code: 'kept_new_version' }); };
+  await assert.rejects(runWindowsUpdateCommand(['--yes', '--result-file', '/out/result.json'], deps), /did not start/);
+  assert.deepEqual(results[2][1], { status: 'failed', error: 'v1.1.0 did not start (synthetic); the new one was kept.', errorCode: 'kept_new_version' },
+    'the console page names the reason from its code');
   await assert.rejects(runWindowsUpdateCommand(['--yes', '--stop-pid', '40'], deps), /option/);
   await assert.rejects(runWindowsUpdateCommand(['--yes', '--result-file', 'relative.json'], deps), /absolute/);
 });

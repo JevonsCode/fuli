@@ -14,6 +14,10 @@ import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { createIssueReport } from '../diagnostics/issue-report.js';
+import { createClientFileReveal } from './client-file-reveal.js';
+import { createClientFirstRunAction } from './client-first-run-action.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createClientRestart } from './client-restart.js';
 import { clientApps } from '../agents/client-apps.js';
@@ -40,13 +44,14 @@ import { readFormatOperations } from '../data-format/operations-log.js';
 import { createModelCapture } from '../debug-turns/model-capture.js';
 import { windowsDataAcl } from './windows-data-acl.js';
 import { debugTurnStore } from '../debug-turns/store.js';
-import { runningMcpServers } from './mcp-process-scan.js';
+import { runningMcpServers } from './fuli-process-scan.js';
 import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
 import { createNpmCopyControl } from '../desktop/npm-copy-control.js';
 import { createCliPathControl } from '../desktop/cli-path.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { createWhatsNew } from '../whats-new/whats-new.js';
 import { desktopClientOpensLinks } from '../desktop/desktop-client-links.js';
+import { liveSourceConsoleUrl } from '../graphiti/source-marker.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -62,20 +67,23 @@ export function createSystemService({
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
   // Codex's /fla prompt files (src/agents/codex/fla-prompts.js), kept while the console runs.
   codexFlaPrompts = null,
-  agentKits = agentKitPorts(paths, { runtimeConfigPath,
+  // The console never holds a request open for another FULI's download: it says so and reads again.
+  agentKits = agentKitPorts(paths, { runtimeConfigPath, waitForOthers: false,
     ...(codexFlaPrompts ? { clientPrompts: () => ({ codex: codexFlaPrompts.prompts() }) } : {}) }),
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   // The client apps FULI quits and reopens around an update (src/agents/client-apps.js).
   apps = clientApps(),
+  eventLog = diagnosticEventLog(paths.dataDir),
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
     customClients,
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
     awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
-    apps
+    apps, diagnosticEvents: eventLog, presence: agentKits.clientPresence
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps, customClients,
+    presence: agentKits.clientPresence }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
     inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),
@@ -98,7 +106,7 @@ export function createSystemService({
   transcriptFormat = createTranscriptFormatProbe(),
   // Who can open the data directory on Windows (windows-data-acl.js).
   dataDirAcl = windowsDataAcl(),
-  // This installation's MCP servers the OS shows running (mcp-process-scan.js).
+  // This installation's MCP servers the OS shows running (fuli-process-scan.js).
   scanMcpServers = runningMcpServers,
   now = Date.now,
   runtimeBroker = createAdaptiveRuntimeBroker({
@@ -168,6 +176,7 @@ export function createSystemService({
   }
 
   const observeClients = () => clientObserver.observe();
+  const liveProcesses = () => liveMcpProcesses(runtimeConfigPath);
   // The client polls the doctor; the OS process list is read at most once per window.
   let serverScan = null;
   const runningServers = () => {
@@ -180,7 +189,7 @@ export function createSystemService({
     npmCopies: () => npmCopyControl?.list().copies ?? [],
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }), transcriptFormat,
-    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
+    liveProcesses, awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
     dataDirShared: () => dataDirAcl.sharedWith(paths.dataDir),
     // Only a graph that was set up has a mode; a fresh data directory has nothing to move.
@@ -212,7 +221,10 @@ export function createSystemService({
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
       format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
-    clientConnectionStatus: observeClients,
+    clientConnectionStatus: (options) => clientObserver.observe(options),
+    runClientFirstRun: createClientFirstRunAction({ locate: agentKits.locateProgram }),
+    revealClientFile: createClientFileReveal({ installer: agentKits.clientInstaller }),
+    issueReport: createIssueReport({ log: eventLog, observeClients, liveProcesses }),
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
     // A new session in a connected client's CLI (new-sessions.js): which can open, and the click that opens one.
@@ -247,7 +259,7 @@ export function createSystemService({
     modelCapture,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id),
-      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir) }),
+      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir), consoleUrl: liveSourceConsoleUrl(runtimeConfigPath) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

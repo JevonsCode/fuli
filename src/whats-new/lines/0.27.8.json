@@ -1,0 +1,11 @@
+{
+  "version": "0.27.8",
+  "zh": [
+    "Mac 上从访达启动的 FULI 现在找得到 Claude Code 和 Codex 了，能叫醒助手。",
+    "原因是这样启动的应用 PATH 很短；FULI 找不到时会去问一次登录环境。"
+  ],
+  "en": [
+    "On a Mac, a FULI started from Finder now finds Claude Code and Codex and can wake assistants.",
+    "Apps started that way get a short PATH; when FULI finds nothing it asks your login environment."
+  ]
+}

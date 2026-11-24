@@ -1,3 +1,4 @@
+import { SMALL, taskSize } from './task-size.js';
 import { projectBrief } from './project-brief.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { projectSnapshot, scopedAgentMemoryView } from './project-agent-memory.js';
@@ -8,6 +9,7 @@ import { resolveTaskAgentMention } from './project-agent-mention.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { taskWorkKind } from './task-scene.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { agentDisplayName } from '../agents/agent-label.js';
 
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -37,7 +39,10 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       session_id: input.sessionId ?? null,
       turn_id: input.turnId ?? null,
       work_kind: workKind,
-      required_capabilities: input.requiredCapabilities ?? []
+      required_capabilities: input.requiredCapabilities ?? [],
+      // A small task is not routed for execution (rec#146 item 2); only sent
+      // when small, so a standard request stays byte for byte what it was.
+      ...(taskSize(input.taskPrompt) === SMALL ? { task_size: SMALL } : {})
     };
     const delegation = application.roundtable?.taskEntryDelegation?.({
       sessionId: input.receivingSessionId ?? input.sessionId
@@ -46,7 +51,14 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
       contextRequest.delegation_token = delegation.token;
       contextRequest.delegation_session_id = delegation.sessionId;
     }
-    let value = await application.personal.resolveProjectAgentContext(contextRequest);
+    // An FLA the person named that owns a line of this project works as
+    // itself, exactly as when the line matched; the turn counts on its line
+    // in the ledger only when it names that line (withNamedLine,
+    // docs/workstreams.md).
+    const namedLine = named && !delegation ? lineOf(application, resolution.personalProjectId, named) : null;
+    let value = namedLine ? await ownerContext(application, contextRequest, named) : null;
+    const namedWorkstreamId = value?.reason === 'workstream_owner' && value.agent ? resolution.namedLineId ?? null : null;
+    if (!value?.agent) value = await application.personal.resolveProjectAgentContext(contextRequest);
     // Internal Agent activity restores only its granted role; it never hires a lead.
     if (value?.reason === 'project_lead_required' && !delegation) {
       await application.personal.staffDefaultProjectLead(scope);
@@ -70,21 +82,30 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
           required_action: 'Use coordinate_project_agent_task to select or recruit a qualified durable owner before implementation. AR and project managers collaborate in their own roles; do not attribute development to them by fallback.' };
       }
     }
-    // A standing assignment's Agent other than the one chosen is asked for by
-    // name, like an explicit Agent: the Provider keeps the project's lead
-    // accountable and names a member as requested_agent_id. A request it
-    // cannot serve or answer keeps the ordinary choice, marked unreached so
-    // the routing notice does not claim the switch; one never repeats the other.
-    const standingAgentId = resolution.standingOwner?.leadAgentId ?? resolution.standingAgentId ?? null;
-    let standingAgentUnreached = false;
+    // The Agent a standing assignment names, when the ordinary selection chose
+    // another. A line of this project (standingWorkstream) makes its owner this
+    // turn's FLA, with its own memory and records (docs/workstreams.md); the
+    // person's own rule that moved the task here (standingOwner) asks for its
+    // Agent by name, and the Provider keeps the project's lead accountable. A
+    // request it cannot serve keeps the ordinary choice, marked unreached with
+    // its reason so the notice says why; one never repeats the other.
+    const line = resolution.standingWorkstream ?? null;
+    const standingAgentId = line?.leadAgentId ?? resolution.standingOwner?.leadAgentId ?? null;
+    const standing = { applied: false, unreached: false, reason: null, ownerName: null };
     if (implicit && !delegation && standingAgentId && value.status === 'ready'
       && ![agent?.agentId, value.requested_agent_id].includes(standingAgentId)) {
-      const standing = await application.personal.resolveProjectAgentContext({ ...contextRequest,
-        agent_id: standingAgentId }).catch(() => null);
-      standingAgentUnreached = !(standing?.status === 'ready' && standing.agent);
-      if (!standingAgentUnreached) {
-        value = standing;
-        agent = projectAgentRecord(standing.agent);
+      const chosen = line ? await ownerContext(application, contextRequest, standingAgentId)
+        : await application.personal.resolveProjectAgentContext({ ...contextRequest, agent_id: standingAgentId })
+          .catch(() => null);
+      standing.applied = chosen?.status === 'ready' && Boolean(chosen.agent);
+      standing.unreached = !standing.applied;
+      if (standing.applied) {
+        value = chosen;
+        agent = projectAgentRecord(chosen.agent);
+        standing.ownerName = agentDisplayName(agent);
+      } else {
+        standing.reason = chosen?.reason ?? 'unavailable';
+        if (line) standing.ownerName = await ownerName(application, standingAgentId);
       }
     }
     // The client and status come first, so a scope refusal below means the scope.
@@ -99,13 +120,45 @@ export async function resolveTaskEntryAgent(application, resolution, input) {
           worker_started: false };
       }
     }
-    return { ...value, agent, worker_started: false, ...(standingAgentUnreached ? { standingAgentUnreached } : {}) };
+    return { ...value, agent, worker_started: false,
+      ...(standing.unreached ? { standingAgentUnreached: true, standingUnreachedReason: standing.reason } : {}),
+      ...(standing.applied ? { standingAgentApplied: true } : {}),
+      ...(standing.ownerName ? { standingOwnerName: standing.ownerName } : {}),
+      ...(namedWorkstreamId ? { namedWorkstreamId } : {}) };
   } catch {
     // Preferences remain useful during an older/offline Provider upgrade, but
     // never claim that a role or its private memory was successfully restored.
     return { status: 'unavailable', worker_started: false,
       required_action: 'Role context could not be restored. Check the Provider before claiming continuity.' };
   }
+}
+
+// The owner of a line of this project as this turn's FLA (workstream_owner),
+// or the Provider's answer saying why not. A Provider that does not know the
+// mode answers nothing usable, and the ordinary selection stands.
+async function ownerContext(application, contextRequest, agentId) {
+  return application.personal.resolveProjectAgentContext({ ...contextRequest, agent_id: agentId,
+    workstream_owner: true }).catch(() => null);
+}
+
+// The active assignment of this project this Agent holds in the local store,
+// or null. Whether it is a line, not the person's rule for the lead, the
+// Provider decides (workstream_owner refuses the lead).
+function lineOf(application, projectId, agentId) {
+  try {
+    return application.standingAssignments?.list(application.config.personal.spaceId)
+      .find(line => line.projectId === projectId && line.leadAgentId === agentId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// A line owner the turn could not reach is still named, never shown as an ID;
+// one that no longer exists keeps its ID.
+async function ownerName(application, agentId) {
+  const read = await application.personal.getProjectAgent(application.config.personal.spaceId, null, agentId)
+    .catch(() => null);
+  return read ? agentDisplayName(projectAgentRecord(read)) : null;
 }
 
 // Global selection uses only the space identity; no project lead, assignment or
@@ -131,9 +184,10 @@ async function resolveGlobalAgent(application, resolution, input) {
   }
 }
 
+// readPolicy: the entry's reader of the project's policy (project-policy-read.js), when it has one.
 export async function loadProjectAgentContinuity(application, {
   projectId, agent, sourceApplication = 'other', taskPrompt = null,
-  selectionReason = null, matchBasis = [], includeKnowledge = true, includeTeam = true
+  selectionReason = null, matchBasis = [], includeKnowledge = true, includeTeam = true, readPolicy = null
 }) {
   const scope = { personalSpaceId: application.config.personal.spaceId,
     personalProjectId: projectId, agentId: agent.agentId };
@@ -151,13 +205,14 @@ export async function loadProjectAgentContinuity(application, {
       ? application.personal.getProjectAgentMemory({ ...memoryScope, limit: 1 })
       : Promise.resolve(null)]),
     ...(projectId ? [
-      ...(includeTeam ? [['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId)]] : []),
+      ...(includeTeam ? [['team', loadProjectTeamContext(application, scope.personalSpaceId, projectId,
+        { agentId: agent.agentId, readPolicy })]] : []),
       ['project', application.personal.getPersonalProject(scope.personalSpaceId, projectId)],
       ['tasks', application.personal.listProjectAgentTasks({ ...scope, limit: 4 })],
       ['knowledge', includeKnowledge ? Promise.all(queries.map(query => application.searchKnowledge({
         personalSpaceId: scope.personalSpaceId, personalProjectId: projectId,
         projectAgentId: agent.agentId, query, limit: 4, includePending: false, sourceApplication,
-        agentInvocation: true, agentToolName: 'automatic_project_agent_context'
+        agentInvocation: true, agentToolName: 'automatic_project_agent_context', relatedProjects: false
       }))) : Promise.resolve([])]
     ] : [])
   ];
@@ -221,7 +276,7 @@ export const PROJECT_AGENT_CONTINUITY_GUIDANCE = 'Continue this task in the curr
 // Role instructions shared by task entry and same-task preference recovery.
 export function projectAgentRoleContext(agent, projectProfile) {
   return {
-    role: { name: agent.profile.displayName || agent.profile.name, responsibility: agent.profile.responsibility,
+    role: { name: agentDisplayName(agent), responsibility: agent.profile.responsibility,
       initial_preferences: [...(agent.profile.initialPreferences ?? [])],
       character: {
         judgment: boundedRoleText(agent.profile.character?.judgment, ROLE_TEXT_LIMITS.judgment),

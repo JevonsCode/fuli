@@ -223,3 +223,122 @@ test('a desktop client that does not close stops the update before the lock or a
   assert.deepEqual(f.calls, []);
   assert.equal(readWindowsInstallation(f.current.packageRoot).applicationVersion, '0.12.4');
 });
+
+test('an automatic start under way is waited for before the stop, and no start begins until the record names the new version', async t => {
+  const f = fixture(t); const events = []; let held = false, autostart = 'starting';
+  const next = await updateWindowsInstallation(f.options, { ...f.deps,
+    holdStarts: dataDir => {
+      assert.equal(dataDir, f.current.dataDir);
+      // The start under way finished and recorded its console while this waited.
+      autostart = 'recorded'; held = true; events.push('hold');
+      return () => { held = false; events.push('release'); };
+    },
+    runCli: async (root, args) => {
+      const version = readWindowsInstallation(root).applicationVersion;
+      events.push(`${args[0]} ${version}`);
+      if (args[0] === 'stop' && autostart === 'recorded') { autostart = null; events.push('stopped the automatic start\'s console'); }
+      if (args[0] === 'start') {
+        assert.equal(held, false, 'the new version\'s own start takes the start lock');
+        assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
+      }
+      return { code: 0 };
+    } });
+  assert.equal(readWindowsInstallation(next.packageRoot).applicationVersion, '0.12.5');
+  assert.deepEqual(events.slice(0, 5), ['hold', 'stop 0.12.4', 'stopped the automatic start\'s console', 'release', 'start 0.12.5']);
+});
+
+test('a start that never lets go of the start lock ends the update before anything is stopped or switched', async t => {
+  const f = fixture(t); f.client.state = 'exited';
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps,
+    holdStarts: () => { throw new Error('Another FULI process holds this lock'); } }),
+  /^Error: Another start of FULI did not finish, so FULI was not stopped for the update; nothing was changed\./);
+  assert.deepEqual(f.calls, []);
+  assert.equal(readWindowsInstallation(f.current.packageRoot).applicationVersion, '0.12.4');
+  assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.4');
+  assert.equal(readdirSync(join(f.current.installRoot, 'versions')).length, 1);
+  assert.deepEqual(f.client.events.at(-1), ['reopen', f.current.installRoot]);
+});
+
+// The new version upgrades a store the stopped one used, then its first start fails.
+function upgradingStart(f, { secondStartWorks }) {
+  const settingsPath = join(f.current.dataDir, 'runtime-settings.json');
+  writeFileSync(settingsPath, JSON.stringify({ version: 1, graphRuntimeMode: 'native' }));
+  const commands = []; let newStarts = 0;
+  const runCli = async (root, args) => {
+    const version = readWindowsInstallation(root).applicationVersion;
+    commands.push(`${args[0]} ${version}`);
+    if (args[0] === 'start' && version === '0.12.5') {
+      newStarts += 1;
+      writeFileSync(settingsPath, JSON.stringify({ version: 2, graphRuntimeMode: 'native' }));
+      return { code: newStarts === 1 || !secondStartWorks ? 1 : 0 };
+    }
+    return { code: 0 };
+  };
+  return { commands, runCli };
+}
+
+test('on data the new version already upgraded the previous one never comes back; the new one is started once more', async t => {
+  const f = fixture(t); const { commands, runCli } = upgradingStart(f, { secondStartWorks: true });
+  const next = await updateWindowsInstallation(f.options, { ...f.deps, runCli });
+  assert.equal(readWindowsInstallation(next.packageRoot).applicationVersion, '0.12.5');
+  assert.deepEqual(commands.slice(0, 5), ['stop 0.12.4', 'start 0.12.5', 'stop 0.12.5', 'start 0.12.5', 'status 0.12.5']);
+  assert.equal(commands.includes('start 0.12.4'), false);
+});
+
+test('a new version that does not start on upgraded data stays selected, and the failure names both starts', async t => {
+  const f = fixture(t); const { commands, runCli } = upgradingStart(f, { secondStartWorks: false });
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps, runCli }), error => error.code === 'kept_new_version'
+    && error.message === 'v0.12.5 did not start (Fuli 0.12.5 did not start.); the previous version cannot run on this data '
+      + '(stores the new version changed: runtime-settings.json 1 → 2), so the new one was kept; started again, it did not run (Fuli 0.12.5 did not start.).');
+  assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
+  assert.equal(commands.includes('start 0.12.4'), false);
+});
+
+test('a new version that does not stop after a failed start keeps the first error and says it stays', async t => {
+  const f = fixture(t); let oldStarts = 0;
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps, runCli: async (root, args) => {
+    if (root === f.current.packageRoot) { if (args[0] === 'start') oldStarts++; return { code: 0 }; }
+    return { code: 1 };
+  } }), error => error.code === 'kept_new_version' && error.message === 'v0.12.5 did not start (Fuli 0.12.5 did not start.); '
+    + 'it did not stop either, so it was left installed and nothing was switched back '
+    + '(Fuli 0.12.5 could not be stopped; automatic rollback was not attempted.).');
+  assert.equal(oldStarts, 0);
+  assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
+});
+
+test('a start lock that cannot be had after a failed start keeps the new version selected and stops nothing', async t => {
+  const f = fixture(t); const commands = []; let holds = 0;
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps,
+    holdStarts: () => { if (++holds === 2) throw new Error('Another FULI process holds this lock'); return () => {}; },
+    runCli: async (root, args) => { commands.push(`${args[0]} ${readWindowsInstallation(root).applicationVersion}`);
+      return { code: args[0] === 'start' && root !== f.current.packageRoot ? 1 : 0 }; } }),
+  error => error.code === 'kept_new_version' && /\); another start of FULI did not finish, so it was left installed/.test(error.message));
+  assert.deepEqual(commands, ['stop 0.12.4', 'start 0.12.5']);
+});
+
+test('a console the failed start left running keeps the new version selected; the data is not judged and nothing is restored', async t => {
+  const f = fixture(t); const commands = [];
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps,
+    consolesLeft: async dataDir => { assert.equal(dataDir, f.current.dataDir); return 'a FULI console still runs (process 4242)'; },
+    runCli: async (root, args) => { commands.push(`${args[0]} ${readWindowsInstallation(root).applicationVersion}`);
+      return { code: args[0] === 'start' && root !== f.current.packageRoot ? 1 : 0 }; } }),
+  error => error.code === 'kept_new_version'
+    && error.message.endsWith('; a FULI console still runs (process 4242), so it was left installed and nothing was switched back.'));
+  assert.deepEqual(commands, ['stop 0.12.4', 'start 0.12.5', 'stop 0.12.5']);
+  assert.equal(JSON.parse(readFileSync(join(f.current.installRoot, 'installation.json'))).applicationVersion, '0.12.5');
+});
+
+test('no start can begin while the recovery reads the data or restores the record; the update releases the lock for its own start', async t => {
+  const f = fixture(t); let held = false; const seen = [];
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps,
+    holdStarts: () => { held = true; return () => { held = false; }; },
+    consolesLeft: async () => { seen.push(['consolesLeft', held]); return null; },
+    runCli: async (root, args) => {
+      const version = readWindowsInstallation(root).applicationVersion;
+      seen.push([`${args[0]} ${version}`, held]);
+      return { code: args[0] === 'start' && version === '0.12.5' ? 1 : 0 };
+    } }), /restored/);
+  assert.deepEqual(seen.slice(0, 6), [['stop 0.12.4', true], ['start 0.12.5', false], ['stop 0.12.5', true], ['consolesLeft', true],
+    ['start 0.12.4', false], ['status 0.12.4', false]]);
+  assert.equal(held, false);
+});

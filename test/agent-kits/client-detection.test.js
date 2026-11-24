@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,8 @@ import { customClientStore } from '../../src/agent-kits/custom-clients.js';
 import { agentKitExecutables } from '../../src/agent-kits/executables.js';
 import { retireLegacyHooks } from '../../src/agent-kits/legacy-hook-cleanup.js';
 import { installAgent } from '../../src/setup/install-agent.js';
+import { createClientConnectionObserver } from '../../src/system/client-connection-status.js';
+import { createClientFileReveal } from '../../src/system/client-file-reveal.js';
 import { createCustomClients } from '../../src/system/custom-client-connection.js';
 import { isolateHomeEnvironment, realAgentKitExecutable } from '../../test-support/agent-kit-binaries.js';
 
@@ -59,18 +61,42 @@ test('a client described by hand is written as an install-only extension, checke
   mkdirSync(extensionsDir, { recursive: true });
   // A launcher-only file of the same ID is never replaced, nor removable.
   writeFileSync(join(extensionsDir, 'acme-agent.json'), JSON.stringify({ schemaVersion: 1, name: 'Acme', launch: { command: ['acme'] } }));
-  // The installer lists the built-in Codex and whatever install-only files are there.
+  // The installer lists the built-in Codex and whatever install-only files are there; it takes FULI's
+  // entry out of a client's file unless told to refuse.
+  const removals = [];
+  let refuseRemoval = false;
   const installer = { status: async () => ({ status: 'available', extensionErrors: [],
-    clients: [{ id: 'codex' }, ...[...store.removable()].map((id) => ({ id }))] }) };
+    clients: [{ id: 'codex', componentStates: [{ component: 'mcp', state: 'missing', paths: ['~/.codex/config.toml'] }] },
+      ...[...store.removable()].map((id) => ({ id }))] }),
+    remove: async (ids) => { removals.push(ids); return { status: 'available', partial: refuseRemoval, extensionErrors: [], clients: [],
+      problems: refuseRemoval ? [{ client: ids[0], message: 'The file could not be written.' }] : [] }; } };
   const clients = createCustomClients({ installer, store });
   for (const input of [{}, { name: 'X', mcpFile: '/elsewhere/mcp.json' }, { name: 'X', mcpFile: '~/a.json', format: 'yaml' },
-    { name: 'two\nlines', mcpFile: '~/a.json' }]) {
+    { name: 'two\nlines', mcpFile: '~/a.json' }, { name: 'X', mcpFile: '~' }]) {
     await assert.rejects(() => clients.addCustomClient(input), { code: 'invalid_input' });
   }
+  // `..` is refused in both forms and with either separator, before anything is written.
+  for (const mcpFile of ['~/../outside.json', '~\\..\\outside.json', '~/a/../../outside.json', '~/a/../b.json',
+    `${home}/../outside.json`, `${home}\\a\\..\\b.json`]) {
+    await assert.rejects(() => clients.addCustomClient({ name: 'X', mcpFile }), { code: 'invalid_input', message: /home folder/ }, mcpFile);
+  }
+  // A listed client's own file is never named for another, in any spelling of it.
+  for (const mcpFile of ['~/.codex/config.toml', '~\\.codex\\config.toml', join(home, '.codex', 'config.toml')]) {
+    await assert.rejects(() => clients.addCustomClient({ name: 'My Codex', mcpFile }),
+      { code: 'invalid_input', message: /configuration file of a client already listed/ }, mcpFile);
+  }
+  assert.deepEqual(readdirSync(extensionsDir), ['acme-agent.json']);
   const added = await clients.addCustomClient({ name: 'Acme Agent', mcpFile: join(home, '.acme', 'mcp.json') });
   assert.deepEqual(added, { id: 'acme-agent-2' });
   assert.deepEqual(JSON.parse(readFileSync(join(extensionsDir, 'acme-agent-2.json'), 'utf8')), { schemaVersion: 1, name: 'Acme Agent',
     install: { detect: [{ path: '~/.acme/mcp.json' }], mcp: { file: '~/.acme/mcp.json', format: 'mcp-servers-json' } } });
+  // A client with Skills names its folder, so FULI's Skills are installed there too; it stays in the home folder.
+  await assert.rejects(() => clients.addCustomClient({ name: 'Beta', mcpFile: '~/.beta/mcp.json', skillsDir: '~/../skills' }),
+    { code: 'invalid_input', message: /skillsDir must be in your home folder/ });
+  const withSkills = await clients.addCustomClient({ name: 'Beta', mcpFile: '~/.beta/mcp.json', skillsDir: join(home, '.beta', 'skills') });
+  assert.deepEqual(JSON.parse(readFileSync(join(extensionsDir, `${withSkills.id}.json`), 'utf8')).install.skills, { dir: '~/.beta/skills' });
+  await clients.removeCustomClient(withSkills.id);
+  removals.length = 0;
   assert.deepEqual([...store.removable()], ['acme-agent-2']);
   // A file the installer cannot read as a client is taken back, with its reason.
   const refusing = createCustomClients({ store, installer: { status: async () => ({ status: 'available', clients: [],
@@ -78,8 +104,15 @@ test('a client described by hand is written as an install-only extension, checke
   await assert.rejects(() => refusing.addCustomClient({ name: '公司客户端', mcpFile: '~/公司/mcp.json' }),
     { code: 'invalid_input', message: '$.install.mcp.file is not a plain path.' });
   assert.deepEqual([...store.removable()], ['acme-agent-2']);
-  assert.throws(() => clients.removeCustomClient('acme-agent'), { code: 'invalid_input' });
-  assert.deepEqual(clients.removeCustomClient('acme-agent-2'), { id: 'acme-agent-2' });
+  // Removing one takes FULI's entry out of its file first; a client whose entry stays is not forgotten.
+  await assert.rejects(() => clients.removeCustomClient('acme-agent'), { code: 'invalid_input' });
+  assert.deepEqual(removals, []);
+  refuseRemoval = true;
+  await assert.rejects(() => clients.removeCustomClient('acme-agent-2'), { code: 'invalid_input', message: 'The file could not be written.' });
+  assert.deepEqual([...store.removable()], ['acme-agent-2']);
+  refuseRemoval = false;
+  assert.deepEqual(await clients.removeCustomClient('acme-agent-2'), { id: 'acme-agent-2' });
+  assert.deepEqual(removals, [['acme-agent-2'], ['acme-agent-2']]);
   assert.deepEqual([...store.removable()], []);
 });
 
@@ -146,6 +179,19 @@ test('every built-in client connects through agent-installer and then reads as c
   await custom.addCustomClient({ name: 'Acme Agent', mcpFile: '~/.acme/mcp.json' });
   const acme = (await detectClients(installer)).clients.find(({ id }) => id === 'acme-agent');
   assert.deepEqual([acme.builtin, acme.detected, acme.mcpPaths], [false, false, ['~/.acme/mcp.json']]);
+  // FULI writes it too: agent-installer creates the file the person named, and the self-check reads it back.
+  const written = await installAgent(installer, { id: 'acme-agent', label: 'Acme Agent' });
+  assert.deepEqual([written.status, written.selfCheck.status], ['connected', 'passed'], written.message);
+  assert.equal(JSON.parse(readFileSync(join(home, '.acme', 'mcp.json'), 'utf8')).mcpServers.fuli.args.includes('--runtime-config'), true);
+  // FULI refuses a file outside the home folder or a built-in client's own file before agent-installer sees it.
+  for (const mcpFile of ['~/../outside.json', '~/.codex/config.toml']) {
+    await assert.rejects(() => custom.addCustomClient({ name: 'Other', mcpFile }), { code: 'invalid_input' }, mcpFile);
+  }
+  // Removing it takes FULI's entry out first (agent-installer deletes the file it created for FULI alone),
+  // then forgets the client.
+  assert.deepEqual(await custom.removeCustomClient('acme-agent'), { id: 'acme-agent' });
+  assert.equal(existsSync(join(home, '.acme', 'mcp.json')), false);
+  assert.equal((await detectClients(installer)).clients.some(({ id }) => id === 'acme-agent'), false);
   const removed = await installer.remove(builtIn.map(({ id }) => id));
   assert.deepEqual(removed.problems, []);
   const after = (await detectAgents(installer)).agents.filter(({ id }) => builtIn.some((agent) => agent.id === id));
@@ -194,4 +240,73 @@ test('over the person\'s own configuration, FULI connects, reads as current, and
     if (/\.jsonc?$/.test(relative)) assert.deepEqual(parseJsonc(now), parseJsonc(text), relative);
     else assert.equal(now.trimEnd(), text.trimEnd(), relative);
   }
+});
+
+// rec#145: a client installed on a computer where it has never written its
+// configuration. agent-installer does not find it (no file, and its command is
+// not on FULI's PATH: Cursor's CLI is `cursor-agent`, which it does not look
+// for), FULI finds it by its command (client-presence.js) and asks for it, and
+// the real agent-installer then creates each file where that client reads it.
+test('a client agent-installer did not find is still written in full when FULI asks for it, and reads back connected', async (t) => {
+  const executable = await realAgentKitExecutable('agent-installer');
+  if (!executable) { t.skip('no agent-installer executable here (set AGENT_INSTALLER_BIN to opt in)'); return; }
+  const { home } = isolateHomeEnvironment(t);
+  // Neither client's command is on this PATH, so only its files could show it.
+  const savedPath = process.env.PATH;
+  process.env.PATH = mkdtempSync(join(tmpdir(), 'fuli-empty-path-'));
+  t.after(() => { rmSync(process.env.PATH, { recursive: true, force: true }); process.env.PATH = savedPath; });
+  const installer = realPort(t, executable, { home });
+  const before = Object.fromEntries((await detectClients(installer)).clients.map((client) => [client.id, client]));
+  assert.deepEqual([before.cursor.detected, before.opencode.detected], [false, false]);
+
+  for (const agent of [{ id: 'cursor', label: 'Cursor' }, { id: 'opencode', label: 'OpenCode' }]) {
+    const result = await installAgent(installer, agent);
+    assert.deepEqual([result.status, result.selfCheck?.status], ['connected', 'passed'], `${agent.id}: ${result.message}`);
+  }
+  // Where each client reads it, in its own format; nothing existed, so nothing was backed up.
+  const cursor = JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8'));
+  assert.ok(cursor.mcpServers.fuli.args.includes('cursor'), 'Cursor: mcpServers.fuli, command + args');
+  const openCode = parseJsonc(readFileSync(join(home, '.config', 'opencode', 'opencode.jsonc'), 'utf8'));
+  assert.deepEqual([openCode.mcp.fuli.type, openCode.mcp.fuli.command.includes('opencode')], ['local', true],
+    'OpenCode: mcp.fuli, type local + command array');
+  const backedUp = (dir) => (existsSync(dir) ? readdirSync(dir, { recursive: true }).filter((name) => /\.bak$/.test(name)) : []);
+  assert.deepEqual(backedUp(installer.backupsDir), []);
+  const after = Object.fromEntries((await detectClients(installer)).clients.map((client) => [client.id, client]));
+  assert.deepEqual([after.cursor.connected, after.opencode.connected], [true, true]);
+  // agent-installer would create a client's folder for anyone who asks, so only FULI's
+  // check that the client is here keeps it from writing one that is not: Kiro was not asked for.
+  assert.equal(existsSync(join(home, '.kiro')), false);
+});
+
+test('an existing client file is backed up before FULI goes in, and one it cannot read is left exactly as it was', async (t) => {
+  const executable = await realAgentKitExecutable('agent-installer');
+  if (!executable) { t.skip('no agent-installer executable here (set AGENT_INSTALLER_BIN to opt in)'); return; }
+  const { home } = isolateHomeEnvironment(t);
+  mkdirSync(join(home, '.cursor'), { recursive: true });
+  writeFileSync(join(home, '.cursor', 'mcp.json'), '{ "mcpServers": { "mine": { "command": "mine" } } }\n');
+  const broken = '{ "theme": "dark", \n';
+  mkdirSync(join(home, '.config', 'opencode'), { recursive: true });
+  writeFileSync(join(home, '.config', 'opencode', 'opencode.json'), broken);
+  const installer = realPort(t, executable, { home });
+  const cursor = await installAgent(installer, { id: 'cursor', label: 'Cursor' });
+  assert.equal(cursor.status, 'connected', cursor.message);
+  assert.match(readdirSync(join(installer.backupsDir, 'cursor')).join(' '), /^mcp\.json\..+\.bak$/);
+  assert.ok(JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8')).mcpServers.mine, 'the person\'s server stays');
+  // The unreadable file is reported and untouched, never half rewritten; the connection says partial.
+  const openCode = await installAgent(installer, { id: 'opencode', label: 'OpenCode' });
+  assert.equal(openCode.status, 'partial');
+  assert.match(openCode.message, /opencode\.json: Invalid JSON/);
+  assert.equal(readFileSync(join(home, '.config', 'opencode', 'opencode.json'), 'utf8'), broken);
+  // Its other parts went in, so the page must not offer 「更新接入」, which would only fail again: it
+  // says the file has a problem, which file, and what agent-installer said, and offers to show it.
+  const observer = createClientConnectionObserver({ installer, customClients: { removable: () => new Set() },
+    historyPath: join(home, 'history.json'), homeDir: home });
+  const shown = (await observer.observe()).clients.find(({ id }) => id === 'opencode');
+  assert.equal(shown.status, 'unknown');
+  assert.deepEqual(shown.entryFile, { path: '~/.config/opencode/opencode.json', problem: 'Invalid JSON.' });
+  const revealed = [];
+  const reveal = createClientFileReveal({ installer, homeDir: home, reveal: async (path) => { revealed.push(path); return { revealed: true }; } });
+  assert.deepEqual(await reveal({ clientId: 'opencode' }), { id: 'opencode', revealed: true });
+  assert.deepEqual(revealed, [join(home, '.config', 'opencode', 'opencode.json')]);
+  await assert.rejects(() => reveal({ clientId: 'cursor' }), /no configuration file to show/);
 });

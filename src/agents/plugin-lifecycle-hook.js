@@ -10,6 +10,7 @@ import { callAgentTool } from '../agent-tools.js';
 import { createRuntimeLeaseClient } from '../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
+import { RUNNER_HOOK_CONTEXT, runnerRuntimeConfig } from '../runner/runner-mode.js';
 import { platformPath, wslCallerPath } from '../system/platform-path.js';
 import { readHookInput } from './lifecycle-input.js';
 import { unavailableNotice } from './plugin-hook-process.js';
@@ -117,6 +118,11 @@ function deadlineOutput(event, budget, cause) {
 // never prints prompts, paths or exception text.
 export async function runPluginLifecycleCommand(client, args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
+  if (runnerRuntimeConfig(args)) {
+    (dependencies.write ?? (value => process.stdout.write(value)))(
+      `${JSON.stringify(event === 'prompt' ? { context: RUNNER_HOOK_CONTEXT } : {})}\n`);
+    return { timedOut: false };
+  }
   const timeoutMs = hookTimeoutMs(args);
   const controller = new AbortController();
   let emitted = false;

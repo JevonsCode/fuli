@@ -69,6 +69,9 @@ ProjectAgentRoutingReason = Literal[
     'no_match',
     'agent_unavailable',
     'explicit_new_agent',
+    # A new durable Agent was asked for, and an idle one of that occupation
+    # already on the project took the task instead: nobody was hired.
+    'idle_same_occupation',
     'explicit_temporary_agent',
     'explicit_unassigned',
     'hr_unavailable',

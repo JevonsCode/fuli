@@ -56,7 +56,7 @@ async def test_policy_roundtrip_and_legacy_partial_update_preserve_subteams():
     assert saved.sub_teams[0].lead_agent_id == 'sub'
     assert saved.sub_team_suggestion_threshold == 9
     write = next(parameters for query, parameters in store.runtime.driver.calls
-                 if 'SET policy.ask_before_recruitment' in query)
+                 if 'SET policy.confirm_before_hiring' in query)
     assert json.loads(write['sub_teams_json']) == [GROUP]
 
 
@@ -67,7 +67,7 @@ async def test_removing_a_group_member_requires_an_atomic_layout_update():
     with pytest.raises(HTTPException) as error:
         await store.update_project_agent_coordination_policy({'id': 'principal'}, update(team_member_agent_ids=['sub']))
     assert error.value.status_code == 422
-    assert not any('SET policy.ask_before_recruitment' in q for q, _ in store.runtime.driver.calls)
+    assert not any('SET policy.confirm_before_hiring' in q for q, _ in store.runtime.driver.calls)
     saved = await store.update_project_agent_coordination_policy({'id': 'principal'}, update(team_member_agent_ids=['sub'], sub_teams=[]))
     assert saved.sub_teams == []
 

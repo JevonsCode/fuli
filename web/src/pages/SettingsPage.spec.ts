@@ -113,6 +113,44 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('on a fresh installation, keeps advanced areas out of the tabs and lists them last in 系统, where search finds them', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: '我' }],
+      personalProjects: [], projects: [], subscriptions: [], advancedAreas: { shown: [] } } as never
+    const fetch = vi.fn(async (input: unknown) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      if (String(input) === '/api/advanced-areas/reveal') return Response.json({ shown: ['tonborg'] })
+      return Response.json({}, { status: 503 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('[data-open-judgment-standards]').exists()).toBe(false)
+    expect(wrapper.find('[data-peer-settings]').exists()).toBe(false)
+    // The card is the last of 系统, so nothing above it moves when it goes.
+    const system = wrapper.get('[data-settings-tab="system"]')
+    const cards = system.findAll('.settings-card')
+    expect(cards.at(-1)?.attributes('data-hidden-areas')).toBe('')
+    expect(cards.at(-1)?.findAll('[data-hidden-area]').map(row => row.attributes('data-hidden-area'))).toEqual(['roundtable', 'tonborg', 'tidy', 'lan'])
+    // A search for an area's name lands on the card.
+    await wrapper.get('.settings-search input').setValue('配对')
+    await flushPromises()
+    expect(wrapper.get('[data-hidden-areas]').attributes('data-search-hidden')).toBeUndefined()
+    await wrapper.get('.settings-search input').setValue('')
+    await flushPromises()
+    // Show takes effect at once, with no confirmation, and the area's own controls appear.
+    await wrapper.get('[data-show-area="tonborg"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/advanced-areas/reveal')).toBe(true)
+    expect(wrapper.find('[data-open-judgment-standards]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-hidden-area]').map(row => row.attributes('data-hidden-area'))).toEqual(['roundtable', 'tidy', 'lan'])
+    wrapper.unmount()
+  })
+
   it('narrows the page to matching settings and says when nothing matches', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -459,6 +497,48 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('keeps the resource numbers in place while 刷新 reads them again', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true } }
+    const snapshot = (usedBytes: number) => ({ sampledAt: '2026-08-01T10:00:00.000Z', status: 'ready',
+      memory: { usedBytes, hostTotalBytes: 16_000_000_000, hostFreeBytes: 8_000_000_000, complete: true,
+        components: [{ id: 'console', label: 'Management service', status: 'ready', bytes: 40_000_000 }] },
+      disk: { usedBytes: 2_700_000_000, hostTotalBytes: 500_000_000_000, hostFreeBytes: 200_000_000_000, complete: true,
+        measuredAt: '2026-08-01T10:00:00.000Z', components: [] }, exclusions: ['browser-tab-memory'] })
+    let reads = 0
+    let release: (value: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      if (url === '/api/system/resources') {
+        reads += 1
+        if (reads === 1) return Response.json(snapshot(1_073_741_824))
+        return new Promise<Response>((resolve) => { release = resolve })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = () => wrapper.get('.resource-card')
+    expect(card().text()).toContain('1 GB')
+
+    await card().get('[data-resources-refresh]').trigger('click')
+    await flushPromises()
+    // Read again: the numbers stay, no loading line is inserted above them, and the button turns.
+    expect(card().text()).toContain('1 GB')
+    expect(card().findAll('.growth-loading').filter((node) => !node.element.closest('[data-resources-refresh]'))).toHaveLength(0)
+    expect(card().get('[data-resources-refresh]').attributes('aria-busy')).toBe('true')
+    release(Response.json(snapshot(2_147_483_648)))
+    await flushPromises()
+    expect(card().text()).toContain('2 GB')
+    expect(card().get('[data-resources-refresh]').attributes('aria-busy')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('offers no migration once the install already runs native', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -645,14 +725,24 @@ describe('SettingsPage', () => {
     const card = wrapper.get('.behavior-card')
     expect(card.find('[data-capture-source]').exists()).toBe(false)
     expect(card.get('.growth-loading').attributes('aria-label')).toBe('正在查找本机的客户端…')
-    const client = (id: string, status: string) => ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
+    const client = (id: string, label: string, status: string, sourceApplication: string | null) =>
+      ({ id, label, status, sourceApplication, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
     for (const answer of answers) answer(Response.json({ observedAt: '2026-11-02T08:00:00.000Z', historySaved: true, clients: [
-      client('claude-code', 'connected'), client('codex', 'not_connected'),
-      client('cursor', 'not_detected'), client('opencode', 'not_detected'), client('claude-desktop', 'connected')] }))
+      client('claude-code', 'Claude Code', 'connected', 'claude_code'), client('codex', 'Codex', 'not_connected', 'codex'),
+      client('cursor', 'Cursor', 'not_detected', 'cursor'), client('opencode', 'OpenCode', 'not_detected', 'opencode'),
+      client('claude-desktop', 'Claude Desktop', 'connected', 'claude'), client('gemini', 'Gemini CLI', 'connected', null)],
+    customClients: [{ id: 'acme-agent', label: 'Acme Agent', status: 'not_detected' }] }))
     await flushPromises()
     expect(card.find('.growth-loading').exists()).toBe(false)
-    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor'])
+    // The same clients as the client card: one without a capture adapter switches what its Agent writes.
+    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor', 'claude', 'other'])
     expect(card.get('[data-capture-source="cursor"] [role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(card.get('[data-capture-source="claude"] strong').text()).toBe('Claude')
+    expect(card.get('[data-capture-source="claude"]').text()).toContain('包括 Claude Desktop 和 claude.ai / Cowork 远程连接器')
+    expect(card.get('[data-capture-source="claude"]').text()).toContain('不读取对话')
+    expect(card.get('[data-capture-source="claude_code"]').text()).not.toContain('不读取对话')
+    expect(card.get('[data-capture-source="other"]').text()).toContain('其他客户端')
+    expect(card.get('[data-capture-source="other"]').text()).toContain('包括 Gemini CLI、Acme Agent')
     wrapper.unmount()
   })
 
@@ -672,7 +762,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     const card = wrapper.get('.behavior-card')
     expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source')))
-      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh'])
+      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh', 'claude', 'kiro', 'antigravity', 'other'])
     expect(card.find('.ui-notice').exists()).toBe(false)
     expect(card.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
@@ -698,5 +788,167 @@ describe('SettingsPage', () => {
     await toggle.trigger('click')
     expect(update).toHaveBeenLastCalledWith(false)
     wrapper.unmount()
+  })
+
+  describe('two layouts to switch between', () => {
+    // jsdom has no matchMedia: a test says whether the window is wide enough for the topics on the left.
+    function windowWide(wide: boolean) {
+      vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: wide && query === '(min-width: 861px)', media: query,
+        addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    }
+
+    async function mountSettings(path = '/settings', router = settingsRouter()) {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      useConsoleStore().runtimeStatus = 'ready'
+      vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
+        ? Response.json({ configured, active: configured, restartRequired: false })
+        : Response.json({}, { status: 503 })))
+      await router.push(path)
+      const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
+      await flushPromises()
+      return wrapper
+    }
+    const outlineLabels = (wrapper: VueWrapper) => wrapper.findAll('[data-settings-outline-item]').map(item => item.text())
+    const pressedLayout = (wrapper: VueWrapper) => wrapper.get('[data-settings-layout] [aria-pressed="true"]').attributes('data-value')
+
+    it('opens with the topics on the left, and keeps the tabs on top once the person picks them', async () => {
+      windowWide(true)
+      window.localStorage.removeItem('fuli.settings.layout')
+      const first = await mountSettings()
+      expect(first.find('[data-settings-side]').exists()).toBe(true)
+      expect(first.find('[data-settings-tab-trigger]').exists()).toBe(false)
+      expect(first.get('[data-settings-topic="recording"]').attributes('aria-current')).toBe('true')
+      expect(pressedLayout(first)).toBe('side')
+      await first.get('[data-settings-layout] [data-value="tabs"]').trigger('click')
+      await flushPromises()
+      expect(first.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
+      expect(first.find('[data-settings-side]').exists()).toBe(false)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('tabs')
+      first.unmount()
+
+      const again = await mountSettings()
+      expect(again.find('[data-settings-side]').exists()).toBe(false)
+      expect(pressedLayout(again)).toBe('tabs')
+      // Back to the default: nothing is kept, so a later change of the default reaches this person.
+      await again.get('[data-settings-layout] [data-value="side"]').trigger('click')
+      await flushPromises()
+      expect(again.find('[data-settings-side]').exists()).toBe(true)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
+      again.unmount()
+    })
+
+    it('opens a ?layout= link in that layout for the visit without keeping it', async () => {
+      windowWide(true)
+      window.localStorage.removeItem('fuli.settings.layout')
+      const tabs = await mountSettings('/settings?layout=tabs')
+      expect(tabs.find('[data-settings-side]').exists()).toBe(false)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
+      tabs.unmount()
+      window.localStorage.setItem('fuli.settings.layout', 'tabs')
+      const side = await mountSettings('/settings?layout=side')
+      expect(side.find('[data-settings-side]').exists()).toBe(true)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('tabs')
+      side.unmount()
+      window.localStorage.removeItem('fuli.settings.layout')
+    })
+
+    it('follows the ?layout= in the address while the page stays open', async () => {
+      windowWide(true)
+      window.localStorage.removeItem('fuli.settings.layout')
+      const router = settingsRouter()
+      const wrapper = await mountSettings('/settings?layout=tabs', router)
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      // A link without ?layout= (or Back after the switch removed it) returns to the kept choice, here the default.
+      await router.push('/settings')
+      await flushPromises()
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(true)
+      await router.push('/settings?layout=tabs')
+      await flushPromises()
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('outlines exactly the open topic\'s rendered cards on the left and scrolls to the one clicked', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      const wrapper = await mountSettings('/settings?layout=side')
+      // No topic promotion in these settings: its card is not rendered, so it has no entry.
+      expect(wrapper.find('[data-topic-promotion-card]').exists()).toBe(false)
+      expect(outlineLabels(wrapper)).toEqual(['自动沉淀', '按项目记录'])
+      expect(wrapper.get('[data-settings-outline-item][aria-current]').text()).toBe('自动沉淀')
+      await wrapper.findAll('[data-settings-outline-item]')[1]!.trigger('click')
+      expect(scrolled).toEqual([wrapper.get('[data-capture-projects-card]').element])
+      expect(wrapper.get('[data-settings-outline-item][aria-current]').text()).toBe('按项目记录')
+
+      await wrapper.get('[data-settings-topic="connections"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-settings-topic="connections"]').attributes('aria-current')).toBe('true')
+      expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeUndefined()
+      const cards = wrapper.get('[data-settings-tab="connections"]').findAll('.settings-card')
+      expect(outlineLabels(wrapper)).toHaveLength(cards.length)
+      expect(outlineLabels(wrapper)).toContain('服务端口')
+      expect(outlineLabels(wrapper)).not.toContain('自动沉淀')
+      wrapper.unmount()
+    })
+
+    it('opens a linked card\'s topic on the left, scrolls to it and marks it', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      window.history.replaceState(null, '', '/settings#conversation-launchers')
+      const wrapper = await mountSettings('/settings?layout=side')
+      const launchers = wrapper.get('.conversation-launcher-card')
+      expect(wrapper.get('[data-settings-topic="clients"]').attributes('aria-current')).toBe('true')
+      expect(wrapper.get('[data-settings-tab="clients"]').attributes('hidden')).toBeUndefined()
+      expect(scrolled).toEqual([launchers.element])
+      expect(launchers.attributes('data-settings-linked')).toBe('')
+      wrapper.unmount()
+      window.history.replaceState(null, '', '/')
+    })
+
+    it('shows matches from every topic while searching on the left, with no outline under the topics', async () => {
+      windowWide(true)
+      const wrapper = await mountSettings('/settings?layout=side')
+      expect(outlineLabels(wrapper).length).toBeGreaterThan(0)
+      await wrapper.get('.settings-search input').setValue('Neo4j Bolt')
+      await flushPromises()
+      expect(wrapper.get('.ports-card').attributes('data-search-hidden')).toBeUndefined()
+      expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeUndefined()
+      expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
+      expect(wrapper.find('.settings-search-note').exists()).toBe(true)
+      expect(outlineLabels(wrapper)).toEqual([])
+      await wrapper.get('.settings-search input').setValue('')
+      await flushPromises()
+      expect(outlineLabels(wrapper)).toEqual(['自动沉淀', '按项目记录'])
+      wrapper.unmount()
+    })
+
+    it('while searching, a topic on the left scrolls the right side to its own panel', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      const wrapper = await mountSettings('/settings?layout=side')
+      await wrapper.get('.settings-search input').setValue('Neo4j Bolt')
+      await flushPromises()
+      scrolled.length = 0
+      await wrapper.get('[data-settings-topic="clients"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-settings-topic="clients"]').attributes('aria-current')).toBe('true')
+      expect(scrolled).toEqual([wrapper.get('[data-settings-tab="clients"]').element])
+      wrapper.unmount()
+    })
+
+    it('shows the tabs on top in a narrow window, though the topics on the left are the default', async () => {
+      windowWide(false)
+      window.localStorage.removeItem('fuli.settings.layout')
+      const wrapper = await mountSettings()
+      expect(wrapper.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      // The choice does not apply here, so no switch offers it.
+      expect(wrapper.find('[data-settings-layout]').exists()).toBe(false)
+      wrapper.unmount()
+    })
   })
 })

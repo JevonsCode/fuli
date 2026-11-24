@@ -34,7 +34,7 @@ export const onboardingTourMessages = {
       },
       projects: {
         title: '每个项目有一位负责人',
-        text: '每个项目由一位 FLA 负责。在项目上点「整理」，你的 AI 会读一遍项目，补上 FULI 还缺的。',
+        text: '每个项目由一位 FLA 负责，它记得这个项目的事。',
         go: '去项目',
       },
       roundtable: {
@@ -77,7 +77,7 @@ export const onboardingTourMessages = {
       },
       projects: {
         title: 'Each project has a lead',
-        text: 'One FLA leads each project. Press Organise on a project and your AI reads it and fills in what FULI is missing.',
+        text: 'One FLA leads each project and remembers it.',
         go: 'Open Projects',
       },
       roundtable: {

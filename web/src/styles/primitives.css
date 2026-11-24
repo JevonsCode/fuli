@@ -67,6 +67,9 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .ui-dialog__error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .ui-dialog__error p { margin: 0; }
+/* The content takes the dialog's first focus when it starts with a button (useModalDialog): it is
+   never reached with Tab, so it shows no ring; every control inside keeps the keyboard ring. */
+.ui-dialog__body:focus { outline: none; }
 .ui-dialog__body textarea { resize: vertical; }
 .ui-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 

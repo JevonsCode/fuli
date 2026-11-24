@@ -1,0 +1,13 @@
+{
+  "version": "0.27.6",
+  "zh": [
+    "标成「完全信任」的电脑不再限每天派几件活，只留一条防失控的上限。",
+    "在你这边还没开始执行就失败的活，不占对方当天的名额。",
+    "对面的电脑刚启动时问它，不再报「内部错误」，会提示过一分钟再试。"
+  ],
+  "en": [
+    "A fully trusted computer has no daily limit on requests now; one stop against runaway loops stays.",
+    "Work that failed on your side before it started is not counted against the requester.",
+    "Asking a computer that has just started no longer says internal error; it says to try again."
+  ]
+}

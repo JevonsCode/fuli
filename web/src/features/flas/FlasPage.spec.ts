@@ -116,6 +116,11 @@ describe('FLAs page', () => {
     expect(wrapper.get('[data-flas-group="idle"] .fla-work').text()).toBe('空闲 · Aster looks after synthetic work')
   })
 
+  it('puts who is working first when 今天 asks for it', async () => {
+    const { wrapper } = await setup('/project-agents?view=work&first=working')
+    expect(groupNames(wrapper).map(([key]) => key)).toEqual(['working', 'attention', 'idle', 'unknown'])
+  })
+
   it('opens an FLA by its whole row and marks pinned ones', async () => {
     const { router, wrapper } = await setup()
     const cedar = wrapper.get('[data-fla="agent-3"]')

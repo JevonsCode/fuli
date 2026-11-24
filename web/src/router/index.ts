@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
 import { renamedSettingsTab } from '@/features/settings/settings-tabs'
+import { areaFor, reveal } from '@/features/advanced-areas/advanced-areas'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -10,14 +11,16 @@ export const router = createRouter({
     { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
     { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
     { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
-    {
-      path: '/',
-      name: 'overview',
-      component: () => import('@/pages/OverviewPage.vue'),
-      meta: { title: 'routes.overview.title' },
-    },
-    // The workbench's lists, each on its own page with search and filters in the query (Jevons 11-06).
+    // 今天: what waits for the person's call, what was done today, the week's statement, who is working.
+    { path: '/', name: 'today', component: () => import('@/pages/TodayPage.vue'), meta: { title: 'routes.today.title' } },
+    // 复利账单 day by day, from 今天's statement card; the picked week is ?week=<its Monday>.
+    { path: '/statement', name: 'statement', component: () => import('@/features/statement-calendar/StatementCalendarPage.vue'), meta: { title: 'statementCalendar.title', detail: true } },
+    // The old 工作台 page is gone; 今天 took its place, so an old link lands there.
+    { path: '/workbench', redirect: '/' },
+    // The lists 今天 links to, each on its own page with search and filters in the query (Jevons 11-06).
     { path: '/workbench/:list(running|done|notices)', name: 'workbench-list', component: () => import('@/features/workbench-lists/WorkbenchListPage.vue'), meta: { title: 'routes.overview.title', detail: true } },
+    // Every request another computer's assistant sent to be done here, from 等你拍板's 更多 and the LAN roundtable card.
+    { path: '/visit-requests', name: 'visit-requests', component: () => import('@/features/visit-requests/VisitRequestsPage.vue'), meta: { title: 'visitRequests.list.title', detail: true } },
     {
       path: '/preferences',
       name: 'personal-profile',
@@ -114,6 +117,14 @@ export const router = createRouter({
       name: 'session-migration',
       component: () => import('@/features/session-migration/SessionMigrationPage.vue'),
       meta: { title: 'routes.sessionMigration.title', detail: true },
+    },
+    {
+      // The habits FULI handed to the assistant when a conversation started:
+      // the first reply's 「FULI 习惯」 receipt line links here by its task key.
+      path: '/habits/:taskKey',
+      name: 'habit-delivery',
+      component: () => import('@/features/habit-delivery/HabitDeliveryPage.vue'),
+      meta: { title: 'habitDelivery.title', detail: true },
     },
     {
       // rec#11 D-07 part 2: the tag vocabulary, its review queue and the
@@ -248,9 +259,15 @@ export const router = createRouter({
 
 installNavigationRecovery(router)
 
-// An old settings tab (?tab=memory|network|version) opens the tab that holds it
-// now, also when the settings page is already open.
-router.beforeEach(to => to.path === '/settings' ? renamedSettingsTab(to) : true)
+// A link into an advanced area (a bookmark, a receipt, an Agent's answer) shows
+// that area for good before its page looks for its card. An old settings tab
+// (?tab=memory|network|version) opens the tab that holds it now, also when the
+// settings page is already open.
+router.beforeEach((to) => {
+  const area = areaFor(to)
+  if (area) reveal(area, 'link')
+  return to.path === '/settings' ? renamedSettingsTab(to) : true
+})
 
 router.afterEach((route) => {
   updateDocumentTitle(route.meta.title)

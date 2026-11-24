@@ -1,0 +1,11 @@
+{
+  "version": "0.27.12",
+  "zh": [
+    "派来的活遇到 Git 没回应或读不了文件夹时，不再被说成「不是仓库」，会照实写是 Git 出错。",
+    "Mac 上 FULI 更新后常要重新允许它访问项目文件夹；卡片现在会提示这一点。"
+  ],
+  "en": [
+    "Requested work no longer reads \"not a repository\" when Git did not answer or was refused.",
+    "On a Mac, an update often needs folder access allowed again; the card now says so."
+  ]
+}

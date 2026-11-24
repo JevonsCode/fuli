@@ -2,14 +2,30 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { firstField, listDirectory } from '../session-log.js';
+import { reportedWakeUsage } from '../wake-usage.js';
+import { claudeCodeConstrainedRun } from './constrained-run.js';
 
-// The tools a read-only wake may not use: every file edit and the shell.
-const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
+// A read-only wake has only the built-in tools that read. Whatever edits a file, runs a command
+// (Bash, PowerShell), fetches from the web or starts another agent is not there; the edit and
+// shell tools are denied as well, since a deny rule wins over any allow rule the person keeps.
+// Tools of MCP servers the person configured are not built in: a wake given mcpServers (an ask
+// from another computer, or a discussion turn where FULI can name its own entry) loads exactly
+// those (--strict-mcp-config), FULI's own or none; a read-only wake given none still follows
+// that person's own allow rules (docs/agent-roundtable.md).
+const READ_ONLY_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
+const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash', 'PowerShell']);
+const MODE_ARGUMENTS = Object.freeze({
+  answer: ['--permission-mode', 'dontAsk'],
+  read_only: ['--permission-mode', 'dontAsk', '--tools', READ_ONLY_TOOLS.join(','), '--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')],
+});
 
 // Wakes Claude Code headlessly. Resuming forks the session, so an open window is
 // never written concurrently while the answer still has that conversation's context.
 export const claudeCodeWake = Object.freeze({
   id: 'claude_code',
+
+  // A read-only Claude Code wake has no shell (--tools Read,Grep,Glob), on every platform.
+  isolatedFor: () => true,
 
   resolveCommand({ env, which, platform }) {
     return env.FULI_CLAUDE_BIN || which('claude', platform);
@@ -19,14 +35,24 @@ export const claudeCodeWake = Object.freeze({
   // delegated wake names the (forked) session up front and binds it first.
   plansSession: true,
 
-  // readOnly (a group discussion turn) keeps the same non-interactive mode
-  // and denies the file-editing and shell tools; a deny rule wins over any
-  // allow rule, so the woken session can read and answer but not change files
-  // or run commands. (Plan mode is avoided: headless it may end with a plan
-  // or an empty answer instead of the member's view.)
-  args({ sessionId, plannedSessionId = null, readOnly = false }) {
-    return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      ...(readOnly ? ['--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')] : []),
+  // Restricted mode skips the settings files, so the model access their env
+  // block names goes to the process environment instead (constrained-run.js).
+  restrictedEnvironment: claudeCodeConstrainedRun.environment,
+
+  // mode (roundtable/wake.js WAKE_MODES): answer keeps the person's own rules;
+  // read_only (a group discussion turn, an ask from another computer) keeps the
+  // same non-interactive mode with the reading tools only, so the woken session
+  // can read and answer but not change files or run commands. (Plan mode is
+  // avoided: headless it may end with a plan or an empty answer instead of the
+  // member's view.) mcpServers ({ name: { command, args } }, possibly empty): a
+  // read_only wake then loads exactly these MCP servers, none of the person's.
+  // origin (an ask from another computer): restricted mode as well, as the
+  // constrained run uses it, so none of the person's settings files load: no
+  // hooks, plugins or permission rules of theirs run for text from elsewhere.
+  args({ sessionId, plannedSessionId = null, mode, mcpServers = null, origin = null }) {
+    const only = mcpServers && mode === 'read_only' ? ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers:
+      Object.fromEntries(Object.entries(mcpServers).map(([name, entry]) => [name, { type: 'stdio', command: entry.command, args: entry.args }])) })] : [];
+    return ['-p', '--output-format', 'stream-json', '--verbose', ...(origin ? ['--restricted'] : []), ...MODE_ARGUMENTS[mode], ...only,
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },
@@ -41,12 +67,19 @@ export const claudeCodeWake = Object.freeze({
     return null;
   },
 
-  // stream-json ends with one `result` event carrying the final answer.
-  initialState: () => ({ body: '', completed: true, failed: false }),
+  // stream-json ends with one `result` event carrying the final answer. Its
+  // `system` `init` event names the model the session runs (rec#129); the
+  // `result` event's usage counts the run's tokens, input apart from the
+  // cache reads and writes, so the whole input is the three together.
+  initialState: () => ({ body: '', completed: true, failed: false, model: null, usage: null }),
   nativeSessionId: event => event.type === 'system' && event.subtype === 'init' ? event.session_id : null,
   readEvent(event, state) {
+    if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') state.model = event.model;
     if (event.type !== 'result') return;
     state.body = event.result ?? '';
+    const usage = event.usage ?? {};
+    state.usage = reportedWakeUsage({ output: usage.output_tokens,
+      inputParts: [usage.input_tokens, usage.cache_read_input_tokens, usage.cache_creation_input_tokens] });
     state.failed ||= Boolean(event.is_error);
   },
 });

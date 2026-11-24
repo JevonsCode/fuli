@@ -3,7 +3,7 @@ import { navDestinations } from '@/layouts/nav-destinations'
 import { contrast, mixOver, semanticToken } from '@/test-support/colour-contrast'
 import { pageBackdrop } from './page-backdrops'
 
-const dockKeys = navDestinations({ spaceId: 'space-1' })
+const dockKeys = navDestinations({ spaceId: 'space-1', shown: () => true })
   .filter(destination => destination.placement === 'dock').map(destination => destination.key)
 const everyBackdrop = [...dockKeys, 'settings', undefined].map(pageBackdrop)
 

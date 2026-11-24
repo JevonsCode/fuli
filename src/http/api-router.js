@@ -1,4 +1,4 @@
-import { isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
+import { isForwardedConsoleRequest, isLoopbackAddress, refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 import { handleExternalKnowledgeApiRequest } from './external-knowledge-api-router.js';
 import { handleGraphApiRequest } from './graph-api-router.js';
@@ -10,6 +10,7 @@ import { handleNpmCopiesRequest } from './npm-copies-api-router.js';
 import { handleCliPathRequest } from './cli-path-api-router.js';
 import { handleWhatsNewRequest } from './whats-new-api-router.js';
 import { handleDesktopClientRequest } from './desktop-client-api-router.js';
+import { handleDesktopGlanceRequest } from './desktop-glance-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
 import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.js';
@@ -18,6 +19,7 @@ import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
 import { handleProjectOrganizingRequest } from './project-organizing-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
+import { handleClientConnectionRequest } from './client-connection-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleProjectHierarchyRequest } from './project-hierarchy-api-router.js';
@@ -26,6 +28,7 @@ import { handleTaskCloseRequest } from './task-close-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleClientLinksRequest } from './client-links-api-router.js';
+import { handleGuestLinksRequest } from './guest-links-api-router.js';
 import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleAgentWorkflowsRequest } from './agent-workflows-api-router.js';
 import { handleAgentAvatarsRequest } from './agent-avatars-api-router.js';
@@ -33,16 +36,22 @@ import { handleWorkSurfacesRequest } from './work-surfaces-api-router.js';
 import { handleAgentDelegationRequest } from './agent-delegation-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
+import { handleRunnersRequest } from './runner-api-router.js';
+import { handleVisitorAccessRequest } from './visitor-access-api-router.js';
+import { handleVisitRequestsApiRequest } from '../visit-requests/http.js';
+import { handleLifecycleHookRequest } from './lifecycle-hooks-api-router.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { KNOWLEDGE_EMBEDDING_OPERATION } from '../model-backends/config.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { handleModelListRequest } from '../model-backends/models-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
+import { reviewHandedOver } from '../judgment/review-delegation.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
 import { handleNoticesRequest } from './notices-api-router.js';
+import { handleStatementRequest } from './statement-api-router.js';
 import { handleRetrospectivesRequest } from './retrospectives-api-router.js';
 import { handleSemanticRequest } from './semantic-api-router.js';
 import { handleEmbeddingModelsRequest } from './embedding-models-api-router.js';
@@ -75,13 +84,19 @@ export async function handleApiRequest({
   readModelEvaluation = null,
   judgmentUndo = null,
   clientLinks = null,
-  agentDelegation = null
+  agentDelegation = null,
+  lifecycleHooks = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (await handleLifecycleHookRequest({ request, response, url, lifecycleHooks })) return true;
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
+  if (await handleVisitorAccessRequest({ request, response, url, visitorAccess: app.visitorAccess ?? null })) return true;
+  if (await handleVisitRequestsApiRequest({ request, response, url, visitorAccess: app.visitorAccess ?? null })) return true;
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleModelListRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
+  if (await handleGuestLinksRequest({ request, response, url, guestAccess: app.guestAccess ?? null })) return true;
+  if (await handleRunnersRequest({ request, response, url, runnerHost: app.runnerHost ?? null })) return true;
   if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
@@ -90,6 +105,7 @@ export async function handleApiRequest({
     roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION, RETRIEVAL_TERMS_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
       semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
+    handedOver: { tonborg: () => reviewHandedOver(app.judgment, app.config?.personal?.spaceId ?? null) },
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
     ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
   // The suggestion log's owner proof is confirmed with the Provider, so that
@@ -116,55 +132,13 @@ export async function handleApiRequest({
     return true;
   }
 
-  if (system && url.pathname === '/api/system/client-connection' && request.method === 'GET') {
-    response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, system.clientConnection());
-    return true;
-  }
-
-  if (system && url.pathname === '/api/system/client-connection/connect' && request.method === 'POST') {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Client connection is only available on this computer' });
-      return true;
-    }
-    sendJson(response, 200, await system.connectClient(await readJson(request)));
-    return true;
-  }
-
-  // Quitting and reopening a client app ends its open sessions: only the person on this computer starts it.
-  if (system && url.pathname === '/api/system/client-connection/restart' && request.method === 'POST') {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Restarting a client is only available on this computer' });
-      return true;
-    }
-    sendJson(response, 200, await system.restartClient(await readJson(request)));
-    return true;
-  }
-
-  if (system && url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
-    response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, await system.clientConnectionStatus());
-    return true;
-  }
-
-  // A client the person describes by hand goes into the shared agent-clients
-  // directory, so only this computer may add or remove one.
-  const customClient = /^\/api\/system\/client-connection\/custom-clients(?:\/([a-z][a-z0-9-]{0,63}))?$/.exec(url.pathname);
-  if (system && customClient && ((request.method === 'POST' && !customClient[1]) || (request.method === 'DELETE' && customClient[1]))) {
-    response.setHeader('Cache-Control', 'no-store');
-    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
-      sendJson(response, 403, { error: 'Custom clients can only be changed on this computer' });
-      return true;
-    }
-    sendJson(response, 200, request.method === 'POST'
-      ? await system.addCustomClient(await readJson(request))
-      : system.removeCustomClient(customClient[1]));
-    return true;
-  }
+  if (system && await handleClientConnectionRequest({ request, response, url, system })) return true;
 
   if (system && url.pathname === '/api/system/settings' && request.method === 'PUT') {
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { error: 'Manage host settings in the local host console', code: 'local_user_only' });
+      return true;
+    }
     const result = await system.updateSettings(await readJson(request));
     if (result.apply?.status === 'applying') {
       // Flush the acknowledgement before the detached worker stops this server.
@@ -213,6 +187,10 @@ export async function handleApiRequest({
   // the start, which only a request from this computer may make.
   if (system?.startUpdate && url.pathname === '/api/system/update') {
     response.setHeader('Cache-Control', 'no-store');
+    if (isForwardedConsoleRequest(request)) {
+      sendJson(response, 403, { error: 'FULI is updated only on this computer', code: 'local_user_only' });
+      return true;
+    }
     if (request.method === 'GET') sendJson(response, 200, { update: system.updateStatus() });
     else if (request.method !== 'POST') sendJson(response, 405, { error: 'Method not allowed' });
     else if (!refuseRemoteDecision(request, response, 'FULI is updated only on this computer')) {
@@ -234,12 +212,14 @@ export async function handleApiRequest({
   if (await handleOccupationPluginsRequest({ request, response, url, app })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleNoticesRequest({ request, response, url, app, delegation: agentDelegation, system })) return true;
+  if (await handleStatementRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleRetrospectivesRequest({ request, response, url, app })) return true;
   if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
   if (await handleEmbeddingModelsRequest({ request, response, url, embeddingModels: app.embeddingModels ?? null })) return true;
   if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
-  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
+  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents,
+    readIssueReport: system?.issueReport })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 
@@ -307,6 +287,7 @@ export async function handleApiRequest({
     await handleAgentWorkflowsRequest({ request, response, url, app }) ||
     await handleAgentAvatarsRequest({ request, response, url, app }) ||
     await handleWorkSurfacesRequest({ request, response, url, app }) ||
+    await handleDesktopGlanceRequest({ request, response, url, app }) ||
     await handleEmployeeApiRequest({ request, response, url, app }) ||
     await handleGraphApiRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads });
   if (system?.withGraphRuntimeLease && (

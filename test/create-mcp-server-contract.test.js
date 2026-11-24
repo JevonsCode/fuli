@@ -422,7 +422,9 @@ test('ordinary and worker MCP entries deliver the same explicit preference block
           const data = result.structuredContent;
           assert.equal(data.preference_delivery.reason, sourceTruncated ? 'source_window' : 'delivery_budget');
           assert.equal(data.preferences_complete, false);
-          assert.equal(data.same_task_recovery_available, false);
+          // A worker's task recovers through its sealed port; an entry without a task cannot (rec#128).
+          assert.equal(data.same_task_recovery_available, worker);
+          assert.equal(data.preference_delivery.token_use.includes('read_task_preferences'), worker);
           assert.equal(Object.hasOwn(data, 'effective_preferences'), false);
           assert.match(result.content[0].text, /Fuli preference delivery is blocked/);
           assert.match(data.preference_delivery.guidance, /Do not execute/);

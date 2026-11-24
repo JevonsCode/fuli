@@ -180,6 +180,24 @@ TASK_BLOCKER_RULES = (
     _node_index('fuli_project_agent_event_session', 'FuliProjectAgentTaskEvent', 'source_session_id', 'status'),
 )
 
+# graph/22: where each host session of a conversation ran, kept per conversation
+# (a resume rebinds a session but never rewrites where an earlier one ran), found
+# by conversation for a list and by Agent scope and time for a task entry.
+CONVERSATION_SESSION_RULES = (
+    _unique('fuli_conversation_session_id', 'FuliConversationSession', 'id'),
+    _node_index('fuli_conversation_session_conversation', 'FuliConversationSession', 'conversation_id'),
+    _node_index('fuli_conversation_session_scope_seen', 'FuliConversationSession', 'scope', 'last_seen'),
+)
+CONVERSATION_SESSION_LABELS = frozenset({'FuliConversationSession'})
+
+# graph/24: no two Agents of a personal space are called by one name; each
+# stores the identity key of its shown name. Every key starts empty, so the
+# constraint never needs a person: an FLA that already shared a name stores
+# none until the person settles the name (store_project_agent_name_fixes.py).
+AGENT_NAME_RULES = (
+    _unique('fuli_project_agent_display_name', 'FuliProjectAgent', 'display_name_space_id', 'display_name_key'),
+)
+
 # Every Fuli label in the code when the format registry was introduced.
 BASELINE_LABELS = frozenset({
     'FuliAgentAttention',

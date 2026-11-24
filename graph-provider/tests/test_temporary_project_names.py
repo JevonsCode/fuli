@@ -1,0 +1,273 @@
+"""A temporary project stores no name (graph/23): the step's own queries and
+undo journal, the project models' name rule, and what a lead of an unnamed
+project is called. Every value is synthetic; the step itself runs against
+Neo4j in test_graph_format_confirm_neo4j.py."""
+
+import json
+
+import pytest
+from pydantic import ValidationError
+
+from fuli_graph.default_project_lead import default_lead_profile
+from fuli_graph.graph_field_contract import NODE_FIELDS
+from fuli_graph.graph_format_journal import UNDO_LABEL
+from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS
+from fuli_graph.graph_format_temporary_names import (
+    GENERATED_NAMES,
+    TEMPORARY_NAME_JOURNAL,
+    _with_name,
+    apply_temporary_names,
+    name_for_graph_22,
+    pending_temporary_names,
+)
+from fuli_graph.models import PersonalProjectUpsert, ProjectProfile
+from fuli_graph.temporary_project_scope import (
+    _SESSION_PROFILE, _TASK_PROFILE, is_temporary_project, project_reference, stored_project_name,
+)
+
+STEP = 'graph/23-temporary-project-names'
+
+
+class RecordingDriver:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    async def execute_query(self, query, **parameters):
+        self.calls.append((query, parameters))
+        return self.rows, None, None
+
+
+def test_the_step_is_version_23_and_changes_records_only_with_a_person():
+    step = next(migration for migration in GRAPH_MIGRATIONS if migration.id == STEP)
+    assert step.to_version == 23 <= GRAPH_FORMAT_VERSION
+    assert step.kind == 'rewrite' and not step.automatic
+    assert step.journal is TEMPORARY_NAME_JOURNAL and TEMPORARY_NAME_JOURNAL.reversible
+
+
+def test_every_generated_name_ever_shipped_is_matched_and_nothing_by_how_it_was_stored():
+    # The conversation fallback saved its projects as registered: the name alone decides.
+    assert GENERATED_NAMES == ('临时任务 / Temporary task', '临时会话 / Temporary session',
+                               '会话项目 / Conversation project')
+    (touch,) = TEMPORARY_NAME_JOURNAL.touches
+    for name in GENERATED_NAMES:
+        assert f"'{name}'" in touch.match
+    assert 'scope_type' not in touch.match and 'STARTS WITH' not in touch.match
+
+
+def profile(name):
+    return json.dumps({'name': name, 'purpose': 'Synthetic purpose.'}, ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_pending_lists_the_projects_still_holding_a_generated_name_in_both_places():
+    driver = RecordingDriver([
+        {'id': 'node-b', 'profile_json': profile('会话项目 / Conversation project')},
+        {'id': 'node-a', 'profile_json': profile('')},
+        # The column says FULI's name, the profile a person's: theirs stays.
+        {'id': 'node-c', 'profile_json': profile('Synthetic own words')},
+    ])
+    assert await pending_temporary_names(driver, None) == ['node-a', 'node-b']
+    (query, parameters), = driver.calls
+    assert query.startswith(TEMPORARY_NAME_JOURNAL.touches[0].match) and parameters == {'routing_': 'r'}
+
+
+@pytest.mark.asyncio
+async def test_apply_clears_both_names_and_marks_the_project_temporary():
+    stored = json.dumps({'name': '会话项目 / Conversation project', 'purpose': 'Synthetic purpose.',
+                         'boundaries': ['Synthetic boundary.'], 'lifecycle': 'active'}, ensure_ascii=False)
+    driver = RecordingDriver([{'id': 'node-a', 'profile_json': stored},
+                              {'id': 'node-c', 'profile_json': json.dumps({'name': 'Synthetic own words'})}])
+    assert await apply_temporary_names(driver, None) == {'unreadable': 0}
+    (_, _), (write, parameters) = driver.calls
+    assert "item.name = ''" in write and "item.scope_type = 'temporary'" in write
+    (row,) = parameters['rows']
+    assert row['id'] == 'node-a'
+    assert json.loads(row['profile_json']) == {**json.loads(stored), 'name': ''}
+
+
+@pytest.mark.asyncio
+async def test_apply_with_nothing_left_writes_nothing():
+    driver = RecordingDriver([])
+    await apply_temporary_names(driver, None)
+    assert len(driver.calls) == 1, 'only the read'
+
+
+def test_only_the_name_changes_inside_the_profile_and_its_order_stays():
+    stored = '{"purpose": "Synthetic purpose.", "name": "临时任务 / Temporary task", "lifecycle": "active"}'
+    assert _with_name(stored, '') == '{"purpose": "Synthetic purpose.", "name": "", "lifecycle": "active"}'
+
+
+@pytest.mark.asyncio
+async def test_a_profile_that_is_not_a_json_object_is_left_counted_and_never_pending():
+    # Broken JSON, "null" and a list: rewriting them is not safe, and they must not
+    # keep the step pending (the graph would stay read-only for good).
+    driver = RecordingDriver([{'id': 'node-a', 'profile_json': profile('')},
+                              {'id': 'broken', 'profile_json': '{not json'},
+                              {'id': 'null', 'profile_json': 'null'},
+                              {'id': 'list', 'profile_json': '["临时任务 / Temporary task"]'}])
+    assert await pending_temporary_names(driver, None) == ['node-a']
+    assert await apply_temporary_names(driver, None) == {'unreadable': 3}
+    _, parameters = driver.calls[-1]
+    assert [row['id'] for row in parameters['rows']] == ['node-a']
+
+
+@pytest.mark.asyncio
+async def test_after_an_undo_every_unnamed_project_gets_the_name_graph_22_would_have_written():
+    session = json.dumps({'name': '', 'purpose': _SESSION_PROFILE.purpose}, ensure_ascii=False)
+    task = json.dumps({'name': '', 'purpose': _TASK_PROFILE.purpose}, ensure_ascii=False)
+    driver = RecordingDriver([
+        {'id': 'new-session', 'project_id': 'temporary-' + 'a' * 64, 'name': '', 'profile_json': session},
+        {'id': 'new-task', 'project_id': 'temporary-' + 'b' * 64, 'name': None, 'profile_json': task},
+        {'id': 'cleared-fallback', 'project_id': 'conversation-' + 'c' * 64, 'name': '', 'profile_json': profile('')},
+        # The profile names it; graph/22 keeps the column equal to it.
+        {'id': 'column-only', 'project_id': 'synthetic-x', 'name': '', 'profile_json': profile('Synthetic own')},
+        {'id': 'named', 'project_id': 'synthetic-y', 'name': 'Synthetic named', 'profile_json': profile('Synthetic named')},
+        {'id': 'broken', 'project_id': 'temporary-' + 'd' * 64, 'name': '', 'profile_json': 'null'},
+    ])
+    assert await name_for_graph_22(driver) == 4
+    (_, _), (write, parameters) = driver.calls
+    assert 'item.name = row.name' in write and 'item.profile_json = row.profile_json' in write
+    named = {row['id']: (row['name'], json.loads(row['profile_json'])) for row in parameters['rows']}
+    assert named['new-session'] == ('临时会话 / Temporary session',
+                                    {'name': '临时会话 / Temporary session', 'purpose': _SESSION_PROFILE.purpose})
+    assert named['new-task'][0] == '临时任务 / Temporary task'
+    assert named['cleared-fallback'][0] == '会话项目 / Conversation project'
+    assert named['column-only'][0] == 'Synthetic own'
+    # graph/22's own rule: a stored profile needs a name.
+    for name, stored in named.values():
+        assert stored['name'] == name and name.strip()
+
+
+@pytest.mark.asyncio
+async def test_after_an_undo_with_every_project_named_nothing_is_written():
+    driver = RecordingDriver([{'id': 'named', 'project_id': 'synthetic-y', 'name': 'Synthetic named',
+                               'profile_json': profile('Synthetic named')}])
+    assert await name_for_graph_22(driver) == 0
+    assert len(driver.calls) == 1, 'only the read'
+
+
+def test_the_undo_of_graph_23_names_what_it_did_not_journal():
+    step = next(migration for migration in GRAPH_MIGRATIONS if migration.id == STEP)
+    assert step.after_undo is name_for_graph_22
+    assert all(migration.after_undo is None for migration in GRAPH_MIGRATIONS if migration.id != STEP)
+
+
+def test_the_profile_name_decides_as_in_node_and_the_console():
+    # The `mismatched` seed: the column says FULI's name, the profile a person's.
+    conversation = 'conversation-' + '9' * 64
+    name = stored_project_name('会话项目 / Conversation project', profile('Synthetic own words'))
+    assert name == 'Synthetic own words'
+    assert is_temporary_project(conversation, None, name) is False
+    # An empty profile name is the project's name, as Node's `profile.name ?? name` reads it.
+    assert stored_project_name('会话项目 / Conversation project', profile('')) == ''
+    # Only a profile with no name field at all falls back to the column.
+    assert stored_project_name('Synthetic column', json.dumps({'purpose': 'x'})) == 'Synthetic column'
+    assert stored_project_name('Synthetic column', 'not json') == 'Synthetic column'
+
+
+def test_the_undo_journal_keeps_everything_it_restores():
+    (touch,) = TEMPORARY_NAME_JOURNAL.touches
+    assert touch.properties == ('name', 'profile_json', 'scope_type')
+    assert {f'b_{name}' for name in touch.properties} <= set(NODE_FIELDS[UNDO_LABEL])
+
+
+def test_temporary_scopes_are_created_without_a_name():
+    for profile in (_TASK_PROFILE, _SESSION_PROFILE):
+        assert profile.name == ''
+    # An unnamed stored profile reads back: the field is optional for a stored record.
+    assert ProjectProfile.model_validate_json(_SESSION_PROFILE.model_dump_json()).name == ''
+
+
+def test_a_project_a_person_or_an_agent_creates_still_needs_a_name():
+    profile = {'purpose': 'Synthetic purpose.'}
+    with pytest.raises(ValidationError, match='needs a name'):
+        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile=profile, create_only=True)
+    with pytest.raises(ValidationError, match='needs a name'):
+        PersonalProjectUpsert(personal_space_id='space', project_id='synthetic', profile={**profile, 'name': '  '},
+                              create_only=True)
+    created = PersonalProjectUpsert(personal_space_id='space', project_id='synthetic',
+                                    profile={**profile, 'name': 'Synthetic project'}, create_only=True)
+    assert created.profile.name == 'Synthetic project'
+    # An edit may go without a name: the store allows it only for a temporary project.
+    edit = PersonalProjectUpsert(personal_space_id='space', project_id='temporary-' + 'ab' * 32,
+                                 profile={**profile, 'lifecycle': 'archived'})
+    assert edit.profile.name == ''
+
+
+class ProjectsDriver(RecordingDriver):
+    def __init__(self, scope_type, name):
+        super().__init__([{'scope_type': scope_type, 'name': name}])
+
+
+@pytest.mark.asyncio
+async def test_the_store_lets_only_a_temporary_project_go_on_without_a_name():
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from fuli_graph.store_projects import StoreProjects
+
+    def store(scope_type, name):
+        value = StoreProjects()
+        value.runtime = SimpleNamespace(driver=ProjectsDriver(scope_type, name))
+        return value
+    assert await store('temporary', '')._temporary_project('space', 'temporary-' + 'ab' * 32) is True
+    assert await store('registered', 'Synthetic own')._temporary_project('space', 'synthetic') is False
+    named = store('registered', 'Synthetic own')
+    named._require_personal = lambda: None
+    async def authorize(*_args):
+        return {}
+    named.authorize = authorize
+    with pytest.raises(HTTPException, match='needs a name'):
+        await named.upsert_personal_project({}, PersonalProjectUpsert(
+            personal_space_id='space', project_id='synthetic', profile={'purpose': 'Synthetic purpose.'}))
+
+
+def test_an_unnamed_project_is_referred_to_by_the_number_the_console_shows():
+    assert project_reference('temporary-' + 'ab12' * 16, '') == '#ab12ab12'
+    assert project_reference('conversation-' + 'cd34' * 16, '') == '#cd34cd34'
+    assert project_reference('synthetic-other', '') == '#synthetic-other'
+    assert project_reference('temporary-' + 'ab12' * 16, 'Synthetic title') == 'Synthetic title'
+
+
+def test_the_lead_of_an_unnamed_project_is_never_named_after_an_empty_name():
+    lead = default_lead_profile(project_reference('temporary-' + 'ef56' * 16, ''))
+    assert lead.name == '#ef56ef56 负责人'
+    assert not lead.name.startswith(' ')
+
+
+def test_a_project_is_temporary_by_its_scope_type_or_an_unnamed_generated_id_never_by_a_readable_id():
+    digest = 'ab12' * 16
+    assert is_temporary_project('temporary-' + digest, 'temporary', '') is True
+    assert is_temporary_project('synthetic-any', 'temporary', 'Anything') is True
+    # A conversation fallback a graph waiting for graph/23 has not marked yet.
+    assert is_temporary_project('conversation-' + digest, None, '会话项目 / Conversation project') is True
+    assert is_temporary_project('conversation-' + digest, 'registered', '') is True
+    # A person named it: it is theirs.
+    assert is_temporary_project('conversation-' + digest, 'registered', 'Synthetic garden notes') is False
+    # Readable IDs a person's project name makes ('Temporary fix', 'Conversation notes').
+    assert is_temporary_project('temporary-fix', 'registered', 'Temporary fix') is False
+    assert is_temporary_project('conversation-notes', None, 'Conversation notes') is False
+
+
+def test_a_task_reads_its_projects_scope_as_it_is_now_not_as_it_was_when_created():
+    # Tasks copied scope_type when they were created; graph/23 marks their
+    # conversation project temporary afterwards.
+    from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
+    scope = StoreProjectAgentTaskReads._scope_type
+    assert scope({'project_scope_type': 'temporary'}, {'scope_type': 'registered'}) == 'temporary'
+    assert scope({'project_scope_type': None}, {'scope_type': 'temporary'}) == 'temporary'
+    assert StoreProjectAgentTaskReads._task_read_query('').count('project_scope_type') == 1
+
+
+def test_task_lists_read_the_project_scope_over_the_tasks_own_edge_first():
+    from fuli_graph.store_project_agent_task_pages import _page_query
+    from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
+    from fuli_graph.temporary_project_scope import TASK_PROJECT_SCOPE_TYPE
+    direct = '(task)<-[:HAS_PROJECT_AGENT_TASK]-(direct:FuliPersonalProject {project_id: task.personal_project_id})'
+    assert direct in TASK_PROJECT_SCOPE_TYPE
+    # The space-wide lookup is only the ELSE branch, for a task without that edge.
+    assert TASK_PROJECT_SCOPE_TYPE.index('THEN') < TASK_PROJECT_SCOPE_TYPE.index(direct) \
+        < TASK_PROJECT_SCOPE_TYPE.index('ELSE') < TASK_PROJECT_SCOPE_TYPE.index('[:CONTAINS_PROJECT]')
+    _, page = _page_query('updated', 'newest')
+    for query in (StoreProjectAgentTaskReads._task_read_query(''), page):
+        assert f'{TASK_PROJECT_SCOPE_TYPE} AS project_scope_type' in query

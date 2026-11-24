@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { claudeCodeWake } from '../packages/roundtable/src/agents/claude-code/wake.js';
-import { parseFinalAnswer, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
+import { parseFinalAnswer, wakeAgent, wakeArguments } from '../packages/roundtable/src/roundtable/wake.js';
 
 test('Claude Code resumes by forking, so an open window is never written', () => {
   assert.deepEqual(wakeArguments('claude_code', { sessionId: 'cc-session-1' }),
@@ -14,17 +14,54 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk']);
 });
 
-test('a read-only (group discussion) wake keeps the non-interactive mode and denies file edits and the shell', () => {
-  assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
+test('a read-only wake keeps the non-interactive mode with the reading tools only, and denies file edits and both shells', () => {
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'read_only', plannedSessionId: 'planned-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash', '--session-id', 'planned-1']);
-  assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
+      '--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell', '--session-id', 'planned-1']);
+  assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('plan'));
+});
+
+test('a wake mode outside answer and read_only is refused: work for another computer is a constrained run, not a wake', () => {
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer' }), wakeArguments('claude_code', {}));
+  for (const mode of ['worktree_edit', 'write_anywhere']) assert.throws(() => wakeArguments('claude_code', { mode }), /Invalid wake mode/);
+});
+
+test('an ask from another computer loads exactly the given MCP servers: FULI\'s own, or none at all', () => {
+  const entry = { command: 'C:/synthetic/node.exe', args: ['C:/synthetic/mcp-server.js', '--source-application', 'claude_code'],
+    settings: {} };
+  const strict = (servers) => ['--strict-mcp-config', '--mcp-config', JSON.stringify({ mcpServers: servers })];
+  const tail = (args) => args.slice(args.indexOf('--strict-mcp-config'), args.indexOf('--strict-mcp-config') + 3);
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry } })),
+    strict({ fuli: { type: 'stdio', command: entry.command, args: entry.args } }));
+  assert.deepEqual(tail(wakeArguments('claude_code', { mode: 'read_only', mcpServers: {} })), strict({}));
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer', mcpServers: { fuli: entry } }), wakeArguments('claude_code', {}));
+  assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('--strict-mcp-config'));
 });
 
 test('Claude Code answers come from the final result event', () => {
   assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
     JSON.stringify({ type: 'system', session_id: 'fork-1' }), JSON.stringify({ type: 'result', result: ' 好的 ' })].join('\n') }),
   { body: '好的', sessionId: 'fork-1' });
+  // rec#129: the init event names the model the session runs; FULI records it as reported.
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-2', model: 'synthetic-model-a' }),
+    JSON.stringify({ type: 'result', result: 'ok' })].join('\n') }),
+  { body: 'ok', sessionId: 'fork-2', model: 'synthetic-model-a' });
+  // The result's usage as Claude Code reports it: the whole input is input plus cache reads and writes.
+  const result = usage => JSON.stringify({ type: 'result', result: 'ok', usage });
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: result({ input_tokens: 10, cache_read_input_tokens: 200,
+    cache_creation_input_tokens: 30, output_tokens: 7 }) }).usage, { inputTokens: 240, outputTokens: 7 });
+  // A missing part leaves that side unknown, never a partial sum; nothing reported is no usage at all.
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: result({ input_tokens: 10, output_tokens: 7 }) }).usage,
+    { inputTokens: null, outputTokens: 7 });
+  assert.equal('usage' in parseFinalAnswer('claude_code', { code: 0, stdout: result(undefined) }), false);
+  // A failed run keeps what it reported before failing, for its wake record.
+  assert.throws(() => parseFinalAnswer('claude_code', { code: 1, stdout: [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-3', model: 'synthetic-model-a' }),
+    JSON.stringify({ type: 'result', result: '', is_error: true, usage: { input_tokens: 5, cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0, output_tokens: 1 } })].join('\n') }),
+  error => error.code === 'wake_failed' && error.reported.model === 'synthetic-model-a'
+    && error.reported.usage.inputTokens === 5 && error.reported.usage.outputTokens === 1);
   assert.throws(() => parseFinalAnswer('claude_code', { code: 0, stdout: JSON.stringify({ type: 'result', result: 'x', is_error: true }) }),
     /did not return an answer/);
 });
@@ -69,4 +106,30 @@ test('a delegated Claude Code wake binds its named session before the client sta
     env: { FULI_CLAUDE_BIN: '/opt/claude' }, onSession: async () => {},
     run: async (_command, _args, { onEvent }) => { onEvent({ type: 'system', subtype: 'init', session_id: 'another-session-1' }); return { code: 0, stdout: '' }; } }),
   { code: 'session_mismatch' });
+});
+
+test('a wake for an ask from another computer runs restricted: none of the person\'s settings, hooks or plugins load', async (t) => {
+  const entry = { command: '/synthetic/node', args: ['/synthetic/mcp-server.js'] };
+  const args = wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry }, origin: 'runner', plannedSessionId: 'planned-1' });
+  assert.deepEqual(args.slice(0, 5), ['-p', '--output-format', 'stream-json', '--verbose', '--restricted']);
+  assert.ok(args.includes('--strict-mcp-config'));
+  assert.equal(wakeArguments('claude_code', { mode: 'read_only', mcpServers: { fuli: entry } }).includes('--restricted'), false,
+    'a discussion turn of the person\'s own Agents keeps their settings');
+
+  // The settings' env block (model access) goes to the process instead, as for a constrained run.
+  const home = mkdtempSync(join(tmpdir(), 'fuli-claude-restricted-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(join(home, '.claude'));
+  writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://synthetic.invalid' },
+    hooks: { UserPromptSubmit: [] } }));
+  let seen;
+  await wakeAgent({ client: 'claude_code', cwd: '/synthetic', prompt: 'Review', origin: 'runner',
+    env: { FULI_CLAUDE_BIN: '/synthetic/claude', CLAUDE_CONFIG_DIR: join(home, '.claude') },
+    run: async (_command, runArgs, input) => {
+      seen = { args: runArgs, env: input.env };
+      return { code: 0, stdout: JSON.stringify({ type: 'result', result: 'Answer', session_id: 'synthetic-session' }) };
+    } });
+  assert.ok(seen.args.includes('--restricted'));
+  assert.equal(seen.env.ANTHROPIC_BASE_URL, 'https://synthetic.invalid');
+  assert.equal(seen.env.FULI_ROUNDTABLE_ORIGIN, 'runner');
 });

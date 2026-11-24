@@ -8,7 +8,7 @@ export const connectionStatusShape = shapeFor<ConnectionStatus>(z.looseObject({
   available: z.boolean().optional(),
   clients: z.array(z.looseObject({ id: z.string(), label: z.string(), status: z.string(), detected: z.boolean() })),
 }))
-export const connectionResultShape = shapeFor<ConnectionResult>(z.looseObject({ id: z.string(), status: z.string() }))
+export const connectionResultShape = shapeFor<ConnectionResult>(z.looseObject({ id: z.string(), status: z.string(), reason: z.string().optional() }))
 
 // The clients installed on this computer; the ones not found are left to 设置 › 客户端.
 export function detectedClients(status: ConnectionStatus | null): ClientObservation[] {
@@ -20,8 +20,10 @@ export function preselectedClients(clients: readonly ClientObservation[]): Recor
   return Object.fromEntries(clients.filter(client => canConnect(client) && client.status !== 'connected').map(client => [client.id, true]))
 }
 
-// One connect answer as the row shows it: connected (maybe after a restart), or not done.
-export function connectOutcome(result: ConnectionResult | null): 'connected' | 'restart' | 'failed' {
-  if (result?.status !== 'connected') return 'failed'
+// One connect answer as the row shows it: connected (maybe after a restart), not written because the
+// client is open and would write its old entry back (running), or not done.
+export type ConnectOutcome = 'connected' | 'restart' | 'running' | 'failed'
+export function connectOutcome(result: ConnectionResult | null): ConnectOutcome {
+  if (result?.status !== 'connected') return result?.reason === 'client_running' ? 'running' : 'failed'
   return result.restartRequired ? 'restart' : 'connected'
 }

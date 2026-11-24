@@ -2,6 +2,7 @@ import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 import { REMOTE_CONFLICT } from '../graphiti/agent-project-resolution.js';
 import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
+import { addressedAgentId } from '../graphiti/fla-mention.js';
 import { markdownLink } from '../text/markdown-link.js';
 
 // The console origin every receipt link opens: always http. Chat clients such as
@@ -32,7 +33,32 @@ export function sessionRecordsUrl(application, { sourceApplication = null, sessi
     + `item=${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(itemKey)}`;
 }
 
-export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration.';
+// How FULI splits a session or moves work to another client (rec#147, Jevons
+// 2026-11-22: 「我们有 FULI 干嘛要这种接手文档」). The standing method, not a
+// per-turn instruction: this text is delivered by version reference, so saying
+// it here costs a task entry nothing.
+export const CONTINUATION_GUIDANCE = 'Use a connected client and the same authorized project/Agent. Obtain a fresh task context; never reuse the previous client’s token. This is a FULI prompt, not a native client @ picker registration. '
+  + 'To split a session, or move this work to another client or computer: call checkpoint_task_knowledge for the decisions so far, then open the target client and send `prompt` as its first message. '
+  + 'Never write a hand-off document, summary file or transfer note for this: FULI carries the context, and resume_agent_conversation reports in `carried` exactly how much of it came across. '
+  + 'A `continuation` (conversation.continuation on entry, or on resume) with show true names the earlier work this turn picks up: say it in one line at the start of the reply from its fields only, never inferring a model, time or amount. Without one, say nothing about continuing. context not_loaded: nothing of that conversation is loaded until resume_agent_conversation.';
+
+// The method itself stays in CONTINUATION_GUIDANCE above, which every entry
+// sends as a version reference rather than text: spelling the steps out in each
+// receipt would cost every turn tokens for something that changes once a year.
+// The FLA and conversation a FULI continuation prompt (agentContinuation)
+// names, read back from the person's message; null for any other text. Only a
+// prompt that names both continues earlier work: `#FLA {agentId}` alone just
+// says who works on this task.
+export function continuationTarget(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const agentId = addressedAgentId(prompt);
+  const quoted = /conversationId=("(?:[^"\\]|\\.)*")/.exec(prompt)?.[1];
+  if (!agentId || !quoted) return null;
+  try {
+    const conversationId = JSON.parse(quoted);
+    return typeof conversationId === 'string' && conversationId ? { agentId, conversationId } : null;
+  } catch { return null; }
+}
 
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
@@ -71,12 +97,40 @@ export function roundtableThreadUrl(application, threadId) {
 // One FLA signs 「FULI Agent：A」; with others, 「FULI Agents：A & B」. roundtable
 // ({ threads, peers }) is what this turn used of the roundtable: the FLAs that
 // took part join the line and each conversation gets a 「圆桌对话详情」 link.
+// introduction is the owner's own line under it, the turn it introduces
+// itself (task-entry-introduction.js), already Markdown-escaped.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
+
+// How long the receipt line is, decided by FULI from what the conversation and
+// the turn actually hold — never by the model judging how short its own reply
+// is (rec#146 item 3: 「短回复每条都附，噪音偏大」).
+//
+// The whole line, console link included, is for a receipt that carries
+// something the person has not been given in this conversation yet: the first
+// receipt of a conversation, the first after work was continued here, anything
+// retained this turn, a notice, a collaborator or roundtable thread, an
+// introduction. A later turn that saved nothing and changed nothing signs with
+// the FLA's name alone.
+//
+// taskAgentReceipt cannot know the conversation part when it is built (an
+// entry builds its receipt before the conversation begins), so a receipt whose
+// line is nothing but the identity keeps its short form beside it, under a
+// symbol no JSON answer serializes. signedReceipt picks it once the caller
+// knows; anything appended to the line afterwards keeps it whole.
+const SHORT_FORM = Symbol('short_receipt_form');
+
+export function signedReceipt(receipt, { firstInConversation = true } = {}) {
+  const alternative = receipt?.[SHORT_FORM];
+  if (!alternative) return receipt;
+  const { [SHORT_FORM]: _alternative, ...plain } = receipt;
+  if (firstInConversation || plain.markdown !== alternative.full) return plain;
+  return { ...plain, form: 'short', markdown: alternative.short };
+}
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
   collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null,
-  roundtable = null }) {
+  roundtable = null, introduction = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
@@ -86,11 +140,12 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     && !helpers.some(item => item.agentId === peer.agentId)) : [];
   const threads = (roundtable?.threads ?? []).map((threadId, index) =>
     markdownLink(index ? `圆桌对话详情 ${index + 1}` : '圆桌对话详情', roundtableThreadUrl(application, threadId)));
-  const build = () => ({ required: true, markdown: [owner
+  const build = () => ({ required: true, form: 'full', markdown: [owner
     ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[agentLink(application, agentId, name, role),
       ...helpers.map(item => collaboratorLink(application, item)),
       ...peers.map(peer => agentLink(application, peer.agentId, peer.name))].join(' & ')}`
-    : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · '), owner,
+    : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · ')
+      + (owner && introduction ? `\n${introduction}` : ''), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),
@@ -113,6 +168,15 @@ export function taskAgentReceipt(application, { projectId, agentId, name = null,
     }
     receipt = build();
   }
+  // Only the identity on the line: it may be signed with the name alone.
+  const identityOnly = owner && !helpers.length && !peers.length && !threads.length && !notices.length
+    && !introduction && !turnReceipt?.lines?.length;
+  if (identityOnly) {
+    // Not enumerable: never serialized or compared, and a copy made by spreading
+    // the receipt (to append a line) drops it, which keeps that line whole.
+    Object.defineProperty(receipt, SHORT_FORM, { value: { full: receipt.markdown,
+      short: `FULI Agent：${receiptText(agentLabel(name, role) || agentId)}` } });
+  }
   return withTurnReceipt(receipt, turnReceipt);
 }
 
@@ -128,8 +192,17 @@ export function withReceiptLines(receipt, lines) {
   return lines?.length ? { ...receipt, markdown: [receipt.markdown, ...lines].join('\n') } : receipt;
 }
 
+// What the person reads where an Agent gave no label of its own. The scene
+// FULI inferred (task-scene.js) is an internal name, so a kind it has no word
+// for says nothing rather than printing the name (Jevons 11-23).
+const WORK_KIND_LABELS = Object.freeze({
+  code_review: '代码审查', architecture: '架构', design: '设计', frontend: '前端',
+  implementation: '开发', test_validation: '测试验证', project_management: '项目管理',
+  chat: '闲聊', project_context: '项目工作'
+});
+
 function collaboratorLink(application, item) {
-  const duties = [...new Set((item.runs ?? []).map(run => run.worker_label || run.work_kind).filter(Boolean))];
+  const duties = [...new Set((item.runs ?? []).map(run => run.worker_label || WORK_KIND_LABELS[run.work_kind]).filter(Boolean))];
   const sessions = new Map();
   for (const run of item.runs ?? []) {
     const url = receiptSessionUrl(run.session_url);
@@ -183,7 +256,7 @@ function unassignedReceipt(status, reason) {
     agent_selection_conflict: '分配待确认（FLA 选择冲突）',
     manual_selection: '分配待确认（需要选择负责人）'
   };
-  return `FULI Agent：${labels[status] ?? '分配未完成（AR 尚未返回负责人）'}`;
+  return `FULI Agent：${labels[status] ?? '分配未完成（还没有返回负责人）'}`;
 }
 
 export function employeeCollaborationReceipt(application, context, { tool, permission, sourceApplication }) {

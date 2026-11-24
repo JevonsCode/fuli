@@ -1,0 +1,170 @@
+import { t } from '@/i18n'
+import { REQUESTER_MODES, VISIT_STATES, type RequesterMode, type VisitEvent, type VisitRequest, type VisitRequestCard } from './visit-request-shape'
+import type { VisitAction } from './visit-request-api'
+
+// How the console words and offers work another computer asked for: plain
+// data in, plain words or lists out.
+
+/** A request still waiting on the person or running; the rest only reads. */
+const ACTIONS: Partial<Record<VisitRequest['state'], VisitAction[]>> = {
+  received: ['cancel'], planning: ['cancel'], approved: ['cancel'], running: ['cancel'],
+  awaiting_owner: ['decline', 'approve'],
+  awaiting_review: ['discard', 'keep'],
+}
+
+/** The actions valid for the request's state, in the order they stand (the main one last). */
+export function visitActions(request: Pick<VisitRequest, 'state'>): VisitAction[] {
+  return ACTIONS[request.state] ?? []
+}
+
+/** A guest link only asks (src/visitor-access/port.js). */
+const GUEST_MODES: readonly RequesterMode[] = ['ask_only']
+
+function requesterKind(key: string): 'peer' | 'guest' {
+  return key.startsWith('guest:') ? 'guest' : 'peer'
+}
+
+export function modesFor(key: string): readonly RequesterMode[] {
+  return requesterKind(key) === 'guest' ? GUEST_MODES : REQUESTER_MODES
+}
+
+/** Who asked: the other computer and, when it named one, its assistant. */
+export function askerLine(requester: VisitRequest['requester']) {
+  return requester.agentName
+    ? t('visitRequests.asker', { computer: requester.label, assistant: requester.agentName })
+    : requester.label
+}
+
+/** The state in plain words; a finished run waiting for the person says whether it is ready or held. */
+export function visitStateLabel(request: Pick<VisitRequest, 'state' | 'review'>) {
+  if (request.state === 'awaiting_review' && request.review) return t(`visitRequests.review.${request.review}`)
+  return t(`visitRequests.states.${request.state}`)
+}
+
+/**
+ * The requester's own words as they are shown: text only, without control,
+ * zero-width or bidirectional characters. Line breaks and tabs stay.
+ */
+const HIDDEN_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/g
+export function shownText(text: string) {
+  return text.replace(HIDDEN_CHARACTERS, '')
+}
+
+/** Why the assistant's assessment is missing, in plain words. */
+export function planErrorText(code: string) {
+  return ['planning_interrupted', 'plan_unreadable', 'no_working_directory'].includes(code)
+    ? t(`visitRequests.card.planErrors.${code}`) : t('visitRequests.card.planErrors.other')
+}
+
+// The reasons and codes the server names; any other falls back to a generic sentence, never the bare code.
+const REFUSED = new Set(['ask_only', 'budget_exceeded', 'project_budget_exceeded', 'computer_budget_exceeded', 'planning_busy'])
+const CANCELLED = new Set(['share_removed', 'lead_changed', 'requester_revoked', 'mode_ask_only', 'withdrawn_by_requester'])
+const HELD = new Set(['integrity_violation', 'secret_found', 'outside_envelope', 'unsafe_content', 'too_large', 'runs_on_open',
+  'integrity_unknown'])
+// git_failed: only when Git left no line to show (with one, failedText shows it).
+const FAILED: Record<string, string> = { no_constrained_client: 'noConstrainedClient', restricted_mode_unsupported: 'restrictedModeUnsupported',
+  no_repository: 'noRepository', folder_not_this_project: 'folderNotThisProject', git_failed: 'gitFailedSilent' }
+// A failed Git step's reason: Git's own last line (paths removed on the server), or git_unavailable when Git could not start.
+const GIT_UNAVAILABLE = 'git_unavailable'
+// Git was stopped at its time limit without an answer.
+const GIT_TIMED_OUT = 'git_timeout'
+const known = (values: Set<string>, value: string | null) => (value && values.has(value) ? value : 'other')
+
+/** A finished run nobody reviewed for 14 days: its copy is gone, its result and branch stay. */
+export function reviewExpired(request: Pick<VisitRequest, 'state' | 'result'>) {
+  return request.state === 'expired' && request.result !== null
+}
+
+/** How the request ended, or null while it is open or when it ended with a result. events: its history, when at hand. */
+export function endingText(request: Pick<VisitRequest, 'state' | 'reason' | 'error' | 'result'> & { events?: Pick<VisitEvent, 'note'>[] }) {
+  if (request.state === 'refused') return t(`visitRequests.card.refused.${known(REFUSED, request.reason)}`)
+  if (request.state === 'declined' && request.reason) return t('visitRequests.card.ownReason', { reason: shownText(request.reason) })
+  // A withdrawal says the copy and branch are gone only when they are.
+  if (request.state === 'cancelled' && request.reason === 'withdrawn_by_requester' && somethingLeft(request.events ?? [])) {
+    return t('visitRequests.card.cancelledBecause.withdrawn_left')
+  }
+  if (request.state === 'cancelled' && request.reason) return t(`visitRequests.card.cancelledBecause.${known(CANCELLED, request.reason)}`)
+  if (request.state === 'expired') return t(reviewExpired(request) ? 'visitRequests.card.reviewExpired' : 'visitRequests.card.ownerExpired')
+  if (request.state === 'unknown') return t('visitRequests.card.restarted')
+  if (request.state === 'failed') return failedText(request)
+  return null
+}
+
+function failedText(request: Pick<VisitRequest, 'reason' | 'error'>) {
+  if (request.error === 'git_failed' && request.reason) {
+    if (request.reason === GIT_UNAVAILABLE) return t('visitRequests.card.gitUnavailable')
+    return request.reason === GIT_TIMED_OUT ? t('visitRequests.card.gitTimedOut')
+      : t('visitRequests.card.gitFailed', { reason: shownText(request.reason) })
+  }
+  return t(`visitRequests.card.${FAILED[request.error ?? ''] ?? 'failed'}`)
+}
+
+/** Why a request did not work, for its row in the list; null for any other state. */
+export function failedLine(request: Pick<VisitRequest, 'state' | 'reason' | 'error'>) {
+  return request.state === 'failed' ? failedText(request) : null
+}
+
+// process_unconfirmed / process_ended: the copy stays while the run's program may still be running, and goes once it stopped; cleanup_done: a failed removal went through later.
+const WARNINGS = new Set(['worktree_entry_kept', 'branch_kept', 'cleanup_failed', 'process_unconfirmed', 'process_ended',
+  'cleanup_done'])
+// Why a removal failed, when the server knows: the code after the note (cleanup_failed:git_timeout).
+const CLEANUP_CAUSES = new Set(['git_timeout', 'git_unavailable', 'git_failed', 'worktree_root_changed', 'worktree_outside_root', 'files_left'])
+/** What happened to the copy or the branch apart from the request's own steps (mostly what went wrong removing them). */
+export function warningText(warning: string) {
+  const [kind = '', cause = ''] = warning.split(':')
+  if (kind === 'cleanup_failed' && CLEANUP_CAUSES.has(cause)) {
+    return t('visitRequests.warnings.cleanup_failed_because', { cause: t(`visitRequests.warnings.cause.${cause}`) })
+  }
+  return t(`visitRequests.warnings.${known(WARNINGS, kind)}`)
+}
+const warningKind = (note: string | null) => (note ?? '').split(':')[0] ?? ''
+
+// The copy, its git record or the branch is still there: the last word of the history on removing them is not a success.
+// process_ended: the copy goes right after it, and a removal that fails then notes cleanup_failed after it.
+const LEFT = new Set(['cleanup_failed', 'worktree_entry_kept', 'branch_kept', 'process_unconfirmed'])
+const GONE = new Set(['cleanup_done', 'process_ended'])
+function somethingLeft(events: Pick<VisitEvent, 'note'>[]) {
+  const last = events.map(event => warningKind(event.note)).filter(kind => LEFT.has(kind) || GONE.has(kind)).at(-1)
+  return last !== undefined && LEFT.has(last)
+}
+
+/** Why a finished run was held, in plain words. */
+export function heldText(holdReason: string | null) {
+  return t(`visitRequests.result.held.${known(HELD, holdReason)}`)
+}
+
+/** Who decided and under which mode. */
+export function decisionText(request: Pick<VisitRequest, 'decidedBy' | 'modeAtDecision' | 'modeAtReceipt'>) {
+  if (request.decidedBy === 'owner') return t('visitRequests.card.byOwner')
+  if (request.decidedBy === 'rule') {
+    return t('visitRequests.card.byRule', { mode: modeName(request.modeAtDecision ?? request.modeAtReceipt) })
+  }
+  return t('visitRequests.card.undecided')
+}
+
+export function modeName(mode: RequesterMode) {
+  return t(`visitRequests.mode.names.${mode}`)
+}
+
+const KNOWN_CHECKS = new Set(['budget_left', 'plan_ready', 'areas_inside_project', 'no_dependency_changes', 'no_config_changes',
+  'no_network', 'paths_inside_worktree', 'no_denied_paths', 'no_executables', 'within_size', 'no_secrets', 'integrity',
+  'content_safe', 'nothing_runs_on_open'])
+export function checkName(name: string) {
+  return KNOWN_CHECKS.has(name) ? t(`visitRequests.checks.${name}`) : t('visitRequests.checks.other', { name })
+}
+
+/** Every check a rule made on the way, in order. */
+export function ruleChecks(card: Pick<VisitRequestCard, 'events'>) {
+  return card.events.flatMap(event => event.checks ?? [])
+}
+
+const ACTORS = new Set(['owner', 'rule', 'system', 'requester'])
+const STATES = new Set<string>(VISIT_STATES)
+/** One step of the timeline: who moved it and to what. */
+export function eventText(event: Pick<VisitEvent, 'by' | 'to' | 'note'>) {
+  // A cleanup that went wrong is recorded as a note on its own step; any other note keeps the plain line.
+  if (event.note && WARNINGS.has(warningKind(event.note))) return warningText(event.note)
+  const who = ACTORS.has(event.by) ? t(`visitRequests.card.by.${event.by}`) : event.by
+  const state = STATES.has(event.to) ? t(`visitRequests.states.${event.to}`) : event.to
+  return t('visitRequests.card.event', { who, state })
+}

@@ -16,6 +16,8 @@ import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
 import { decodeWorkerDescriptor, WORKER_DESCRIPTOR_ENV } from '../graphiti/worker-descriptor.js';
+import { runnerRuntimeConfig } from '../runner/runner-mode.js';
+import { dirname } from 'node:path';
 
 export async function runMcpCommand(args, { env = process.env } = {}) {
   if (args.includes('--worker') || args.some(arg => arg.startsWith('--worker='))) {
@@ -38,6 +40,12 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     return;
   }
 
+  // Only the serving version resolves its installed data. A relay launched
+  // from a replaced Windows slot can still find the active server.
+  if (!env[MCP_RELAYED_ENV] && !args.includes('--call')) {
+    runStdioRelay({ target: mcpServerTarget(args) });
+    return;
+  }
   const { runtimeConfigPath } = resolveGraphRuntimeOptions(args, env);
   const configuredSourceApplication = args.includes('--source-application')
     ? requiredOption(args, '--source-application')
@@ -52,19 +60,19 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
     });
     return;
   }
-  // The client starts the relay; the relay starts this same command as the server.
-  if (!env[MCP_RELAYED_ENV]) {
-    runStdioRelay({ target: mcpServerTarget(args) });
+  const sourceApplication = configuredSourceApplication
+    ? normalizeMcpSourceApplication(configuredSourceApplication)
+    : undefined;
+  // A config without a profile gets the small chat set; full must be asked for.
+  const toolProfile = args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat';
+  // A runner serves through its host (docs/runner.md); the same entry, so setup writes nothing else.
+  // Loaded only here: a host's MCP start (relay and server) never loads the runner's modules.
+  if (runnerRuntimeConfig(['--runtime-config', runtimeConfigPath])) {
+    const { runRunnerMcp } = await import('../runner/runner-mcp.js');
+    await runRunnerMcp({ dataDir: dirname(runtimeConfigPath), sourceApplication: sourceApplication ?? 'other', toolProfile, env });
     return;
   }
-  await runStdio({
-    runtimeConfigPath,
-    sourceApplication: configuredSourceApplication
-      ? normalizeMcpSourceApplication(configuredSourceApplication)
-      : undefined,
-    // A config without a profile gets the small chat set; full must be asked for.
-    toolProfile: args.includes('--tool-profile') ? requiredOption(args, '--tool-profile') : 'chat'
-  });
+  await runStdio({ runtimeConfigPath, sourceApplication, toolProfile });
 }
 
 function workerRuntimeArguments(args) {

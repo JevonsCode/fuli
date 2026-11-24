@@ -237,12 +237,15 @@ class StoreProjectAgentTasks(
         self._verify_parallel_plan(request.parallel_plan, projected_participants,
                                    require_staffed=not staffing_hold)
 
+        # An idle Agent of the occupation took a request for a new one: no hire.
+        recruits_as_asked = (request.staffing_intent in {'new_durable', 'temporary'}
+                             and reason != 'idle_same_occupation')
         will_open_recruitment = (
             request.staffing_intent != 'unassigned'
             and reason not in HOLD_RECRUITMENT_REASONS
             and (
                 bool(parallel_recruitment_slots) or not lead
-                or request.staffing_intent in {'new_durable', 'temporary'}
+                or recruits_as_asked
             )
         )
         if will_open_recruitment:
@@ -349,7 +352,7 @@ class StoreProjectAgentTasks(
                 routing_outcome = 'blocked'
                 task_status = 'blocked'
                 reason = 'hr_unavailable'
-        elif not lead or request.staffing_intent in {'new_durable', 'temporary'}:
+        elif not lead or recruits_as_asked:
             recruitment, recruited = await self._open_recruitment(
                 actor,
                 space,

@@ -48,7 +48,7 @@ class PolicyStore(StoreProjectAgentCoordinationPolicy):
 
 
 @pytest.mark.asyncio
-async def test_project_coordination_policy_defaults_both_switches_on():
+async def test_a_project_with_no_saved_policy_hires_without_asking_and_keeps_reuse_and_growth_on():
     store = PolicyStore()
 
     policy = await store.get_project_agent_coordination_policy(
@@ -57,10 +57,55 @@ async def test_project_coordination_policy_defaults_both_switches_on():
         'activity-intake',
     )
 
-    assert policy.ask_before_recruitment is True
+    assert policy.ask_before_recruitment is False
     assert policy.auto_reuse_previous_agent is True
     assert policy.auto_grow_team is True
     assert policy.updated_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stored, asks', [
+    # Saved before graph 21: on with every policy write, never a choice.
+    ({'ask_before_recruitment': True}, False),
+    ({'ask_before_recruitment': True, 'confirm_before_hiring': False}, False),
+    # The person turned asking on.
+    ({'ask_before_recruitment': False, 'confirm_before_hiring': True}, True),
+    ({'confirm_before_hiring': True}, True),
+])
+async def test_a_project_asks_before_hiring_only_once_the_person_turned_it_on(stored, asks):
+    policy = await PolicyStore(stored).get_project_agent_coordination_policy(
+        {'id': 'principal'}, 'personal-space', 'activity-intake')
+
+    assert policy.ask_before_recruitment is asks
+
+
+@pytest.mark.asyncio
+async def test_turning_asking_on_is_saved_where_it_is_read_and_leaves_the_earlier_value_alone():
+    store = PolicyStore({'ask_before_recruitment': True})
+
+    await store.update_project_agent_coordination_policy({'id': 'principal'}, ProjectAgentCoordinationPolicyUpdate(
+        personal_space_id='personal-space', personal_project_id='activity-intake',
+        ask_before_recruitment=True, auto_reuse_previous_agent=True))
+
+    query, write = next((query, parameters) for query, parameters in store.runtime.driver.calls
+                        if 'MERGE (policy:FuliProjectAgentCoordinationPolicy' in query)
+    assert 'SET policy.confirm_before_hiring = $ask_before_recruitment' in query
+    assert 'policy.ask_before_recruitment' not in query
+    assert write['ask_before_recruitment'] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stored, kept', [({'confirm_before_hiring': True}, True), ({'ask_before_recruitment': True}, False), (None, False)])
+async def test_a_save_that_does_not_state_the_switch_keeps_the_stored_one(stored, kept):
+    store = PolicyStore(stored)
+
+    saved = await store.update_project_agent_coordination_policy({'id': 'principal'}, ProjectAgentCoordinationPolicyUpdate(
+        personal_space_id='personal-space', personal_project_id='activity-intake', auto_reuse_previous_agent=False))
+
+    write = next(parameters for query, parameters in store.runtime.driver.calls
+                 if 'SET policy.confirm_before_hiring' in query)
+    assert write['ask_before_recruitment'] is kept
+    assert saved.ask_before_recruitment is kept
 
 
 @pytest.mark.asyncio
@@ -83,7 +128,7 @@ async def test_project_coordination_policy_persists_both_switches_together():
         parameters
         for query, parameters in store.runtime.driver.calls
         if 'HAS_PROJECT_AGENT_COORDINATION_POLICY' in query
-        and 'SET policy.ask_before_recruitment' in query
+        and 'SET policy.confirm_before_hiring' in query
     )
     assert write['ask_before_recruitment'] is False
     assert write['auto_reuse_previous_agent'] is False
@@ -120,7 +165,7 @@ async def test_stale_policy_update_cannot_replace_a_team():
             personal_space_id='personal-space', personal_project_id='activity-intake',
             team_lead_agent_id='lead', expected_updated_at=datetime(2026, 9, 15, tzinfo=UTC)))
     assert error.value.status_code == 409
-    assert not any('SET policy.ask_before_recruitment' in query for query, _ in store.runtime.driver.calls)
+    assert not any('SET policy.confirm_before_hiring' in query for query, _ in store.runtime.driver.calls)
 
 
 def test_team_cannot_repeat_a_role():

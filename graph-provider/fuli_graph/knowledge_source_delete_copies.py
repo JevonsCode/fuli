@@ -7,11 +7,47 @@ mutation erases local publication drafts in the same transaction; remote copies
 are outside this local source operation.
 """
 from .conversation_context import message_bytes
+from .knowledge_sensitivity import EDIT_SOURCE_KINDS
 from .store_agent_conversations import decode_event
+
+# A deleted source that was not explicitly normal (private, restricted or
+# unknown) and not an edit episode, which says nothing about the knowledge.
+_NON_NORMAL_SOURCE = '''
+  NOT coalesce(episode.fuli_source_kind, '') IN $edit_kinds
+  AND coalesce(episode.fuli_sensitivity, '') <> 'normal'
+'''
+
+
+async def _mark_restricted_source_loss(scoped, space, episode_ids):
+    """Before the episodes go, in the delete's own transaction: every item a
+    non-normal one of them is a source of, and that outlives the delete (the
+    items that go were removed before this), carries
+    fuli_had_restricted_source = true from now on, so a visitor's search
+    (knowledge_sensitivity) still withholds it. The marker is never unset;
+    only that search reads it."""
+    if not episode_ids:
+        return
+    params = {'group_id': space['group_id'], 'episode_ids': episode_ids, 'edit_kinds': list(EDIT_SOURCE_KINDS)}
+    await scoped.runtime.driver.execute_query(
+        '''
+        MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(item:Entity {group_id: $group_id})
+        WHERE episode.uuid IN $episode_ids AND''' + _NON_NORMAL_SOURCE + '''
+        SET item.fuli_had_restricted_source = true
+        ''', **params)
+    await scoped.runtime.driver.execute_query(
+        '''
+        MATCH (episode:Episodic {group_id: $group_id})
+        WHERE episode.uuid IN $episode_ids AND''' + _NON_NORMAL_SOURCE + '''
+        WITH collect(episode.uuid) AS withheld
+        MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
+        WHERE any(id IN coalesce(item.episodes, []) WHERE id IN withheld)
+        SET item.fuli_had_restricted_source = true
+        ''', **params)
 
 
 async def remove_source_copies(scoped, space, inventory):
     episode_ids = [episode['uuid'] for episode in inventory['episodes']]
+    await _mark_restricted_source_loss(scoped, space, episode_ids)
     await scoped.runtime.driver.execute_query(
         '''
         MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()

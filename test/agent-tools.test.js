@@ -42,7 +42,7 @@ const NAMES = [
   'record_fla_lesson',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
   'run_delegated_action',
-  'read_diagnostic_events', 'read_old_data', 'read_occupation_kit',
+  'read_diagnostic_events', 'read_old_data', 'read_compounding_statement', 'read_occupation_kit',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -116,13 +116,12 @@ const NAMES = [
   'list_project_agent_routing_learning',
   'ignore_project_agent_routing_learning',
   'reset_project_agent_routing_learning',
-  'list_workflow_candidates',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
   'preview_personal_project_action',
   'apply_personal_project_action',
   'get_graphiti_status',
-  'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+  'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
 ];
 
@@ -450,7 +449,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['ignore-project-agent-routing-learning', input]),
     resetProjectAgentRoutingLearning: async (input) =>
       calls.push(['reset-project-agent-routing-learning', input]),
-    listWorkflowCandidates: async (input) => calls.push(['workflow-candidates', input]),
     reviseKnowledgeItem: async (input) => calls.push(['revise-knowledge', input]),
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
     previewKnowledgeProjectAction: async (input) => calls.push(['preview-project-action', input]),
@@ -470,6 +468,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
         run_delegated_action: { taskContextToken: 'fuli-task-probe', route: 'PATCH /api/recall-policy', reason: 'probe' },
         read_occupation_kit: { personalSpaceId: 'space-a', occupation: 'testing' },
         list_reply_echoes: { personalSpaceId: 'space-a', taskContextToken: 'fuli-task-probe' },
+        // The app's owner is the probe task's FLA, read from its token.
+        submit_agent_app_version: { taskContextToken: 'fuli-task-probe' },
         ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
           'pause_work_surfaces', 'resume_work_surfaces'].map(tool => [tool, { taskContextToken: 'fuli-task-probe' }])) }[name];
       await callAgentTool(app, name, { probe: name, ...probe });
@@ -520,7 +520,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'delete-executor-routing-rule', 'record-project-agent-task-outcome',
     'list-project-agent-routing-learning', 'ignore-project-agent-routing-learning',
     'reset-project-agent-routing-learning',
-    'workflow-candidates',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
     'status'

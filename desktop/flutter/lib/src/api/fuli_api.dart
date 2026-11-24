@@ -1,4 +1,5 @@
 import '../doctor/doctor_report.dart';
+import 'glance.dart';
 import 'migration_plan.dart';
 
 // The FULI console's HTTP API as this client uses it. Implementations talk to
@@ -14,9 +15,16 @@ abstract interface class FuliApi {
   Future<MigrationPlan> migrationPlan();
   Future<ApplyOutcome> applyMigration(String digest);
 
-  /// Requests Agents left for the person that are still open, newest first.
+  /// Requests Agents left for the person that are still open, newest first,
+  /// at most [openAttentionLimit].
   Future<List<AttentionNotice>> openAttention();
+
+  /// The few rows the tray menu shows of FULI's work. Throws [FuliHttpError]
+  /// with status 404 when this FULI has no glance yet.
+  Future<Glance> glance();
 }
+
+const openAttentionLimit = 20;
 
 /// One open request from an Agent, as much as a notification shows.
 class AttentionNotice {

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 // plain statement of what happens. This scans every zh-CN and en-US console
 // message for a FULI command, a shell instruction or the word terminal.
 const COMMAND = new RegExp([
-  String.raw`\b(?:fuli|fl) (?:start|stop|restart|status|open|clients|connect|connect-workspace|mcp|setup|peer|remote-mcp|employee|app|models|session|worker|update|uninstall|migrate|graph)\b`,
+  String.raw`\b(?:fuli|fl) (?:start|stop|restart|status|open|clients|connect|connect-workspace|mcp|setup|peer|remote-mcp|employee|app|models|session|worker|update|uninstall|migrate|graph|runner)\b`,
   String.raw`终端`,
   String.raw`\b[Ii]n (?:a|the|your) terminal\b`,
   String.raw`\bnpm (?:install|i|update|run)\b`,

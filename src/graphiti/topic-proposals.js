@@ -1,4 +1,5 @@
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { sourceConsoleUrl } from './source-marker.js';
@@ -14,8 +15,8 @@ import { markdownLink } from '../text/markdown-link.js';
 // triage counts; no model is called. Forming also moves what the topic's
 // sessions held in their temporary projects into it, and an undo moves back
 // what nobody changed since (the Provider's topic_knowledge_migration). Then
-// Bole hires the project's first team and Astro hands the topic over to each
-// of them as a task of their own (topic-team-handoff.js).
+// Astro hands the topic over to the project's lead as a task of its own
+// (topic-team-handoff.js); Bole hires anyone else when a task needs them.
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
 const PROPOSAL_MIN_DAYS = 2;
 const PROPOSAL_ASK_AGAIN_AFTER = 3;
@@ -39,7 +40,7 @@ export async function proposalForTopic(application, topic) {
   const [stats] = await topics(application, { topic, limit: 1 });
   if (!isProposable(stats) || (stats.count - (stats.declined_count ?? 0)) % PROPOSAL_ASK_AGAIN_AFTER !== 0) return null;
   const url = `${application.consoleUrl ?? sourceConsoleUrl(null)}/employees/assistant`;
-  return { status: 'ask_user', proposed_by: 'employee.assistant', ...proposalView(stats), console_url: url,
+  return { status: 'ask_user', proposed_by: ASSISTANT_AGENT_ID, ...proposalView(stats), console_url: url,
     ask_user: `「${stats.topic}」已经聊了 ${stats.count} 次、跨 ${stats.days} 天，还没成立项目。`
       + `要为它成立项目、招人长期维护吗？请在 FULI 控制台决定：${url}`,
     guidance: 'Add ask_user to the end of your reply. Only the person decides, in the console; never form the project yourself.' };
@@ -64,7 +65,7 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
   const formed = await formTopicProject(application, stats, existing, reason, sourceApplication);
   const link = `${receiptConsoleUrl(application)}/employees/assistant?${new URLSearchParams({
     promoted: formed.personal_project_id, topic: stats.topic })}`;
-  return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
+  return { ...formed, status: 'promoted', proposed_by: ASSISTANT_AGENT_ID,
     notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」`
       + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}${teamNotice(formed.team)}。`
       + `${markdownLink('改名、换上级或撤销', link)}`,
@@ -74,20 +75,20 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
         ? ' Then ask start_question with the native choice of the host; only the person answers it.' : '') };
 }
 
-// Whether the team starts now is the person's call at that moment (Jevons
-// 11-11): one click, with 其他 for their own words. Each handover is a
-// backlog task, so "yes" is setting those tasks to queued.
+// Whether the lead starts now is the person's call at that moment (Jevons
+// 11-11): one click, with 其他 for their own words. The handover is a
+// backlog task, so "yes" is setting it to queued.
 function startQuestion(formed) {
   // Only a task waiting in the backlog can be started; a blocked one says why in the task itself.
   const tasks = (formed.team?.handoffs ?? []).filter(item => item.task_id && item.status === 'backlog').map(item => item.task_id);
   if (!tasks.length) return {};
-  return { start_question: { ask: `「${formed.topic}」的团队现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
+  return { start_question: { ask: `「${formed.topic}」的负责人现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
     on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', summary: '你说马上开工',
       personal_project_id: formed.personal_project_id, task_ids: tasks } } };
 }
 
 // The person said yes: an AI-draft brief, a lead staffed through AR, every
-// open conversation of the topic attached, and the team hired and briefed.
+// open conversation of the topic attached, and the lead briefed.
 // People can rename, merge or split it afterwards.
 export async function acceptTopicProposal(application, { topic, sourceApplication = 'other' }) {
   const stats = await openTopic(application, topic);

@@ -11,7 +11,7 @@ import type { ProjectAgentRecord } from '@/types'
 const BUILT_IN_ROLE_IDS = new Set(['employee.assistant', 'employee.jefa', 'employee.bole', 'employee.tonborg'])
 // Not FLAs: the built-in roles and the retired AR identity.
 const ROLE_AGENT_IDS = new Set([...BUILT_IN_ROLE_IDS, 'fuli-project-hr'])
-const ROLE_CAPABILITIES = new Set(['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'])
+const ROLE_CAPABILITIES = new Set(['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg', 'fuli.employee:assistant'])
 const NOT_FLA_TYPES = new Set(['coordinator', 'hr', 'temporary'])
 
 /** Whether this Agent is one of FULI's built-in roles, which keep their own name for `#FLA` when renamed. */

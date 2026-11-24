@@ -161,9 +161,64 @@ profile allows.
 
 Devices on the same trusted local network can share project leads. Each computer
 needs FULI 0.12.1 or later. Open **Settings → LAN roundtable (Beta)** on the computer
-itself. Choose one computer to host, copy its one-use invitation to the other
-computer, compare the displayed fingerprints, and join. Select the project leads
-and local clients you want to share. Sharing is off until you choose it.
+itself. Turn on **附近的 FULI** on both computers (`fuli peer nearby on`): for up to 30
+minutes each advertises over mDNS a random instance id, the name you chose (default
+`FULI` plus four fingerprint characters, never the computer's name), its port, a short
+fingerprint and the protocol version, only on physical LAN addresses, and lists the
+others. Click 配对 on one computer; the other shows who asks at once. Both then show
+the same 6-digit code, derived from both certificate fingerprints and a fresh nonce
+from each side. Compare the two screens, tick that they match and click 确认 on each
+computer (`fuli peer confirm <code shown on the other computer>`). While FULI is in its
+test phase an Agent you asked to pair the two computers may confirm for you, with the LAN
+roundtable permission on; it tells you which device and digits it confirmed.
+Only then are the devices paired, with the same mutual-TLS trust records an invitation
+writes. A request nobody confirms ends after 2 minutes. Every handshake is counted in the
+computer's own store before any nonce leaves it: at most 3 per device and address and 5
+in all per 10 minutes, and 10 per rolling 24 hours. Turning nearby off and on, an Agent or
+a restart does not clear the count; only time does, or the person on that computer (清零,
+`fuli peer nearby clear-attempts`, a deliberate second step, since many attempts can mean
+someone is trying to pair uninvited). So a device in the middle wins with a chance of at
+most 10 in a million per computer per 24 hours, and each try shows on the screens. The
+bound assumes the count is measured in real time: while FULI runs it follows the
+process's monotonic clock, so setting the system clock back or forward changes nothing;
+across restarts it starts no earlier than the latest stored attempt; only a system clock
+moved forward while FULI is stopped ages the count, once. The nearby list is keyed by an
+unauthenticated fingerprint prefix, so a device can pose as another in the list; that can
+only block or misdirect a pairing, never grant one, because the code binds both full
+fingerprints. Pairing requests arriving on a virtual or VPN adapter are not answered. A
+pairing shows as waiting until the other computer first connects, and only then as paired. Trust a side
+wrote for a pairing the other side never used, or that its person cancelled, is taken back
+(the one-minute deadline survives a restart). Nearby pairing turns itself off after a
+pairing or 30 minutes (turning it on again while on keeps that end); if the mDNS port
+cannot be opened it turns off with the reason and the console keeps running. While it is
+off, its routes answer like any unknown path. Afterwards a listener returns to the
+address the person chose, or narrows to the address its paired devices reached (kept
+across restarts). Every listener move (widening for nearby pairing, returning, narrowing,
+「重新监听」) runs one at a time and the latest target asked for wins; a narrowing never
+replaces a move to an address that waits (the address the person chose, 「重新监听」), and
+turning nearby pairing off while it is still opening returns the listener to the
+chosen address. A move waits at most 30 seconds for the listener it replaces to stop;
+past that nothing listens, `listenFailure.code` is `STOP_TIMEOUT` (the card says the
+previous listener did not stop) and later moves, 「重新监听」 too, go on. When that address is gone, nothing listens and the card says so;
+turning the LAN roundtable off revokes every paired device even then. An address that is
+only away (a laptop on another network: `listenFailure.addressAway`) is looked for every
+30 seconds, and the listener starts by itself once that same address is on this computer
+again, with no restart, no other address and no change of trust; the card says so instead
+of asking for off and on. A network that gives the computer a different address does not
+bring it back: then off and on, and pairing again, is still the way. The computer that already coordinates
+other devices keeps coordinating; otherwise the computer that was picked from the list
+does. Without nearby pairing, choose one computer to host, copy its one-use invitation
+to the other computer, compare the displayed fingerprints, and join. Select the project
+leads and local clients you want to share; nothing is shared until you tick it. A
+project another paired computer registered with the same own repository is suggested:
+devices send keyed digests of their own repository addresses only to the coordinator,
+which tells each device which of its own digests another paired device also has. The
+coordinator (a paired device holding the key) could test guessed addresses. Another
+paired device could too, but only 50 digests per set and 3 new sets a day (kept across
+coordinator restarts; the first set under a new group key is free); it learns
+only matches with its own (or guessed) addresses, never another device's other projects.
+A match cannot depend on who published first, because two devices registering the same
+project legitimately publish in either order.
 
 `find_agents` includes shared leads with their device and project names. Use the
 returned `peer:` address with `message_agent`. Remote asks support `auto` or `new`
@@ -189,6 +244,266 @@ The console's separate LAN-access switch does not turn this feature on.
 The equivalent local controls are available with `fuli peer --help`. Full database
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
+
+### Requests run on my computer (seconding, 外派)
+
+A project lead on a paired computer can ask the lead of a project this computer
+shared to do a piece of work here: `visit_shared_lead` `action: "request"` with a
+title (≤160), what to do (≤4000) and up to 10 expected areas, carried as a
+`peer-query/1` assertion signed for the `request` purpose (only a project lead's
+task gets it). The asker keeps the `requestId` and reads progress with
+`action: "request_status"`; only the device that made a request can read it.
+That device can also take its request back with `action: "request_withdraw"`
+(signed for the `request` purpose too): before its run starts (a planning wake in
+flight is stopped), or once it was shown a ready result while its computer is
+still fully trusted. The request ends `cancelled` with the reason
+`withdrawn_by_requester`, its event says the requester did it, and its worktree and
+branch are removed. A removal that fails is noted on the request's history with its
+cause when known (`cleanup_failed:git_timeout`, `git_unavailable`, `git_failed`,
+`worktree_root_changed`, `worktree_outside_root`, `files_left`), tried again about
+each minute by the service itself (one pass at a time) for a day (`cleanup_done` once it went through), and
+the owner's card says the copy or branch is still there until then. A run in progress (stopping it would skip the checks its
+result gets), a held result, a result the requester was not shown, a ready result
+of a computer since trusted less and anything kept, discarded or ended answer
+`request_not_withdrawable`: those stay the owner's, and keeping a branch is never
+the requester's or an Agent's to do.
+It always gets the state, the title and the owner's one-line reason. The result
+(summary, branch name, at most 50 cleaned paths, diffstat; never the patch)
+crosses only once the owner kept the branch, or, for a computer the owner marked
+fully trusted, as soon as the run is ready. Until then a finished result reads
+as `awaiting_owner`, held or not, like any request waiting for the owner.
+The summary is the run's own final answer: the owner reads it on the card
+before keeping, and it is exactly what the other computer will see. The
+planning pass reads the live project folder (ignored files such as `.env`
+included), so none of its free text reaches the run: the run prompt gets only
+the plan's areas (path-like, cleaned, at most 10) and its yes/no answers. Every
+text in a prompt (the request, the requester's label, the lead, the plan) is
+JSON with `<` and `>` escaped inside its own block, so no text can close a
+block early.
+
+On this computer every request is a row in `visitor-access.sqlite` (format 3)
+with an event row for each change of state:
+
+```
+received ─(ask_only / over a budget / planning busy)→ refused
+received → planning → awaiting_owner ─approve→ approved
+                    └(auto envelope / trusted)→ approved
+planning | approved ─(no constrained client)→ failed
+awaiting_owner ─decline→ declined | ─7 days→ expired | ─cancel→ cancelled
+approved → running → awaiting_review(ready | held) | failed | cancelled | unknown
+awaiting_review → kept (branch stays) | discarded (worktree and branch removed)
+                | ─14 days unreviewed→ expired (worktree removed, branch kept)
+```
+
+A visit request's planning pass and its run are plain constrained client runs
+(`packages/roundtable/src/roundtable/constrained-run.js`), not sessions of the
+lead: no MCP server at all (FULI's included), no grant, none of the person's
+settings, so no FULI tool can send anything to another computer. The lead's
+name and responsibility come in the prompt as data, as does the requester's
+text. Only Claude Code is used, in its restricted mode: `--restricted` removes
+the tools that run commands or code and WebFetch unless `--tools` names them,
+ignores the user, project and local settings files, confines the file tools to
+the working directory, refuses bypassPermissions and leaves writes to settings,
+Git and tool configuration to a person; `--strict-mcp-config` with an empty
+`--mcp-config` loads no MCP server. Planning: `--permission-mode dontAsk` with
+Read, Grep and Glob, in the owner's project folder (3 minutes). The run:
+`--permission-mode acceptEdits` with Read, Grep, Glob, Edit, Write and
+MultiEdit, Bash, PowerShell, WebFetch, WebSearch and NotebookEdit denied, in the
+request's worktree (15 minutes). The run's start event must prove the
+restriction: it may list only the step's tools and no MCP server, or the run is
+stopped at once and fails with `restricted_mode_unsupported`. Model access the person set in the `env` block
+of their user settings (`CLAUDE_CONFIG_DIR` respected; a base URL, a model
+name) is passed to the run's process environment, string values only, never on
+the command line or kept. A Claude Code too old for `--restricted` fails the
+run with `restricted_mode_unsupported`; it is never run without it. Codex is not
+used for visit requests yet: its `-c mcp_servers=…` override merges with the
+person's table rather than replacing it (the wake turns their servers off by
+name instead), and it is not verified that its platform sandbox confines the
+shell its workspace-write mode keeps. A lead whose clients are only Codex gets its request ended as
+`failed` with `no_constrained_client`.
+
+Nothing is copied before approval. What happens next depends on the
+requester's mode, set per paired computer (default 计划): 只能问 refuses
+requests; 计划 waits for the person; 自动 runs only when `auto_envelope_v1`
+passes before the run (the budget, a plan inside the project with no
+dependency, config or network change) and checks the actual diff after it
+(paths inside the worktree; no manifests, lockfiles, build files and wrappers
+such as `build.rs`, `CMakeLists.txt`, `*.targets` or `*.props`, CI, editor,
+container, Python start-up and Agent settings such as `.vscode/`,
+`.devcontainer/`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.mcp.json`, `*.pth` or
+`sitecustomize.py`, env files, `.git*`, `config/`, scripts or executables, and
+on Windows no file without an extension; at most 400 lines in 20 files; no
+secrets), holding the result otherwise; 完全信任 skips only the approval and is
+meant for the person's own computers. A guest link stays 只能问 and takes no requests.
+
+An approved request gets a Git worktree on the branch `fuli/visit/<id>`, cut
+from the repository's HEAD commit under `<dataDir>/visit-worktrees/`; its path
+and branch are recorded before they are made, so a restart in between still
+tidies both. One run per lead at a time on this computer.
+
+A remote `message_agent` ask from another computer (a read-only wake of the
+lead) loads only FULI's own MCP server, from the entry FULI's installer writes
+for that client, and no MCP server at all when FULI cannot name it; never the
+person's others. Without that entry FULI's own hooks do not load either, so
+such an ask fails safely (`delegation_not_redeemed`) instead of loading the
+person's other servers. An ask, chat message or group discussion started by a
+runner (another computer of the person using this FULI, `docs/runner.md`) is
+woken the same way: read-only, only FULI's own MCP server, never in a folder
+the runner named (a fresh session starts in an empty folder FULI owns), and
+with no stand-in; the ask records the runner's fingerprint. Such a wake, and
+the wake of a paired device's ask, carries its origin in
+`FULI_ROUNDTABLE_ORIGIN`, and the woken session's own asks are held the same
+way, so no later hop reaches a full wake. On Windows such an ask wakes only
+Claude Code (no shell in its read-only wake), never Codex, and is refused
+(`no_isolated_client`) when no Claude Code can start; on macOS and Linux
+Codex's read-only sandbox also blocks the network and Codex is woken too. A group discussion turn, whose text comes from the
+person's own Agents, loads only FULI's own server too where FULI can name that
+entry, and keeps the client's own servers where it cannot, so a discussion
+never fails for the lack of it. The entry is the one FULI's installer writes,
+with the chat tool profile whichever profile the person's own entry names.
+Claude Code loads exactly that set (`--strict-mcp-config`), checked against the
+real CLI. Codex merges a `-c` table into the person's configuration instead of
+replacing it, so FULI reads the servers and plugins that the person's
+`$CODEX_HOME/config.toml` and the project's `.codex/config.toml` files (from the
+working folder up to the folder with `.git`) name, and turns each one off by name
+(`enabled = false`), with plugins off by default and apps off
+(`features.apps=false`). A configuration file that exists but cannot be read or
+parsed refuses the wake (`mcp_config_unreadable`). Not covered on Codex:
+servers an administrator's managed configuration adds, and project files above
+a custom project-root marker. The Codex side follows Codex's documentation and
+source; a run against a real Codex has not confirmed it yet.
+
+After the run FULI works on the worktree only with its Git directory and work
+tree named explicitly (never discovered from files the run left), without the
+person's system or global Git configuration, hooks, fsmonitor, untracked cache,
+submodule recursion, external diff or textconv. Before anything is staged it
+holds the result as `unsafe_content` when the worktree's `.git` pointer is not
+the one FULI wrote, any symbolic link, junction or other link exists, any other
+`.git` file or folder exists under any spelling Git or the file system treats
+as `.git` (any case, `git~1`, trailing dots or spaces, the characters HFS+
+ignores), a
+`.gitmodules` (any spelling) is added or changed or a file sits inside a
+submodule path, and as `too_large` past 2,000 changed files or 50 MB. The walk is
+asynchronous: on a worktree of 3,000 files the inspection took about 0.5 s and
+the removal about 0.5 s, with the console's event loop never held for more than
+16 ms.
+Otherwise it commits the branch as `FULI visit <visit@fuli.invalid>`, reads the
+files and diffstat from Git, scans the summary and the added lines for secrets,
+and compares a digest of the owner's checkout (status, tracked changes,
+untracked files, the names Git ignores), the repository config,
+`config.worktree`, `info/exclude`, `info/attributes`, `objects/info/alternates`,
+its hooks folder, the other worktrees Git knows and every ref except the
+request's own branch with the one taken before the run; a difference holds the
+result as `integrity_violation`. The "before" snapshot is taken only when the
+run is about to start; each Git step of a snapshot has 60 s, and one that could
+not be taken holds the result as `integrity_unknown` instead of waiting. In
+every mode a result that changed files which can run code when the branch is
+opened, checked out or built (the auto envelope's deny list: manifests,
+lockfiles, build files, editor, container, Agent and Python start-up settings,
+scripts, executables) is held as `runs_on_open`, and the card lists those paths
+(`heldPaths`, at most 50, each cut to 200 characters). This is detection only: nothing is restored,
+and work done in the owner's own checkout during a run also holds it. A commit
+that fails after its files were added leaves unreachable objects that Git's own
+gc removes later; FULI does not prune the owner's object store. FULI never
+merges or pushes.
+
+Removing a worktree never uses `git worktree remove --force` (which follows a
+junction planted inside): links and junctions are unlinked themselves, never
+followed, the remaining plain tree is deleted by Node, then the request's own Git worktree
+entry; nothing outside `<dataDir>/visit-worktrees/` is ever removed. FULI
+never runs `git worktree prune`, which would also drop the owner's other
+worktrees whose folders are missing (one on an unplugged drive): it removes
+only `<common>/worktrees/<id>`, once that entry's `gitdir` file names this
+request's worktree, compared by real location (the parent folder's real path and the
+folder name), never by the text of the paths, so 8.3 short names, letter case
+and symlinked temp folders agree. An entry that does not name it stays, with
+the branch, and the request notes `worktree_entry_kept` (a branch Git refused
+to delete: `branch_kept`; a removal that failed: `cleanup_failed`); keep and
+discard answer it as `warning`.
+
+Budgets: per requester 5 requests a day (3 for a guest link, which takes none
+yet), 10 open (results waiting for review included), 60 minutes of planning and
+run wakes a day; per shared project 10 requests a day; per computer 20 a day;
+at most 2 planning wakes at once. A computer in the fully trusted mode is the
+owner's own: it is held to no count of requests or wake minutes a day, and its
+requests are not part of the project's or the computer's counts. One stop of
+ten holds for it, against a requester stuck in a loop: its requests that are
+unfinished or not looked at yet, together with those of the last 24 hours that
+failed after costing a wake or were taken back by the requester; at ten the
+next is refused. The two planning wakes
+at once and one run of a lead at a time hold for it as for everyone. When the project folder is looked at before
+planning, only a folder that is gone, or Git's own answer that the folder is in no repository
+(or in one without a work tree), ends the request
+`no_repository`; a Git that failed, was refused the folder by the system or did not answer
+in time ends it `git_failed`, with the cause (`git_timeout`, or Git's last line without
+paths) for the owner only. A
+request that failed on this computer before its run started (`no_repository`,
+`folder_not_this_project`,
+`git_failed`, `no_constrained_client`, `no_working_directory`) is not counted
+among the requester's requests of the day; from a requester that is not fully
+trusted it still counts for the project and the computer. A request over any of them is refused in the
+same transaction, before any run, and a request or a status read must also pass
+the visitor limits a card or search meets; status reads are also counted in
+memory (60 per requester in 10 minutes) and write nothing.
+Lowering a requester to 只能问, revoking its pairing, removing the share, or the
+project getting another lead (checked again just before a run) cancels its open
+requests; a running one is stopped through its abort signal and its worktree is
+removed only once the run, its commit step included, has ended. A rule's
+approval holds only under the mode it was made in (or 完全信任): lowering to 计划,
+or from 完全信任 to 自动, returns rule-approved requests that have not started to
+the person, queued runs included; a running one goes on and is reviewed by the
+mode it was approved in. Raising the mode approves nothing that waits. After a restart a run that was going is
+`unknown`, its worktree is removed, and it is not run again.
+
+The console reads `GET /api/visit-requests` (with `awaiting` for 等你拍板) and
+`GET /api/visit-requests/:id` (events, and the patch for the owner) and the modes
+set so far with `GET /api/visitor-access/requesters`, and decides
+with `POST /api/visit-requests/:id/{approve,decline,keep,discard,cancel}` and
+`PUT /api/visitor-access/requesters/:key/mode`, all on this computer's loopback
+only. An FLA may decline or cancel for the person (lan_roundtable permission);
+approving, keeping, discarding and every mode change stay the person's own.
+
+### Guest links: asking without FULI (rec issue 133)
+
+A guest link lets someone on the same network whose computer has no FULI ask one
+project here, read-only, from their own AI client. The person makes it on the
+project page (访客链接 › 生成; 1, 7 or 30 days, 7 by default) and copies a
+`claude mcp add --transport http …` line for Claude Code, or one sentence for any AI
+that can run commands. The token (`fgl_` and 32 random bytes)
+is shown only in that dialog; FULI stores its SHA-256 in `visitor-access.sqlite`.
+
+- **Listener.** `src/guest-access/` runs its own HTTP listener on port 2729 of this
+  computer's private addresses, only while a link is live. It looks them up again on
+  every change and about every minute, rebinds when they changed, and the card offers a
+  physical adapter's address before a Hyper-V, WSL or Docker one. A carrier-grade NAT
+  address (100.64.0.0/10) is bound and accepted only on an adapter named like a VPN
+  (Tailscale, WireGuard, ZeroTier, utun, tun, tap, vpn), never one an ISP hands out
+  directly. Each server limits header and request time, keep-alive, connections and
+  header count. It never reaches the console's
+  handlers or `/api/*`; the console's LAN access is unchanged and stays off it.
+- **Checks before any route.** A guest source address (as above), a Host
+  naming a bound address, no Origin, and the token in `Authorization: Bearer` only.
+  Missing, wrong, expired and revoked tokens get one `401`; 10 failures from one
+  address in 10 minutes give `429` for 10 minutes, even with a right token (a guest
+  behind the same NAT as someone guessing waits too). The 访客链接 card shows how many
+  such visits were refused today, without addresses; the count lives in memory and
+  starts from zero when FULI restarts. Every request reads the link again, so 撤销
+  works on the next request, and the last link's end stops the listener.
+- **Routes.** `GET /guest/1/card` (the visiting assistant's card, cleaned and
+  recorded the same way) and `POST /guest/1/search { queries: [1-4] }`, the same narrowed visitor search as a paired computer's visiting assistant
+  (`src/visitor-access/`), recorded per attempt under `guest:<linkId>` with its
+  limits. The same two are MCP tools at `/guest/1/mcp` (`guest_card`,
+  `search_project_knowledge`), on the session plumbing the remote connector uses
+  (`src/mcp/http-session-transport.js`); each session belongs to its link, and 撤销
+  closes that link's open sessions, as does its expiry; one link holds at most 4 of the
+  16 sessions. Every contact made with a valid token shows under 「最近被问」 as
+  「访客链接 guest-…」. A link only asks; running work on this computer
+  is a later step.
+- **Console.** `GET/POST /api/visitor-access/guest-links` and
+  `DELETE /api/visitor-access/guest-links/:linkId` answer on loopback only. Creating
+  is the person's own; revoking may be delegated (LAN roundtable permission).
+- The link travels unencrypted on that network, so links are short-lived and
+  revocable; the card on the project page says so.
 
 ## Chat push and unread delivery (RT-1)
 
@@ -259,8 +574,8 @@ caps (fixed members, each consumed once, two response rounds, five follow-ups),
 and with no more authority than `message_agent`.
 
 Each member turn is a real `message_agent` wake in a fresh session (no resume) of
-the member's own allowed client. Claude Code discussion wakes deny file edits and the shell: they keep the
-non-interactive mode and add `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. The prompt holds the
+the member's own allowed client. Claude Code discussion wakes, like asks from another computer, have the reading tools only: they keep the
+non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Where FULI can name its own MCP entry for the client, the wake loads only that server (on Codex by turning the person's other servers, plugins and apps off, as for an ask from another computer); where it cannot, tools of other MCP servers the person configured in that client still follow the person's own allow rules there. The prompt holds the
 question, the member's role line and 800-character excerpts of the other members;
 the member's own FULI entry delivers its preferences and knowledge index. The
 Provider issues and verifies a per-attempt delegation, and only a verified answer

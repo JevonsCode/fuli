@@ -70,6 +70,27 @@ test('retrieval term calls send the space, project and items with ordinary auth'
   }
 });
 
+test('a scope export sends the space, scope and vector choice with ordinary auth and returns the envelope', async () => {
+  const calls = [];
+  const envelope = { replicaProtocol: 1, scope: 'project:synthetic-project', nodes: [], digest: 'a'.repeat(64) };
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, envelope); } });
+  assert.deepEqual(await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'project:synthetic-project' }),
+    envelope);
+  await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', vectors: false });
+  assert.deepEqual(calls.map(({ url }) => url), ['http://provider.test/v1/scopes/export',
+    'http://provider.test/v1/scopes/export']);
+  assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
+    { personal_space_id: 'synthetic-space', scope: 'project:synthetic-project', vectors: true },
+    { personal_space_id: 'synthetic-space', scope: 'global', vectors: false }
+  ]);
+  for (const { options } of calls) {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.authorization, 'Bearer synthetic-token');
+    assert.equal(options.headers['x-fuli-human-review-token'], undefined);
+  }
+});
+
 test('conversation triage reaches every Provider operation, decline and reopen included', async () => {
   const urls = [];
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
@@ -251,7 +272,8 @@ test('provider client turns structured validation failures into actionable messa
       );
       assert.deepEqual(error.validationErrors, [{
         field: 'episode.entities[0]',
-        message: 'Value error, non-known-known knowledge requires a reasoning summary'
+        message: 'Value error, non-known-known knowledge requires a reasoning summary',
+        type: 'value_error'
       }]);
       assert.ok(!JSON.stringify(error.details).includes('must not be copied'));
       return true;
@@ -321,28 +343,6 @@ test('provider client maps every persistent knowledge review endpoint', async ()
   assert.equal(calls.every(({ options }) => options.method === 'POST'), true);
 });
 
-test('provider client maps workflow reads without exposing the human review channel', async () => {
-  const calls = [];
-  const client = new GraphitiProviderClient({
-    baseUrl: 'http://127.0.0.1:8787',
-    accessToken: 'local-test-token',
-    fetchImpl: async (url, options) => {
-      calls.push({ url, options });
-      return jsonResponse(200, {});
-    }
-  });
-  const scope = {
-    personal_space_id: 'personal-1',
-    personal_project_id: 'project-1'
-  };
-
-  await client.searchWorkflowCandidates(scope);
-  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ['/v1/workflow-candidates/search']);
-  assert.equal(calls[0].options.method, 'POST');
-  assert.equal(client.reviewWorkflowCandidate, undefined);
-  assert.equal(client.recommendWorkflowCandidates, undefined);
-});
-
 // 11-11: workflow observations were removed; an old runtime config's token is
 // still accepted but never sent.
 test('a client built with the old workflow observation token never sends it', async () => {
@@ -356,8 +356,10 @@ test('a client built with the old workflow observation token never sends it', as
       return jsonResponse(200, {});
     }
   });
-  await client.searchWorkflowCandidates({ personal_space_id: 'personal-1' });
+  await client.reviseKnowledgeItem('item-1', { personal_space_id: 'personal-1' });
   assert.equal(client.recordWorkflowObservation, undefined);
+  // 11-23: nor does it read learned workflow candidates any more.
+  assert.equal(client.searchWorkflowCandidates, undefined);
   assert.equal('x-fuli-workflow-observation-token' in calls[0].options.headers, false);
 });
 

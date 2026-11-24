@@ -102,6 +102,8 @@ test('real Neo4j + HTTP Provider + MCP: Bole dismisses with a reason and later A
     idempotencyKey: 'synthetic-dismissal-recruitment', title: 'Synthetic recruitment',
     objective: 'Recruit another engineer for the synthetic sample.', workKind: 'implementation',
     staffingIntent: 'new_durable', recruitmentOccupation: { role: 'engineering' }, start: false,
+    // No idle engineer holds it, so this asks Bole to hire instead of reusing one.
+    requiredCapabilities: ['synthetic-release-signing'],
     contextQueries: ['synthetic sample'],
     routingReason: 'Synthetic recruitment after a dismissal.' });
   assert.equal(recruiting.status, 'awaiting_recruitment', JSON.stringify(recruiting).slice(0, 2000));

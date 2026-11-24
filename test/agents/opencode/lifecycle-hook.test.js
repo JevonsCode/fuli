@@ -4,7 +4,7 @@
 // directory, port-2727 service, OpenCode configuration or client is used.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -156,5 +156,23 @@ test('a broken hook answers the prompt with one line and the stop with nothing',
     if (expected) assert.match(output.context, expected);
     else assert.deepEqual(output, {});
     assert.doesNotMatch(lines[0], /private/, 'no exception text or path is printed');
+  }
+});
+
+test('on a runner the hook opens nothing: the prompt is told to enter through MCP, the stop gets nothing', async (t) => {
+  // A runner's data directory (docs/runner.md): its runner store and no graph runtime of its own.
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-runner-plugin-hook-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  mkdirSync(join(dataDir, 'runner'));
+  writeFileSync(join(dataDir, 'runner', 'runner.sqlite'), '');
+  const refuse = () => { throw new Error('a runner\'s hook opens nothing'); };
+  for (const [event, expected] of [['prompt', /FULI runner.+get_collaboration_preferences/], ['stop', null]]) {
+    const lines = [];
+    await runOpenCodeLifecycleCommand(['--runtime-config', join(dataDir, 'graph-runtime.json'), '--event', event], {
+      readInput: refuse, openApplication: refuse, createLeases: refuse, write: (line) => lines.push(line) });
+    assert.equal(lines.length, 1);
+    const output = JSON.parse(lines[0]);
+    if (expected) assert.match(output.context, expected);
+    else assert.deepEqual(output, {});
   }
 });

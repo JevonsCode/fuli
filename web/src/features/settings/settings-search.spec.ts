@@ -70,6 +70,15 @@ describe('linkedCard', () => {
     expect(linkedCard(root, '')?.dataset.card).toBe('ports')
     root.remove()
   })
+
+  it('never returns a card the search hid', () => {
+    const root = page()
+    filterSettings(root, 'console')
+    expect(hidden(root, '[data-card="notifications"]')).toBe(true)
+    expect(linkedCard(root, '#needs-person')).toBeNull()
+    expect(linkedCard(root, '#ports')?.dataset.card).toBe('ports')
+    root.remove()
+  })
 })
 
 describe('settingSearchTerm', () => {

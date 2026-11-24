@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -12,7 +13,7 @@ import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { roleName } from './model'
 import {
-  VISIBLE_SUGGESTIONS, isSuggestion, logSuggestionView, orderSuggestions, readScoreCard, scoreValue,
+  VISIBLE_SUGGESTIONS, askedModel, isSuggestion, logSuggestionView, orderSuggestions, readScoreCard, scoreValue,
   type RoleSuggestion, type ScoreCard, type SuggestionState, type SuggestionView,
 } from './suggestions'
 import { tonborgSuggestionView, type TonborgSuggestion } from './tonborg-suggestions'
@@ -51,12 +52,15 @@ const boleEntries = computed(() => (props.entries ?? []).filter(entry => entry.r
 const agentSpace = computed(() => boleEntries.value[0]?.personalSpaceId ?? '')
 const agentIds = computed(() => boleEntries.value.map(entry => entry.subject.agentId!))
 const { records: agents } = useAgentRecords(agentSpace, agentIds)
-const agentName = (entry: RoleSuggestion) => agents.value[entry.subject.agentId!]?.profile.name ?? entry.subject.agentId!
+const agentName = (entry: RoleSuggestion) => {
+  const agent = agents.value[entry.subject.agentId!]
+  return agent ? agentDisplayName(agent) : entry.subject.agentId!
+}
 
 const TONES: Record<SuggestionState, 'default' | 'secondary' | 'warning' | 'outline'> = {
   suggested: 'default', newer: 'secondary', superseded: 'secondary', fallback: 'outline', stopped: 'warning',
 }
-const ordered = computed(() => orderSuggestions([...(props.entries ?? []).map(logSuggestionView), ...(props.reviews ?? []).map(tonborgSuggestionView)]))
+const ordered = computed(() => orderSuggestions([...(props.entries ?? []).filter(askedModel).map(logSuggestionView), ...(props.reviews ?? []).map(tonborgSuggestionView)]))
 const views = computed(() => ordered.value.slice(0, showAll.value ? undefined : VISIBLE_SUGGESTIONS).map(view => ({
   ...view, time: formatDateTime(view.at, currentLocale(), DATE_TIME_MINUTE, { missing: '' }),
 })))

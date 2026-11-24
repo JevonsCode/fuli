@@ -29,7 +29,6 @@ describe('ConnectionsSettingsTab', () => {
     expect(local.text()).toContain('本地 Graphiti')
     expect(local.text()).toContain('已连接')
     expect(local.get('dl').text()).toContain('Neo4j')
-    expect(local.attributes('data-span')).toBe('wide')
     expect(local.classes()).toContain('settings-card')
     expect(wrapper.find('external-knowledge-settings-stub').exists()).toBe(true)
     // Without a project there is nothing to set a conflict policy for.
@@ -38,6 +37,17 @@ describe('ConnectionsSettingsTab', () => {
     expect(wrapper.findAll('.port-grid input')).toHaveLength(4)
     expect(wrapper.find('peer-settings-stub').exists()).toBe(true)
     expect(wrapper.find('[data-settings-restart-notice]').exists()).toBe(false)
+  })
+
+  it('keeps console LAN access and the ports, and leaves out LAN pairing until it is shown', () => {
+    const hidden = mountTab({ advancedAreas: { shown: [] } })
+    expect(hidden.text()).toContain('局域网访问')
+    expect(hidden.findAll('.port-grid input')).toHaveLength(4)
+    expect(hidden.find('peer-settings-stub').exists()).toBe(false)
+    hidden.unmount()
+    const shownLan = mountTab({ advancedAreas: { shown: ['lan'] } })
+    expect(shownLan.find('peer-settings-stub').exists()).toBe(true)
+    shownLan.unmount()
   })
 
   it('offers the conflict policy once there are projects, and says when the graph service is down', () => {

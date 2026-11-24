@@ -1,0 +1,185 @@
+import { z } from 'zod'
+import { ApiError } from '@/api/client'
+import { shapeFor } from '@/api/response-shape'
+
+// The LAN roundtable's console payloads (GET /api/peer and the controls that answer with it).
+
+export type ClientId = 'codex' | 'claude_code'
+
+export type Shareable = {
+  projectId: string
+  projectName: string
+  lead: { agentId: string; name: string } | null
+  clients: ClientId[]
+  // Paired computers that registered this project with the same own repository (rec issue 127).
+  sameProjectOn?: { nodeId: string; name: string }[]
+  knownFolder?: string | null
+}
+
+export type Share = {
+  projectId: string
+  projectName: string
+  agentId: string
+  clients: ClientId[]
+  workingDirectory?: string | null
+  state: 'shared' | 'lead_changed' | 'lead_unavailable' | 'team_unreadable'
+}
+
+export type Device = {
+  nodeId: string
+  name: string
+  shortFingerprint: string
+  self?: boolean
+  status: string
+  online?: boolean
+}
+
+export type NearbyDevice = { name: string; fingerprint: string; shortFingerprint: string; paired: boolean }
+
+export type NearbyPairing = {
+  requestId: string | null
+  direction: 'incoming' | 'outgoing'
+  // waiting: this computer trusts the other, which has not connected yet; paired comes after that.
+  state: 'connecting' | 'confirm' | 'finishing' | 'waiting' | 'paired' | 'trust_withdrawn' | 'cancelled' | 'expired' | 'failed'
+  reason: string | null
+  device: { name: string; fingerprint?: string | null; shortFingerprint: string | null }
+  code: string | null
+  coordinator: 'this' | 'other'
+  confirmedHere: boolean
+  confirmedThere: boolean
+  expiresAt: string
+}
+
+export type Nearby = {
+  on: boolean
+  name: string | null
+  // FULI and four characters of this computer's fingerprint; never its own name.
+  suggestedName: string | null
+  canPair: boolean
+  reason: string | null
+  until?: string | null
+  // Pairing handshakes counted on this computer: they age out or the person clears them here.
+  attempts?: { lastWindow: number; lastDay: number; limited: boolean }
+  limited?: boolean
+  devices: NearbyDevice[]
+  pairing: NearbyPairing | null
+  // Why it turned itself off, or what it last did.
+  ended?: { kind: 'paired' | 'waiting' | 'timeout' | 'discovery_failed' | 'trust_withdrawn'; name?: string; reason?: string; at: string } | null
+}
+
+export type PeerStatus = {
+  beta: boolean
+  remoteRemovalPending?: boolean
+  role: 'coordinator' | 'member' | null
+  device: { fingerprint: string; shortFingerprint: string } | null
+  // fingerprint: names the coordinator as a requester ('peer:<fingerprint>') on a computer that joined.
+  coordinator: { name: string; url: string; fingerprint?: string; shortFingerprint: string; listening: boolean;
+    // Why the listener is not running: an address that is gone, a port in use.
+    listenFailure?: { address: string; port: number; code: string; at: string; addressAway?: boolean } | null } | null
+  addresses: string[]
+  devices: Device[]
+  openInvitations: number
+  shares: Share[]
+  // Only shared projects and suggestions (the same own repository on a paired computer); the rest are found by search.
+  shareable: Shareable[]
+  // This computer and the paired devices it sees; every one of them can ask a shared lead.
+  groupSize?: number
+  // What a pairing shared without a separate tick (the projects the other computer reports too),
+  // or why it shared none: other computers in the group, more than 8, or no answer.
+  autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[];
+    skipped?: 'group' | 'too_many' | 'unanswered'; matched?: number }[]
+  // A pairing still waiting for the coordinator's answer: the card keeps reading until it lands.
+  autoSharePending?: boolean
+  lastPublish?: { at: string; agents: number | null; error: string | null; message?: string } | null
+  nearby?: Nearby
+}
+
+const nearbyShape = z.looseObject({
+  on: z.boolean(),
+  canPair: z.boolean(),
+  devices: z.array(z.looseObject({ name: z.string(), fingerprint: z.string(), shortFingerprint: z.string(), paired: z.boolean() })),
+  pairing: z.looseObject({ requestId: z.string().nullable(), state: z.string(), code: z.string().nullable(),
+    device: z.looseObject({ name: z.string() }) }).nullable(),
+})
+
+// The fields the card relies on in every answer of the peer controls.
+export const peerStatusShape = shapeFor<PeerStatus>(z.looseObject({
+  role: z.enum(['coordinator', 'member']).nullable(),
+  addresses: z.array(z.string()),
+  devices: z.array(z.looseObject({ nodeId: z.string(), name: z.string() })),
+  shares: z.array(z.looseObject({ projectId: z.string(), state: z.string() })),
+  shareable: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
+  nearby: nearbyShape.optional(),
+}))
+
+// GET /api/peer/shareable?query=…: other projects to add, by name, without their teams.
+export type ShareableSearch = { projects: { projectId: string; projectName: string }[]; more: boolean }
+
+export const shareableSearchShape = shapeFor<ShareableSearch>(z.looseObject({
+  projects: z.array(z.looseObject({ projectId: z.string(), projectName: z.string() })),
+  more: z.boolean(),
+}))
+
+// GET /api/peer/shareable/<projectId>: the picked project as a row of the list.
+export const shareableShape = shapeFor<Shareable>(z.looseObject({
+  projectId: z.string(),
+  projectName: z.string(),
+  lead: z.looseObject({ agentId: z.string(), name: z.string() }).nullable(),
+  clients: z.array(z.enum(['codex', 'claude_code'])),
+}))
+
+// Projects a paired computer has with the same own repository that are not shared yet,
+// and that can be (they have a lead with a client): what 「共享这 N 个相同的项目」 shares.
+export function unsharedSuggestions(status: PeerStatus) {
+  const shared = new Set(status.shares.map((share) => share.projectId))
+  return status.shareable.filter((project) => project.sameProjectOn?.length && project.lead && project.clients.length
+    && !shared.has(project.projectId))
+}
+
+// The names of the projects pairing shared without a separate tick, for 「配对后已共享：…」.
+export function autoSharedNames(status: PeerStatus) {
+  return [...new Set((status.autoShared ?? []).flatMap((record) => record.projects.map((project) => project.projectName)))]
+}
+
+// The rows of the share list: the short list from status, then projects the
+// person added in this visit (kept, ticked or not, until a save or reload).
+export function shareRows(status: PeerStatus, added: readonly Shareable[]) {
+  const listed = new Set(status.shareable.map((project) => project.projectId))
+  return [...status.shareable, ...added.filter((project) => !listed.has(project.projectId))]
+}
+
+// Why a save of the share list was refused: the server's code when the console words it, else 'other'.
+const SHARE_SAVE_REFUSALS = ['invalid_folder', 'lead_unavailable', 'invalid_clients', 'share_not_published'] as const
+export function shareSaveRefusal(caught: unknown): typeof SHARE_SAVE_REFUSALS[number] | 'other' {
+  if (!(caught instanceof ApiError) || !caught.detail) return 'other'
+  try {
+    const code = (JSON.parse(caught.detail) as { error?: unknown }).error
+    return SHARE_SAVE_REFUSALS.find((known) => known === code) ?? 'other'
+  } catch { return 'other' }
+}
+
+// The console's own message for a refused peer control, else the fallback.
+export function peerApiMessage(caught: unknown, fallback: string) {
+  if (caught instanceof ApiError && caught.detail) {
+    try {
+      const body = JSON.parse(caught.detail) as { message?: string }
+      if (typeof body.message === 'string' && body.message.trim()) return body.message
+    } catch { /* use fallback */ }
+  }
+  return fallback
+}
+
+// How an ended pairing reads: the i18n key under settings.peer.pairEnded.
+export function pairingOutcome(pairing: NearbyPairing): 'paired' | 'waiting' | 'trust_withdrawn' | 'expired' | 'mismatch' | 'cancelled' | 'failed' | null {
+  if (pairing.state === 'paired' || pairing.state === 'waiting' || pairing.state === 'trust_withdrawn') return pairing.state
+  if (pairing.state === 'expired') return 'expired'
+  if (pairing.reason === 'code_mismatch') return 'mismatch'
+  if (pairing.state === 'cancelled') return 'cancelled'
+  if (pairing.state === 'failed') return 'failed'
+  return null
+}
+
+// A 6-digit code read in two groups of three.
+export function groupedCode(code: string) {
+  return `${code.slice(0, 3)} ${code.slice(3)}`
+}

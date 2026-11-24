@@ -14,10 +14,10 @@ test('connection sections are cards on the page width and keep accessible help l
   assert.match(tab, /<ConflictPolicyCard v-if="hasProjects" class="settings-card" \/>/);
   const conflictCard = readFileSync('web/src/features/connections/ConflictPolicyCard.vue', 'utf8');
   assert.match(conflictCard, /<Card as="section" class="conflict-policy-section"/);
-  // Every page keeps the workbench's width (Jevons 11-01): the page sets no width of its
-  // own, and on a wide window the two service cards sit side by side instead.
+  // The page sets no width of its own: its cards sit one under another in the shared
+  // PageStack, never in two columns that scroll together (Jevons 11-13).
   assert.doesNotMatch(`${tab}${page}`, /max-w-|--(canvas|layout|column|form)-max|--form-measure/);
-  assert.match(tab, /<PageColumns>/);
+  assert.match(tab, /<PageStack>/);
   assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);
 

@@ -11,8 +11,14 @@ import { scopeEgress } from './egress.js';
 // operations (today Tonborg's knowledge review write-back) apply what that
 // model answered, unless the person switched the role to 「只给建议」, or has
 // not yet acknowledged the one-line warning on the settings page. An answer
-// from the current session (no model, a disabled role, or a fallback after
-// the model failed) is always a suggestion, as before.
+// from the current session is a suggestion, with one exception (Jevons
+// 11-17): a role with no model configured at all, to which the person handed
+// the operation over (key.handedOver, set by the role's own switch), has the
+// session stand in for it under the same choice and warning. A configured
+// role that is disabled or not allowed the operation keeps session answers
+// suggestions, since an Agent may change those settings for the person. A
+// session answering after the role's model failed stays a suggestion: a
+// fallback never applies by itself.
 //
 // Trust relaxes nothing else: permission, egress, the person's own policy and
 // safety rules, the capture switch, injection isolation and the hard-delete
@@ -68,15 +74,26 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
       warningSeen: row.warning_version === TRUST_WARNING_VERSION, warningSeenAt: row.warning_seen_at, revision: row.revision };
   }
 
-  // key: { role, operation, connection, model, scope }. connection: the
-  // identity of the configured connection that answered (config.js
-  // connectionIdentity), null for a current-session answer; model names it in
-  // receipts. scope: the answer's { personalSpaceId, personalProjectId },
-  // checked against the role's egress approval as it is now; omitted for the
-  // settings view, which has no answer.
+  // Whether the current session may stand in for the role: only while the
+  // person configured no model for it at all, read now, so a model configured
+  // since the session answered takes the operation back.
+  const sessionMayStandIn = role => !modelBackends.hasModel(role);
+
+  // key: { role, operation, connection, model, scope, handedOver }.
+  // connection: the identity of the configured connection that answered
+  // (config.js connectionIdentity), null for a current-session answer; model
+  // names it in receipts. scope: the answer's { personalSpaceId,
+  // personalProjectId }, checked against the role's egress approval as it is
+  // now; omitted for the settings view, which has no answer. handedOver: the
+  // person handed this operation to the role, and no model answered or failed.
   function verdict(key, current) {
     const refuse = reason => ({ status: 'not_passed', reason, modelId: key.model ?? null });
-    if (!key.connection) return refuse('session_answer');
+    if (!key.connection) {
+      if (!key.handedOver || !sessionMayStandIn(key.role)) return refuse('session_answer');
+      if (current.suggestionsOnly) return refuse('suggestions_only');
+      if (!current.warningSeen) return refuse('warning_not_seen');
+      return { status: 'passed', reason: null, modelId: null };
+    }
     const settings = modelBackends.operationSettings(key.role, key.operation);
     if (!settings) return refuse('not_configured');
     // Another connection, endpoint, protocol or model than the one that answered.
@@ -143,14 +160,18 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
         return write(gate);
       });
     },
+    // Whether the current session stands in for a role the person handed an
+    // operation over to; a task's acceptance asks it (it has no write gate).
+    sessionMayStandIn,
     // What the settings page shows of a role whose operations may run by
     // themselves: the person's choice, the acknowledgement, and whether the
-    // configured model would execute now.
-    view(role, operation) {
+    // configured model would execute now, or with handedOver (the role's own
+    // switch is on) the current session standing in for a role without one.
+    view(role, operation, { handedOver = false } = {}) {
       const current = state(role);
       const settings = modelBackends.operationSettings(role, operation);
       const gate = verdict({ role, operation, connection: settings?.connection.identity ?? null,
-        model: settings?.connection.model ?? null }, current);
+        model: settings?.connection.model ?? null, ...(handedOver ? { handedOver: true } : {}) }, current);
       return { suggestionsOnly: current.suggestionsOnly, warningSeen: current.warningSeen,
         warningSeenAt: current.warningSeenAt, warningVersion: TRUST_WARNING_VERSION, revision: current.revision,
         status: gate.status === 'passed' ? 'automatic' : 'suggestion', reason: gate.reason };

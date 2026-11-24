@@ -2,8 +2,9 @@ import { checkpointConversation } from './agent-conversations.js';
 import { recordTriage, validateTriage } from './conversation-triage.js';
 import { compactTaskCapture } from './task-remember.js';
 import { taskTeam } from './task-collaboration-attribution.js';
-import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
-import { checkpointTurnReceipt } from './turn-receipt-delivery.js';
+import { captureSettingsUrl, signedReceipt, taskAgentReceipt } from '../agents/identity-receipt.js';
+import { checkpointTurnReceipt, entryOpenedConversation } from './turn-receipt-delivery.js';
+import { continuedInTask } from './conversation-continuation.js';
 import { ensureSessionTemporaryProject } from './temporary-project-scope.js';
 import { createHash } from 'node:crypto';
 
@@ -16,13 +17,15 @@ import { receiptNotices } from './capture-notice.js';
 import { standingReceiptNotices } from './task-entry-standing-owner.js';
 import { namedFlaReceiptNotices } from './task-entry-named-fla.js';
 import { ownerChangeReceiptNotices } from './task-entry-owner-change.js';
+import { introductionReceiptLine } from './task-entry-introduction.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
+import { ruleTextView } from '../conversations/entry-rules.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
-import { admittedTask } from './checkpoint-save-status.js';
+import { admittedTask, closedTaskRefusal } from './checkpoint-save-status.js';
 import { roundtableTurn } from '../agent-roundtable/turn-receipt.js';
 
 export async function checkpointTaskKnowledge(application, {
@@ -94,6 +97,10 @@ export async function checkpointTaskKnowledge(application, {
       ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
   if (!amend && task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
+    // A closed task is not a conflict to resolve but a token to replace: the
+    // call saved nothing and says how to keep this turn's knowledge
+    // (checkpoint-save-status.js checkpointOnClosedTask).
+    if (task.checkpoint.phase === 'complete') throw closedTaskRefusal();
     throw validationError(checkpointConflictMessage(task.checkpoint));
   }
   // An amendment finishes from its stored entry: its log, decision and event (rec#85).
@@ -115,15 +122,26 @@ export async function checkpointTaskKnowledge(application, {
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     // A task without an owner says why, as its entry did.
     const unassigned = task.projectAgentId ? null : storedUnassignment(task);
-    return { ...interaction, ...result, conversation, ...(triaged ? { triage: triaged } : {}),
-      agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
+    const agentReceipt = sharedContinuation(signedReceipt(taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, role: team.role, sourceApplication: task.sourceApplication,
         assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        roundtable: roundtableTurn(task.token),
-        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
+        roundtable: roundtableTurn(task.token), introduction: introductionReceiptLine(task),
+        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application),
+          unsavedRemember: decision.allowed ? null : remember }), ...await receiptFormatNotices(application, { taskId: task.token })],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
+        // A later turn of a conversation already signed, that retained nothing
+        // and carries nothing new, signs with the name alone: the reply it
+        // follows is often a two-word confirmation (rec#146 item 3). Only when
+        // FULI knows it: the entry wrote that it opened no conversation, this
+        // checkpoint saved to one, and no earlier work was continued here.
+        { firstInConversation: !(conversation?.status === 'saved' && entryOpenedConversation(application, task) === false)
+          || continuedInTask(task.token) }));
+    // One receipt, said twice: the conversation's copy is exactly agent_receipt,
+    // so whichever an Agent reads, it is the same line (short or whole).
+    return { ...interaction, ...result, conversation: conversation?.receipt ? { ...conversation, receipt: agentReceipt } : conversation,
+      ...(triaged ? { triage: triaged } : {}), agent_receipt: agentReceipt,
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
   if (amend && fingerprint !== task.checkpoint.fingerprint) {
@@ -253,4 +271,13 @@ function canonicalCheckpoint(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [
     key, canonicalCheckpoint(value[key])
   ]));
+}
+
+// The continuation rules travel by version, as every task entry names them,
+// rather than in full. A sealed worker, which cannot read the rule
+// resources, keeps the text, as its entry does (task-context-view.js).
+function sharedContinuation(receipt) {
+  if (!receipt?.continuation?.guidance || activeSealedWorkerRequest()) return receipt;
+  return { ...receipt, continuation: { ...receipt.continuation,
+    guidance: ruleTextView(receipt.continuation.guidance, 'continuation_guidance') } };
 }

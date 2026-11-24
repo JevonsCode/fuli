@@ -28,6 +28,14 @@ test('a Claude Code MCP process can recover its own task preferences, never a fo
   const unknown = await call({});
   assert.match(unknown.input.sourceSessionId, /^fuli-host-/);
   assert.equal(unknown.input.sourceSessionVerified, false);
+  // Claude Code names its sessions, so a process without one is not bound by
+  // its token either (rec#128): `fuli mcp --call` with the variable unset.
+  assert.equal(Object.hasOwn(unknown.input, 'sourceSessionBinding'), false);
+  // A client that names none recovers by its token (the reader binds that task's own session).
+  const tokenOnly = await prepareDirectAgentToolCall({ toolName: 'read_task_preferences',
+    input: { taskContextToken: TOKEN }, sourceApplication: 'cursor', env: { CLAUDE_CODE_SESSION_ID: SESSION } });
+  assert.equal(tokenOnly.input.sourceSessionVerified, false);
+  assert.equal(tokenOnly.input.sourceSessionBinding, 'task_token');
   // The tool schema rejects caller-supplied session fields outright.
   await assert.rejects(call({}, { sourceSessionId: SESSION, sourceSessionVerified: true }), /Input validation/);
 });

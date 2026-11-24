@@ -7,7 +7,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'search_knowledge_graph',
   // The caller's client decides whether its own turns are recorded.
   'get_capture_policy',
-  'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message',
+  'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message',
   'agent_chat', 'group_discussion',
   'get_agent_message_status', 'cancel_agent_message',
   'get_agent_quality_gate', 'record_agent_verification',
@@ -36,7 +36,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'dismiss_project_agent',
   // The task token is resolved for this client; its session is the conversation recorded.
   'register_standing_assignment', 'organize_project', 'report_agent_service', 'record_fla_lesson',
-  'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
+  'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run', 'submit_agent_app_version',
   'pause_work_surfaces', 'resume_work_surfaces', 'run_delegated_action', 'list_tonborg_questions', 'answer_tonborg_question',
   'list_reply_echoes',
   'record_project_agent_task_activity',
@@ -89,12 +89,15 @@ export function isFuliProcessSession(id) {
   return typeof id === 'string' && id.startsWith(FULI_PROCESS_SESSION);
 }
 
+// `hostNamesSessions`: whether the client this process was started for names
+// its sessions (native-session-env.js); false only where it names none.
 export function normalizeAgentSessionInput(
   name,
   input,
   nativeThreadId,
   hostSessionId = nativeThreadId,
-  sourceApplication = nativeThreadId ? 'codex' : 'other'
+  sourceApplication = nativeThreadId ? 'codex' : 'other',
+  { hostNamesSessions = true } = {}
 ) {
   if (PROJECT_AGENT_SOURCE_TOOLS.has(name)) {
     if (!hostSessionId) {
@@ -108,8 +111,10 @@ export function normalizeAgentSessionInput(
       source_session_id: _source_session_id,
       sourceSessionVerified: _sourceSessionVerified,
       source_session_verified: _source_session_verified,
+      sourceSessionBinding: _sourceSessionBinding,
       ...safeInput
     } = input ?? {};
+    const verified = Boolean(nativeThreadId && nativeThreadId === hostSessionId);
     return {
       ...safeInput,
       ...(SESSION_ID_TOOLS.has(name) && nativeThreadId ? { sessionId: nativeThreadId } : {}),
@@ -117,9 +122,12 @@ export function normalizeAgentSessionInput(
       sourceSessionId: hostSessionId,
       // nativeThreadId is set only from the environment of the client this
       // process was started for (agents/native-session-env.js).
-      ...(name === 'read_task_preferences' ? { sourceSessionVerified: Boolean(
-        nativeThreadId && nativeThreadId === hostSessionId) } : {}),
-      ...(name === 'call_employee_tool' ? { sourceSessionVerified: Boolean(nativeThreadId && nativeThreadId === hostSessionId) } : {}),
+      ...(name === 'read_task_preferences' ? { sourceSessionVerified: verified,
+        // A process of a client that names no session (Cursor, Claude
+        // Desktop's connector, rec#107) recovers by its token alone; one of a
+        // client that does but did not here is refused (rec#128).
+        ...(!verified && !hostNamesSessions && isFuliProcessSession(hostSessionId) ? { sourceSessionBinding: 'task_token' } : {}) } : {}),
+      ...(name === 'call_employee_tool' ? { sourceSessionVerified: verified } : {}),
     };
   }
   if (CAPTURE_SOURCE_TOOLS.has(name) && input && typeof input === 'object' && !Array.isArray(input)) {

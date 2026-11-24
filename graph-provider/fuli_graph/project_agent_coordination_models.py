@@ -55,7 +55,9 @@ class ProjectAgentCoordinationPolicyRecord(StrictModel):
 
     personal_space_id: str
     personal_project_id: str
-    ask_before_recruitment: bool = True
+    # Off unless the person turns it on: Bole hires without a confirmation
+    # each (Jevons 11-17).
+    ask_before_recruitment: bool = False
     auto_reuse_previous_agent: bool = True
     auto_grow_team: bool = True
     team_lead_agent_id: str | None = None
@@ -68,7 +70,9 @@ class ProjectAgentCoordinationPolicyRecord(StrictModel):
 class ProjectAgentCoordinationPolicyUpdate(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
-    ask_before_recruitment: bool = True
+    # Off unless the person turns it on: Bole hires without a confirmation
+    # each (Jevons 11-17).
+    ask_before_recruitment: bool = False
     auto_reuse_previous_agent: bool = True
     auto_grow_team: bool | None = None
     team_lead_agent_id: str | None = Field(default=None, min_length=1, max_length=128)

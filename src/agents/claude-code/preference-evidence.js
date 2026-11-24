@@ -32,7 +32,9 @@ export const claudePreferenceEvidence = Object.freeze({
       return text ? [{ type: 'context', output: HOOK_WRAPPER.exec(text)?.[1] ?? text }] : [];
     }
     if (!['assistant', 'user'].includes(record.type) || !Array.isArray(record.message?.content)) return [];
-    return record.message.content.flatMap(block => {
+    // Any assistant record is the model answering after what came before it.
+    const output = record.type === 'assistant' ? [{ type: 'output' }] : [];
+    return [...output, ...record.message.content.flatMap(block => {
       if (record.type === 'assistant' && block.type === 'tool_use') {
         return [{ type: 'call', id: block.id, name: block.name, input: block.input }];
       }
@@ -40,6 +42,6 @@ export const claudePreferenceEvidence = Object.freeze({
         return [{ type: 'result', id: block.tool_use_id, output: block.content }];
       }
       return [];
-    });
+    })];
   }
 });

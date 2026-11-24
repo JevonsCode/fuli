@@ -1,0 +1,13 @@
+{
+  "version": "0.27.1",
+  "zh": [
+    "0.27.0 用了一天报上来的毛病都修了：项目不再被认错，模型不再挂着旧故障，搜索也更快。",
+    "偏好可以交给 AI 收拾；#FLG 讨论里，别的客户端粘一句话就能入席。",
+    "两台电脑在同一个网里，对一下六位数就能配上（默认关闭，Beta）。"
+  ],
+  "en": [
+    "A day of 0.27.0 is fixed: projects resolve right, stale model errors clear, search is faster.",
+    "An AI can tidy your preferences, and another client joins a #FLG discussion by pasting one sentence.",
+    "Two computers on one network pair by comparing six digits (off by default, Beta)."
+  ]
+}

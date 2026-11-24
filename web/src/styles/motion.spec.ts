@@ -19,15 +19,6 @@ describe('motion system', () => {
     expect(rules).not.toMatch(/\b\d+m?s\b/)
   })
 
-  it('never shows a squeezed snapshot of the dock or top bar while a page changes', () => {
-    expect(rule('::view-transition-old(app-topbar), ::view-transition-old(app-dock)')).toContain('display: none')
-    expect(rule('::view-transition-new(app-topbar), ::view-transition-new(app-dock)')).toContain('animation: none')
-  })
-
-  it('lets clicks through while a page transition runs', () => {
-    expect(rule('::view-transition')).toContain('pointer-events: none')
-  })
-
   it('takes a leaving list item out of the flow and out of hit testing at once', () => {
     const leave = rule('.ui-list-leave-active')
     expect(leave).toContain('position: absolute')
@@ -38,6 +29,5 @@ describe('motion system', () => {
   it('is switched off by both the system setting and the in-app switch', () => {
     expect(primitives).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0s !important/)
     expect(primitives).toMatch(/:root\[data-motion="reduced"\] \*[\s\S]*transition-duration: 0s !important/)
-    expect(motion).toMatch(/prefers-reduced-motion: reduce[\s\S]*::view-transition-new\(\*\) \{ animation: none !important; \}/)
   })
 })

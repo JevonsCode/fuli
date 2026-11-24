@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync }
 import { join } from 'node:path';
 
 import { acquireFileLock } from '../storage/file-lock.js';
-import { DIAGNOSTIC_EVENT_VERSION, diagnosticEvent } from './safe-event.js';
+import { DIAGNOSTIC_EVENT_VERSION, diagnosticEvent, storedDiagnosticEvent } from './safe-event.js';
 
 // FULI's runtime failures in one data directory (rec#73): one JSON line per
 // event under diagnostics/, appended by every FULI process (console, MCP,
@@ -120,9 +120,7 @@ export function inspectDiagnosticEvents(dataDir) {
 
 function parseLine(line) {
   try {
-    const event = JSON.parse(line);
-    return event?.v === DIAGNOSTIC_EVENT_VERSION && typeof event.id === 'string' && typeof event.at === 'string'
-      && Number.isFinite(Date.parse(event.at)) ? event : null;
+    return storedDiagnosticEvent(JSON.parse(line));
   } catch {
     return null;
   }

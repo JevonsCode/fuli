@@ -1,6 +1,9 @@
 import { waitForChatChange } from './chat-wait.js';
 import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
@@ -13,10 +16,13 @@ import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
+import { visitView } from '../peer/query-answer.js';
+import { isOpaqueId, PeerError, validVisitRequest } from '../peer/protocol.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
-import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
-import { createWakeLadder, standInAllowed } from './wake-ladder.js';
+import { isolatedWakeClients, ORIGIN_ENV, WAKE_CLIENTS, WAKE_ORIGINS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
+import { REMOTE_WAKE_ATTEMPTS, createWakeLadder, standInAllowed } from './wake-ladder.js';
+import { outwardFailureView, wakeAttemptRecord } from './wake-failure.js';
 import { enterStandIn, recordStandInReply, standInState } from './stand-in.js';
 
 const THREAD_MESSAGE_LIMIT = 24;
@@ -25,11 +31,37 @@ const REMOTE_PENDING = new Set(['sent', 'queued', 'claimed', 'running']);
 const REMOTE_FINAL = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown']);
 // Claim refusals kept on the ask; a chat wait is the chat's own state, not the ask's.
 const RECORDED_REFUSALS = new Set(['execution_claimed', 'cleanup_unconfirmed']);
+// A later wake of a remote ask starts only with this much of its deadline left
+// (the shortest grant lifetime the Provider issues).
+const MIN_REMOTE_WAKE_MS = 30_000;
+// How long an unanswered question keeps being announced at a task entry as
+// one an Agent is waiting on (rec#146 item 1): a roundtable test message from
+// 2026-10-27 was still saying "Other Agents are waiting for your answers" a
+// month later, and taking one of the five slots from live ones. Past this a
+// queued ask is expired; nothing is deleted.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PENDING_ASK_DAYS = 7;
+const STALE_ASK_REASON = 'unanswered_7_days';
+// How often a running FULI settles asks nobody can still be waiting on.
+const SETTLE_INTERVAL_MS = 60 * 60 * 1000;
+
+// Where a fresh session for an ask from another computer starts when the host
+// names no folder of its own: a new empty folder only this user can write to
+// (mkdtemp, so nobody can have put files there first), never the process's
+// working folder.
+function emptyWakeFolder() {
+  return mkdtempSync(join(tmpdir(), 'fuli-roundtable-wake-'));
+}
+
+// A process still running in it may hold it (Windows): it stays then, empty, under the OS temp.
+function removeWakeFolder(folder) {
+  try { rmSync(folder, { recursive: true, force: true }); } catch { /* left for the OS temp cleanup */ }
+}
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
 export function createAgentRoundtable({ host, peer = null, openStore, wake = wakeAgent, idFactory = randomUUID,
-  env = process.env, locateCwd = sessionWorkingDirectory, turnRunning = sessionTurnRunning, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
+  env = process.env, platform = process.platform, locateCwd = sessionWorkingDirectory, turnRunning = sessionTurnRunning, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
   bootEvidence = async () => null, now = Date.now,
@@ -41,6 +73,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   desktopApp = () => null }) {
   assertRoundtableHost(host);
   const spaceId = () => host.spaceId();
+  // This process serves a session woken for an ask from another computer (wake.js ORIGIN_ENV):
+  // every ask it makes is held as one too, so no hop reaches a full wake.
+  const inheritedOrigin = WAKE_ORIGINS.includes(env[ORIGIN_ENV]) ? env[ORIGIN_ENV] : null;
   // Opened on first use: most MCP processes never touch the roundtable.
   let opened = null;
   const refreshes = new Map();
@@ -161,8 +196,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // latest one), then a fresh session with the Agent's memory, in the sender's
   // own client first (preferClient), then in the Agent's other clients. Each
   // candidate passed over is said on the ladder with why.
+  // lastCwd: where a fresh session starts when nothing else names a folder (an ask from another computer: an empty scratch folder).
   async function deliveryTargets(agent, conversation, projectId, projectPath, { clients = null, freshCwd = null, strictCwd = false,
-    preferClient = null, ladder = null } = {}) {
+    preferClient = null, ladder = null, lastCwd = null } = {}) {
     const permitted = (agent.profile.allowedClients ?? []).filter((client) => WAKE_CLIENTS.includes(client)
       && (!clients || clients.includes(client)));
     const allowed = permitted.filter(client => clientAvailable(client));
@@ -190,14 +226,15 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ladder?.skip('new_session', { client: preferClient,
         reason: permitted.includes(preferClient) ? 'client_unavailable' : 'client_not_allowed' });
     }
+    // A share names its clients in the owner's order.
     const freshClients = explicit ? [resumable.client]
-      : [...new Set([preferClient ?? resumable?.client, ...WAKE_CLIENTS])].filter((client) => allowed.includes(client));
+      : [...new Set([preferClient ?? resumable?.client, ...(clients ?? WAKE_CLIENTS)])].filter((client) => allowed.includes(client));
     // A strict delivery only starts new sessions in a folder known for this project.
     const strictFolder = strictCwd ? freshCwd ?? resumable?.cwd ?? await projectFolder(agent, projectId) : null;
     if (strictCwd && !strictFolder) return resumable ? [resumable] : [];
     const fresh = freshClients.map((client) => ({ client, sessionId: null,
       cwd: client === resumable?.client ? resumable.cwd
-        : strictCwd ? strictFolder : freshCwd ?? projectPath ?? resumable?.cwd ?? process.cwd() }));
+        : strictCwd ? strictFolder : freshCwd ?? projectPath ?? resumable?.cwd ?? lastCwd ?? process.cwd() }));
     return resumable ? [resumable, ...fresh] : fresh;
   }
 
@@ -213,27 +250,53 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // Tries each target until one answers as the restored Agent. The grant is the
   // only authority the woken session receives and is revoked after every attempt.
-  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, oneGrant = false,
-    readOnly = false, ladder = null }) {
+  // remote ({ deadline }): a paired device's ask wakes at most REMOTE_WAKE_ATTEMPTS
+  // times, all within its one execution deadline, and a refused grant ends it.
+  // onlyFuliMcp: the woken session loads only FULI's own MCP server where the
+  // host can name it (host.fuliMcpServer), else no MCP server at all; an ask
+  // from another computer runs on text from elsewhere, so it never gets the
+  // person's others. preferFuliMcp: a group discussion turn, whose text is
+  // the person's own Agents', loads only FULI's server where the host can
+  // name it and stays as it was (the client's own servers) where it cannot,
+  // so a discussion never fails for the lack of that entry.
+  const fuliOnly = (client) => {
+    const entry = host.fuliMcpServer?.(client) ?? null;
+    return entry ? { fuli: entry } : {};
+  };
+  const wakeServers = (client, { onlyFuliMcp, preferFuliMcp }) => {
+    const servers = onlyFuliMcp || preferFuliMcp ? fuliOnly(client) : null;
+    return servers && (onlyFuliMcp || servers.fuli) ? { mcpServers: servers } : {};
+  };
+  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, remote = null,
+    wakeMode = 'answer', ladder = null, onlyFuliMcp = false, preferFuliMcp = false, origin = null }) {
     const unusable = new Set();
     let failure = 'wake_failed';
+    let detail = null;
+    let woken = 0;
     let cleanup = null;
     for (const delivery of attempts) {
       if (unusable.has(delivery.client)) continue;
-      if (signal?.aborted) { failure = 'cancelled'; break; }
+      if (signal?.aborted) { failure = 'cancelled'; detail = 'cancelled'; break; }
       // Resuming in place would write into a turn that is still running.
       if (delivery.busy) {
         failure = 'session_busy';
+        detail = null;
         ladder?.skip('resume', { client: delivery.client, session: delivery.sessionId, reason: failure });
         continue;
       }
+      const waitMs = remote ? Math.min(timeoutMs, remote.deadline - now()) : timeoutMs;
+      if (remote && woken && (woken >= REMOTE_WAKE_ATTEMPTS || waitMs < MIN_REMOTE_WAKE_MS)) break;
       store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
       let answer;
       let grant;
+      const startedAt = now();
       try {
-        grant = await issueGrant(delivery, timeoutMs / 1000);
+        grant = await issueGrant(delivery, waitMs / 1000);
+        woken += 1;
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, readOnly,
+          timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, mode: wakeMode,
+          ...(origin ? { origin } : {}),
+          ...wakeServers(delivery.client, { onlyFuliMcp, preferFuliMcp }),
           onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
@@ -242,7 +305,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         store.recordMemoryResult(ask.id, verified.memoryResultCount ?? 0);
       } catch (error) {
         failure = attemptFailure(error);
+        detail = error.detail ?? null;
         ladder?.attempt(delivery, 'failed', failure);
+        // A failed wake still keeps what its client reported (the stream before
+        // it failed, or an answer whose session did not restore the Agent).
+        if (grant) recordWake(ask, delivery, { startedAt, remote, error, reported: error.reported ?? answer });
         // The team rules refused this Agent: no other channel or stand-in may reach it.
         if (failure === 'not_permitted') break;
         // A process that may still be running must not get a sibling on another channel.
@@ -256,19 +323,36 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         if (['client_login_required', 'client_unavailable'].includes(failure)) unusable.add(delivery.client);
         // A timeout already used the caller's wait; a cancellation ends the delivery.
         if (failure === 'wake_timeout' || failure === 'cancelled') break;
-        // A remote attempt receives authority once; a second channel would only be
-        // refused and hide why the first one failed.
-        if (oneGrant) break;
+        // Each wake of a remote ask is authorised as the first one was (its own
+        // grant from the owner's Provider); a refused grant ends the ask.
+        if (remote && !grant) break;
         continue;
       } finally {
         // Even failed or timed-out attempts lose their authority. Expiry remains
         // the fail-closed backstop if the Provider is temporarily unreachable.
         if (grant?.token) await host.revokeDelegation({ token: grant.token }).catch(() => {});
       }
+      recordWake(ask, delivery, { startedAt, remote, reported: answer });
       ladder?.attempt(delivery, 'answered');
       return { answer, delivery, via: `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}` };
     }
-    throw Object.assign(new Error('No client answered'), { code: failure, ...(cleanup ? { cleanup } : {}) });
+    throw Object.assign(new Error('No client answered'), { code: failure, ...(detail ? { detail } : {}),
+      ...(remote ? { attempts: woken } : {}), ...(cleanup ? { cleanup } : {}) });
+  }
+
+  // Each wake is kept where it ran, its output only as the host redacts it
+  // (wake-failure.js); a failure also reaches the host's diagnostics, without that output.
+  // The record is diagnostics: failing to keep it never changes what the ask answers.
+  // reported: the model and usage the client reported for this wake, if any.
+  function recordWake(ask, delivery, { startedAt, remote, error = null, reported = null }) {
+    try {
+      const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error, reported,
+        durationMs: now() - startedAt, redact: host.redactDiagnostic });
+      store.wakeAttempts.record(ask.id, record);
+      if (!error || record.code === 'cancelled') return;
+      const { client, sessionMode, code, detail, exitCode, signal, durationMs } = record;
+      host.recordWakeFailure?.({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote: Boolean(remote) });
+    } catch { /* the wake's own outcome stands */ }
   }
 
   // While an earlier wake of this Agent may still be running, no new one starts.
@@ -279,12 +363,27 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   }
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
-    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null,
-    // readOnly: a group discussion turn, woken where it can change nothing (wake adapters).
-    readOnly = false } = {}) {
+    conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWakeThrough = null, chatWake = null,
+    // wakeMode: read_only for a group discussion turn, woken where it can change nothing (wake adapters).
+    wakeMode = 'answer',
+    // The host's runner (another computer of the person) that sent it, or null (host.callerRunner).
+    // Such an ask is woken as one from another computer: read-only, only FULI's MCP server, and
+    // never in a folder it names, which is on that computer.
+    callerRunner = host.callerRunner?.() ?? null } = {}) {
+    // An ask from another computer: a runner's call, or one made in a session
+    // woken for such an ask (its wake carries ORIGIN_ENV). It wakes read-only
+    // with only FULI's MCP server, never in a folder it named, with no stand-in,
+    // and passes the same origin on to the session it wakes.
+    const origin = callerRunner ? 'runner' : inheritedOrigin;
+    if (origin) {
+      wakeMode = 'read_only';
+      projectPath = null;
+    }
+    const readOnly = wakeMode === 'read_only';
     if (roundtableProjectId && peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (peer?.isRemoteAddress(to)) {
-      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
+      return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal,
+        callerRunner });
     }
     const from = await sender({ taskContextToken, sourceApplication });
     const address = projectAddress(to);
@@ -303,11 +402,17 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         && (['auto', 'new'].includes(conversation ?? 'auto') || conversation === from.session)) {
       throw validation(await sameAgentGuidance(target, from));
     }
+    // A named native session (conversation) is kept on the ask apart from where it is delivered:
+    // only that client and session, or one FULI hands it to, see and answer it.
+    const named = conversation && !['auto', 'new'].includes(conversation)
+      ? { client: (await conversations(target, null)).find(session => session.sessionId === conversation)?.client ?? null,
+        session: conversation } : null;
     const { thread, history } = openThread(threadId, from.projectId, body, label(target));
-    const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued',
+    const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued', target: named,
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
-        client: from.client, session: from.session },
+        client: from.client, session: from.session, runner: callerRunner }, origin,
       to: { agentId: target.agentId, name: label(target) }, targetProjectId,
+      ...(chatWakeChatId && Number.isInteger(chatWakeThrough) ? { chatWake: { chatId: chatWakeChatId, through: chatWakeThrough } } : {}),
       sourceContextHash: taskContextToken ? taskContextHash(taskContextToken) : null });
     // The source token never enters the communication log.
     const nested = history.filter((message) => message.kind === 'ask' && message.status === 'delivering').length;
@@ -315,21 +420,33 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (!taskContextToken) return queued(thread, ask, target, 'task_context_required');
     const ladder = createWakeLadder();
     // A task outside every project holds no authority the Provider can pass on.
-    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, readOnly, ladder,
-      timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
-      targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
-        { preferClient: from.client, ladder,
-          ...(crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}) }),
-      noTargets: () => crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
-        ? 'no_working_directory' : 'no_client',
-      prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
-        targetProjectId: crossProject ? targetProjectId : null }),
-      issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
-        agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
-        // Claude resumes into a fork with a new ID. Only Codex resumes in place.
-        targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
-        lifetimeSeconds: lifetime }),
-      replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+    // A fallback folder made for this wake (no host folder of its own) goes once the wake is over.
+    let temporaryFolder = null;
+    let woken;
+    try {
+      woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, ladder,
+        wakeMode, ...(origin ? { onlyFuliMcp: true, origin } : {}),
+        timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
+        targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
+          { preferClient: from.client, ladder,
+            ...(origin ? { lastCwd: host.wakeScratchFolder?.() ?? (temporaryFolder ??= emptyWakeFolder()),
+              clients: isolatedWakeClients(platform) } : {}),
+            ...(crossProject ? { strictCwd: true, freshCwd: await verifiedProjectFolder(host, targetProjectId, projectPath) } : {}) }),
+        noTargets: () => origin && !isolatedWakeClients(platform).some(client => target.profile.allowedClients.includes(client)
+            && clientAvailable(client)) ? 'no_isolated_client'
+          : crossProject && WAKE_CLIENTS.some(client => target.profile.allowedClients.includes(client) && clientAvailable(client))
+            ? 'no_working_directory' : 'no_client',
+        prompt: wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: from.client,
+          targetProjectId: crossProject ? targetProjectId : null }),
+        issueGrant: (delivery, lifetime) => host.issueDelegation({ taskContextToken, client: from.client,
+          agentId: target.agentId, ...(crossProject ? { targetProjectId } : {}), targetClient: delivery.client,
+          // Claude resumes into a fork with a new ID. Only Codex resumes in place.
+          targetSessionId: delivery.client === 'codex' ? delivery.sessionId : null,
+          lifetimeSeconds: lifetime }),
+        replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
+    } finally {
+      if (temporaryFolder) removeWakeFolder(temporaryFolder);
+    }
     if (woken.status !== 'answered') {
       // Nobody could come: the sender's own session takes the recipient on, unless
       // the recipient may still be running, the rules refused it, or this is a woken session.
@@ -347,7 +464,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const observation = await observeReturnedMemory(host, store, { ask, reply: woken.reply, from, taskContextToken });
     return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
       ...(observation ? { memoryObservation: observation } : {}),
-      via: woken.via, reply: woken.reply.body, ladder: ladder.view(woken.tier) };
+      via: woken.via, reply: woken.reply.body, ladder: ladder.view(woken.tier),
+      // A discussion turn records who answered with what (rec#129); other asks stay as they were.
+      ...(readOnly ? { executor: { client: woken.reply.from_client, session: woken.reply.from_session,
+        model: woken.model ?? null } } : {}) };
   }
 
   // The one way an ask wakes its recipient, whoever sent it: a durable execution
@@ -355,7 +475,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // verified answer becomes its reply. An ask that is not answered stays queued
   // with the reason, so the recipient still sees it when it next works.
   async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
-    chatWakeChatId = null, readOnly = false, ladder = null }) {
+    chatWakeChatId = null, wakeMode = 'answer', onlyFuliMcp = false, origin = null, ladder = null }) {
     await wakeClaims.release(spaceId(), target.agentId);
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) {
@@ -373,16 +493,18 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       return { status: 'queued', reason };
     }
     // A read-only turn cannot go to a desktop conversation, which runs with the person's own settings.
-    const app = readOnly ? null : desktopApp(attempts[0].client);
+    const app = wakeMode === 'read_only' ? null : desktopApp(attempts[0].client);
     if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder });
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly, issueGrant, ladder });
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder,
+        onlyFuliMcp, origin, preferFuliMcp: wakeMode === 'read_only' });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
           session: answer.sessionId }, to: replyTo, delivery: replyInbox.pendingFor(replyTo) });
-      return { status: 'answered', reply, via, tier: delivery.sessionId ? 'resume' : 'new_session' };
+      return { status: 'answered', reply, via, tier: delivery.sessionId ? 'resume' : 'new_session',
+        ...(answer.model ? { model: answer.model } : {}) };
     } catch (error) {
       finishWake(ask, error);
       store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
@@ -468,7 +590,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // A remote ask is signed by this device for one verified local task. The task
   // token itself never leaves this computer.
-  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal }) {
+  async function messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal,
+    callerRunner = null }) {
     if (!['auto', 'new'].includes(conversation ?? 'auto')) throw validation('Remote Agents accept conversation "auto" or "new"');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A remote message must come from an active project task of a FULI Agent; pass taskContextToken');
@@ -476,7 +599,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const { thread } = openThread(threadId, from.projectId, body, target.name);
     if (thread.project_id !== from.projectId) throw validation('This thread belongs to another project');
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'sent', via: 'peer',
-      from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session },
+      from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session, runner: callerRunner },
+      origin: callerRunner ? 'runner' : inheritedOrigin,
       to: { agentId: target.address, name: `${target.name} · ${target.deviceName}` } });
     if (chatWake) {
       const claim = store.claimExecution(spaceId(), target.address, ask.id);
@@ -498,6 +622,35 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     }
     if (wait) state = await peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000, { signal });
     return handedOver(remoteView(applyRemote(ask.id, state)), 'message_agent');
+  }
+
+  // The visiting assistant: the current task's Agent reads a paired device's
+  // shared project with this client's own model. The other device answers from
+  // its shared knowledge and wakes nothing; message_agent is the path that wakes its lead.
+  async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, request, requestId, signal }) {
+    if (!peer?.isRemoteAddress(address)) throw validation('Visit a paired device\'s lead by its peer:<device>:<binding> address from find_agents');
+    if (!VISIT_ACTIONS.has(action)) throw validation('action is card, search, request, request_status or request_withdraw');
+    if (action === 'search' && (!Array.isArray(queries) || !queries.length || queries.length > 4
+      || !queries.every((query) => typeof query === 'string' && query.trim() && query.length <= 200))) {
+      throw validation('search needs 1-4 focused queries of at most 200 characters');
+    }
+    if (action === 'request' && !validVisitRequest(request)) {
+      throw validation('request needs request: { title (≤160), what (≤4000), expectedAreas? (≤10 paths of ≤200) }');
+    }
+    if (REQUEST_ID_ACTIONS.has(action) && !isOpaqueId(requestId)) throw validation(`${action} needs the requestId request answered`);
+    const from = await sender({ taskContextToken, sourceApplication });
+    if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
+    // An address that names no shared lead right now (not shared any more, or that computer has just
+    // started and has not published its shares yet) is a refusal with its code, like any other, not a fault.
+    let target;
+    try { target = await peer.resolveRemote(address); }
+    catch (error) {
+      if (!(error instanceof PeerError)) throw error;
+      return visitView({ address, device: null, action, answer: { ok: false, code: error.code } });
+    }
+    const answer = await peer.query(target, visitQuestion({ action, queries, request, requestId }), { taskContextToken,
+      sourceApplication: from.client, from: { agentId: from.agent.agentId, name: label(from.agent) }, signal });
+    return visitView({ address: target.address, device: target.deviceName, action, answer });
   }
 
   function applyRemote(messageId, state) {
@@ -524,7 +677,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? store.messages(ask.thread_id).find((message) => message.in_reply_to === ask.id) : null;
     return { status: ask.status === 'sent' ? 'queued' : ask.status, threadId: ask.thread_id, messageId: ask.id,
       recipient: { agentId: ask.to_agent, name: ask.to_name }, remote: true,
-      ...(reply ? { reply: reply.body, via: reply.via } : {}), ...(ask.error ? { reason: ask.error } : {}),
+      ...(reply ? { reply: reply.body, via: reply.via } : {}), ...(ask.error ? outwardFailureView(ask.error) : {}),
       ...cleanupView(storedCleanup(ask)),
       ...(REMOTE_FINAL.has(ask.status) ? {} : { guidance: 'The remote device has not answered yet. Check later with get_agent_message_status; it does not mean the work ran.' }),
       ...(ask.status === 'unknown' ? { guidance: 'The remote device lost track of this attempt; it may or may not have run. It is not retried automatically.' } : {}) };
@@ -547,7 +700,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const thread = store.getThread(threadId) ?? store.createThread({ id: threadId, spaceId: share.spaceId,
       projectId: share.projectId, subject: assertion.body.trim().split(/\r?\n/)[0].slice(0, 80) });
     const ask = store.appendMessage(thread.id, { id: askId, kind: 'ask',
-      body: assertion.body, status: 'delivering', via: 'peer',
+      body: assertion.body, status: 'delivering', via: 'peer', origin: 'remote',
       from: { agentId: `peer:${device.nodeId.slice(0, 16)}:${assertion.from.agentId}`, name: `${assertion.from.name} · ${device.name}`,
         client: assertion.from.client ?? 'other' },
       to: { agentId: target.agentId, name: label(target) } });
@@ -560,20 +713,25 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     let attempts;
     try {
       attempts = await deliveryTargets(target, assertion.conversation, share.projectId, null,
-        { clients: share.clients, freshCwd: share.workingDirectory ?? null, strictCwd: true });
+        { clients: share.clients.filter((client) => isolatedWakeClients(platform).includes(client)),
+          freshCwd: share.workingDirectory ?? null, strictCwd: true });
     } catch (error) { finishWake(ask); throw error; }
     if (!attempts.length) {
       finishWake(ask);
-      const code = share.clients.some((client) => clientAvailable(client)) ? 'no_working_directory' : 'no_client';
+      const isolated = share.clients.filter((client) => isolatedWakeClients(platform).includes(client));
+      const code = isolated.some((client) => clientAvailable(client)) ? 'no_working_directory'
+        : share.clients.some((client) => clientAvailable(client)) ? 'no_isolated_client' : 'no_client';
       store.updateMessage(ask.id, { status: 'failed', error: code });
       throw Object.assign(new Error(code === 'no_working_directory'
         ? 'This shared project has no known folder on this device; the owner sets one in Settings'
+        : code === 'no_isolated_client' ? 'On this device an ask from another computer is answered only by a read-only Claude Code session, and none can run'
         : 'No shared client can run on this device'), { code });
     }
     const prompt = promptOverride ?? wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: ask.from_client });
     try {
+      // A paired device only asks: every client is woken read-only on this computer.
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
-        peerDepth: assertion.depth, oneGrant: true });
+        peerDepth: assertion.depth, wakeMode: 'read_only', onlyFuliMcp: true, origin: 'remote', remote: { deadline: now() + timeoutMs } });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
@@ -664,8 +822,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const attentionReplies = me.projectId ? attentionInbox.read(me.agent.agentId, me.projectId) : [];
     const { replies, more } = me.projectId ? replyInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     const { replies: handbacks } = me.projectId ? handbackInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
-    return { messages: store.pendingFor(spaceId(), me.agent.agentId)
-      .filter(message => messageProject(message) === me.projectId).map(inboxItem),
+    settleStaleAsks();
+    return { messages: store.pendingFor(spaceId(), me.agent.agentId, 5, me)
+      .filter(message => messageProject(message) === me.projectId && forViewer(message, me) && !chatWakeRead(message)).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
       ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
         ? ' More are waiting: call read_agent_messages again.' : ''}` } : {}),
@@ -696,6 +855,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? { agentId: me.agent.agentId, name: label(me.agent) } : { agentId: ask.to_agent, name: ask.to_name };
     if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
       if (await host.projectLeadId(ask.target_project_id) !== answering.agentId) throw validation('The target project lead changed');
+    }
+    // An ask that named a native session is that session's (or the one FULI handed it to):
+    // the same FLA in another client or session cannot close it, even with its ID.
+    if (!forViewer(ask, me)) {
+      throw validation(`This message is for another session of this FLA (${CLIENT_LABELS[ask.target_client] ?? ask.target_client ?? 'a named session'}); only that session answers it`);
     }
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
@@ -777,9 +941,15 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ...(rest.length > page.length ? { nextAfter: page.at(-1).seq } : {}),
       messages: page.map((message) => ({ id: message.id, seq: message.seq, kind: message.kind, status: message.status,
         body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
+        ...(message.origin ? { origin: message.origin } : {}),
         ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
-        from: { agentId: message.from_agent, name: message.from_name, client: message.from_client },
-        to: { agentId: message.to_agent, name: message.to_name, client: message.to_client } })) };
+        // Who wrote it, the session an ask named, and where it was delivered: client and native session each.
+        from: { agentId: message.from_agent, name: message.from_name, client: message.from_client,
+          ...(message.from_session ? { session: message.from_session } : {}),
+          ...(message.from_runner ? { runner: message.from_runner } : {}) },
+        ...(message.target_session ? { target: { client: message.target_client, session: message.target_session } } : {}),
+        to: { agentId: message.to_agent, name: message.to_name, client: message.to_client,
+          ...(message.to_session ? { session: message.to_session } : {}) } })) };
   }
 
   function taskEntryDelegation({ sessionId }) {
@@ -789,9 +959,54 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? { token: env.FULI_ROUNDTABLE_DELEGATION, sessionId: sessionId ?? null } : null;
   }
 
+  // Whether a session may see and answer an ask: one that named no native
+  // session is its FLA's (older records have none); one that named a session is
+  // that client and session's, or the one FULI delivered it to.
+  const forViewer = (message, viewer) => !message.target_session || (Boolean(viewer?.session)
+    && ((message.target_session === viewer.session && (!message.target_client || message.target_client === viewer.client))
+      || (message.to_session === viewer.session && message.to_client === viewer.client)));
+
   // A task with no project (a global assistant) reaches the messages of no project.
   const sameProject = (left, right) => (left ?? null) === (right ?? null);
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
+  // One rule for "this Agent's question, in this project, for this session".
+  const mine = (message, projectId, viewer) =>
+    (projectId === undefined || messageProject(message) === projectId) && forViewer(message, viewer);
+  // A chat wake whose recipient has already read its chat through the last
+  // message the wake was about: it was answered there, so it waits for nothing
+  // (rec#146 item 1; coordinator: both read pointers at the chat's last seq,
+  // and every entry still pushed it with "Other Agents are waiting"). Read at
+  // listing time too, so a settle that could not write never shows it again.
+  const chatWakeRead = message => {
+    if (!message?.chat_wake_chat_id || !Number.isInteger(message.chat_wake_through)) return false;
+    try { return store.chat.readCursor(message.chat_wake_chat_id, `local:${message.to_agent}`) >= message.chat_wake_through; }
+    catch { return false; }
+  };
+  // The instant a question has to be newer than to count as waiting at a task entry.
+  const pendingSince = () => new Date(now() - PENDING_ASK_DAYS * DAY_MS).toISOString();
+  // Asks nobody can still be waiting on stop looking unanswered (rec#146
+  // item 1), at most once per SETTLE_INTERVAL_MS: a chat wake whose recipient
+  // has since read its chat past the snapshot is answered there (via
+  // chat:read), and a queued ask older than PENDING_ASK_DAYS is expired. Every
+  // row, body and thread stays; a late reply still answers an expired ask.
+  // Returns what changed; a store that cannot be written changes nothing and
+  // is tried again later.
+  let settledAt = -Infinity;
+  function settleStaleAsks() {
+    if (now() - settledAt < SETTLE_INTERVAL_MS) return { answered: 0, expired: 0 };
+    settledAt = now();
+    try {
+      let answered = 0;
+      for (const ask of store.queuedChatWakes(spaceId())) {
+        if (!chatWakeRead(ask)) continue;
+        store.updateMessage(ask.id, { status: 'answered', via: 'chat:read' });
+        answered += 1;
+      }
+      return { answered, expired: store.expireQueuedAsks(spaceId(), pendingSince(), STALE_ASK_REASON) };
+    } catch {
+      return { answered: 0, expired: 0 };
+    }
+  }
   const attentionInbox = createAttentionInbox({ store, spaceId });
   const replyInbox = createReplyInbox({ store, spaceId });
   const handbackInbox = createReplyInbox({ store, spaceId, kind: 'handback' });
@@ -827,18 +1042,40 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // conversations, who is subscribed and how each one receives a post.
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
-    messageStatus, cancelMessage, answerRemote,
+    messageStatus, cancelMessage, answerRemote, visitSharedLead,
+    // The lead's clients that could run on this computer, in order (a visit request picks its constrained one).
+    visitClients: async ({ agentId }) => { const agent = await agentById(agentId); return agent ? wakeClientsFor(agent) : []; },
+    // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
+    knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
+    // Woken clients' answers in [from, to) by client and reported model (statement usage).
+    wakeUsage: ({ from, to }) => store.wakeAttempts.usageBetween(spaceId(), from, to),
+    // Whether this space ever had a thread, an Agent chat or a group discussion (the console's 圆桌).
+    used: () => store.used(spaceId()),
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,
     recordGroupChoice: discussions.ownerRecordChoice,
     requestGroupFollowUp: discussions.ownerFollowUp,
     groupDiscussionStatus: discussions.ownerStatus,
-    ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
+    joinGroupDiscussion: discussions.ownerJoin,
+    groupDiscussionTurns: discussions.ownerSessionTurn,
+    // The owner also sees each wake this computer started for the ask and why it failed.
+    ownerMessageStatus: async ({ messageId }) => {
+      const ask = ownedAsk(messageId);
+      const wakeAttempts = store.wakeAttempts.forMessage(ask.id);
+      return { ...await statusOf(ask), ...(wakeAttempts.length ? { wakeAttempts } : {}) };
+    },
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
-    pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
-      .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
+    // viewer: the entering session ({ client, session }); an ask that named another session is not its.
+    // Only questions someone can still be waiting on: newer than
+    // PENDING_ASK_DAYS, and not a chat wake the recipient already read and
+    // answered in its chat (rec#146 item 1).
+    pending: (agentId, projectId = undefined, viewer = null) => {
+      settleStaleAsks();
+      return store.pendingFor(spaceId(), agentId, 5, viewer, { since: pendingSince() })
+        .filter(message => mine(message, projectId, viewer) && !chatWakeRead(message)).map(inboxItem);
+    },
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
     agentReplies: replyInbox.announce,
@@ -905,6 +1142,20 @@ function wakePrompt({ thread, target, senderName, senderClient, ask, targetProje
 
 function inboxGreeting(target) {
   return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
+}
+
+const VISIT_ACTIONS = new Set(['card', 'search', 'request', 'request_status', 'request_withdraw']);
+// The two actions that name one request made earlier.
+const REQUEST_ID_ACTIONS = new Set(['request_status', 'request_withdraw']);
+
+// Exactly the fields each visit action carries across devices.
+function visitQuestion({ action, queries, request, requestId }) {
+  if (action === 'search') return { action, queries };
+  if (action === 'request') {
+    const { title, what, expectedAreas } = request;
+    return { action, request: { title, what, ...(expectedAreas ? { expectedAreas } : {}) } };
+  }
+  return REQUEST_ID_ACTIONS.has(action) ? { action, requestId } : { action };
 }
 
 function label(agent) {

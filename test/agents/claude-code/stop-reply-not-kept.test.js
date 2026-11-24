@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 
 const SESSION = 'synthetic-stop-session';
 const itemUrl = id => `http://127.0.0.1:2828/knowledge/project/space-1/directory/entity/${id}`;

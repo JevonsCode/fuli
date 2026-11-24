@@ -52,6 +52,10 @@ class TaskContextBegin(StrictModel):
     # 'hook' when a lifecycle hook delivered the context, so its Stop hook will
     # run and may close a task that has nothing to record.
     entry_via: Literal['hook', 'tool'] = 'tool'
+    # What the person asked of the task at entry ('remember' something or
+    # 'update' something kept), so a later preference read replays the
+    # entry's checkpoint decision. A record kept before it lacks the key.
+    checkpoint_request: Literal['remember', 'update'] | None = None
 
 
 class TaskContextAgentMemory(StrictModel):

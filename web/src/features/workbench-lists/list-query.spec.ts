@@ -61,7 +61,7 @@ describe('workbench list query', () => {
     const { path, params } = request('notices', { range: '90d', need: 'info', project: 'garden', sort: 'oldest' })
     expect(path).toBe('/api/notices')
     expect(params.get('days')).toBe('90')
-    expect(params.getAll('kind')).toEqual(['tonborg_confirmed', 'fla_joined', 'fla_left', 'delegated_change'])
+    expect(params.getAll('kind')).toEqual(['tonborg_confirmed', 'fla_joined', 'fla_left', 'delegated_change', 'runner_paired'])
     expect(params.getAll('project')).toEqual(['garden'])
     expect(request('notices', { need: 'act', kind: ['fla_joined', 'model_failing'] }).params.getAll('kind')).toEqual(['model_failing'])
     // Nothing in both: a kind no notice has, so nothing matches.

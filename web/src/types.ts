@@ -440,6 +440,14 @@ export interface ProjectAgentTaskRecord {
   /** Set only while the task is blocked. */
   blocker?: ProjectAgentTaskBlocker | null
   events?: ProjectAgentTaskEvent[]
+  /** The client sessions an open task runs in, latest first (at most three); only the task list sends them. */
+  sessions?: ProjectAgentTaskSession[]
+}
+
+export interface ProjectAgentTaskSession {
+  client: ConversationSourceApplication
+  /** null: the client is known, the conversation to open is not. */
+  sessionId: string | null
 }
 
 export interface ProjectAgentActivityTask {
@@ -566,6 +574,17 @@ export interface AgentOccupation {
   updatedAt: string
 }
 
+/** One name an Agent was called until `until`: renamed by the person, or when the person settled a name it shared. */
+export interface AgentNameChange {
+  name: string
+  until: string
+  reason: 'renamed' | 'duplicate_name'
+  keptByAgentId: string | null
+  /** Why this Agent gave a shared name up (duplicate_name only). */
+  gaveWay: 'built_in_role' | 'dismissed' | 'test' | 'person_named' | 'temporary_lead' | 'less_work' | 'less_recent'
+    | 'later' | 'person_chose' | null
+}
+
 export interface ProjectAgentRecord {
   agentId: string
   /** Fixed roles keep the occupation their manifest gives them. */
@@ -573,6 +592,10 @@ export interface ProjectAgentRecord {
   employeeNumber?: string | null
   /** A free person-like name the Provider offers when the shown name reads as a job title. */
   nameSuggestion?: string | null
+  /** The name it had until a recent rename (30 days), shown as 「原名」. */
+  formerName?: string | null
+  /** The names it was called before, oldest first. */
+  nameHistory?: AgentNameChange[]
   legacyAgentIds?: string[]
   personalSpaceId: string
   personalProjectId?: string | null
@@ -681,6 +704,8 @@ export interface ConsoleState {
   // The console's first-run guide: open once for a new installation until finished or skipped;
   // tourSeen: the newest beginner's guide version the console has shown (null: none yet).
   firstRunGuide?: { open: boolean; tourSeen?: number | null }
+  // The advanced areas this installation has used or opened (features/advanced-areas).
+  advancedAreas?: { shown: string[] }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   providers?: {

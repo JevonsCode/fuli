@@ -400,3 +400,18 @@ async function mcpCall(app, sourceApplication, name, args) {
   assert.equal(result.isError, undefined, JSON.stringify(result.content));
   return result.structuredContent;
 }
+
+test('C4-2 a temporary project in a preview is named in the language the person reads FULI in', async (t) => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-capture-language-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const temporaryId = `temporary-${'d'.repeat(64)}`;
+  const changes = createCaptureChanges(new CapturePolicyStore(join(directory, 'capture-policy.json')), {
+    listProjects: async () => [{ project_id: temporaryId, scope_type: 'temporary', profile: { name: '' } }],
+    language: () => 'en-US', consoleUrl: null, taskContext: async () => ({ sessionId: null }) });
+  const asked = await changes.propose({ recordProjects: { [temporaryId]: false } }, { sourceApplication: 'codex' });
+  assert.equal(asked.status, 'confirmation_required');
+  assert.match(JSON.stringify(asked.preview), /Temporary project #dddddddd/);
+  assert.doesNotMatch(JSON.stringify(asked.preview), /临时项目/);
+});

@@ -4,9 +4,8 @@ import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
 import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from './preference-snapshot.js';
 import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
-import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL,
-  WHOLE_ENTRY } from './entry-inline-budget.js';
-import { BLOCKED_PREFERENCE_LABEL } from '../mcp/preference-delivery.js';
+import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_INDEX_LABEL,
+  OMITTED_PREFERENCES_LABEL, OMITTED_UNREADABLE_LABEL, WHOLE_ENTRY } from './entry-inline-budget.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
 import { skeletonFrameLabel } from './entry-skeleton.js';
 
@@ -45,9 +44,8 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
 // no_task, task_closed, other_session, fuli_off, or refreshed with `context`.
 export async function currentTaskPreferences(input, { sourceApplication, currentTask, invoke }) {
   const task = await currentTask?.(input.session_id, sourceApplication);
-  if (!task) return { status: 'no_task' };
-  if (task.checkpoint?.phase === 'complete') return { status: 'task_closed' };
-  if (task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication) return { status: 'other_session' };
+  const status = currentTaskStatus(task, input, sourceApplication);
+  if (status) return { status };
   // The reader pages its uncompacted result at the MCP budget. The hook holds
   // those cursors in its own process, so it reads the whole revision and
   // compacts and bounds it itself: a first page alone is an incomplete frame
@@ -66,6 +64,14 @@ export async function currentTaskPreferences(input, { sourceApplication, current
   return { status: 'refreshed', context: compactTaskContext(whole) };
 }
 
+// Why the session's current task cannot be read in place, or null when it can:
+// no_task, task_closed or other_session.
+export function currentTaskStatus(task, input, sourceApplication) {
+  if (!task) return 'no_task';
+  if (task.checkpoint?.phase === 'complete') return 'task_closed';
+  return task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication ? 'other_session' : null;
+}
+
 // `inlineChars` is the inline limit of a host that keeps only a preview of a
 // longer hook context (entry-inline-budget.js); without it the entry is whole.
 // The model passes taskContextToken (PASS_TASK_TOKEN), so the hook context
@@ -81,12 +87,13 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
   const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
     label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
-    blockedLabel: `${BLOCKED_PREFERENCE_LABEL} ${taskReceiptInstruction(value)}`.trim() });
-  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
+    blockedNote: taskReceiptInstruction(value) });
+  const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
+  const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength, { projectPath: input.cwd ?? null }) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,
-    taskPrompt: typeof input.prompt === 'string' ? input.prompt : null, label: frameLabel }, format, fit)
+    taskPrompt, label: frameLabel }, format, fit)
     : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
 }
@@ -94,7 +101,9 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
 function omittedLabel(label, boundedLabel, projected) {
   const omitted = projected?.preferences_omitted, conflicts = projected?.active_conflicts_omitted;
   if (!omitted && !conflicts) return label;
+  if (!(omitted ?? conflicts).read) return `${boundedLabel} ${OMITTED_UNREADABLE_LABEL}`;
   return [boundedLabel, ...(omitted ? [OMITTED_PREFERENCES_LABEL] : []),
+    ...(omitted?.index?.length || omitted?.index_unchanged ? [OMITTED_INDEX_LABEL] : []),
     ...(omitted?.includes_always_inline ? [ALWAYS_INLINE_OMITTED_LABEL] : []), ...(conflicts ? [OMITTED_CONFLICTS_LABEL] : [])].join(' ');
 }
 

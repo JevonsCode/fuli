@@ -139,7 +139,7 @@ test('an observation that cannot be saved is kept for this observer and reported
   assert.equal(byId(removed, 'codex').status, 'removed', 'the just-observed connection is not forgotten');
 });
 
-test('clients described by hand are listed apart, with where their MCP entry goes', async (t) => {
+test('clients described by hand are listed apart, with where their MCP entry goes and what FULI put in them', async (t) => {
   const { make, answer } = fixture(t);
   answer([
     installerClient('codex'),
@@ -151,8 +151,11 @@ test('clients described by hand are listed apart, with where their MCP entry goe
   const result = await make().observe();
   assert.deepEqual(result.clients.map(({ id }) => id), ['codex']);
   assert.deepEqual(result.customClients, [
-    { id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true },
-    { id: 'team-client', label: 'Team', detected: false, status: 'not_detected', mcpPaths: ['~/.team/mcp.json'], removable: false }
+    { id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true,
+      components: { mcp: 'current' } },
+    { id: 'team-client', label: 'Team', detected: false, status: 'not_detected', mcpPaths: ['~/.team/mcp.json'], removable: false,
+      // A part the client takes none of is not listed.
+      components: { mcp: 'missing' } }
   ]);
 });
 
@@ -163,6 +166,13 @@ test('without agent-installer nothing is claimed about any client', async (t) =>
   assert.deepEqual({ ...result, observedAt: undefined }, { scope: 'configuration', observedAt: undefined, available: false,
     historySaved: true, clients: [], customClients: [] });
   assert.equal(existsSync(historyPath), false, 'no history is written from nothing');
+});
+
+test('while another FULI downloads agent-installer the observation says so', async (t) => {
+  const { make } = fixture(t);
+  const result = await make({ installer: { status: async () => ({ status: 'unavailable', reason: 'busy', downloading: true }) } }).observe();
+  assert.equal(result.available, false);
+  assert.equal(result.componentDownloading, true);
 });
 
 test('a connected client says how many open sessions wait for a restart', async (t) => {

@@ -16,6 +16,26 @@ test('one-click connection applies a client agent-installer found and self-check
   assert.deepEqual(installer.calls, [['apply', ['gemini']]]);
 });
 
+test('a client described by hand connects like a built-in one, even before its file exists', async () => {
+  const customClients = { removable: () => new Set(['acme-agent']) };
+  const installer = fakeClientInstaller([{ id: 'acme-agent', builtin: false, detected: false }]);
+  const connect = createClientInstaller({ installer, customClients });
+  assert.deepEqual(await connect({ clientId: 'acme-agent' }), { id: 'acme-agent', status: 'connected', restartRequired: true });
+  assert.deepEqual(installer.calls, [['apply', ['acme-agent']]]);
+  // An update's self-check reads the same client: one agent-installer still finds outdated is partial.
+  const outdated = createClientInstaller({ customClients,
+    installer: fakeClientInstaller([{ id: 'acme-agent', builtin: false }], { afterApply: 'update_available' }) });
+  assert.equal((await outdated({ clientId: 'acme-agent' })).status, 'partial');
+});
+
+test('a client that is not built in and was not added here, such as another product\'s extension, is never written', async () => {
+  const installer = fakeClientInstaller([{ id: 'acme-agent', builtin: false, detected: true }, { id: 'other-tool', builtin: false, detected: true }]);
+  const connect = createClientInstaller({ installer, customClients: { removable: () => new Set(['acme-agent']) },
+    install: () => assert.fail('no writes') });
+  await assert.rejects(() => connect({ clientId: 'other-tool' }), /unavailable/);
+  await assert.rejects(() => createClientInstaller({ installer, install: () => assert.fail('no writes') })({ clientId: 'acme-agent' }), /unavailable/);
+});
+
 test('the self-check reads agent-installer: a write it does not see as connected is partial', async () => {
   const connect = createClientInstaller({ installer: fakeClientInstaller([{ id: 'gemini' }], { afterApply: 'update_available' }) });
   assert.deepEqual(await connect({ clientId: 'gemini' }), { id: 'gemini', status: 'partial', restartRequired: false });
@@ -29,6 +49,16 @@ test('without agent-installer nothing is written and the answer says the compone
     reason: 'client_component_unavailable', message: undefined });
   assert.match(result.message, /无法下载客户端组件.*请检查网络后重试/);
   assert.match(result.message, /could not be downloaded; check your network connection and try again/);
+});
+
+test('while another FULI downloads agent-installer the answer says so, not that the network failed', async () => {
+  const downloading = { status: 'unavailable', reason: 'busy', downloading: true };
+  const connect = createClientInstaller({ installer: { status: async () => downloading, apply: async () => downloading },
+    install: () => assert.fail('no writes') });
+  const result = await connect({ clientId: 'gemini' });
+  assert.deepEqual({ ...result, message: undefined }, { id: 'gemini', status: 'failed', restartRequired: false,
+    reason: 'client_component_downloading', message: undefined });
+  assert.match(result.message, /另一个 FULI 正在下载客户端组件 agent-installer.*Another FULI is downloading/);
 });
 
 test('manual or absent clients never write, and simultaneous requests cannot overlap', async () => {

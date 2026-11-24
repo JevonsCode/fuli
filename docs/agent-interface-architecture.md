@@ -4,7 +4,7 @@ FULI exposes product data operations through structured Agent tools so an AI Age
 
 ## Contract
 
-`list_agent_interfaces` returns the versioned `agent-interface-parity-v1` catalog. Every console data mutation is classified as one of:
+`list_agent_interfaces` serves the versioned `agent-interface-parity-v1` catalog. Without arguments it returns an index (under 12 KB): the guidance, coverage and delegation categories, each domain's tool names (`domains`, with `readRouteDomains` for those that also have console read routes), each route group's console changes counted by access in coverage order (`areas`, grouped by the segment after `/api`, each count array in the order `[agent, agent_delegable, agent_delegable_off, agent_relayed, local_user_only]`), the tools of each group's `agent` entries (`areaTools`), and `otherTools`, the tools neither names, so every tool name is in the index. One part comes in full on request (each under 16 KB): `domain` for one read workflow with its guidance and read routes, `area` for one route group's entries, `route` (as listed, or `METHOD /api/...` path, matched the way the console matches a request) for one entry; a read route answers `readRoute: true` with the domain that lists it, and a route without its method asks for `METHOD /api/...`. A `toolName` or `area` answer names the domains that list its tools. A name that is not there answers `found: false` with the names that are. Every view is cut from `agentInterfaceCatalog()`, the one full table, which tests and `run_delegated_action` use directly. Every console data mutation is classified as one of:
 
 - `agent`: the catalog names the structured Agent tool or tools that perform the same business operation.
 - `local_user_only`: the catalog records why the operation requires local human presence.
@@ -33,9 +33,12 @@ Reading a legacy profile does not rewrite its stored history.
 
 Every new Agent (Bole's recruitment or a direct write) gets a nickname no other Agent in the
 personal space uses: one that reads as a job title ("PPT 专责", "design Agent"), or none at all,
-is replaced by a generated name such as "Lyra North"; a person-like role name another Agent
-already has gets a number ("Lyra North 2"). A `displayName` given on purpose that another Agent
-already has is refused with `agent_name_taken` and three free generated names, before anything
+is replaced by a generated name such as "Lyra North", and so is a person-like role name another
+Agent already has. When every first-and-last name is taken, generation goes on with a double
+surname ("Lyra North-Vale"); a number is the last resort and is not reached before 32,768 names.
+A built-in role's own name (Jefa, Bole, Tonborg, Astro) counts as taken. A `displayName` given on
+purpose that another Agent already has is refused with `agent_name_taken`, who uses it and in which
+projects (`used by: …`, also as fields) and three free generated names, before anything
 is written (a recruitment checks its proposed name when the task is submitted; one taken by the
 time the Agent is provisioned falls back to a generated name). The job stays in `profile.name`,
 the occupation and the responsibility. An update that omits `displayName` keeps the stored one;
@@ -50,6 +53,43 @@ generated names above; the field shows that rule as editable starting text, and 
 or restoring it saves no style. Existing Agents are never renamed
 automatically: when an Agent's shown name reads as a job title, reading it returns
 `nameSuggestion`, a free nickname the profile page offers as a one-click rename.
+
+Uniqueness is held by the graph, not only by the check before a write (graph/24): every Agent of
+the person, FULI's own roles included, stores the identity key of its shown name with its space
+(`display_name_space_id`, `display_name_key`) under a uniqueness constraint, so two hires or renames
+racing for one name cannot both commit; the loser is named again or refused. A built-in role's
+built-in name stays reserved by the check, and so does another Agent's 原名 for 30 days after its
+rename (the refusal's `used_by` entry then carries `former_name` and `free_from`). A key an older
+FULI left on an Agent it renamed (FULI 22 renames without updating it) is cleared when the Provider
+starts and whenever it blocks a write; only the key fields change. A refusal carries `used_by` (name, Agent ID, projects)
+and `free_names` as fields beside its sentence. Each project there, as in the list of shared
+names, comes as its ID, stored name and `scope_type`, so the console names a temporary project
+the way it does everywhere (临时项目 #编号) and the sentence an Agent reads gives its number. A rename keeps
+the old name in the Agent's name history (`name_history_json`: name, until, `renamed` or
+`duplicate_name`, who kept it and why); records carry `nameHistory` and, for 30 days, `formerName`,
+which pages, the FLAs list and the `#FLA` notice show as 「原名 …」 on the turn that names the FLA,
+and by which `#FLA` still reaches it. Nothing said or signed under the old name is rewritten.
+
+Spaces from before this rule can hold FLAs that share a name (names derived from the Agent ID,
+or a write that raced the check). Upgrading changes none of them and needs no confirmation: the
+constraint step is automatic, because every key starts empty. Such an FLA keeps working; a write
+that would give it a key another FLA already holds stores none and goes through. The person
+settles shared names when they choose, on the FLAs page (「有 N 个名字不止一位 FLA 在用」): the
+plan (`GET /api/project-agent-name-fixes`, `keep=<agentId>` to pick another keeper) lists each
+shared name, who keeps it, the new name of each other FLA and why; the person may leave renames
+out, and one apply (`POST /api/project-agent-name-fixes/apply`, `agent_relayed`: an Agent proposes,
+only the person's words apply it) renames the rest through the ordinary rename write, refusing
+the whole apply if anything changed since the plan was read. New names avoid every name of the
+space (each Agent's, every built-in role's, each recent 原名) and each other; past every generated
+name a numbered one is given. An apply keys a keeper only once no other FLA shares its name. In each group the name stays with,
+in order: a built-in role; an FLA not dismissed; one that is not a test FLA; one whose name a
+person gave (a rename in its history, or a name FULI does not generate); one that works beyond
+temporary or conversation projects; the one with more work (tasks it took part in, hiring tasks
+left out, plus task entries it worked); the one active more recently; the one hired first. The
+plan reads the space once, and sums the work of the FLAs that share names in single queries.
+`GET /api/project-agent-name-changes` lists every rename with its 原名 and, for a settled name,
+who kept it; the FLAs page announces settled names once (`PUT /api/project-agent-name-changes/seen`,
+kept with the space) and keeps the whole list under 改名记录.
 
 Use `request_agent_attention` only for an explicit human action, with the exact space,
 project and Agent, optional task ID, request kind, context and `requestedAction`.
@@ -82,7 +122,7 @@ or expose this private attention queue.
 
 An Agent should:
 
-1. call `list_agent_interfaces`;
+1. call `list_agent_interfaces`, then the one `domain`, `area` or `route` the task needs;
 2. resolve exact space, project, item and version identifiers with read tools;
 3. inspect the selected tool's current schema;
 4. read current state before a write;
@@ -153,12 +193,12 @@ on the shared task board: one project shows that project's own columns, several 
 built-in five. Cards open the task; the board stores nothing and moves nothing.
 
 Workflows are the Agent's own repeated work as named, ordered steps, in
-`agent-workflows.sqlite` (format 1). The task's bound Agent, read from the current
+`agent-workflows.sqlite` (format 3). The task's bound Agent, read from the current
 `taskContextToken`, is the only owner a tool acts for:
 
-- `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
-  repeated often enough across sessions, or from the Agent's own steps; with `workflowId` it
-  proposes a change. Every proposal is a new version and older versions are kept.
+- `propose_agent_workflow` proposes a workflow from the Agent's own steps; with `workflowId` it
+  proposes a change. (Learned X-then-Y candidates, `list_workflow_candidates`, were removed on
+  11-23: their only input was retired on 11-11, so the list stayed empty.) Every proposal is a new version and older versions are kept.
 - A project Skill draft (rec#78 step 4) is a proposal from three or more of the Agent's own kept
   experiences (`experienceIds`, checked against the project's current kept items). It must carry a
   `workMap` (inputs, outputs, dependencies, branches, acceptance; at most three questions, which FULI
@@ -169,8 +209,19 @@ Workflows are the Agent's own repeated work as named, ordered steps, in
   `record_agent_workflow_run` records the outcome of a run the Agent did.
 
 Only the person confirms, rejects or retires a workflow, on the Agent's home page, at the
-version the page showed. Nothing is active until confirmed, nothing runs by itself, and
-workflows are never put into an entry or other context.
+version the page showed. Nothing is active until confirmed and nothing runs by itself. A task
+entry carries only names (Jevons 11-23, `fla_growth`, `src/fla-growth/entry-hint.js`), and only
+on the first turn of a conversation: the Agent's confirmed workflows in that project (at most
+three, name and the first sentence of the purpose), and a repeat the hourly check found
+(`src/fla-growth/tool-suggestions.js`, "the same kind of work" per `step-similarity.js`) with the
+person's answer once given, in at most two conversations per answer. A proposal of the same kind
+of work deposits the repeat (a rejection gives it back); the person's open 待决策 about it is then
+withdrawn, and a person who chose 「只记下这串步骤」 has a new workflow (version 1, never active)
+confirmed by that choice only when its steps are the ones they chose, one for one (spacing and
+case aside); other steps, or a change of an existing workflow, wait on the Agent's page. State
+is `agent_growth_hints` (agent-workflows format 3); an entry never migrates the store. Steps are
+never put into an entry; an ordinary entry has no `fla_growth` key. The console shows how often
+each confirmed workflow was run and ran through, counted from its runs.
 
 ## Work surfaces: one table, pause all, resume (rec#11 D-85)
 

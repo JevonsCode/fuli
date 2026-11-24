@@ -5,6 +5,7 @@ const api = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { ApiError } from '@/api/client'
 import { setLocale } from '@/i18n'
 import ConsoleUpdate from './ConsoleUpdate.vue'
 
@@ -20,6 +21,16 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('ConsoleUpdate', () => {
+  it('directs a runner to the host when it lacks update access and stops polling', async () => {
+    api.postJson.mockRejectedValueOnce(new ApiError('Forbidden', 403))
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.8.0' } })
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('运行 FULI 的那台电脑上开始')
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.getJson).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('starts the update with one click, shows progress while FULI restarts, and reloads on the new version', async () => {
     const reload = vi.fn()
     const wrapper = mount(ConsoleUpdate, { props: { version: '0.8.0', reload } })
@@ -116,5 +127,41 @@ describe('ConsoleUpdate', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能启动，已自动换回原来的版本。 查看详情')
     expect(wrapper.text()).not.toContain('did not start')
+  })
+
+  it('says that neither version runs when switching back did not end with the previous one running', async () => {
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.24.0', kind: 'macos-app' } })
+    api.postJson.mockResolvedValueOnce(job('updating', { kind: 'macos-app', step: null }))
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    api.getJson.mockResolvedValueOnce({ update: job('failed', { kind: 'macos-app', errorCode: 'rollback_failed',
+      error: 'v0.24.0 did not start (synthetic); the previous version was restored but did not start either (synthetic).' }) })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能启动，原来的版本也没能正常运行，请看详情。 查看详情')
+  })
+
+  it('says plainly when the Mac app kept the new version instead of switching back', async () => {
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.24.0', kind: 'macos-app' } })
+    api.postJson.mockResolvedValueOnce(job('updating', { kind: 'macos-app', step: null }))
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await flushPromises()
+    api.getJson.mockResolvedValueOnce({ update: job('failed', { kind: 'macos-app', errorCode: 'kept_new_version',
+      error: 'v0.24.0 did not start (synthetic); it did not stop either, so it was left installed and nothing was switched back.' }) })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(wrapper.get('[role="alert"]').text()).toBe('新版本没能正常启动，没有换回旧版本，新版本还装着，请看详情。 查看详情')
+    await wrapper.get('[data-console-update-details]').trigger('click')
+    expect(document.body.textContent).toContain('it did not stop either')
+  })
+
+  it('when FULI does not answer again in time, reloads the page from the notice', async () => {
+    api.postJson.mockResolvedValueOnce(job('running'))
+    api.getJson.mockRejectedValue(new Error('stopped while it installs'))
+    const reload = vi.fn()
+    const wrapper = mount(ConsoleUpdate, { props: { version: '0.8.0', reload } })
+    await wrapper.get('[data-console-update-start]').trigger('click')
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    await flushPromises()
+    await wrapper.get('[data-console-update-reload]').trigger('click')
+    expect(reload).toHaveBeenCalledTimes(1)
   })
 })

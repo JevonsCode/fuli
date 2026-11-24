@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -19,6 +21,7 @@ import {
   type ConflictMode, type ConflictPolicyOverview,
 } from './conflict-policy'
 import { docsHelpUrl } from './docs-help'
+import { projectDisplayName } from '@/features/projects/project-origin'
 
 const store = useConsoleStore()
 const overview = ref<ConflictPolicyOverview | null>(null)
@@ -35,12 +38,7 @@ const helpUrl = computed(() => docsHelpUrl('external-knowledge', 'external-knowl
 const projects = computed(() => store.state?.personalProjects ?? [])
 const exceptions = computed(() => overview.value ? projectExceptions(overview.value, projects.value) : [])
 const addableOptions = computed<SelectOption[]>(() => overview.value
-  ? projectsFollowingDefault(overview.value, projects.value).map((project) => ({
-      value: project.project_id,
-      label: project.profile.name,
-      meta: `#${compactIdentity(project.project_id, 26)}`,
-      search: identitySearchText(project.project_id),
-    }))
+  ? projectScopeOptions(projectsFollowingDefault(overview.value, projects.value), project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) }))
   : [])
 const modeOptions = computed(() => CONFLICT_MODES.map((mode) => ({
   value: mode, label: t(`pages.connections.conflictMode.${mode}`),
@@ -115,7 +113,7 @@ function startAdding() {
 async function addException() {
   const project = projects.value.find(({ project_id }) => project_id === addProjectId.value)
   if (!project) return
-  if (await saveProject(project.project_id, project.profile.name, addMode.value, 'pages.connections.savingConflictProject')) {
+  if (await saveProject(project.project_id, projectDisplayName(project), addMode.value, 'pages.connections.savingConflictProject')) {
     adding.value = false
   }
 }
@@ -192,6 +190,7 @@ async function addException() {
               :label="t('pages.connections.conflictExceptionProject')"
               :placeholder="t('pages.connections.conflictExceptionProject')"
               :options="addableOptions"
+              :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()"
               :disabled="Boolean(savingLabel)"
               required
             />

@@ -1,3 +1,4 @@
+import { consoleWorkLocations, LIST_LIMIT, listedWorkLocations } from './agent-work-locations.js';
 import { listAgentWorkbenches, listTeamWorkbenches } from './project-agent-task-sheets.js';
 import { withOccupationDemand } from './occupation-staffing.js';
 import { occupationCatalog } from './occupation-catalog.js';
@@ -14,6 +15,12 @@ import { agentProjectResolution } from './agent-project-resolution.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { dismissProjectAgent, getAgentHandoff, listAgentDismissalLessons } from './project-agent-dismissal.js';
+import {
+  agentNameFixPlan as agentNameFixPlanWorkflow,
+  applyAgentNameFixes as applyAgentNameFixesWorkflow,
+  listAgentNameChanges as listAgentNameChangesWorkflow,
+  markAgentNameChangesSeen as markAgentNameChangesSeenWorkflow,
+} from './agent-name-workflows.js';
 import {
   getProjectAgentMemory,
   inspectProjectAgentMemory,
@@ -106,9 +113,16 @@ export class ProjectAgentControlPlaneApplication {
   async organizeProject(input) {
     return organizeProject(this, input);
   }
+  // workLocations counts where this FLA worked from the very page the list
+  // reads, so an Agent's count has exactly this tool's scope and checks
+  // (rec#147 review): its client, the FLA's allowed clients, a worker's own
+  // layer, and the one scope it asked for.
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);
-    return queryConversations(this, input);
+    if (!input.workLocations || input.mode !== 'list') return queryConversations(this, input);
+    const limit = Math.min(input.limit ?? LIST_LIMIT, LIST_LIMIT);
+    const answer = await queryConversations(this, { ...input, limit });
+    return { ...answer, work_locations: listedWorkLocations(answer, { personalProjectId: input.personalProjectId ?? null, limit }) };
   }
   async resumeAgentConversation(input) { return resumeConversation(this, input); }
   async updateAgentConversationPolicy(input) {
@@ -226,6 +240,26 @@ export class ProjectAgentControlPlaneApplication {
     return renameProjectAgentWorkflow(this, input);
   }
 
+  async listAgentNameChanges(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listAgentNameChangesWorkflow(this, input);
+  }
+
+  async markAgentNameChangesSeen(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return markAgentNameChangesSeenWorkflow(this, input);
+  }
+
+  async agentNameFixPlan(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return agentNameFixPlanWorkflow(this, input);
+  }
+
+  async applyAgentNameFixes(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return applyAgentNameFixesWorkflow(this, input);
+  }
+
   async updateProjectAgentOccupation(input) {
     this.#assertSpace(input.personalSpaceId);
     return updateProjectAgentOccupationWorkflow(this, input);
@@ -325,6 +359,12 @@ export class ProjectAgentControlPlaneApplication {
     return viewProjectAgentActivityWorkflow(this, input);
   }
 
+  // The person's own console view across the FLA's active projects.
+  async viewAgentWorkLocations(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return consoleWorkLocations(this, input);
+  }
+
   async getProjectAgentCoordinationPolicy(input) {
     this.#assertSpace(input.personalSpaceId);
     return getProjectAgentCoordinationPolicyWorkflow(this, input);
@@ -333,7 +373,10 @@ export class ProjectAgentControlPlaneApplication {
   async getProjectTeam(input) {
     this.#assertSpace(input.personalSpaceId);
     if (!input.personalProjectId) throw new TypeError('personalProjectId is required');
-    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId);
+    // How far each workstream got costs one read per line (docs/workstreams.md),
+    // so only a caller that shows it asks: the Agent tool and the ledger page.
+    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId,
+      { withProgress: input.withProgress === true });
   }
 
   async updateProjectAgentCoordinationPolicy(input) {

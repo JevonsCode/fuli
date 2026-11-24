@@ -25,6 +25,17 @@ def native_datetime(value):
     return to_native() if callable(to_native) else value
 
 
+def stored_epoch(value) -> float:
+    """Seconds of a stored time (a graph datetime, or text an early FULI wrote); 0 when unknown."""
+    value = native_datetime(value)
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        except ValueError:
+            return 0.0
+    return value.timestamp() if isinstance(value, datetime) else 0.0
+
+
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode('utf-8')).hexdigest()
 

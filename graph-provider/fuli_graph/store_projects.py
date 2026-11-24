@@ -6,6 +6,7 @@ from .models import (
 )
 from .provider_values import now_utc, stable_uuid
 from .project_brief import legacy_project_brief
+from .temporary_project_scope import is_temporary_project, stored_project_name
 
 
 class StoreProjects:
@@ -16,6 +17,8 @@ class StoreProjects:
     ) -> PersonalProjectRecord:
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        if not request.profile.name.strip() and not await self._temporary_project(request.personal_space_id, request.project_id):
+            raise HTTPException(status_code=422, detail='A project a person or an Agent creates needs a name')
         node_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -104,3 +107,14 @@ class StoreProjects:
         return await legacy_project_brief(
             self, self._personal_project(records[0]['project'], personal_space_id)
         )
+
+    async def _temporary_project(self, personal_space_id: str, project_id: str) -> bool:
+        """Whether an edit is for a temporary project, which may go on without a name."""
+        records, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:CONTAINS_PROJECT]->
+                  (project:FuliPersonalProject {project_id: $project_id})
+            RETURN project.scope_type AS scope_type, project.name AS name, project.profile_json AS profile_json
+            ''', space_id=personal_space_id, project_id=project_id, routing_='r')
+        return bool(records) and is_temporary_project(project_id, records[0]['scope_type'], stored_project_name(
+            records[0]['name'], records[0].get('profile_json')))

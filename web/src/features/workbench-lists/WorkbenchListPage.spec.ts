@@ -52,7 +52,7 @@ afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 
 async function setup(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div>Workbench</div>' } },
+    { path: '/', component: { template: '<div>Today</div>' } },
     { path: '/workbench/:list(running|done|notices)', component: WorkbenchListPage },
     { path: '/project-agents/manage', component: { template: '<div>Task</div>' } },
   ] })
@@ -77,7 +77,6 @@ describe('a workbench list on its own page', () => {
     expect(first.searchParams.get('limit')).toBe('50')
     expect(wrapper.get('[data-list-search]').element).toHaveProperty('value', 'needle')
     expect(wrapper.get('[data-workbench-list]').attributes('data-workbench-list')).toBe('running')
-    expect(wrapper.get('[data-list-morph]').attributes('data-list-morph')).toBe('running')
     expect(wrapper.find('[data-task-row]').text()).toContain('Synthetic task 0')
     expect(wrapper.find('[data-task-row]').text()).toContain('Aster · Synthetic project')
     expect(wrapper.text()).toContain('51 条')
@@ -87,10 +86,20 @@ describe('a workbench list on its own page', () => {
     expect(wrapper.get('[data-list-sort]').text()).toContain('最久没动静')
   })
 
+  it('leads back to 今天', async () => {
+    const { wrapper } = await setup('/workbench/running')
+    const crumb = wrapper.get('nav a')
+    expect(crumb.text()).toBe('今天')
+    expect(crumb.attributes('href')).toBe('/')
+  })
+
   it('unfolds the filters each list declares', async () => {
     const running = await setup('/workbench/running')
     await running.wrapper.get('[data-list-filters]').trigger('click')
     expect(running.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'quiet'])
+    // The project filter folds temporary projects under one row; the others have no such group.
+    const folds = running.wrapper.findAllComponents({ name: 'OptionCombobox' }).map(field => field.props('foldGroup'))
+    expect(folds.filter(Boolean)).toEqual(['临时项目'])
     const done = await setup('/workbench/done')
     await done.wrapper.get('[data-list-filters]').trigger('click')
     expect(done.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'result', 'took'])

@@ -4,8 +4,8 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
-import { runTrayAction } from './desktop-controller.js';
-import { readWindowsInstallation } from './windows-installation-context.js';
+import { runTrayAction, stageReporter } from './desktop-controller.js';
+import { readWindowsInstallation, WindowsInstallationSupersededError } from './windows-installation-context.js';
 import { removeRetiredLaunchers } from './windows-node-launcher.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -53,10 +53,22 @@ export function loadTrayContext({ packageRoot = PACKAGE_ROOT, env = process.env 
   }
   const installed = readWindowsInstallation(root);
   const dataDir = installed?.dataDir ?? validateTrayDataDir(root, config.dataDir, env);
-  return { packageRoot: root, dataDir, installRoot: installed?.installRoot ?? null,
-    instanceKey: createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0, 32),
+  return { packageRoot: root, dataDir, installRoot: installed?.installRoot ?? null, instanceKey: trayInstanceKey(dataDir),
     nodePath: join(root, 'runtime', 'node', 'node.exe'), cliPath: join(root, 'src', 'cli.js'),
     logDir: join(dataDir, 'logs'), nativeLogDir: join(dataDir, 'native-runtime', 'personal', 'logs') };
+}
+
+// The one-client lock of a data directory (windows-update-lock.js names the same).
+const trayInstanceKey = dataDir => createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0, 32);
+
+// What a client that runs from a version the installation replaced is told,
+// for any action: nothing runs from it, but it still takes this data's
+// one-client lock, so an update closes it and a second launch shows the
+// running client, and it offers to open currentPackageRoot instead.
+export function supersededReply(error) {
+  const { dataDir, packageRoot } = error.installation;
+  return { ok: false, status: 'superseded', error: error.message, dataDir,
+    instanceKey: trayInstanceKey(dataDir), currentPackageRoot: packageRoot };
 }
 
 // What a tray start tidies first: launchers an update set aside while a
@@ -71,17 +83,20 @@ export function tidyInstallation(context, action, { removeLeftovers = removeReti
 
 if (isMainModule(import.meta.url)) {
   try {
-    if (process.argv.length !== 3) throw new Error('Expected exactly one tray action.');
+    // One action; `recover-start` and `abandon-import-start` also take the digest of the plan the person confirmed.
+    if (process.argv.length !== (/^(?:recover|abandon-import|keep-newer)-start$/.test(process.argv[2]) ? 4 : 3)) throw new Error('Expected exactly one tray action.');
     const context = loadTrayContext();
     tidyInstallation(context, process.argv[2]);
     const result = process.argv[2] === 'context'
       ? { ok: true, dataDir: context.dataDir, logDir: context.logDir,
         nativeLogDir: context.nativeLogDir, instanceKey: context.instanceKey }
-      : await runTrayAction(process.argv[2], context);
+      : await runTrayAction(process.argv[2], context, { onStage: stageReporter(process.env),
+        recoveryDigest: process.argv[3] ?? null });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (!result.ok) process.exitCode = 1;
   } catch (error) {
-    process.stdout.write(JSON.stringify({ ok: false, status: 'unknown', error: error.message }) + '\n');
+    process.stdout.write(JSON.stringify(error instanceof WindowsInstallationSupersededError ? supersededReply(error)
+      : { ok: false, status: 'unknown', error: error.message }) + '\n');
     process.exitCode = 1;
   }
 }

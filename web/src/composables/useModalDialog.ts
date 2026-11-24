@@ -12,6 +12,9 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+// A control the person types or picks in: opening a dialog on it saves them a step.
+const fieldSelector = 'input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable="true"]'
+
 const POPUP_SELECTOR = '[data-reka-popper-content-wrapper]'
 
 export function useModalDialog(open: () => boolean, requestClose: () => void) {
@@ -39,11 +42,17 @@ export function useModalDialog(open: () => boolean, requestClose: () => void) {
         const dialog = dialogRef.value
         if (!dialog) return
         if (!dialog.open) dialog.showModal()
-        // Prefer an explicit target, then content over the header's close button.
+        // An explicit target first. Else the content's first control when it is a
+        // field; when it is a button or a link, the content itself (it scrolls with
+        // the keys, and Tab goes on to that control). A button is not focused for
+        // the person: WebKit draws the keyboard focus ring on a control focused
+        // from script after a click, so a dialog opened with the mouse showed a
+        // ring on a button nobody had reached (the statement's 上一周, on macOS).
         const body = dialog.querySelector<HTMLElement>('.ui-dialog__body')
+        const first = body ? focusableElements(body)[0] : undefined
         const target = initialFocusRef.value
           ?? dialog.querySelector<HTMLElement>('[autofocus]')
-          ?? (body ? focusableElements(body)[0] : undefined)
+          ?? (first?.matches(fieldSelector) ? first : body)
           ?? focusableElements(dialog)[0]
         target?.focus({ preventScroll: true })
       })

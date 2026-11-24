@@ -1,0 +1,479 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+
+import { runPeerControlCommand } from '../packages/roundtable/src/peer/control-cli.js';
+import { startCoordinatorServer } from '../packages/roundtable/src/peer/coordinator-http.js';
+import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
+import { device, discoveryBus } from './fixtures/peer-devices.js';
+
+// Synthetic repositories only.
+const COMMON = 'git@example.test:team/common-app.git';
+const repo = (name) => `git@example.test:team/${name}.git`;
+
+// A personal project as the Provider lists it.
+function project(id, name, { own = null, reference = null, archived = false, temporary = false, session = false } = {}) {
+  return { project_id: id, name, ...(temporary ? { scope_type: 'temporary' } : {}),
+    profile: { name, ...(archived ? { lifecycle: 'archived' } : {}), ...(session ? { origin: 'conversation_fallback' } : {}),
+      sources: [...(own ? [{ kind: 'repository', role: 'own', uri: own }] : []),
+        ...(reference ? [{ kind: 'repository', role: 'reference', uri: reference }] : [])] } };
+}
+
+// Gives a fixture device these projects, its lead assigned to each, and counts team reads.
+function withProjects(record, projects) {
+  const leadId = record.projectId.replace(/-project$/, '-lead');
+  const lead = (record.lead = { agentId: leadId });
+  record.app.personal.listPersonalProjects = async () => projects;
+  record.app.personal.listProjectAgents = async () => [{ agent_id: leadId, profile: { status: 'active', name: `${leadId} name` },
+    assignments: projects.map((entry) => ({ personal_project_id: entry.project_id, status: 'active' })) }];
+  record.teamReads = [];
+  const policy = record.app.personal.getProjectAgentCoordinationPolicy;
+  record.app.personal.getProjectAgentCoordinationPolicy = async (space, projectId) => {
+    record.teamReads.push(projectId);
+    return policy(space, projectId);
+  };
+  return lead;
+}
+
+// Waits by the clock, not by a count of reads: on a slow Windows CI runner 200 reads of the status were not
+// enough for a listener to move (it failed twice on 2026-11-15 with nothing wrong in the product).
+async function until(runtime, matches, label) {
+  let status;
+  for (const deadline = Date.now() + 30_000; Date.now() < deadline;) {
+    status = await runtime.status();
+    if (matches(status)) return status;
+    await delay(25);
+  }
+  // The state it stopped in: a time-out on CI that no local run repeats (2026-11-17) said nothing about why.
+  throw new Error(`Timed out waiting for ${label}; stopped at ${JSON.stringify(stoppedAt(status))}`);
+}
+
+// What a pairing share depends on, from the last status read.
+function stoppedAt(status) {
+  return { role: status.role, listening: status.coordinator?.listening, listenFailure: status.coordinator?.listenFailure,
+    nearbyOn: status.nearby?.on, pairing: status.nearby?.pairing?.state, groupSize: status.groupSize,
+    shares: status.shares.map((share) => share.projectId), autoShared: status.autoShared,
+    autoSharePending: status.autoSharePending, lastPublish: status.lastPublish };
+}
+
+const fillers = (prefix, count) => Array.from({ length: count }, (_, index) =>
+  project(`${prefix}-filler-${index}`, `Synthetic filler ${String(index).padStart(3, '0')}`));
+
+// A folder that is a Git checkout whose origin is the given address.
+async function checkout(origin) {
+  const folder = await mkdtemp(join(tmpdir(), 'fuli-peer-checkout-'));
+  await mkdir(join(folder, '.git'));
+  await writeFile(join(folder, '.git', 'config'), `[remote "origin"]\n\turl = ${origin}\n`);
+  return folder;
+}
+
+test('status lists only shared and same-repository projects, the search finds the rest, and a joined invitation shares only the common project', { timeout: 30_000 }, async () => {
+  // The desk knows a checkout of the common repository, but its own project resolution does not map it there.
+  const unmapped = await checkout(COMMON);
+  const [laptop, desk] = await Promise.all([device('laptop'), device('desk', { sessionFolder: unmapped })]);
+  try {
+    withProjects(laptop, [project('laptop-common', 'Common app', { own: COMMON }),
+      project('laptop-r2', 'Laptop r2', { own: repo('r2') }), project('laptop-r3', 'Laptop r3', { own: repo('r3') }),
+      project('laptop-r4', 'Laptop r4', { own: repo('r4') }), project('laptop-r5', 'Laptop r5', { own: repo('r5') }),
+      project('laptop-hidden-archived', 'Hidden archived', { archived: true }),
+      project('laptop-hidden-temporary', 'Hidden temporary', { temporary: true }),
+      project('laptop-hidden-session', 'Hidden session', { session: true }),
+      ...fillers('laptop', 300)]);
+    withProjects(desk, [project('desk-common', 'Desk common', { own: COMMON }),
+      project('desk-reference', 'Desk reference', { reference: repo('r2') }),
+      project('desk-archived', 'Desk archived', { own: repo('r3'), archived: true }),
+      project('desk-temporary', 'Desk temporary', { own: repo('r4'), temporary: true }),
+      project('desk-session', 'Desk session', { own: repo('r5'), session: true }),
+      project('desk-unrelated', 'Desk unrelated', { own: repo('desk-only') })]);
+    desk.app.personal.recentAgentSessions = async () => [{ source_application: 'codex', session_id: 'desk-recent',
+      personal_project_id: 'desk-common', last_active: '2030-01-01T08:00:00.000Z' }];
+
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const joined = await desk.runtime.join({ invitation: laptop.runtime.createInvitation().invitation, name: 'Desk' });
+    // Joining with the invitation shares exactly the project both computers have, lead only, first allowed client.
+    // The folder gets the check a manual save makes, so a checkout the host does not map to the project is not stored.
+    assert.deepEqual(joined.shares.map((share) => [share.projectId, share.clients, share.workingDirectory]), [['desk-common', ['codex'], null]]);
+    assert.deepEqual(joined.autoShared.map((record) => record.projects), [[{ projectId: 'desk-common', projectName: 'Desk common' }]]);
+    assert.equal(joined.groupSize, 2);
+    assert.equal(joined.shareable[0].knownFolder, unmapped, 'the folder is known, only not confirmed for this project');
+
+    // The coordinator took no confirming action: the same project is a suggestion, not a share.
+    // The desk's archived and session-only projects publish no digest, so Laptop r3 and r5 are no suggestions.
+    const suggested = await until(laptop.runtime, (status) => status.shareable.length > 0, 'the suggestion to show');
+    assert.deepEqual([suggested.shares, suggested.autoShared], [[], []]);
+    assert.deepEqual(suggested.shareable.map((entry) => [entry.projectId, entry.sameProjectOn.map((device) => device.name)]),
+      [['laptop-common', ['Desk']]]);
+    assert.equal(suggested.shareable[0].lead.agentId, laptop.lead.agentId);
+
+    laptop.teamReads.length = 0;
+    await laptop.runtime.status();
+    assert.deepEqual(laptop.teamReads, ['laptop-common'], 'one team read for the one listed project, not one per project');
+
+    laptop.teamReads.length = 0;
+    const narrowed = await laptop.runtime.searchShareable({ query: 'FILLER 01', limit: 5 });
+    assert.deepEqual(narrowed.projects.map((entry) => entry.projectName),
+      ['Synthetic filler 010', 'Synthetic filler 011', 'Synthetic filler 012', 'Synthetic filler 013', 'Synthetic filler 014']);
+    assert.equal(narrowed.more, true);
+    const recent = await laptop.runtime.searchShareable({});
+    assert.equal(recent.projects.length, 20);
+    assert.deepEqual(recent.projects.slice(0, 2).map((entry) => entry.projectId), ['laptop-r2', 'laptop-r3'], 'the host order, listed ones left out');
+    assert.equal(recent.more, true);
+    assert.deepEqual(await laptop.runtime.searchShareable({ query: 'hidden' }), { projects: [], more: false });
+    assert.deepEqual(await laptop.runtime.searchShareable({ query: 'common' }), { projects: [], more: false }, 'the short list already shows it');
+    const exact = await laptop.runtime.searchShareable({ query: 'filler 299' });
+    assert.deepEqual(exact, { projects: [{ projectId: 'laptop-filler-299', projectName: 'Synthetic filler 299' }], more: false });
+    assert.deepEqual(laptop.teamReads, [], 'searching reads no team');
+
+    const picked = await laptop.runtime.shareableProject('laptop-filler-7');
+    assert.deepEqual([picked.projectName, picked.lead.agentId, picked.clients, picked.sameProjectOn, picked.knownFolder],
+      ['Synthetic filler 007', laptop.lead.agentId, ['codex'], [], null]);
+    for (const hidden of ['laptop-hidden-archived', 'laptop-hidden-temporary', 'laptop-hidden-session', 'nobody']) {
+      await assert.rejects(laptop.runtime.shareableProject(hidden), { code: 'project_not_found' });
+    }
+
+    // Sharing the suggestion is the person's one click there; a removed share leaves the short list unless suggested.
+    await laptop.runtime.setShares({ shares: [{ projectId: 'laptop-common', clients: ['codex'] }, { projectId: 'laptop-filler-7', clients: ['codex'] }] });
+    assert.deepEqual((await laptop.runtime.status()).shareable.map((entry) => entry.projectId), ['laptop-common', 'laptop-filler-7']);
+    const removed = await laptop.runtime.setShares({ shares: [{ projectId: 'laptop-common', clients: ['codex'] }] });
+    assert.deepEqual(removed.shareable.map((entry) => entry.projectId), ['laptop-common']);
+
+    const lines = [];
+    await runPeerControlCommand(['status'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli', notRunning: 'not running',
+      write: (line) => lines.push(line), fetchImpl: async () => new Response(JSON.stringify(await desk.runtime.status())) });
+    assert.ok(lines.includes('Shared after pairing (projects the other computer has too): Desk common'), lines.join('\n'));
+
+    // Revoking the device forgets its record, as turning the roundtable off does.
+    const deskNode = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    laptop.app.peer.nodeStore().setSetting('autoShared', { [deskNode]: { state: 'done', since: 1, at: '2030-01-01T00:00:00.000Z', projects: [] } });
+    await laptop.runtime.revokeDevice(deskNode);
+    assert.equal(laptop.app.peer.nodeStore().setting('autoShared'), null);
+  } finally { await desk.close(); await laptop.close(); await rm(unmapped, { recursive: true, force: true }); }
+});
+
+test('joining a group that has another computer shares nothing automatically and says the group is larger', { timeout: 30_000 }, async () => {
+  const [laptop, tablet, desk] = await Promise.all([device('laptop'), device('tablet'), device('desk')]);
+  try {
+    withProjects(laptop, [project('laptop-common', 'Common app', { own: COMMON })]);
+    withProjects(desk, [project('desk-common', 'Desk common', { own: COMMON })]);
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await tablet.runtime.join({ invitation: laptop.runtime.createInvitation().invitation, name: 'Tablet' });
+    const joined = await desk.runtime.join({ invitation: laptop.runtime.createInvitation().invitation, name: 'Desk' });
+    assert.deepEqual(joined.shares, []);
+    assert.deepEqual(joined.autoShared.map((record) => [record.projects, record.skipped, record.matched]), [[[], 'group', 1]]);
+    assert.equal(joined.groupSize, 3);
+    assert.deepEqual(joined.shareable.map((entry) => entry.projectId), ['desk-common'], 'left for the one-click button');
+  } finally { await desk.close(); await tablet.close(); await laptop.close(); }
+});
+
+test('fuli peer join says what joining shares before it joins', async () => {
+  const lines = [];
+  const paths = [];
+  await runPeerControlCommand(['join', '--invitation', 'fuli-peer-invite:1:synthetic'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli',
+    notRunning: 'not running', write: (line) => lines.push(line),
+    fetchImpl: async (url) => { paths.push([lines.length, new URL(url).pathname]); return new Response(JSON.stringify({ role: null, addresses: [] })); } });
+  assert.equal(lines[0], 'Once confirmed, leads of up to 8 projects the other computer says it has too can talk. Nothing else.');
+  // The joining side is always the member: told what the other computer decides.
+  assert.equal(lines[1], MEMBER_TRUST);
+  assert.deepEqual(paths, [[2, '/api/peer/join']], 'both sentences come before the join request');
+});
+
+const MEMBER_TRUST = 'The other computer relays messages and decides who else is in the group. Pair only if you trust it.';
+
+test('fuli peer confirm tells the side that will join the other computer\'s group what that computer decides, and only that side', async () => {
+  for (const [coordinator, told] of [['other', true], ['this', false]]) {
+    const lines = [];
+    const status = { role: null, addresses: [], nearby: { on: true, devices: [], pairing: { requestId: 'request-1', state: 'confirm',
+      code: '123456', coordinator, device: { name: 'Desk' }, confirmedHere: true, expiresAt: '2026-11-14T00:00:00.000Z' } } };
+    await runPeerControlCommand(['confirm', '123456'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli',
+      notRunning: 'not running', write: (line) => lines.push(line),
+      fetchImpl: async () => new Response(JSON.stringify(status)) });
+    assert.equal(lines.includes(MEMBER_TRUST), told, coordinator);
+  }
+});
+
+test('a confirmed nearby pairing shares only the common project on both computers, once, and an untick stays', { timeout: 40_000 }, async () => {
+  const bus = discoveryBus();
+  // The coordinator's first read comes before the other computer published its digests: the one retry finds them.
+  const quick = { autoShareRetryMs: 1_500, pairedGraceMs: 100 };
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: quick }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: quick })]);
+  let restarted = null;
+  try {
+    withProjects(desk, [project('desk-common', 'Desk common', { own: COMMON }), project('desk-unrelated', 'Desk unrelated', { own: repo('desk-only') }),
+      project('desk-reference', 'Desk reference', { reference: repo('r2') })]);
+    withProjects(laptop, [project('laptop-common', 'Laptop common', { own: COMMON }), project('laptop-unrelated', 'Laptop unrelated', { own: repo('laptop-only') }),
+      project('laptop-r2', 'Laptop r2', { own: repo('r2') })]);
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const seen = await until(desk.runtime, (status) => status.nearby.devices.length > 0, 'the laptop to be listed');
+    await desk.runtime.pairNearby({ fingerprint: seen.nearby.devices[0].fingerprint.slice(0, 6) });
+    const [here, there] = await Promise.all([until(desk.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'desk code'),
+      until(laptop.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'laptop code')]);
+    await desk.runtime.confirmPairing({ requestId: here.nearby.pairing.requestId, code: there.nearby.pairing.code });
+    await laptop.runtime.confirmPairing({ requestId: there.nearby.pairing.requestId, code: here.nearby.pairing.code });
+
+    for (const [record, expected] of [[desk, 'desk-common'], [laptop, 'laptop-common']]) {
+      // One status reads shares before the record, so it waits until it shows both.
+      const done = await until(record.runtime, (status) => status.autoShared.length === 1 && status.shares.length > 0, `${expected} to be shared`);
+      assert.deepEqual(done.shares.map((share) => [share.projectId, share.agentId, share.clients]), [[expected, record.lead.agentId, ['codex']]]);
+      assert.deepEqual(done.autoShared[0].projects.map((entry) => entry.projectId), [expected]);
+    }
+    // Each computer can now ask the other's common lead, and only that one.
+    for (const [record, otherProject] of [[desk, 'Laptop common'], [laptop, 'Desk common']]) {
+      let remote = [];
+      for (let index = 0; index < 100 && !remote.length; index += 1) {
+        remote = (await record.app.roundtable.findAgents({})).remoteAgents ?? [];
+        if (!remote.length) await delay(50);
+      }
+      assert.deepEqual(remote.map((agent) => agent.projectName), [otherProject], JSON.stringify(remote));
+    }
+
+    // The person unticks it: no status read, retry or restart shares it again.
+    const fingerprint = Object.keys(desk.app.peer.nodeStore().setting('autoShared'))[0];
+    await desk.runtime.setShares({ shares: [] });
+    await delay(400);
+    await desk.runtime.status();
+    await desk.runtime.close();
+    restarted = createPeerRuntime({ host: createFuliRoundtableHost(desk.app), roundtable: desk.app.roundtable, port: desk.app.peer,
+      allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', createDiscovery: discoveryBus().discovery, ...quick });
+    await restarted.resume();
+    await delay(400);
+    const after = await restarted.status();
+    assert.deepEqual(after.shares, []);
+    assert.deepEqual(after.shareable.map((entry) => entry.projectId), ['desk-common'], 'still suggested, for the person to tick again');
+    assert.deepEqual(Object.keys(desk.app.peer.nodeStore().setting('autoShared')), [fingerprint], 'recorded once for this pairing');
+  } finally { await restarted?.close(); await desk.close(); await laptop.close(); }
+});
+
+// One physical adapter; its address is loopback so the moved listener stays reachable in a test.
+const LAN = { eth0: [{ address: '127.0.0.1', family: 'IPv4', internal: false }] };
+
+// The listener the runtime asks for, recorded, and opened on loopback whatever the address. A device reaches it
+// on `reachedAs` (loopback until a test says otherwise); hold(host) keeps the next start on that host waiting;
+// failing makes every start fail as a taken port does.
+function recordedListener() {
+  const asked = [];
+  const held = new Map();
+  const listener = { asked, reachedAs: '127.0.0.1', failing: false,
+    hold(host) {
+      const reached = Promise.withResolvers();
+      const release = Promise.withResolvers();
+      held.set(host, { reached, release });
+      return { reached: reached.promise, release: () => release.resolve() };
+    },
+    async startServer(options) {
+      asked.push(options.host);
+      const waiting = held.get(options.host);
+      if (waiting) { held.delete(options.host); waiting.reached.resolve(); await waiting.release.promise; }
+      if (listener.failing) throw Object.assign(new Error('address in use'), { code: 'EADDRINUSE' });
+      return startCoordinatorServer({ ...options, host: '127.0.0.1',
+        onReached: (nodeId) => options.onReached?.(nodeId, listener.reachedAs) });
+    } };
+  return listener;
+}
+
+// Two computers paired nearby; the laptop coordinates through a recorded listener and narrows it when pairing ends.
+async function pairedNearby({ publishMs } = {}) {
+  const bus = discoveryBus();
+  const listener = recordedListener();
+  const options = { nearbyListenHost: '0.0.0.0', pairedGraceMs: 60_000, interfaces: () => LAN, ...(publishMs ? { publishMs } : {}) };
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: options }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { ...options, startServer: listener.startServer } })]);
+  await desk.runtime.nearbyOn({ name: 'Desk' });
+  await laptop.runtime.nearbyOn({ name: 'Laptop' });
+  const seen = await until(desk.runtime, (status) => status.nearby.devices.length > 0, 'the laptop to be listed');
+  await desk.runtime.pairNearby({ fingerprint: seen.nearby.devices[0].fingerprint.slice(0, 6) });
+  const [here, there] = await Promise.all([until(desk.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'desk code'),
+    until(laptop.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'laptop code')]);
+  await desk.runtime.confirmPairing({ requestId: here.nearby.pairing.requestId, code: there.nearby.pairing.code });
+  await laptop.runtime.confirmPairing({ requestId: there.nearby.pairing.requestId, code: here.nearby.pairing.code });
+  await until(desk.runtime, (status) => status.role === 'member' && status.groupSize === 2, 'the desk to join');
+  await until(laptop.runtime, (status) => status.coordinator?.listening && status.groupSize === 2, 'the laptop to see the desk');
+  return { desk, laptop, listener };
+}
+
+const listenerHost = (record) => record.app.peer.nodeStore().setting('coordinator')?.host;
+
+test('both computers share after a nearby pairing whose coordinator then moves its listener to a new repository key', { timeout: 60_000 }, async () => {
+  const bus = discoveryBus();
+  const listener = recordedListener();
+  // A listener on every address, as in production: after pairing it narrows to the
+  // address the other computer used, which starts a new coordinator with a new key.
+  const options = { nearbyListenHost: '0.0.0.0', startServer: listener.startServer, pairedGraceMs: 100, interfaces: () => LAN,
+    publishMs: 400, autoShareRetryMs: 150, autoShareAttempts: 60 };
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery, runtimeOptions: options }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: options })]);
+  try {
+    withProjects(desk, [project('desk-common', 'Desk common', { own: COMMON }), project('desk-unrelated', 'Desk unrelated', { own: repo('desk-only') })]);
+    withProjects(laptop, [project('laptop-common', 'Laptop common', { own: COMMON }), project('laptop-unrelated', 'Laptop unrelated', { own: repo('laptop-only') })]);
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const seen = await until(desk.runtime, (status) => status.nearby.devices.length > 0, 'the laptop to be listed');
+    await desk.runtime.pairNearby({ fingerprint: seen.nearby.devices[0].fingerprint.slice(0, 6) });
+    const [here, there] = await Promise.all([until(desk.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'desk code'),
+      until(laptop.runtime, (status) => status.nearby.pairing?.state === 'confirm', 'laptop code')]);
+    await desk.runtime.confirmPairing({ requestId: here.nearby.pairing.requestId, code: there.nearby.pairing.code });
+    await laptop.runtime.confirmPairing({ requestId: there.nearby.pairing.requestId, code: here.nearby.pairing.code });
+
+    await until(laptop.runtime, (status) => !status.nearby.on && laptop.app.peer.nodeStore().setting('coordinator')?.host === '127.0.0.1',
+      'the coordinator to move its listener');
+    for (const [record, expected] of [[desk, 'desk-common'], [laptop, 'laptop-common']]) {
+      const done = await until(record.runtime, (status) => status.autoShared.length === 1 && status.shares.length > 0, `${expected} to be shared`);
+      assert.deepEqual(done.shares.map((share) => share.projectId), [expected]);
+      assert.deepEqual(done.autoShared[0].projects.map((entry) => entry.projectId), [expected]);
+    }
+    assert.ok(listener.asked.includes('0.0.0.0') && listener.asked.at(-1) === '127.0.0.1', JSON.stringify(listener.asked));
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+// Two reasons to narrow the listener at once (nearby pairing ending while a paired device first reaches it,
+// or the publisher's check) are one move: each move stopped the other's listener and neither opened a new one.
+test('two narrowings of the listener at once move it once and leave it listening', { timeout: 30_000 }, async () => {
+  const { desk, laptop, listener } = await pairedNearby();
+  try {
+    await Promise.all([laptop.runtime.nearbyOff(), laptop.runtime.nearbyOff()]);
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop)], [true, '127.0.0.1']);
+    assert.deepEqual(listener.asked, ['0.0.0.0', '127.0.0.1'], 'moved once');
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+// Nearby pairing ends, the paired desk first reaches the laptop on another address, and the publisher's round
+// comes, while the first narrowing still moves: the listener ends on the latest target, not the first.
+// The other address is an IPv4-mapped loopback, so the moved listener stays reachable in a test.
+test('narrowings asked for while the listener moves end on the latest target', { timeout: 30_000 }, async () => {
+  const { desk, laptop, listener } = await pairedNearby({ publishMs: 40 });
+  const other = '::ffff:127.0.0.1';
+  try {
+    const deskId = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    // No device has reached a LAN address yet, so the first narrowing takes the first one.
+    const first = listener.hold('127.0.0.1');
+    const off = laptop.runtime.nearbyOff();
+    await first.reached;
+    listener.reachedAs = other;
+    laptop.app.peer.nodeStore().setSetting('reachedAddresses', { [deskId]: other });
+    first.release();
+    await off;
+    await until(laptop.runtime, (status) => status.coordinator?.listening && listenerHost(laptop) === other, 'the latest target');
+    await delay(200);
+    assert.equal(listenerHost(laptop), other, 'it stays on the latest target');
+    assert.deepEqual(listener.asked, ['0.0.0.0', '127.0.0.1', other]);
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+// Nearby pairing ends twice at once (its timer and the person): one returns the listener to the address the
+// person chose, the other narrows. They used to stop each other's listener and leave nothing listening, and
+// then the narrowing replaced the waiting return. The computer's first LAN address is not the chosen one, so
+// a narrowing that wins shows. (The recorded listener opens on loopback whatever address it is asked for.)
+test('returning to the chosen address while a narrowing is asked for leaves it listening there', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const lan = { eth0: [{ address: '192.0.2.10', family: 'IPv4', internal: false }] };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => lan,
+    startServer: listener.startServer, publishMs: 20 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    assert.equal(listenerHost(laptop), '0.0.0.0');
+    await Promise.all([laptop.runtime.nearbyOff(), laptop.runtime.nearbyOff()]);
+    await delay(100);
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop)], [true, '127.0.0.1']);
+    assert.deepEqual(listener.asked, ['127.0.0.1', '0.0.0.0', '127.0.0.1']);
+  } finally { await laptop.close(); }
+});
+
+// The person turns nearby pairing off while turning it on still widens the listener: off is the last word.
+test('nearby pairing turned off while it opens leaves the listener on the chosen address', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer: listener.startServer } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const widening = listener.hold('0.0.0.0');
+    const on = laptop.runtime.nearbyOn({ name: 'Laptop' });
+    await widening.reached;
+    const off = laptop.runtime.nearbyOff();
+    widening.release();
+    await assert.rejects(on, { code: 'listen_stopped' });
+    await off;
+    const after = await laptop.runtime.status();
+    assert.deepEqual([after.coordinator.listening, listenerHost(laptop), after.nearby.on], [true, '127.0.0.1', false]);
+  } finally { await laptop.close(); }
+});
+
+test('a listener move that cannot listen anywhere says why', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer: listener.startServer, listenRetryMs: 60_000 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    listener.failing = true;
+    await laptop.runtime.nearbyOff();
+    const after = await laptop.runtime.status();
+    assert.equal(after.coordinator.listening, false);
+    assert.equal(after.coordinator.listenFailure?.code, 'EADDRINUSE', JSON.stringify(after.coordinator));
+  } finally { await laptop.close(); }
+});
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+// A listener that never finishes closing (a connection holding it, say) used to hold the move forever, and
+// every move after it, the person's 「重新监听」 too. The move now gives up after its limit and says why.
+test('a listener that does not stop in time ends the move with a reason and leaves 重新监听 working', { timeout: 30_000 }, async () => {
+  const listener = recordedListener();
+  let stuck = false;
+  // The first listener closes its socket but does not say it is done until the test lets it: the stop that
+  // waits for it then closes the coordinator's database too, which Windows needs before the test's folder
+  // can be removed (an open coordinator.sqlite-shm is EBUSY there).
+  const done = Promise.withResolvers();
+  let closing = null;
+  const startServer = async (options) => {
+    const server = await listener.startServer(options);
+    if (stuck) return server;
+    stuck = true;
+    return { ...server, close: () => (closing = server.close().then(() => done.promise)) };
+  };
+  const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
+    startServer, moveStopMs: 50 } });
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    const on = laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const settled = await Promise.race([on.then(() => 'moved', (error) => error.code), delay(5_000, 'still waiting')]);
+    assert.equal(settled, 'listen_stop_timeout');
+    const stalled = await laptop.runtime.status();
+    assert.deepEqual([stalled.coordinator.listening, stalled.coordinator.listenFailure?.code], [false, 'STOP_TIMEOUT']);
+    const lines = [];
+    await runPeerControlCommand(['status'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli', notRunning: 'not running',
+      write: (line) => lines.push(line), fetchImpl: async () => new Response(JSON.stringify(stalled)) });
+    assert.ok(lines.some((line) => line.startsWith('Not listening: the previous listener did not stop')), lines.join('\n'));
+    const again = await Promise.race([laptop.runtime.reopenListener(), delay(5_000, null)]);
+    assert.ok(again, 'the person\'s 重新监听 is not held behind the stuck stop');
+    assert.deepEqual([again.coordinator.listening, again.coordinator.listenFailure, listenerHost(laptop)], [true, null, '127.0.0.1']);
+  } finally {
+    // The late stop ends: it closes the first coordinator's database in the turn after its close answers.
+    done.resolve();
+    await closing;
+    await tick();
+    await laptop.close();
+  }
+});
+
+test('a device that leaves by itself ends the coordinator\'s waiting share for it, as a revoke does', { timeout: 30_000 }, async () => {
+  const [laptop, desk] = await Promise.all([device('laptop', { runtimeOptions: { autoShareRetryMs: 50, autoShareAttempts: 1_000 } }), device('desk')]);
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await desk.runtime.join({ invitation: laptop.runtime.createInvitation().invitation, name: 'Desk' });
+    const deskNode = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    const store = laptop.app.peer.nodeStore();
+    store.setSetting('autoShared', { [deskNode]: { state: 'pending', since: Date.now(), until: Date.now() + 60_000 } });
+    assert.equal((await laptop.runtime.status()).autoSharePending, true);
+    await desk.runtime.disable();
+    await until(laptop.runtime, (status) => !status.autoSharePending, 'the leave to end the waiting');
+    assert.equal(store.setting('autoShared'), null, 'no unanswered record that would block a later pairing');
+  } finally { await desk.close(); await laptop.close(); }
+});

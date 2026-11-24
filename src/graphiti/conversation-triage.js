@@ -1,5 +1,5 @@
 import { projectByName, projectNames } from './task-entry-project-mention.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID, JEFA_AGENT_ID } from '../employees/fixed-roles.js';
 import { PROPOSAL_MIN_CONVERSATIONS, topicOutcome } from './topic-proposals.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
@@ -14,6 +14,8 @@ function isUnclaimedTask(task) {
 }
 
 // Names only, one per line in spirit: the entry stays small and details stay queryable.
+// continue_with: how a conversation about one of the topics finds that topic's
+// earlier conversations, which is all the memory Astro keeps of a topic.
 export async function triageCandidates(application) {
   const [projects, topics] = await Promise.all([
     projectNames(application, PROJECT_CANDIDATES).catch(() => []),
@@ -21,7 +23,8 @@ export async function triageCandidates(application) {
       personal_space_id: application.config.personal.spaceId, limit: TOPIC_CANDIDATES
     })).then(value => value.topics.map(item => item.topic)).catch(() => [])
   ]);
-  return { projects, topics, label_with: 'checkpoint_task_knowledge.triage' };
+  return { projects, topics, label_with: 'checkpoint_task_knowledge.triage',
+    continue_with: 'list_agent_conversations.topic' };
 }
 
 export function validateTriage(triage) {
@@ -53,7 +56,7 @@ export async function recordTriage(application, task, conversation, label) {
       personal_space_id: spaceId, conversation_id: conversation.conversation_id, kind: label.kind,
       personal_project_id: projectId, topic: label.kind === 'topic' ? label.topic : null, source: 'host'
     });
-    const result = { status: 'recorded', recorded_by: 'employee.jefa', ...recorded.triage,
+    const result = { status: 'recorded', recorded_by: JEFA_AGENT_ID, ...recorded.triage,
       ...(recorded.kept ? { kept: recorded.kept } : {}) };
     if (!recorded.kept && label.kind === 'topic' && recorded.topic_count >= PROPOSAL_MIN_CONVERSATIONS) {
       // A formed project (D-86) is announced; otherwise the person is asked.

@@ -1,11 +1,14 @@
 import { ApplicationError } from '../app/application-error.js';
+import { isFuliProcessSession } from '../mcp/session-id.js';
+import { ProviderRequestError } from './provider-client.js';
 import { captureSettingsUrl, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { projectAgentCollaborationPreferences } from './collaboration-preference-workflow.js';
-import { taskKnowledgeGuidance } from './task-knowledge-guidance.js';
+import { taskKnowledgeGuidance, withoutLeadOnlyRules } from './task-knowledge-guidance.js';
 import { taskJudgmentContext } from './task-entry-preferences.js';
+import { introductionReceiptLine } from './task-entry-introduction.js';
 import { withWorkerTaskGuidance } from './worker-task-context.js';
-import { blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
+import { blockedPreferenceRecovery } from '../mcp/preference-delivery.js';
 import { projectAgentRecord } from './project-agent-mapping.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE, projectAgentRoleContext, projectAgentRoleTextOverflows } from './project-agent-task-entry.js';
 import { loadProjectTeamContext } from './project-agent-team-context.js';
@@ -15,6 +18,12 @@ import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { taskPreferenceMetadata, withPreferenceScope } from '../conversations/preference-snapshot.js';
 import { createTaskPreferencePager } from './task-preference-pages.js';
+import { taskCheckpointReplay } from './checkpoint-reason.js';
+
+// Why a recovery read of a task kept before its entry's decision could be
+// replayed (recoveredCheckpoint) requires a checkpoint (rec#137). Short on purpose: the
+// reader's whole result shares one 32 KiB envelope with the role and receipt.
+const RECOVERY_REASON = 'set by the entry that opened this task';
 
 // Worker entry always uses this fixed admission selection (worker-task-context.js).
 const WORKER_ASSIGNMENT = Object.freeze({ selection_reason: 'worker_run_admitted', match_basis: ['sealed_worker_run'] });
@@ -22,15 +31,13 @@ const PAGERS = new WeakMap();
 
 // A fresh read of the current source, never a task entry or preference snapshot.
 export async function readTaskPreferences(application, {
-  taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified = false,
-  workerRun = null, cursor
+  taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified = false, sourceSessionBinding = null,
+  workerRun = null, cursor, keys = null
 }) {
-  if (!sourceSessionVerified || !sourceSessionId || sourceSessionId.startsWith('fuli-host-')) {
-    throw blocked('This host has no verified native or sealed worker session; do not supply or guess a session to recover preferences.');
-  }
-  const { task, preferences } = await application.taskContextRegistry.preferences(taskContextToken,
-    { sourceApplication, sessionId: sourceSessionId });
-  if (task.token !== taskContextToken || task.sessionId !== sourceSessionId ||
+  const sessionId = await readerSession(application,
+    { taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified, sourceSessionBinding });
+  const { task, preferences } = await ownedTaskPreferences(application, taskContextToken, { sourceApplication, sessionId });
+  if (task.token !== taskContextToken || task.sessionId !== sessionId ||
       task.sourceApplication !== sourceApplication || task.checkpoint?.phase === 'complete') {
     throw blocked('Task preferences do not belong to this active host session.');
   }
@@ -54,6 +61,7 @@ export async function readTaskPreferences(application, {
     taskScope: { sessionId: task.sessionId, sourceSessionId: task.sourceSessionId,
       workKind: scope.work_kind, workflow: scope.workflow }
   });
+  if (Array.isArray(keys) && keys.length) return keyedPreferences(task, projection, keys);
   const spaceId = application.config.personal.spaceId;
   let rawAgent;
   let project;
@@ -63,7 +71,8 @@ export async function readTaskPreferences(application, {
     [rawAgent, project, team] = await Promise.all([
       application.personal.getProjectAgent(spaceId, task.personalProjectId, task.projectAgentId),
       task.personalProjectId ? application.personal.getPersonalProject(spaceId, task.personalProjectId) : null,
-      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId) : null
+      task.personalProjectId ? loadProjectTeamContext(application, spaceId, task.personalProjectId,
+        { agentId: task.projectAgentId }) : null
     ]);
   } catch {
     throw blocked('The task Agent role could not be read; recovery cannot deliver its role instructions.');
@@ -88,14 +97,18 @@ export async function readTaskPreferences(application, {
       ...(team?.guidance ? { team_guidance: team.guidance } : {}),
       guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE
     }, assignment),
-    taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+    taskContextToken: task.token, task_context_token: task.token,
+    // A recovery read of an open task replays the decision of the entry that
+    // opened it (design T2, rec#137), never "required while open".
+    ...recoveredCheckpoint(task),
     ...(task.projectScope ? { project_scope: task.projectScope } : {}),
-    task_guidance: taskKnowledgeGuidance(),
+    task_guidance: withoutLeadOnlyRules(taskKnowledgeGuidance()),
     ...(judgment ? { judgment_context: judgment } : {}),
     agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
       agentId: task.projectAgentId, name: rawAgent.profile?.display_name ?? null, role: rawAgent.profile?.name ?? null, sourceApplication: task.sourceApplication,
       notices: [...receiptNotices(await captureDecision(application, taskCaptureScope(task)), [],
-        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })] }),
+        { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
+      introduction: introductionReceiptLine(task) }),
     preference_delivery: { status: 'complete' }, preferences_complete: true,
     same_task_recovery_available: true, truncated: false
   };
@@ -114,10 +127,90 @@ export async function readTaskPreferences(application, {
   }
   if (!PAGERS.has(application)) PAGERS.set(application, createTaskPreferencePager());
   const page = PAGERS.get(application).read(projection.context.source_truncated
-    ? blockedPreferenceDelivery(result, 'source_window') : result, { cursor });
+    ? blockedPreferenceRecovery(result, 'source_window') : result, { cursor });
   // A final page is only a suffix, never a complete native delta baseline.
   return page.preference_delivery.status === 'complete'
     ? withPreferenceScope(page, taskPreferenceMetadata(task, spaceId)) : page;
 }
 
+// The session whose task this read may recover. A host that names a session
+// (native or sealed worker) binds it, and a task of another session is
+// refused. A process of a client that names no session at all
+// (sourceSessionBinding 'task_token', set by session-id.js, such as Claude
+// Desktop's connector serving its Code tab, rec#107, rec#128): there the
+// token's current, unfinished task in this client names its own session,
+// recorded when the task began. A process of a client that names sessions but
+// proves none is refused. The caller never supplies or chooses a session.
+async function readerSession(application,
+  { taskContextToken, sourceApplication, sourceSessionId, sourceSessionVerified, sourceSessionBinding }) {
+  if (sourceSessionVerified && sourceSessionId && !isFuliProcessSession(sourceSessionId)) return sourceSessionId;
+  if (!sourceSessionVerified && sourceSessionBinding === 'task_token' && isFuliProcessSession(sourceSessionId)) {
+    const sessionId = await application.taskContextRegistry.currentTaskSession(taskContextToken, sourceApplication);
+    if (typeof sessionId === 'string' && sessionId && !isFuliProcessSession(sessionId)) return sessionId;
+    throw blocked('This taskContextToken names no current task of a host session in this client; recover with the latest entry\'s token.');
+  }
+  throw blocked('This host has no verified native or sealed worker session; do not supply or guess a session to recover preferences.');
+}
+
+// The Provider answers 404 when the token's current task is not this
+// session's: an MCP process started before /clear or an in-app resume still
+// names the earlier session (the host's variable is fixed at its start), or a
+// newer entry superseded the token. Said as the reader's refusal, never a
+// provider error the model would retry.
+async function ownedTaskPreferences(application, token, scope) {
+  try {
+    return await application.taskContextRegistry.preferences(token, scope);
+  } catch (error) {
+    if (!(error instanceof ProviderRequestError && error.status === 404)) throw error;
+    // Shown whole: an MCP error message keeps 240 characters.
+    throw blocked('Not the current task of this MCP process\'s session: the process may predate /clear or a resume, or a newer '
+      + 'entry superseded the token. Tell the person; checkpoint this token as incomplete if checkpoint_required.');
+  }
+}
+
+// The entry's checkpoint decision for this task (checkpoint-reason.js). A task
+// kept before that decision could be replayed needs a checkpoint while open.
+function recoveredCheckpoint(task) {
+  const replayed = taskCheckpointReplay(task);
+  if (replayed) return { checkpoint_required: replayed.required, checkpoint_reason: replayed.reason };
+  const done = task.checkpoint?.phase === 'complete';
+  return { checkpoint_required: !done, checkpoint_reason: done ? 'this task is already checkpointed' : RECOVERY_REASON };
+}
+
 function blocked(message) { return new ApplicationError('preference_recovery_blocked', message); }
+
+// The preferences a task entry named in its index (preferences_omitted.index,
+// rec#137), read by key: the bodies of those items whole, in one result, with
+// no page and no cursor, so expanding the two that may apply costs one call
+// and survives the next turn's new token. It is never the complete set:
+// preferences_complete stays false, so no session takes it as the base of a
+// delta. A key this task does not have is named back, never guessed.
+const KEYED_GUIDANCE = 'These are only the preferences you asked for by key; the rest of this task\'s set still applies '
+  + 'as the entry delivered it. in_conflict: an unresolved conflict holds that key — apply no alternative until it is resolved '
+  + '(read it with read_task_preferences without keys). scope_unknown: it is limited to a work kind, workflow or session '
+  + 'this task does not state. missing: not one of this task\'s preferences now.';
+function keyedPreferences(task, projection, keys) {
+  const wanted = new Set(keys);
+  const effective = projection.effective_preferences.filter(item => wanted.has(item.preference_key));
+  const found = new Set(effective.map(item => item.preference_key));
+  // A key that is not delivered may still be held somewhere other than the
+  // set (review of #1070): an unresolved conflict, or a scope this task does
+  // not state. Calling those "missing" told the model the rule was gone.
+  const conflicted = new Set((projection.active_conflicts ?? []).map(conflict => conflict.preference_key));
+  const unknown = new Set(projection.scope_unknown ?? []);
+  const rest = [...wanted].filter(key => !found.has(key));
+  const listed = keysOf => rest.filter(keysOf);
+  const value = {
+    taskContextToken: task.token, task_context_token: task.token,
+    ...recoveredCheckpoint(task),
+    context: projection.context,
+    effective_preferences: effective,
+    preference_delivery: { status: 'keys', requested: wanted.size,
+      in_conflict: listed(key => conflicted.has(key)),
+      scope_unknown: listed(key => !conflicted.has(key) && unknown.has(key)),
+      missing: listed(key => !conflicted.has(key) && !unknown.has(key)),
+      guidance: KEYED_GUIDANCE },
+    preferences_complete: false, same_task_recovery_available: true, truncated: false
+  };
+  return projection.context.source_truncated ? blockedPreferenceRecovery(value, 'source_window') : value;
+}

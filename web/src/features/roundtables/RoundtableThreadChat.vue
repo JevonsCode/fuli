@@ -2,15 +2,17 @@
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
+import { RouterLink } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
-import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
+import { deliveryLabel, deliveryTone, reasonLabel, reasonPlace, viaLabel } from './roundtable-delivery'
 import { chatRunMarks } from './chat-runs'
-import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
+import { chatBubbles, postRecipients, tableSeats, threadName, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableChatHead from './RoundtableChatHead.vue'
 import RoundtableComposer from './RoundtableComposer.vue'
@@ -87,7 +89,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 <template>
   <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
     <div class="rt-thread-main">
-      <RoundtableChatHead :seats="seats" :title="thread.subject" :stale="stale"
+      <RoundtableChatHead :seats="seats" :title="threadName({ subject: thread.subject, participants: seats.map(seat => seat.person) })" :stale="stale"
         :meta="`${t('roundtable.messages', { count: thread.messages.length })} · ${time(thread.createdAt)}`" />
       <div ref="body" class="rt-chat-body">
         <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
@@ -97,7 +99,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
             <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
             <div class="rt-msg-row">
               <template v-if="!bubble.mine">
-                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><AgentAvatar
+                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(identityKeyOf(bubble.from.agentId))" aria-hidden="true"><AgentAvatar
                   v-if="bubble.from.agentId" :agent-id="bubble.from.agentId" /><template v-else>{{ initial(bubble) }}</template></span>
                 <span v-else class="rt-face-gap" aria-hidden="true" />
               </template>
@@ -125,6 +127,9 @@ watch(() => props.thread.messages.length, async (length, previous) => {
       <template v-if="recipients.length">
         <p v-for="item in blocked" :key="item.agentId" class="roundtable-blocked" role="status" data-roundtable-instant-blocked>
           {{ t('roundtable.instantBlocked', { name: item.name ?? item.agentId, reason: reasonLabel(item.instantBlocked) }) }}
+          <RouterLink v-if="reasonPlace(item.instantBlocked)" :to="reasonPlace(item.instantBlocked)!.to" data-roundtable-blocked-fix>
+            {{ t(reasonPlace(item.instantBlocked)!.label) }}
+          </RouterLink>
         </p>
         <p v-if="!subscribed" class="roundtable-recipients ui-meta">{{ t('roundtable.composer.to', { names: recipients.map(item => item.name).join('、') }) }}</p>
         <RoundtableComposer ref="composer" :mode="mode" :sending="sending" :switching="switching" :error="error"

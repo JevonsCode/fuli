@@ -145,8 +145,10 @@ test('reassigning to an Agent of another project is refused; a valid lead moves 
 
   // Another project and its lead; the terms move with it.
   const preview = await correct(app, 'preview', 'reassign', { projectName: 'ops' });
+  // It was a workstream of Timesheet (a member, not its lead), so the sentence says it leaves that ledger.
   assert.equal(preview.restatement, 'FULI will send later tasks that mention "iDev", "工时" to project "ops" (lead '
-    + '"lead-ops name") instead of project "Timesheet" (lead "helper-timesheet name"); nothing is done now.');
+    + '"lead-ops name") instead of project "Timesheet" (lead "helper-timesheet name"), and "Fill the synthetic '
+    + 'timesheet" stops being a workstream of project "Timesheet"; nothing is done now.');
   const ops = await correct(app, 'confirm', 'reassign', { projectName: 'ops',
     confirmationDigest: preview.confirmationDigest });
   assert.deepEqual([ops.assignment.projectId, ops.assignment.leadAgentId, ops.assignment.terms],
@@ -217,7 +219,8 @@ test('internal Agent activity cannot correct or end an assignment', async (t) =>
     assert.deepEqual(app.standingAssignments.list(SPACE), [assignment]);
   }
   const { app } = application(t);
-  await assert.rejects(correct(app, 'preview', 'rename'), /change must be register, retire, reassign or edit_terms/);
+  await assert.rejects(correct(app, 'preview', 'rename'),
+    /change must be register, delegate, retire, reassign or edit_terms/);
 });
 
 test('confirming the same correction again answers unchanged and records no second revision', async (t) => {

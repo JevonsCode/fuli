@@ -7,7 +7,7 @@ import { ApplicationError, InvalidInputError } from '../app/application-error.js
 import { callingTask } from '../app/calling-task.js';
 import { captureDecision } from '../graphiti/capture-decision.js';
 import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
-import { employeeAgentId } from '../employees/manifest.js';
+import { TONBORG_AGENT_ID } from '../employees/fixed-roles.js';
 import { taskKnowledgeReader } from '../graphiti/knowledge-reader.js';
 import { singleLineExcerpt as excerpt } from '../text/single-line.js';
 import { DELEGATED_LIST_LIMIT, latestDelegatedReviews } from './delegated-reviews.js';
@@ -132,9 +132,8 @@ async function openQuestions(app, judgment, input, task, { only = null } = {}) {
 // session, the whole space (11-08: the count matches 「Tonborg 拿不准」 in
 // 待决策, less only items that are one FLA's own, which are counted as hidden).
 // Any other FLA reads in its own project, as everywhere.
-const TONBORG = employeeAgentId('tonborg');
 function questionReader(task) {
-  return task?.projectAgentId === TONBORG ? null : taskKnowledgeReader(task);
+  return task?.projectAgentId === TONBORG_AGENT_ID ? null : taskKnowledgeReader(task);
 }
 
 // The one sentence to ask and its two choices, the guess first. Written from

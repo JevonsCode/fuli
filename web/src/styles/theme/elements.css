@@ -35,6 +35,15 @@ button { cursor: pointer; }
   -webkit-user-select: none;
   user-select: none;
 }
+/* The interface's own words are not text to copy either (Jevons 11-13): the page title, a
+   card's title and its one-line description, a group label, and a row that is a link. A
+   select-all then picks up what a person might quote (their knowledge, task text, an
+   error, a fingerprint), not the frame around it. A page that is all frame (今天) says so
+   on its own root. */
+:where(h1, [data-slot="card-title"], [data-slot="card-description"], .ui-group-label, a.workbench-row) {
+  -webkit-user-select: none;
+  user-select: none;
+}
 h1, h2, h3, p { margin: 0; }
 /* Headings follow the type scale (base.css): page, section, card. */
 h1 { font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; }

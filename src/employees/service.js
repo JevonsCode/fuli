@@ -7,6 +7,10 @@ import { employeeTaskEntry } from './task-entry.js';
 import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
 import { isPeerRoleAgent } from '../graphiti/project-team-view.js';
 import { briefAcceptanceChecks } from '../acceptance-checks/port.js';
+import { parseConversationProgressArgs, projectConversationProgress } from './project-conversation-progress.js';
+
+// Jefa tools that read across the projects she manages; the host names them.
+const CROSS_PROJECT_TOOLS = new Set(['summarize_projects', 'list_project_conversations']);
 
 export function createEmployeeService({ app, runtimeConfigPath, registry: configuredRegistry, managementStore: configuredManagementStore }) {
   const registry = configuredRegistry ?? createEmployeePackageRegistry(employeeDirectories(runtimeConfigPath));
@@ -62,6 +66,24 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     } catch { return false; }
   }
 
+  // Jefa's cross-project summary reads every project the person lets her manage.
+  // The host names them from the same scope the console shows (never an argument),
+  // so the package needs no way to ask the Provider for projects itself.
+  async function managedProjectsFor(context, input) {
+    if (context.templateId !== 'jefa' || !CROSS_PROJECT_TOOLS.has(input.tool)) return {};
+    // Arguments are checked before any project or conversation is read.
+    const request = input.tool === 'list_project_conversations' ? parseConversationProgressArgs(input.arguments ?? {}) : null;
+    const { managedProjects } = (await recruitment.list()).templates.find((entry) => entry.id === context.templateId);
+    // A temporary project is one session's or task's scope, not a project the
+    // person manages: listing each as an empty project only spends tokens.
+    const projects = managedProjects.filter((entry) => !entry.temporary).map(({ id, name }) => ({ id, name }));
+    if (!request) return { managedProjects: projects };
+    // The conversations are read here, over the same projects, so the package needs no
+    // Provider access of its own (project-conversation-progress.js).
+    return { projectConversations: await projectConversationProgress(app, { spaceId: context.personalSpaceId,
+      managedProjects: projects, request }) };
+  }
+
   async function callTool(input) {
     const context = await workspace({ ...input, readOnly: await readsOnly(input) });
     const runtime = await registry.runtime(context.templateId);
@@ -82,7 +104,7 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
       verified: input.sourceSessionVerified === true,
     } : null;
     try {
-      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session });
+      const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session, ...await managedProjectsFor(context, input) });
       if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
       return { ...result, ...(context.templateId === 'jefa' && input.tool === 'get_task' ? await keptChecks(app, context) : {}),
         collaboration_receipt: employeeCollaborationReceipt(app, context, {

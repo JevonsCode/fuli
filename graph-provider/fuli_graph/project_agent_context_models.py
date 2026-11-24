@@ -20,6 +20,14 @@ class ProjectAgentContextRequest(StrictModel):
     work_kind: str = Field(default='project_context', min_length=1, max_length=128)
     required_capabilities: list[MemoryNote] = Field(default_factory=list, max_length=16)
     source_application: SourceApplication = 'other'
+    # How much work the prompt asks for, as the caller's task-size.js reads it:
+    # 'small' only on positive evidence (a question, one command, one named
+    # change). A small task is not told who would execute it or to coordinate
+    # staffing (rec#146 item 2): it is over before a worker could start.
+    task_size: Literal['small', 'standard'] = 'standard'
+    # The host's entry names agent_id as the owner of a workstream of this
+    # project (docs/workstreams.md): that member runs this turn as itself.
+    workstream_owner: bool = False
 
 
 class ProjectAgentContextResolution(StrictModel):

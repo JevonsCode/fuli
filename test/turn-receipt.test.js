@@ -9,6 +9,7 @@ import { beginTaskFromPreferences, checkpointTaskKnowledge } from '../src/graphi
 import { providerEpisode } from '../src/graphiti/knowledge-provider-mapping.js';
 import { ProviderTaskContextRegistry } from '../src/mcp/provider-task-context-registry.js';
 import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.js';
+import { RecallImpressionsStore, taskKeyFor } from '../src/knowledge-impressions/store.js';
 
 // rec#20 part 1: the per-turn receipt. Synthetic Provider only: the fake
 // Provider below plays the authoritative store, so a receipt line can be
@@ -51,7 +52,9 @@ test('each entry is one line with its real content, scope, weight basis, tags, s
       weight: { percent: 100, basis: { confirmation_status: 'confirmed', confirmed_by_person: true,
         qualified_use_count: 4, distinct_task_count: 2, source_count: 2, negative_evidence_count: 0 } } }),
     entry({ item_id: 'item-5', category: 'fact', item_kind: 'relationship',
-      scope: { kind: 'temporary', projects: [{ id: 'temporary-x', name: '临时会话', temporary: true }], status: 'undetermined' } })
+      // A temporary project has no stored name (graph/23): the receipt names it by its number.
+      scope: { kind: 'temporary', projects: [{ id: `temporary-${'a'.repeat(64)}`, name: null, temporary: true }],
+        status: 'undetermined' } })
   ]);
   const receipt = await readTurnReceipt(app, saved());
   assert.deepEqual(reads, [{ personal_space_id: 'synthetic-space', episode_ids: ['episode-1'] }]);
@@ -65,9 +68,9 @@ test('each entry is one line with its real content, scope, weight basis, tags, s
   assert.match(lines[1], /^- 更新 经验「Retry the flaky import once」｜项目 Alpha、Beta｜.*｜#imports｜/);
   assert.match(lines[2], /判断.*｜FLA Nova（Alpha）｜.*｜你明确说的·待确认｜/);
   assert.match(lines[3], /规则类.*｜权重100%（你已确认）｜.*｜Agent推断·你已确认｜/);
-  assert.match(lines[4], /事实.*｜临时会话项目·范围待确定｜/);
+  assert.match(lines[4], /事实.*｜临时项目 #aaaaaaaa·范围待确定｜/);
   const fields = lines[4].split('｜');
-  assert.equal(fields[1], '临时会话项目·范围待确定', 'scope pending is a scope state');
+  assert.equal(fields[1], '临时项目 #aaaaaaaa·范围待确定', 'scope pending is a scope state');
   assert.equal(fields[4], 'Agent推断·待确认', 'content confirmation is a separate state');
   for (const line of lines) assert.match(line, ITEM_LINK, 'each link opens that item, not the knowledge home');
 });
@@ -178,7 +181,9 @@ function checkpointFixture({ captureEnabled = true, readable = true } = {}) {
           item_id: `id-${item.key}`, content: `stored: ${item.summary}`, category: item.aspect === 'taste' ? 'taste' : 'fact',
           content_source: item.source,
           scope: item.project ? { kind: item.project.startsWith('temporary-') ? 'temporary' : 'projects',
-            projects: [{ id: item.project, name: item.project }], status: item.scopeStatus ?? 'set' }
+            projects: [item.project.startsWith('temporary-')
+              ? { id: item.project, name: null, temporary: true } : { id: item.project, name: item.project }],
+            status: item.scopeStatus ?? 'set' }
             : { kind: 'global', projects: [], status: 'set' } }))), unchanged_count: 0 };
       } } };
   const begin = () => registry.begin({ sessionId: 'native-session', turnId: `turn-${registry.tokens.size}`,
@@ -210,7 +215,7 @@ test('a saved turn shows every item read back from the Provider after the identi
     'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
   assert.ok(lines.every(line => line.includes('你明确说的·待确认')), 'the user asked for these; still pending');
   assert.match(byContent['stored: Lead with the conclusion'], /｜个人全局｜/);
-  assert.match(byContent['stored: Prefer short status lines'], /｜临时会话项目·范围待确定｜/,
+  assert.match(byContent['stored: Prefer short status lines'], /｜临时项目 #[0-9a-f]{8}·范围待确定｜/,
     'an unsure scope waits undecided, never global');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'the reply carried it; the next entry has nothing to deliver');
   assert.equal([...registry.receipts.values()][0].state, 'delivered');
@@ -284,7 +289,7 @@ test('nothing is reported saved while capture is off, for retain_nothing or a du
   const off = checkpointFixture({ captureEnabled: false });
   const offResult = await checkpointTaskKnowledge(off.app, checkpoint(off.begin()));
   assert.doesNotMatch(offResult.agent_receipt.markdown, /沉淀|已保存/);
-  assert.match(offResult.agent_receipt.markdown, /自动记录已关闭/);
+  assert.match(offResult.agent_receipt.markdown, /这条习惯没有记下：记录已关闭/);
   assert.equal(off.writes.length, 0);
   const plain = checkpointFixture();
   const none = await checkpointTaskKnowledge(plain.app, { taskContextToken: plain.begin().token, sourceApplication: 'codex',
@@ -322,6 +327,34 @@ test('rec#20 part 2 (dot P2-2): the first task\'s migration link survives into t
   const later = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Small talk.' });
   assert.equal(later.agent_receipt.markdown.split('\n').length, 1);
+});
+
+test('a first task\'s checkpoint receipt keeps the habits line its entry showed; a later task\'s never gains it', async () => {
+  const { app, begin } = checkpointFixture();
+  app.recallImpressions = new RecallImpressionsStore(':memory:');
+  const habits = [{ id: 'pref-1', item_kind: 'entity' }, { id: 'pref-2', item_kind: 'entity' }];
+  const opened = () => {
+    const task = begin();
+    app.recallImpressions.recordDelivered({ taskContextToken: task.token, personalSpaceId: 'synthetic-space',
+      preferences: habits, opensConversation: true });
+    return task;
+  };
+  const line = task => `FULI 习惯：这个新对话为你准备了 2 条习惯 · [看看是哪几条](${CONSOLE}/habits/${taskKeyFor(task.token).slice(0, 16)})`;
+  const quiet = token => checkpointTaskKnowledge(app, { taskContextToken: token, sourceApplication: 'codex',
+    disposition: 'retain_nothing', reason: 'Small talk.' });
+  const first = opened();
+  assert.equal((await quiet(first.token)).agent_receipt.markdown, `${(await quiet(first.token)).agent_receipt.markdown
+    .split('\n')[0]}\n${line(first)}`, 'a retried checkpoint says it again, once');
+  // The first task of another new conversation saved something: the line follows what it saved.
+  const saving = opened();
+  const saved = await checkpointTaskKnowledge(app, checkpoint(saving, { remember: [{ kind: 'project_fact', text: 'A fact' }] }));
+  assert.equal(saved.agent_receipt.markdown.split('\n').at(-1), line(saving), 'after what the turn saved');
+  assert.equal(saved.agent_receipt.markdown.split('\n').filter(text => text.startsWith('FULI 习惯')).length, 1);
+  // The session's next task: its entry recovered the conversation.
+  const later = begin();
+  app.recallImpressions.recordDelivered({ taskContextToken: later.token, personalSpaceId: 'synthetic-space',
+    preferences: habits, opensConversation: false });
+  assert.equal((await quiet(later.token)).agent_receipt.markdown.split('\n').length, 1);
 });
 
 test('the Provider registry maps unread receipts and claims through the Provider contract', async () => {

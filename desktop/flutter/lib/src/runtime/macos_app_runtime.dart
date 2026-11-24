@@ -1,14 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'console_port.dart';
 import 'fuli_runtime.dart';
 import 'runtime_output.dart';
-
-// A first start sets FULI up and starts the graph; the controller bounds
-// each CLI call at five minutes.
-const _controllerTimeout = Duration(minutes: 10);
 
 /// FULI shipped inside this app (scripts/build-macos-app.js):
 /// `FULI.app/Contents/Resources/fuli`, with its own Node. Null for a client
@@ -38,11 +33,15 @@ class MacosAppRuntime implements FuliRuntime {
   @override
   Future<int> consolePort() => readConsolePort(defaultDataDir(os: 'macos', env: env));
 
+  // src/setup/paths.js: <data>/logs holds runtime.log and the services' logs.
+  @override
+  Future<String> logDirectory() async => '${defaultDataDir(os: 'macos', env: env)}/logs';
+
   @override
   Future<RuntimeReport> status() => _action('status');
 
   @override
-  Future<RuntimeReport> start() => _action('start');
+  Future<RuntimeReport> start({StageListener? onStage}) => _action('start', onStage: onStage);
 
   @override
   Future<RuntimeReport> stop() => _action('stop');
@@ -52,20 +51,42 @@ class MacosAppRuntime implements FuliRuntime {
   bool get canChangePort => false;
 
   @override
-  Future<RuntimeReport> changePort() async =>
+  Future<RuntimeReport> changePort({StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
-  Future<RuntimeReport> _action(String action) async {
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) => _action('end-orphans-start', onStage: onStage);
+
+  @override
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) => _action('release-lock-start', onStage: onStage);
+
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
+
+  // The controller recovers in its own process, after the confirmation here.
+  @override
+  bool get recoversInTerminal => false;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) =>
+      _action('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start', onStage: onStage, extra: [digest]);
+
+  // The controller's lines are read as they arrive: the steps it reports while
+  // it works, then the one result line at the end. A first start sets FULI up
+  // and starts the graph (the controller bounds each CLI call at five
+  // minutes); an import goes on far longer (readControllerLines).
+  Future<RuntimeReport> _action(String action, {StageListener? onStage, List<String> extra = const []}) async {
     if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
     try {
-      final result = await Process.run(macosNodePathOf(root), [macosControllerPathOf(root), action],
-              workingDirectory: root, stdoutEncoding: utf8, stderrEncoding: utf8)
-          .timeout(_controllerTimeout);
-      return parseControllerReply('${result.stdout}');
+      final process = await Process.start(macosNodePathOf(root), [macosControllerPathOf(root), action, ...extra],
+          workingDirectory: root, environment: onStage == null ? null : stageMarkersEnvironment);
+      unawaited(process.stderr.drain<void>());
+      final read = await readControllerLines(process.stdout, onStage);
+      if (!read.timedOut) return parseControllerReply(read.output);
+      return read.importing ? stillImporting() : const RuntimeReport(RuntimeState.unknown, error: 'The FULI controller did not answer.');
     } on ProcessException catch (error) {
       return RuntimeReport(RuntimeState.unknown, error: error.message);
-    } on TimeoutException {
-      return const RuntimeReport(RuntimeState.unknown, error: 'The FULI controller did not answer.');
     }
   }
 }

@@ -1,7 +1,8 @@
 import { ApiError, postJson } from '@/api/client'
 import { shortUniqueIds } from '@/lib/short-ids'
+import { ROLE_AGENT_IDS } from './fixed-roles'
 
-export const ASSISTANT_AGENT_ID = 'employee.assistant'
+export const ASSISTANT_AGENT_ID = ROLE_AGENT_IDS.astro
 
 export type UnassignedTriageStatus = 'pending' | 'needs_project' | 'assign_project' | 'one_off'
 

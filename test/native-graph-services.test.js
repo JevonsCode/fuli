@@ -8,7 +8,7 @@ import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { createNativeGraphServices as createServices, ensureNativeRuntime } from '../src/native-runtime/runtime.js';
+import { createNativeGraphServices as createServices, ensureNativeRuntime, installedProviderRefusal } from '../src/native-runtime/runtime.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { readJsonFile, writeJsonFileAtomic } from '../src/storage/json-file.js';
@@ -101,6 +101,8 @@ test('native graph services start databases before Providers and preserve shutdo
       [join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
         'dbms', 'set-initial-password', '--', 'workspace-password']
     ]);
+    assert.deepEqual(commands.map(({ options }) => options.cwd), [PATHS.nativePersonalDir, PATHS.nativeWorkspaceDir],
+      'neo4j-admin runs in the instance directory too, never in the directory of whoever started FULI');
     assert.deepEqual(spawnedDatabases.map(({ id, command, args }) => ({ id, command, args })), [
       {
         id: 'personal',
@@ -124,6 +126,34 @@ test('native graph services start databases before Providers and preserve shutdo
     ]);
     assert.deepEqual(stopped, [4100, 4101, 4000, 4001]);
   });
+
+test('Neo4j and the Provider start in their instance directory, never in the directory of whoever started FULI', async () => {
+  const spawnedIn = [];
+  const services = createNativeGraphServices({
+    paths: PATHS,
+    runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21', neo4jHome: PATHS.nativeNeo4jHome,
+      providerPython: '/data/native-runtime/provider-venv/bin/python' },
+    personalOnly: false, readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true,
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }), waitForDatabase: async () => {},
+    spawnDatabase: spec => { spawnedIn.push(['database', spec.id, spec.workingDirectory]); return { pid: 4000 + spawnedIn.length }; },
+    spawnProvider: spec => { spawnedIn.push(['provider', spec.id, spec.workingDirectory]); return { pid: 4100 + spawnedIn.length }; },
+    readProcessState: () => null, writeProcessState: () => {},
+    fetchImpl: async () => Response.json({ status: 'ok', transcript_contract: 1 })
+  });
+  await services.start();
+  assert.deepEqual(spawnedIn, [
+    ['database', 'personal', PATHS.nativePersonalDir], ['database', 'workspace', PATHS.nativeWorkspaceDir],
+    ['provider', 'personal', PATHS.nativePersonalDir], ['provider', 'workspace', PATHS.nativeWorkspaceDir]
+  ]);
+});
+
+test('a previous version reads, without starting anything, that the recorded native Provider is newer than its own', () => {
+  const manifest = '/data/native-runtime/manifest.json';
+  const refusal = installedProviderRefusal(manifest, () => ({ providerVersion: '999.0.0+native.2' }));
+  assert.equal(refusal?.code, 'provider_downgrade_refused');
+  assert.equal(installedProviderRefusal(manifest, () => ({ providerVersion: '0.0.1+native.2' })), null);
+  assert.equal(installedProviderRefusal(manifest, () => null), null, 'a data directory without a native runtime refuses nothing');
+});
 
 test('native graph services do not signal a PID that no longer belongs to Fuli', async () => {
   let signalled = false;
@@ -456,15 +486,15 @@ test('offline dump and load run neo4j-admin with the instance home Windows start
     pathExists: () => true,
     markInitialized: () => {},
     readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
-    run: async (command, args, { env }) => commands.push({ command, args,
-      home: env.NEO4J_HOME, conf: env.NEO4J_CONF, java: env.JAVA_HOME })
+    run: async (command, args, { env, cwd }) => commands.push({ command, args,
+      home: env.NEO4J_HOME, conf: env.NEO4J_CONF, java: env.JAVA_HOME, cwd })
   });
 
   await services.dumpDatabase('personal', '/stage/out');
   await services.loadDatabase('personal', '/stage/in');
   await assert.rejects(services.dumpDatabase('workspace', '/stage/out'), /Unsupported graph instance/);
 
-  const instance = { home: PATHS.nativePersonalDir, conf: join(PATHS.nativePersonalDir, 'conf'), java: '/jre-21' };
+  const instance = { home: PATHS.nativePersonalDir, conf: join(PATHS.nativePersonalDir, 'conf'), java: '/jre-21', cwd: PATHS.nativePersonalDir };
   assert.deepEqual(commands, [
     { command: join(PATHS.nativeNeo4jHome, 'bin', 'neo4j-admin'),
       args: ['database', 'dump', 'neo4j', '--to-path=/stage/out'], ...instance },
@@ -536,4 +566,43 @@ test('a dump refused after a hard stop is retried once after a database-only sta
 
   await services.dumpDatabase('personal', '/stage');
   assert.deepEqual(events, ['dump-1', 'start-database', 'stop-4800', 'dump-2']);
+});
+
+test('an import holds one lease across its loads: they run under it, it records each graph\'s state, and only release ends it', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-load-holder-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const paths = { ...PATHS, nativeRuntimeDir: join(root, 'native-runtime') };
+  const lockDir = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  const seen = [];
+  const options = {
+    platform: 'darwin', paths, env: {},
+    runtimeDescriptor: { status: 'ready', mode: 'native', javaHome: '/jdk-21', neo4jHome: PATHS.nativeNeo4jHome, providerPython: '/python' },
+    personalOnly: false, readText: () => ENVIRONMENT, writeText: async () => {}, pathExists: () => true, markInitialized: () => {},
+    readSettings: () => ({ ...DEFAULT_RUNTIME_SETTINGS, graphRuntimeMode: 'native' }),
+    run: async (_command, args) => {
+      const holder = JSON.parse(readFileSync(join(lockDir, 'holder.json'), 'utf8'));
+      seen.push([args[1], readFileSync(join(lockDir, 'owner'), 'utf8'), holder.operation, holder.graphStates]);
+      if (args.includes('--from-path=/stage/bad')) throw new Error('neo4j-admin failed');
+    }
+  };
+  const services = createServices(options);
+  const restorePoint = { path: '/x/backups/graph/before-import-1', instances: ['personal'], loading: ['personal', 'workspace'] };
+  const lease = await services.hold('load', { restorePoint, graphStates: { personal: 'untouched', workspace: 'untouched' } });
+  assert.equal(lease.locked, true);
+  const owner = readFileSync(join(lockDir, 'owner'), 'utf8');
+  await lease.record({ graphStates: { personal: 'writing', workspace: 'untouched' } });
+  await services.loadDatabase('personal', '/stage/in');
+  await lease.record({ graphStates: { personal: 'imported', workspace: 'writing' } });
+  await assert.rejects(services.loadDatabase('workspace', '/stage/bad'), /neo4j-admin failed/);
+  assert.ok(existsSync(lockDir), 'a failed load keeps the lease');
+  await assert.rejects(createServices(options).start(), /in progress/, 'anything else is held back meanwhile');
+  assert.deepEqual(seen, [
+    ['load', owner, 'load', { personal: 'writing', workspace: 'untouched' }],
+    ['load', owner, 'load', { personal: 'imported', workspace: 'writing' }]
+  ], 'both loads ran under the same lock, each graph\'s state recorded before neo4j-admin wrote it');
+  assert.deepEqual(JSON.parse(readFileSync(join(lockDir, 'holder.json'), 'utf8')).restorePoint, restorePoint);
+  await lease.release();
+  assert.equal(existsSync(lockDir), false);
+  // Outside macOS there is no lease: nothing to hold.
+  assert.equal((await createServices({ ...options, platform: 'linux' }).hold('load', {})).locked, false);
 });

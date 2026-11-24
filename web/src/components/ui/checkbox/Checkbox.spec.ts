@@ -14,8 +14,10 @@ describe('Checkbox', () => {
     expect(wrapper.get('[data-slot="checkbox-indicator"] svg').attributes('aria-hidden')).toBe('true')
   })
 
-  it('reports an indeterminate state as mixed', () => {
-    expect(mount(Checkbox, { props: { modelValue: 'indeterminate' } }).get('[role="checkbox"]').attributes('aria-checked')).toBe('mixed')
+  it('reports an indeterminate state as mixed and draws a minus, not the check', () => {
+    const wrapper = mount(Checkbox, { props: { modelValue: 'indeterminate' } })
+    expect(wrapper.get('[role="checkbox"]').attributes('aria-checked')).toBe('mixed')
+    expect(wrapper.get('[data-slot="checkbox-indicator"] svg').html()).toContain('M5 12h14')
   })
 
   it('toggles v-model on click but not on Enter, as WAI-ARIA checkboxes do', async () => {

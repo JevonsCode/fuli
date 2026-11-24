@@ -332,3 +332,42 @@ test('the conversation rule reference and latest checkpoint are skeleton parts; 
   assert.deepEqual(next.frame.conversation, { status: 'saved', conversation_id: 'conversation-1', revision: 2,
     recovery: { messages_omitted: 2, omitted_reason: 'seen_in_session' } });
 }));
+
+// 11-17: the turn an FLA introduces itself has a receipt of two lines; that
+// turn sends it whole, and the next turn's plain receipt is sent again rather
+// than named from a frame before the introduction.
+test('a receipt that carries an introduction is sent that turn, and the plain one is sent again the turn after', () => fixture(async f => {
+  const plain = 'FULI Agent：Synthetic owner';
+  const introduced = `${plain}\n👋 初次见面，我是 Synthetic owner。以后 project 的事找我，消息开头写 #FLA Synthetic owner。`;
+  const first = await f.turn(entry(f.sessionId, 'task-a', { receipt: plain }), 'Synthetic prompt 1');
+  const second = await f.turn(entry(f.sessionId, 'task-b', { receipt: introduced }), 'Synthetic prompt 2');
+  const third = await f.turn(entry(f.sessionId, 'task-c', { receipt: plain }), 'Synthetic prompt 3');
+  assert.equal(first.frame.agent_receipt.markdown, plain);
+  assert.equal(second.frame.skeleton_unchanged, first.frame.skeleton_revision, 'the rest of the skeleton is named');
+  assert.deepEqual(second.frame.agent_receipt, { required: true, markdown: introduced });
+  assert.equal(third.frame.skeleton_unchanged, second.frame.skeleton_revision);
+  assert.deepEqual(third.frame.agent_receipt, { required: true, markdown: plain }, 'never left to the introducing frame');
+  // From then on the plain receipt is named like any unchanged part.
+  const fourth = await f.turn(entry(f.sessionId, 'task-d', { receipt: plain }), 'Synthetic prompt 4');
+  assert.equal(Object.hasOwn(fourth.frame, 'agent_receipt'), false);
+  assert.equal(fourth.frame.skeleton_unchanged, third.frame.skeleton_revision);
+}));
+
+// Review of #1076: the reason beside the checkpoint requirement repeats while
+// the requirement does, so a later frame of the session names it instead of
+// paying its seventy characters again; a changed reason is sent again.
+test('the checkpoint reason is sent once, then named, and again when it changes', () => fixture(async f => {
+  const reasoned = (token, reason) => {
+    const value = entry(f.sessionId, token);
+    return withPreferenceScope({ ...value, checkpoint_reason: reason }, {
+      personal_space_id: 'synthetic-space', personal_project_id: 'project', project_agent_id: 'lead', session_id: f.sessionId,
+      source_application: 'claude_code', preference_scope: { version: 1, work_kind: null, workflow: null } });
+  };
+  const first = await f.turn(reasoned('task-a', 'the Stop hook closes this task'), 'Do the thing');
+  assert.equal(first.frame.checkpoint_reason, 'the Stop hook closes this task');
+  const next = await f.turn(reasoned('task-b', 'the Stop hook closes this task'), 'Do the next thing');
+  assert.equal(Object.hasOwn(next.frame, 'checkpoint_reason'), false);
+  assert.equal(next.frame.checkpoint_required, true, 'the requirement itself is always there');
+  const changed = await f.turn(reasoned('task-c', 'this turn asks FULI to keep something'), 'Remember this');
+  assert.equal(changed.frame.checkpoint_reason, 'this turn asks FULI to keep something');
+}));

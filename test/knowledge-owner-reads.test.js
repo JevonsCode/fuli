@@ -94,12 +94,14 @@ test('every console full read carries the review proof on its own route', async 
   await ownerReads.turnReceipt({ personal_space_id: SPACE });
   await ownerReads.sessionRecords({ personal_space_id: SPACE });
   await ownerReads.sessionMigration({ personal_space_id: SPACE });
+  await ownerReads.statementItems({ personal_space_id: SPACE });
   await ownerReads.preferenceConflicts({ personalSpaceId: SPACE, status: 'ai_pending', limit: 50, offset: 100 });
   assert.deepEqual(sent, [
     { path: '/v1/knowledge/item-views', method: 'POST', review: true },
     { path: '/v1/knowledge/turn-receipts', method: 'POST', review: true },
     { path: '/v1/session-records', method: 'POST', review: true },
     { path: '/v1/knowledge/session-migrations/preview', method: 'POST', review: true },
+    { path: '/v1/knowledge/statement/items', method: 'POST', review: true },
     { path: `/v1/preference-conflicts?personal_space_id=${SPACE}&limit=50&status=ai_pending&offset=100`, method: 'GET',
       review: true }]);
   const refused = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: false, status: 403,

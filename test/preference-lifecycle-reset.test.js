@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
-import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
+import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-event.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
 import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
 import { builtInClientPack } from '../test-support/client-packs.js';
 

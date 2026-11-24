@@ -15,12 +15,12 @@ export function reportThreads(threads: readonly Pick<RoundtableThreadSummary, 'r
   reportedAt = Date.now()
 }
 
-/** For the shell: the live state of the space, kept fresh while the window is visible. */
-export function useRoundtableLive(spaceId: Ref<string>) {
+/** For the shell: the live state of the space, kept fresh while the window is visible and 圆桌 is shown. */
+export function useRoundtableLive(spaceId: Ref<string>, enabled: Ref<boolean>) {
   let timer: ReturnType<typeof setInterval> | undefined
   let reading = false
   async function read() {
-    if (!spaceId.value || reading || document.visibilityState !== 'visible' || Date.now() - reportedAt < POLL_MS) return
+    if (!enabled.value || !spaceId.value || reading || document.visibilityState !== 'visible' || Date.now() - reportedAt < POLL_MS) return
     reading = true
     const space = spaceId.value
     try {
@@ -31,11 +31,11 @@ export function useRoundtableLive(spaceId: Ref<string>) {
       if (space === spaceId.value) live.value = false
     } finally { reading = false }
   }
-  watch(spaceId, () => { live.value = false; reportedAt = 0; void read() })
+  watch([spaceId, enabled], () => { live.value = false; reportedAt = 0; void read() })
   onMounted(() => {
     void read()
     timer = setInterval(() => { void read() }, POLL_MS)
   })
   onBeforeUnmount(() => clearInterval(timer))
-  return computed(() => live.value)
+  return computed(() => enabled.value && live.value)
 }

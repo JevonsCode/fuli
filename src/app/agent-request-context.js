@@ -16,7 +16,25 @@ export function runWithAgentRequestContext(value, operation) {
   return requestContext.run({ signal, testToolsEnabled: value?.testToolsEnabled ?? testToolsEnabled(),
     sealedWorker: value?.[SEALED_WORKER] === true,
     hostSession: value && Object.hasOwn(value, HOST_SESSION) ? value[HOST_SESSION] : undefined,
-    hostClient: value?.[HOST_CLIENT] ?? null }, operation);
+    hostClient: value?.[HOST_CLIENT] ?? null,
+    // A runner's call stays one for everything it runs.
+    runner: requestContext.getStore()?.runner ?? null }, operation);
+}
+
+// Runs one call a runner (docs/runner.md) made: another computer of the
+// person, known by its paired certificate's fingerprint. Only the runner
+// listener's routes call this, after the listener verified that certificate.
+// The call is then held to what a call from another computer may do: wakes
+// read-only with only FULI's MCP server, no folder it names used as one of this
+// computer's, no console change (src/runner/host-routes.js).
+export function runAsRunnerCall(fingerprint, operation) {
+  if (typeof fingerprint !== 'string' || !fingerprint) throw new TypeError('A runner call needs its fingerprint');
+  return requestContext.run({ ...(requestContext.getStore() ?? {}), runner: fingerprint }, operation);
+}
+
+// The fingerprint of the runner whose call is being served, or null for this computer's own callers.
+export function activeRunnerCaller() {
+  return requestContext.getStore()?.runner ?? null;
 }
 
 // Only the worker MCP composition calls this, after the Provider admitted the

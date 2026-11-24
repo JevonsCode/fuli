@@ -12,6 +12,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 }))
 
 import { ApiError } from '@/api/client'
+import { latestModelRoles } from '@/features/model-settings/latest-model-roles'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { reloadPage } from '@/layouts/page-refresh'
@@ -40,6 +41,9 @@ const roles = (overrides: Record<string, unknown> = {}) => ({
 const usage = () => ({ groups: [
   { role: 'tonborg', provider: 'openai_chat@127.0.0.1:11434', model: 'qwen-test', actualModels: ['qwen-test'], channel: 'model_api',
     requests: 2, failedRequests: 1, attempts: 3, failedAttempts: 2, unreportedAttempts: 1, unreportedFailedAttempts: 1,
+    failureReasons: [{ reason: 'stream_stalled', requests: 1 }],
+    // A try that broke FULI's check and was then repaired is no failed call, but its rule is still listed.
+    formatIssues: [{ issue: 'payload.decisions[].doubt:invalid_value', attempts: 1 }],
     tokens: { input: { reported: 1200, unknownAttempts: 1 }, output: { reported: 300, unknownAttempts: 2 }, cachedInput: { reported: 0, unknownAttempts: 1 },
       total: { reported: 1500, unknownAttempts: 2 } } },
   { role: 'bole', provider: null, model: null, actualModels: [], channel: 'session', requests: 1, failedRequests: 0, attempts: 1, failedAttempts: 0,
@@ -54,6 +58,7 @@ const trust = (overrides: Record<string, unknown> = {}) => ({ operation: 'knowle
 let rolesPayload = roles()
 const dreamingOff = { readiness: 'needs_model', projects: [] }
 beforeEach(() => {
+  latestModelRoles.value = null
   setActivePinia(createPinia())
   const store = useConsoleStore()
   store.runtimeStatus = 'ready'
@@ -135,6 +140,21 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-use-details] [data-tonborg-delegation]').exists()).toBe(false)
   })
 
+  it("opens Tonborg's settings right at its projects from 「去选项目」's link, then drops the link", async () => {
+    routing.route.query = { edit: 'tonborg', focus: 'projects', tab: 'x' }
+    Element.prototype.scrollIntoView = vi.fn()
+    try {
+      const wrapper = await mountPage()
+      const dialog = wrapper.get('[data-model-role-dialog]')
+      const egress = dialog.get('[data-model-egress]')
+      expect(egress.classes()).toContain('is-asked')
+      expect(document.activeElement).toBe(egress.element)
+      expect(routing.replace).toHaveBeenCalledWith({ query: { tab: 'x' }, hash: '' })
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+  })
+
   it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {
     const wrapper = await mountPage()
     let details = await openDetails(wrapper, 'tonborg')
@@ -142,6 +162,8 @@ describe('ModelSettingsPage', () => {
     expect(details.get('[data-model-guide]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/#tonborg')
     expect(details.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
     expect(details.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
+    expect(details.get('[data-model-fact="operations"]').text()).toContain('确认知识')
+    expect(details.get('[data-model-fact="operations"]').text()).not.toContain('knowledge_review')
     expect(details.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
     expect(details.get('[data-model-fact="fallback"]').text()).toContain('允许')
     expect(details.find('[data-model-check]').exists()).toBe(true)
@@ -225,6 +247,17 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
   })
 
+  it('says the session executes for Tonborg without a model once 「交给 Tonborg 确认」 is on', async () => {
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { role: 'tonborg', state: 'not_configured', answeredBy: 'current_session',
+      trust: trust({ status: 'automatic', reason: null }) } as never
+    const wrapper = await mountPage()
+    const row = (await openDetails(wrapper, 'tonborg')).get('[data-model-fact="execution"]').text()
+    expect(row).toContain('由你当时的 AI 会话自动执行（已打开「交给 Tonborg 确认」）')
+    expect(row).not.toContain('只给建议')
+    expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
+  })
+
   it('shows the local build observed after the latest answer beside the model: 12 characters, the full build and a caveat in a title', async () => {
     const digest = '0123456789abcdef'.repeat(4)
     ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'observed', digest, completedAt: '2026-10-24T08:00:00.000Z' }
@@ -277,7 +310,8 @@ describe('ModelSettingsPage', () => {
     expect(dialog.find('[data-model-budget="maxOutputTokens"]').exists()).toBe(false)
     await dialog.get('[data-model-advanced] button').trigger('click')
     await flushPromises()
-    expect(dialog.text()).toContain('已接入：knowledge_review')
+    // Task types are ticked by name, never typed as codes.
+    expect(dialog.findAll('[data-model-operation]').map(row => row.text())).toContain('确认知识')
     await dialog.get('[data-model-name] input').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
     await dialog.get('form').trigger('submit')
@@ -319,8 +353,52 @@ describe('ModelSettingsPage', () => {
     await tonborg.get('[data-model-check]').trigger('click')
     await flushPromises()
     expect(reads()).toBe(before + 1)
+    // What the page read after the test is what the top bar's model button shows.
+    expect(latestModelRoles.value?.roles.find(view => view.role === 'tonborg')?.health?.status).toBe('ok')
     expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
     expect(wrapper.find('[data-model-role="tonborg"] [data-model-failure]').exists()).toBe(false)
+  })
+
+  // A real report on 0.27.12: 测试连接 inside a use's 查看详情 answered, and the use's card, its connection's row and the top bar stayed as they were.
+  it('reads the settings again after 测试连接 in a use\'s details, so its card and its connection turn with the answer', async () => {
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'timeout', scope: 'role' } } as never
+    const wrapper = await mountPage()
+    const state = () => wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()
+    expect(state()).toBe('任务失败')
+    const details = await openDetails(wrapper, 'tonborg')
+    const reads = () => api.getJson.mock.calls.filter(([url]) => url === '/api/model-backends/roles').length
+    const before = reads()
+
+    // The test answers, and the settings read after it carry that answer.
+    api.postJson.mockResolvedValue({ ok: true, receipt: { status: 'completed', actualModel: 'qwen-test' } })
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'ok', at: new Date().toISOString(), reason: null, scope: 'connection' } } as never
+    await details.get('[data-model-check]').trigger('click')
+    await flushPromises()
+    expect(reads()).toBe(before + 1)
+    expect(state()).toBe('已接上')
+    expect(wrapper.get('[data-model-connection-id="local-qwen"] [data-model-connection-health]').text()).toContain('连接正常')
+    expect(latestModelRoles.value?.roles.find(view => view.role === 'tonborg')?.health?.status).toBe('ok')
+
+    // And the other way: a test that fails turns the card to the failure.
+    api.postJson.mockResolvedValue({ ok: false, receipt: { status: 'failed', reason: 'auth_failed' } })
+    rolesPayload = roles()
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'auth_failed', scope: 'role' } } as never
+    await wrapper.get('[data-model-use-details] [data-model-check]').trigger('click')
+    await flushPromises()
+    expect(state()).toBe('任务失败')
+  })
+
+  it('shows what the top bar\'s model button read since, without a read of its own', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
+    const reads = api.getJson.mock.calls.length
+    const newer = roles()
+    newer.roles[3] = { ...(newer.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'timeout', scope: 'role' } } as never
+    latestModelRoles.value = newer as never
+    await flushPromises()
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('任务失败')
+    expect(api.getJson.mock.calls.length).toBe(reads)
   })
 
   it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {
@@ -358,13 +436,13 @@ describe('ModelSettingsPage', () => {
     const wrapper = await mountPage()
     await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
     const dialog = wrapper.get('[data-model-role-dialog]')
-    const shown = dialog.findAll('[data-model-egress-project]').length
+    const shown = dialog.findAll('[data-project-scope-formal]').length
     expect(shown).toBeGreaterThan(0)
-    await dialog.get('[data-model-project-search]').setValue('no-such-synthetic-project')
-    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(0)
+    await dialog.get('[data-project-scope-search]').setValue('no-such-synthetic-project')
+    expect(dialog.findAll('[data-project-scope-formal]')).toHaveLength(0)
     expect(dialog.text()).toContain('没有匹配的项目。')
-    await dialog.get('[data-model-project-search]').setValue('')
-    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(shown)
+    await dialog.get('[data-project-scope-search]').setValue('')
+    expect(dialog.findAll('[data-project-scope-formal]')).toHaveLength(shown)
   })
 
   it('reads the settings again when they changed meanwhile, and shows a refusal in the form', async () => {
@@ -382,6 +460,11 @@ describe('ModelSettingsPage', () => {
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
     expect(wrapper.get('[data-model-stale]').text()).toContain('没有保存')
     expect(api.getJson.mock.calls.length).toBeGreaterThan(reads)
+    // The edit that was not saved is one click away again.
+    await wrapper.get('[data-model-stale-edit]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
   })
 
   it('reads the settings again and locks the form when the file stopped validating during the edit', async () => {
@@ -399,6 +482,9 @@ describe('ModelSettingsPage', () => {
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
     expect(wrapper.get('[data-model-config-invalid]').text()).toContain('roles.nobody')
+    // A file that does not validate: the person's AI repairs it, then it is read again here.
+    expect(wrapper.find('[data-model-config-invalid] [data-ai-help="task.models"]').exists()).toBe(true)
+    expect(wrapper.find('[data-model-config-invalid] [data-model-config-reload]').exists()).toBe(true)
     expect(wrapper.findAll('[data-model-role-edit]').every(button => button.attributes('disabled') !== undefined)).toBe(true)
     await dialog.get('form').trigger('submit')
     expect(api.putJson).toHaveBeenCalledTimes(1)
@@ -427,6 +513,24 @@ describe('ModelSettingsPage', () => {
     expect(session.text()).toContain('用量由客户端会话记录')
     expect(session.get('[data-usage-cell="input"] dd').text()).toBe('没返回')
     expect(session.find('[data-usage-row-note]').exists()).toBe(false)
+    // Why the calls failed, by side: only the model service's leads to testing the model this row counted.
+    expect(model.get('[data-usage-failure-side="service"]').text()).toBe('模型服务那边回答中途停住 1查看并测试 qwen-test')
+    expect(model.get('[data-usage-failure-side="fuli"]').isVisible()).toBe(false)
+    expect(session.find('[data-usage-failure-reasons]').exists()).toBe(false)
+    // The rules FULI's check found broken open on request.
+    const issues = model.get('[data-usage-format-issues]')
+    expect(issues.attributes('open')).toBeUndefined()
+    expect(issues.get('summary').text()).toBe('格式检查明细')
+    expect(issues.get('li').text()).toBe('payload.decisions[].doubt:invalid_value · 1 次')
+    const row = wrapper.get('[data-model-connection-id="local-qwen"]').element as HTMLElement
+    // jsdom has no layout: the row's scroll is a stub here, whatever another spec did to the prototype.
+    const scroll = vi.fn()
+    Object.defineProperty(row, 'scrollIntoView', { configurable: true, value: scroll })
+    const focus = vi.spyOn(row.querySelector('[data-model-connection-check]') as HTMLElement, 'focus')
+    await model.get('[data-usage-failure-check]').trigger('click')
+    expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+    expect(focus).toHaveBeenCalled()
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
 
     await wrapper.get('[data-value="today"]').trigger('click')
     await flushPromises()
@@ -509,6 +613,47 @@ describe('ModelSettingsPage', () => {
     await wrapper.get('[data-model-details-edit]').trigger('click')
     expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
     expect(wrapper.get('[data-model-role-dialog]').text()).toContain('这个连接也用于 Jefa, Tonborg')
+  })
+
+  it("去授权 on a use opens Astro's settings at the projects that may be sent, and the use reads again when they close", async () => {
+    const termsRead = vi.fn(async () => ({ readiness: 'project_not_approved', stats: null, trial: null, run: null, busy: null }))
+    const answer = api.getJson.getMockImplementation()!
+    api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/retrieval-terms') ? termsRead() : answer(url)))
+    // jsdom has no layout, so no scrollIntoView of its own; the dialog's first focus calls it.
+    const scrolled = vi.fn()
+    Element.prototype.scrollIntoView = scrolled
+    try {
+      const wrapper = await mountPage()
+      await wrapper.get('[data-retrieval-terms] [data-terms-authorize]').trigger('click')
+      await flushPromises()
+      const dialog = wrapper.get('[data-model-role-dialog]')
+      expect(dialog.find('[data-model-dreaming]').exists()).toBe(true)
+      const egress = dialog.get('[data-model-egress]')
+      expect(egress.classes()).toContain('is-asked')
+      // Keyboard focus starts in the project list ([autofocus] through useModalDialog), and it is scrolled into view.
+      expect(egress.attributes('autofocus')).toBeDefined()
+      expect(document.activeElement).toBe(egress.element)
+      expect(scrolled).toHaveBeenCalledWith({ block: 'center' })
+      expect(scrolled.mock.contexts).toEqual([egress.element])
+
+      // Closed without saving: the person is back on the page and the use reads its state again.
+      const reads = termsRead.mock.calls.length
+      await dialog.findAll('button').find(button => button.text() === '取消')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
+      expect(termsRead).toHaveBeenCalledTimes(reads + 1)
+
+      // Opened any other way, the form does not mark, focus or scroll to the projects.
+      await wrapper.get('[data-model-role="assistant"] [data-model-role-edit]').trigger('click')
+      await flushPromises()
+      const plain = wrapper.get('[data-model-egress]')
+      expect(plain.classes()).not.toContain('is-asked')
+      expect(plain.attributes('autofocus')).toBeUndefined()
+      expect(plain.element.contains(document.activeElement)).toBe(false)
+      expect(scrolled).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
   })
 
   it('names its pending reads with GrowthLoading', async () => {

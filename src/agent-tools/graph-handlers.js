@@ -1,18 +1,20 @@
 import { ApplicationError } from '../app/application-error.js';
 import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
-import { agentInterfaceCatalog } from './interface-catalog.js';
+import { agentInterfaceView } from './interface-catalog-views.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
 import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 import { reportAgentService } from '../agent-services/agent-report.js';
 import { recordFlaLesson } from '../fla-growth/lessons.js';
-import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
+import { AGENT_WORKFLOW_HANDLERS, appSubmitted } from '../agent-workflows/agent-tools.js';
+import { callingAppOwner } from '../agent-apps/calling-owner.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
 import { DIAGNOSTIC_HANDLERS } from '../diagnostics/agent-tool.js';
 import { OLD_DATA_HANDLERS } from '../old-data/agent-tools.js';
+import { STATEMENT_HANDLERS } from '../statement/agent-tool.js';
 import { REPLY_ECHO_HANDLERS } from '../graphiti/reply-echo-agent-tool.js';
 import { OCCUPATION_KIT_HANDLERS } from '../occupation-plugins/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
@@ -44,6 +46,7 @@ const HANDLERS = Object.freeze({
   ...DELEGATION_HANDLERS,
   ...DIAGNOSTIC_HANDLERS,
   ...OLD_DATA_HANDLERS,
+  ...STATEMENT_HANDLERS,
   ...REPLY_ECHO_HANDLERS,
   ...OCCUPATION_KIT_HANDLERS,
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
@@ -72,7 +75,7 @@ const HANDLERS = Object.freeze({
   list_agent_attention: (app, input) => app.listAgentAttention(input),
   cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),
   list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
-  list_agent_interfaces: () => agentInterfaceCatalog(),
+  list_agent_interfaces: (_app, input) => agentInterfaceView(input),
   get_capture_policy: async (app, input) => describeCapture(app, await taskBoundScope(app, input, {
     sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
     projectPath: input?.projectPath ?? null, sessionId: input?.sessionId ?? null })),
@@ -116,7 +119,11 @@ const HANDLERS = Object.freeze({
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
   call_employee_tool: (app, input) => employeeService(app).callTool(input),
-  submit_agent_app_version: (app, input) => agentApps(app).submit(input),
+  // One owner for the submission and for what it settles (callingAppOwner refuses another FLA's agentId).
+  submit_agent_app_version: async (app, input) => {
+    const owner = await callingAppOwner(app, input);
+    return appSubmitted(app, owner, await agentApps(app).submit({ ...input, ...owner }));
+  },
   list_agent_apps: (app, input) => input.appId ? agentApps(app).read(input) : agentApps(app).list(input),
   begin_task_context: (app, input) => app.beginTaskContext(input),
   read_task_preferences: (app, input) => app.readTaskPreferences(input),
@@ -220,7 +227,8 @@ const HANDLERS = Object.freeze({
   view_project_agent_activity: (app, input) => app.viewProjectAgentActivity(input),
   get_project_agent_coordination_policy: (app, input) =>
     app.getProjectAgentCoordinationPolicy(input),
-  get_project_team: (app, input) => app.getProjectTeam(input),
+  // The Agent's ledger read says how far each workstream got (docs/workstreams.md).
+  get_project_team: (app, input) => app.getProjectTeam({ ...input, withProgress: true }),
   update_project_agent_coordination_policy: (app, input) =>
     app.updateProjectAgentCoordinationPolicy(input),
   list_project_agent_recruitments: (app, input) =>
@@ -256,7 +264,6 @@ const HANDLERS = Object.freeze({
     app.ignoreProjectAgentRoutingLearning(input),
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
-  list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
   // The console's own edits reach reviseKnowledgeItem as the person; this Agent
   // path is not verifiably the person, so it stops with automatic recording.
   revise_personal_knowledge: (app, input) => captureGuard(app, sessionCaptureScope(input),

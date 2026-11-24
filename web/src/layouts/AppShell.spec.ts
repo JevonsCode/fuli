@@ -49,7 +49,8 @@ beforeEach(() => {
   })
 })
 
-async function setup(path: string, extraRoutes: RouteRecordRaw[] = []) {
+// advancedAreas: what /api/state says is shown; left out, every area shows (a server without the record).
+async function setup(path: string, extraRoutes: RouteRecordRaw[] = [], advancedAreas?: { shown: string[] }) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useConsoleStore()
@@ -63,6 +64,7 @@ async function setup(path: string, extraRoutes: RouteRecordRaw[] = []) {
     subscriptions: [],
     capturePolicy: { enabled: false },
     agentAccessPolicy: { enabled: true },
+    ...(advancedAreas ? { advancedAreas } : {}),
   } as never
   const page = { template: '<div class="routed-page" />' }
   const router = createRouter({
@@ -92,6 +94,19 @@ describe('AppShell', () => {
     expect(wrapper.get('[data-section="knowledge"]').attributes('aria-current')).toBe('page')
     wrapper.unmount()
   })
+  it('leaves 圆桌 and 整理 out of the dock and tabs until they are shown, and reads no roundtable list meanwhile', async () => {
+    const { wrapper, store } = await setup('/preferences', [], { shown: [] })
+    expect(wrapper.get('.app-dock').findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'memory', 'projects'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'tags'])
+    expect(vi.mocked(getJson).mock.calls.some(([url]) => String(url).startsWith('/api/roundtable/'))).toBe(false)
+    // The next state read that shows them puts both back in their usual places.
+    store.state = { ...store.state!, advancedAreas: { shown: ['roundtable', 'tidy'] } }
+    await flushPromises()
+    expect(wrapper.get('.app-dock').findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
+    wrapper.unmount()
+  })
+
   it('marks the active destination and shows its sections', async () => {
     const { wrapper } = await setup('/preferences')
     expect(wrapper.get('[data-destination="memory"]').attributes('aria-current')).toBe('page')
@@ -132,7 +147,7 @@ describe('AppShell', () => {
     const { wrapper, router } = await setup('/')
     const dock = wrapper.get('.app-dock')
     expect(dock.findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
-    expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['工作台', 'FLAs', '圆桌', '沉淀', '项目'])
+    expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['今天', 'FLAs', '圆桌', '沉淀', '项目'])
     expect(wrapper.get('.app-topbar [data-destination="settings"]').attributes('href')).toBe('/settings')
     // One ink pill sits behind the current destination and moves with it.
     expect(dock.findAll('.app-dock-active')).toHaveLength(1)

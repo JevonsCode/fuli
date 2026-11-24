@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -10,10 +10,13 @@ import { OptionCombobox } from '@/components/ui/combobox'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import ProjectScopePicker from '@/features/projects/ProjectScopePicker.vue'
+import { isArchivedProject } from '@/features/projects/project-origin'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { t, currentLocale } from '@/i18n'
+import { tableLabel } from '@/i18n/label-table'
 import { UiDialog, UiSegmented } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
@@ -22,13 +25,23 @@ import { modelListReason, modelListRequest, orderModels } from './model-list'
 import { useEndpointModels } from './useEndpointModels'
 import {
   MODEL_PROTOCOLS, REASONING_EFFORTS, SEMANTIC_PRESETS, SEMANTIC_ROLE, configConflict, endpointSuggestions, knownKeyReferences, projectKey, roleDraft, roleName,
-  rolesSharing, saveModelRole, semanticPreset, validKeyReference, withConnection, withProject, withSemanticPreset,
+  rolesSharing, hasSavedEgress, saveModelRole, semanticPreset, validKeyReference, withConnection, withProjects, withSemanticPreset,
   type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft, type SemanticPreset, modelGuideUrl } from './model'
 
 // One role's model settings as a centred form. Saving sends the whole role
 // with the revision it was read at; the server validates and refuses a file
 // that changed meanwhile, and the page then shows what it read again.
-const props = defineProps<{ role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[] }>()
+// projectsLoaded: whether `projects` was read yet; the page reads it alongside the settings.
+// A use can open the form directly at the projects it needs permission to send.
+const props = defineProps<{
+  role: ModelRoleId | null; payload: ModelRolesPayload; projects: readonly PersonalProject[]
+  projectsLoaded: boolean; focus?: 'projects' | null
+}>()
+// Projects whose content may go to the model: every project in use, formal and temporary; archived ones are not offered.
+const offeredProjects = computed(() => props.projects.filter(project => !isArchivedProject(project)))
+const approvedProject = (project: PersonalProject) => ({ personalSpaceId: project.personal_space_id, personalProjectId: project.project_id })
+// Set when a role never saved opens; cleared when the person changes the project list.
+const followsAllProjects = ref(false)
 const emit = defineEmits<{ close: []; saved: [payload: ModelRolesPayload]; conflict: [code: ConfigConflict] }>()
 
 const BUDGET_FIELDS = ['maxInputTokens', 'maxOutputTokens', 'timeoutSeconds', 'windowHours', 'maxTokensPerWindow'] as const
@@ -62,11 +75,23 @@ const modelListText = computed(() => {
   }
   return ''
 })
+// The settings the draft was made from. The page's copy is read again while the form is open (the top
+// bar reads it every minute); a save names this one, so a change made elsewhere meanwhile is still refused.
+let draftRevision = props.payload.revision
 watch(() => props.role, (role) => {
-  draft.value = role ? roleDraft(props.payload, role) : null
+  draft.value = role ? roleDraft(props.payload, role, offeredProjects.value.map(approvedProject)) : null
+  followsAllProjects.value = Boolean(role) && !hasSavedEgress(props.payload, role!)
+  draftRevision = props.payload.revision
   error.value = ''
   refreshModels()
 }, { immediate: true })
+// Opened to approve projects: the project list is marked and is the dialog's first focus
+// ([autofocus], which useModalDialog focuses once the dialog shows). It scrolls into view when
+// that focus reaches it, so keyboard and view both start there; Tab goes on to its controls.
+const asked = computed(() => Boolean(props.role) && props.focus === 'projects')
+function showAsked(event: FocusEvent) {
+  if (asked.value && event.target === event.currentTarget) (event.currentTarget as HTMLElement).scrollIntoView({ block: 'center' })
+}
 
 const name = computed(() => (props.role ? roleName(props.role) : ''))
 const presetOptions = computed(() => SEMANTIC_PRESETS.map(value => ({ value, label: t(`modelSettings.semantic.presets.${value}`) })))
@@ -88,25 +113,36 @@ const protocolOptions = computed(() => MODEL_PROTOCOLS.map(value => ({ value, la
 const effortOptions = computed(() => [{ value: '', label: t('modelSettings.reasoningDefault') },
   ...REASONING_EFFORTS.map(value => ({ value, label: value }))])
 const wired = computed(() => (props.role ? props.payload.operations[props.role] ?? [] : []))
-const projectChoices = computed(() => props.projects.filter(project => project.scope_type !== 'temporary')
-  .map(project => ({ key: projectKey({ personalSpaceId: project.personal_space_id, personalProjectId: project.project_id }),
-    project: { personalSpaceId: project.personal_space_id, personalProjectId: project.project_id }, label: project.profile.name })))
-const approved = computed(() => new Set(draft.value?.approvedProjects.map(projectKey)))
-const projectQuery = ref('')
-const shownProjects = computed(() => {
-  const query = projectQuery.value.trim().toLowerCase()
-  return query ? projectChoices.value.filter(choice => choice.label.toLowerCase().includes(query)) : projectChoices.value
+const approved = computed(() => draft.value?.approvedProjects.map(projectKey) ?? [])
+// A role never saved approves every project offered, also those that arrive after the form
+// opened (the page reads projects and settings at once) or on a refresh, until the person
+// changes the list. Until projects are read it cannot be saved: nothing would be approved.
+const waitingForProjects = computed(() => followsAllProjects.value && !props.projectsLoaded)
+watch(() => [props.projectsLoaded, offeredProjects.value] as const, ([loaded, offered]) => {
+  if (followsAllProjects.value && loaded && draft.value) draft.value = { ...draft.value, approvedProjects: offered.map(approvedProject) }
 })
+function approveProjects(keys: string[], on: boolean) {
+  followsAllProjects.value = false
+  const projects = offeredProjects.value.filter(project => keys.includes(projectKey(approvedProject(project))))
+  if (draft.value) draft.value = withProjects(draft.value, projects.map(approvedProject), on)
+}
 const savedKeys = ref<string[]>([])
 // Dreaming and retrieval terms are two of Astro's task types; each switch is that entry in the list.
 const operationSwitch = (name: string) => computed({
   get: () => operationList(draft.value?.operations).includes(name),
-  set(on: boolean) {
-    if (!draft.value) return
-    const others = operationList(draft.value.operations).filter(operation => operation !== name)
-    draft.value = { ...draft.value, operations: (on ? [...others, name] : others).join(', ') }
-  },
+  set(on: boolean) { setOperation(name, on) },
 })
+// Task types with a switch of their own in this form are not offered twice.
+const OWN_SWITCH = new Set(['dreaming', 'retrieval_terms'])
+const operationChoices = computed(() => [...new Set([...wired.value, ...operationList(draft.value?.operations)])]
+  .filter(operation => !OWN_SWITCH.has(operation)))
+function setOperation(name: string, on: boolean) {
+  if (!draft.value) return
+  const others = operationList(draft.value.operations).filter(operation => operation !== name)
+  draft.value = { ...draft.value, operations: (on ? [...others, name] : others).join(', ') }
+}
+// What a task type is called; one this console does not know yet shows as written.
+const operationName = (operation: string) => tableLabel('modelSettings.operationNames', operation) ?? operation
 const dreamingOn = operationSwitch('dreaming')
 const termsOn = operationSwitch('retrieval_terms')
 function operationList(text = '') { return text.split(',').map(item => item.trim()).filter(Boolean) }
@@ -121,11 +157,11 @@ function chooseConnection(id: string) {
 }
 
 async function save() {
-  if (!props.role || !draft.value || locked.value || badKeyName.value) return
+  if (!props.role || !draft.value || locked.value || badKeyName.value || waitingForProjects.value) return
   saving.value = true
   error.value = ''
   try {
-    emit('saved', await saveModelRole(props.role, draft.value, props.payload.revision))
+    emit('saved', await saveModelRole(props.role, draft.value, draftRevision))
   } catch (cause) {
     const code = configConflict(cause)
     if (code) emit('conflict', code)
@@ -133,6 +169,14 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+// 「有单价才能设费用上限」 comes with the way there: turn prices on and start at the first price.
+async function addPrices() {
+  if (!draft.value) return
+  draft.value.priced = true
+  await nextTick()
+  document.getElementById('model-role-input-price')?.focus()
 }
 </script>
 
@@ -200,21 +244,13 @@ async function save() {
         <FieldLabel for="model-role-terms">{{ t('modelSettings.retrievalTerms.enable') }}</FieldLabel>
       </Field>
 
-      <fieldset class="model-role-fieldset">
+      <fieldset class="model-role-fieldset" :class="{ 'is-asked': asked }" :tabindex="asked ? -1 : undefined" :autofocus="asked || undefined"
+        data-model-egress @focus="showAsked">
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>
-        <p v-if="!projectChoices.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
-        <template v-else>
-          <Input v-model="projectQuery" type="search" autocomplete="off" :placeholder="t('modelSettings.projectSearch')" :aria-label="t('modelSettings.projectSearch')"
-            data-model-project-search @keydown.enter.prevent />
-          <div class="model-role-projects" data-model-projects>
-            <div v-for="choice in shownProjects" :key="choice.key" class="model-role-check">
-              <Checkbox :id="`model-role-project-${choice.key}`" :model-value="approved.has(choice.key)" :disabled="inactive"
-                data-model-egress-project @update:model-value="value => draft = withProject(draft!, choice.project, value === true)" />
-              <Label :for="`model-role-project-${choice.key}`" :title="choice.label">{{ choice.label }}</Label>
-            </div>
-          </div>
-          <p v-if="!shownProjects.length" class="model-role-muted">{{ t('modelSettings.projectNoMatch') }}</p>
-        </template>
+        <GrowthLoading v-if="!projectsLoaded" variant="inline" :label="t('modelSettings.loadingProjects')" data-model-projects-loading />
+        <p v-else-if="!offeredProjects.length" class="model-role-muted">{{ t('modelSettings.noProjects') }}</p>
+        <ProjectScopePicker v-else :projects="offeredProjects" :selected="approved" :disabled="inactive" id-prefix="model-role-project"
+          data-model-projects @toggle="approveProjects" />
         <div class="model-role-check">
           <Checkbox id="model-role-unassigned" v-model="draft.allowUnassigned" :disabled="inactive" />
           <Label for="model-role-unassigned">{{ t('modelSettings.allowUnassigned') }}</Label>
@@ -250,15 +286,16 @@ async function save() {
               <FieldDescription>{{ t('modelSettings.headersHint') }}</FieldDescription>
             </Field>
 
-            <Field>
-              <FieldLabel for="model-role-operations">{{ t('modelSettings.operations') }}</FieldLabel>
-              <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="inactive"
-                data-model-operations />
-              <FieldDescription>
-                {{ t('modelSettings.operationsHint') }}
-                {{ wired.length ? t('modelSettings.wired', { operations: wired.join(', ') }) : t('modelSettings.notWired') }}
-              </FieldDescription>
-            </Field>
+            <!-- Chosen, never typed: the task types this role can send to its model (11-23). -->
+            <fieldset class="model-role-operations" data-model-operations>
+              <legend class="model-role-operations-label">{{ t('modelSettings.operations') }}</legend>
+              <label v-for="operation in operationChoices" :key="operation" class="model-role-operation" :data-model-operation="operation">
+                <Checkbox :model-value="operationList(draft.operations).includes(operation)" :disabled="inactive"
+                  @update:model-value="value => setOperation(operation, value === true)" />
+                <span>{{ operationName(operation) }}</span>
+              </label>
+              <FieldDescription v-if="!operationChoices.length">{{ t('modelSettings.notWired') }}</FieldDescription>
+            </fieldset>
 
             <p class="model-role-muted" data-model-limits-hint>{{ t('modelSettings.limitsHint') }}</p>
             <div class="model-role-grid">
@@ -271,7 +308,12 @@ async function save() {
                 <FieldLabel for="model-role-cost-cap">{{ t('modelSettings.maxCostPerWindow') }}</FieldLabel>
                 <Input id="model-role-cost-cap" v-model="draft.maxCostPerWindow" type="number" min="0" step="any"
                   :disabled="inactive || !draft.priced" />
-                <FieldDescription v-if="!draft.priced">{{ t('modelSettings.costNeedsPrice') }}</FieldDescription>
+                <FieldDescription v-if="!draft.priced">
+                  {{ t('modelSettings.costNeedsPrice') }}
+                  <Button variant="link" size="sm" class="h-auto p-0" :disabled="inactive" data-model-add-prices @click="addPrices">
+                    {{ t('modelSettings.addPrices') }}
+                  </Button>
+                </FieldDescription>
               </Field>
             </div>
 
@@ -285,7 +327,7 @@ async function save() {
     </div>
     <template #footer>
       <Button variant="ghost" :disabled="saving" @click="emit('close')">{{ t('modelSettings.cancel') }}</Button>
-      <Button type="submit" :disabled="locked || badKeyName" :loading="saving" :loading-label="t('modelSettings.saving', { name })" data-model-save>
+      <Button type="submit" :disabled="locked || badKeyName || waitingForProjects" :loading="saving" :loading-label="t('modelSettings.saving', { name })" data-model-save>
         {{ t('modelSettings.save') }}
       </Button>
     </template>
@@ -298,9 +340,9 @@ async function save() {
 .model-role-wide { grid-column: 1 / -1; }
 .model-role-fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .model-role-fieldset legend { margin-bottom: 4px; font-size: 14px; font-weight: 500; }
+/* Opened from a use's 去授权: the list the person came for is marked. */
+.model-role-fieldset.is-asked legend { color: var(--color-gold); }
 .model-role-check { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
-.model-role-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px 16px; max-height: 208px; padding: 2px; overflow-y: auto; }
-.model-role-projects label { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-role-advanced :deep(.model-role-advanced-trigger) { padding-block: 8px; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .model-role-advanced :deep(.model-role-advanced-body) { display: grid; gap: 16px; padding-top: 8px; }
 .model-role-muted { margin: 0; color: var(--color-muted); font-size: 13px; }
@@ -310,4 +352,7 @@ async function save() {
 .model-role-list :deep(.growth-loading__content) { min-width: 0; }
 .model-role-list-refresh { flex: none; min-height: 24px; padding-inline: 0; user-select: none; }
 .model-role-inactive { opacity: .5; }
+.model-role-operations { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.model-role-operations-label { width: 100%; margin-bottom: 2px; font-size: var(--text-label, 13px); font-weight: 500; }
+.model-role-operation { display: inline-flex; align-items: center; gap: 8px; }
 </style>

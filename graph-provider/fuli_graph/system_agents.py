@@ -7,16 +7,21 @@ original coordinator reference.
 
 import json
 
+from .fixed_roles import (
+    SYSTEM_ASSISTANT_AGENT_ID,
+    SYSTEM_COORDINATOR_AGENT_ID,
+    SYSTEM_HR_AGENT_ID,
+    SYSTEM_JUDGMENT_AGENT_ID,
+    system_role_capability,
+)
+from .name_identity import identity_key
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS
 from .project_agent_models import ProjectAgentProfile
 from .project_agent_employee_numbers import ASSIGN_EMPLOYEE_NUMBERS, EMPLOYEE_NUMBER_LOCK
+from .project_agent_names import agent_display_name
 from .provider_values import now_utc, stable_uuid
 
-SYSTEM_COORDINATOR_AGENT_ID = 'employee.jefa'
 LEGACY_COORDINATOR_AGENT_ID = 'fuli-project-coordinator'
-SYSTEM_HR_AGENT_ID = 'employee.bole'
-SYSTEM_JUDGMENT_AGENT_ID = 'employee.tonborg'
-SYSTEM_ASSISTANT_AGENT_ID = 'employee.assistant'
 # Upgrade only the former built-in copy; custom responsibilities are user data.
 LEGACY_ASSISTANT_NAME = 'Assistant'
 # Earlier built-in Bole copies, upgraded in place; any other text is the user's.
@@ -25,16 +30,19 @@ LEGACY_HR_RESPONSIBILITIES = (
     'AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录。',
 )
 LEGACY_JUDGMENT_RESPONSIBILITY = '判断官：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。'
+# Jefa's built-in copy while it still claimed choosing who does each task: the
+# project's lead and Bole choose the people, Tonborg the client and model.
+LEGACY_COORDINATOR_RESPONSIBILITY = '项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。'
 
 
 def coordinator_profile() -> ProjectAgentProfile:
     return ProjectAgentProfile(
         name='Jefa',
         occupation_emoji='🧭',
-        responsibility='项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。',
+        responsibility='项目经理：拆解目标、维护看板与进展。',
         agent_type='coordinator',
         work_kinds=['project_management', 'planning', 'review', 'task-coordination'],
-        capabilities=['项目规划', '任务拆解', '看板读写', 'Agent 路由', 'fuli.employee:jefa'],
+        capabilities=['项目规划', '任务拆解', '看板读写', 'Agent 路由', system_role_capability(SYSTEM_COORDINATOR_AGENT_ID)],
         initial_preferences=[
             '质量与可验收完成优先于成本和时间。',
             'Agent 认为完成时只移入待确认，最终完成由用户决定。',
@@ -53,7 +61,7 @@ def hr_profile() -> ProjectAgentProfile:
         ),
         agent_type='hr',
         work_kinds=['agent-recruitment', 'staffing-review', 'agent-dismissal'],
-        capabilities=['Agent 招募', '人员分布', '工作状态', '招募审计', 'Agent 离职', 'fuli.employee:bole'],
+        capabilities=['Agent 招募', '人员分布', '工作状态', '招募审计', 'Agent 离职', system_role_capability(SYSTEM_HR_AGENT_ID)],
         initial_preferences=[
             '每次招募保留任务、原因、触发来源与时间线。',
             '只展示 Provider 已记录的人员状态，不推测未上报的工作。',
@@ -70,7 +78,7 @@ def judgment_profile() -> ProjectAgentProfile:
         responsibility='决策员：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。',
         agent_type='durable',
         work_kinds=['judgment', 'knowledge-review', 'executor-selection'],
-        capabilities=['判断审核', '执行器选择', '判断反馈', 'fuli.employee:tonborg'],
+        capabilities=['判断审核', '执行器选择', '判断反馈', system_role_capability(SYSTEM_JUDGMENT_AGENT_ID)],
         initial_preferences=[
             '用户明确偏好优先；只把相关范围的历史反馈用于当前判断。',
             '不把模型建议当作已执行，不把 AI 审核冒充用户确认。',
@@ -86,7 +94,7 @@ def assistant_profile() -> ProjectAgentProfile:
         name='Astro', occupation_emoji='💬',
         responsibility='全局助手：接待未归属项目的对话，只用全局偏好，不自动询问项目归属。',
         work_kinds=['conversation'],
-        capabilities=['全局对话', 'fuli.employee:assistant'],
+        capabilities=['全局对话', system_role_capability(SYSTEM_ASSISTANT_AGENT_ID)],
         initial_preferences=['项目确认前只保留任务上下文，不写入长期记忆。'],
     )
 
@@ -120,6 +128,8 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
              and stored.get('responsibility') in LEGACY_HR_RESPONSIBILITIES)
             or (agent_id == SYSTEM_JUDGMENT_AGENT_ID
                 and stored.get('responsibility') == LEGACY_JUDGMENT_RESPONSIBILITY)
+            or (agent_id == SYSTEM_COORDINATOR_AGENT_ID
+                and stored.get('responsibility') == LEGACY_COORDINATOR_RESPONSIBILITY)
         )
         if upgrade_responsibility:
             stored['responsibility'] = default.responsibility
@@ -161,6 +171,15 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
               agent.occupation_updated_at = $now,
               agent.occupation_source = 'builtin-role-v1'
         )
+        // The role holds the name it is shown by like every Agent, so no write
+        // gives that name to another (store_project_agent_naming.py); an FLA
+        // that already had it keeps it until the person settles the name.
+        FOREACH (_ IN CASE WHEN coalesce(agent.display_name_key, '') <> $name_key AND NOT EXISTS {
+            MATCH (other:FuliProjectAgent {display_name_space_id: $space_id, display_name_key: $name_key})
+            WHERE other <> agent
+          } THEN [1] ELSE [] END |
+          SET agent.display_name_space_id = $space_id, agent.display_name_key = $name_key
+        )
         MERGE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(agent)
         ''' + ASSIGN_EMPLOYEE_NUMBERS + ' RETURN agent',
         space_id=space_id,
@@ -177,6 +196,7 @@ async def ensure_system_identity(driver, provider_id, space_id, agent_id):
         agent_type=profile.agent_type,
         memory_scope='task_only' if agent_id == SYSTEM_ASSISTANT_AGENT_ID else 'reviewed_agent',
         occupation_role=BUILTIN_AGENT_OCCUPATIONS[agent_id],
+        name_key=identity_key(agent_display_name(agent_id, profile.name, profile.display_name)),
         now=now,
     )
     if agent_id == SYSTEM_JUDGMENT_AGENT_ID:

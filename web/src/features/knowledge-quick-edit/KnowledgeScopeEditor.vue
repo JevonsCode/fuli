@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -31,8 +34,7 @@ const agents = ref<Array<{ value: string; label: string }>>([])
 const message = ref<{ kind: 'error' | 'status' | 'widening' | 'project_match'; text: string } | null>(null)
 watch(() => props.item.version, () => { draft.value = initialScopeDraft(props.item) })
 
-const projectOptions = computed(() => props.projects.filter(project => project.scope_type !== 'temporary')
-  .map(project => ({ value: project.project_id, label: project.profile.name || project.project_id })))
+const projectOptions = computed(() => projectScopeOptions(props.projects.filter(project => project.scope_type !== 'temporary')))
 const choices = computed(() => scopeChoices(props.item))
 const request = computed(() => scopeRequest(props.spaceId, props.item, draft.value, reason.value))
 
@@ -47,7 +49,7 @@ watch(() => draft.value.agentProjectId, async project => {
       personalProjectId: project, status: 'active' })}`)
     const list = Array.isArray(value) ? value : (value as { agents?: unknown[] })?.agents ?? []
     agents.value = (list as Array<{ agentId?: string; profile?: { name?: string } }>)
-      .filter(agent => agent.agentId).map(agent => ({ value: agent.agentId!, label: agent.profile?.name || agent.agentId! }))
+      .filter(agent => agent.agentId).map(agent => ({ value: agent.agentId!, label: (agent.profile?.name ? agentDisplayName({ profile: { name: agent.profile.name, displayName: null } }) : '') || agent.agentId! }))
   } catch {
     agents.value = []
   }
@@ -93,13 +95,13 @@ async function save() {
         </RadioGroup>
       </Field>
       <OptionCombobox v-if="draft.choice === 'projects'" v-model="draft.projectIds" field multiple
-        :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :disabled="saving" data-scope-projects />
+        :label="t('knowledgeQuickEdit.scope.projectsField')" :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :disabled="saving" data-scope-projects />
       <p v-if="!isPreference(item)" class="m-0 text-xs text-muted-foreground" data-scope-other-knowledge>
         {{ t('knowledgeQuickEdit.scope.otherKnowledge') }}
       </p>
       <template v-if="draft.choice === 'agent'">
         <OptionCombobox v-model="draft.agentProjectId" field :label="t('knowledgeQuickEdit.scope.project')"
-          :options="projectOptions" :disabled="saving" data-scope-agent-project />
+          :options="projectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :disabled="saving" data-scope-agent-project />
         <OptionCombobox v-if="agents.length" v-model="draft.agentId" field :label="t('knowledgeQuickEdit.scope.agentLabel')"
           :options="agents" :disabled="saving" data-scope-agent />
         <p v-else class="m-0 text-xs text-muted-foreground">{{ t('knowledgeQuickEdit.scope.noAgents') }}</p>

@@ -8,7 +8,8 @@ import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { readJsonFile, writeJsonFileAtomic, writeTextFileAtomic } from '../storage/json-file.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
-import { assertManagedNeo4jHome, neo4jAssetFingerprint, acquireNeo4jLifecycleLock, assetContainer, managedNeo4jContainers } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, neo4jAssetFingerprint, uninstallContainers } from './neo4j-asset-state.js';
+import { acquireNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree } from './macos-ports.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { readNeo4jStoreFormats } from './neo4j-store-formats.js';
@@ -39,7 +40,8 @@ export async function planNativeNeo4j({ paths, action }) {
 
 export async function manageNativeNeo4j({ paths, action, env = process.env }, dependencies = {}) {
   if ((dependencies.platform ?? process.platform) !== 'darwin') throw new Error('This native Neo4j lifecycle command currently requires macOS.');
-  const lock = await acquireNeo4jLifecycleLock(paths.nativeRuntimeDir);
+  // Named, so a later start never takes over a lock an interrupted asset operation left.
+  const lock = await acquireNeo4jLifecycleLock(paths.nativeRuntimeDir, { operation: action });
   const journal = join(paths.nativeRuntimeDir, 'neo4j-transaction.json');
   const operationEnv = { ...env, FULI_NATIVE_ASSET_OPERATION: lock.token };
   const runtime = dependencies.runtime ?? localRuntimeControl(paths, operationEnv, () => {});
@@ -103,14 +105,7 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
     await lock.assertHeld(); await unchanged(paths.nativeRuntimeManifestPath, plan.bytes);
     if (await neo4jAssetFingerprint(current.neo4jHome) !== plan.fingerprint) throw new Error('Current Neo4j assets changed while stopping.');
     if (action === 'uninstall') {
-      // After a patch upgrade the retained assets are of the older patch.
-      const assets = [{ home: current.neo4jHome, version: current.neo4jVersion }, current.previousNeo4jAsset].filter(Boolean);
-      const versions = [...new Set(assets.map(({ version }) => version))];
-      const defaultHomes = await Promise.all(versions.map(version =>
-        assertManagedNeo4jHome(paths, join(paths.nativeRuntimeDir, `neo4j-community-${version}`), version)));
-      const containers = new Set([...defaultHomes, ...await managedNeo4jContainers(paths, versions),
-        ...assets.map(({ home }) => assetContainer(paths, home))]);
-      for (const { home, version } of assets) await assertManagedNeo4jHome(paths, home, version);
+      const containers = await uninstallContainers(paths, current);
       writeJsonFileAtomic(journal, { action, phase: 'removing-assets', previous: current });
       writeJsonFileAtomic(paths.nativeRuntimeManifestPath, { ...current, status: 'uninstalled' });
       const uninstalled = await readFile(paths.nativeRuntimeManifestPath);
@@ -124,7 +119,8 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
     const kept = graphBackup ? ` The graph backup taken before the upgrade is kept at ${graphBackup}.` : '';
     const nextBytes = Buffer.from(`${JSON.stringify(target, null, 2)}\n`);
     const targetServices = service(target);
-    writeJsonFileAtomic(journal, { action, phase: 'switching', previous: current, next: target, storeFormats: before });
+    const switching = { action, phase: 'switching', previous: current, next: target, storeFormats: before };
+    writeJsonFileAtomic(journal, switching);
     let switched = false, consoleStartAttempted = false;
     try {
       await lock.assertHeld(); await unchanged(paths.nativeRuntimeManifestPath, plan.bytes);
@@ -148,7 +144,14 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
         if (JSON.stringify(await formats(target)) !== JSON.stringify(before)) throw new Error('Neo4j storage format changed; unsafe rollback blocked.');
       } catch (recoveryError) { throw new AggregateError([error, recoveryError], 'Neo4j rollback needs attention. The candidate was not replaced and recovery evidence was kept.' + kept); }
       if (await neo4jAssetFingerprint(current.neo4jHome) !== plan.fingerprint) throw new Error('Previous assets changed; recovery needs attention.' + kept);
-      if (switched) writeTextFileAtomic(paths.nativeRuntimeManifestPath, plan.bytes);
+      if (switched) {
+        // The newer Neo4j already opened the store: recorded before the older
+        // descriptor goes back, so a recovery after this continues the back-out
+        // (and checks the older version starts) instead of undoing a switch
+        // that never took effect (neo4j-recovery.js).
+        writeJsonFileAtomic(journal, { ...switching, backingOut: true });
+        writeTextFileAtomic(paths.nativeRuntimeManifestPath, plan.bytes);
+      }
       const old = service(current);
       try {
         await old.start({ providers: wasProviderRunning });
@@ -159,7 +162,11 @@ export async function manageNativeNeo4j({ paths, action, env = process.env }, de
       await rm(journal);
       throw new Error('Neo4j switch failed; the previous assets were restored. Data was preserved.' + kept, { cause: error });
     }
-  } finally { await lock.release(); }
+  } finally {
+    // A switch whose own rollback did not finish leaves its journal: the lock
+    // stays with it, so nothing starts until `fuli graph runtime recover` ran.
+    if (!existsSync(journal)) await lock.release();
+  }
 }
 async function unchanged(path, bytes) {
   if (!(await readFile(path)).equals(bytes)) throw new Error('Native Neo4j descriptor changed concurrently; it was left untouched.');

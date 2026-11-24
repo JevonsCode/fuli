@@ -33,3 +33,15 @@ export function viaLabel(via: string | null) {
   const mode = via?.split(':')[1]
   return mode && ['resume', 'new', 'inbox', 'stand_in'].includes(mode) ? t(`roundtable.via.${mode}`) : ''
 }
+
+// Where a reason that is a setting of the person's is changed, so the line under the
+// thread never stops at the reason (docs/console-design.md). Other reasons are about
+// this one message: it waits on the board, and nothing needs the person.
+const REASON_PLACES: Readonly<Record<string, { to: string, label: string }>> = {
+  lead_changed: { to: '/settings?tab=connections#peer', label: 'roundtable.reasonActions.share' },
+  lead_unavailable: { to: '/settings?tab=connections#peer', label: 'roundtable.reasonActions.share' },
+  no_client: { to: '/settings?tab=clients', label: 'roundtable.reasonActions.clients' },
+}
+
+/** Where to fix a delivery reason, or null when it is not a setting. */
+export const reasonPlace = (reason: string | null | undefined) => (reason && REASON_PLACES[reason]) || null

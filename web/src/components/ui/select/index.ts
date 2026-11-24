@@ -11,7 +11,7 @@
 //   chevron, a darker hairline on hover and a soft neutral halo on focus and
 //   while the list is open; quiet disabled surface.
 // - FULI popover look, as DropdownMenu: card surface, hairline border, popover
-//   shadow, the control radius, --z-popover stacking instead of z-50, and a
+//   shadow, the control radius, --z-dialog stacking (as popover: one opened inside a dialog shows above it) instead of z-50, and a
 //   px minimum width (upstream's 8rem drifts with the 14px root).
 // - tw-animate-css is not used: the list fades in (animate-popover-in), which
 //   reduced motion zeroes.

@@ -18,8 +18,11 @@ import {
 import { createConnection } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 
-import { assertManagedNeo4jHome, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { assertManagedNeo4jHome, takeNativeAssetOperation, withNativeAssetOperation } from './neo4j-asset-state.js';
+import { neo4jLifecycleLockError, releaseAbandonedNeo4jLifecycleLock } from './neo4j-lifecycle-lock.js';
 import { assertMacNativePortFree, assertMacNativePortOwner } from './macos-ports.js';
+import { endOrphanedServices, findOrphanedServices, orphanedServicesError } from './orphan-services.js';
+import { processMatchesCommand } from './process-identity.js';
 import { resolveNativeJavaHome } from './java-runtime.js';
 import { installNativeNeo4j } from './neo4j-install.js';
 import { neo4jPatchUpgrade } from './neo4j-version-policy.js';
@@ -40,7 +43,7 @@ import {
 } from '../system/runtime-settings.js';
 import { nonEmptyText } from '../validation/values.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
-import { isProcessAlive } from '../local-runtime/processes.js';
+import { isProcessAlive, processState } from '../local-runtime/processes.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { errorCode } from '../diagnostics/safe-event.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
@@ -82,20 +85,43 @@ export function createNativeGraphServices({
     : platform === 'darwin' ? assertMacNativePortOwner : async () => {},
   verifyPortFree = platform === 'win32' ? assertWindowsNativePortFree
     : platform === 'darwin' ? assertMacNativePortFree : async () => {},
+  // A graph service of this data directory that FULI lost track of, holding its port (orphan-services.js).
+  findOrphans = platform === 'darwin' ? findOrphanedServices : async () => [],
   fetchImpl = globalThis.fetch,
   wait = delay,
   now = () => new Date(),
   // A start that failed, in the data directory's diagnostics log (rec#73).
-  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {}
+  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {},
+  recordOrphan = paths.dataDir ? diagnosticEventLog(paths.dataDir).record : () => false,
+  // The phase a start enters where it begins (src/local-runtime/startup-stage.js).
+  onStage = () => {}
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
-  const operation = action => platform === 'darwin' ? withNativeAssetOperation(paths, env, action) : action(env);
-  const start = options => operation(() => startUnlocked(options));
-  const stopProviders = () => operation(() => stopProvidersUnlocked());
-  const stopDatabases = () => operation(() => stopDatabasesUnlocked());
+  // The lease these services hold themselves (hold), which their own operations re-enter.
+  let held = null;
+  const operationEnv = () => held ? { ...env, FULI_NATIVE_ASSET_OPERATION: held } : env;
+  const operation = (name, action) => platform === 'darwin' ? withNativeAssetOperation(paths, operationEnv(), action, { operation: name }) : action(env);
+  const start = options => operation('start', () => startUnlocked(options));
 
-  async function startUnlocked({ providers: startProviders = true } = {}) {
+  // Takes the lifecycle lease for [name] and keeps it across several steps (an
+  // import: every load, and the rollback after a failed one), recording
+  // [holder] for a recovery. The lease answers whether it locks (only macOS
+  // has the lease), records more as the steps go (record), and goes only when
+  // release is called: a failure in between keeps it, so nothing starts.
+  async function hold(name, holder) {
+    if (platform !== 'darwin') return { locked: false, record: async () => {}, release: async () => {} };
+    const lock = await takeNativeAssetOperation(paths, operationEnv(), { operation: name, holder });
+    if (!lock) throw new Error('This native runtime\'s lifecycle lease is already held by this operation.');
+    held = lock.token;
+    return { locked: true, record: patch => lock.record(patch), async release() { await lock.release(); held = null; } };
+  }
+  const stopProviders = () => operation('stop', () => stopProvidersUnlocked());
+  const stopDatabases = () => operation('stop', () => stopDatabasesUnlocked());
+
+  // endOrphans: the person chose to end a graph service of this data directory that FULI lost track of
+  // (`fuli start --end-orphaned-services`, 「结束它并启动」); without it the start stops and says so.
+  async function startUnlocked({ providers: startProviders = true, endOrphans = false } = {}) {
     const startedAt = Date.now();
     if (platform === 'darwin') {
       const selected = readJson(paths.nativeRuntimeManifestPath);
@@ -109,6 +135,7 @@ export function createNativeGraphServices({
     const startedDatabases = {};
     const startedProviders = {};
     try {
+      onStage('graph_start');
       for (const spec of specs) {
         await prepareInstance(spec);
         const existing = previousState.databases?.[spec.id];
@@ -119,7 +146,9 @@ export function createNativeGraphServices({
         ) {
           databases[spec.id] = existing;
         } else {
-          // Nothing is spawned while another process holds either Neo4j port.
+          // Nothing is spawned while another process holds either Neo4j port; one this data
+          // directory started and lost track of is ended first (orphan-services.js).
+          await releaseOrphans(spec, [spec.boltPort, spec.httpPort], endOrphans);
           await verifyPortFree(spec.boltPort);
           await verifyPortFree(spec.httpPort);
           const child = await spawnDatabase(databaseSpec(spec));
@@ -135,6 +164,7 @@ export function createNativeGraphServices({
           startedDatabases[spec.id] = databases[spec.id];
         }
         persistProcessState(databases, providers);
+        onStage('database_wait');
         await waitForDatabase('127.0.0.1', spec.boltPort, databases[spec.id]);
         await verifyPortOwner(databases[spec.id], spec.boltPort);
         if (platform === 'darwin') {
@@ -155,6 +185,7 @@ export function createNativeGraphServices({
         ) {
           providers[spec.id] = existing;
         } else {
+          await releaseOrphans(spec, [spec.providerPort], endOrphans);
           await verifyPortFree(spec.providerPort);
           const child = await spawnProvider(providerSpec(spec));
           if (!Number.isInteger(child?.pid)) {
@@ -170,6 +201,7 @@ export function createNativeGraphServices({
         }
       }
       persistProcessState(databases, providers);
+      onStage('provider_wait');
       for (const spec of specs) {
         await waitForProvider(spec.providerUrl, fetchImpl, wait, providers[spec.id]);
         await verifyPortOwner(providers[spec.id], spec.providerPort);
@@ -187,6 +219,15 @@ export function createNativeGraphServices({
       recordFailure(error, Date.now() - startedAt);
       throw error;
     }
+  }
+
+  // A graph service of this data directory on these ports that FULI lost track of:
+  // ended when the person chose so, else the start stops and says what holds them.
+  async function releaseOrphans(spec, ports, endOrphans) {
+    const found = await findOrphans({ instanceDir: spec.instanceDir, ports });
+    if (!found.length) return;
+    if (!endOrphans) throw orphanedServicesError(found);
+    await endOrphanedServices(found, { stop: (group) => stopProcess(group, { pid: group }), record: recordOrphan });
   }
 
   async function stopProvidersUnlocked() {
@@ -212,7 +253,7 @@ export function createNativeGraphServices({
       // Compatibility with native runtimes created before database PIDs were recorded.
       for (const spec of await serviceSpecs()) {
         await run(join(descriptor.neo4jHome, 'bin', 'neo4j'), ['stop'], {
-          env: neo4jEnvironment(spec)
+          env: neo4jEnvironment(spec), cwd: spec.instanceDir
         }).catch(() => {});
       }
     }
@@ -258,7 +299,7 @@ export function createNativeGraphServices({
     // is still read as the positional <password> value.
     await run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), [
       'dbms', 'set-initial-password', '--', spec.password
-    ], { env: neo4jEnvironment(spec) });
+    ], { env: neo4jEnvironment(spec), cwd: spec.instanceDir });
     await markInitialized(marker);
   }
 
@@ -277,6 +318,7 @@ export function createNativeGraphServices({
       python: descriptor.providerPython,
       sourcePath: descriptor.providerSource ?? null,
       port: spec.providerPort,
+      workingDirectory: spec.instanceDir,
       logPath: nativeInstanceLogPaths(spec.instanceDir).provider,
       environment: {
         ...process.env,
@@ -311,6 +353,7 @@ export function createNativeGraphServices({
       args: ['console'],
       memory: spec.memory,
       pidPath: join(spec.instanceDir, 'run', 'neo4j.pid'),
+      workingDirectory: spec.instanceDir,
       logPath: nativeInstanceLogPaths(spec.instanceDir).database,
       environment: neo4jEnvironment(spec)
     };
@@ -343,12 +386,14 @@ export function createNativeGraphServices({
     return spec;
   }
 
-  async function adminDatabase(spec, args) { return operation(() => adminDatabaseUnlocked(spec, args)); }
+  // A dump reads a database's files and a load overwrites them: the lock names
+  // which (args[1]), and an interrupted one is never taken over (neo4j-lifecycle-lock.js).
+  async function adminDatabase(spec, args) { return operation(args[1], () => adminDatabaseUnlocked(spec, args)); }
 
   async function adminDatabaseUnlocked(spec, args) {
     await prepareInstance(spec);
     return run(join(descriptor.neo4jHome, 'bin', 'neo4j-admin'), args, {
-      env: neo4jEnvironment(spec)
+      env: neo4jEnvironment(spec), cwd: spec.instanceDir
     });
   }
 
@@ -368,6 +413,9 @@ export function createNativeGraphServices({
       return adminDatabase(spec, args);
     }
   }
+  // An import loads under the lease it holds for the whole import (hold), whose
+  // lock records the copy it took before and where it stands with each graph
+  // (graph-backup.js); a recovery's restore under the lock's own token.
   const loadDatabase = async (instanceId, fromPath) => adminDatabase(await instanceSpec(instanceId), [
     'database', 'load', 'neo4j', `--from-path=${fromPath}`, '--overwrite-destination=true'
   ]);
@@ -407,7 +455,7 @@ export function createNativeGraphServices({
     if (body.errors?.length || rows?.length !== 1 || rows[0].row?.[0] !== descriptor.neo4jVersion) throw new Error('Native Neo4j health/version check failed.');
   }
 
-  return { start, stopProviders, stopDatabases, ready, dumpDatabase, loadDatabase, censusDatabase, checkDatabaseHealth };
+  return { start, stopProviders, stopDatabases, ready, hold, dumpDatabase, loadDatabase, censusDatabase, checkDatabaseHealth };
 }
 
 export async function ensureNativeRuntime(input, dependencies = {}) {
@@ -445,10 +493,13 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   }
   const assetLock = join(input.paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
   const recovery = join(input.paths.nativeRuntimeDir, 'neo4j-transaction.json');
+  await releaseAbandonedNeo4jLifecycleLock(input.paths.nativeRuntimeDir);
   if (existsSync(assetLock) || existsSync(recovery)) {
     let owner = null;
     try { owner = readFileSync(join(assetLock, 'owner'), 'utf8'); } catch { /* Incomplete ownership is blocked. */ }
-    if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) throw new Error('Native Neo4j lifecycle switch or recovery is in progress.');
+    if (!owner || input.env?.FULI_NATIVE_ASSET_OPERATION !== owner) {
+      throw await neo4jLifecycleLockError(input.paths.nativeRuntimeDir);
+    }
   }
   const env = input.env ?? process.env;
   const packageRoot = dirname(input.paths.graphComposePath);
@@ -496,9 +547,11 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
   assertProviderUpgrade(saved?.providerVersion, expected.providerVersion, input.allowProviderDowngrade);
   if (manifestReady(saved, expected, input.paths, deps.pathExists)) return saved;
 
-  deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
   if (!neo4jReady(input.paths, deps.pathExists, neo4jHome)) {
     if (upgradePending) throw pendingUpgrade();
+    // Said only when it happens: a start that finds Neo4j in place installs nothing.
+    deps.onProgress(input, `Installing native Neo4j ${NATIVE_NEO4J_VERSION}…`);
+    input.onStage?.('graph_install');
     await deps.installNeo4j({
       paths: input.paths,
       home: neo4jHome,
@@ -514,6 +567,7 @@ async function ensureNativeRuntimeUnlocked(input, dependencies = {}) {
     saved?.providerFingerprint !== expected.providerFingerprint
   )) {
     deps.onProgress(input, 'Installing the native Graph Provider…');
+    input.onStage?.('graph_install');
     await deps.installProvider({
       uvCommand,
       venvPath: input.paths.nativeProviderVenvPath,
@@ -660,6 +714,8 @@ function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     execFile(command, args, {
       env: options.env ?? process.env,
+      // Neo4j's tools, like its server, run in the instance directory (spawnNativeDatabase).
+      cwd: options.cwd,
       timeout: COMMAND_TIMEOUT_MS,
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,
@@ -767,10 +823,18 @@ async function secureMarker(path) {
   await writeFile(path, '', { mode: 0o600 });
 }
 
+// Neo4j and the Provider run in their instance directory under the data
+// directory: it exists before they start (prepareInstance writes its conf) and
+// no app update moves it. A child that inherited the console's directory
+// (inside FULI.app) cannot start once an update replaced that bundle: a JVM
+// in a deleted directory dies with "Could not determine current working
+// directory". Their arguments and environment name only absolute paths.
 function spawnNativeDatabase(spec) {
   if (existsSync(spec.pidPath)) {
     const pid = Number(readFileSync(spec.pidPath, 'utf8').trim());
-    if (Number.isInteger(pid) && isProcessAlive(pid)) {
+    // This installation's Neo4j runs as this user: a PID that is now another
+    // user's process is a stale file, as before EPERM counted as alive.
+    if (processState(pid) === 'running') {
       throw new Error('A live process is recorded in the Neo4j PID file without verified runtime ownership. Stop its verified owner before starting another copy.');
     }
     unlinkSync(spec.pidPath);
@@ -778,6 +842,7 @@ function spawnNativeDatabase(spec) {
   const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.command, spec.args, {
+      cwd: spec.workingDirectory,
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],
@@ -794,6 +859,7 @@ function spawnNativeProvider(spec) {
   const log = openChildProcessLog(spec.logPath);
   try {
     const child = spawn(spec.python, providerServerArguments(spec.port), {
+      cwd: spec.workingDirectory,
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],
@@ -865,6 +931,19 @@ function withoutStarted(entries, started) {
 // (desktop/flutter/lib/src/runtime/provider_conflict.dart).
 export const PROVIDER_DOWNGRADE_REFUSED = 'provider_downgrade_refused';
 
+// The refusal this package's Provider would meet on the native runtime the
+// manifest records, or null. Read without starting anything, so an app update
+// knows whether the previous version can still run on this data.
+export function installedProviderRefusal(manifestPath, readManifest = path => readJsonFile(path, null)) {
+  try {
+    assertProviderUpgrade(readManifest(manifestPath)?.providerVersion, `${FULI_VERSION}+native.${PROVIDER_RUNTIME_REVISION}`);
+    return null;
+  } catch (error) {
+    if (error?.code === PROVIDER_DOWNGRADE_REFUSED) return error;
+    throw error;
+  }
+}
+
 function assertProviderUpgrade(installed, requested, allowDowngrade = false) {
   if (allowDowngrade) return;
   let comparison;
@@ -902,11 +981,6 @@ function tcpReady(host, port) {
     socket.once('connect', () => done(true));
     socket.once('error', () => done(false));
   });
-}
-
-async function processMatchesCommand(pid, command) {
-  const result = await commandResult('ps', ['-p', String(pid), '-o', 'command=']);
-  return result.status === 0 && result.stdout.includes(command);
 }
 
 export async function stopOwnedProcess(pid) {

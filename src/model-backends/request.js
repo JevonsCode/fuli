@@ -26,7 +26,9 @@ const outputSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('choice'), options: z.array(z.object({ id: key, description: z.string().trim().min(1).max(500) }).strict())
     .min(2).max(255).refine(options => new Set(options.map(option => option.id)).size === options.length, 'option IDs must be unique') }).strict(),
   z.object({ type: z.literal('score'), levels: z.array(z.string().trim().min(1).max(500)).min(2).max(10) }).strict(),
-  z.object({ type: z.literal('structured'), schema: z.looseObject({}) }).strict()
+  // items: payload[field] is a batch of one object per key (decision-contract.js batchCheck).
+  z.object({ type: z.literal('structured'), schema: z.looseObject({}),
+    items: z.object({ field: key, key }).strict().optional() }).strict()
 ]);
 
 const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable(), sessionRef: id.nullable() }).strict();
@@ -44,7 +46,9 @@ const requestSchema = z.object({
     .refine(items => new Set(items.map(item => item.id)).size === items.length, 'evidence IDs must be unique'),
   output: outputSchema,
   decisions: z.array(z.enum(DECISIONS)).min(1).max(DECISIONS.length).default([...DEFAULT_DECISIONS]),
-  budget: z.object({ maxOutputTokens: z.number().int().positive(), timeoutMs: z.number().int().positive() })
+  // hotPath: the caller is on a path a person waits on and set timeoutMs for
+  // it; a timeout under it is then not the role's failure (budget.js callLimits).
+  budget: z.object({ maxOutputTokens: z.number().int().positive(), timeoutMs: z.number().int().positive(), hotPath: z.boolean() })
     .partial().strict().default({})
 }).strict();
 
@@ -56,7 +60,7 @@ const embeddingSchema = z.object({
   scope: scopeSchema,
   texts: z.array(z.string().trim().min(1).max(MAX_EMBEDDING_TEXT_CHARS)).min(1).max(MAX_EMBEDDING_TEXTS),
   // A search waits only so long for its query's vector, then goes on by words.
-  budget: z.object({ timeoutMs: z.number().int().positive() }).strict().optional()
+  budget: z.object({ timeoutMs: z.number().int().positive(), hotPath: z.boolean().optional() }).strict().optional()
 }).strict();
 
 const usageQuerySchema = z.object({

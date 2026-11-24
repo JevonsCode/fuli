@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import type { PersonalProject } from '@/types'
 
 import JudgmentPolicyPanel from './JudgmentPolicyPanel.vue'
@@ -14,24 +14,24 @@ const props = withDefaults(defineProps<{ personalSpaceId: string; projects?: Per
 </script>
 
 <template>
-  <PageColumns>
-    <Card as="section" data-span="wide" aria-labelledby="judgment-standards-title" data-judgment-standards>
+  <PageStack>
+    <Card as="section" aria-labelledby="judgment-standards-title" data-judgment-standards>
       <CardHeader>
         <CardTitle id="judgment-standards-title" as="h2">{{ judgmentText('standards.title') }}</CardTitle>
         <CardDescription>{{ judgmentText('standards.hint') }}</CardDescription>
       </CardHeader>
       <div class="judgment-standard-groups">
-        <PageColumns>
+        <PageStack>
           <section v-for="group in JUDGMENT_STANDARD_GROUPS" :key="group.id" class="judgment-standard-group" :data-standard-group="group.id">
             <h3>{{ judgmentText(`standards.${group.id}.title`) }}</h3>
             <ul><li v-for="line in group.lines" :key="line">{{ judgmentText(`standards.${group.id}.${line}`) }}</li></ul>
           </section>
-        </PageColumns>
+        </PageStack>
       </div>
     </Card>
     <JudgmentPolicyPanel :personal-space-id="props.personalSpaceId" />
     <JudgmentProjectOverrides :personal-space-id="props.personalSpaceId" :projects="props.projects" />
-  </PageColumns>
+  </PageStack>
 </template>
 
 <style scoped>

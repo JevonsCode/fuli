@@ -12,11 +12,30 @@ import { createRoundtableTaskContext } from '../agent-roundtable/task-context.js
 import { createMcpServer } from './create-mcp-server.js';
 import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { GraphRuntimeConfigurationError } from '../graphiti/runtime-config.js';
+import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 import { registerMcpProcess } from './process-registry.js';
 import { MCP_SESSION_STARTED_ENV } from './stdio-relay.js';
 import { superviseConsole } from '../local-runtime/console-autostart.js';
+import { ownIssuer } from '../runner/task-issuer.js';
 
-export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
+export async function runStdio(options) {
+  const started = Date.now();
+  try { return await startStdio(options); }
+  catch (error) {
+    if (options.runtimeConfigPath) {
+      const source = SOURCE_APPLICATIONS.includes(options.sourceApplication) ? options.sourceApplication : 'other';
+      const code = error instanceof GraphRuntimeConfigurationError ? 'mcp_runtime_config_invalid'
+        : ['ENOENT', 'EACCES', 'EPERM'].includes(error?.code) ? error.code : 'mcp_start_failed';
+      diagnosticEventLog(dirname(options.runtimeConfigPath)).record({ component: 'mcp', operation: `start.${source}`,
+        outcome: 'failed', code, durationMs: Date.now() - started });
+    }
+    throw error;
+  }
+}
+
+async function startStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
   const leaseClient = createRuntimeLeaseClient({ runtimeConfigPath });
   bindRuntimeLeaseAgentTools(app, leaseClient);
@@ -30,6 +49,8 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
     toolNames,
     toolProfile,
     flaMenu: true,
+    // A task token a computer following this one gave out names this FULI (task-issuer.js).
+    taskIssuer: runtimeConfigPath ? ownIssuer(dirname(runtimeConfigPath)) : null,
     withRuntimeLease: leaseClient.withGraphLease,
     onSession: sessionId => registration?.recordSession(sessionId)
   });

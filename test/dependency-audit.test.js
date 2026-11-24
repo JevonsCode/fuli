@@ -73,6 +73,20 @@ test('an advisory in a runtime dependency or a bundled package fails the gate', 
   assert.match(info.stdout, /No advisories\./);
 });
 
+test('a shipped package that only depends on a flagged build tool does not fail the gate; the tool shipping does', (t) => {
+  const root = fixture(t);
+  // npm lists the bundled package by name only (`via` holds names): its own code is not the advisory's.
+  const inherited = { name: 'vue', severity: 'high', range: '>=3.0.0', nodes: ['node_modules/vue'], via: ['glob'] };
+  const quiet = gate(root, { vulnerabilities: { glob: advisory('glob', ['node_modules/glob'], 'high'), vue: inherited } });
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.match(quiet.stdout, /only depend on a flagged development tool[\s\S]*vue >=3\.0\.0 \(high\) via glob/);
+  // When the flagged tool's own code is bundled, it blocks.
+  const shipped = gate(fixture(t, { bundled: ['node_modules/vue', 'node_modules/glob'] }),
+    { vulnerabilities: { glob: advisory('glob', ['node_modules/glob'], 'high'), vue: inherited } });
+  assert.equal(shipped.status, 1);
+  assert.match(shipped.stderr, /what ships to users[\s\S]*glob <9\.9\.9 \(high\)/);
+});
+
 test('the gate refuses a failed audit or a missing bundle record instead of passing', (t) => {
   const failed = gate(fixture(t), { error: { code: 'ENOTFOUND', summary: 'request to the registry failed' } });
   assert.equal(failed.status, 2);
@@ -110,6 +124,14 @@ test('pull request CI blocks only on what ships, after the build that records th
   assert.ok(audit > node.indexOf('npx --yes npm@11.13.0 audit --json > "$RUNNER_TEMP/npm-audit.json" || true'));
   assert.ok(audit > node.indexOf('- run: npm test'), 'npm test builds the console first');
   assert.match(ci, /\n {2}workflow_dispatch:\n/, 'the daily audit can start CI on its fix branch');
+});
+
+test('a release blocks only on what ships, after npm test builds the console', () => {
+  const release = read('.github/workflows/release.yml');
+  assert.doesNotMatch(release, /npm@[\d.]+ audit --audit-level/, 'no whole-tree audit blocks a release (11-18: an unfixed build-tool advisory stopped 0.27.16)');
+  const audit = release.indexOf('node scripts/audit-shipped.js "$RUNNER_TEMP/npm-audit.json"');
+  assert.ok(audit > release.indexOf('- run: npm test'), 'npm test builds the console first');
+  assert.ok(audit < release.indexOf('npm@11.13.0 publish'), 'the audit runs before publishing');
 });
 
 test('the daily audit covers the whole tree and opens one fix pull request or one issue', () => {

@@ -10,7 +10,7 @@ const TOOLS = Object.freeze(['get_collaboration_preferences', 'read_task_prefere
 const AUTHORITY = new Set(['personalSpaceId', 'personal_space_id', 'personalProjectId', 'personal_project_id',
   'agentId', 'agent_id', 'projectAgentId', 'project_agent_id', 'sourceApplication', 'source_application',
   'sessionId', 'session_id', 'sourceSessionId', 'source_session_id', 'turnId', 'turn_id',
-  'taskContextToken', 'task_context_token', 'projectPath', 'sourceSessionVerified', 'roundtableProjectId']);
+  'taskContextToken', 'task_context_token', 'projectPath', 'sourceSessionVerified', 'sourceSessionBinding', 'roundtableProjectId']);
 
 // The private capability is checked by the Provider on every call. Environment
 // metadata and model arguments never establish scope or native identity.

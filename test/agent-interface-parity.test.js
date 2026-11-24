@@ -99,12 +99,17 @@ const REQUIRED_LOCAL_USER_BOUNDARIES = new Set([
   'PUT /api/judgment/policy',
   'POST /api/agent-apps/:appId/confirm',
   'POST /api/system/graph-migration',
+  'POST /api/visitor-access/guest-links',
+  // A client added by hand names a file FULI writes into: the person picks it.
+  'POST /api/system/client-connection/custom-clients',
 ]);
 
 // rec#80: the person's own decisions, which an FLA relays only in their words.
 const RELAYED_DECISIONS = new Set([
   'POST /api/judgment/feedback',
   'POST /api/judgment/undo',
+  // 「交给 Tonborg 确认」: it also hands Tonborg's work to the session when Tonborg has no model.
+  'PUT /api/judgment/delegation',
   'POST /api/agent-attention/respond',
   'POST /api/preference-conflicts/:conflictId/complete',
   'POST /api/knowledge/:itemKind/:itemId/preference-scope',
@@ -122,6 +127,8 @@ const RELAYED_DECISIONS = new Set([
   'PUT /api/project-agents/:agentId/occupation-kit',
   // rec#123: the person completes or cancels a task themself.
   'POST /api/project-agent-tasks/:taskId/close',
+  // Settling names FLAs share renames FLAs the person knows: an Agent proposes, the person decides.
+  'POST /api/project-agent-name-fixes/apply',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -173,7 +180,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [58, 8, 18, 30]);
+    catalog.coverage.localUserOnly], [61, 17, 20, 44]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -259,7 +266,7 @@ test('external knowledge configuration is controllable through explicit Agent to
 test('Agent interface catalog lists roundtable reads and requested-Agent identity guidance', () => {
   const catalog = agentInterfaceCatalog();
   const roundtable = catalog.readWorkflows.find(({ domain }) => domain === 'roundtable');
-  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status']);
+  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead']);
   assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId',
     'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
     'GET /api/roundtable/messages/:messageId']);
@@ -269,10 +276,15 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   assert.equal(byRoute.get('POST /api/roundtable/messages/:messageId/cancel')?.toolName, 'cancel_agent_message');
   assert.equal(byRoute.get('POST /api/roundtable/chats')?.toolName, 'agent_chat');
   // rec#11 D-81: an FLA pairs and shares only after the person turns lan_roundtable on.
-  for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
-    'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable']) {
+  for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/listen', 'POST /api/peer/invitations', 'POST /api/peer/join',
+    'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable',
+    'POST /api/peer/nearby', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel',
+    // Test phase (Jevons 11-14, rec issue 135): an FLA may confirm the code for the person.
+    'POST /api/peer/nearby/confirm']) {
     assert.equal(byRoute.get(route)?.access, 'agent_delegable_off', route);
   }
+  // Clearing the attempt count stays the person's own step.
+  assert.equal(byRoute.get('POST /api/peer/nearby/attempts/clear')?.access, 'local_user_only');
 });
 
 test('Agent memory export is a read workflow beside the console memory route', () => {
@@ -291,9 +303,22 @@ test('Agent memory export is a read workflow beside the console memory route', (
     null, 'fuli-host-synthetic', 'cursor').sourceApplication, 'cursor');
 });
 
-test('list_agent_interfaces returns the same parity contract exposed in code', async () => {
-  const result = await callAgentTool({
-    getAgentAccessPolicy: () => ({ enabled: true, updatedAt: null }),
-  }, 'list_agent_interfaces', {});
-  assert.deepEqual(result, agentInterfaceCatalog());
+test('list_agent_interfaces cuts its index and details from the parity contract exposed in code', async () => {
+  const app = { getAgentAccessPolicy: () => ({ enabled: true, updatedAt: null }) };
+  const catalog = agentInterfaceCatalog();
+  const index = await callAgentTool(app, 'list_agent_interfaces', {});
+  assert.deepEqual([index.guidance, index.coverage, index.delegationCategories],
+    [catalog.guidance, catalog.coverage, catalog.delegationCategories]);
+  assert.equal(Object.values(index.areas).flat().reduce((sum, count) => sum + count, 0), catalog.coverage.total);
+  const fromAreas = [];
+  for (const area of Object.keys(index.areas)) {
+    fromAreas.push(...(await callAgentTool(app, 'list_agent_interfaces', { area })).uiMutationParity);
+  }
+  assert.deepEqual(fromAreas.sort((a, b) => a.route.localeCompare(b.route)),
+    catalog.uiMutationParity.sort((a, b) => a.route.localeCompare(b.route)));
+  for (const workflow of catalog.readWorkflows) {
+    assert.deepEqual(index.domains[workflow.domain], workflow.toolNames);
+    assert.equal(index.readRouteDomains.includes(workflow.domain), Boolean(workflow.readRoutes));
+    assert.deepEqual((await callAgentTool(app, 'list_agent_interfaces', { domain: workflow.domain })).readWorkflow, workflow);
+  }
 });

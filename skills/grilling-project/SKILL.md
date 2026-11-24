@@ -24,6 +24,8 @@ Read [project-profile.md](references/project-profile.md) before assessing eviden
 2. Call `list_personal_projects` for the active personal space.
 3. Match by stable project ID first. Use repository evidence second. Never merge projects from name similarity alone; ask one identity question when the match is ambiguous.
 
+On a runner (another computer whose clients use the person's FULI on a host computer), these tools reach the host and the repository you inspect stays on this computer. While the host is unreachable, `upsert_personal_project` fails with `host_unreachable` and nothing is queued: keep the confirmed facts in the conversation, tell the person, and write the profile once the host answers.
+
 Use a stable, human-readable `projectId` derived from the repository/project name. Do not derive it from a local absolute path, username, hostname, or confidential identifier.
 
 ## Discover before asking

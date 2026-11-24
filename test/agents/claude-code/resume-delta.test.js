@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleOutput } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
 import { claudeEntrySession, hookFrame, syntheticLargeEntry, syntheticPreferences }
   from '../../../test-support/synthetic-large-entry.js';
@@ -46,7 +46,11 @@ test('a SessionStart resume keeps the delta base: Claude Code replays the same t
     // No full restore either: the replayed frame is still in the model's context.
     assert.deepEqual(resumed, { output: {}, lookups: 0 });
     assert.equal(second.frame.preference_delivery.base_revision, first.frame.revision);
-    assert.ok(second.text.length < 3000, `${second.text.length} chars`);
+    // It resends none of the base's bodies; its room spells out ones the base only named.
+    assert.ok(second.text.length <= INLINE_CHARS, `${second.text.length} chars`);
+    assert.deepEqual(second.frame.preference_delivery.removed, []);
+    assert.equal(second.frame.preference_delivery.unchanged, first.frame.effective_preferences.length);
+    assert.deepEqual(keys(second.frame.preference_updates).filter(key => keys(first.frame.effective_preferences).includes(key)), []);
     // A compaction still starts a new generation.
     await claudeLifecycleOutput('PreCompact', { session_id: session.sessionId, transcript_path: session.host.path },
       async () => { throw new Error('no task read expected'); }, { delivery: session.delivery });

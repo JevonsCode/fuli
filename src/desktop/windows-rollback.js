@@ -22,17 +22,17 @@ export function planWindowsRollback({ installRoot, env = process.env, readShortc
 
 export async function rollbackWindowsInstallation(options, {
   runCli = runInstalledCli, createShortcut = createWindowsShortcut, readShortcut = readWindowsShortcut,
-  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, desktopClient = windowsDesktopClient
+  acquireLock = acquireWindowsUpdateLock, write = () => {}, stopping, holdStarts, consolesLeft, desktopClient = windowsDesktopClient
 } = {}) {
   const plan = planWindowsRollback({ ...options, readShortcut });
   if (options.expectedInstallationId && options.expectedInstallationId !== plan.current.installationId) {
     throw new Error('The installation changed after confirmation; review the rollback again.');
   }
   return withWindowsClientClosed(plan, desktopClient,
-    () => switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping }));
+    () => switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, holdStarts, consolesLeft }));
 }
 
-async function switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping }) {
+async function switchToKeptVersion(plan, { runCli, createShortcut, readShortcut, acquireLock, write, stopping, holdStarts, consolesLeft }) {
   const lock = await acquireLock(plan.current.dataDir);
   try {
     lock.assertHeld();
@@ -46,7 +46,7 @@ async function switchToKeptVersion(plan, { runCli, createShortcut, readShortcut,
     const staged = { next, record: Buffer.from(JSON.stringify(next, null, 2) + '\n'),
       shortcuts: stageWindowsShortcuts(plan.shortcuts, target.packageRoot, createShortcut, readShortcut),
       runtime: snapshotWindowsUpdateRuntime(plan.current, target.packageRoot, { downgrade: true }) };
-    return await stopAndSwitchWindowsInstallation(plan, staged, target.packageRoot, { runCli, lock, write, stopping });
+    return await stopAndSwitchWindowsInstallation(plan, staged, target.packageRoot, { runCli, lock, write, stopping, holdStarts, consolesLeft });
   } finally { await lock.release(); }
 }
 

@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 
@@ -13,8 +14,10 @@ import {
   capturePolicyPathForRuntime
 } from './capture-policy.js';
 import { createCaptureChanges } from './capture-change-confirmation.js';
+import { applicationLanguage } from './project-display-name.js';
 import { createCaptureOnboarding } from './capture-onboarding.js';
 import { createFirstRunGuide, firstRunGuidePathForRuntime } from './first-run-guide.js';
+import { advancedAreasPathForRuntime, createAdvancedAreas } from '../advanced-areas/advanced-areas.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
 import { readOwnSessionRecords, recentSessionUserMessages } from './session-records.js';
@@ -28,7 +31,7 @@ import {
   liveSourceConsoleUrl,
   sourceConsoleUrl
 } from './source-marker.js';
-import { resolvePersonalProjectPath } from './project-path-context.js';
+import { resolveCallerProjectPath } from './caller-workspace.js';
 import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-registry.js';
 import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -65,9 +68,6 @@ import {
   preflightPersonalKnowledgeCaptures,
   validateCaptureSessionKnowledge
 } from './session-knowledge-capture.js';
-import {
-  listWorkflowCandidates
-} from './workflow-learning.js';
 import { collaborationPreferencesAtEntry, getUserTasteSkill } from './collaboration-preference-entry.js';
 import {
   getKnowledgeGraph,
@@ -97,8 +97,10 @@ import {
   listPersonalProjectHistory,
   listPersonalProjects,
   listProjectRelationWeights,
+  listTemporaryProjectSources,
   upsertPersonalProject
 } from './personal-projects.js';
+import { environmentTokenUsageResolver } from '../agents/token-usage-resolver.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -123,7 +125,8 @@ export function openFederatedGraphApplication({
     ),
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
-    tokenUsageResolver,
+    advancedAreas: createAdvancedAreas(advancedAreasPathForRuntime(runtimeConfigPath)),
+    tokenUsageResolver: tokenUsageResolver ?? environmentTokenUsageResolver(env),
     // Read per use (briefly cached): an MCP process that starts while the console is restarting
     // (an update reconnects every client) must not keep the default port for its whole life.
     consoleUrl: liveSourceConsoleUrl(runtimeConfigPath),
@@ -179,15 +182,18 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     recallPolicyStore = new RecallPolicyStore(),
     // The console's first-run guide (first-run-guide.js); in memory unless opened on a data directory.
     firstRunGuide = createFirstRunGuide(null),
+    // Which advanced console areas this installation has used (advanced-areas.js); in memory likewise.
+    advancedAreas = createAdvancedAreas(null),
     consoleUrl = sourceConsoleUrl(null),
-    projectPathResolver = resolvePersonalProjectPath,
+    projectPathResolver = resolveCallerProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
     tokenUsageResolver = undefined,
     refreshPersonalToken = null,
     // The runtime directory whose transcript ledgers this application's hooks
     // keep; none for an application that only lives in memory.
-    runtimeConfigPath = null
+    runtimeConfigPath = null,
+    diagnosticEvents = runtimeConfigPath ? diagnosticEventLog(dirname(runtimeConfigPath)) : null
   } = {}) {
     super();
     this.graphiti = true;
@@ -195,12 +201,14 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.capturePolicyStore = capturePolicyStore;
     // An Agent's long-term capture change waits for the person's confirmed preview (rec#5 C4-2).
     const captureChangeReads = { listProjects: () => this.listPersonalProjects(), consoleUrl: () => this.consoleUrl,
-      taskContext: (token, client) => this.taskContextRegistry.context(token, client) };
+      taskContext: (token, client) => this.taskContextRegistry.context(token, client), language: () => applicationLanguage(this) };
     this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);
     this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);
     this.firstRunGuide = firstRunGuide;
+    this.advancedAreas = advancedAreas;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
+    this.diagnosticEvents = diagnosticEvents;
     // A confirmed session migration waiting for that session's next task entry (rec#82).
     this.sessionMigrationNotices = sessionMigrationNoticesForRuntime(runtimeConfigPath);
     this.agentAccessPolicyStore = agentAccessPolicyStore;
@@ -214,14 +222,15 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       workflowObservationToken: config.personal.workflowObservationToken ?? null,
       fetchImpl,
       requestTimeoutMs: providerRequestTimeoutMs,
-      refreshAccessToken: refreshPersonalToken
+      refreshAccessToken: refreshPersonalToken,
+      diagnosticEvents
     });
     this.taskContextRegistry = taskContextRegistry ?? new ProviderTaskContextRegistry(
       this.personal, config.personal.spaceId
     );
     this.workspaces = new Map(config.workspaces.map((workspace) => {
       const provider = createWorkspaceProvider(workspace, {
-        fetchImpl, requestTimeoutMs: providerRequestTimeoutMs
+        fetchImpl, requestTimeoutMs: providerRequestTimeoutMs, diagnosticEvents
       });
       return [provider.providerUrl, provider];
     }));
@@ -315,10 +324,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return finishKnowledgeReviewWorkflow(this, input);
   }
 
-  async listWorkflowCandidates(input) {
-    return listWorkflowCandidates(this, input);
-  }
-
   async recordKnowledgeUsage(input) {
     return recordKnowledgeUsage(this, input);
   }
@@ -405,6 +410,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async listPersonalProjects(input) {
     return listPersonalProjects(this, input);
+  }
+
+  listTemporaryProjectSources(input) {
+    return listTemporaryProjectSources(this, input);
   }
 
   async listProjectRelationWeights(input) {
@@ -549,6 +558,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       capturePolicy: this.getCapturePolicy(),
       captureOnboarding: this.captureOnboarding.state(),
       firstRunGuide: this.firstRunGuide.state(),
+      // Observed on every read: an area with a trace joins the shown ones and stays.
+      advancedAreas: this.advancedAreas.observe(this),
       agentAccessPolicy: this.getAgentAccessPolicy(),
       recallPolicy: this.getRecallPolicy()
     };

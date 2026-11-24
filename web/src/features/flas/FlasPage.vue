@@ -27,8 +27,10 @@ import { formatRelativeTime } from '@/lib/relative-time'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import { UiIcon, UiNotice, UiSegmented } from '@/ui'
+import AgentNameChanges from './AgentNameChanges.vue'
+import AgentNameFixes from './AgentNameFixes.vue'
 import FlaRow from './FlaRow.vue'
-import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, type FlaGroupKey } from './fla-groups'
+import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, WORKING_FIRST_ORDER, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
 import { lacksOccupation, suggestedOccupation } from './occupation-backfill'
 import { usePageRefresh } from '@/layouts/page-refresh'
@@ -178,7 +180,8 @@ const sections = computed(() => {
       .map(group => ({ key: group.key, label: t(`flas.scopes.${group.key}`), rows: group.rows }))
   }
   if (view.value === 'work') {
-    return groupFlas(rows.value, groupOf).map(group => ({ key: group.key, label: t(`flas.groups.${group.key}`), rows: group.rows }))
+    const order = route.query.first === 'working' ? WORKING_FIRST_ORDER : FLA_GROUP_ORDER
+    return groupFlas(rows.value, groupOf, order).map(group => ({ key: group.key, label: t(`flas.groups.${group.key}`), rows: group.rows }))
   }
   const ids = rows.value.map(agent => agent.agentId)
   const grouped = groupAgentsByProject(ids, id => profileProjectIds(byId.value.get(id)!), id => entries.value[id]?.status, formalProjectIds.value)
@@ -190,7 +193,8 @@ const sections = computed(() => {
 })
 
 function meta(agent: ProjectAgentRecord) {
-  return [...occupationLabels(agent.occupation).slice(0, 2), agent.employeeNumber ? `FLA ${agent.employeeNumber}` : ''].filter(Boolean).join(' · ')
+  return [agent.formerName ? t('agentProfiles.name.former', { name: agent.formerName }) : '',
+    ...occupationLabels(agent.occupation).slice(0, 2), agent.employeeNumber ? `FLA ${agent.employeeNumber}` : ''].filter(Boolean).join(' · ')
 }
 // Under 按状态 the heading already says free, not reported or switched off;
 // those rows say what the FLA is for instead of repeating it. Elsewhere a
@@ -233,6 +237,13 @@ function clearFilters() {
   projectFilter.value = []
 }
 const showFirstTask = computed(() => !busy.value && store.runtimeStatus === 'ready' && !formalProjectIds.value.length && !loadFailed.value)
+// Settling shared names renames FLAs: the roster and the renames reread.
+const nameRevision = ref(0)
+function namesSettled() {
+  nameRevision.value += 1
+  void roster.reload()
+}
+
 function retry() {
   void roster.reload()
   void work.load()
@@ -310,6 +321,8 @@ usePageRefresh(() => Promise.all([roster.reload(), work.load()]))
             data-flas-occupations-fill @click="fillOccupations">{{ t('flas.occupations.fill') }}</Button>
         </template>
       </UiNotice>
+      <AgentNameFixes :personal-space-id="space" @settled="namesSettled" />
+      <AgentNameChanges :personal-space-id="space" :revision="nameRevision" />
       <ProjectAgentFirstTask v-if="showFirstTask" :personal-space-id="space" />
 
       <GrowthLoading v-if="firstLoading" :label="t('flas.loading')" />

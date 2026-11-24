@@ -174,8 +174,12 @@ export interface ModelEvaluation {
 const TRUST_REASONS = ['suggestions_only', 'warning_not_seen', 'session_answer', 'not_configured'] as const
 
 // What the 执行方式 line says: who executes now, or why it only suggests.
+// Automatic without a model: the role has none, and its own switch (「交给
+// Tonborg 确认」) has the current session stand in for it.
 export function trustStatusText(trust: RoleTrust, model: string | null): string {
-  if (trust.status === 'automatic') return t('modelSettings.trust.automatic', { model: model ?? '' })
+  if (trust.status === 'automatic') {
+    return model ? t('modelSettings.trust.automatic', { model }) : t('modelSettings.trust.sessionStandsIn')
+  }
   const reason = TRUST_REASONS.find(known => known === trust.reason) ?? 'other'
   return t(`modelSettings.trust.reasons.${reason}`)
 }
@@ -253,7 +257,15 @@ const NEW_CONNECTION: ModelConnection = {
 export const projectKey = (project: ApprovedProject) => `${project.personalSpaceId}/${project.personalProjectId}`
 const text = (value: number | null | undefined) => (value === null || value === undefined ? '' : String(value))
 
-export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDraft {
+/** Whether the role's projects were ever saved; until then the form approves every offered one. */
+export function hasSavedEgress(payload: ModelRolesPayload, role: ModelRoleId) {
+  return Boolean(payload.roles.find(entry => entry.role === role)?.egress)
+}
+
+// `offered`: the projects the form offers. A role never saved starts with all of
+// them approved; a saved role shows exactly what it saved, an empty list too, and
+// a project added since is not approved until someone ticks it.
+export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId, offered: readonly ApprovedProject[] = []): RoleDraft {
   const view = payload.roles.find(entry => entry.role === role)
   // The form connects the person's own model service: from a built-in model it starts a connection of its own.
   const connectionId = view?.connection && view.connection.protocol !== BUILTIN_EMBEDDING_PROTOCOL ? view.connection.id : role
@@ -265,7 +277,7 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
     connectionId,
     // Dreaming sends sessions to the model, so a new role starts without it: the person turns it on.
     operations: (view?.allowedOperations ?? (payload.operations[role] ?? []).filter(operation => operation !== 'dreaming')).join(', '),
-    approvedProjects: [...(view?.egress?.approvedProjects ?? [])],
+    approvedProjects: [...(view?.egress ? view.egress.approvedProjects : offered)],
     allowUnassigned: view?.egress?.allowUnassigned ?? false,
     maxInputTokens: text(budget.maxInputTokens),
     maxOutputTokens: text(budget.maxOutputTokens),
@@ -301,10 +313,11 @@ function connectionFields(connection: ModelConnection) {
   }
 }
 
-// Approves or withdraws one project for egress.
-export function withProject(draft: RoleDraft, project: ApprovedProject, approved: boolean): RoleDraft {
-  const others = draft.approvedProjects.filter(entry => projectKey(entry) !== projectKey(project))
-  return { ...draft, approvedProjects: approved ? [...others, project] : others }
+// Approves or withdraws projects for egress; approvals of projects not listed stay.
+export function withProjects(draft: RoleDraft, projects: readonly ApprovedProject[], approved: boolean): RoleDraft {
+  const keys = new Set(projects.map(projectKey))
+  const others = draft.approvedProjects.filter(entry => !keys.has(projectKey(entry)))
+  return { ...draft, approvedProjects: approved ? [...others, ...projects] : others }
 }
 
 // Other roles that use the same connection, so the form says an edit reaches them.
@@ -443,6 +456,10 @@ export interface UsageGroup {
   // Attempts that returned no token counts at all, and how many of them failed.
   unreportedAttempts: number
   unreportedFailedAttempts: number
+  // failedRequests by why each one's last attempt ended, most first; absent from an older server.
+  failureReasons?: { reason: string; requests: number }[]
+  // The rules of FULI's answer check this group's attempts broke ("payload.decisions[].doubt:invalid_value"), most first.
+  formatIssues?: { issue: string; attempts: number }[]
   tokens: Partial<Record<'input' | 'output' | 'total' | 'cachedInput' | 'cacheWriteInput' | 'reasoning', TokenCell>>
 }
 
@@ -494,6 +511,42 @@ export function callParts(group: UsageGroup, locale: string): { value: string; f
     failed: group.failedRequests ? t('modelSettings.usage.failed', { count: formatCount(group.failedRequests, locale) }) : '',
     note: group.attempts > group.requests ? t('modelSettings.usage.tries', { count: formatCount(group.attempts, locale) }) : '',
   }
+}
+
+// Why the failed calls failed, by whose side to look at (「没通过 FULI 的格式检查
+// 23 · 其他 3」 on FULI's, 「超时 12」 on the model service's), so a failure
+// of FULI's own check never reads as the service's. Unknown reasons count as
+// FULI's 其他: only a reason the service can be asked about leads to its test.
+// Each side is '' when it has none; both are without failures or a breakdown.
+const FULI_REASONS = ['invalid_output', 'invalid_items', 'output_token_limit'] as const
+const SERVICE_REASONS = ['timeout', 'stream_stalled', 'network', 'rate_limited', 'server_error', 'auth_failed', 'provider_billing',
+  'model_or_endpoint_not_found', 'invalid_response'] as const
+export function failureReasonSides(group: UsageGroup, locale: string): { fuli: string; service: string } {
+  if (!group.failedRequests) return { fuli: '', service: '' }
+  const counts = { fuli: new Map<string, number>(), service: new Map<string, number>() }
+  for (const { reason, requests } of group.failureReasons ?? []) {
+    const [side, key] = (SERVICE_REASONS as readonly string[]).includes(reason) ? ['service', reason] as const
+      : ['fuli', (FULI_REASONS as readonly string[]).includes(reason) ? reason : 'other'] as const
+    counts[side].set(key, (counts[side].get(key) ?? 0) + requests)
+  }
+  const line = (side: Map<string, number>) =>
+    [...side].map(([key, count]) => `${t(`modelSettings.usage.reasons.${key}`)} ${formatCount(count, locale)}`).join(' · ')
+  return { fuli: line(counts.fuli), service: line(counts.service) }
+}
+
+// The rules of FULI's check a row's answers broke, each with how many tries broke it: 「payload.decisions[].doubt:invalid_value · 3 次」.
+export function formatIssueLines(group: UsageGroup, locale: string): string[] {
+  return (group.formatIssues ?? []).map(({ issue, attempts }) =>
+    t('modelSettings.usage.issue', { issue, count: formatCount(attempts, locale) }))
+}
+
+// The connected model a usage row counted (its protocol, host and model), for
+// 「查看并测试」; null when no connection names it any more, as after the
+// role moved to another model and this one was removed.
+export function usageConnection(group: UsageGroup, payload: ModelRolesPayload | null): string | null {
+  if (!group.provider || !group.model) return null
+  return payload?.roles.map(view => view.connection).find(connection => connection
+    && `${connection.protocol}@${connection.endpointHost}` === group.provider && connection.model === group.model)?.id ?? null
 }
 
 export interface UsageRow {

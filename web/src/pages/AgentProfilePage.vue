@@ -52,6 +52,7 @@ import { usePageTitle } from "@/layouts/page-title";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 import { usePageRefresh } from "@/layouts/page-refresh";
+import { hasTemporaryOrigin, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 
 // The Workbench and the management sections load only when their tab opens (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
@@ -83,8 +84,10 @@ const projects = computed(() =>
     (item) => item.personal_space_id === space.value,
   ),
 );
-const projectName = (id: string) =>
-  projects.value.find((item) => item.project_id === id)?.profile.name || id;
+const projectName = (id: string) => {
+  const project = projects.value.find((item) => item.project_id === id);
+  return (project && projectDisplayName(project)) || id;
+};
 
 const tasks = ref<ProjectAgentTaskRecord[]>([]);
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
@@ -173,11 +176,9 @@ const currentProjects = computed(() =>
       })
     : [],
 );
-const conversationProjects = computed(() =>
-  projects.value
-    .filter((item) => currentProjects.value.includes(item.project_id))
-    .map((item) => ({ id: item.project_id, name: item.profile.name })),
-);
+const conversationProjectRecords = computed(() => projects.value.filter((item) => currentProjects.value.includes(item.project_id)));
+const conversationProjects = computed(() => pickerOrder(conversationProjectRecords.value).map((item) => ({
+  id: item.project_id, name: projectDisplayName(item), temporary: hasTemporaryOrigin(item) })));
 const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
 const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
 const previousProjects = computed(() =>
@@ -492,7 +493,7 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
                 <AgentOccupationEditor v-if="agent.profile.status !== 'archived'" :key="`occupation-${agent.agentId}`" :agent="agent" @saved="saved" />
                 <Card v-if="agent.memoryScope === 'reviewed_agent'" as="section" class="agent-resume-section" aria-labelledby="agent-memory-settings-heading">
                   <h2 id="agent-memory-settings-heading">{{ t("agentProfiles.memorySettings") }}</h2>
-                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
+                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjectRecords" />
                   <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
                 </Card>
                 <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution']" />

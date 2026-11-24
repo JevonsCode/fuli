@@ -43,6 +43,7 @@ import { knowledgeQuickEditMessages } from './messages/knowledge-quick-edit'
 import { knowledgeHardDeleteMessages } from './messages/knowledge-hard-delete'
 import { sessionRecordsMessages } from './messages/session-records'
 import { sessionMigrationMessages } from './messages/session-migration'
+import { habitDeliveryMessages } from './messages/habit-delivery'
 import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
 import { firstRunMessages } from './messages/first-run'
@@ -50,14 +51,19 @@ import { clientLinksMessages } from './messages/client-links'
 import { npmCopiesMessages } from './messages/npm-copies'
 import { whatsNewMessages } from './messages/whats-new'
 import { onboardingTourMessages } from './messages/onboarding-tour'
+import { advancedAreasMessages } from './messages/advanced-areas'
 import { openInAppMessages } from './messages/open-in-app'
 import { cliPathMessages } from './messages/cli-path'
+import { guestLinksMessages } from './messages/guest-links'
 import { agentDelegationMessages } from './messages/agent-delegation'
 import { aiHelpMessages } from './messages/ai-help'
 import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
 import { doctorMessages } from './messages/doctor'
 import { contextMenuMessages } from './messages/context-menu'
+import { todayMessages } from './messages/today'
+import { visitRequestMessages } from './messages/visit-requests'
+import { statementCalendarMessages } from './messages/statement-calendar'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -109,6 +115,9 @@ export const messages = {
     agentPins: agentPinsMessages['zh-CN'],
     ui: uiMessages['zh-CN'],
     overview: overviewMessages['zh-CN'],
+    today: todayMessages['zh-CN'],
+    visitRequests: visitRequestMessages['zh-CN'],
+    statementCalendar: statementCalendarMessages['zh-CN'],
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
@@ -133,6 +142,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['zh-CN'],
     sessionRecords: sessionRecordsMessages['zh-CN'],
     sessionMigration: sessionMigrationMessages['zh-CN'],
+    habitDelivery: habitDeliveryMessages['zh-CN'],
     knowledgeTags: knowledgeTagsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
     firstRun: firstRunMessages['zh-CN'],
@@ -140,8 +150,10 @@ export const messages = {
     npmCopies: npmCopiesMessages['zh-CN'],
     whatsNew: whatsNewMessages['zh-CN'],
     onboardingTour: onboardingTourMessages['zh-CN'],
+    advancedAreas: advancedAreasMessages['zh-CN'],
     openInApp: openInAppMessages['zh-CN'],
     cliPath: cliPathMessages['zh-CN'],
+    guestLinks: guestLinksMessages['zh-CN'],
     agentDelegation: agentDelegationMessages['zh-CN'],
     aiHelp: aiHelpMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
@@ -171,6 +183,9 @@ export const messages = {
     agentPins: agentPinsMessages['en-US'],
     ui: uiMessages['en-US'],
     overview: overviewMessages['en-US'],
+    today: todayMessages['en-US'],
+    visitRequests: visitRequestMessages['en-US'],
+    statementCalendar: statementCalendarMessages['en-US'],
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
@@ -195,6 +210,7 @@ export const messages = {
     knowledgeHardDelete: knowledgeHardDeleteMessages['en-US'],
     sessionRecords: sessionRecordsMessages['en-US'],
     sessionMigration: sessionMigrationMessages['en-US'],
+    habitDelivery: habitDeliveryMessages['en-US'],
     knowledgeTags: knowledgeTagsMessages['en-US'],
     capture: captureMessages['en-US'],
     firstRun: firstRunMessages['en-US'],
@@ -202,8 +218,10 @@ export const messages = {
     npmCopies: npmCopiesMessages['en-US'],
     whatsNew: whatsNewMessages['en-US'],
     onboardingTour: onboardingTourMessages['en-US'],
+    advancedAreas: advancedAreasMessages['en-US'],
     openInApp: openInAppMessages['en-US'],
     cliPath: cliPathMessages['en-US'],
+    guestLinks: guestLinksMessages['en-US'],
     agentDelegation: agentDelegationMessages['en-US'],
     aiHelp: aiHelpMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],

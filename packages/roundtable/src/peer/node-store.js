@@ -54,6 +54,16 @@ export function createNodeStore(path = ':memory:') {
         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`)
         .run(key, JSON.stringify(value), now());
     },
+    // Reads and writes one setting in one immediate transaction, so two
+    // processes on the same data directory never both act on the same value.
+    // change(current) returns the new value; a throw writes nothing.
+    updateSetting(key, change) {
+      return transaction(() => {
+        const next = change(this.setting(key));
+        this.setSetting(key, next);
+        return next;
+      });
+    },
     shares: () => database.prepare('SELECT * FROM shares WHERE revoked_at IS NULL ORDER BY created_at').all().map(shareView),
     share: (bindingId) => shareView(database.prepare('SELECT * FROM shares WHERE binding_id = ? AND revoked_at IS NULL').get(bindingId)),
     // Replaces the owner's share list; a removed share is kept as revoked history.

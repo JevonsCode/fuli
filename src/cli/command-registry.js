@@ -19,12 +19,15 @@ Local service:
   open [--data-dir DIR]
 
 Install and Agent connection:
-  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs; update previews; apply asks separately for each file)
+  clients trust|update|status|rollback [--data-dir DIR]  (pinned descriptor packs, not connected clients; update previews; apply asks separately for each file)
   connect [--format standard|vscode|server] [--data-dir DIR | --runtime-config FILE]  (print generic MCP configuration)
   mcp [--runtime-config FILE] [--source-application codex|claude|claude_code|cursor|kiro|opencode|antigravity|dsh|other]  (stdio server)
   setup [--yes] [--codex-only] [--data-dir DIR] [--personal-space NAME] [--port PORT] [--runtime-mode container|native] [--memory-profile low|balanced] [--adaptive-memory|--no-adaptive-memory] [--skip-agents] [--no-start] [--allow-provider-downgrade] [--personal-only|--with-dev-public]
+  whoami [--project ID_OR_FOLDER] [--json] [--data-dir DIR]  (read only: this folder's space, project and lead FLA, and whether this computer is the host or a runner)
   connect-workspace --url URL --token-file FILE [--data-dir DIR]
   peer status|host|invite|join|share|revoke|off [--data-dir DIR]  (LAN roundtable Beta: pair devices and share project leads)
+  runner invite|list|revoke|join|status|sync [--data-dir DIR]  (runners: another computer's clients use this FULI)
+  routes list|follow SCOPE HOST|local SCOPE|scope-of PATH [--data-dir DIR]  (which parts of your FULI this computer follows on another)
   remote-mcp --personal-project-id ID --bearer-token-file FILE [--port PORT] [--data-dir DIR] [--source-application claude|cursor|other] [--allowed-origin HTTPS_ORIGIN] [--allowed-host HOST] [--max-sessions N] [--session-idle-ttl-seconds N]
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
   app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal, then Windows Hello)
@@ -52,6 +55,9 @@ Diagnostics:
 Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]
   graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]
+  graph abandon-import [--target-mode container|native] [--yes] [--data-dir DIR]  (give up an unfinished import outside macOS native: moves each graph it may have half written aside, not deleted)
   graph runtime install|update|rollback|uninstall [--preview] [--yes] [--data-dir DIR]  (macOS native assets; preserves data)
+  graph runtime unlock [--preview] [--yes] [--data-dir DIR]  (release a lock no holder is recorded for)
+  graph runtime recover [--preview [--json]] [--back-out | --abandon-import | --keep-newer] [--yes --expect DIGEST] [--data-dir DIR]  (an operation killed part way)
   graph migrate --to native [--yes] [--data-dir DIR]  (container graph -> native, count-verified, switches back on failure)`);
 }

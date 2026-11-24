@@ -3,6 +3,8 @@ export const commonMessages = {
     brand: '复利',
     // The current person wherever the console names them as an actor (MeLink).
     me: { name: '我', link: '我的主页' },
+    // An experimental entry (BetaBadge): the same word in both languages, the hint says what it means.
+    beta: { label: 'Beta', hint: '测试中的功能：能用，但做法和样子还可能变；遇到问题请告诉我们。' },
     back: '返回',
     breadcrumb: '页面位置',
     outline: '本页目录',
@@ -51,6 +53,7 @@ export const commonMessages = {
   'en-US': {
     brand: 'FULI',
     me: { name: 'Me', link: 'My home' },
+    beta: { label: 'Beta', hint: 'In testing: it works, but how it works and looks may still change. Tell us if something goes wrong.' },
     back: 'Back',
     breadcrumb: 'Breadcrumb',
     outline: 'On this page',

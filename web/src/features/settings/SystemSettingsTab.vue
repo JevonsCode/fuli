@@ -3,11 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import HiddenAreasCard from '@/features/advanced-areas/HiddenAreasCard.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { startTour } from '@/features/onboarding-tour/onboarding-tour'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
@@ -17,6 +18,8 @@ import { usePageRefresh } from '@/layouts/page-refresh'
 import { formatDateTime } from '@/lib/date-time'
 import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
+import { pageWidthPreference, setPageWidthPreference, type PageWidthPreference } from '@/lib/page-width-preference'
+import UiSegmented from '@/ui/UiSegmented.vue'
 import type { ResourceComponent, ResourceSnapshot, RuntimeSettings } from '@/types'
 import { FULI_VERSION } from '@/version'
 import DiagnosticsSettings from './DiagnosticsSettings.vue'
@@ -34,6 +37,10 @@ const locale = computed({
   get: () => currentLocale(),
   set: (value: AppLocale) => setLocale(value),
 })
+const pageWidthOptions = computed<Array<{ value: PageWidthPreference; label: string }>>(() => [
+  { value: 'comfortable', label: t('settings.behavior.pageWidthComfortable') },
+  { value: 'full', label: t('settings.behavior.pageWidthFull') },
+])
 const localeOptions = computed(() => [
   { value: 'zh-CN', label: t('settings.behavior.zh') },
   { value: 'en-US', label: t('settings.behavior.en') },
@@ -48,6 +55,8 @@ const versionCheckedAt = (value: string) => formatDateTime(value, locale.value, 
 
 const resources = ref<ResourceSnapshot | null>(null)
 const loadingResources = ref(false)
+// A refresh the person asked for (刷新 or the top bar): its button turns while it reads.
+const refreshingResources = ref(false)
 const resourceError = ref('')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 const memoryMax = computed(() => Math.max(1, ...(resources.value?.memory.components.map(({ bytes }) => bytes) ?? [1])))
@@ -64,6 +73,12 @@ async function loadResources() {
   } finally {
     loadingResources.value = false
   }
+}
+
+// Read again by the person's hand; the timer's reads show nothing while the numbers stay.
+async function refreshResources() {
+  refreshingResources.value = true
+  try { await loadResources() } finally { refreshingResources.value = false }
 }
 
 function startPolling() {
@@ -85,7 +100,7 @@ onMounted(() => {
 onBeforeUnmount(stopPolling)
 watch(() => form.value.resourceRefreshSeconds, startPolling)
 // The top bar's 刷新 reads the machine's resources again.
-usePageRefresh(loadResources)
+usePageRefresh(refreshResources)
 
 // The language also goes to FULI's settings, so clients' /fla menu says
 // project and role in it (src/graphiti/fla-menu.js).
@@ -121,7 +136,7 @@ function formatTime(value: string | undefined) {
 </script>
 
 <template>
-  <PageColumns>
+  <PageStack>
     <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
       <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}<AiHelpButton term="task.interface" /></CardTitle></CardHeader>
       <div class="setting-list">
@@ -135,6 +150,11 @@ function formatTime(value: string | undefined) {
             :label="t('settings.behavior.language')"
             @update:model-value="updateLocale"
           />
+        </div>
+        <div class="setting-row select-row">
+          <span><strong>{{ t('settings.behavior.pageWidth') }}</strong><small>{{ t('settings.behavior.pageWidthMeta') }}</small></span>
+          <UiSegmented :model-value="pageWidthPreference" :options="pageWidthOptions" :label="t('settings.behavior.pageWidth')" size="sm"
+            data-page-width @update:model-value="setPageWidthPreference" />
         </div>
         <label class="setting-row">
           <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
@@ -210,19 +230,22 @@ function formatTime(value: string | undefined) {
       </div>
     </Card>
     <DiagnosticsSettings />
-    <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
+    <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
       <CardHeader>
         <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>
         <CardDescription v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</CardDescription>
         <CardAction>
-          <Button size="sm" variant="ghost" :disabled="loadingResources" @click="loadResources">
+          <Button size="sm" variant="ghost" :disabled="loadingResources" :loading="refreshingResources"
+            :loading-label="t('settings.resources.loading')" data-resources-refresh @click="refreshResources">
             {{ t('common.actions.refresh') }}
           </Button>
         </CardAction>
       </CardHeader>
-      <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
+      <!-- Only the first read shows a loading line: a refresh keeps the numbers in place, so the card never
+           shrinks and grows back (the button above turns for a refresh the person asked for). -->
+      <GrowthLoading v-if="loadingResources && !resources" variant="compact" :label="t('settings.resources.loading')" />
       <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
-      <template v-else-if="resources">
+      <template v-if="resources">
         <div class="resource-totals">
           <article>
             <span>{{ t('settings.resources.memory') }}</span>
@@ -263,7 +286,9 @@ function formatTime(value: string | undefined) {
         </div>
       </template>
     </Card>
-  </PageColumns>
+    <!-- Last, so nothing above moves when it goes. -->
+    <HiddenAreasCard />
+  </PageStack>
 </template>
 
 <style scoped>

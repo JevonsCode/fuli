@@ -41,7 +41,9 @@ export function linkedCard(root: HTMLElement, hash: string): HTMLElement | null 
   const id = hash.replace(/^#/, '')
   if (!id) return root.querySelector<HTMLElement>(`${CARD}:not([${HIDDEN}])`)
   const named = root.ownerDocument.getElementById(id)
-  return named && root.contains(named) ? named.closest<HTMLElement>(CARD) : null
+  const card = named && root.contains(named) ? named.closest<HTMLElement>(CARD) : null
+  // A card the search hid is not on screen: never scroll to it.
+  return card?.hasAttribute(HIDDEN) ? null : card
 }
 
 /** Keep the filter applied while the query changes and cards load their content. */

@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { currentLocale, t } from '@/i18n'
-import { roleName, type ModelRolesPayload } from './model'
+import { roleName, type ModelRoleId, type ModelRolesPayload } from './model'
 import { healthLine, isFailing } from './model-health'
 import { modelsInUse, useName, type ModelInUse, type ModelUseId } from './model-uses'
 import { runRoleCheck, type RoleCheckResult } from './useRoleCheck'
@@ -19,17 +19,30 @@ const emit = defineEmits<{ open: [use: ModelUseId]; checked: [] }>()
 
 const models = computed(() => modelsInUse(props.payload))
 const checking = ref<string | null>(null)
+// The role being tested now, for the button's label.
+const checkingRole = ref<ModelRoleId | null>(null)
 const results = ref<Record<string, RoleCheckResult>>({})
 
-// The saved settings are tested through a use that is on; a connection whose uses are all off makes no calls.
+// The saved settings are tested through the uses that are on (checkRoles), one after another: the row
+// says the first that did not answer, else the last answer. A connection whose uses are all off makes no calls.
 async function check(entry: ModelInUse) {
-  if (!entry.checkRole) return
+  if (!entry.checkRoles.length) return
   checking.value = entry.id
   results.value = Object.fromEntries(Object.entries(results.value).filter(([id]) => id !== entry.id))
-  const result = await runRoleCheck(entry.checkRole, entry.model)
-  results.value = { ...results.value, [entry.id]: result }
+  let result: RoleCheckResult | null = null
+  for (const role of entry.checkRoles) {
+    checkingRole.value = role
+    result = await runRoleCheck(role, entry.model)
+    if (!result.ok) break
+  }
+  results.value = { ...results.value, [entry.id]: result! }
   checking.value = null
+  checkingRole.value = null
   emit('checked')
+}
+const checkLabel = (entry: ModelInUse) => {
+  const role = (checking.value === entry.id ? checkingRole.value : null) ?? entry.checkRoles[0]
+  return role ? t('modelSettings.check.running', { name: roleName(role) }) : ''
 }
 
 function tone(entry: ModelInUse) {
@@ -58,9 +71,9 @@ const line = (entry: ModelInUse) => results.value[entry.id]?.text ?? healthLine(
             {{ useName(item.use) }}
           </Button>
         </div>
-        <Button variant="outline" size="sm" class="model-list-check" :disabled="!entry.checkRole || (checking !== null && checking !== entry.id)"
-          :title="entry.checkRole ? undefined : t('modelSettings.models.checkOff')" :loading="checking === entry.id"
-          :loading-label="entry.checkRole ? t('modelSettings.check.running', { name: roleName(entry.checkRole) }) : ''"
+        <Button variant="outline" size="sm" class="model-list-check" :disabled="!entry.checkRoles.length || (checking !== null && checking !== entry.id)"
+          :title="entry.checkRoles.length ? undefined : t('modelSettings.models.checkOff')" :loading="checking === entry.id"
+          :loading-label="checkLabel(entry)"
           :aria-label="`${t('modelSettings.check.run')} ${entry.model}`" data-model-connection-check @click="check(entry)">
           {{ t('modelSettings.check.run') }}
         </Button>

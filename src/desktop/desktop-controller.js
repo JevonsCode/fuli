@@ -1,6 +1,18 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { claimImportRun, IMPORT_RUN_LONGEST_MS, importRunningFacts, runningImport } from '../backup/import-run.js';
+import { planUnfinishedImport } from '../backup/unfinished-import-plan.js';
+import { unfinishedImportError, unfinishedWayOut } from '../backup/unfinished-import.js';
+import { runGraphDataCommand } from '../cli/graph-data-command.js';
+import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
+import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
+import { followStartupStages, startupStageMarker, wantsStageMarkers } from '../local-runtime/startup-stage.js';
+import { releaseStaleNeo4jLifecycleLock } from '../native-runtime/neo4j-lifecycle-lock.js';
+import { applyNativeRecovery, planNativeRecovery } from '../native-runtime/neo4j-recovery.js';
+import { END_ORPHANS_ACTION, END_ORPHANS_FLAG } from '../native-runtime/orphan-services.js';
+import { nativeRecoveryServices } from '../native-runtime/recovery-services.js';
+import { isRunnerDataDirectory } from '../runner/runner-mode.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
@@ -16,7 +28,10 @@ import { findNpmCopies } from './npm-copies.js';
 // and the macOS app (macos-controller.js) only differ in how they find the
 // package and its data directory: context = { packageRoot, dataDir, nodePath, cliPath }.
 
-const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port']);
+// END_ORPHANS_ACTION (「结束它并启动」): a start that stopped at a graph service of this data
+// directory FULI lost track of (orphan-services.js) ends it, then starts and opens as start-open does.
+const ACTIONS = new Set(['status', 'start', 'start-open', 'open', 'stop', 'change-port', 'release-lock-start', END_ORPHANS_ACTION,
+  'recover-preview', 'recover-start', 'abandon-import-preview', 'abandon-import-start', 'keep-newer-preview', 'keep-newer-start']);
 const STATES = new Set(['running', 'stopped', 'degraded', 'not_configured']);
 
 export function trayStateLabel(state) {
@@ -52,16 +67,37 @@ async function consolePortBlocked(context) {
     host: settings.lanAccess ? '0.0.0.0' : '127.0.0.1' }) !== null;
 }
 
+// The recovery the window confirms (neo4j-recovery.js), through the native
+// runtime's own services; [choice]: { abandonImport } for 「放弃这次导入…」,
+// { keepNewer } for 「保留新版本并解除这把锁…」.
+const nativeRecovery = {
+  plan: (paths, choice = {}) => planNativeRecovery({ paths, ...choice, dependencies: nativeRecoveryServices({ paths }) }),
+  apply: (paths, digest, choice = {}) => applyNativeRecovery({ paths, digest, ...choice, dependencies: nativeRecoveryServices({ paths }) })
+};
+
+// The first line of a failed import's words, for the window to put before its
+// own: whole enough to keep both languages and what a failed abandon already moved.
+const firstLine = error => String(error?.message ?? error).split('\n')[0].slice(0, 4000);
+
 // A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
-  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold
+  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
+  onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery,
+  graphData = runGraphDataCommand, importRuns = {}, platform = process.platform
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
-  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
-  const inspect = async () => {
+  // The step running now, reported as it starts and kept for a failure, so the
+  // client says which step did not finish instead of only that a start failed.
+  let stage = null;
+  const atStage = (next, bound) => { stage = next; onStage(next, bound); };
+  const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir], atStage);
+  // Only the look before a start is a step of it; the checks after a start
+  // (did it come up, what runs after a failure) report none.
+  const inspect = async ({ step = true } = {}) => {
+    if (step) atStage('checking');
     const result = await invoke(['status', '--json']);
     if (![0, 1].includes(result.code)) throw cliError(result);
     let state;
@@ -74,13 +110,124 @@ export async function runTrayAction(action, context, {
     const result = await invoke(args);
     if (result.code !== 0) throw cliError(result);
   };
+  // The start's commands finished; FULI must now run. When it does not, no step
+  // of the start is named: each one reported finishing.
+  const requireRunning = async () => {
+    const ready = await inspect({ step: false });
+    if (ready.status !== 'running') {
+      stage = null;
+      throw new Error('启动命令都结束了，但 FULI 没有进入运行状态。 / The start finished, but FULI did not reach its running state.');
+    }
+  };
+  // 「恢复并启动」 (and 「放弃这次导入…」, abandon-import-*, and 「保留新版本并解除这把锁…」,
+  // keep-newer-*): first the plan the
+  // window shows in the confirmation, then — with the digest of the plan the
+  // person chose (it may be the alternative shown beside it) — the recovery
+  // itself (neo4j-recovery.js, which refuses when anything changed since), and
+  // an ordinary start. Done here, not through the CLI: the CLI recovers only
+  // at a terminal. The window words a refusal from its reason itself. With an
+  // unfinished import's marker, the same two actions are its way out instead
+  // (「导回到导入前并启动」 and giving the import up).
+  let recoveryRecord = null, recoveryResult = null;
+  const recovering = { 'recover-preview': 'preview', 'recover-start': 'start', 'abandon-import-preview': 'preview', 'abandon-import-start': 'start',
+    'keep-newer-preview': 'preview', 'keep-newer-start': 'start' }[action];
+  if (recovering) {
+    const paths = resolveSetupPaths({ dataDir: context.dataDir });
+    const choice = action.startsWith('abandon-import') ? { abandonImport: true } : action.startsWith('keep-newer') ? { keepNewer: true } : {};
+    const reply = async (ok, fields) => {
+      const state = await inspect({ step: false }).catch(() => null);
+      return { ok, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown', state, ...fields };
+    };
+    const unknown = (error, failure) => reply(false, { error: error.message, ...(failure ? { failure } : {}) });
+    // An unfinished import's marker for this data's runtime mode (a runtime
+    // with no lifecycle lock): its way out (unfinished-import-plan.js) instead
+    // of the macOS recovery, then the same `fuli graph import` or
+    // `fuli graph abandon-import` the terminal runs. The person confirmed it in
+    // this window, which is the person the CLI's terminal check asks for
+    // (graph-data-command.js), so giving the import up runs here without a
+    // terminal; the CLI keeps its check. A lifecycle lock's recovery comes
+    // first (unfinishedWayOut, as a start asks): the marker's way once it is done.
+    const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
+    const marked = !choice.keepNewer && unfinishedWayOut(paths, mode, platform) === 'marker' ? mode : null;
+    const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true, runs: importRuns });
+    if (recovering === 'preview') {
+      try { return reply(true, { recoveryPlan: marked ? await markerPlan() : await recovery.plan(paths, choice) }); }
+      catch (error) { return unknown(error); }
+    }
+    if (!/^[0-9a-f]{16}$/.test(recoveryDigest ?? '')) throw new Error(`${action} needs the digest of the plan the person confirmed.`);
+    if (marked) {
+      const plan = await markerPlan();
+      if (!plan.digest) return unknown(new Error(`The import was not brought back (${plan.reason ?? plan.kind}).`), { code: 'recovery_refused', ...plan });
+      if (plan.digest !== recoveryDigest) return unknown(new Error('Things changed after the plan was shown.'), { code: 'recovery_refused', reason: 'plan_changed' });
+      const abandoning = plan.kind === 'abandon_import';
+      // Recorded as running (import-run.js) until it ends: a second click meanwhile is refused, never a second import.
+      let run;
+      try { run = await claimImportRun(paths, marked, abandoning ? 'abandon-import' : 'import', importRuns); }
+      catch (error) { return unknown(error); }
+      if (run.running) return unknown(new Error('An earlier import is still running.'), { code: 'recovery_refused', ...importRunningFacts(marked, run.running) });
+      // However long it takes, the window waits as long as the run counts as going on.
+      atStage(abandoning ? 'import_abandon' : 'graph_import', { maxSeconds: IMPORT_RUN_LONGEST_MS / 1000 });
+      try {
+        const done = await graphData(abandoning ? 'abandon-import' : 'import',
+          [...(abandoning ? [] : ['--input', plan.from]), '--target-mode', marked, '--data-dir', paths.dataDir, '--yes'],
+          { interactive: true, write: () => {} });
+        // Where giving the import up moved each graph, and how to move it back.
+        recoveryResult = done?.words ? { importAbandoned: done.words } : {};
+      } catch (error) {
+        // The marker that is still there, as a start would report it, with why this attempt failed.
+        const left = unfinishedImportError(paths, marked)?.startupFailure;
+        return unknown(error, left ? { ...left, attemptError: firstLine(error), attemptKind: abandoning ? 'abandon' : 'import' } : null);
+      } finally {
+        run.release();
+      }
+    }
+    if (!marked) {
+      let recovered;
+      try { recovered = await recovery.apply(paths, recoveryDigest, choice); }
+      catch (error) {
+        return unknown(error, error?.code === 'recover_step_failed'
+          ? { code: 'recovery_refused', ...error.facts, reason: error.reason, step: error.step, record: error.record, planKind: error.planKind } : null);
+      }
+      if (recovered.kind === 'refused') return unknown(new Error(`The recovery was refused (${recovered.reason}).`), { code: 'recovery_refused', ...recovered });
+      recoveryRecord = recovered.record ?? null;
+      // Graph data the recovery moved aside, and why Neo4j did not start after
+      // an import was taken back: the window says both beside the start's own result.
+      recoveryResult = { ...(recovered.keptGraphData ? { keptGraphData: recovered.keptGraphData } : {}),
+        ...(recovered.startFailure ? { recoveryStartFailure: recovered.startFailure } : {}) };
+    }
+    action = 'start';
+  }
+  // 「解除这把锁并启动」: the person confirmed it; the lock goes only when every
+  // check passes (neo4j-lifecycle-lock.js), then this is an ordinary start.
+  if (action === 'release-lock-start') {
+    const released = await releaseLock({ paths: resolveSetupPaths({ dataDir: context.dataDir }) });
+    if (!released.released) {
+      const state = await inspect({ step: false }).catch(() => null);
+      return { ok: false, action, status: state?.status ?? 'unknown', label: state ? trayStateLabel(state) : '状态未知 / Unknown',
+        state, error: lockReleaseRefusal(released), lockRelease: released };
+    }
+    action = 'start';
+  }
   let starting = false;
   let notice = null;
   let replaced = null;
   let hold = null;
   let adopted = null;
   try {
-    if (['start', 'start-open', 'stop', 'change-port'].includes(action)) assertNativeSelection(context);
+    if (['start', 'start-open', 'stop', 'change-port', END_ORPHANS_ACTION].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
+      assertNativeSelection(context);
+    }
+    // The window's way back or giving up still runs (import-run.js): a start,
+    // like the window opening, says so instead of offering it again.
+    if (['start', 'start-open', 'change-port', END_ORPHANS_ACTION].includes(action)) {
+      const paths = resolveSetupPaths({ dataDir: context.dataDir });
+      const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
+      const running = await runningImport(paths, mode, importRuns);
+      if (running) {
+        throw Object.assign(new Error('An earlier import is still running. / 上一次导回还在进行。'),
+          { startupFailure: { code: 'recovery_refused', ...importRunningFacts(mode, running) } });
+      }
+    }
     if (action === 'change-port') {
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
         throw new Error('Fuli 尚未设置，请先「启动并打开」。 / Fuli is not set up yet; use Start and open first.');
@@ -92,12 +239,20 @@ export async function runTrayAction(action, context, {
       notice = `已改用端口 ${switched.port}（原 ${switched.previousPort}）。已打开的 Agent 会话里的 Fuli 链接仍指向旧地址，重开会话即可更新。`
         + ` / Fuli now uses port ${switched.port} (was ${switched.previousPort}). Fuli links in open Agent sessions point to the old address until those sessions restart.`;
       await command([before.status === 'running' ? 'restart' : 'start']);
-      const ready = await inspect();
-      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+      await requireRunning();
+    }
+    if (action === END_ORPHANS_ACTION) {
+      starting = true;
+      await command(['start', END_ORPHANS_FLAG]);
+      await requireRunning();
     }
     if (action === 'start' || action === 'start-open') {
       starting = true;
-      if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+      if (isRunnerDataDirectory(context.dataDir)) {
+        // A runner (docs/runner.md) starts only its console entry; it never sets up a FULI of its own.
+        if ((await inspect()).status !== 'running') await command(['start']);
+      } else if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {
+        atStage('first_setup');
         const setup = await invoke(['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native']);
         // A setup that failed names its error on stderr. One that finished but
         // reports "partial" exits 1 silently: right after the first start its
@@ -114,31 +269,40 @@ export async function runTrayAction(action, context, {
         if (other && !hold) { replaced = other; await command(['restart']); }
         else if (before.status !== 'running') await command(['start']);
       }
-      const ready = await inspect();
-      if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+      await requireRunning();
       // Clients still pointed at an npm copy are pointed at the app's; a failure here never fails the start.
       if (hold) notice = adoptionHoldNotice(hold);
       else adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies, dataUse }).catch(() => null);
       // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
       try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
-    if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
+    if (['open', 'start-open', 'change-port', END_ORPHANS_ACTION].includes(action)) {
+      atStage('console_open');
+      await command(['open']);
+    }
     if (action === 'stop') await command(['stop']);
-    const state = await inspect();
+    const state = await inspect({ step: false });
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {
       throw new Error('Fuli did not confirm that the selected runtime stopped.');
     }
     return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
-      ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}) };
+      ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}),
+      ...(recoveryRecord ? { recoveryRecord } : {}), ...recoveryResult };
   } catch (error) {
+    // The step that did not finish, read before the check below moves on, and
+    // what the start said it ran into (startup-failure-line.js), for the client
+    // to word its own next step.
+    const failedAt = stage;
+    const failure = error?.startupFailure ?? null;
     // A failed start can already own processes. Keep their CLI state and report
     // what is actually running; never kill by process name or delete the data.
-    const state = await inspect().catch(() => null);
+    const state = await inspect({ step: false }).catch(() => null);
     // A start that failed on a port Windows reserves offers the port change.
     const blocked = starting && await portBlocked(context).catch(() => false);
     return { ok: false, action, status: state?.status ?? 'unknown',
       label: state ? trayStateLabel(state) : '状态未知 / Unknown',
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
+      ...(failedAt ? { stage: failedAt } : {}), ...(failure ? { failure } : {}), ...(recoveryRecord ? { recoveryRecord } : {}), ...recoveryResult,
       ...(blocked ? { portBlocked: true } : {}) };
   }
 }
@@ -154,17 +318,36 @@ function adoptionHoldNotice(hold) {
 
 function cliError(result) {
   // CLI error details are written to stderr. Do not copy setup/start stdout:
-  // LAN output can contain a temporary access code.
-  return new Error(String(result.stderr ?? '').trim().slice(-4000)
-    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.');
+  // LAN output can contain a temporary access code. A reason a client can act
+  // on comes on a line of its own (startup-failure-line.js) and is kept apart.
+  const { failure, stderr } = readStartupFailure(result.stderr);
+  return Object.assign(new Error(stderr.trim().slice(-4000)
+    || 'The selected Fuli CLI failed (exit ' + result.code + '). See its log directories.'),
+  failure ? { startupFailure: failure } : {});
 }
 
-function executeCli(context, args) {
+// The CLI writes its startup phase as a marker line (startup-stage.js) because
+// this client renders the phase itself; the lines are read as they arrive so
+// the window says what the start is doing while it is still doing it.
+function executeCli(context, args, onStage = () => {}) {
   return new Promise((resolveRun) => {
-    execFile(context.nodePath, [context.cliPath, ...args], {
+    const child = execFile(context.nodePath, [context.cliPath, ...args], {
+      // The CLI writes step lines only when this controller was asked for them (it inherits the ask).
       cwd: context.packageRoot, env: process.env, windowsHide: true,
       encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024
     }, (error, stdout, stderr) => resolveRun({ code: error ? error.code ?? 1 : 0, stdout,
       stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '') }));
+    followStartupStages(child.stdout, onStage);
   });
+}
+
+// How the tray and macOS entry points pass the phase on to their client: one
+// JSON line per phase as it starts, before the single result line the client
+// reads at the end (desktop/flutter/lib/src/runtime/runtime_output.dart).
+// Only a caller that asks for them (FULI_STAGE_MARKERS=1) gets them: the
+// updaters, acceptance runs and smoke scripts read the whole output as the
+// one result line, and must keep getting exactly that.
+export function stageReporter(env = process.env, write = (line) => process.stdout.write(line)) {
+  if (!wantsStageMarkers(env)) return () => {};
+  return (stage, bound) => write(startupStageMarker(stage, bound) + '\n');
 }

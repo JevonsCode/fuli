@@ -8,6 +8,9 @@ import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/s
 // it relayed (rec#80), the person's words and the message they were found in.
 // One row per call, never updated or deleted, so the person reads back
 // exactly what happened in their name.
+// The log's file in a data directory.
+export const DELEGATION_LOG_FILE = 'agent-delegation.sqlite';
+
 export const AGENT_DELEGATION_FORMAT = sqliteFormat({
   store: 'agent-delegation',
   schema: `
@@ -51,9 +54,20 @@ export class DelegatedOperationLog {
 
   // Newest first.
   recent(limit) {
-    if (!this.database && this.path !== ':memory:' && !existsSync(this.path)) return [];
+    if (this.#missing()) return [];
     return this.db.prepare('SELECT * FROM delegated_operations ORDER BY at DESC, rowid DESC LIMIT ?').all(limit)
       .map(operationView);
+  }
+
+  // How many changes made for the person succeeded in [from, to) (ISO instants).
+  succeededBetween(from, to) {
+    if (this.#missing()) return 0;
+    return this.db.prepare(`SELECT COUNT(*) AS count FROM delegated_operations
+      WHERE outcome = 'succeeded' AND at >= ? AND at < ?`).get(from, to).count;
+  }
+
+  #missing() {
+    return !this.database && this.path !== ':memory:' && !existsSync(this.path);
   }
 
   close() {

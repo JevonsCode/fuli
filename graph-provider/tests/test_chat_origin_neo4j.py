@@ -28,6 +28,16 @@ async def test_member_chat_proof_cannot_sign_an_execution_and_expires_with_its_t
         assert same_id_execution.status_code == 403
         ordinary = await client.post('/v1/project-agent-context/remote-origins', json={**body, 'message_id': 'exec-2', 'purpose': 'execution'})
         assert ordinary.status_code == 403
+        # A member's visitor query is its own signed purpose; a request stays with the lead.
+        query = await client.post('/v1/project-agent-context/remote-origins',
+                                  json={**body, 'message_id': 'query-1', 'purpose': 'query'})
+        assert query.status_code == 200, query.text
+        encoded = query.json()['proof']['payload']
+        query_claims = json.loads(urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+        assert (query_claims['purpose'], query_claims['version']) == ('query', 'fuli-query-origin/1')
+        member_request = await client.post('/v1/project-agent-context/remote-origins',
+                                           json={**body, 'message_id': 'request-1', 'purpose': 'request'})
+        assert member_request.status_code == 403
         next_turn = await client.put('/v1/task-contexts', json={
             **scope, 'token': token + '-next', 'project_agent_id': 'member', 'source_application': 'codex',
             'session_id': 'synthetic-member-chat', 'turn_id': 'chat-next'})

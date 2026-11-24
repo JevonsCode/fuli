@@ -12,7 +12,7 @@ const OWN_LAYER_TOOLS = new Set([
 const ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 const SOURCE_FIELDS = new Set([
   'sourceApplication', 'source_application', 'sourceSessionId', 'source_session_id',
-  'sourceSessionVerified', 'source_session_verified', 'sessionId', 'session_id',
+  'sourceSessionVerified', 'source_session_verified', 'sourceSessionBinding', 'sessionId', 'session_id',
   'turnId', 'turn_id', 'taskContextToken', 'task_context_token',
   'personalSpaceId', 'personal_space_id', 'personalProjectId', 'personal_project_id',
   'projectAgentId', 'project_agent_id', 'agentId', 'agent_id', 'ownerInspection',

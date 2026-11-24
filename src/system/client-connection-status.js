@@ -3,7 +3,9 @@ import { homedir } from 'node:os';
 import { sep } from 'node:path';
 
 import { clientSourceApplication, detectClients, entryState } from '../agent-kits/client-detection.js';
+import { clientFirstRun } from '../agents/client-first-run.js';
 import { configuredInstall, installOf } from './configured-install.js';
+import { observeMcpDiagnostics } from '../diagnostics/mcp-configuration.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
@@ -43,35 +45,61 @@ const MAX_INSTALL_KEY = 1024;
  * says `overwritten` (rec#106).
  */
 export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date(), awaitingRestart = () => [],
-  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform }) {
+  consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform, diagnosticEvents = null,
+  presence = null }) {
   const own = consoleInstall ? installOf([consoleInstall.nodePath, consoleInstall.mcpServerPath], { platform }) : null;
   const ownInstall = own ? { path: displayPath(own.root, homeDir, platform), version: consoleInstall.version } : null;
   // History that could not be written stays reliable for this observer.
   let retained = null;
 
-  async function observe() {
+  // afterProbe: answer once the probes running now have finished, so the page
+  // can read again the moment they do instead of on its next round.
+  async function observe({ afterProbe = false } = {}) {
+    if (afterProbe && presence?.settled) await presence.settled();
     const observedAt = now().toISOString();
-    const answer = await detectClients(installer);
+    // A status read never waits for a login shell: what the last probe found, the next one meanwhile.
+    const answer = await detectClients(installer, { presence, wait: false });
     if (answer.status !== 'available') {
-      return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [] };
+      return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [],
+        // Another FULI is downloading agent-installer: the page says so and reads again soon.
+        ...(answer.downloading ? { componentDownloading: true } : {}),
+        ...(answer.diagnosticCode ? { diagnosticCode: answer.diagnosticCode } : {}) };
     }
     const builtin = answer.clients.filter((client) => client.builtin);
     const waiting = new Map(awaitingRestart().map(entry => [entry.sourceApplication, entry.count]));
     const history = sanitizeHistory(retained ?? readHistory(historyPath), builtin.map(({ id }) => id));
     let dirty = retained !== null;
+    // Asked before the views are built: whether a client's own first-run question is still ahead.
+    const firstRuns = new Map(await Promise.all(builtin.filter((client) => client.connected && clientFirstRun(client.id))
+      .map(async (client) => [client.id, await clientFirstRun(client.id).pending({
+        commandFound: (command) => (presence?.command ? presence.command(command) : null), homeDir }).catch(() => false)])));
     const clients = builtin.map((client) => {
       // sourceApplication: the client as FULI's other records name it (client links, capture), so a reader needs no mapping of its own.
       const sourceApplication = clientSourceApplication(client.id);
       const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
+        // A connected client that still asks the person something itself the first time FULI is
+        // used in it, while that is still ahead of them (client-first-run.js).
+        ...(firstRuns.get(client.id) ? { firstRun: { id: client.id, command: clientFirstRun(client.id).command } } : {}),
+        // Installed only inside WSL: FULI on this Windows cannot connect it (client-presence.js).
+        ...(client.inWsl ? { inWsl: true } : {}),
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own (for DeepSeek Harness, a
       // plugin directory that is not FULI's) is never reported as a removal.
       if (entryState(client.components) === 'conflict') {
-        return { shown: view(client, { ...record, status: 'unknown' }, { ...extra, lastKnownStatus: record.status }) };
+        // The file FULI's entry is in, and what agent-installer said about it: the person can fix
+        // that file; connecting again would only fail the same way.
+        const unreadable = client.entryProblem && client.entryPaths[0]
+          ? { entryFile: { path: client.entryPaths[0], problem: client.entryProblem } } : {};
+        return { shown: view(client, { ...record, status: 'unknown' }, { ...extra, components: client.components, lastKnownStatus: record.status,
+          ...unreadable }) };
       }
       const previouslyConnected = record.previouslyConnected || PRESENT.has(statusOf(client, false));
       const status = statusOf(client, previouslyConnected);
+      // Still being looked for: said as such, never stored, never counted as missing.
+      if (client.probing && status === 'not_detected') {
+        return { shown: view(client, { ...record, status: 'probing' }, { ...extra, components: client.components }) };
+      }
       // Only an entry that differs from this console's is read for what it names.
       const configured = status === 'changed' ? configuredInstall(client.mcpPaths, { homeDir, platform }) : null;
       // Only another installation can be written back: an entry naming the console's own (its Skills or hooks
@@ -106,14 +134,15 @@ export function createClientConnectionObserver({ installer, customClients, histo
     }
     const removable = customClients.removable();
     return { scope: 'configuration', observedAt, available: true, historySaved, clients: views,
+      ...(views.some(({ status }) => status === 'probing') ? { probing: true } : {}),
       ...(ownInstall ? { installs: installsOf(ownInstall, views, platform) } : {}),
       customClients: answer.clients.filter((client) => !client.builtin).map((client) => ({
         id: client.id, label: client.label, detected: client.detected,
         status: entryState(client.components) === 'conflict' ? 'unknown' : statusOf(client, false),
         // Where the person puts FULI's MCP entry by hand, relative to home.
-        mcpPaths: client.mcpPaths, removable: removable.has(client.id) })) };
+        mcpPaths: client.mcpPaths, removable: removable.has(client.id), components: client.components })) };
   }
-  return { observe };
+  return { observe: diagnosticEvents ? observeMcpDiagnostics(observe, diagnosticEvents) : observe };
 }
 
 function statusOf(client, previouslyConnected) {

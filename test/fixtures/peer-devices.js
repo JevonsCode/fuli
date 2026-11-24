@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadDeviceIdentity } from '../../packages/roundtable/src/peer/device-identity.js';
+import { originProofVersion } from '../../packages/roundtable/src/peer/origin-proof.js';
 import { createPeerPort, peerDirectory } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createPeerRuntime } from '../../packages/roundtable/src/peer/peer-runtime.js';
 import { canonicalJson, sha256Hex } from '../../packages/roundtable/src/peer/protocol.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../../src/graphiti/roundtable-host.js';
+import { createVisitorAccess } from '../../src/visitor-access/port.js';
 
 // Signs exactly like the FULI Provider does: the private key stays in here.
 export function signingAuthority() {
@@ -38,7 +40,43 @@ function identityDirectory(label) {
   return identities.get(label);
 }
 
-export async function device(label, { tamper = null, wake = null } = {}) {
+// Nearby discovery inside this process: every device's advertisement reaches
+// every browsing device on 127.0.0.1, with no multicast socket.
+export function discoveryBus() {
+  const adverts = new Map();
+  const browsers = new Set();
+  const failures = [];
+  const view = (record) => ({ name: record.name, port: record.port, txt: record.txt, addresses: ['127.0.0.1'] });
+  return {
+    adverts, browsers,
+    // The multicast socket of every device failing, as a taken UDP 5353 would.
+    fail: (error) => { for (const onFailure of failures) onFailure(error); },
+    discovery: ({ onFailure = () => {} } = {}) => {
+      failures.push(onFailure);
+      return {
+        advertise(record) {
+          const key = Symbol(record.name);
+          adverts.set(key, record);
+          for (const browser of browsers) browser.onUp(view(record));
+          return { stop: () => { if (adverts.delete(key)) for (const browser of browsers) browser.onDown(view(record)); } };
+        },
+        browse(handlers) {
+          browsers.add(handlers);
+          for (const record of adverts.values()) handlers.onUp(view(record));
+          return { stop: () => browsers.delete(handlers),
+            refresh: () => { for (const record of adverts.values()) handlers.onUp(view(record)); } };
+        },
+        close() {},
+      };
+    },
+  };
+}
+
+// search: the Provider search a visitor's query reaches; with it the device
+// answers visiting assistants through a real visitor-access port (in memory).
+// requests: the visit request service factory that port gets (seconding C).
+export async function device(label, { tamper = null, wake = null, discovery = null, repository = null, sessionFolder = null, search = null,
+  requests = null, runtimeOptions = {} } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
@@ -52,10 +90,11 @@ export async function device(label, { tamper = null, wake = null } = {}) {
     getRemoteOriginAuthority: async () => ({ algorithm: 'Ed25519', key_id: authority.keyId, public_key: authority.publicKey }),
     issueRemoteAgentOrigin: async (input) => {
       calls.origins.push(input);
-      const claims = { version: input.purpose === 'chat' ? 'fuli-chat-origin/1' : 'fuli-remote-origin/1', key_id: authority.keyId, space_id: spaceId, project_id: projectId,
+      const purpose = input.purpose ?? 'execution';
+      const claims = { version: originProofVersion(purpose), key_id: authority.keyId, space_id: spaceId, project_id: projectId,
         agent_id: actorId(input.task_context_token), task_hash: sha256Hex(input.task_context_token), message_id: input.message_id, digest: input.digest,
         target_node: input.target_node, binding_id: input.binding_id, issued_at: new Date().toISOString(),
-        expires_at: input.expires_at, ...(input.purpose === 'chat' ? { purpose: 'chat' } : {}) };
+        expires_at: input.expires_at, ...(purpose !== 'execution' ? { purpose } : {}) };
       const payload = Buffer.from(canonicalJson(claims));
       let proof = { payload: payload.toString('base64url'), signature: sign(null, payload, authority.privateKey).toString('base64url') };
       if (tamper) proof = tamper(proof, claims, authority);
@@ -64,13 +103,16 @@ export async function device(label, { tamper = null, wake = null } = {}) {
     issueRemoteAgentDelegation: async (input) => { calls.grants.push(input); return { token: `grant-${calls.grants.length}` }; },
     verifyAgentDelegation: async () => ({ redeemed: true }),
     revokeAgentDelegation: async () => ({}),
-    recentAgentSessions: async () => [],
+    recentAgentSessions: async () => (sessionFolder ? [{ source_application: 'codex', session_id: `${label}-recent`,
+      personal_project_id: projectId, last_active: '2026-11-13T08:00:00.000Z' }] : []),
     getProjectAgentCoordinationPolicy: async () => ({ team_lead_agent_id: leadId, team_member_agent_ids: [] }),
     listProjectAgents: async () => [{ agent_id: leadId, profile: { status: 'active', name: `${label} lead` },
       assignments: [{ personal_project_id: projectId, status: 'active' }] },
       { agent_id: memberId, occupation: { role: 'tester' }, profile: { status: 'active', name: `${label} tester`, capabilities: ['testing'] },
         assignments: [{ personal_project_id: projectId, status: 'active' }] }],
-    listPersonalProjects: async () => [{ project_id: projectId, name: `${label} project` }],
+    getPersonalProject: async () => ({ project_id: projectId, name: `${label} project` }),
+    listPersonalProjects: async () => [{ project_id: projectId, name: `${label} project`,
+      ...(repository ? { profile: { name: `${label} project`, sources: [{ kind: 'repository', role: 'own', uri: repository }] } } : {}) }],
   };
   const app = {
     config: { personal: { spaceId } },
@@ -84,17 +126,26 @@ export async function device(label, { tamper = null, wake = null } = {}) {
     taskContextRegistry: { context: async token => ({ projectAgentId: actorId(token), personalProjectId: projectId,
       sourceApplication: 'codex', sessionId: `${label}-session` }) },
   };
+  if (search) {
+    personal.search = search;
+    app.visitorAccess = createVisitorAccess({ application: app, ...(requests ? { requests } : {}) });
+  }
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
   const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });
-  app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+  // Shares name Codex, which takes asks from another computer on macOS and Linux; Windows is tested in agent-roundtable.test.js.
+  app.roundtable = createAgentRoundtable({ platform: 'linux', host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+    ...(sessionFolder ? { locateCwd: () => sessionFolder } : {}),
     wake: async (input) => { calls.wakes.push(input);
       return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
   app.projectPathResolver = (path) => path === folder
     ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
-  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}) });
+  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true,
+    claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', ...(discovery ? { createDiscovery: discovery } : {}),
+    ...runtimeOptions });
   return { app, runtime, calls, until, projectId, folder, close: async () => {
-    await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
+    await runtime.close(); await app.roundtable.close(); app.peer.close(); app.visitorAccess?.close();
+    await rm(dataDir, { recursive: true, force: true });
   } };
 }
 

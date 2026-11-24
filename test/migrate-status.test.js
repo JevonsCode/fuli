@@ -134,9 +134,87 @@ test('a store opened and migrated by FULI reports current with its ledger', asyn
     assert.deepEqual(snapshot(root, { skip: (name) => name.endsWith('-shm') }), before);
   } finally { live.close(); }
   const store = byLabel(JSON.parse(output))['agent-roundtable.sqlite'];
-  assert.deepEqual([store.state, store.version, store.target], ['current', 7, 7]);
+  // A new store is created at the format this release writes: roundtable 14
+  // (roundtable/14-message-chat-wake).
+  assert.deepEqual([store.state, store.version, store.target], ['current', 14, 14]);
   assert.deepEqual(store.ledger.map((entry) => [entry.migrationId, entry.status]), [['roundtable/created', 'created']]);
 });
+
+// The roundtable as the released FULI left it, from the declarations those
+// releases shipped (a shipped migration never changes), with one ask in it.
+// Its schema fingerprint must equal the one that release recorded, so this
+// is that format and not one derived from today's constants.
+const SHIPPED_ROUNDTABLE = {
+  11: { release: '0.27.16', fingerprint: '5b4238b628905e8d073403ae8891eda185b92bfdef2cf9bd1e712c8487e52014' },
+  12: { release: '0.29.0-beta.8', fingerprint: '594c0dbec801ab9b787b3e294495ec33c4d2ef09405105e9a7826e5e132c46f7' }
+};
+const sqlStatement = (sql) => String(sql ?? '').replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim();
+function schemaFingerprint(database) {
+  const schema = database.prepare(`SELECT type, name, tbl_name, sql FROM sqlite_master
+    WHERE name NOT LIKE 'sqlite_%' AND tbl_name <> 'fuli_format_ledger' ORDER BY type, name`).all()
+    .map((row) => [row.type, row.name, row.tbl_name, sqlStatement(row.sql)]);
+  return createHash('sha256').update(JSON.stringify(schema)).digest('hex');
+}
+async function shippedRoundtable(path, version) {
+  const { ROUNDTABLE_FORMAT } = await import('../packages/roundtable/src/roundtable/store.js');
+  const database = new DatabaseSync(path);
+  database.exec(ROUNDTABLE_FORMAT.schema);
+  for (const migration of ROUNDTABLE_FORMAT.migrations.filter(({ to }) => to <= version)) {
+    if (migration.kind === 'add-table') database.exec(migration.create);
+    else for (const [name, type] of Object.entries(migration.columns)) {
+      database.exec(`ALTER TABLE ${migration.table} ADD COLUMN ${name} ${type}`);
+    }
+  }
+  assert.equal(schemaFingerprint(database), SHIPPED_ROUNDTABLE[version].fingerprint,
+    `the roundtable format ${version} that ${SHIPPED_ROUNDTABLE[version].release} wrote`);
+  database.exec(`CREATE TABLE fuli_format_ledger(seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      migration_id TEXT NOT NULL, from_version INTEGER NOT NULL, to_version INTEGER NOT NULL, kind TEXT NOT NULL,
+      status TEXT NOT NULL, backup_ref TEXT, detail TEXT, recorded_at TEXT NOT NULL);
+    INSERT INTO fuli_format_ledger(migration_id, from_version, to_version, kind, status, recorded_at)
+      VALUES('roundtable/created', 0, ${version}, 'schema', 'created', 'synthetic');
+    INSERT INTO threads(id, space_id, project_id, subject, created_at, updated_at)
+      VALUES('synthetic-thread', 'synthetic-space', 'synthetic-project', 'synthetic subject', 'x', 'x');
+    INSERT INTO messages(id, thread_id, seq, kind, body, status, created_at, updated_at)
+      VALUES('synthetic-ask', 'synthetic-thread', 1, 'ask', 'synthetic body', 'queued', 'x', 'x');
+    PRAGMA user_version = ${version};`);
+  database.close();
+}
+
+// 14 (roundtable/14-message-chat-wake) is this branch's; formats it already
+// passed are named by the release that wrote them.
+const LATEST_ROUNDTABLE = 14;
+for (const [from, applied] of [[11, ['roundtable/12-message-runner', 'roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']],
+  [12, ['roundtable/13-message-target-session', 'roundtable/14-message-chat-wake']]]) {
+  test(`a roundtable left at format ${from} by ${SHIPPED_ROUNDTABLE[from].release} upgrades to ${LATEST_ROUNDTABLE} after a backup, and says so`, async (t) => {
+    const root = dataDir(t);
+    const path = join(root, 'agent-roundtable.sqlite');
+    await shippedRoundtable(path, from);
+    const before = byLabel(JSON.parse((await status(root)).output))['agent-roundtable.sqlite'];
+    assert.deepEqual([before.state, before.version, before.target], ['upgrade_on_open', from, LATEST_ROUNDTABLE]);
+    assert.deepEqual(before.steps.map((step) => [step.id, step.state]), applied.map((id) => [id, 'automatic']));
+
+    const live = createRoundtableStore(path);
+    try {
+      // The ask an older FULI kept is still there, and names no session.
+      const ask = live.getMessage('synthetic-ask');
+      assert.deepEqual([ask.body, ask.target_session ?? null], ['synthetic body', null]);
+    } finally { live.close(); }
+
+    const store = byLabel(JSON.parse((await status(root)).output))['agent-roundtable.sqlite'];
+    assert.deepEqual([store.state, store.version, store.target], ['current', LATEST_ROUNDTABLE, LATEST_ROUNDTABLE]);
+    const upgrade = store.ledger.filter((entry) => entry.migrationId !== 'roundtable/created');
+    assert.deepEqual(upgrade.map((entry) => [entry.migrationId, entry.status]), applied.map((id) => [id, 'applied']));
+    // One backup, taken before the first step and named on every step it covers.
+    const [backupRef] = new Set(upgrade.map((entry) => entry.backupRef));
+    assert.ok(backupRef && upgrade.every((entry) => entry.backupRef === backupRef));
+    const backup = new DatabaseSync(join(root, backupRef), { readOnly: true });
+    try {
+      assert.equal(backup.prepare('PRAGMA user_version').get().user_version, from, 'the backup is the store before the upgrade');
+      assert.equal(schemaFingerprint(backup), SHIPPED_ROUNDTABLE[from].fingerprint, `so ${SHIPPED_ROUNDTABLE[from].release} can open it`);
+      assert.equal(backup.prepare('SELECT body FROM messages WHERE id = ?').get('synthetic-ask').body, 'synthetic body');
+    } finally { backup.close(); }
+  });
+}
 
 test('a store that cannot be read without writing fails the command and stays untouched', async (t) => {
   const root = dataDir(t);

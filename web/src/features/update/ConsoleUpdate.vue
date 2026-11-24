@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { apiErrorReason } from '@/api/client'
+import { ApiError, apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -34,7 +34,7 @@ const detailsOpen = ref(false)
 // The text 「查看详情」 shows: the recorded reason, or why the update could not start.
 const details = ref('')
 const REASONS = new Set(['not_installed', 'no_permission', 'download_failed', 'checksum_mismatch', 'start_failed',
-  'rollback_failed'])
+  'rollback_failed', 'kept_new_version'])
 let timer: ReturnType<typeof setTimeout> | undefined
 let unmounted = false
 
@@ -67,7 +67,8 @@ async function start(stopProcesses: string[] = []) {
   try {
     started = await startConsoleUpdate(stopProcesses)
   } catch (cause) {
-    error.value = t('console.update.notStarted')
+    error.value = cause instanceof ApiError && cause.status === 403
+      ? t('console.update.hostOnly') : t('console.update.notStarted')
     details.value = apiErrorReason(cause)
     busy(false)
     return
@@ -126,7 +127,10 @@ onBeforeUnmount(() => {
         {{ t('console.update.stopAndRetry') }}
       </Button>
     </template>
-    <p v-if="notBack" role="alert" class="console-update-error">{{ t('console.update.notBack') }}</p>
+    <p v-if="notBack" role="alert" class="console-update-error">
+      {{ t('console.update.notBack') }}
+      <Button variant="link" size="sm" class="console-update-details" data-console-update-reload @click="props.reload()">{{ t('console.update.reloadPage') }}</Button>
+    </p>
     <Dialog v-model:open="detailsOpen">
       <DialogContent size="md" data-console-update-reason>
         <DialogHeader>

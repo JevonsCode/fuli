@@ -119,6 +119,29 @@ test('an unconfirmed cleanup is reported with the original error code, bounded t
   }
 });
 
+test('each wake of an attempt gets its own grant key, a fourth is impossible, and only codes cross to the asker', async () => {
+  let fourth;
+  const f = await fixture({ answer: async (input) => {
+    await input.issueGrant({ client: 'codex', sessionId: null }, 300);
+    await input.issueGrant({ client: 'claude_code', sessionId: null }, 300);
+    fourth = await input.issueGrant({ client: 'claude_code', sessionId: null }, 300).catch(error => error);
+    throw Object.assign(new Error('synthetic failure at /home/synthetic-person/repo'), { code: 'wake_failed',
+      detail: 'client_exit_nonzero', attempts: 3, exitCode: 1, sessionId: 'synthetic-session-id',
+      output: { stderr: 'token sk-synthetic-secret at C:\\Users\\synthetic-person\\repo' } });
+  } });
+  try {
+    const claim = f.claimFor();
+    await f.runner.handle(claim);
+    const keys = f.calls.filter((call) => call.grant).map((call) => call.grant.origin_attempt_id);
+    assert.deepEqual(keys, [claim.attemptId, `${claim.attemptId}.2`, `${claim.attemptId}.3`]);
+    assert.equal(fourth.code, 'wake_limit');
+    const [row] = f.results;
+    assert.deepEqual([row.outcome, row.error], ['failed', 'wake_failed;detail=client_exit_nonzero;attempts=3']);
+    const sent = JSON.stringify(f.results);
+    for (const secret of ['synthetic-person', 'sk-synthetic-secret', 'synthetic-session-id', 'exitCode']) assert.ok(!sent.includes(secret), secret);
+  } finally { await f.runner.stop(); f.store.close(); }
+});
+
 test('the lease deadline stops execution even while a renewal request is pending', async (t) => {
   const started = Promise.withResolvers();
   let renewalPending = false;

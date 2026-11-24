@@ -180,7 +180,10 @@ test('rec#80: secrets stay unread, and what limits an Agent goes back only by th
   const started = [];
   const restore = { describe: () => ({ currentDigest: 'd' }), start: (input) => { started.push(input.label); return { status: 'started' }; } };
   const console = (item) => createOldDataConsole({ shelf: { find: async () => item, forgetMeasurement() {} }, restore });
-  for (const store of [AGENT_DELEGATION_FORMAT.store, AGENT_DELEGATION_POLICY_FORMAT.store, AGENT_ACCESS_POLICY_FORMAT.store, MODEL_SECRETS_FORMAT.store]) {
+  const { JUDGMENT_FORMAT } = await import('../src/judgment/store.js');
+  const { MODEL_TRUST_FORMAT } = await import('../src/model-backends/role-trust.js');
+  for (const store of [AGENT_DELEGATION_FORMAT.store, AGENT_DELEGATION_POLICY_FORMAT.store, AGENT_ACCESS_POLICY_FORMAT.store, MODEL_SECRETS_FORMAT.store,
+    JUDGMENT_FORMAT.store, MODEL_TRUST_FORMAT.store]) {
     assert.equal(personOnlyRestore(backup(store)), true, store);
     await assert.rejects(console(backup(store)).restore('id', { delegated: true }), (error) => error.code === 'old_data_restore_person_only', store);
   }
@@ -295,4 +298,12 @@ test('no MCP or Agent tool module reaches the old-data restore and delete', () =
     const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(changing.filter((path) => modules.has(path)), [], entry);
   }
+});
+
+test('a graph backed up on the data format page says which step it was taken before', async (t) => {
+  const { dataDir, paths } = dataDirectory(t);
+  write(dataDir, 'backups/graph/before-format-23-2026-11-24T08-00-00-000Z/manifest.json', JSON.stringify({ format: 'fuli-neo4j-backup', version: 1,
+    createdAt: '2026-11-24T08:00:00.000Z', instances: [{ id: 'personal', file: 'personal.dump' }] }));
+  const [item] = (await shelfFor(paths).list()).items;
+  assert.deepEqual([item.kind, item.left.zh, item.createdAt], ['graph_export', '确认数据格式 23 前备份的图谱', '2026-11-24T08:00:00.000Z']);
 });

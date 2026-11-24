@@ -1,9 +1,11 @@
 import { ApplicationError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
+import { recordProviderFailure } from '../diagnostics/provider-operation.js';
 import { graphReadPath, preferenceConflictsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
+import { workingProject } from './project-agent-mapping.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
@@ -34,6 +36,7 @@ export class ProviderRequestError extends ApplicationError {
 
 export class GraphitiProviderClient {
   #refreshAccessToken;
+  #diagnosticEvents;
 
   constructor({
     baseUrl,
@@ -41,7 +44,8 @@ export class GraphitiProviderClient {
     workflowObservationToken = null,
     fetchImpl = globalThis.fetch,
     requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
-    refreshAccessToken = null
+    refreshAccessToken = null,
+    diagnosticEvents = null
   }) {
     if (!baseUrl) throw new TypeError('Graphiti provider baseUrl is required');
     if (refreshAccessToken !== null && typeof refreshAccessToken !== 'function') {
@@ -70,6 +74,7 @@ export class GraphitiProviderClient {
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
     this.#refreshAccessToken = refreshAccessToken;
+    this.#diagnosticEvents = diagnosticEvents;
   }
 
   agentVerification(operation, input) {
@@ -155,6 +160,11 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return sharedProjectList(this, personalSpaceId, () => this.#request(`/v1/personal-projects?${query}`));
   }
+  // Which recorded host session made each session temporary project (read on demand).
+  listTemporaryProjectSources(personalSpaceId) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    return this.#request(`/v1/personal-projects/temporary-sources?${query}`);
+  }
   getPersonalProject(personalSpaceId, projectId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(
@@ -197,6 +207,20 @@ export class GraphitiProviderClient {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
     }
     return this.#request(`/v1/project-agent-pages?${query}`);
+  }
+  listAgentNameChanges(personalSpaceId) {
+    return this.#request(`/v1/project-agent-name-changes?${new URLSearchParams({ personal_space_id: personalSpaceId })}`);
+  }
+  markAgentNameChangesSeen(input) {
+    return this.#request('/v1/project-agent-name-changes/seen', { method: 'PUT', body: input });
+  }
+  agentNameFixPlan(personalSpaceId, keep = []) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const agentId of keep) query.append('keep', agentId);
+    return this.#request(`/v1/project-agent-name-fixes?${query}`);
+  }
+  applyAgentNameFixes(input) {
+    return this.#request('/v1/project-agent-name-fixes/apply', { method: 'POST', body: input });
   }
   getProjectAgent(personalSpaceId, personalProjectId, agentId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
@@ -254,6 +278,10 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, project_agent_id: agentId, limit: String(limit) });
     if (personalProjectId) query.set('personal_project_id', personalProjectId);
     return this.#request(`/v1/task-context-sessions/recent?${query}`);
+  }
+  // Each Agent that began a task since then, the latest first, and whether one is under way.
+  recentWorkingAgents({ personalSpaceId, since }) {
+    return this.#request(`/v1/task-context-agents/recent?${new URLSearchParams({ personal_space_id: personalSpaceId, since })}`);
   }
   staffDefaultProjectLead(input) {
     return this.#request('/v1/project-agent-context/default-lead', { method: 'POST', body: input });
@@ -626,6 +654,14 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId }
     });
   }
+  // The graph's counts for the person's compounding statement (src/statement); counts only.
+  readKnowledgeStatement(input) {
+    return this.#request('/v1/knowledge/statement', { method: 'POST', body: input });
+  }
+  // The same counts per local day of the range's offset, days with nothing left out.
+  readKnowledgeStatementDays(input) {
+    return this.#request('/v1/knowledge/statement/days', { method: 'POST', body: input });
+  }
   // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
   // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {
@@ -690,11 +726,6 @@ export class GraphitiProviderClient {
   }
   finishKnowledgeReview(input) {
     return this.#request('/v1/knowledge/reviews/finish', {
-      method: 'POST', body: input
-    });
-  }
-  searchWorkflowCandidates(input) {
-    return this.#request('/v1/workflow-candidates/search', {
       method: 'POST', body: input
     });
   }
@@ -834,6 +865,14 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, model }
     });
   }
+  // docs/runner-roles-design.md "Scopes in the graph": one scope of the personal
+  // space ('global' or 'project:<id>') as a deterministic envelope, read only.
+  // For this computer's own process (a read-only copy, a move); no Agent tool.
+  exportScope({ personalSpaceId, scope, vectors = true }) {
+    return this.#request('/v1/scopes/export', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, timeoutMs: 120_000
+    });
+  }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
   // ways someone would ask for each item and stores them beside it; ordinary
   // access token, no version and nothing a person confirms.
@@ -881,7 +920,11 @@ export class GraphitiProviderClient {
   // example after a graph import or a runtime mode switch. A rejected token is
   // replaced once by the current one and the request repeated; the Provider
   // did not act on the rejected request. An unchanged token is not retried.
-  async #request(path, options = {}) {
+  #request(path, options = {}) {
+    return trackProviderRequest(this.#diagnosticEvents, path, options, () => this.#sendWithTokenRefresh(path, options));
+  }
+
+  async #sendWithTokenRefresh(path, options) {
     const used = this.accessToken;
     try {
       return await this.#send(path, options);
@@ -974,6 +1017,19 @@ export class GraphitiProviderClient {
   }
 }
 
+// Both database protocols record the final transport outcome. Successful token
+// recovery and caller cancellation keep their original behavior and leave no event.
+export async function trackProviderRequest(log, path, { method = 'GET' }, send) {
+  if (!log) return send();
+  const started = Date.now();
+  try {
+    return await send();
+  } catch (error) {
+    if (error instanceof ProviderRequestError) recordProviderFailure(log, method, path, error, started);
+    throw error;
+  }
+}
+
 async function parseResponse(response) {
   const type = response.headers.get('content-type') ?? '';
   const text = await response.text();
@@ -1026,8 +1082,24 @@ function providerErrorDiagnostic(status, payload) {
     detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
     validationErrors,
     // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
-    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {})
+    ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {}),
+    ...nameTakenFields(payload?.detail)
   };
+}
+
+// A refused Agent name says who has it, where, and free names (graph-provider
+// store_project_agent_naming.py name_taken), as fields the console shows as they are.
+function nameTakenFields(detail) {
+  if (detail?.code !== 'agent_name_taken' || !Array.isArray(detail.free_names)) return {};
+  const text = value => String(value ?? '').slice(0, 160);
+  return { nameTaken: {
+    usedBy: (Array.isArray(detail.used_by) ? detail.used_by : []).slice(0, 8).map(item => ({
+      agentId: text(item?.agent_id), name: text(item?.name),
+      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(workingProject),
+      // Someone's 原名: taken until free_from (an exact time).
+      ...(item?.former_name && ISO_TIME.test(item?.free_from ?? '')
+        ? { formerName: text(item.former_name), freeFrom: item.free_from } : {}) })),
+    freeNames: detail.free_names.slice(0, 8).map(text) } };
 }
 
 // What a refusal says, for the human-review channel too (human-review-channel.js):
@@ -1069,9 +1141,14 @@ function providerValidationErrors(payload) {
     .slice(0, MAX_PROVIDER_VALIDATION_ERRORS)
     .map((item) => ({
       field: validationLocation(item.loc),
-      message: sanitizeProviderDetail(item.msg.trim())
+      message: sanitizeProviderDetail(item.msg.trim()),
+      // pydantic's error type (extra_forbidden, missing, ...): what kind of
+      // refusal, so a caller can tell an unknown field from a wrong value.
+      ...(typeof item.type === 'string' && VALIDATION_TYPE.test(item.type) ? { type: item.type } : {})
     }));
 }
+
+const VALIDATION_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 
 function validationLocation(loc) {
   if (!Array.isArray(loc)) return '';

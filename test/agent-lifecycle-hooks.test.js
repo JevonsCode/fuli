@@ -15,7 +15,7 @@ after(() => rmSync(RUNTIME_ROOT, { recursive: true, force: true }));
 import {
   codexStopLifecycleOutput,
   runCodexLifecycleHook
-} from '../src/agents/codex/lifecycle-hook.js';
+} from '../src/agents/codex/lifecycle-event.js';
 import {
   cursorLifecycleOutput,
   runCursorLifecycleHook

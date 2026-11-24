@@ -46,8 +46,8 @@ const withApp = async operation => {
   const app = openFederatedGraphApplication({ runtimeConfigPath: runtime });
   try { return await operation(app); } finally { await app.close?.(); }
 };
-const HOOKS = { claude_code: ['/src/agents/claude-code/lifecycle-hook.js', 'runClaudeLifecycleHook'],
-  codex: ['/src/agents/codex/lifecycle-hook.js', 'runCodexLifecycleHook'] };
+const HOOKS = { claude_code: ['/src/agents/claude-code/lifecycle-event.js', 'runClaudeLifecycleHook'],
+  codex: ['/src/agents/codex/lifecycle-event.js', 'runCodexLifecycleHook'] };
 let result;
 if (command === 'hook') {
   const runHook = (await load(HOOKS[source][0]))[HOOKS[source][1]];

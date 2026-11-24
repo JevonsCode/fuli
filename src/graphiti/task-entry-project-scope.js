@@ -2,11 +2,14 @@ import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
+import { HANDOFF_HELD, handoffNotDone, withNamedLine, withWorkstream } from './task-entry-workstream.js';
+import { POLICY_READER, policyReader } from './project-policy-read.js';
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
-import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { ASSISTANT_AGENT_ID } from '../employees/fixed-roles.js';
 import { sessionOwnerOf } from './task-entry-owner-change.js';
+import { sameTurnIntroduction } from './task-entry-introduction.js';
 import { REMOTE_CONFLICT } from './agent-project-resolution.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
@@ -25,14 +28,29 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   let sessionTask = null;
   try { sessionTask = await readSessionTask(); } catch { /* no stored member choice can be proven */ }
   const group = groupDiscussionRequest(application, input, sessionTask);
+  // A second entry of the same turn repeats that turn's introduction (task-entry-introduction.js).
+  const turnIntroduction = sameTurnIntroduction(sessionTask, input);
+  const carried = turnIntroduction ? { turnIntroduction } : {};
+  // The project's lead is read at most once in this entry (project-policy-read.js).
+  const readPolicy = policyReader(application);
+  carried[POLICY_READER] = readPolicy;
   const named = fla && namedFlaResolution(fla);
-  if (named) return group ? { ...named, group } : named;
+  // The person's #FLA outranks a lead's hand-off, which is then said not to have happened.
+  if (named) {
+    return { ...handoffNotDone(await withNamedLine(application, named, input), input.workstream, HANDOFF_HELD,
+      'named_fla'), ...(group ? { group } : {}), ...carried };
+  }
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
-  const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
+  // The person's own rules may move the task to its project; a line of the
+  // project it is then in may give it to that line's owner (docs/workstreams.md).
+  // A turn the person's own #FLA bound never carries a line on to the next.
+  const routed = group?.holdsProject ? handoffNotDone(home, input.workstream, HANDOFF_HELD, 'group_discussion')
+    : await withWorkstream(application, await withStandingOwner(application, home, input), input,
+      namedFlaTask(sessionTask) ? null : sessionTask, readPolicy);
   // Whose the session's last task was, so the entry can say when that changes (task-entry-owner-change.js).
   const sessionOwner = sessionOwnerOf(sessionTask);
-  return fla || group || sessionOwner ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),
-    ...(sessionOwner ? { sessionOwner } : {}) } : routed;
+  return { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),
+    ...(sessionOwner ? { sessionOwner } : {}), ...carried };
 }
 
 // The session's current task, read at most once per entry, and not at all

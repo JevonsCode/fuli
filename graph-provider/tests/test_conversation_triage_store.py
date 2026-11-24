@@ -221,7 +221,13 @@ def test_a_label_carries_exactly_what_its_kind_needs():
 
 
 class ListDriver:
+    def __init__(self):
+        self.calls = []
+
     async def execute_query(self, query, **parameters):
+        self.calls.append((query, parameters))
+        if 'FuliConversationSession' in query or 'HAS_EVENT' in query:
+            return [], None, None  # where each conversation was written from: none recorded here
         assert 'FuliConversationTriage' in query
         return [{'c': {'id': 'c1', 'summary': 'One', 'status': 'reported', 'revision': 2, 'last_activity': 'x'},
                  't': {'kind': 'topic', 'topic': 'Garden', 'source': 'user', 'personal_project_id': None,
@@ -245,10 +251,22 @@ async def test_conversation_lists_carry_their_triage_label():
         async def _conversation_policy(self, scope):
             return ConversationPolicy()
 
-    result = await ListStore().query_conversations({}, ConversationQuery(
+    store = ListStore()
+    result = await store.query_conversations({}, ConversationQuery(
         personal_space_id=SPACE, personal_project_id=None, agent_id='employee.assistant', mode='list'))
     assert [row['triage'] and row['triage']['topic'] for row in result['conversations']] == ['Garden', None]
     assert result['conversations'][0]['triage']['source'] == 'user'
+    # No topic asked for: every conversation of the scope.
+    assert store.runtime.driver.calls[0][1]['topic'] is None
+
+    # A topic asks for its open conversations only, by the same key its labels are stored under.
+    await store.query_conversations({}, ConversationQuery(
+        personal_space_id=SPACE, personal_project_id=None, agent_id='employee.assistant', mode='list',
+        topic='  Garden   Planning '))
+    # The list query, not the reads of where each conversation was written from.
+    query, parameters = [call for call in store.runtime.driver.calls if 'FuliConversationTriage' in call[0]][1]
+    assert parameters['topic'] == 'garden planning'
+    assert "t.kind = 'topic' AND t.topic_key = $topic AND t.formed_project_id IS NULL" in query
 
 
 @pytest.mark.asyncio

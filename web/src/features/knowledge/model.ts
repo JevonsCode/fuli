@@ -315,7 +315,12 @@ export function filterKnowledgeItems(
 }
 
 export function personalProfileItems(graph: KnowledgeGraph | null) {
-  const items = knowledgeItems(graph).filter(({ profileAspect }) => profileAspect)
+  return profileItemsOf(knowledgeItems(graph))
+}
+
+/** The preferences among items already read from a space's graph (a relationship stands for its endpoints). */
+export function profileItemsOf(all: readonly KnowledgeItem[]) {
+  const items = all.filter(({ profileAspect }) => profileAspect)
   const relatedEntityIds = new Set(
     items
       .filter(({ itemKind }) => itemKind === 'relationship')

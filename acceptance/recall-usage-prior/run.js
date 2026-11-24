@@ -75,7 +75,7 @@ export async function measure({ seed = 63, rounds = 8, reporting = 1 } = {}) {
         const byId = new Map(query.candidates.map(candidate => [candidate.id, candidate]));
         const ids = await recalled(store, query.candidates);
         const taskContextToken = `fuli-task-bench-${seed}-${task += 1}`;
-        store.recordShown({ taskContextToken, personalSpaceId: SPACE, personalProjectId: PROJECT,
+        store.recordDelivered({ taskContextToken, personalSpaceId: SPACE, personalProjectId: PROJECT,
           entities: ids.map(id => ({ id })) });
         const reports = random() < reporting;
         const used = ids.filter(id => random() < byId.get(id).useChance && reports);

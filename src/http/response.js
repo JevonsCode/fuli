@@ -1,21 +1,22 @@
-// Keep local API request buffering at or below a fixed 64 KiB budget.
+// Keep local API request buffering at or below a fixed 64 KiB budget; a route
+// that carries more (a lifecycle hook's stdin) names its own bound.
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 export class JsonBodyTooLargeError extends Error {
-  constructor() {
-    super(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes`);
+  constructor(maxBytes = MAX_JSON_BODY_BYTES) {
+    super(`JSON request body exceeds ${maxBytes} bytes`);
     this.name = 'JsonBodyTooLargeError';
   }
 }
 
-export async function readJson(request) {
+export async function readJson(request, { maxBytes = MAX_JSON_BODY_BYTES } = {}) {
   const chunks = [];
   let receivedBytes = 0;
   for await (const chunk of request) {
     receivedBytes += chunk.length;
-    if (receivedBytes > MAX_JSON_BODY_BYTES) {
+    if (receivedBytes > maxBytes) {
       chunks.length = 0;
-      throw new JsonBodyTooLargeError();
+      throw new JsonBodyTooLargeError(maxBytes);
     }
     chunks.push(chunk);
   }

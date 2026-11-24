@@ -23,10 +23,17 @@ export const agentProfileMessages = {
     recent: "最近的工作记录",
     joined: "加入时间",
     created: "建立档案",
+    // Names FULI wrote by itself, in the console's words (agent-profile/agent-name.ts).
+    generatedName: {
+      temporaryLead: "临时项目的助手",
+      numberedLead: "临时项目 #{number} 的助手",
+      occupation: "{occupation}助手",
+      specialist: "专项助手",
+    },
     // The built-in Agents' default responsibility, word for word as the Provider stores it
     // (graph-provider/fuli_graph/system_agents.py; test/system-agent-defaults.test.js).
     systemResponsibility: {
-      jefa: "项目经理：拆解目标、维护看板与进展，并为任务选择合适的 Agent。",
+      jefa: "项目经理：拆解目标、维护看板与进展。",
       bole: "AR：维护 Agent 人员分布与工作状态，按需招募并保留招募记录；在用户发起或同意时办理离职：先问理由，沉淀教训并留下交接。",
       tonborg: "决策员：依照用户偏好审核日常事项、建议客户端和模型，保留判断依据与反馈。",
       assistant: "全局助手：接待未归属项目的对话，只用全局偏好，不自动询问项目归属。",
@@ -95,6 +102,10 @@ export const agentProfileMessages = {
       saving: "正在把名字改为 {name}",
       restore: "恢复默认名",
       taken: "「{name}」已经有别的 FLA 在用了",
+      takenBy: "「{name}」已经是 {holder}（{projects}）的名字",
+      takenByAgent: "「{name}」已经是 {holder} 的名字",
+      takenFormer: "「{name}」是 {holder} 的原名，{time} 之后可以用",
+      former: "原名 {name}",
       free: "可以用：",
       failed: "改名没有成功：{reason}",
     },
@@ -115,6 +126,7 @@ export const agentProfileMessages = {
       unreadable: "这张图片读不出来，换一张试试",
       tooLarge: "这张图片缩小后还是太大，换一张试试",
     },
+    remoteFace: "{name}（另一台电脑）",
   },
   "en-US": {
     title: "Agents",
@@ -140,8 +152,14 @@ export const agentProfileMessages = {
     recent: "Recent work records",
     joined: "Joined",
     created: "Profile created",
+    generatedName: {
+      temporaryLead: "Temporary project assistant",
+      numberedLead: "Assistant for temporary project #{number}",
+      occupation: "{occupation} assistant",
+      specialist: "Specialist assistant",
+    },
     systemResponsibility: {
-      jefa: "Project manager: breaks goals into tasks, keeps the board and progress current, and picks the right Agent for each task.",
+      jefa: "Project manager: breaks goals into tasks and keeps the board and progress current.",
       bole: "Agent resources: keeps track of which Agents exist and what they are working on, recruits when needed and keeps the recruitment records; handles a dismissal when you start or agree to it: asks why first, keeps the lessons and leaves a handover.",
       tonborg: "Decision maker: reviews everyday matters by your preferences, suggests clients and models, and keeps the reasoning and feedback.",
       assistant: "Global assistant: takes conversations that belong to no project, uses only global preferences, and never asks on its own which project they belong to.",
@@ -213,6 +231,10 @@ export const agentProfileMessages = {
       saving: "Renaming to {name}",
       restore: "Restore default name",
       taken: "Another FLA already uses “{name}”",
+      takenBy: "“{name}” is already {holder}’s name ({projects})",
+      takenByAgent: "“{name}” is already {holder}’s name",
+      takenFormer: "“{name}” is {holder}’s former name; you can use it after {time}",
+      former: "Formerly {name}",
       free: "Free names:",
       failed: "The rename did not go through: {reason}",
     },
@@ -233,5 +255,6 @@ export const agentProfileMessages = {
       unreadable: "This picture can’t be read; try another one",
       tooLarge: "This picture is still too large when scaled down; try another one",
     },
+    remoteFace: "{name} (another computer)",
   },
 };

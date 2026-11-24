@@ -1,0 +1,1238 @@
+import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
+import test from 'node:test';
+
+import { createVisitorAccess } from '../src/visitor-access/port.js';
+import { createVisitRequests } from '../src/visit-requests/service.js';
+
+// Synthetic requesters, projects and a fake runner: no Git, no client, no data directory.
+const ALPHA = `peer:${'a'.repeat(64)}`;
+const BETA = `peer:${'b'.repeat(64)}`;
+const GAMMA = `peer:${'c'.repeat(64)}`;
+const GUEST = 'guest:synthetic-link-1';
+const PROJECT = 'synthetic-project';
+const LEAD = 'synthetic-lead';
+const SAFE_PLAN = { areas: ['src/server.js'], risks: [], dependencyChanges: false, configChanges: false, network: false, size: 's' };
+const DRAFT = { title: 'Read the port from settings', what: 'The server should read its port from settings.json', expectedAreas: ['src/'] };
+
+// pid: the run's client process starts with this PID; failWith: the run throws it; abortError: what a stopped run throws.
+function fakeRunner({ plan = SAFE_PLAN, result = {}, holdRun = null, afterAbort = null, pid = null, failWith = null, abortError = null } = {}) {
+  const calls = { folders: [], prepared: [], planned: [], ran: [], removed: [] };
+  return {
+    calls,
+    async folder(request) { calls.folders.push(request.id); return '/synthetic/project'; },
+    async prepare(request) {
+      calls.prepared.push(request.id);
+      return { projectFolder: '/synthetic/project', worktreePath: `/synthetic/worktrees/${request.id}`,
+        branch: `fuli/visit/${request.id}`, baseCommit: 'c'.repeat(40) };
+    },
+    planned: (request) => ({ worktreePath: `/synthetic/worktrees/${request.id}`, branch: `fuli/visit/${request.id}` }),
+    async plan(request, { client }) { calls.planned.push({ id: request.id, cwd: request.projectFolder, worktree: request.worktreePath, client });
+      return { plan, error: plan ? null : 'plan_unreadable', ms: 1000 }; },
+    async run(request, { signal, client, lead, onSpawn }) {
+      calls.ran.push({ id: request.id, decidedBy: request.decidedBy, mode: request.modeAtDecision, client, lead });
+      if (pid) onSpawn(pid);
+      if (failWith) throw failWith;
+      if (holdRun) {
+        await Promise.race([holdRun, new Promise((_, reject) => signal.addEventListener('abort', async () => {
+          // A commit step still finishing after the abort.
+          if (afterAbort) await afterAbort();
+          reject(abortError ?? Object.assign(new Error('cancelled'), { code: 'cancelled', ms: 5 }));
+        }))]);
+      }
+      return { ms: 2000, hold: null, summary: 'Changed the server to read its port.', intact: true, addedText: '+const port = settings.port;',
+        files: [{ path: 'src/server.js', added: 3, removed: 1, binary: false, executable: false, symlink: false }],
+        diffstat: { files: 1, added: 3, removed: 1 }, ...result };
+    },
+    async patch() { return { text: 'diff --git a/src/server.js b/src/server.js', truncated: false }; },
+    async remove(request, { keepBranch }) { calls.removed.push({ id: request.id, keepBranch }); }
+  };
+}
+
+function fixture(t, runnerOptions = {}, { now = () => new Date('2026-11-14T08:00:00.000Z'), lead = LEAD, clients = ['claude_code'],
+  platform = 'linux', processes = {} } = {}) {
+  const runner = fakeRunner(runnerOptions);
+  const leads = { current: lead, confirm: async ({ agentId }) => agentId === leads.current, constrainedClients: async () => clients,
+    describe: async () => ({ name: 'Synthetic lead', responsibility: 'Owns the server' }) };
+  let sequence = 0;
+  const port = createVisitorAccess({ application: {}, now,
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads, platform, now,
+      idFactory: () => `request-${++sequence}`, ...processes }) });
+  t.after(() => port.close());
+  const submit = (key = ALPHA, request = DRAFT, projectId = PROJECT) => port.submitRequest({
+    requester: { key, label: 'Synthetic desk', agentName: 'Visitor lead' }, projectId, agentId: LEAD, request });
+  const setMode = (mode, key = ALPHA) => port.setRequesterMode({ key, kind: key.startsWith('peer:') ? 'peer' : 'guest',
+    label: 'Synthetic desk', mode, ownDevice: mode === 'trusted' });
+  const state = (id) => port.requests.card(id).then((card) => card.request.state);
+  const events = async (id) => (await port.requests.card(id)).events.map((event) => [event.from, event.to, event.by]);
+  return { port, runner, leads, submit, setMode, state, events };
+}
+
+// Background planning and runs finish within a few event-loop turns.
+async function settled(check) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (await check()) return;
+    await delay(5);
+  }
+  assert.fail('the request did not settle');
+}
+
+test('plan mode: planned read-only in the project folder, no worktree before approval, runs once approved, ends kept', async (t) => {
+  const f = fixture(t);
+  const submitted = f.submit();
+  assert.deepEqual(submitted, { ok: true, requestId: 'request-1', state: 'planning' });
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  assert.deepEqual(f.runner.calls.planned, [{ id: 'request-1', cwd: '/synthetic/project', worktree: null, client: 'claude_code' }]);
+  assert.deepEqual([f.runner.calls.prepared, f.runner.calls.ran], [[], []], 'no worktree and no run before the owner approves');
+  const listed = f.port.requests.list();
+  assert.equal(listed.awaiting.count, 1);
+  assert.deepEqual(listed.awaiting.newest.map((request) => [request.id, request.plan.size, request.modeAtReceipt]), [['request-1', 's', 'plan']]);
+
+  assert.equal(f.port.requests.approve('request-1').ok, true);
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  assert.deepEqual(f.runner.calls.prepared, ['request-1'], 'the worktree is made after the approval');
+  const card = await f.port.requests.card('request-1');
+  assert.deepEqual([card.request.review, card.request.decidedBy, card.request.modeAtDecision, card.request.runMs, card.request.planningMs],
+    ['ready', 'owner', 'plan', 2000, 1000]);
+  assert.equal(card.diff.text.startsWith('diff --git'), true, 'the owner reads the patch');
+
+  assert.equal((await f.port.requests.keep('request-1')).ok, true);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: true }], 'keep removes only the worktree');
+  assert.deepEqual(await f.events('request-1'), [[null, 'received', 'requester'], ['received', 'planning', 'system'],
+    ['planning', 'awaiting_owner', 'system'], ['awaiting_owner', 'approved', 'owner'], ['approved', 'running', 'system'],
+    ['running', 'awaiting_review', 'rule'], ['awaiting_review', 'kept', 'owner']]);
+  assert.deepEqual(await f.port.requests.discard('request-1'), { ok: false, code: 'state_conflict' });
+  assert.deepEqual(await f.port.requests.keep('missing'), { ok: false, code: 'request_not_found' });
+});
+
+test('decline, cancel and the 7-day expiry end a waiting request; discard removes a result\'s worktree and branch', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  const f = fixture(t, {}, { now: () => clock });
+  f.submit();
+  f.submit(BETA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner' && await f.state('request-2') === 'awaiting_owner');
+  f.submit(GAMMA);
+  await settled(async () => await f.state('request-3') === 'awaiting_owner');
+  const declined = await f.port.requests.decline('request-1', { reason: 'Not\u0007 now‮ please' });
+  assert.deepEqual([declined.request.state, declined.request.reason], ['declined', 'Not now please']);
+  assert.equal((await f.port.requests.cancel('request-2')).request.state, 'cancelled');
+  clock = new Date('2026-11-21T08:00:01.000Z');
+  assert.equal(await f.state('request-3'), 'expired');
+  assert.deepEqual(f.runner.calls.removed, [], 'nothing was copied, so nothing to remove');
+
+  clock = new Date('2026-11-21T09:00:00.000Z');
+  f.submit();
+  await settled(async () => await f.state('request-4') === 'awaiting_owner');
+  f.port.requests.approve('request-4');
+  await settled(async () => await f.state('request-4') === 'awaiting_review');
+  assert.equal((await f.port.requests.discard('request-4')).request.state, 'discarded');
+  assert.deepEqual(f.runner.calls.removed.at(-1), { id: 'request-4', keepBranch: false }, 'discard deletes the branch');
+});
+
+test('a discard that could not remove Git\'s entry or the branch says so to the owner and on the request', async (t) => {
+  const f = fixture(t);
+  f.runner.remove = async () => ({ entryKept: true, branchKept: true });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  const discarded = await f.port.requests.discard('request-1');
+  assert.deepEqual([discarded.request.state, discarded.warning], ['discarded', 'worktree_entry_kept']);
+  const last = (await f.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([last.from, last.to, last.note], ['discarded', 'discarded', 'worktree_entry_kept']);
+  f.runner.remove = async () => { throw new Error('locked'); };
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await f.port.requests.keep('request-2')).warning, 'cleanup_failed');
+});
+
+test('a result left unreviewed for 14 days expires: its worktree goes, its branch stays, and it counted as open meanwhile', async (t) => {
+  let clock = new Date('2026-11-01T08:00:00.000Z');
+  const f = fixture(t, {}, { now: () => clock });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  clock = new Date('2026-11-15T08:00:01.000Z');
+  assert.equal(await f.state('request-1'), 'expired');
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: true }]);
+  assert.equal((await f.port.requests.card('request-1')).events.at(-1).note, 'review_expired');
+});
+
+test('trusted skips only the approval; auto approves inside its envelope; both run constrained as the lead', async (t) => {
+  const trusted = fixture(t);
+  trusted.setMode('trusted');
+  trusted.submit();
+  await settled(async () => await trusted.state('request-1') === 'awaiting_review');
+  assert.deepEqual(trusted.runner.calls.ran, [{ id: 'request-1', decidedBy: 'rule', mode: 'trusted', client: 'claude_code',
+    lead: { name: 'Synthetic lead', responsibility: 'Owns the server' } }]);
+  assert.deepEqual(trusted.runner.calls.planned[0].client, 'claude_code');
+
+  const auto = fixture(t);
+  auto.setMode('auto');
+  auto.submit();
+  await settled(async () => await auto.state('request-1') === 'awaiting_review');
+  const approved = (await auto.port.requests.card('request-1')).events.find((event) => event.to === 'approved');
+  assert.deepEqual([approved.by, approved.rule, approved.checks.every((check) => check.ok)], ['rule', 'auto_envelope_v1', true]);
+
+  // A lead whose clients FULI cannot run constrained (only Codex, for now): nothing could run it, said plainly.
+  const codexOnly = fixture(t, {}, { clients: [] });
+  codexOnly.setMode('trusted');
+  codexOnly.submit();
+  await settled(async () => await codexOnly.state('request-1') === 'failed');
+  const failed = (await codexOnly.port.requests.card('request-1')).request;
+  assert.deepEqual([failed.error, failed.reason], ['no_constrained_client', 'no_constrained_client']);
+  assert.deepEqual([codexOnly.runner.calls.planned, codexOnly.runner.calls.folders], [[], []], 'no wake, no folder read');
+
+  const risky = fixture(t, { plan: { ...SAFE_PLAN, dependencyChanges: true } });
+  risky.setMode('auto');
+  risky.submit();
+  await settled(async () => await risky.state('request-1') === 'awaiting_owner');
+  const held = (await risky.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([held.by, held.rule, held.checks.find((check) => check.name === 'no_dependency_changes').ok], ['rule', 'auto_envelope_v1', false]);
+  assert.deepEqual(risky.runner.calls.ran, []);
+
+  const unplanned = fixture(t, { plan: null });
+  unplanned.setMode('auto');
+  unplanned.submit();
+  await settled(async () => await unplanned.state('request-1') === 'awaiting_owner');
+  assert.equal((await unplanned.port.requests.card('request-1')).request.planError, 'plan_unreadable');
+});
+
+test('a project folder that is not a Git repository ends the request at once: no planning wake, no worktree, one code for the requester',
+  async (t) => {
+    const f = fixture(t);
+    f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+    f.setMode('trusted');
+    assert.deepEqual(f.submit(), { ok: true, requestId: 'request-1', state: 'planning' });
+    await settled(async () => await f.state('request-1') === 'failed');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.error, request.reason, request.worktreePath], ['no_repository', 'no_repository', null]);
+    assert.deepEqual([f.runner.calls.planned, f.runner.calls.prepared, f.runner.calls.ran, f.runner.calls.removed], [[], [], [], []],
+      'no planning wake, no worktree, nothing to clean up');
+    assert.deepEqual(events.slice(-1).map((event) => [event.from, event.to, event.note]), [['planning', 'failed', 'no_repository']]);
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title, reason: 'no_repository' });
+  });
+
+test('a failed Git step keeps a short summary of Git\'s message for the owner, never for the requester', async (t) => {
+  const failWith = Object.assign(new Error('git'), { code: 'git_failed', summary: `fatal: ${'x'.repeat(300)}` });
+  const f = fixture(t, { failWith });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const { request } = await f.port.requests.card('request-1');
+  assert.equal(request.error, 'git_failed');
+  assert.equal(request.reason, `fatal: ${'x'.repeat(300)}`.slice(0, 200), 'cut to the reason length');
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title }, 'Git\'s words stay on this computer');
+});
+
+test('auto: a run whose diff leaves the envelope is held, and the requester only hears it waits for the owner', async (t) => {
+  // A binary file runs nothing on open, but auto takes only text it can read.
+  const f = fixture(t, { result: { files: [{ path: 'assets/logo.png', added: 0, removed: 0, binary: true }] } });
+  f.setMode('auto');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  const card = await f.port.requests.card('request-1');
+  assert.deepEqual([card.request.review, card.request.holdReason], ['held', 'outside_envelope']);
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'awaiting_owner', title: DRAFT.title });
+});
+
+test('unsafe content, a too large run, a secret or a broken integrity snapshot hold the result in every mode', async (t) => {
+  for (const [result, reason] of [[{ hold: 'unsafe_content', files: [] }, 'unsafe_content'], [{ hold: 'too_large', files: [] }, 'too_large'],
+    [{ addedText: `+const key = "sk-synthetic${'Q'.repeat(24)}";` }, 'secret_found'], [{ intact: false }, 'integrity_violation'],
+    [{ intact: null }, 'integrity_unknown']]) {
+    const f = fixture(t, { result });
+    f.setMode('trusted');
+    f.submit();
+    await settled(async () => await f.state('request-1') === 'awaiting_review');
+    const { request } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.review, request.holdReason], ['held', reason], reason);
+    // A held result never shows the requester anything of the work, even once kept.
+    await f.port.requests.keep('request-1');
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'kept', title: DRAFT.title }, reason);
+  }
+});
+
+test('in every mode, files that run code when the branch is opened hold the result and are listed for the owner', async (t) => {
+  const touched = ['.claude/settings.json', '.vscode/tasks.json', 'package.json', '.envrc', 'tests/conftest.py']
+    .map((path) => ({ path, added: 1, removed: 0, binary: false, executable: false, symlink: false }));
+  for (const mode of ['plan', 'trusted']) {
+    const f = fixture(t, { result: { files: [...touched, { path: 'src/server.js', added: 1, removed: 0 }] } });
+    f.setMode(mode);
+    f.submit();
+    if (mode === 'plan') {
+      await settled(async () => await f.state('request-1') === 'awaiting_owner');
+      f.port.requests.approve('request-1');
+    }
+    await settled(async () => await f.state('request-1') === 'awaiting_review');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.review, request.holdReason, request.heldPaths], ['held', 'runs_on_open', touched.map((file) => file.path)], mode);
+    assert.equal(events.at(-1).checks.find((check) => check.name === 'nothing_runs_on_open').ok, false);
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'awaiting_owner', title: DRAFT.title }, 'nothing of it reaches the requester');
+  }
+});
+
+test('ask_only, a guest link and an exhausted budget are refused before any wake, and recorded', async (t) => {
+  const f = fixture(t);
+  f.setMode('ask_only');
+  assert.deepEqual(f.submit(), { ok: false, code: 'ask_only' });
+  assert.deepEqual(f.submit(GUEST), { ok: false, code: 'ask_only' }, 'a guest link stays ask_only');
+  assert.deepEqual(f.runner.calls.folders, [], 'no folder read, no wake');
+  const refusedRows = f.port.requests.list({ state: 'refused' }).requests;
+  assert.deepEqual(refusedRows.map((row) => [row.requesterKey, row.reason, row.modeAtReceipt]).sort(),
+    [[GUEST, 'ask_only', 'ask_only'], [ALPHA, 'ask_only', 'ask_only']]);
+
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(f.submit(BETA).ok, true);
+    await settled(async () => f.runner.calls.planned.length === index + 1 && f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' }, 'five a day for a paired device');
+  assert.equal(f.runner.calls.planned.length, 5, 'the sixth woke nothing');
+  assert.deepEqual(f.submit(BETA, { title: 'x'.repeat(161), what: 'y' }), { ok: false, code: 'request_invalid' });
+});
+
+test('per project, per computer and planning at once are limits too, in the same transaction as the request', async (t) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const f = fixture(t);
+  // Two planning wakes at once at most.
+  const slowPlan = f.runner.plan;
+  f.runner.plan = async (request) => { await gate; return slowPlan(request); };
+  assert.equal(f.submit(ALPHA).ok, true);
+  assert.equal(f.submit(BETA).ok, true);
+  assert.deepEqual(f.submit(GAMMA), { ok: false, code: 'planning_busy' });
+  release();
+  await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+
+  // Ten a day for one project, from any requesters.
+  const keys = Array.from({ length: 13 }, (_, index) => `peer:${String(index + 1).padStart(64, '0')}`);
+  for (const key of keys.slice(0, 8)) {
+    assert.equal(f.submit(key).ok, true, key);
+    await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  assert.deepEqual(f.submit(keys[8]), { ok: false, code: 'project_budget_exceeded' });
+  // Twenty a day for this computer, over every project.
+  for (let index = 0; index < 10; index += 1) {
+    assert.equal(f.submit(keys[9 + (index % 4)], DRAFT, `other-project-${index}`).ok, true, String(index));
+    await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  assert.deepEqual(f.submit(keys[12], DRAFT, 'one-more-project'), { ok: false, code: 'computer_budget_exceeded' });
+});
+
+test('a fully trusted computer is held to no daily count or wake minutes, only to ten open at once', async (t) => {
+  // Each run takes thirteen minutes: twenty-five of them are far past sixty wake minutes and every daily count.
+  const f = fixture(t, { result: { ms: 13 * 60 * 1000 } });
+  f.setMode('trusted');
+  for (let index = 1; index <= 25; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
+    assert.equal((await f.port.requests.discard(`request-${index}`)).ok, true);
+  }
+  // Its requests are the owner's own: another computer still has the project's ten and its own five.
+  for (let index = 26; index <= 30; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' }, 'five a day for a computer in the default mode');
+  // Ten unlooked-at results stop a trusted computer until the owner has looked: a requester stuck in a loop ends here.
+  for (let index = 32; index <= 41; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
+  }
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'ten open');
+  assert.equal((await f.port.requests.discard('request-32')).ok, true);
+  assert.equal(f.submit().ok, true, 'one looked at, one more taken');
+  // Taking the trust back applies the five a day at once.
+  f.setMode('plan');
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' });
+});
+
+test('a request that failed here before its run started is not one of the requester’s five a day', async (t) => {
+  const f = fixture(t);
+  const folder = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+  for (let index = 1; index <= 6; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  // The folder is put right: the five of the day are all still there, and the sixth is refused.
+  f.runner.folder = folder;
+  for (let index = 7; index <= 10; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  }
+  // The project's ten a day count every request taken, failed or not: that bound stays.
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'project_budget_exceeded' });
+  assert.equal(f.submit(BETA, DRAFT, 'other-project').ok, true, 'the fifth that did not fail here');
+  await settled(async () => f.port.requests.list({ state: 'planning' }).requests.length === 0);
+  assert.deepEqual(f.submit(BETA, DRAFT, 'other-project'), { ok: false, code: 'budget_exceeded' });
+});
+
+test('a fully trusted computer whose runs keep failing is stopped at ten of them in a day', async (t) => {
+  // A requester stuck in a loop of work that cannot finish: every run fails, so nothing ever waits for the owner.
+  const f = fixture(t, { failWith: Object.assign(new Error('client'), { code: 'client_exit_nonzero', ms: 60 * 1000 }) });
+  f.setMode('trusted');
+  for (let index = 1; index <= 10; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'ten failed runs of the day');
+  assert.equal(f.runner.calls.ran.length, 10, 'the eleventh ran nothing');
+  // Another computer is not held back by them.
+  assert.equal(f.submit(BETA).ok, true);
+});
+
+test('a trusted computer\u2019s requests that failed here without any wake are not part of its stop', async (t) => {
+  const f = fixture(t);
+  const folder = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('no_repository'), { code: 'no_repository' }); };
+  f.setMode('trusted');
+  for (let index = 1; index <= 12; index += 1) {
+    assert.equal(f.submit().ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  f.runner.folder = folder;
+  assert.equal(f.submit().ok, true, 'the folder is put right and work goes on');
+});
+
+test('a Git step that fails after the run is counted, and so are its wake minutes', async (t) => {
+  // The commit or the reading of the changes failing after the client ran: the requester's edit can cause it.
+  const f = fixture(t, { failWith: Object.assign(new Error('git'), { code: 'git_failed', summary: 'synthetic', ms: 60 * 1000 }) });
+  for (let index = 1; index <= 5; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_owner');
+    f.port.requests.approve(`request-${index}`);
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  const { request } = await f.port.requests.card('request-5');
+  assert.deepEqual([request.error, request.runMs], ['git_failed', 60 * 1000]);
+  // Five minutes of wakes in all: it is the count of five that refuses the sixth, so each failed run was counted.
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
+});
+
+test('a run that started and failed is still one of the requester’s requests of the day', async (t) => {
+  const f = fixture(t, { failWith: Object.assign(new Error('client'), { code: 'client_exit_nonzero', ms: 0 }) });
+  f.setMode('plan', BETA);
+  for (let index = 1; index <= 5; index += 1) {
+    assert.equal(f.submit(BETA).ok, true, String(index));
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_owner');
+    f.port.requests.approve(`request-${index}`);
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  assert.deepEqual(f.submit(BETA), { ok: false, code: 'budget_exceeded' });
+});
+
+test('the wake minutes of a day are a budget too', async (t) => {
+  const f = fixture(t, { result: { ms: 61 * 60 * 1000 } });
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  f.port.requests.approve('request-1');
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' });
+});
+
+test('lowering a mode to ask_only cancels open requests; a running one is tidied only after its run ended', async (t) => {
+  let release;
+  const order = [];
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }),
+    afterAbort: async () => { await delay(30); order.push('commit_step_ended'); } });
+  t.after(() => release());
+  const remove = f.runner.remove;
+  f.runner.remove = async (request, options) => { order.push(`removed:${request.id}`); return remove(request, options); };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.setMode('plan');
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_owner');
+  const changed = f.setMode('ask_only');
+  assert.deepEqual([changed.effects.cancelled.sort(), changed.effects.returned], [['request-1', 'request-2'], []]);
+  assert.deepEqual([await f.state('request-1'), await f.state('request-2')], ['cancelled', 'cancelled']);
+  await settled(async () => order.includes('removed:request-1'));
+  assert.deepEqual(order, ['commit_step_ended', 'removed:request-1'], 'no worktree removed under a commit');
+  const running = (await f.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([running.from, running.to, running.by, running.note], ['running', 'cancelled', 'owner', 'mode_ask_only']);
+});
+
+test('the owner\'s cancel of a running request also waits for the run to end before tidying', async (t) => {
+  let release;
+  const order = [];
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }),
+    afterAbort: async () => { await delay(30); order.push('commit_step_ended'); } });
+  t.after(() => release());
+  const remove = f.runner.remove;
+  f.runner.remove = async (request, options) => { order.push('removed'); return remove(request, options); };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  const cancelled = await f.port.requests.cancel('request-1');
+  assert.equal(cancelled.request.state, 'cancelled');
+  assert.deepEqual(order, ['commit_step_ended', 'removed']);
+});
+
+test('lowering to plan returns rule-approved requests that have not started; raising approves nothing waiting', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }) });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.submit();
+  // One lane per lead: the first runs, the second waits approved by the rule.
+  await settled(async () => await f.state('request-2') === 'approved');
+  const changed = f.setMode('plan');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: ['request-2'] });
+  assert.equal(await f.state('request-2'), 'awaiting_owner');
+  assert.equal(await f.state('request-1'), 'running', 'a running request continues; it is isolated and never merged');
+  f.setMode('trusted');
+  assert.equal(await f.state('request-2'), 'awaiting_owner', 'raising the mode approves nothing retroactively');
+});
+
+test('lowering trusted to auto returns a trusted rule approval whose run has not started', async (t) => {
+  const f = fixture(t);
+  // The run is about to start: it waits on the lead's confirmation.
+  let confirmed;
+  const confirm = f.leads.confirm;
+  f.leads.confirm = (options) => new Promise((resolve) => { confirmed = () => resolve(confirm(options)); });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'approved' && confirmed);
+  const changed = f.setMode('auto');
+  confirmed();
+  assert.deepEqual(changed.effects, { cancelled: [], returned: ['request-1'] });
+  await delay(20);
+  const { request, events } = await f.port.requests.card('request-1');
+  assert.deepEqual([request.state, request.decidedBy, request.modeAtDecision], ['awaiting_owner', null, null]);
+  assert.deepEqual(f.runner.calls.ran, [], 'nothing ran without the auto check');
+  assert.deepEqual([events.at(-1).from, events.at(-1).to, events.at(-1).note], ['approved', 'awaiting_owner', 'mode_auto']);
+});
+
+test('lowering trusted to auto keeps a queued trusted approval from starting; a running one goes on', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }) });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'approved');
+  const changed = f.setMode('auto');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: ['request-2'] });
+  release();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  await delay(20);
+  assert.equal(await f.state('request-2'), 'awaiting_owner');
+  assert.deepEqual(f.runner.calls.ran.map((run) => run.id), ['request-1'], 'the queued run did not start');
+});
+
+test('lowering trusted to auto leaves the owner\'s approval as it is', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }) });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  f.setMode('plan');
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_owner');
+  f.setMode('trusted');
+  assert.equal(f.port.requests.approve('request-2').ok, true);
+  const changed = f.setMode('auto');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: [] });
+  release();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  const { request } = await f.port.requests.card('request-2');
+  assert.deepEqual([request.decidedBy, request.modeAtDecision], ['owner', 'trusted']);
+});
+
+test('raising auto to trusted leaves a request waiting for the owner as it is', async (t) => {
+  const f = fixture(t, { plan: { ...SAFE_PLAN, network: true } });
+  f.setMode('auto');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  const changed = f.setMode('trusted');
+  assert.deepEqual(changed.effects, { cancelled: [], returned: [] });
+  await delay(20);
+  assert.equal(await f.state('request-1'), 'awaiting_owner');
+  assert.deepEqual(f.runner.calls.ran, []);
+});
+
+test('revoking the paired device cancels its open requests and no other device\'s', async (t) => {
+  const f = fixture(t);
+  f.submit(ALPHA);
+  f.submit(BETA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner' && await f.state('request-2') === 'awaiting_owner');
+  const effects = await f.port.requesterRevoked(ALPHA);
+  assert.deepEqual(effects.cancelled, ['request-1']);
+  assert.deepEqual([await f.state('request-1'), await f.state('request-2')], ['cancelled', 'awaiting_owner']);
+  assert.equal((await f.port.requests.card('request-1')).events.at(-1).note, 'requester_revoked');
+});
+
+test('removing a share ends that project\'s open requests; a lead change cancels an approved request before it runs', async (t) => {
+  const f = fixture(t);
+  f.submit(ALPHA);
+  f.submit(BETA, DRAFT, 'kept-project');
+  await settled(async () => await f.state('request-1') === 'awaiting_owner' && await f.state('request-2') === 'awaiting_owner');
+  const effects = await f.port.requests.sharesChanged([{ projectId: 'kept-project', agentId: LEAD }]);
+  assert.deepEqual(effects.cancelled, ['request-1']);
+  const card = (await f.port.requests.card('request-1')).request;
+  assert.deepEqual([card.state, card.reason], ['cancelled', 'share_removed']);
+  assert.equal(await f.state('request-2'), 'awaiting_owner');
+
+  f.leads.current = 'someone-else';
+  f.port.requests.approve('request-2');
+  await settled(async () => await f.state('request-2') === 'cancelled');
+  assert.equal((await f.port.requests.card('request-2')).request.reason, 'lead_changed');
+  assert.deepEqual(f.runner.calls.prepared, [], 'nothing was copied or run');
+});
+
+test('a requester sees a plan-mode result only once the owner kept it, and a trusted one when ready; never the patch', async (t) => {
+  const f = fixture(t, { result: { files: Array.from({ length: 60 }, (_, index) => ({ path: `src/${'x'.repeat(250)}\u0007${index}.js`,
+    added: 1, removed: 0 })), diffstat: { files: 60, added: 60, removed: 0 } } });
+  f.submit(ALPHA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  f.port.requests.approve('request-1');
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'awaiting_owner', title: DRAFT.title }, 'reads like any request waiting for the owner');
+  await f.port.requests.keep('request-1');
+  const kept = f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' });
+  assert.deepEqual(Object.keys(kept), ['ok', 'requestId', 'state', 'title', 'summary', 'branch', 'files', 'diffstat']);
+  assert.equal(kept.files.length, 50, 'at most 50 paths');
+  assert.ok(kept.files.every((path) => path.length <= 200 && !path.includes('\u0007')));
+  assert.deepEqual(f.port.requestStatus({ requester: { key: BETA }, requestId: 'request-1' }), { ok: false, code: 'request_not_found' });
+
+  f.setMode('trusted', BETA);
+  f.submit(BETA);
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  const trusted = f.port.requestStatus({ requester: { key: BETA }, requestId: 'request-2' });
+  assert.deepEqual([trusted.state, trusted.branch, trusted.summary], ['awaiting_review', 'fuli/visit/request-2',
+    'Changed the server to read its port.']);
+});
+
+test('a status read is rate limited and writes nothing', async (t) => {
+  const f = fixture(t);
+  f.submit(ALPHA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  const before = JSON.stringify(f.port.requests.list());
+  for (let index = 0; index < 5; index += 1) f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' });
+  assert.equal(JSON.stringify(f.port.requests.list()), before);
+  assert.deepEqual(f.port.recentReads().reads, [], 'no visitor read row either');
+});
+
+test('after a restart a run whose client had not started is unknown and its worktree goes at once; approved work runs', async (t) => {
+  const runner = fakeRunner({ holdRun: new Promise(() => {}) });
+  const now = () => new Date('2026-11-14T08:00:00.000Z');
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  let sequence = 0;
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now, idFactory: () => `request-${++sequence}` });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'running');
+  // A second service over the same store stands for the console after a restart.
+  const fresh = fakeRunner();
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'plan', runner: fresh, leads, now });
+  restarted.resume();
+  assert.equal((await restarted.card('request-1')).request.state, 'unknown');
+  await settled(async () => fresh.calls.removed.length === 1);
+  assert.deepEqual(fresh.calls.removed, [{ id: 'request-1', keepBranch: false }]);
+  await restarted.close();
+});
+
+test('a restart between making the worktree and recording it still tidies both: the paths are recorded first', async (t) => {
+  const runner = fakeRunner();
+  // The worktree step is still going when the restart happens.
+  runner.prepare = () => new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('late'), { code: 'git_failed' })), 300));
+  const now = () => new Date('2026-11-14T08:00:00.000Z');
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now, idFactory: () => 'request-1' });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'running');
+  const fresh = fakeRunner();
+  const removed = [];
+  fresh.remove = async (request) => { removed.push([request.worktreePath, request.branch]); };
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'plan', runner: fresh, leads, now });
+  restarted.resume();
+  await settled(async () => removed.length === 1);
+  assert.deepEqual(removed, [['/synthetic/worktrees/request-1', 'fuli/visit/request-1']]);
+  await restarted.close();
+});
+
+test('status reads are counted without writing: past 60 in ten minutes a requester is refused', async (t) => {
+  const f = fixture(t);
+  f.submit(ALPHA);
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  for (let index = 0; index < 60; index += 1) assert.equal(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }).ok, true);
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }), { ok: false, code: 'rate_limited_short' });
+  assert.equal(f.port.requestStatus({ requester: { key: BETA }, requestId: 'request-1' }).code, 'request_not_found', 'others are not affected');
+  assert.deepEqual(f.port.recentReads().reads, []);
+});
+
+// ---- A run whose client process may still be running keeps its worktree (dot review, cleanup after exit) ----
+
+// A fake OS for the run's client process: running until os.alive turns false.
+function fakeProcesses(pid) {
+  const os = { alive: true };
+  return { os, processes: { inspectProcess: async () => new Map(os.alive ? [[pid, { identity: 'synthetic-start-1' }]] : []),
+    groupAlive: () => os.alive } };
+}
+// What runProcess throws when it stopped a client but could not confirm the process tree ended.
+const unconfirmedStop = (code) => Object.assign(new Error(code), { code, ms: 5, cleanup: { status: 'unconfirmed', code: 'cleanup_timeout' } });
+const MINUTE_LATER = 61_000;
+
+// A run left going by an earlier console, over the same store, and the console that starts after it.
+async function restartedWhileRunning(t, { pid = null, processes = {}, before = () => {} }) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner({ pid, holdRun: new Promise(() => {}) });
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1' });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.runExit === (pid ? 'running' : 'not_started'));
+  before(shared.store);
+  const fresh = fakeRunner();
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'plan', runner: fresh, leads, now: () => clock.now, ...processes });
+  t.after(() => restarted.close());
+  restarted.resume();
+  return { clock, fresh, restarted };
+}
+
+test('a failed run whose client was not confirmed to stop keeps its worktree until the process is gone', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  const { os, processes } = fakeProcesses(4242);
+  const f = fixture(t, { pid: 4242, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock, processes });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const failed = await f.port.requests.card('request-1');
+  assert.deepEqual([failed.request.runExit, failed.request.runPid, failed.request.error], ['unconfirmed', 4242, 'wake_timeout']);
+  assert.deepEqual(failed.events.at(-1), { from: 'failed', to: 'failed', by: 'system', rule: null, checks: null,
+    note: 'process_unconfirmed', at: '2026-11-14T08:00:00.000Z' });
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'the worktree stays while the client may still be running');
+  os.alive = false;
+  await f.port.requests.card('request-1');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'the OS is asked again only after a minute');
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  await f.port.requests.card('request-1');
+  await settled(async () => f.runner.calls.removed.length === 1);
+  const released = await f.port.requests.card('request-1');
+  assert.deepEqual([released.request.state, released.request.runExit, released.events.at(-1).note], ['failed', 'ended', 'process_ended']);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: false }]);
+});
+
+test('a failed run whose client was confirmed to stop is tidied at once', async (t) => {
+  const f = fixture(t, { pid: 4343, failWith: Object.assign(new Error('timed out'), { code: 'wake_timeout', ms: 5 }) });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('a cancelled run whose client was not confirmed to stop keeps its worktree until the process is gone', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  let release;
+  const { os, processes } = fakeProcesses(5151);
+  const f = fixture(t, { pid: 5151, holdRun: new Promise((resolve) => { release = resolve; }), abortError: unconfirmedStop('cancelled') },
+    { now: () => clock, processes });
+  t.after(() => release());
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  const cancelled = await f.port.requests.cancel('request-1');
+  assert.deepEqual([cancelled.request.state, cancelled.request.runExit], ['cancelled', 'unconfirmed']);
+  assert.equal((await f.port.requests.card('request-1')).events.at(-1).note, 'process_unconfirmed');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, []);
+  os.alive = false;
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  f.port.requests.list();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('after a restart a run whose client had started keeps its worktree until that process is gone', async (t) => {
+  const { os, processes } = fakeProcesses(6161);
+  const { clock, fresh, restarted } = await restartedWhileRunning(t, { pid: 6161, processes });
+  const lost = await restarted.card('request-1');
+  assert.deepEqual([lost.request.state, lost.request.runExit, lost.request.runPid, lost.events.at(-1).note],
+    ['unknown', 'unconfirmed', 6161, 'process_unconfirmed']);
+  await delay(20);
+  assert.deepEqual(fresh.calls.removed, [], 'the earlier console\'s client may still be writing there');
+  os.alive = false;
+  clock.now = new Date(clock.now.getTime() + MINUTE_LATER);
+  restarted.list();
+  await settled(async () => fresh.calls.removed.length === 1);
+  assert.deepEqual(fresh.calls.removed, [{ id: 'request-1', keepBranch: false }]);
+});
+
+test('after a restart a run an earlier FULI recorded nothing of is kept for a day', async (t) => {
+  // As a FULI from before run_exit left a running request.
+  const { clock, fresh, restarted } = await restartedWhileRunning(t, {
+    before: (store) => store.db.prepare('UPDATE visit_requests SET run_exit = NULL').run() });
+  assert.equal((await restarted.card('request-1')).request.runExit, 'unconfirmed');
+  await delay(20);
+  assert.deepEqual(fresh.calls.removed, []);
+  clock.now = new Date(clock.now.getTime() + 24 * 60 * 60 * 1000);
+  restarted.list();
+  await settled(async () => fresh.calls.removed.length === 1);
+});
+
+// ---- A failed removal is tried again; a PID without identity is limited to a day (review of PR 967) ----
+
+const DAY_LATER = 24 * 60 * 60 * 1000;
+// On Windows no process group is kept: once the client's PID is gone it counts as ended.
+const windowsGone = { inspectProcess: async () => new Map(), groupAlive: () => false };
+
+// A request failed with an unconfirmed stop, and a removal that fails failures times (a file a child still holds).
+async function failedWithHeldFiles(t, { failures, processes = windowsGone }) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const f = fixture(t, { pid: 7171, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock.now, processes });
+  const attempts = [];
+  f.runner.remove = async (request) => {
+    attempts.push(clock.now.toISOString());
+    if (attempts.length <= failures) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    f.runner.calls.removed.push({ id: request.id });
+  };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  const later = async (ms) => {
+    clock.now = new Date(clock.now.getTime() + ms);
+    await f.port.requests.card('request-1');
+    await delay(20);
+  };
+  const notes = async () => (await f.port.requests.card('request-1')).events.map((event) => event.note).filter(Boolean);
+  return { f, attempts, later, notes, runExit: async () => (await f.port.requests.card('request-1')).request.runExit };
+}
+
+test('on Windows, children still holding the copy after the client\'s PID is gone: the removal is tried again each minute', async (t) => {
+  const { f, attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: 1 });
+  await later(0);
+  assert.deepEqual([attempts.length, await runExit()], [1, 'cleanup_pending'], 'the PID is gone, the first removal failed');
+  await later(0);
+  assert.equal(attempts.length, 1, 'not again within the minute');
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit(), f.runner.calls.removed.length], [2, 'ended', 1]);
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_left', 'cleanup_done'],
+    'the failure is noted with its cause');
+});
+
+test('a removal that keeps failing is tried for a day, warned about once, and then left as it is', async (t) => {
+  const { attempts, later, notes, runExit } = await failedWithHeldFiles(t, { failures: Infinity });
+  await later(0);
+  await later(MINUTE_LATER);
+  assert.deepEqual([attempts.length, await runExit()], [2, 'cleanup_pending']);
+  await later(DAY_LATER);
+  assert.equal(await runExit(), 'ended', 'given up a day after it first failed');
+  const tries = attempts.length;
+  await later(MINUTE_LATER);
+  assert.equal(attempts.length, tries, 'no more tries');
+  assert.deepEqual(await notes(), ['process_unconfirmed', 'process_ended', 'cleanup_failed:files_left'], 'the warning stays the last word');
+});
+
+test('a recorded PID whose identity could not be read, later held by another process, is released after a day', async (t) => {
+  let clock = new Date('2026-11-14T08:00:00.000Z');
+  let reads = 0;
+  // The read at spawn fails; afterwards another process holds the PID, with its group.
+  const processes = { inspectProcess: async () => (++reads === 1 ? null : new Map([[8181, { identity: 'synthetic-other' }]])),
+    groupAlive: () => true };
+  const f = fixture(t, { pid: 8181, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock, processes });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  assert.equal((await f.port.requests.card('request-1')).request.runPidIdentity, null);
+  clock = new Date(clock.getTime() + MINUTE_LATER);
+  await f.port.requests.card('request-1');
+  await delay(20);
+  assert.deepEqual(f.runner.calls.removed, [], 'within the day it may still be the client');
+  clock = new Date(clock.getTime() + DAY_LATER);
+  await f.port.requests.card('request-1');
+  await settled(async () => f.runner.calls.removed.length === 1);
+});
+
+const withdraw = (f, requestId, key = ALPHA) => f.port.withdrawRequest({ requester: { key }, requestId });
+const NOT_WITHDRAWABLE = { ok: false, code: 'request_not_withdrawable' };
+
+test('a requester takes back a request that waits for the owner; nobody else can, and it cannot be approved after', async (t) => {
+  const f = fixture(t);
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_owner');
+  // Another device cannot take it back, or learn that it exists; neither can a made-up id.
+  assert.deepEqual(await withdraw(f, 'request-1', BETA), { ok: false, code: 'request_not_found' });
+  assert.deepEqual(await withdraw(f, 'no-such-request'), { ok: false, code: 'request_not_found' });
+  assert.deepEqual(await f.port.withdrawRequest({ requester: { key: 'not-a-key' }, requestId: 'request-1' }),
+    { ok: false, code: 'requester_invalid' });
+  assert.equal(await f.state('request-1'), 'awaiting_owner');
+
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  const last = (await f.port.requests.card('request-1')).events.at(-1);
+  assert.deepEqual([last.from, last.to, last.by, last.note], ['awaiting_owner', 'cancelled', 'requester', 'withdrawn_by_requester']);
+  assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'cancelled', title: DRAFT.title, reason: 'withdrawn_by_requester' });
+  assert.deepEqual(f.port.requests.approve('request-1'), { ok: false, code: 'state_conflict' });
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE, 'only once');
+  assert.deepEqual([f.runner.calls.ran, f.runner.calls.removed], [[], []], 'it never ran, and nothing had been copied');
+});
+
+test('a run in progress is not the requester\'s to stop, in any mode: its result still gets its checks', async (t) => {
+  let release;
+  const f = fixture(t, { holdRun: new Promise((resolve) => { release = resolve; }), result: { intact: false } });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'running');
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE);
+  assert.equal(await f.state('request-1'), 'running');
+  release();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  // What the run did is held for the owner, and stays.
+  const { request } = await f.port.requests.card('request-1');
+  assert.deepEqual([request.review, request.holdReason], ['held', 'integrity_violation']);
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE, 'a held result cannot be taken back, even by a fully trusted requester');
+  assert.equal(await f.state('request-1'), 'awaiting_review');
+  assert.deepEqual(f.runner.calls.removed, [], 'what a check held back for the owner is not removed');
+});
+
+test('a fully trusted requester takes back a ready result it was shown; what waits for the owner stays the owner\'s', async (t) => {
+  const f = fixture(t);
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-1', keepBranch: false }], 'the worktree and the branch are gone when it answers');
+  assert.deepEqual(await f.port.requests.keep('request-1'), { ok: false, code: 'state_conflict' });
+  assert.deepEqual(await f.port.requests.discard('request-1'), { ok: false, code: 'state_conflict' });
+
+  // plan mode: a result the requester was not shown (it reads as waiting for the owner) is the owner's to keep or discard.
+  f.submit(BETA);
+  await settled(async () => await f.state('request-2') === 'awaiting_owner');
+  f.port.requests.approve('request-2');
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.deepEqual(await withdraw(f, 'request-2', BETA), NOT_WITHDRAWABLE);
+  assert.equal(await f.state('request-2'), 'awaiting_review');
+  await f.port.requests.keep('request-2');
+  assert.deepEqual(await withdraw(f, 'request-2', BETA), NOT_WITHDRAWABLE, 'a kept result stays');
+  assert.deepEqual(f.runner.calls.removed.filter((call) => call.id === 'request-2'), [{ id: 'request-2', keepBranch: true }]);
+});
+
+test('a computer the owner trusts less than when its result was made can still read it, not remove it', async (t) => {
+  const f = fixture(t);
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  f.setMode('auto');
+  assert.equal(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }).state, 'awaiting_review');
+  assert.deepEqual(await withdraw(f, 'request-1'), NOT_WITHDRAWABLE);
+  assert.deepEqual(f.runner.calls.removed, []);
+  f.setMode('trusted');
+  assert.equal((await withdraw(f, 'request-1')).ok, true, 'trusted again, it may');
+});
+
+test('requests taken back count toward the stop of ten of a fully trusted requester, whenever they were taken back', async (t) => {
+  const f = fixture(t);
+  // A planning pass that goes on until it is stopped, as a withdrawal stops it.
+  let planning = 0;
+  const quickPlan = f.runner.plan;
+  // Stopped at once it cost nothing measurable (0 ms); the last one cost 40 ms.
+  let stoppedMs = 0;
+  const stoppedPlan = () => ({ plan: null, error: 'cancelled', ms: stoppedMs });
+  f.runner.plan = (request, options) => (planning-- > 0
+    ? new Promise((resolve) => (options.signal.aborted ? resolve(stoppedPlan())
+      : options.signal.addEventListener('abort', () => resolve(stoppedPlan()))))
+    : quickPlan(request, options));
+  f.setMode('trusted');
+  for (let index = 1; index <= 5; index += 1) {
+    assert.equal(f.submit().ok, true, `request ${index}`);
+    await settled(async () => await f.state(`request-${index}`) === 'awaiting_review');
+    assert.equal((await withdraw(f, `request-${index}`)).ok, true);
+  }
+  for (let index = 6; index <= 10; index += 1) {
+    planning = 1;
+    stoppedMs = index === 10 ? 40 : 0;
+    assert.equal(f.submit().ok, true, `request ${index}`);
+    assert.equal(await f.state(`request-${index}`), 'planning');
+    assert.equal((await withdraw(f, `request-${index}`)).ok, true, 'taken back while it is being planned');
+  }
+  // The planning wake that was stopped is still counted as spent time; one that cost nothing counts as taken back all the same.
+  await settled(async () => (await f.port.requests.card('request-10')).request.planningMs === 40);
+  assert.equal((await f.port.requests.card('request-9')).request.planningMs, 0);
+  assert.equal(f.runner.calls.ran.length, 5, 'none of the five taken back during planning ran');
+  assert.deepEqual(f.submit(), { ok: false, code: 'budget_exceeded' }, 'asking and withdrawing in a loop stops at ten');
+});
+
+// ---- A withdrawal whose removal fails: named, and tried again by the service itself (the first real withdrawal, 0.27.10) ----
+
+// The removal of a trusted requester's ready result fails as errors[n] for its nth try, then goes through.
+async function withdrawnWithFailingRemoval(t, errors) {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const timers = [];
+  const f = fixture(t, {}, { now: () => clock.now, processes: { setTimer: (run, ms) => { timers.push({ run, ms }); return null; } } });
+  let tries = 0;
+  f.runner.remove = async (request, { keepBranch }) => {
+    if (tries++ < errors.length) throw errors[tries - 1];
+    f.runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'awaiting_review');
+  // The timer fires a minute on, with nobody reading the list or the card.
+  const fire = async () => {
+    const { run, ms } = timers.shift();
+    clock.now = new Date(clock.now.getTime() + ms);
+    run();
+    await delay(20);
+  };
+  const notes = async () => (await f.port.requests.card('request-1')).events.map((event) => event.note).filter(Boolean);
+  return { f, timers, fire, notes, tries: () => tries };
+}
+const gitTimeout = () => Object.assign(new Error('A Git step of the visit request failed'), { code: 'git_failed', summary: null, timedOut: true });
+
+test('a withdrawal whose removal fails still answers cancelled, notes why, and the service tries again by itself', async (t) => {
+  const { f, timers, fire, notes, tries } = await withdrawnWithFailingRemoval(t, [gitTimeout(), gitTimeout()]);
+  assert.deepEqual(await withdraw(f, 'request-1'), { ok: true, requestId: 'request-1', state: 'cancelled' });
+  assert.deepEqual([tries(), timers.length, timers[0].ms > 60_000], [1, 1, true], 'one timer, past the minute a retry waits');
+  await fire();
+  assert.deepEqual([tries(), f.runner.calls.removed, timers.length], [2, [], 1], 'failed again: the timer is set again, nothing noted twice');
+  await fire();
+  assert.deepEqual([tries(), f.runner.calls.removed, timers.length], [3, [{ id: 'request-1', keepBranch: false }], 0],
+    'gone on the third try, and no timer is left');
+  assert.deepEqual(await notes(), ['withdrawn_by_requester', 'cleanup_failed:git_timeout', 'cleanup_done']);
+  assert.equal((await f.port.requests.card('request-1')).request.runExit, 'ended');
+});
+
+test('a failed removal names its cause when it is a known one, and nothing of Git\'s text or a path', async (t) => {
+  const causes = [
+    [Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_unavailable', timedOut: false }), 'cleanup_failed:git_unavailable'],
+    [Object.assign(new Error('git'), { code: 'git_failed', summary: 'fatal: not a git repository: /synthetic/secret', timedOut: false }),
+      'cleanup_failed:git_failed'],
+    [Object.assign(new Error('worktree_root_changed'), { code: 'worktree_root_changed' }), 'cleanup_failed:worktree_root_changed'],
+    [Object.assign(new Error('worktree_outside_root'), { code: 'worktree_outside_root' }), 'cleanup_failed:worktree_outside_root'],
+    [Object.assign(new Error('EACCES: /synthetic/secret'), { code: 'EACCES' }), 'cleanup_failed:files_left'],
+    [new Error('something else at /synthetic/secret'), 'cleanup_failed']
+  ];
+  for (const [error, noted] of causes) {
+    const { f, notes } = await withdrawnWithFailingRemoval(t, [error]);
+    assert.equal((await withdraw(f, 'request-1')).ok, true);
+    assert.equal((await notes()).at(-1), noted);
+  }
+});
+
+test('the owner\'s own discard that cannot remove the copy notes the cause too, and answers the plain warning', async (t) => {
+  const { f, timers, notes } = await withdrawnWithFailingRemoval(t, [gitTimeout()]);
+  const discarded = await f.port.requests.discard('request-1');
+  assert.deepEqual([discarded.request.state, discarded.warning], ['discarded', 'cleanup_failed']);
+  assert.deepEqual([(await notes()).at(-1), timers.length], ['cleanup_failed:git_timeout', 0], 'a decision\'s removal is not retried');
+});
+
+// ---- The retry timer: one pass at a time, to the day's limit, never after close, again after a restart (review of PR 996) ----
+
+test('a failed removal sets no second timer while its pass still runs, and the next one only once the pass ended', async (t) => {
+  const { f, timers, fire } = await withdrawnWithFailingRemoval(t, [gitTimeout(), gitTimeout()]);
+  assert.equal((await withdraw(f, 'request-1')).ok, true);
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.equal(timers.length, 1, 'one timer for both pending removals');
+  // In the timer's pass the first removal fails at once and the second hangs, as a Git that does not answer.
+  let held = () => {};
+  t.after(() => held());
+  f.runner.remove = (request) => (request.id === 'request-1' ? Promise.reject(gitTimeout())
+    : new Promise((resolve, reject) => { held = () => reject(gitTimeout()); }));
+  await fire();
+  assert.equal(timers.length, 0, 'the first failed, the pass is still running: no timer yet');
+  f.port.requests.list();
+  await delay(20);
+  assert.equal(timers.length, 0, 'a read during the pass sets none either');
+  held();
+  await delay(20);
+  assert.equal(timers.length, 1, 'set again once the pass ended, both removals still pending');
+});
+
+test('one request whose process cannot be checked does not end the pass for a removal that is pending', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const timers = [];
+  const f = fixture(t, { pid: 7171, failWith: unconfirmedStop('wake_timeout') }, { now: () => clock.now, processes: {
+    inspectProcess: async () => new Map(), groupAlive: () => { throw new Error('synthetic'); },
+    setTimer: (run, ms) => { timers.push({ run, ms }); return null; } } });
+  f.setMode('trusted');
+  f.submit();
+  await settled(async () => await f.state('request-1') === 'failed');
+  // A second request, a second after it, whose removal fails once.
+  clock.now = new Date(clock.now.getTime() + 1000);
+  f.runner.run = fakeRunner().run;
+  let failing = true;
+  f.runner.remove = async (request, { keepBranch }) => {
+    if (failing) throw gitTimeout();
+    f.runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.deepEqual([timers.length, (await f.port.requests.card('request-1')).request.runExit], [1, 'unconfirmed']);
+  failing = false;
+  const { run, ms } = timers.shift();
+  clock.now = new Date(clock.now.getTime() + ms);
+  run();
+  await settled(async () => f.runner.calls.removed.length === 1);
+  assert.deepEqual(f.runner.calls.removed, [{ id: 'request-2', keepBranch: false }], 'the pass went on past the request it could not check');
+});
+
+test('the retry timer stops at the day\'s limit, and does nothing once the service is closed', async (t) => {
+  const always = Array.from({ length: 50 }, gitTimeout);
+  const { f, timers, fire, notes, tries } = await withdrawnWithFailingRemoval(t, always);
+  assert.equal((await withdraw(f, 'request-1')).ok, true);
+  await fire();
+  assert.deepEqual([tries(), timers.length], [2, 1], 'still failing: tried again, timer set again');
+  // A day later the timer's pass gives up, and no further timer is set.
+  timers[0].ms = DAY_LATER;
+  await fire();
+  assert.deepEqual([tries(), timers.length, (await f.port.requests.card('request-1')).request.runExit], [2, 0, 'ended']);
+  assert.deepEqual(await notes(), ['withdrawn_by_requester', 'cleanup_failed:git_timeout'], 'the warning stays the last word');
+
+  // A second request whose removal fails: its timer does nothing once the service is closed.
+  f.submit();
+  await settled(async () => await f.state('request-2') === 'awaiting_review');
+  assert.equal((await withdraw(f, 'request-2')).ok, true);
+  assert.equal(timers.length, 1);
+  const before = tries();
+  await f.port.close();
+  timers.shift().run();
+  await delay(20);
+  assert.deepEqual([tries(), timers.length], [before, 0], 'no removal and no timer after close');
+});
+
+test('after a restart a removal that was pending is tried at once, and by the timer when it fails again', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner();
+  const tried = [];
+  runner.remove = async (request) => { tried.push(request.id); if (tried.length < 3) throw gitTimeout(); };
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1', setTimer: () => null });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'awaiting_review');
+  assert.equal((await port.withdrawRequest({ requester: { key: ALPHA }, requestId: 'request-1' })).ok, true);
+  assert.deepEqual([tried.length, (await port.requests.card('request-1')).request.runExit], [1, 'cleanup_pending']);
+
+  const timers = [];
+  const restarted = createVisitRequests({ store: shared.store, modeOf: () => 'trusted', runner, leads, now: () => clock.now,
+    setTimer: (run, ms) => { timers.push({ run, ms }); return null; } });
+  t.after(() => restarted.close());
+  restarted.resume();
+  await settled(async () => tried.length === 2 && timers.length === 1);
+  const { run, ms } = timers.shift();
+  clock.now = new Date(clock.now.getTime() + ms);
+  run();
+  await settled(async () => tried.length === 3);
+  await delay(20);
+  const card = await restarted.card('request-1');
+  assert.deepEqual([card.request.runExit, timers.length, card.events.at(-1).note], ['ended', 0, 'cleanup_done']);
+});
+
+test('a pass that cannot read the store at all still sets the timer again, and a timer that cannot be set loses no note', async (t) => {
+  const clock = { now: new Date('2026-11-14T08:00:00.000Z') };
+  const runner = fakeRunner();
+  let failing = true;
+  runner.remove = async (request, { keepBranch }) => {
+    if (failing) throw gitTimeout();
+    runner.calls.removed.push({ id: request.id, keepBranch });
+  };
+  const leads = { confirm: async () => true, constrainedClients: async () => ['claude_code'], describe: async () => null };
+  const shared = { store: null };
+  const timers = [];
+  let timerBroken = true;
+  const port = createVisitorAccess({ application: {}, now: () => clock.now, requests: ({ store, modeOf }) => {
+    shared.store = store;
+    return createVisitRequests({ store, modeOf, runner, leads, now: () => clock.now, idFactory: () => 'request-1',
+      setTimer: (run, ms) => { if (timerBroken) throw new Error('synthetic'); timers.push({ run, ms }); return null; } });
+  } });
+  t.after(() => port.close());
+  port.setRequesterMode({ key: ALPHA, kind: 'peer', label: 'Desk', mode: 'trusted', ownDevice: true });
+  port.submitRequest({ requester: { key: ALPHA, label: 'Desk' }, projectId: PROJECT, agentId: LEAD, request: DRAFT });
+  await settled(async () => (await port.requests.card('request-1')).request.state === 'awaiting_review');
+  // The timer cannot be set: the withdrawal still answers, and the failure is noted and marked for a retry.
+  assert.deepEqual(await port.withdrawRequest({ requester: { key: ALPHA }, requestId: 'request-1' }),
+    { ok: true, requestId: 'request-1', state: 'cancelled' });
+  const card = await port.requests.card('request-1');
+  assert.deepEqual([card.request.state, card.request.runExit, card.events.at(-1).note], ['cancelled', 'cleanup_pending', 'cleanup_failed:git_timeout']);
+
+  // A read a minute on tries again and sets the timer, which works now.
+  timerBroken = false;
+  clock.now = new Date(clock.now.getTime() + MINUTE_LATER);
+  port.requests.list();
+  await settled(async () => timers.length === 1);
+  // The timer's pass cannot read the store: no removal is tried, and the timer is set again all the same.
+  const db = shared.store.db;
+  const prepare = db.prepare.bind(db);
+  let unreadable = true;
+  db.prepare = (sql) => { if (unreadable && sql.includes('run_exit IN')) throw new Error('synthetic: database is busy'); return prepare(sql); };
+  t.after(() => { delete db.prepare; });
+  const fire = async () => { const { run, ms } = timers.shift(); clock.now = new Date(clock.now.getTime() + ms); run(); await delay(20); };
+  await fire();
+  assert.deepEqual([timers.length, runner.calls.removed], [1, []]);
+  unreadable = false;
+  failing = false;
+  await fire();
+  assert.deepEqual([timers.length, runner.calls.removed], [0, [{ id: 'request-1', keepBranch: false }]]);
+});
+
+// ---- A Git that failed or did not answer while the folder was looked at (two real requests on 0.27.11 read "no_repository") ----
+
+test('a Git failure when the project folder is looked at ends the request failed with Git\'s cause for the owner, and no reason for the requester', async (t) => {
+  for (const [mode, error, reason] of [
+    ['trusted', Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_timeout', timedOut: true }), 'git_timeout'],
+    ['plan', Object.assign(new Error('git'), { code: 'git_failed', summary: 'fatal: cannot change to \'<path>\': Operation not permitted', timedOut: false }),
+      'fatal: cannot change to \'<path>\': Operation not permitted'],
+    ['auto', Object.assign(new Error('git'), { code: 'git_failed', summary: null, timedOut: false }), null]
+  ]) {
+    const f = fixture(t);
+    f.runner.folder = async () => { throw error; };
+    f.setMode(mode);
+    f.submit();
+    await settled(async () => await f.state('request-1') === 'failed');
+    const { request, events } = await f.port.requests.card('request-1');
+    assert.deepEqual([request.error, request.reason, request.planningMs ?? 0, events.at(-1).note], ['git_failed', reason, 0, 'git_failed'], mode);
+    assert.deepEqual([f.runner.calls.planned, f.runner.calls.prepared, f.runner.calls.ran], [[], [], []], 'no wake, no copy, no run');
+    assert.deepEqual(f.port.requestStatus({ requester: { key: ALPHA }, requestId: 'request-1' }),
+      { ok: true, requestId: 'request-1', state: 'failed', title: DRAFT.title }, 'the requester is told it failed, not why: the cause may describe the owner\'s setup');
+  }
+});
+
+test('a request that failed on Git before any wake is not among a fully trusted requester\'s ten', async (t) => {
+  const f = fixture(t);
+  const working = f.runner.folder;
+  f.runner.folder = async () => { throw Object.assign(new Error('git'), { code: 'git_failed', summary: 'git_timeout', timedOut: true }); };
+  f.setMode('trusted');
+  for (let index = 1; index <= 12; index += 1) {
+    assert.equal(f.submit().ok, true, `request ${index}`);
+    await settled(async () => await f.state(`request-${index}`) === 'failed');
+  }
+  f.runner.folder = working;
+  assert.equal(f.submit().ok, true, 'Git answers again: the next one is taken');
+});

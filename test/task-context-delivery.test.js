@@ -196,7 +196,9 @@ test('incomplete preference sources or necessary fields fail closed without part
     const result = hookAdditionalContextToolResult(value, { ...options, ...overrides, label: 'Apply effective_preferences.' });
     const data = result.structuredContent;
     assert.equal(data.preferences_complete, false);
-    assert.equal(data.same_task_recovery_available, false);
+    // The entry's task and Agent let the same-task reader recover it (rec#128).
+    assert.equal(data.same_task_recovery_available, true);
+    assert.deepEqual(data.preference_delivery.token_use, ['read_task_preferences', 'checkpoint_task_knowledge']);
     assert.equal(data.preference_delivery.status, 'blocked');
     assert.equal(data.preference_delivery.reason, reason);
     assert.equal(Object.hasOwn(data, 'effective_preferences'), false);
@@ -279,8 +281,8 @@ test('a budget too small for the complete blocked envelope returns no preference
 });
 
 test('both native adapters share blocked delivery and preserve the original task token', async () => {
-  const { codexLifecycleOutput } = await import('../src/agents/codex/lifecycle-hook.js');
-  const { claudeLifecycleOutput } = await import('../src/agents/claude-code/lifecycle-hook.js');
+  const { codexLifecycleOutput } = await import('../src/agents/codex/lifecycle-event.js');
+  const { claudeLifecycleOutput } = await import('../src/agents/claude-code/lifecycle-event.js');
   for (const lifecycle of [codexLifecycleOutput, claudeLifecycleOutput]) {
     for (const sourceTruncated of [false, true]) {
       const value = preferenceEntry();

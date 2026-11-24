@@ -4,10 +4,12 @@ import { apiErrorReason } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { t } from "@/i18n";
+import { currentLocale, t } from "@/i18n";
+import { formatDateTime } from "@/lib/date-time";
 import type { ProjectAgentRecord } from "@/types";
+import { workingProjectNames } from "@/features/projects/project-origin";
 import { UiIconButton } from "@/ui";
-import { MAX_AGENT_NAME, freeNamesOffered, renameAgent } from "./agent-rename";
+import { MAX_AGENT_NAME, nameTaken, renameAgent } from "./agent-rename";
 import { isBuiltInRole } from "./fla-mention";
 import { agentDisplayName } from "./profile-model";
 
@@ -48,6 +50,15 @@ async function start() {
   input?.select();
 }
 
+// When another FLA's 原名 becomes free, in the person's own time zone: within
+// 30 days, so the month and day name it. Shown to the minute, rounded up, so
+// any time after the one shown is free.
+const freeTime = (value: string) => {
+  const minute = Math.ceil(Date.parse(value) / 60_000) * 60_000;
+  return formatDateTime(Number.isNaN(minute) ? value : new Date(minute).toISOString(), currentLocale(),
+    { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }, { missing: value });
+};
+
 // One line: runs of spaces (and any line break a paste kept) become one space.
 const cleaned = (value: string) => value.replace(/\s+/g, " ").trim();
 
@@ -61,11 +72,17 @@ async function save(next: string | null) {
     emit("saved", await renameAgent(props.agent, name));
     close();
   } catch (cause) {
-    const offered = freeNamesOffered(cause);
-    freeNames.value = offered ?? [];
-    error.value = offered
-      ? t("agentProfiles.name.taken", { name: saving.value })
-      : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });
+    const taken = nameTaken(cause);
+    const holder = taken?.usedBy[0];
+    freeNames.value = taken?.freeNames ?? [];
+    error.value = holder?.freeFrom
+      ? t("agentProfiles.name.takenFormer", { name: saving.value, holder: holder.name, time: freeTime(holder.freeFrom) })
+      : holder
+        ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
+          { name: saving.value, holder: holder.name, projects: workingProjectNames(holder.projects) })
+        : taken
+          ? t("agentProfiles.name.taken", { name: saving.value })
+          : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });
     if (name === null) editing.value = false;
   } finally {
     saving.value = null;
@@ -77,6 +94,7 @@ async function save(next: string | null) {
   <div class="agent-name" data-agent-name>
     <div v-if="!editing" class="agent-name-row">
       <h1 class="agent-name-text">{{ shown }}</h1>
+      <span v-if="agent.formerName" class="agent-name-former" data-agent-former-name>{{ t("agentProfiles.name.former", { name: agent.formerName }) }}</span>
       <UiIconButton icon="edit" size="sm" class="agent-name-edit" :label="t('agentProfiles.name.edit', { name: shown })"
         data-agent-name-edit @click="start" />
       <Button v-if="restorable" variant="ghost" size="sm" class="agent-name-restore" :loading="saving !== null"
@@ -109,6 +127,7 @@ async function save(next: string | null) {
 .agent-name-restore { color: var(--color-ink-soft); }
 .agent-name-input { flex: 0 1 22rem; font-size: var(--text-title); font-weight: var(--weight-strong); }
 .agent-name-keys { color: var(--color-faint); font-size: var(--text-meta); }
+.agent-name-former { color: var(--color-ink-soft); font-size: var(--text-meta); }
 .agent-name-error { margin: 0; color: var(--color-danger); font-size: var(--text-meta); }
 .agent-name-free { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .agent-name-free-label { color: var(--color-ink-soft); font-size: var(--text-meta); }

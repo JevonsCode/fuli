@@ -25,7 +25,7 @@ export function entryHintSkipped() {
 // What an entry already holds once its task is written and is cheap to carry:
 // delivered as it is at the deadline, so a partial entry still says how to
 // checkpoint, and that the person asked to keep something.
-const DELIVERED_AT_DEADLINE = Object.freeze(['checkpoint_required', 'checkpoint_guidance', 'remember_guidance',
+const DELIVERED_AT_DEADLINE = Object.freeze(['checkpoint_required', 'checkpoint_reason', 'checkpoint_guidance', 'remember_guidance',
   'update_guidance', 'previous_checkpoint_missing', 'project_scope']);
 
 // The task this entry wrote, with its opening writes done in time. One noted
@@ -97,9 +97,10 @@ function missingParts(entry) {
     ? [{ parts: [`project_agent_context.${part}`], tool: 'get_project_agent_memory',
       arguments: { personalSpaceId: spaceId, personalProjectId, agentId } }] : [];
   const messages = ['agent_messages', 'agent_replies', 'stand_in_handbacks', 'attention_replies'].filter(part => entry[part]?.length);
+  // The reader replays the task Agent; a task without one it refuses (rec#128).
   return [
-    { parts: ['effective_preferences', 'task_guidance', ...['project_agent_context', 'judgment_context'].filter(part => entry[part])],
-      tool: 'read_task_preferences', arguments: { taskContextToken: token }, note: RECOVERY_NOTE },
+    ...(agentId ? [{ parts: ['effective_preferences', 'task_guidance', ...['project_agent_context', 'judgment_context'].filter(part => entry[part])],
+      tool: 'read_task_preferences', arguments: { taskContextToken: token }, note: RECOVERY_NOTE }] : []),
     ...memory('memory', projectId), ...memory('global_memory', null),
     ...(messages.length ? [{ parts: messages, tool: 'read_agent_messages', arguments: { taskContextToken: token } }] : [])
   ];

@@ -22,6 +22,9 @@ import {
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
 import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
+import { AGENT_INTRODUCTIONS_FILE, AgentIntroductionStore } from '../agent-introductions/store.js';
+import { keptDataBefore } from '../data-format/local-stores.js';
+import { DELEGATION_LOG_FILE, DelegatedOperationLog } from '../agent-delegation/operation-log.js';
 import { createAgentAvatars } from '../agent-avatars/port.js';
 import { createProjectChangeLog } from '../project-change-log/port.js';
 import { createPersonProfile } from '../person-profile/port.js';
@@ -29,6 +32,10 @@ import { createProjectOrganizing } from '../project-organizing/port.js';
 import { isLoopbackUrl } from '../external-knowledge/connectors/response-values.js';
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
+import { createVisitorAccess } from '../visitor-access/port.js';
+import { createVisitRequests } from '../visit-requests/service.js';
+import { createVisitRunner } from '../visit-requests/runner.js';
+import { CONSTRAINED_RUN_CLIENTS, runConstrained } from '../../packages/roundtable/src/roundtable/constrained-run.js';
 import { createOldDataShelf } from '../old-data/port.js';
 import { createOccupationPlugins } from '../occupation-plugins/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
@@ -36,7 +43,6 @@ import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js'
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { createSessionPromptSentences } from './session-prompt-sentences.js';
-import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { nativeChoiceAnswers } from '../agents/choice-answers.js';
 import { createProcessInspector } from '../agent-services/process-identity.js';
 
@@ -45,8 +51,6 @@ import { createProcessInspector } from '../agent-services/process-identity.js';
 export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl }) {
   const dataDir = dirname(runtimeConfigPath);
   const providerIdentity = app.config.personal.providerUrl;
-  // The runtime failures this process and the data directory's other FULI processes caught (rec#73).
-  app.diagnosticEvents = diagnosticEventLog(dataDir);
   app.preferenceDelivery = createSessionPreferenceDelivery({
     directory: join(dataDir, 'preference-delivery'),
     env
@@ -97,8 +101,40 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
   // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recall reads it as a ranking prior.
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
+  // Which FLAs the person knows and who last owned each project's tasks. Created
+  // when FULI first opens this data directory with it. After an upgrade (FULI
+  // already kept data here) the FLAs that exist then are not introduced as new;
+  // on a new installation every FLA is new to the person, so introductions
+  // count from the epoch.
+  app.agentIntroductions = new AgentIntroductionStore(join(dataDir, AGENT_INTRODUCTIONS_FILE));
+  try {
+    app.agentIntroductions.begin(() => keptDataBefore(dataDir, [AGENT_INTRODUCTIONS_FILE])
+      ? new Date().toISOString() : new Date(0).toISOString());
+  } catch { /* no introductions; entries go on */ }
+  // Read here only for the compounding statement's count of changes made for the person;
+  // the console's delegation port alone records them. A missing file reads as none.
+  app.delegatedOperations = new DelegatedOperationLog(join(dataDir, DELEGATION_LOG_FILE));
   // Each Agent's look as the person chose it (rec#11 D-89); the file is created by the first choice.
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });
+  // What visitors from other computers read of a shared project, and each requester's mode; created by the first one.
+  app.visitorAccess = createVisitorAccess({ path: join(dataDir, 'visitor-access.sqlite'), application: app,
+    // Work a paired computer asks to have done here (seconding C): plain constrained client runs, as the shared lead, in its own worktree.
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner: createVisitRunner({
+      runClient: (input) => runConstrained({ ...input, env }),
+      projectFolder: (input) => app.roundtable.knownProjectFolder(input),
+      verifyFolder: (folder, projectId) => app.roundtableHost.folderBelongsTo(folder, projectId),
+      root: join(dataDir, 'visit-worktrees') }),
+    // A run whose client may still be running keeps its worktree until the OS shows that process ended.
+    inspectProcess: createProcessInspector().inspect,
+    leads: {
+      confirm: async ({ projectId, agentId }) => await app.roundtableHost.projectLeadId(projectId) === agentId,
+      constrainedClients: async ({ agentId }) => (await app.roundtable.visitClients({ agentId }))
+        .filter((client) => CONSTRAINED_RUN_CLIENTS.includes(client)),
+      describe: async ({ projectId, agentId }) => {
+        const { lead } = await app.roundtableHost.projectTeam(projectId);
+        return lead?.agentId === agentId ? { name: lead.name, responsibility: lead.responsibility ?? null } : null;
+      }
+    } }) });
   // What changed in each project's profile; the file is created by the first change.
   app.projectChangeLog = createProjectChangeLog({ path: join(dataDir, 'project-change-log.sqlite') });
   // The person's own name and picture (「我」); the file is created by the first change.
@@ -108,7 +144,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // The prompt of each session's current hook-entered task, kept only for the relay check (rec#80).
   app.entryPrompts = entryPromptRecords(dataDir);
   // What the person answered in the client's own question card, for the same check.
-  app.nativeChoiceAnswers = task => nativeChoiceAnswers(task);
+  app.nativeChoiceAnswers = task => nativeChoiceAnswers(task, { env });
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
   app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });
@@ -117,7 +153,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // Each occupation's starter kit and what the person enabled per FLA; the choices file is created by the first answer.
   app.occupationPlugins = createOccupationPlugins({ statePath: join(dataDir, 'occupation-plugins.json'),
     choicesPath: join(dataDir, 'occupation-kit-choices.sqlite'), fetchImpl });
-  app.roundtableHost = createFuliRoundtableHost(app);
+  app.roundtableHost = createFuliRoundtableHost(app, { wakeFolder: join(dataDir, 'roundtable-wake') });
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({
     host: app.roundtableHost,
@@ -137,7 +173,10 @@ export function closeLocalRuntimes(app) {
   app.standingAssignments?.close();
   app.agentWorkflows?.close();
   app.recallImpressions?.close();
+  app.agentIntroductions?.close();
+  app.delegatedOperations?.close();
   app.agentAvatars?.close();
+  app.visitorAccess?.close();
   app.occupationPlugins?.close();
   app.projectChangeLog?.close();
   app.workSurfaces?.close();

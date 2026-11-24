@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { once } from 'node:events';
 import { createServer } from 'node:https';
+import { connect } from 'node:net';
+import { connect as tlsConnect } from 'node:tls';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -84,6 +87,25 @@ test('malformed successful JSON is an error, never an empty success', async () =
   } finally { await harness.close(); }
 });
 
+test('a shared lead carries its re-rolled face seed; a bad or other look is dropped, an old entry has none', async () => {
+  const { coordinator, target, service } = await coordinatorWithTarget();
+  const entry = (bindingId, look) => ({ bindingId, agentId: `agent-${bindingId}`, ...(look === undefined ? {} : { look }) });
+  service.publishDirectory(target.fingerprint, { agents: [
+    entry('generated', { kind: 'generated', seed: 'seed-🌱-7' }),
+    entry('long', { kind: 'generated', seed: 'x'.repeat(65) }),
+    entry('control', { kind: 'generated', seed: 'seed\u001b[31m' }),
+    entry('bidi', { kind: 'generated', seed: 'seed‮' }),
+    entry('blank', { kind: 'generated', seed: '  ' }),
+    entry('image', { kind: 'image', data: 'iVBORw0KGgo=', seed: 'seed-image' }),
+    entry('wrong-type', 'generated'),
+    entry('old'),
+  ] });
+  const looks = Object.fromEntries(service.directory(coordinator.fingerprint).devices
+    .find((device) => device.nodeId === target.fingerprint).agents.map((agent) => [agent.bindingId, agent.look ?? null]));
+  assert.deepEqual(looks, { generated: { kind: 'generated', seed: 'seed-🌱-7' }, long: null, control: null, bidi: null,
+    blank: null, image: null, 'wrong-type': null, old: null });
+});
+
 test('only canonical UTC ISO lifetimes are accepted, so persisted expiry comparisons hold', async () => {
   let now = Date.parse('2026-10-11T00:00:00.000Z');
   const { coordinator, target, store, service } = await coordinatorWithTarget({ clock: () => now });
@@ -126,6 +148,23 @@ test('an abandoned empty long poll never claims a message submitted afterwards',
     await server.close();
     store.close();
   }
+});
+
+// A paired device connecting at the moment the listener closes (a move after nearby pairing ends) must not
+// keep the close waiting: a connection accepted before the close whose TLS handshake ends after it is
+// ended with the rest, instead of carrying that device's requests on and holding the close open.
+test('closing the listener ends a connection whose TLS handshake was still under way', { timeout: 5_000 }, async () => {
+  const { coordinator, target, store, service } = await coordinatorWithTarget();
+  const server = await startCoordinatorServer({ service, identity: coordinator, host: '127.0.0.1', claimWaitMs: 300 });
+  const socket = connect(server.address.port, '127.0.0.1').on('error', () => {});
+  try {
+    await once(socket, 'connect');
+    await delay(50); // accepted by the listener, no handshake yet
+    const ended = new Promise((resolve) => socket.once('close', resolve));
+    const closed = server.close();
+    tlsConnect({ socket, ...target.tlsOptions, rejectUnauthorized: false }).on('error', () => {});
+    await Promise.all([closed, ended]);
+  } finally { socket.destroy(); store.close(); }
 });
 
 test('a claim that was never accepted is requeued, an accepted one becomes unknown', async () => {

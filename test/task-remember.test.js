@@ -83,3 +83,18 @@ test('a request to keep something for later is noticed however it is phrased', a
   for (const prompt of ['Fix the login page styles.', 'Add a retry to fetchRate and a test for it.', '修一下登录页的样式。'])
     assert.equal(rememberRequested(prompt), false, prompt);
 });
+
+// A person stating their own habit is asked to be kept; ordinary talk about
+// liking or usually doing something is not, or every turn would need a checkpoint.
+test('a habit the person states is noticed, ordinary talk and other habits are not', async () => {
+  const { rememberRequested, REMEMBER_GUIDANCE } = await import('../src/graphiti/task-remember.js');
+  for (const prompt of ['我的习惯：提交说明用中文。', '我的一个习惯是先写测试。', '我习惯用两个空格缩进。',
+    'My habit: tabs, never spaces.', 'Here are my habits for reviews.', 'One of my habits is to squash commits.'])
+    assert.equal(rememberRequested(prompt), true, prompt);
+  for (const prompt of ['我喜欢简洁的界面。', '我一般先看日志。', '我总是忘带钥匙。', '我们的习惯是周五发布。', '我习惯性地点了保存。',
+    'I always run the tests first.', 'I prefer short answers.', 'Please always use tabs.',
+    'Follow the habit of this library for errors.', 'This is his habit, not mine.', 'They inhabit the old module.',
+    'Habitual retries hide bugs.', '这个库的习惯写法是先导出类型。'])
+    assert.equal(rememberRequested(prompt), false, prompt);
+  assert.match(REMEMBER_GUIDANCE, /habit is a preference: quote the user's exact words, scope global unless they name a project/);
+});

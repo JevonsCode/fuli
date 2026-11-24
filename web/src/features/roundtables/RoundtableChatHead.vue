@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import RoundtableSeats from './RoundtableSeats.vue'
 import { isPerson, type RoundtableSeat } from './roundtable-model'
 
@@ -20,7 +21,7 @@ const open = ref(false)
 <template>
   <header class="rt-chat-head">
     <span class="rt-chat-faces" aria-hidden="true">
-      <span v-for="seat in faces" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><AgentAvatar
+      <span v-for="seat in faces" :key="seat.key" :style="agentIdentityStyle(identityKeyOf(seat.person.agentId))"><AgentAvatar
         v-if="seat.person.agentId" :agent-id="seat.person.agentId" :name="seat.person.name" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
     </span>
     <h2 tabindex="-1" class="rt-chat-title" :title="title" data-roundtable-detail-title>{{ title }}</h2>

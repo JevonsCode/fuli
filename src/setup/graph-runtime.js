@@ -11,6 +11,7 @@ import {
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
+import { withoutStageMarkers } from '../local-runtime/startup-stage.js';
 import {
   ensureContainerRuntime,
   runDockerCompose
@@ -25,6 +26,7 @@ import {
   lanConsoleUrls
 } from '../server/lan-access.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { unfinishedImportFirst } from '../backup/unfinished-import.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
 import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
@@ -60,9 +62,9 @@ export {
   selectDockerEnvironment
 } from './container-runtime.js';
 import { CONSOLE_HEALTH_TIMEOUT_MS, checkLocalConsoleHealth } from '../local-runtime/console-health.js';
-import { isProcessAlive, stopProcess, waitForExit } from '../local-runtime/processes.js';
+import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/processes.js';
 import { consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from '../local-runtime/unresponsive-console.js';
-import { isManagedWorkspace, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
+import { isManagedWorkspace, PROVIDER_READY_TIMEOUT_MS, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
 import { parseProviderEnv } from './provider-env.js';
 
 const CONSOLE_READY_TIMEOUT_MS = 60_000;
@@ -70,6 +72,16 @@ const CONSOLE_READY_INTERVAL_MS = 250;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
+  // What this start is doing now, for whoever is watching it (startup-stage.js).
+  // A phase the native runtime already reported is not reported again.
+  const report = typeof input.onStage === 'function' ? input.onStage : () => {};
+  let reported = null;
+  const stage = (id, bound = {}) => {
+    const key = `${id}:${bound.maxSeconds ?? ''}`;
+    if (key === reported) return;
+    reported = key;
+    report(id, bound);
+  };
   const requestedSettings = normalizeRuntimeSettings(input.runtimeSettings ??
     runtimeSettingsWithOverrides(DEFAULT_RUNTIME_SETTINGS, {
       consolePort: input.port,
@@ -104,6 +116,13 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   if (lan && lanAddresses.length === 0) {
     throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');
   }
+  // An import into this mode that never finished leaves a marker
+  // (backup/unfinished-import.js): nothing starts on the graph it may have
+  // left half written, and the error says the way back. A native lifecycle
+  // lock is dealt with first, by its own refusal below (unfinishedWayOut).
+  const unfinished = deps.unfinishedImport(input.paths, runtimeMode);
+  if (unfinished) throw unfinished;
+  stage('graph_runtime');
   const selectedGraphRuntime = runtimeMode === 'native'
     ? await deps.ensureNativeRuntime({
         paths: input.paths,
@@ -112,7 +131,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
         memoryProfile: input.memoryProfile,
         personalOnly: input.personalOnly === true,
         allowProviderDowngrade: input.allowProviderDowngrade === true,
-        onProgress: input.onProgress
+        onProgress: input.onProgress,
+        onStage: stage
       })
     : await deps.ensureContainerRuntime({
         env: input.env ?? process.env,
@@ -148,10 +168,15 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   );
   if (portMoves.length) deps.backupSettings(input.paths, new Date(deps.now()));
   deps.writeRuntimeSettings(input.paths.runtimeSettingsPath, runtimeSettings);
+  stage('graph_start');
   if (runtimeMode === 'native') {
     await deps.startNativeProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: input.personalOnly === true,
       nativeRuntime: selectedGraphRuntime,
+      // Only when the person chose to end a lost graph service (orphan-services.js); a plain start passes nothing new.
+      ...(input.endOrphanedServices === true ? { endOrphanedServices: true } : {}),
+      // The native start waits for Neo4j and the Provider itself and says so.
+      onStage: stage,
       ...(input.env ? { env: input.env } : {})
     });
   } else {
@@ -161,8 +186,13 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       ...(input.buildProviders === false ? { build: false } : {})
     });
   }
+  // The native start has already waited for its Providers; here only the
+  // container's wait remains, one Provider after the other.
+  stage('provider_wait', runtimeMode === 'native' ? {}
+    : { maxSeconds: (input.personalOnly ? 1 : 2) * PROVIDER_READY_TIMEOUT_MS / 1000 });
   await waitForProviderHealth(urls.personal, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.personal}` });
   if (!input.personalOnly) await waitForProviderHealth(urls.workspace, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.workspace}` });
+  stage('graph_setup');
   if (input.paths.adaptiveRuntimeStatePath) {
     deps.writeAdaptiveState(
       input.paths.adaptiveRuntimeStatePath,
@@ -224,6 +254,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   // 体检 reads them from the runtime state while that console runs.
   const reportedMoves = portMoves.length ? { portMoves } : {};
   if (input.noStart) return { status: 'initialized', url: null, pid: null, ...reportedMoves };
+  stage('console_start');
   const existing = activeRuntimeState;
   const consoleStop = { signal: deps.stopProcess, isAlive: deps.isProcessAlive, health: deps.webHealth,
     owned: deps.consoleProcessOwned, waitForExit: deps.waitForExit, wait: deps.wait, now: deps.now };
@@ -260,6 +291,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     }
   }
   const lanAccessToken = lan ? input.lanAccessToken || deps.createLanAccessToken() : null;
+  stage('console_start', { maxSeconds: CONSOLE_READY_TIMEOUT_MS / 1000 });
   const child = deps.spawnWebRuntime({
     paths: input.paths,
     nodePath: process.execPath,
@@ -271,13 +303,17 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const url = `http://127.0.0.1:${runtimeSettings.ports.console}`;
   const consoleStart = Number.isInteger(child.pid) ? await waitForWeb(url, child.pid, deps) : 'abandoned';
   if (consoleStart !== 'ready') {
-    if (Number.isInteger(child.pid)) deps.stopProcess(child.pid);
-    throw new Error(consoleStartFailure(consoleStart, {
-      url,
+    // This console was never recorded, so no stop will find it: the start
+    // returns only once it is gone (SIGTERM, then SIGKILL, bounded), and says
+    // so when it could not be confirmed gone.
+    const ended = !Number.isInteger(child.pid) || !deps.isProcessAlive(child.pid) || await terminateConsole(child.pid,
+      { signal: deps.stopProcess, isAlive: deps.isProcessAlive, wait: deps.wait, now: deps.now });
+    throw consoleStartFailure(consoleStart, {
+      url, pid: child.pid, ended,
       providerUrls: input.personalOnly ? [urls.personal] : [urls.personal, urls.workspace],
       logPath: input.paths.logPath,
       portProblem: await deps.consolePortProblem(runtimeSettings.ports.console, lan ? '0.0.0.0' : '127.0.0.1')
-    }));
+    });
   }
   const state = {
     version: 4,
@@ -547,14 +583,21 @@ function waitForWeb(url, pid, deps) {
 
 // By now Neo4j and the Provider run and the graph is set up; only the console
 // failed. Say so, so a person neither assumes nothing started nor loses track of it.
-// A port Windows reserves is named first: retrying on the same port cannot help.
-function consoleStartFailure(outcome, { url, providerUrls, logPath, portProblem }) {
-  const problem = outcome === 'timed_out'
-    ? `The Fuli console did not answer at ${url} within ${CONSOLE_READY_TIMEOUT_MS / 1000} s, so it was stopped.`
-    : 'The Fuli console exited while starting.';
-  return `${portProblem ? `${portProblem} ` : ''}${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
-    `and your data is kept. The console's output is in ${logPath}. ` +
-    'Run the same command again to retry, or run `fuli stop` to stop the graph services.';
+// A port Windows reserves is named first: retrying on the same port cannot help,
+// and the tray offers its port change for it instead of a retry. The message
+// says what happened; the next step is each surface's own (startup-failure.js).
+function consoleStartFailure(outcome, { url, pid, ended, providerUrls, logPath, portProblem }) {
+  const seconds = CONSOLE_READY_TIMEOUT_MS / 1000;
+  const problem = outcome !== 'timed_out' ? 'The Fuli console exited while starting.'
+    : ended ? `The Fuli console did not answer at ${url} within ${seconds} s, so it was stopped.`
+    : `The Fuli console did not answer at ${url} within ${seconds} s and did not end when stopped; its process ${pid} may still be running.`;
+  const message = `${portProblem ? `${portProblem} ` : ''}${problem} Neo4j and the graph Provider are already running (${providerUrls.join(', ')}) ` +
+    `and your data is kept. The console's output is in ${logPath}.`;
+  const port = Number(new URL(url).port);
+  const code = portProblem ? 'console_port_reserved' : outcome === 'timed_out' ? 'console_not_answering' : 'console_exited';
+  return Object.assign(new Error(message), {
+    code, startupFailure: { code, seconds, logPath, port, ...(outcome === 'timed_out' && !ended ? { stillRunningPid: pid } : {}) }
+  });
 }
 
 function startGraphProviders(paths, envPath, options = {}) {
@@ -601,9 +644,10 @@ function spawnWebRuntime(input) {
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],
+      // The console outlives this start: it does not keep the client's ask for step lines.
       env: input.lan
-        ? { ...input.env, FULI_LAN_ACCESS_TOKEN: input.lanAccessToken }
-        : input.env
+        ? { ...withoutStageMarkers(input.env), FULI_LAN_ACCESS_TOKEN: input.lanAccessToken }
+        : withoutStageMarkers(input.env)
     });
     child.unref();
     return child;
@@ -630,15 +674,18 @@ function graphDependencies(overrides) {
     writeState: writeJsonFileAtomic,
     ensureContainerRuntime,
     ensureNativeRuntime,
+    unfinishedImport: unfinishedImportFirst,
     startProviders: startGraphProviders,
     startNativeProviders: (paths, _envPath, options) => createNativeGraphServices({
       paths,
       runtimeDescriptor: options.nativeRuntime,
       personalOnly: options.personalOnly,
-      env: options.env
-    }).start(),
+      env: options.env,
+      onStage: options.onStage
+    }).start({ endOrphans: options.endOrphanedServices === true }),
     spawnWebRuntime,
-    isProcessAlive,
+    // Consoles are FULI's own processes (processes.js).
+    isProcessAlive: isOwnProcessRunning,
     stopProcess,
     webHealth: checkLocalConsoleHealth,
     consolePortProblem: (port, host) => reservedPortProblem(port, { host }),

@@ -15,7 +15,10 @@ const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 // record); records holds the complete native records that start at the
 // requested byte offsets, as parsed. A transcript over MAX_BYTES is read from
 // its last reset in the final MAX_BYTES (rec#15: a long session otherwise got
-// a full context on every turn).
+// a full context on every turn). outputAt is where the latest model output of
+// the generation starts (an adapter's 'output' event), or -1 without one: a
+// frame produced before it that is still not recorded was lost. written holds
+// the hash of every frame of the generation, a rewound branch's too.
 export async function readPreferenceEvidence(path, sessionId, adapter, recordOffsets = new Set()) {
   let file;
   try {
@@ -36,7 +39,7 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
     const calls = new Map();
     const records = new Map();
     const tree = { parents: new Map(), ids: new Map(), leaf: null };
-    let frames = [], offset = start, since = 0;
+    let frames = [], outputs = [], offset = start, since = 0;
     let generation = start === 0 ? contentHash(first) : null;
     for (const line of window.bytes.subarray(start - window.offset).toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
@@ -45,7 +48,8 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
       if (link) { tree.parents.set(link.id, link.parent); tree.ids.set(offset, link.id); tree.leaf = link.id; }
       if (recordOffsets.has(offset)) records.set(offset, record);
       for (const event of adapter.events(record, sessionId)) {
-        if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
+        if (event.type === 'reset') { calls.clear(); frames = []; outputs = []; generation = contentHash({ offset, line }); since = end; }
+        if (event.type === 'output') outputs.push(offset);
         if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, evidenceToolName(event));
         // A host-recorded Hook context is model-facing like a tool result; each
         // line is parsed on its own, so only a complete JSON frame counts. Its
@@ -68,12 +72,15 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
       }
       offset = end;
     }
+    const written = new Set(frames.map(frame => preferenceFrameHash(frame.value)));
     const active = activeChain(tree);
     if (active) {
       frames = frames.filter(frame => active.has(tree.ids.get(frame.offset)));
+      outputs = outputs.filter(at => active.has(tree.ids.get(at)));
       for (const at of records.keys()) if (!active.has(tree.ids.get(at))) records.delete(at);
     }
-    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size, generation, since, frames, records };
+    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size, generation, since, frames, records,
+      outputAt: outputs.at(-1) ?? -1, written };
   } catch { return { known: false }; }
   finally { await file?.close(); }
 }

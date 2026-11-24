@@ -60,11 +60,14 @@ function fixture(t) {
     service.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
-  return { runtimeConfigPath, service, app: { getAgentAccessPolicy: () => ({ enabled: true }), agentApps: service } };
+  // The calling task names the FLA; a task bound to none stands for one that is not.
+  const tasks = { 'fuli-task-jvs': { projectAgentId: 'agent-jvs', personalProjectId: 'garden' }, 'fuli-task-unbound': {} };
+  return { runtimeConfigPath, service, app: { getAgentAccessPolicy: () => ({ enabled: true }), agentApps: service,
+    config: { personal: { spaceId: 'space-a' } }, taskContextRegistry: { context: async token => tasks[token] } } };
 }
 
 const submission = (manifest = {}) => ({
-  personalSpaceId: 'space-a', agentId: 'agent-jvs', manifest: { ...MANIFEST, ...manifest }, files: FILES
+  taskContextToken: 'fuli-task-jvs', manifest: { ...MANIFEST, ...manifest }, files: FILES
 });
 
 test('the Agent tool submits and lists app versions but can never approve or change them', async (t) => {
@@ -85,6 +88,19 @@ test('the Agent tool submits and lists app versions but can never approve or cha
     assert.throws(() => callAgentTool(app, name, { appId: submitted.appId }), /Unknown agent tool/);
   }
 
+  // The owner is the calling task's FLA, never the caller's word for it.
+  assert.equal(service.read({ appId: submitted.appId }).agentId, 'agent-jvs');
+  assert.equal((await callAgentTool(app, 'submit_agent_app_version', { ...submission(), agentId: 'agent-jvs', personalSpaceId: 'space-a' })).status, 'pending');
+  await assert.rejects(async () => callAgentTool(app, 'submit_agent_app_version', { ...submission({ version: '1.0.3' }), agentId: 'agent-other' }),
+    { code: 'agent_not_owner' });
+  await assert.rejects(async () => callAgentTool(app, 'submit_agent_app_version', { ...submission({ version: '1.0.4' }), personalSpaceId: 'space-b' }),
+    { code: 'scope_mismatch' });
+  await assert.rejects(async () => callAgentTool(app, 'submit_agent_app_version', { ...submission({ version: '1.0.5' }), taskContextToken: 'fuli-task-unbound' }),
+    { code: 'agent_not_bound' });
+  await assert.rejects(async () => callAgentTool(app, 'submit_agent_app_version', { manifest: { ...MANIFEST, version: '1.0.6' }, files: FILES,
+    personalSpaceId: 'space-a', agentId: 'agent-jvs' }), /taskContextToken/);
+  assert.deepEqual(service.read({ appId: submitted.appId }).versions.map(({ version }) => version), ['1.0.0']);
+
   const detail = await callAgentTool(app, 'list_agent_apps', { appId: submitted.appId });
   assert.equal(detail.status, 'pending');
   assert.equal(detail.versions[0].approval, null);
@@ -102,6 +118,17 @@ test('the Agent tool submits and lists app versions but can never approve or cha
   }
   // rec#80: showing an export folder is the person's ask, relayed in their words.
   assert.equal(byRoute.get('POST /api/agent-apps/:appId/reveal-export')?.access, 'agent_relayed');
+});
+
+test('a submitted app settles the repeats of the FLA and project of the calling task, also without agentId', async (t) => {
+  const { app } = fixture(t);
+  const deposits = [];
+  const withRepeats = { ...app, agentWorkflows: { depositApp: (owner, appId) => deposits.push([owner.agentId, owner.personalProjectId, appId]) } };
+  const submitted = await callAgentTool(withRepeats, 'submit_agent_app_version', submission());
+  assert.deepEqual(deposits, [['agent-jvs', 'garden', submitted.appId]]);
+  await assert.rejects(async () => callAgentTool(withRepeats, 'submit_agent_app_version',
+    { ...submission({ version: '1.0.1' }), agentId: 'agent-other' }), { code: 'agent_not_owner' });
+  assert.equal(deposits.length, 1, 'another FLA\'s agentId: nothing submitted, nothing settled');
 });
 
 test('an Agent on the chat profile submits through fuli_call and cannot reach an approval', async (t) => {
@@ -130,7 +157,7 @@ test('an Agent on the chat profile submits through fuli_call and cannot reach an
 
 test('the local HTTP API lists apps and accepts management writes only from this computer', async (t) => {
   const { app, service } = fixture(t);
-  const submitted = await service.submit(submission());
+  const submitted = await service.submit({ personalSpaceId: 'space-a', agentId: 'agent-jvs', manifest: MANIFEST, files: FILES });
   const { server, url } = await createServer({ app: { agentApps: service }, port: 0 });
   t.after(() => closeServer(server));
 
@@ -174,7 +201,7 @@ test('the local HTTP API lists apps and accepts management writes only from this
 
 test('fuli app approve refuses non-interactive callers and completes the terminal confirmation on every platform', async (t) => {
   const { runtimeConfigPath, service } = fixture(t);
-  const resident = (version) => service.submit({
+  const resident = (version) => service.submit({ personalSpaceId: 'space-a', agentId: 'agent-jvs',
     ...submission({ version, resident: true, runtime: { apiVersion: 1, entry: 'service/main.js', webRoot: 'web' } }),
     files: [...FILES, { path: 'service/main.js', content: 'export const synthetic = true;\n' }]
   });

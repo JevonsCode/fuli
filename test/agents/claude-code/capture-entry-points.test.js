@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { callAgentTool } from '../../../src/agent-tools.js';
-import { runClaudeLifecycleHook } from '../../../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../../../src/agents/claude-code/lifecycle-event.js';
 import { claudeEntry, fixture, PRIVATE, receiptOf } from '../../fixtures/capture-project-fixture.js';
 
 const SESSION = 'synthetic-claude-session';

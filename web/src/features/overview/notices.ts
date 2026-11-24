@@ -15,8 +15,12 @@ export type Notice = z.infer<typeof notice>
 export const NOTICE_ICONS: Record<string, IconName> = {
   topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', retrospective_ready: 'memory', tonborg_confirmed: 'check',
   fla_joined: 'agents', fla_left: 'agents', delegated_change: 'settings', model_failing: 'error', update_available: 'refresh',
+  runner_paired: 'external',
 }
 export const NOTICE_KINDS = Object.keys(NOTICE_ICONS)
+// Notices about an entry still in testing carry its Beta badge.
+export const BETA_NOTICE_KINDS = new Set(['runner_paired'])
+export const isBetaNotice = (item: Notice) => BETA_NOTICE_KINDS.has(item.kind)
 
 /** A notice of a kind this console can word; one from a newer server stays out. */
 export const knownNotice = (item: Notice) => item.kind in NOTICE_ICONS

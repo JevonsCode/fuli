@@ -175,15 +175,18 @@ function assertReviewBoundary({ call, chats, candidate, record, provider, instru
   return area;
 }
 
-// Once an endpoint ignores the output schema, the port writes the schema into
-// the system text for every later call (prompt.js promptForMode). That suffix
-// names the candidate's key in its target enum, so it is set apart before the
-// instruction area is compared; it must still be one JSON schema and nothing else.
+// The port ends the system text with the output rules of its mode
+// (prompt.js promptForMode): with structured output one line of the counts
+// and lengths, and once an endpoint ignores the schema, the schema itself for
+// every later call. The schema names the candidate's key in its target enum,
+// so the rules are set apart before the instruction area is compared; the
+// schema must still be one JSON schema and nothing else.
 const PROMPT_MODE_SCHEMA = '\nThe reply must match this JSON schema: ';
+const LIMITS_LINE = /\nLimits: [^\n]*$/;
 
 function withoutPromptModeSchema(system) {
   const at = system.indexOf(PROMPT_MODE_SCHEMA);
-  if (at < 0) return system;
+  if (at < 0) return system.replace(LIMITS_LINE, '');
   JSON.parse(system.slice(at + PROMPT_MODE_SCHEMA.length));
   return system.slice(0, at);
 }

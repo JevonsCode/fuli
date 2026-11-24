@@ -48,6 +48,17 @@ export async function listPersonalProjects(application, input = {}) {
   return input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
 }
 
+// The client and session that made each session temporary project, where FULI's own
+// records prove it (graph-provider temporary_project_sources.py). A picker reads it
+// when it shows temporary projects; the console state never does.
+export function listTemporaryProjectSources(application, input = {}) {
+  const personalSpaceId = input.personalSpaceId ?? application.config.personal.spaceId;
+  if (personalSpaceId !== application.config.personal.spaceId) {
+    throw new TypeError('Temporary project sources must use the active personal space');
+  }
+  return application.personal.listTemporaryProjectSources(personalSpaceId);
+}
+
 // What changed in one project's profile, newest first; local, so it needs no Provider.
 export function listPersonalProjectHistory(application, input) {
   const personalSpaceId = input.personalSpaceId ?? application.config.personal.spaceId;

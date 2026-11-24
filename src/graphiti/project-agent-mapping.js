@@ -75,6 +75,10 @@ export function projectAgentRecord(value) {
     Object.hasOwn(profile, 'display_name'));
   copyOptional(result, 'nameSuggestion', value.name_suggestion,
     Object.hasOwn(value, 'name_suggestion'));
+  // The names it was called before and, for 30 days after a rename, the latest one.
+  copyOptional(result, 'formerName', value.former_name, Object.hasOwn(value, 'former_name'));
+  copyOptional(result, 'nameHistory', (value.name_history ?? []).map(projectAgentNameChange),
+    Object.hasOwn(value, 'name_history'));
   copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
     Object.hasOwn(value, 'legacy_agent_ids'));
   copyOptional(result, 'employeeNumber', value.employee_number,
@@ -852,7 +856,7 @@ export function projectAgentCoordinationPolicyRecord(value = {}) {
   return {
     personalSpaceId: value.personal_space_id,
     personalProjectId: value.personal_project_id,
-    askBeforeRecruitment: value.ask_before_recruitment ?? true,
+    askBeforeRecruitment: value.ask_before_recruitment ?? false,
     autoReusePreviousAgent: value.auto_reuse_previous_agent ?? true,
     autoGrowTeam: value.auto_grow_team ?? true,
     teamLeadAgentId: value.team_lead_agent_id ?? null,
@@ -868,8 +872,9 @@ export function providerProjectAgentCoordinationPolicy(input) {
   return {
     personal_space_id: input.personalSpaceId ?? input.personal_space_id,
     personal_project_id: input.personalProjectId ?? input.personal_project_id,
-    ask_before_recruitment:
-      input.askBeforeRecruitment ?? input.ask_before_recruitment ?? true,
+    // Stated only when the caller stated it: the Provider keeps the stored switch otherwise.
+    ...((input.askBeforeRecruitment ?? input.ask_before_recruitment) == null
+      ? {} : { ask_before_recruitment: input.askBeforeRecruitment ?? input.ask_before_recruitment }),
     auto_reuse_previous_agent:
       input.autoReusePreviousAgent ?? input.auto_reuse_previous_agent ?? true,
     ...(Object.hasOwn(input, 'autoGrowTeam') || Object.hasOwn(input, 'auto_grow_team')
@@ -1255,4 +1260,17 @@ function withoutUndefined(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined)
   );
+}
+
+// One name an Agent was called until `until` (project_agent_name_history.py).
+// A project an Agent works in (graph-provider WorkingProject): a temporary one
+// stores no name, so the console words it by its number in its own language.
+export function workingProject(project) {
+  return { projectId: String(project?.project_id ?? ''), name: String(project?.name ?? '').slice(0, 160),
+    scopeType: project?.scope_type === 'temporary' ? 'temporary' : 'registered' };
+}
+
+export function projectAgentNameChange(change) {
+  return { name: change.name, until: change.until, reason: change.reason,
+    keptByAgentId: change.kept_by_agent_id ?? null, gaveWay: change.gave_way ?? null };
 }

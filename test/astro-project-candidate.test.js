@@ -161,9 +161,11 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
     app.roleWork = createRoleWorkBridge({ port: app.modelBackends, store, verifySession: async () => null, resumers: {} });
   }
   app.roleSuggestions = new RoleSuggestionLog();
+  // These tests are about the hint itself, so the entry waits for it (task-entry-preferences.js afterGrace).
+  app.entryHintGraceMs ??= Infinity;
   const entry = (extra = {}) => app.getCollaborationPreferences({ projectPath: '/synthetic/chat-folder', sourceApplication: 'codex',
     sessionId: 'synthetic-session-a', taskPrompt: PROMPT, agentInvocation: true, agentToolName: 'get_collaboration_preferences', ...extra });
-  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total FROM model_attempts ORDER BY attempt_number')
+  const attempts = () => ledger.db.prepare('SELECT request_id AS requestId, purpose, outcome, role, operation, total_tokens AS total, caller_deadline AS callerDeadline FROM model_attempts ORDER BY attempt_number')
     .all().map(row => ({ ...row }));
   const reservations = () => ledger.db.prepare('SELECT COUNT(*) AS n FROM model_reservations').get().n;
   // The model never binds: no project, triage label, adoption, checkpoint or work package.
@@ -191,11 +193,11 @@ test('not configured: the entry answers byte for byte as today, with zero fetche
   const baseline = await today.entry();
   const plain = JSON.stringify(baseline);
   // Snapshot of today's top-level answer for an unclaimed conversation.
-  assert.deepEqual(Object.keys(baseline), ['conversation', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'resumed_checkpoint',
+  assert.deepEqual(Object.keys(baseline), ['conversation', 'taskContextToken', 'task_context_token', 'checkpoint_required', 'checkpoint_reason', 'resumed_checkpoint',
     'previous_checkpoint_missing', 'effective_preferences', 'deferred_conflicts', 'active_conflicts', 'application_guidance',
     'task_knowledge_recall', 'context', 'project_agent_context', 'triage_candidates', 'agent_receipt', 'task_guidance']);
   assert.deepEqual(baseline.triage_candidates, { projects: ['Garden Planner', 'Alpha Ledger', 'Hidden Orchard'], topics: [],
-    label_with: 'checkpoint_task_knowledge.triage' });
+    label_with: 'checkpoint_task_knowledge.triage', continue_with: 'list_agent_conversations.topic' });
 
   for (const role of [null, astroRole({ enabled: false }), astroRole({ allowedOperations: ['other_operation'] })]) {
     const run = harness({ role, replies: [answer()] });
@@ -248,8 +250,8 @@ test('Astro suggests one approved project as a hint; candidates are evidence wit
   assert.deepEqual(data.evidence, [{ id: 'prompt', text: PROMPT },
     { id: 'project_1', text: JSON.stringify({ name: 'Garden Planner', description: 'Plan watering and planting reminders.' }) },
     { id: 'project_2', text: JSON.stringify({ name: 'Alpha Ledger', description: 'Track household spending.' }) }]);
-  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation }) => [purpose, outcome, role, operation]),
-    [['initial', 'succeeded', 'assistant', 'project_candidate']]);
+  assert.deepEqual(run.attempts().map(({ purpose, outcome, role, operation, callerDeadline }) => [purpose, outcome, role, operation, callerDeadline]),
+    [['initial', 'succeeded', 'assistant', 'project_candidate', 1]], 'the task-entry hot path says so (rec#139)');
   assert.deepEqual(run.contexts.hintClaims().map(({ operation }) => operation), ['project_candidate']);
   run.assertNoAttribution(result);
   const [noted] = run.suggestions();
@@ -385,14 +387,19 @@ test('fallbacks keep their reason and receipt; stops keep theirs and get no guid
 });
 
 test('malicious answers: an invented project, a forged gate or a claimed binding never bind anything', async () => {
-  // An invented project ID, then a forged gate: both fail the contract after one repair.
-  const forged = harness({ role: astroRole(), replies: [answer({ payload: { choice: 'secret' } }),
-    answer({ gate: { status: 'unlocked' }, execution: { status: 'applied' } })] });
+  // An invented project ID fails the contract, and again after one repair.
+  const forged = harness({ role: astroRole(), replies: [answer({ payload: { choice: 'secret' } }), answer({ payload: { choice: 'secret' } })] });
   const result = await forged.entry();
   assert.deepEqual([result.project_candidate.status, result.project_candidate.reason], ['inline', 'invalid_output']);
   assert.deepEqual(result.project_candidate.gate, GATE);
   assert.deepEqual(forged.attempts().map(({ purpose, outcome }) => [purpose, outcome]), [['initial', 'invalid_output'], ['repair', 'invalid_output']]);
   forged.assertNoAttribution(result);
+
+  // A forged gate or execution is a field the contract does not list: dropped, so the host's gate stands.
+  const dropped = harness({ role: astroRole(), replies: [answer({ gate: { status: 'unlocked' }, execution: { status: 'applied' } })] });
+  const hinted = await dropped.entry();
+  assert.deepEqual([hinted.project_candidate.status, hinted.project_candidate.gate], ['suggested', GATE]);
+  dropped.assertNoAttribution(hinted);
 
   // A decision other than propose is outside the contract too.
   const applied = harness({ role: astroRole(), replies: [answer({ decision: 'apply' }), answer({ decision: 'apply' })] });

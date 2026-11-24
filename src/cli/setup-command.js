@@ -5,6 +5,9 @@ import {
 } from './setup-agent-selection.js';
 import { entryState } from '../agent-kits/client-detection.js';
 import { parseSetupOptions } from '../setup/options.js';
+import { resolveSetupPaths } from '../setup/paths.js';
+import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { setUpRunnerClients } from './runner-command.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -18,9 +21,14 @@ import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconci
 import { formatShadowedLaunchers, inspectUpdateInstallation } from './update-installation.js';
 import { quoteShellArgument } from './shell-argument.js';
 import { portMoveSentence } from '../system/blocked-port-recovery.js';
+import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
+import { startupStageWriter, withoutStageMarkers } from '../local-runtime/startup-stage.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
+  // A runner (docs/runner.md) has no FULI of its own to set up: only its clients, which use the host.
+  const dataDir = resolveSetupPaths({ dataDir: options.dataDir, env: dependencies.env ?? process.env }).dataDir;
+  if ((dependencies.isRunner ?? isRunnerDataDirectory)(dataDir)) return setUpRunner(options, dataDir, dependencies);
   const planSetup = dependencies.planSetup ?? planLocalSetup;
   const applySetup = dependencies.applySetup ?? applyLocalSetup;
   const confirm = dependencies.confirm
@@ -28,7 +36,8 @@ export async function runSetupCommand(args, dependencies = {}) {
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
   const copy = copyableValueStyle({ output: dependencies.output, env: dependencies.env });
-  let plan = await planSetup(options, dependencies);
+  // Detection may wait for another FULI's download of agent-installer, and says so.
+  let plan = await planSetup(options, { ...dependencies, onProgress: write });
   if (options.connectedOnly) {
     plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
       ['current', 'outdated'].includes(entryState(agent.integrationDetails))
@@ -44,10 +53,16 @@ export async function runSetupCommand(args, dependencies = {}) {
     return { status: 'cancelled' };
   }
 
-  const result = await applySetup(plan, options, {
+  const env = dependencies.env ?? process.env;
+  const result = await reportingStartupFailure(() => applySetup(plan, options, {
     ...dependencies,
-    onProgress: write
-  });
+    // The services a first start leaves running do not keep a client's ask for step lines.
+    env: withoutStageMarkers(env),
+    onProgress: write,
+    // The phases of the first start, so a first setup is not silent through
+    // the database install and the provider wait (startup-stage.js).
+    onStage: startupStageWriter(write, env)
+  }), { logPath: plan.paths?.logPath ?? null });
   write(formatSetupResult(result, plan, copy));
   // Stubbed setups in tests never read the data directory they name.
   const onboardingFor = dependencies.captureOnboarding ?? (applySetup === applyLocalSetup ? captureOnboardingFor : null);
@@ -64,6 +79,16 @@ export async function runSetupCommand(args, dependencies = {}) {
   const shadowed = shadowedLaunchers?.();
   if (shadowed) write(shadowed);
   return { ...result, exitCode: result.status === 'partial' ? 1 : 0 };
+}
+
+async function setUpRunner(options, dataDir, dependencies) {
+  const write = dependencies.write ?? writeLine;
+  write('This computer is a FULI runner: its FULI is on the host, so only its clients are set up here.');
+  const agents = options.skipAgents ? []
+    : await (dependencies.setupRunnerClients ?? setUpRunnerClients)({ dataDir, env: dependencies.env ?? process.env, write });
+  for (const agent of agents) write(`  ${agent.label ?? agent.id}: ${agent.status}`);
+  for (const agent of agents) for (const step of agent.nextSteps ?? []) write(`  ${agent.label ?? agent.id}: ${step}`);
+  return { status: 'runner', agents, exitCode: agents.every(({ status }) => status === 'connected') ? 0 : 1 };
 }
 
 // A new installation asks where FULI records (rec#5 C10): here when a person
@@ -109,6 +134,16 @@ export function formatSetupPreview(plan, options, copy = String) {
     `Automatic client setup: ${agentSummary}`,
     `Other MCP clients: connect after setup with ${copy('fuli connect')} (no model required)`
   ];
+  // Listing a client is not the same as having it: a client FULI knows of but did
+  // not find here is named, so "nothing to do" never passes for "all connected" (rec#90, rec#145).
+  const missing = plan.agents.filter(({ available, inWsl }) => !available && !inWsl);
+  if (missing.length) lines.push(`Not on this computer: ${missing.map(({ label }) => label).join(', ')}`);
+  // A client only inside WSL reads its configuration there: FULI on Windows cannot connect it.
+  const inWsl = plan.agents.filter(({ inWsl }) => inWsl);
+  if (inWsl.length) {
+    lines.push(`Installed only inside WSL, so FULI on this Windows cannot connect it: ${inWsl.map(({ label }) => label).join(', ')}. `
+      + 'Run fuli setup inside WSL for it.');
+  }
   if (
     runtimeMode !== 'native' &&
     plan.runtimeModeRecommendation?.recommendedMode === 'native'

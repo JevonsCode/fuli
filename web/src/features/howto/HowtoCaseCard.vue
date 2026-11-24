@@ -16,7 +16,7 @@ const animated = computed(() => !motionReduced())
   <Card as="article" class="howto-case" :data-howto-case="props.story.id" :aria-labelledby="`howto-case-${props.story.id}`">
     <CardHeader>
       <CardTitle :id="`howto-case-${props.story.id}`">{{ props.story.title }}</CardTitle>
-      <CardDescription class="howto-case-summary">{{ props.story.summary }}</CardDescription>
+      <CardDescription class="howto-case-summary ui-prose">{{ props.story.summary }}</CardDescription>
     </CardHeader>
     <ol class="howto-timeline" :class="{ 'is-animated': animated }" :style="{ '--steps': props.story.steps.length }">
       <li v-for="(step, index) in props.story.steps" :key="index" class="howto-step" :style="{ '--i': index }" data-howto-step>
@@ -26,8 +26,8 @@ const animated = computed(() => !motionReduced())
             <span class="howto-step-actor">{{ step.actor }}</span>
             <UiChip v-if="step.client">{{ step.client }}</UiChip>
           </p>
-          <p class="howto-step-did">{{ step.did }}</p>
-          <p v-if="step.fuli" class="howto-step-fuli"><span>{{ t('howto.fuli') }}</span>{{ step.fuli }}</p>
+          <p class="howto-step-did ui-prose">{{ step.did }}</p>
+          <p v-if="step.fuli" class="howto-step-fuli ui-prose"><span>{{ t('howto.fuli') }}</span>{{ step.fuli }}</p>
         </div>
       </li>
     </ol>

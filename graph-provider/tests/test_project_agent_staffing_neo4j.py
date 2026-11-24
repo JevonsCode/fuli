@@ -614,6 +614,34 @@ async def test_archive_after_replacement_authorization_blocks_assignment_replace
 
 
 @pytest.mark.asyncio
+async def test_test_cleanup_never_archives_a_fixed_role():
+    async with provider_client(fixture_settings()) as (client, _):
+        scope = await create_scope(client)
+        space = {'personal_space_id': scope['personal_space_id']}
+        # Asking for the project manager makes sure all four fixed roles exist in the space.
+        ensured = await client.post('/v1/project-agents/system-coordinator', params=space)
+        assert ensured.status_code == 200, ensured.text
+        tonborg = await client.get('/v1/project-agents/employee.tonborg', params=space)
+        assert tonborg.status_code == 200, tonborg.text
+        profile = tonborg.json()['profile']
+        # A profile write that marks Tonborg as a test identity (nothing refuses the two fields).
+        marked = await client.put('/v1/project-agents', json={
+            **space, 'agent_id': 'employee.tonborg',
+            'profile': {**profile, 'test_source': 'synthetic_staffing_acceptance', 'cleanup_eligible': True}})
+        assert marked.status_code == 200, marked.text
+        switched_off = await client.put('/v1/project-agents', json={
+            **space, 'agent_id': 'employee.tonborg', 'profile': {**profile, 'status': 'inactive'}})
+        assert switched_off.status_code == 422, switched_off.text
+
+        cleanup = await client.post('/v1/project-agents/test-cleanup', params={
+            **space, 'test_source': 'synthetic_staffing_acceptance'})
+        assert cleanup.status_code == 200, cleanup.text
+        assert cleanup.json()['archived_count'] == 0
+        after = await client.get('/v1/project-agents/employee.tonborg', params=space)
+        assert after.json()['profile']['status'] == 'active'
+
+
+@pytest.mark.asyncio
 async def test_test_cleanup_skips_agents_with_nonterminal_work():
     async with provider_client(fixture_settings()) as (client, _):
         scope = await create_scope(client)

@@ -22,7 +22,7 @@ describe('model uses', () => {
     ])
     expect(models[0]!.service).toBe('OpenAI 兼容 · 127.0.0.1:11434')
     // 测试连接 goes through the first use that is on; a connection whose uses are all off has none.
-    expect(models.map(model => model.checkRole)).toEqual(['assistant', null])
+    expect(models.map(model => model.checkRoles)).toEqual([['assistant'], []])
     const semantic = modelsInUse(payload([{ role: 'semantic', state: 'enabled', answeredBy: 'model_api',
       connection: { ...connection('semantic', 'synthetic-embed'), protocol: 'openai_embeddings' } }]))
     expect(semantic[0]!.service).toBe('OpenAI 兼容向量接口 · 127.0.0.1:11434')
@@ -37,6 +37,21 @@ describe('model uses', () => {
     ]))
     expect(shared!.health).toEqual(failing)
     expect(off!.health).toBeNull()
+  })
+
+  it('test a connection through every use on it whose own task failed, since only its own answer clears that', () => {
+    const at = '2026-11-11T02:00:00.000Z'
+    const own = { status: 'failing', at, reason: 'timeout', scope: 'role' }
+    const [shared, plain] = modelsInUse(payload([
+      { role: 'assistant', state: 'enabled', answeredBy: 'model_api', connection: connection('shared', 'synthetic'), health: { status: 'ok', at, reason: null, scope: 'connection' } },
+      { role: 'bole', state: 'enabled', answeredBy: 'model_api', connection: connection('shared', 'synthetic'), health: own },
+      { role: 'jefa', state: 'enabled', answeredBy: 'model_api', connection: connection('shared', 'synthetic'), health: own },
+      // Off: its failure is not tested. A failure of the connection itself is settled by any one use.
+      { role: 'tonborg', state: 'disabled', answeredBy: 'current_session', connection: connection('shared', 'synthetic'), health: own },
+      { role: 'semantic', state: 'enabled', answeredBy: 'model_api', connection: connection('plain', 'synthetic-embed'),
+        health: { status: 'failing', at, reason: 'network', scope: 'connection' } },
+    ]))
+    expect([shared!.checkRoles, plain!.checkRoles]).toEqual([['bole', 'jefa'], ['semantic']])
   })
 
   it('turn an Astro task on only while Astro\'s model is on and allows it', () => {

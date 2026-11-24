@@ -8,7 +8,8 @@ import { createInterface } from 'node:readline';
 // version is installed and no request is in flight, it starts the new server,
 // replays the client's initialize handshake to it, retires the old one and
 // tells the client the tool list may have changed. A new version that does not
-// start keeps the old one running; the person notices nothing either way.
+// start leaves the old one serving. The relay can try the same update again
+// after the next check interval.
 //
 // The relay's own code stays the version the client started, so it must stay
 // small: a later version only has to honour MCP_RELAYED_ENV.
@@ -35,20 +36,54 @@ export function runStdioRelay({
   if (!first) throw new Error('The installed FULI MCP server cannot be found');
   const clientRequests = new Set();
   const serverRequests = new Set();
-  const refused = new Set();
+  let failedUpdate = null;
+  let canRepeatInitialize = true;
   let initialize = null, initialized = null, listChanged = false;
-  let swapping = false, closing = false, queue = [];
-  let current = attach(start(first), first.version);
-  current.onLine = forward;
+  let candidate = null, closing = false, queue = [];
+  let current = serving(first);
+
+  function serving(spec) {
+    const server = attach(start(spec), spec.version);
+    server.onLine = forward;
+    return server;
+  }
+
+  // The installation can switch after the relay chooses its first child and
+  // before that child reads its runtime. Only an unanswered initialize is safe
+  // to repeat, once, against the replacement.
+  function retryStartingClient() {
+    if (closing || !canRepeatInitialize) return false;
+    const replacement = newer();
+    if (!replacement) return false;
+    canRepeatInitialize = false;
+    current.onLine = () => {};
+    try { current = serving(replacement); } catch { return false; }
+    if (initialize) current.child.stdin.write(`${initialize.line}\n`);
+    return true;
+  }
 
   function attach(child, version) {
-    const server = { child, version, onLine: () => {} };
+    const server = { child, version, onLine: () => {}, onStop: null };
     createInterface({ input: child.stdout, crlfDelay: Infinity }).on('line', line => server.onLine(line));
-    child.on('exit', code => { if (server === current) { closing = true; exit(code); } });
+    let stopped = false;
+    function stop(code) {
+      if (stopped) return;
+      stopped = true;
+      if (server === current) {
+        if (retryStartingClient()) return;
+        closing = true;
+        candidate?.child.kill();
+        exit(code);
+      } else server.onStop?.();
+    }
+    child.once('close', stop);
+    child.on('error', () => stop(1)); // A failed spawn does not emit exit.
+    child.stdin.on('error', () => { child.kill(); stop(1); });
     return server;
   }
 
   function forward(line) {
+    canRepeatInitialize = false;
     const message = parse(line);
     if (message && 'id' in message) {
       if (message.method) serverRequests.add(key(message.id));
@@ -63,8 +98,10 @@ export function runStdioRelay({
   }
 
   function fromClient(line) {
-    if (swapping) { queue.push(line); return; }
+    if (closing) return;
+    if (candidate) { queue.push(line); return; }
     const message = parse(line);
+    if (initialize || message?.method !== 'initialize') canRepeatInitialize = false;
     if (message?.method === 'initialize') initialize = { line, id: message.id };
     else if (message?.method === 'notifications/initialized') initialized = line;
     else if (initialized && idle()) {
@@ -78,30 +115,36 @@ export function runStdioRelay({
     current.child.stdin.write(`${line}\n`);
   }
 
-  const idle = () => !swapping && !closing && clientRequests.size === 0 && serverRequests.size === 0;
+  const idle = () => !candidate && !closing && clientRequests.size === 0 && serverRequests.size === 0;
 
   function newer() {
     let spec;
     try { spec = target(); } catch { return null; }
-    return spec && spec.version !== current.version && !refused.has(spec.version) ? spec : null;
+    if (!spec || spec.version === current.version) return null;
+    if (spec.version === failedUpdate?.version && performance.now() < failedUpdate.retryAt) return null;
+    return spec;
   }
 
   async function swap(spec) {
-    swapping = true;
-    let next;
     try {
-      next = attach(start(spec), spec.version);
-      await handshake(next);
+      candidate = attach(start(spec), spec.version);
+      await handshake(candidate);
+      if (closing) return;
       const retired = current;
-      current = next;
-      next.onLine = forward;
+      current = candidate;
+      current.onLine = forward;
+      retired.onLine = () => {};
       retired.child.stdin.end();
+      failedUpdate = null;
       if (listChanged) output.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })}\n`);
     } catch {
-      refused.add(spec.version);
-      if (next) { next.onLine = () => {}; next.child.removeAllListeners('exit'); next.child.kill(); }
+      failedUpdate = { version: spec.version, retryAt: performance.now() + checkEveryMs };
     } finally {
-      swapping = false;
+      if (candidate && candidate !== current) {
+        candidate.onLine = () => {};
+        candidate.child.kill();
+      }
+      candidate = null;
       const waiting = queue;
       queue = [];
       for (const line of waiting) fromClient(line);
@@ -113,12 +156,12 @@ export function runStdioRelay({
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The new FULI MCP server did not start')), readyWithinMs);
       const fail = () => { clearTimeout(timer); reject(new Error('The new FULI MCP server exited')); };
-      server.child.once('exit', fail);
+      server.onStop = fail;
       server.onLine = line => {
         const message = parse(line);
         if (!message || !('id' in message) || message.method || key(message.id) !== key(initialize.id)) return;
         clearTimeout(timer);
-        server.child.off('exit', fail);
+        server.onStop = null;
         if (message.error) { reject(new Error('The new FULI MCP server refused the client')); return; }
         server.child.stdin.write(`${initialized}\n`);
         resolve();
@@ -128,7 +171,7 @@ export function runStdioRelay({
   }
 
   createInterface({ input, crlfDelay: Infinity }).on('line', fromClient);
-  input.once('end', () => { closing = true; current.child.stdin.end(); });
+  input.once('end', () => { closing = true; candidate?.child.kill(); current.child.stdin.end(); });
   const timer = setInterval(() => {
     if (!initialized || !idle()) return;
     const next = newer();

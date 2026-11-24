@@ -31,3 +31,29 @@ async def test_source_purge_scopes_copies_and_recounts_retained_journal_events()
     assert all(any(name in params for name in ('group_id', 'space_id', 'conversation_ids'))
                for _, params in deletes)
     assert all('FuliPublicationDraft' not in cypher for cypher, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_items_losing_a_non_normal_source_are_marked_before_the_source_goes():
+    calls = []
+
+    async def query(cypher, **parameters):
+        calls.append((cypher, parameters))
+        return ([], None, None)
+
+    scoped = SimpleNamespace(runtime=SimpleNamespace(driver=SimpleNamespace(execute_query=query)))
+    await remove_source_copies(scoped, {'id': 'space', 'group_id': 'group'}, {
+        'episodes': [{'uuid': 'episode'}], 'event_ids': [], 'conversation_ids': [], 'task_tokens': [],
+        'task_ids': []})
+    marks = [index for index, (cypher, _) in enumerate(calls) if 'fuli_had_restricted_source = true' in cypher]
+    strip = next(index for index, (cypher, _) in enumerate(calls) if 'SET item.episodes' in cypher)
+    delete = next(index for index, (cypher, _) in enumerate(calls) if 'DETACH DELETE episode' in cypher)
+    assert len(marks) == 2 and max(marks) < strip < delete
+    entity, relationship = (calls[index] for index in marks)
+    assert '-[:MENTIONS]->(item:Entity' in entity[0] and 'item.episodes' in relationship[0]
+    for cypher, parameters in (entity, relationship):
+        assert parameters['episode_ids'] == ['episode']
+        assert parameters['edit_kinds'] == ['human_knowledge_edit', 'agent_knowledge_edit']
+        # Missing sensitivity is not normal; an edit episode never marks.
+        assert "coalesce(episode.fuli_sensitivity, '') <> 'normal'" in cypher
+        assert "NOT coalesce(episode.fuli_source_kind, '') IN $edit_kinds" in cypher

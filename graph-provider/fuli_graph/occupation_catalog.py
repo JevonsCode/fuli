@@ -3,6 +3,12 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import Field, field_validator, model_validator
+from .fixed_roles import (
+    SYSTEM_ASSISTANT_AGENT_ID,
+    SYSTEM_COORDINATOR_AGENT_ID,
+    SYSTEM_HR_AGENT_ID,
+    SYSTEM_JUDGMENT_AGENT_ID,
+)
 from .model_base import StrictModel
 
 # The occupation each fixed identity ships with: stored on the Agent when the
@@ -10,8 +16,8 @@ from .model_base import StrictModel
 # (occupation_locked). Bole is AR, so it holds Agent resources (graph/12);
 # Jefa and Tonborg hold what they are called, not 管理 (graph/16).
 BUILTIN_AGENT_OCCUPATIONS = {
-    'employee.jefa': 'project_manager', 'employee.bole': 'hr',
-    'employee.tonborg': 'decision_maker', 'employee.assistant': 'assistant',
+    SYSTEM_COORDINATOR_AGENT_ID: 'project_manager', SYSTEM_HR_AGENT_ID: 'hr',
+    SYSTEM_JUDGMENT_AGENT_ID: 'decision_maker', SYSTEM_ASSISTANT_AGENT_ID: 'assistant',
 }
 
 _BUILTINS = [

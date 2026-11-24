@@ -6,7 +6,8 @@
 //   Agent    { agentId, employeeNumber?, occupation?, assignments?, personalProjectId?,
 //              profile: { name, displayName?, responsibility?, capabilities?, allowedClients, status } }
 //   Session  { client, sessionId, projectId, lastActive }
-//   Project  { projectId, name, temporary, archived }
+//   Project  { projectId, name, temporary, archived, repositories? }  repositories: the normalised
+//            addresses of the project's own repositories (host/path), which paired devices compare as digests
 //   Team     { lead: { agentId, name, employeeNumber?, responsibility? } | null, people: [same shape] }
 //
 // Methods (async unless marked sync)
@@ -35,7 +36,12 @@
 //                                               { agent_id, proof }: signed origin for a cross-device ask or chat
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
+//   agentLooks()                                optional: the faces the person changed, [{ agentId, kind, seed? }];
+//                                               a 'generated' seed is shared with paired devices
+//                                               (LAN directory `look`), nothing else is
 //   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
+//   folderRepository(path)                      optional: the normalised origin address of the Git
+//                                               repository holding path, or null (LAN share folder check)
 //   matchWork(query)                            optional: leads the person's own names for work point to, in
 //                                               this space: [{ agentId, projectId, project, responsibility?,
 //                                               matchedTerms? }] (a project name, or an active standing assignment);
@@ -44,8 +50,45 @@
 //   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
 //                                               optional: the Agent's shareable index for a session that
 //                                               stands in for it (stand-in.js); never its private memory
+//   searchSharedProject({ projectId, agentId, workingDirectory, requester: { node, name, agentName },
+//                        query: { action: 'card' | 'search' | 'request' | 'request_status' | 'request_withdraw', queries?, request?, requestId? } })
+//                                               optional: a paired device's read-only look at one shared project
+//                                               (projectId and agentId from this device's share, never from the
+//                                               asker; node the asking device's verified fingerprint, name and
+//                                               agentName display text), every card and search rate limited and
+//                                               recorded by the host: card { ok: true, name, responsibility,
+//                                               projectName }, search { ok: true, results, truncated }, or
+//                                               { ok: false, code }; without it this device refuses every
+//                                               visitor query (query_unsupported). request asks for work done
+//                                               here ({ ok: true, requestId, state }); request_status reads one
+//                                               request and request_withdraw takes one back, only for the device
+//                                               that made it (workingDirectory: the share's folder, or null)
+//   peerDeviceRevoked(nodeId)                   optional: a paired device was revoked or left; the host ends
+//                                               what it kept open for it (its visit requests)
+//   peerSharesChanged(shares)                   optional: the shares this device offers now ([{ projectId,
+//                                               agentId }]); the host ends what was open for others
+//   fuliMcpServer(client)                       optional, sync: the host's own MCP server entry for a wake
+//                                               client ({ command, args, settings? }) as its installer writes
+//                                               it, or null; the read_only wake of an ask from another computer
+//                                               then loads only that server, and without it no MCP server at all
+//   refuseSharedQuery({ requester: { node, name, agentName }, action, code })
+//                                               optional: records a visitor query this device refused before
+//                                               searchSharedProject (not shared, a wrong proof, a replay) once
+//                                               the asking device was proven, counted toward its limits
+//   redactDiagnostic(text)                      optional, sync: a failed wake's captured client output as it
+//                                               may be kept (paths, credentials, secrets removed); without
+//                                               it the output is dropped and only codes are kept
+//   recordWakeFailure({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote })
+//                                               optional, sync, never throws: the host's diagnostics of a failed wake
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
+//   callerRunner()                              optional, sync: the certificate fingerprint of the host's runner (another
+//                                               computer of the person) whose call is being served, or null; such a call
+//                                               wakes read-only with only fuliMcpServer, never in a folder it names, and
+//                                               its asks record it; projectForPath answers null for it
+//   wakeScratchFolder()                         optional, sync: an empty folder the host owns, where a fresh session
+//                                               woken for an ask from another computer starts when nothing names one;
+//                                               without it such a session starts in an empty folder under the OS temp
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([
   'spaceId', 'listAgents', 'recentSessions', 'taskContext', 'listProjects', 'getProject',
   'projectLeadId', 'staffProjectLead', 'projectTeam', 'projectForPath',

@@ -129,6 +129,19 @@ describe('beginner\'s guide', () => {
     expect(posts.some(post => post.url === '/api/first-run-guide/tour')).toBe(true)
   })
 
+  it('leaves out the 圆桌 step while 圆桌 is not shown, and says nothing about 整理', async () => {
+    mountShell({ ...state({ open: false, tourSeen: null }), advancedAreas: { shown: [] } })
+    await flushPromises()
+    expect([...dialog()!.querySelectorAll<HTMLElement>('.tour-step')].map(step => step.dataset.tourStep))
+      .toEqual(['what', 'clients', 'reply', 'memory', 'projects'])
+    expect(find('[data-tour-progress]')?.textContent).toBe('第 1 步，共 5 步：FULI 帮你的 AI 记事')
+    expect(dialog()!.querySelector('[data-tour-step="projects"]')?.textContent).toContain('每个项目由一位 FLA 负责，它记得这个项目的事。')
+    expect(dialog()!.textContent).not.toContain('整理')
+    for (let step = 1; step < 5; step += 1) await click('[data-tour-next]')
+    expect(current()?.dataset.tourStep).toBe('projects')
+    expect(find('[data-tour-next]')?.textContent?.trim()).toBe('完成')
+  })
+
   it('goes to a step\'s place and continues from that step from the corner', async () => {
     const { router } = mountShell(state({ open: false, tourSeen: null }))
     await flushPromises()

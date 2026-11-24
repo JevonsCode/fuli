@@ -7,20 +7,19 @@ describe('widget layout', () => {
   })
 
   it('moves a widget by data alone, and keeps defaults for slots a saved layout leaves out', () => {
-    const moved = resolveLayout({ 'workbench.feed': [], 'fla.overview': ['team-cards'] })
-    expect(moved['workbench.feed']).toEqual([])
+    const moved = resolveLayout({ 'fla.overview': ['team-cards'] })
     expect(moved['fla.overview']).toEqual(['team-cards'])
     expect(moved['shell.aboveDock']).toEqual(['team-island'])
   })
 
-  it('drops unknown widgets, widgets in a slot they were not built for, and repeats', () => {
+  it('drops unknown slots and widgets, widgets in a slot they were not built for, and repeats', () => {
     const resolved = resolveLayout({
-      'workbench.feed': ['nonsense', 'team-island', 'team-cards'],
-      'fla.overview': ['team-cards'],
+      'workbench.feed': ['team-cards'],
+      'fla.overview': ['nonsense', 'team-island', 'team-cards', 'team-cards'],
       'shell.aboveDock': 'not a list',
     })
-    expect(resolved['workbench.feed']).toEqual(['team-cards'])
-    expect(resolved['fla.overview']).toEqual([])
+    expect(Object.keys(resolved)).toEqual(['shell.aboveDock', 'fla.overview'])
+    expect(resolved['fla.overview']).toEqual(['team-cards'])
     expect(resolved['shell.aboveDock']).toEqual(['team-island'])
   })
 })

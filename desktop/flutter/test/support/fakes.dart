@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:fuli_desktop/src/platform/caption_controls.dart';
 import 'package:fuli_desktop/src/platform/ports.dart';
 import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
+import 'package:fuli_desktop/src/runtime/runtime_output.dart';
 
 class RecordingNotifier implements Notifier {
   final List<String> bodies = [];
@@ -25,6 +26,8 @@ class FixedRuntime implements FuliRuntime {
   RuntimeReport report;
   final int port;
   final List<String> calls = [];
+  /// The startup steps this runtime reports while a start runs.
+  List<String> stages = const [];
 
   @override
   Future<bool> locate() async => report.state != RuntimeState.notFound;
@@ -33,14 +36,20 @@ class FixedRuntime implements FuliRuntime {
   Future<int> consolePort() async => port;
 
   @override
+  Future<String> logDirectory() async => '/fuli-data/logs';
+
+  @override
   Future<RuntimeReport> status() async {
     calls.add('status');
     return report;
   }
 
   @override
-  Future<RuntimeReport> start() async {
+  Future<RuntimeReport> start({StageListener? onStage}) async {
     calls.add('start');
+    for (final stage in stages) {
+      onStage?.call(stage, null);
+    }
     return report;
   }
 
@@ -54,8 +63,43 @@ class FixedRuntime implements FuliRuntime {
   bool get canChangePort => true;
 
   @override
-  Future<RuntimeReport> changePort() async {
+  Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) async {
+    calls.add('release-lock-start');
+    return releaseReport ?? report;
+  }
+
+  /// What 「解除这把锁并启动」 answers; [report] when null.
+  RuntimeReport? releaseReport;
+
+  /// The plan a recovery preview answers with, and what the recovery answers.
+  RecoveryPlan? recoveryPlan;
+  RuntimeReport? recoverReport;
+
+  /// Whether this runtime recovers only in a terminal (the `fuli` CLI).
+  @override
+  bool recoversInTerminal = false;
+
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
+    calls.add('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-preview');
+    return RuntimeReport(RuntimeState.stopped, recoveryPlan: recoveryPlan);
+  }
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) async {
+    calls.add('${recoveryAction(abandonImport: abandonImport, keepNewer: keepNewer)}-start $digest');
+    return recoverReport ?? report;
+  }
+
+  @override
+  Future<RuntimeReport> changePort({StageListener? onStage}) async {
     calls.add('change-port');
+    return report;
+  }
+
+  @override
+  Future<RuntimeReport> endOrphansAndStart({StageListener? onStage}) async {
+    calls.add('end-orphans-start');
     return report;
   }
 }

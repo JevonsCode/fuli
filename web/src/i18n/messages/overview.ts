@@ -14,13 +14,15 @@ export const overviewMessages = {
         delegated_change: 'FLA 替你改了设置：{reason}',
         model_failing: '{role} 的模型没回应',
         update_available: '有新版本 v{version}',
+        runner_paired: '电脑「{name}」（{device}）配对成了运行机，能用你的 FULI。不认识它就撤销。',
       },
       actions: {
         topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', retrospective_ready: '去确认', tonborg_confirmed: '查看',
         fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
+        runner_paired: '查看接入',
       },
+      runner: { revoke: '撤销', confirmRevoke: '确认撤销', revoking: '正在撤销', revoked: '已撤销，这台电脑不能再用你的 FULI。' },
     },
-    more: '更多 {count}',
     lists: {
       search: { running: '搜索标题和目标', done: '搜索标题和结果', notices: '搜索名字、项目和任务' },
       range: {
@@ -41,6 +43,7 @@ export const overviewMessages = {
       kinds: {
         topic_promoted: '话题升级', dreaming_found: "@:{'roleNames.astro'} 整理", dreaming_stopped: "@:{'roleNames.astro'} 没跑完", retrospective_ready: '复盘',
         tonborg_confirmed: "@:{'roleNames.tonborg'} 确认", fla_joined: 'FLA 加入', fla_left: 'FLA 离开', delegated_change: '代改设置', model_failing: '模型没回应', update_available: '新版本',
+        runner_paired: '运行机配对',
       },
       sort: {
         label: '排序',
@@ -60,60 +63,13 @@ export const overviewMessages = {
       clear: '清除筛选',
     },
     sections: {
-      attention: '等你处理',
       currentWork: '进行中',
       recentlyDone: '最近完成',
     },
-    stage: {
-      aria: '当前工作',
-      flaProgress: '{done}/{total} 位 FLA 已完成分工',
-      flaDone: 'FLA 已完成分工',
-      system: '系统',
-      switchTo: '切换到 {title}',
-      viewsAria: '这项工作的进展',
-      views: { timeline: '时间轴' },
-    },
-    cast: {
-      aria: '这项工作的 FLA 和项目',
-      flas: '参与的 FLA',
-      project: '项目',
-      moments: '{count} 条',
-      only: '只看 {name} 的进展',
-      all: '看全部进展',
-    },
-    timeline: {
-      today: '今天',
-      yesterday: '昨天',
-      undated: '时间未知',
-      expand: '展开',
-      collapse: '收起',
-      earlier: '显示更早的 {count} 条',
-      gap: '隔了 {span}',
-      tones: { done: '已完成', blocked: '受阻', unblocked: '已解除阻塞' },
-      crew: '同时在干活：{names}',
-    },
-    done: {
-      empty: '还没有完成的工作。',
-    },
-    attention: {
-      loading: '正在读取待处理请求…',
-      meta: '{name}，{time}',
-      loadFailed: '待处理请求暂时无法读取。',
-      all: '查看全部 {count} 个请求', respond: '查看并回应',
-    },
-    work: {
-      loading: '正在读取当前工作…',
-      empty: '当前范围暂无进行中的工作。',
-      loadFailed: '部分工作记录暂不可用。',
-    },
-    read: {
-      scope: '正在读取工作台范围…', slow: '读取时间较长。', timeout: '读取超时。',
-      reload: '重新读取', stale: '更新失败，显示上次结果。', lastRead: '上次读取 {date}', diagnostics: '诊断信息',
-      denied: '访问权限已变化，请重新读取当前范围。', partial: '部分记录',
-    },
+    attention: { meta: '{name}，{time}', respond: '查看并回应' },
+    read: { scope: '正在读取工作台范围…', slow: '比平时慢。控制台最多等 30 秒，然后会说哪里读不到。', denied: '访问权限已变化，请重新读取当前范围。' },
     missing: { taskTitle: '未提供任务标题', requestTitle: '未提供请求标题', owner: '还没有负责人', name: '姓名未提供',
       nameLoading: '正在读取负责人姓名…', nameUnavailable: '负责人姓名暂不可用', project: '项目名未提供', status: '状态未识别', time: '时间未提供' },
-    actions: { request: '查看请求', task: '查看任务', blocked: '查看详情', failed: '查看详情', awaiting_review: '查看交付记录' },
   },
   'en-US': {
     notices: {
@@ -130,13 +86,15 @@ export const overviewMessages = {
         delegated_change: 'An FLA changed a setting for you: {reason}',
         model_failing: 'The {role} model is not answering',
         update_available: 'Version v{version} is out',
+        runner_paired: '“{name}” ({device}) paired as a runner and can use your FULI. Not yours? Revoke it.',
       },
       actions: {
         topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', retrospective_ready: 'Confirm', tonborg_confirmed: 'View',
         fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
+        runner_paired: 'View clients',
       },
+      runner: { revoke: 'Revoke', confirmRevoke: 'Confirm revoke', revoking: 'Revoking', revoked: 'Revoked: this computer can no longer use your FULI.' },
     },
-    more: '{count} more',
     lists: {
       search: { running: 'Search titles and goals', done: 'Search titles and results', notices: 'Search names, projects and tasks' },
       range: {
@@ -157,6 +115,7 @@ export const overviewMessages = {
       kinds: {
         topic_promoted: 'Topic promoted', dreaming_found: "@:{'roleNames.astro'} found", dreaming_stopped: "@:{'roleNames.astro'} stopped", retrospective_ready: 'Retrospective',
         tonborg_confirmed: "@:{'roleNames.tonborg'} confirmed", fla_joined: 'FLA joined', fla_left: 'FLA left', delegated_change: 'Setting changed', model_failing: 'Model not answering', update_available: 'New version',
+        runner_paired: 'Runner paired',
       },
       sort: {
         label: 'Sort',
@@ -176,59 +135,12 @@ export const overviewMessages = {
       clear: 'Clear filters',
     },
     sections: {
-      attention: 'Waiting for you',
       currentWork: 'In progress',
       recentlyDone: 'Recently done',
     },
-    stage: {
-      aria: 'Current work',
-      flaProgress: '{done} of {total} FLAs finished their part',
-      flaDone: 'FLAs finished',
-      system: 'System',
-      switchTo: 'Switch to {title}',
-      viewsAria: 'Progress of this work',
-      views: { timeline: 'Timeline' },
-    },
-    cast: {
-      aria: 'FLAs and project of this work',
-      flas: 'FLAs on it',
-      project: 'Project',
-      moments: '{count}',
-      only: 'Show only {name}’s progress',
-      all: 'Show all progress',
-    },
-    timeline: {
-      today: 'Today',
-      yesterday: 'Yesterday',
-      undated: 'Time unknown',
-      expand: 'Show more',
-      collapse: 'Show less',
-      earlier: 'Show {count} earlier',
-      gap: '{span} apart',
-      tones: { done: 'Done', blocked: 'Blocked', unblocked: 'Unblocked' },
-      crew: 'Also at work: {names}',
-    },
-    done: {
-      empty: 'Nothing finished yet.',
-    },
-    attention: {
-      loading: 'Loading pending requests…',
-      meta: '{name}, {time}',
-      loadFailed: 'Pending requests are temporarily unavailable.',
-      all: 'View all requests ({count})', respond: 'View and respond',
-    },
-    work: {
-      loading: 'Reading current work…',
-      empty: 'No active work in this scope.',
-      loadFailed: 'Current tasks are temporarily unavailable.',
-    },
-    read: {
-      scope: 'Reading workspace scope…', slow: 'Taking longer than usual.', timeout: 'Read timed out.',
-      reload: 'Reload', stale: 'Update failed. Showing previous results.', lastRead: 'Last read {date}', diagnostics: 'Diagnostics',
-      denied: 'Access has changed. Reload the current scope.', partial: 'Partial records',
-    },
+    attention: { meta: '{name}, {time}', respond: 'View and respond' },
+    read: { scope: 'Reading workspace scope…', slow: 'Slower than usual. The console waits up to 30 seconds, then says what it could not read.', denied: 'Access has changed. Reload the current scope.' },
     missing: { taskTitle: 'Task title not provided', requestTitle: 'Request title not provided', owner: 'No lead yet', name: 'Name not provided',
       nameLoading: 'Reading owner names…', nameUnavailable: 'Owner name unavailable', project: 'Project name not provided', status: 'Unrecognized status', time: 'Time not provided' },
-    actions: { request: 'View request', task: 'View task', blocked: 'View details', failed: 'View details', awaiting_review: 'View delivery record' },
   },
 } as const

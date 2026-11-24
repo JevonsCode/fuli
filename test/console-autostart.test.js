@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 
-import { claudeLifecycleUnavailable } from '../src/agents/claude-code/lifecycle-hook.js';
+import { claudeLifecycleUnavailable } from '../src/agents/claude-code/lifecycle-event.js';
 import { consoleRecoveryNotice } from '../src/agents/lifecycle-failure.js';
 import { CONSOLE_AUTOSTART_LIMITS, consoleAutostart, superviseConsole } from '../src/local-runtime/console-autostart.js';
 import {

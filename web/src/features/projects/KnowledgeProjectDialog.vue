@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { projectScopeOptions, temporaryGroupLabel } from '@/features/projects/project-scope-choices'
+import { readTemporaryProjectSources } from '@/features/projects/temporary-project-sources'
 import { computed, ref, watch } from 'vue'
 
 import { postJson } from '@/api/client'
@@ -11,6 +13,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { projectDisplayName } from './project-origin'
 
 type ProjectMode = 'create' | 'existing'
 type ConflictResolution = 'defer' | 'keep_target' | 'use_source' | 'coexist'
@@ -89,12 +92,7 @@ const availableProjects = computed(() =>
   props.projects.filter(({ project_id }) => project_id !== sourceProjectId.value),
 )
 const availableProjectOptions = computed(() =>
-  availableProjects.value.map((project) => ({
-    value: project.project_id,
-    label: project.profile.name,
-    meta: `#${compactIdentity(project.project_id, 26)}`,
-    search: identitySearchText(project.project_id),
-  })),
+  projectScopeOptions(availableProjects.value, project => ({ meta: `#${compactIdentity(project.project_id, 26)}`, search: identitySearchText(project.project_id) })),
 )
 const selectedProject = computed(() =>
   availableProjects.value.find(({ project_id }) => project_id === targetProjectId.value) ?? null,
@@ -284,7 +282,7 @@ async function submit() {
     )
     const targetName = mode.value === 'create'
       ? newProjectName.value.trim()
-      : selectedProject.value?.profile.name
+      : (selectedProject.value && projectDisplayName(selectedProject.value))
         ?? t('projects.knowledgeDialog.relationActors.targetProject')
     emit('close')
     emit('saved', result, targetName)
@@ -353,7 +351,7 @@ function fail(message: string) {
           <textarea v-model="newProjectPurpose" maxlength="4096" rows="3" />
         </label>
       </section>
-      <OptionCombobox v-else v-model="targetProjectId" field :options="availableProjectOptions" :label="t('projects.knowledgeDialog.targetPersonalProject')" required />
+      <OptionCombobox v-else v-model="targetProjectId" field :options="availableProjectOptions" :fold-group="temporaryGroupLabel()" @fold-shown="readTemporaryProjectSources()" :label="t('projects.knowledgeDialog.targetPersonalProject')" required />
 
       <section v-if="sourceProjectId" class="knowledge-project-relation">
         <label class="ui-check">

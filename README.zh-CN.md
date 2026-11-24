@@ -147,6 +147,26 @@ fuli open
 Claude Code、Codex、OpenCode、Cursor、DeepSeek Harness、Claude 桌面版、Gemini CLI、Qwen Code、Kiro 和
 Antigravity 都能在控制台（设置 › 客户端）里一键接入。其他 MCP 客户端运行 `fuli connect` 拿一份标准配置。
 各客户端能做到哪一步，比如能不能自动记录对话，见[客户端接入（英文）](docs/client-connections.md)。
+
+FULI 往一个客户端里装哪些东西、各管什么。只有 MCP 也能用 FULI，其余几样让它自动起来。设置 › 客户端里每个客户端的卡片会列出它装了哪几样。
+
+| 部分 | 作用 | 没有时 |
+| --- | --- | --- |
+| MCP | FULI 的工具：记忆、检索、存知识、FLA | 这个客户端里用不了 FULI |
+| 生命周期钩子（或插件） | 每次任务自动带上你的上下文、结束时自动收尾，并自动记录对话 | 只能靠 Agent 按 FULI 的说明做，没有保证；不会自动记录 |
+| Skills | 教 Agent 怎么用 FULI | 客户端不显示 MCP 自带说明时，Agent 可能不知道怎么用 |
+| 客户端专属 | Claude Code 的权限白名单、Codex 的全局说明和 `/fla` 菜单 | 只少了这些便利 |
+
+| 客户端 | MCP | 钩子或插件 | Skills | 专属 |
+| --- | --- | --- | --- | --- |
+| Claude Code | ✓ | ✓ | ✓ | 权限白名单 |
+| Codex | ✓ | ✓ | ✓ | 全局说明、`/fla` 菜单 |
+| Cursor | ✓ | ✓（只有完成提醒） | ✓ | |
+| OpenCode 2.x | ✓ | 插件 | ✓ | |
+| OpenCode（没装上插件时） | ✓ | | ✓ | |
+| DeepSeek Harness | 在它的 bundle 里 | 插件 | ✓ | |
+| Claude 桌面版、Gemini CLI、Qwen Code、Kiro、Antigravity | ✓ | | | |
+| 你自己添加的客户端 | ✓ | | | |
 </details>
 
 <details>

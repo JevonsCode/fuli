@@ -8,7 +8,7 @@
 // With waitInEntry, task entry writes `started` and then waits for `release` to exist.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
+import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-event.js';
 
 const request = JSON.parse(process.argv[2]);
 const task = token => ({ token, project_agent_id: 'engineer', personal_project_id: 'synthetic-project',
