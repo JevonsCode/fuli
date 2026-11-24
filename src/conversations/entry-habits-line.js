@@ -8,15 +8,19 @@
 import { deliveredHabits, HABITS_LEAD } from '../graphiti/turn-receipt-delivery.js';
 
 // The entry with its habits sentence corrected, or the entry as it is when it
-// has no habits line or leaves nothing out.
+// has no habits line or leaves nothing out. A task entry's receipt carries the
+// line in its markdown, one line each (identity-receipt.js withReceiptLines);
+// a receipt still holding them apart has them in `lines`.
 export function withDeliveredHabits(value) {
-  const lines = value?.agent_receipt?.lines;
+  const receipt = value?.agent_receipt;
   const readable = value?.preferences_omitted?.count ?? 0;
-  if (!Array.isArray(lines) || readable < 1) return value;
+  if (!receipt || readable < 1) return value;
   const inline = Array.isArray(value.effective_preferences) ? value.effective_preferences.length : 0;
-  const rewritten = lines.map(line => rewrite(line, inline, readable));
-  return rewritten.some((line, index) => line !== lines[index])
-    ? { ...value, agent_receipt: { ...value.agent_receipt, lines: rewritten } } : value;
+  const markdown = typeof receipt.markdown === 'string'
+    ? receipt.markdown.split('\n').map(line => rewrite(line, inline, readable)).join('\n') : receipt.markdown;
+  const lines = Array.isArray(receipt.lines) ? receipt.lines.map(line => rewrite(line, inline, readable)) : receipt.lines;
+  return markdown !== receipt.markdown || lines?.some((line, index) => line !== receipt.lines[index])
+    ? { ...value, agent_receipt: { ...receipt, markdown, ...(lines ? { lines } : {}) } } : value;
 }
 
 // The sentence runs from the lead to the separator before the link.
