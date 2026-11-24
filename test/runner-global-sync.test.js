@@ -14,13 +14,13 @@ import { followerConsolePage } from '../src/runner/follower-page.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { followerLine, followerStatus } from '../src/runner/follower-status.js';
 import { COPY_FILE, globalCopyLine, readGlobalCopyRecord } from '../src/runner/global-copy-state.js';
-import { startGlobalSync, syncFromPreparation, syncGlobalCopy } from '../src/runner/global-sync.js';
+import { DIGEST_REFUSAL_AGAIN_MS, startGlobalSync, syncFromPreparation, syncGlobalCopy } from '../src/runner/global-sync.js';
 import { createHostConnection } from '../src/runner/host-connection.js';
 import { startRunnerListener } from '../src/runner/host-listener.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { createScopeExport } from '../src/runner/host-scope-export.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
-import { setAsideHostCopy } from '../src/runner/leave-global-copy.js';
+import { ownDataHere, setAsideHostCopy } from '../src/runner/leave-global-copy.js';
 import { RUNNER_PATHS, SCOPE_DIGEST_HEADER } from '../src/runner/protocol.js';
 import { GLOBAL_SCOPE } from '../src/runner/routes-store.js';
 import { RUNNER_FILE, RunnerStore } from '../src/runner/runner-store.js';
@@ -370,21 +370,24 @@ test('the running sync asks nothing while the runtime does not run, and then eve
   const store = new RunnerStore(path.join(dataDir, RUNNER_FILE));
   const loop = startGlobalSync({ dataDir, store, connection, every: 10 * 60_000, tick: 3_600_000, now: () => clock,
     health: async () => { healthAsked += 1; return running ? { ...FORMATS, globalReplica: true } : { unreachable: true }; },
+    providerRecorded: () => running, owed: () => null,
     sync: async (input) => { synced.push(input); return { outcome: 'synced' }; } });
   try {
     assert.equal(await loop.round(), null);
-    assert.equal(healthAsked, 1, 'asked on loopback only; nothing was started');
+    assert.equal(healthAsked, 0, 'the process record names no Provider: not even asked on loopback, nothing started');
     assert.equal(synced.length, 0, 'the host is not asked either');
     running = true;
     assert.deepEqual(await loop.round(), { outcome: 'synced' });
     assert.deepEqual(synced[0].hostSpace, KNOWN);
     assert.deepEqual(synced[0].ownFormats, { ...FORMATS, globalReplica: true });
     assert.equal(synced[0].localSpaceId, HOST_SPACE_ID);
+    assert.equal(synced[0].verify, true, 'the first sync of a process imports even an unchanged digest');
     clock = 9 * 60_000;
     assert.equal(await loop.round(), null, 'not due yet');
     clock = 10 * 60_000;
     await loop.round();
     assert.equal(synced.length, 2);
+    assert.equal(synced[1].verify, false, 'later ones verify every VERIFY_EVERY-th time');
 
     writeRecord(dataDir, { state: 'ready', createdHere: true, running: false, projects: [], space: { state: 'later', reason: 'host_unreachable' } });
     clock = 30 * 60_000;
@@ -404,7 +407,7 @@ test('the state band, /local and fuli status say where the copy stands', async (
   const never = await state(dataDir);
   assert.equal(never.globalCopy.checkedAt, null);
   assert.match(followerLine(never).zh, /全局副本未同步/);
-  assert.match(globalCopyLine(never.globalCopy).zh, /^全局副本（习惯、助手名册）：还没同步过。本机图谱建好时同步第一次；之后在本机运行时运行时同步。$/);
+  assert.match(globalCopyLine(never.globalCopy).zh, /^全局副本（习惯、助手名册）：还没同步过。这台电脑的控制台启动、且主机在线时补上第一份：为此启动一次本机运行时，完成后停掉。$/);
 
   const text = envelopeText('9'.repeat(64));
   await withStore(dataDir, (store) => syncGlobalCopy({ dataDir, store, hostSpace: KNOWN, ownFormats: FORMATS,
@@ -415,7 +418,7 @@ test('the state band, /local and fuli status say where the copy stands', async (
   assert.match(followerLine(synced).zh, /全局副本核对于 2026-11-24T10:00:00.000Z/);
   const line = globalCopyLine(synced.globalCopy);
   assert.equal(line.zh, '全局副本（习惯、助手名册）：上次核对 2026-11-24T10:00:00.000Z，内容上次变化于 2026-11-24T10:00:00.000Z。'
-    + '本机运行时现在没有运行，下次在它运行时同步（不会为了同步专门启动）。');
+    + '本机运行时现在没有运行，下次在它运行时再核对；平时不会为了同步专门启动它，只在 FULI 升级后启动一次。');
   const page = followerConsolePage({ status: { ...synced, host: { ...synced.host, reachable: null } }, hostPath: '/remote/host-a/' });
   assert.ok(page.includes(line.zh), '/local');
   assert.ok(formatFollowerResult('status', { status: 'running', url: 'http://127.0.0.1:2727', ...synced, line: followerLine(synced) })
@@ -462,4 +465,98 @@ test('leaving sets the graph that holds the host\'s copy aside, never deletes it
   assert.equal(left.exitCode, 0);
   assert.match(said.join('\n'), /held only Host A's copy of global; it was set aside, not deleted, in native-runtime\/recovered\/synthetic\./);
   assert.equal(existsSync(path.join(dataDir, RUNNER_FILE)), false, 'then the pairing ends');
+});
+
+test('a verifying sync imports an unchanged digest and says when it found the copy changed here', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const text = envelopeText('1'.repeat(64));
+  let clock = Date.parse('2026-11-24T09:00:00.000Z');
+  let wrote = { nodes: { created: 1 } };
+  const imported = [];
+  const importInto = async (input) => { imported.push(input); return { imported: wrote }; };
+  const sync = (verify) => withStore(dataDir, (store) => syncGlobalCopy({ dataDir, store, hostSpace: KNOWN, ownFormats: FORMATS,
+    localSpaceId: HOST_SPACE_ID, connection: scriptedConnection({ digest: digestAnswer(text), envelope: envelopeAnswer(text) }),
+    importInto, now: () => clock, verify }));
+  await sync(false);
+  clock += 10 * 60_000;
+  // Something else wrote this computer's graph: the import writes the host's records back.
+  wrote = { nodes: { created: 0, updated: 1, unchanged: 40, deleted: 0 }, relationships: { created: 0, updated: 0, deleted: 0 } };
+  const corrected = await sync(true);
+  assert.equal(imported.length, 2, 'imported although the digest is the one recorded');
+  assert.equal(corrected.corrected, true);
+  assert.equal(readGlobalCopyRecord(dataDir).changedAt, '2026-11-24T09:10:00.000Z');
+  clock += 10 * 60_000;
+  wrote = { nodes: { created: 0, updated: 0, unchanged: 41, deleted: 0 }, relationships: { created: 0, updated: 0, deleted: 0 } };
+  const same = await sync(true);
+  assert.equal(same.unchanged, true);
+  assert.equal(readGlobalCopyRecord(dataDir).changedAt, '2026-11-24T09:10:00.000Z', 'nothing written: not a change');
+  assert.equal(readGlobalCopyRecord(dataDir).checkedAt, '2026-11-24T09:20:00.000Z');
+});
+
+test('the copy is said to have arrived before the import writes, so a process ended after it is still known', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const text = envelopeText('1'.repeat(64));
+  const replicaNow = () => { const routes = openRoutes(dataDir); try { return routes.hasReplica(GLOBAL_SCOPE); } finally { routes.close(); } };
+  let seenDuringImport = null;
+  await assert.rejects(withStore(dataDir, (store) => syncGlobalCopy({ dataDir, store, hostSpace: KNOWN, ownFormats: FORMATS,
+    localSpaceId: HOST_SPACE_ID, connection: scriptedConnection({ digest: digestAnswer(text), envelope: envelopeAnswer(text) }),
+    importInto: async () => { seenDuringImport = replicaNow(); throw new Error('synthetic: the process ended here'); } })));
+  assert.equal(seenDuringImport, true);
+  assert.equal(replicaNow(), true, '`fuli runner leave` sets this graph aside');
+  assert.equal(readGlobalCopyRecord(dataDir).digest, undefined, 'never recorded as synced');
+});
+
+test('a refused digest (413, 409) is not asked again in the same situation for a day', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  let clock = Date.parse('2026-11-24T09:00:00.000Z');
+  const tooLarge = { reachable: true, status: 413, text: JSON.stringify({ error: 'scope_too_large', bytes: 70_000_000, max: 67_108_864 }) };
+  const sync = (connection, hostSpace = KNOWN) => withStore(dataDir, (store) => syncGlobalCopy({ dataDir, store, hostSpace,
+    ownFormats: FORMATS, localSpaceId: HOST_SPACE_ID, connection, importInto: async () => assert.fail('nothing imported'), now: () => clock }));
+  const first = scriptedConnection({ digest: tooLarge });
+  assert.equal((await sync(first)).code, 'scope_too_large');
+  assert.equal(readGlobalCopyRecord(dataDir).last.phase, 'digest');
+  clock += 10 * 60_000;
+  const again = scriptedConnection({ digest: () => assert.fail('not asked again') });
+  assert.equal((await sync(again)).repeated, true);
+  assert.deepEqual(again.asked, []);
+  const newer = scriptedConnection({ digest: tooLarge });
+  await sync(newer, { ...KNOWN, graphFormat: 25, replicaProtocol: 2 });
+  assert.deepEqual(newer.asked, [], 'another version stops before the digest (versions differ)');
+  clock += DIGEST_REFUSAL_AGAIN_MS;
+  const later = scriptedConnection({ digest: tooLarge });
+  await sync(later);
+  assert.deepEqual(later.asked, ['digest'], 'asked again after a day: the host\'s content may have changed');
+});
+
+test('a host never keeps an export past the size cap, and answers the next asks without exporting again', async () => {
+  let exports = 0;
+  const asked = [];
+  const scope = createScopeExport({ app: hostApp(async (input) => { exports += 1; asked.push(input);
+    throw Object.assign(new Error('larger than the cap'), { status: 413, code: 'scope_too_large' }); }), maxBytes: 100 });
+  const answer = await scope.answer('global', 'digest');
+  assert.equal(answer.status, 413);
+  assert.equal(answer.body.error, 'scope_too_large');
+  assert.equal(asked[0].maxBytes, 100, 'the Provider\'s export is read up to the cap only');
+  await scope.answer('global', 'envelope');
+  assert.equal(exports, 1);
+});
+
+test('leaving refuses to move a graph whole that holds data of this computer\'s own', async (t) => {
+  const dataDir = followerDir(t, 'a'.repeat(64));
+  const paths = resolveSetupPaths({ dataDir, env: {} });
+  const routes = openRoutes(dataDir);
+  try { routes.replicaSynced(GLOBAL_SCOPE, '2026-11-24T09:00:00.000Z'); } finally { routes.close(); }
+  const fakes = { stop: async () => assert.fail('nothing stopped'), setAside: async () => assert.fail('nothing moved') };
+  const own = (found) => ({ ...fakes, ownData: async () => found });
+  await assert.rejects(setAsideHostCopy(paths, own('1 project(s)')), { code: 'local_data_here' });
+
+  const unanswered = async () => ({ unreachable: true });
+  assert.equal(await ownDataHere(paths, { localRoutes: ['project:synthetic'] }), 'scopes routed to this computer: project:synthetic');
+  assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: ['synthetic-project'] }),
+    ownGlobal: async () => ({ count: 0 }) }), '1 project(s)');
+  assert.equal(await ownDataHere(paths, { projects: async () => ({ projects: [] }), ownGlobal: async () => ({ count: 3 }) }),
+    '3 record(s) of global');
+  assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered,
+    record: () => ({ projects: [], ownGlobal: 2 }) }), '2 record(s) of global', 'not running: what the preparation found');
+  assert.equal(await ownDataHere(paths, { projects: unanswered, ownGlobal: unanswered, record: () => ({ projects: [] }) }), null);
 });

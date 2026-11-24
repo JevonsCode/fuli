@@ -11,6 +11,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { recordGraphMigration } from '../system/graph-migration.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { refuseOnFollower } from './follower-graph-refusal.js';
 import { runSetupCommand } from './setup-command.js';
 import { writeLine } from './terminal-io.js';
 
@@ -21,6 +22,7 @@ export async function runGraphMigrateCommand(args, dependencies = {}) {
   const env = dependencies.env ?? process.env;
   const write = dependencies.write ?? writeLine;
   const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options.dataDir, env });
+  refuseOnFollower(paths.dataDir, 'fuli graph migrate', { isRunner: dependencies.isRunner });
   write([
     'Move the container graph to the native runtime',
     `Data: ${paths.dataDir}`,

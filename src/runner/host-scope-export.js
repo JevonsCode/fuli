@@ -25,21 +25,26 @@ export const SCOPE_EXPORT_WAIT_MS = 20_000;
 // ownsScope(scope): whether this computer writes the scope (its routes store sends it nowhere).
 export function createScopeExport({ app, ownsScope = () => true, now = Date.now, keepMs = SCOPE_EXPORT_KEEP_MS,
   waitMs = SCOPE_EXPORT_WAIT_MS, maxBytes = SCOPE_ENVELOPE_MAX_BYTES }) {
-  const kept = new Map(); // scope → { at, exported }
-  const running = new Map(); // scope → Promise<{ exported } | { error }>
+  const kept = new Map(); // scope → { at, outcome }
+  const running = new Map(); // scope → Promise<{ exported } | { tooLarge } | { error }>
 
+  // An export larger than maxBytes is never kept (nor read whole: exportScope stops reading it):
+  // only that it was too large, so the next asks within KEEP_MS are answered without exporting again.
   function exportOnce(scope) {
     const fresh = kept.get(scope);
-    if (fresh && now() - fresh.at < keepMs) return Promise.resolve({ exported: fresh.exported });
+    if (fresh && now() - fresh.at < keepMs) return Promise.resolve(fresh.outcome);
     if (!running.has(scope)) {
       const job = Promise.resolve()
-        .then(() => app.personal.exportScope({ personalSpaceId: app.config.personal.spaceId, scope }))
-        .then((exported) => {
-          const entry = { at: now(), exported };
+        .then(() => app.personal.exportScope({ personalSpaceId: app.config.personal.spaceId, scope, maxBytes }))
+        .then((exported) => (exported.bytes > maxBytes ? { tooLarge: { bytes: exported.bytes } } : { exported }),
+          (error) => (error?.code === 'scope_too_large' ? { tooLarge: { bytes: null } } : { error }))
+        .then((outcome) => {
+          if (outcome.error) return outcome;
+          const entry = { at: now(), outcome };
           kept.set(scope, entry);
           setTimeout(() => { if (kept.get(scope) === entry) kept.delete(scope); }, keepMs).unref?.();
-          return { exported };
-        }, (error) => ({ error }))
+          return outcome;
+        })
         .finally(() => running.delete(scope));
       running.set(scope, job);
     }
@@ -62,11 +67,12 @@ export function createScopeExport({ app, ownsScope = () => true, now = Date.now,
     const outcome = await Promise.race([exportOnce(scope), late]).finally(() => clearTimeout(timer));
     if (outcome.late) return refusal(503, 'host_provider_slow', 'This computer\'s graph is slow to export now; ask again later.');
     if (outcome.error) return exportFailed(outcome.error);
-    const exported = outcome.exported;
-    if (exported.bytes > maxBytes) {
-      return { status: 413, body: { error: 'scope_too_large', bytes: exported.bytes, max: maxBytes,
-        message: `The ${scope} export is ${exported.bytes} bytes, more than the ${maxBytes} a copy takes.` } };
+    if (outcome.tooLarge) {
+      const { bytes } = outcome.tooLarge;
+      return { status: 413, body: { error: 'scope_too_large', ...(bytes ? { bytes } : {}), max: maxBytes,
+        message: `The ${scope} export is ${bytes ? `${bytes} bytes, ` : ''}more than the ${maxBytes} bytes a copy takes.` } };
     }
+    const exported = outcome.exported;
     if (part === 'envelope') return { status: 200, text: exported.text, digest: exported.digest };
     return { status: 200, body: { scope: exported.scope, spaceId: exported.spaceId, digest: exported.digest,
       complete: exported.complete, graphFormat: exported.graphFormat, replicaProtocol: exported.replicaProtocol,

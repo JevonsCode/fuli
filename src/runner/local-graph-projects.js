@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { GraphitiProviderClient } from '../graphiti/provider-client.js';
 import { readGraphRuntimeConfig } from '../graphiti/runtime-config.js';
+import { resolveSetupPaths } from '../setup/paths.js';
+import { readJsonFile } from '../storage/json-file.js';
 
 // What this computer's own graph holds of the person's, asked of its own
 // Provider directly, and the one write a follower makes to it (a copy's import). On a computer that follows a host, the console port
@@ -40,6 +42,15 @@ export async function localGraphHealth(configPath, options = {}) {
     return { graph: health?.data_format?.supported_version ?? null, replicaProtocol: health?.replicaProtocol ?? null,
       globalReplica: health?.globalReplica === true };
   });
+}
+
+// Whether this data directory's process record names a running personal Provider: read before
+// anything is asked of it on loopback (global-sync.js), so a stopped runtime costs one small file.
+export function localProviderRecorded(dataDir) {
+  try {
+    const state = readJsonFile(resolveSetupPaths({ dataDir }).nativeProcessStatePath, null);
+    return Boolean(state?.providers?.personal);
+  } catch { return false; }
 }
 
 // The one write a follower makes to its own graph: another computer's scope, imported as a

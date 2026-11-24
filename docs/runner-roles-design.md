@@ -216,7 +216,9 @@ docs/runner.md "This computer's own runtime".)
      paired channel (`/runner/1/scope`, `host-scope-export.js`: the digest alone, or the envelope as its
      Provider wrote it, one export kept a minute, 64 MB cap); the follower imports it into its own graph as a
      read-only copy (`global-sync.js`): once when the preparation made the graph, then only while its own
-     runtime already runs, every 10 minutes, the envelope fetched only when the digest changed. Where it stands
+     runtime already runs, every 10 minutes, the envelope fetched only when the digest changed (or the round
+     verifies); a copy still owed (none arrived, or FULI changed since) is brought by one more preparation run
+     at the console's start, once the host answers. Where it stands
      is said in the state band, `/local` and `fuli status` (`global-copy-state.js`); `fuli runner leave` sets a
      graph holding that copy aside. Nothing reads the copy yet: every call still goes to the host.
    - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
@@ -732,8 +734,12 @@ project must bring it. The PRs that make copies flow must meet these constraints
   `scope_too_large`, the follower stops reading past it.
 - Every start of a follower's Provider takes `FULI_GLOBAL_REPLICA` from the routes store
   (`globalIsCopyHere`), including the path that keeps a Provider running for a scope this computer
-  owns, and the restart after it. *Still true:* the preparation is the only start of a follower's
-  Provider; the sync never starts one (it only asks a running one).
+  owns, and the restart after it. *Done:* the preparation asks `globalIsCopyHere` itself; every other
+  start that does not say (`native-runtime/runtime.js`, `setup/graph-runtime.js`: an import's reconcile, a
+  runtime update's restart) asks `providerGlobalReplica`, which answers false without opening anything on a
+  computer that follows no one; and the commands that would start or write a follower's graph as an ordinary
+  FULI's refuse there (`cli/follower-graph-refusal.js`). The sync itself never starts a Provider; the
+  preparation starts one for an owed copy (below).
 - After `fuli runner leave`, the `global` copies carrying the host's marker get a clear fate (made
   this computer's own, or set aside) before an ordinary start writes the defaults again: otherwise
   the defaults it adds collide with those copies by ID. *Done:* leave sets a graph holding the copy aside
@@ -751,3 +757,22 @@ project must bring it. The PRs that make copies flow must meet these constraints
   its settings name another space ID (`host-space.js` `hostSpaceReader`). A loop must not take an
   old space ID for the current one either. *Done:* the hello is unchanged and answers at once; the sync
   checks the space the export itself names, not only the one the hello read.
+
+**From the review of the copy of `global`** (what the steps after it must keep):
+
+- Judge "the copy is current" by what this computer's graph holds, never by `runner/global-copy.json`
+  alone. *Done* as a verifying import: the preparation's syncs, a running console's first and every sixth
+  import the envelope even when the digest matches, and the import writes back what differs
+  (`test/global-copy-neo4j-acceptance.test.js`). A read-only digest of the copy from the Provider would let
+  every round check it; not built.
+- `fuli runner leave` checks whether this computer owns data before it moves the graph whole (a local route,
+  `countOwnGlobal`, `listProjects`), and refuses if so. *Done* (`leave-global-copy.js ownDataHere`); the step
+  that lets a follower own a scope must set aside only the copy instead.
+- The path that keeps a follower's runtime running passes `globalIsCopyHere`, and after an update migrates
+  and checks the graph format. *Done* for the preparation (an owed copy after an update runs it once) and for
+  any start that does not say (`providerGlobalReplica`); the start that keeps it running is a later step.
+- The host's scope route decides whether an export holds the runtime lease: today it does not, so a host
+  Provider reclaimed while idle fails that export (said as `host_provider_unavailable`). *Open.*
+- "Host route → follower sync → import" on a real Neo4j, then a restart as a copy's with the system FLAs
+  and the content unchanged. *Done:* `test/global-copy-neo4j-acceptance.test.js` in `npm run test:neo4j`
+  (the `provider-neo4j-node` CI job); the host's route is driven in process, not over the TLS listener.

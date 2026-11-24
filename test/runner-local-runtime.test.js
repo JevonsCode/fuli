@@ -259,7 +259,8 @@ test('the background preparation starts only when it is not done and not under w
   writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
   assert.equal(prepareInBackground({ dataDir, spawnProcess, underWay: () => true }), false);
   writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], space: { state: 'same', id: HOST_SPACE.spaceId } });
-  assert.equal(prepareInBackground({ dataDir, spawnProcess }), false);
+  // No copy of the host's global is owed here (runner-global-sync.test.js covers one that is).
+  assert.equal(prepareInBackground({ dataDir, spawnProcess, catchUp: () => null }), false);
   const failed = (record) => writeRecord(dataDir, { state: 'failed', createdHere: true, version: FULI_VERSION, ...record });
   failed({ code: 'disk_low' });
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), true, 'too little disk is tried again at the next start');

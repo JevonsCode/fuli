@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { discoveryAdapters } from '../../packages/roundtable/src/peer/lan-addresses.js';
 import { createBonjourDiscovery } from '../../packages/roundtable/src/peer/nearby-discovery.js';
 import { pinnedTls } from '../../packages/roundtable/src/peer/peer-transport.js';
+import { readBodyAtMost } from '../http/body-at-most.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { RUNNER_PATHS, RUNNER_SERVICE_TYPE } from './protocol.js';
 
@@ -167,7 +168,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     const timeout = AbortSignal.timeout(timeoutMs);
     try {
       const answer = await connection.fetch(`${connection.origin}${path}`, { signal: AbortSignal.any([timeout, closing.signal]) });
-      const bytes = await readAtMost(answer, maxBytes);
+      const bytes = await readBodyAtMost(answer, maxBytes);
       if (bytes === null) return { reachable: true, status: answer.status, tooLarge: true };
       const text = new TextDecoder('utf-8').decode(bytes);
       if (answer.status === 403 && jsonError(text) === NOT_PAIRED) {
@@ -250,26 +251,6 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
   }
 
   return { connect, drop, postJson, getText, hello, get current() { return current; }, get pinFailed() { return pinFailed; }, close };
-}
-
-// The body's bytes, or null once more than maxBytes arrived (the rest is not read).
-async function readAtMost(answer, maxBytes) {
-  if (Number(answer.headers.get('content-length')) > maxBytes) {
-    await answer.body?.cancel();
-    return null;
-  }
-  const chunks = [];
-  let size = 0;
-  const reader = answer.body?.getReader();
-  for (let read = await reader?.read(); read && !read.done; read = await reader.read()) {
-    size += read.value.length;
-    if (size > maxBytes) {
-      await reader.cancel().catch(() => {});
-      return null;
-    }
-    chunks.push(read.value);
-  }
-  return Buffer.concat(chunks);
 }
 
 function jsonError(text) {

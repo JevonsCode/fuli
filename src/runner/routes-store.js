@@ -102,6 +102,12 @@ export class RoutesStore {
       .run(at, scope, LOCAL_OWNER);
   }
 
+  // A copy of this scope is about to be written here (global-sync.js): said before the import, so that a
+  // process that ends after the import and before replicaSynced still leaves `fuli runner leave` knowing.
+  replicaArriving(scope) {
+    this.db.prepare('UPDATE routes SET replica = 1 WHERE scope = ? AND owner <> ?').run(scope, LOCAL_OWNER);
+  }
+
   // Whether a copy of this scope ever arrived here.
   hasReplica(scope) {
     if (this.#missing()) return false;

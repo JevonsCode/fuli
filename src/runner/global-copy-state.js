@@ -22,7 +22,9 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 //   'versions_differ'  host / own: { graph, replicaProtocol }; not imported until one changes
 //   'space_differs'    this computer's graph is another personal space than the host's
 //   'refused'          by: host | here; code and message as said; not tried again for the same
-//                      digest, versions and space
+//                      digest, versions and space; phase: 'digest' when the digest itself was refused
+//                      (no digest to compare: asked again after a day, or once a version or the space changed)
+// last.corrected: a verifying import found this graph's copy other than the host's and wrote it back.
 export const COPY_FILE = join('runner', 'global-copy.json');
 // How often a running runtime checks its copy against the host (global-sync.js).
 export const GLOBAL_SYNC_EVERY_MS = 10 * 60_000;
@@ -88,10 +90,12 @@ function nextLine(copy) {
       en: `This computer's runtime runs: the host is asked every ${copy.everyMinutes} minutes, and the copy fetched only when it changed.` };
   }
   return copy.checkedAt
-    ? { zh: '本机运行时现在没有运行，下次在它运行时同步（不会为了同步专门启动）。',
-      en: 'This computer\'s runtime does not run now; the copy is synced next while it runs (it is never started for that alone).' }
-    : { zh: '本机图谱建好时同步第一次；之后在本机运行时运行时同步。',
-      en: 'The first sync comes when this computer\'s graph is made; later ones while its runtime runs.' };
+    ? { zh: '本机运行时现在没有运行，下次在它运行时再核对；平时不会为了同步专门启动它，只在 FULI 升级后启动一次。',
+      en: 'This computer\'s runtime does not run now; the copy is checked next while it runs. It is not started for a sync, '
+        + 'except once after FULI is updated.' }
+    : { zh: '这台电脑的控制台启动、且主机在线时补上第一份：为此启动一次本机运行时，完成后停掉。',
+      en: 'The first copy comes once this computer\'s console runs and the host answers: its runtime is started once for it, '
+        + 'then stopped again.' };
 }
 
 function problemLine(last) {

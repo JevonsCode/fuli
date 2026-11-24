@@ -120,6 +120,16 @@ test('an exported envelope reaches the import byte for byte, its numbers as the 
   assert.equal(calls[1].options.headers['x-fuli-human-review-token'], undefined);
 });
 
+test('an export larger than the cap a copy takes is not read into memory, and is refused as too large', async () => {
+  const text = `{"digest":"${'a'.repeat(64)}","scope":"global","nodes":[${'{"id":"Entity:synthetic"},'.repeat(20)}{}]}`;
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => new Response(new Blob([text]).stream(), { status: 200, headers: { 'content-type': 'application/json' } }) });
+  await assert.rejects(client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', maxBytes: 100 }),
+    { status: 413, code: 'scope_too_large' });
+  const within = await client.exportScope({ personalSpaceId: 'synthetic-space', scope: 'global', maxBytes: text.length });
+  assert.equal(within.text, text);
+});
+
 test('a scope import takes only the envelope text, never a parsed envelope', () => {
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async () => assert.fail('nothing is sent') });

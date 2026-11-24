@@ -9,7 +9,7 @@ import test, { mock } from 'node:test';
 
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
 import { startFollowerConsole, STATUS_PATH } from '../src/runner/follower-console.js';
-import { graphHoldsNothingOfThePerson, localSpaceLine, prepareInBackground, readLocalRuntime, writeRecord }
+import { copyCatchUp, graphHoldsNothingOfThePerson, localSpaceLine, prepareInBackground, readLocalRuntime, writeRecord }
   from '../src/runner/follower-local-runtime.js';
 import { setGraphAside } from '../src/runner/follower-graph-aside.js';
 import { followerConsolePage } from '../src/runner/follower-page.js';
@@ -231,7 +231,9 @@ test('the graph is made under the host\'s personal space, with its Provider star
   assert.deepEqual(record.formats, { graph: 25, replicaProtocol: 1 }, 'sent with the next hello');
   const state = readLocalRuntime(dataDir);
   assert.equal(localSpaceLine(state).zh, '本机图谱：和主机是同一个空间。');
-  assert.equal(prepareInBackground({ dataDir, spawnProcess: () => assert.fail('nothing left to do') }), false);
+  // The stubbed first sync landed no copy, so one is still owed (copyCatchUp); with it in, nothing is left to do.
+  assert.equal(copyCatchUp(dataDir), 'first');
+  assert.equal(prepareInBackground({ dataDir, spawnProcess: () => assert.fail('nothing left to do'), catchUp: () => null }), false);
 });
 
 test('a Provider that did not start as a follower\'s is not taken for one', { timeout: 60_000 }, async (t) => {

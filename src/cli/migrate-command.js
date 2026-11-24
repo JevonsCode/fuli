@@ -15,6 +15,7 @@ import {
 import { resolveSetupPaths } from '../setup/paths.js';
 import { acquireMaintenance, holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { refuseOnFollower } from './follower-graph-refusal.js';
 import { confirmInTerminal, copyableValueStyle, writeLine } from './terminal-io.js';
 import { reconcileLocalKnowledge, knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 import { quoteShellArgument } from './shell-argument.js';
@@ -55,12 +56,13 @@ export async function runMigrateCommand(args, dependencies = {}) {
   const [action, ...rest] = args;
   if (!Object.hasOwn(OPTIONS, action ?? '')) throw new TypeError(USAGE);
   const options = parseMigrateOptions(action, rest);
+  const env = dependencies.env ?? process.env;
+  const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
+  refuseOnFollower(paths.dataDir, `fuli migrate ${action}`, { isRunner: dependencies.isRunner });
   if (CHANGES.has(action) && !(dependencies.interactive ?? process.stdin.isTTY === true)) {
     throw new TypeError(`fuli migrate ${action} changes FULI data and asks you to confirm, so run it in an `
       + 'interactive terminal');
   }
-  const env = dependencies.env ?? process.env;
-  const paths = (dependencies.resolvePaths ?? resolveSetupPaths)({ dataDir: options['data-dir'] ?? null, env });
   const context = { options, paths, env, write: dependencies.write ?? writeLine,
     copy: copyableValueStyle({ output: dependencies.output, env }),
     reconcileKnowledge: dependencies.reconcileKnowledge ?? reconcileLocalKnowledge,

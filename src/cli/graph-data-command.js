@@ -6,12 +6,14 @@ import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
+import { refuseOnFollower } from './follower-graph-refusal.js';
 import { writeLine } from './terminal-io.js';
 
 export async function runGraphDataCommand(action, args, dependencies = {}) {
   const options = parseGraphDataOptions(action, args);
   const resolvePaths = dependencies.resolvePaths ?? resolveSetupPaths;
   const paths = resolvePaths({ dataDir: options.dataDir, env: dependencies.env ?? process.env });
+  refuseOnFollower(paths.dataDir, `fuli graph ${action}`, { isRunner: dependencies.isRunner });
   const readSettings = dependencies.readSettings ?? readRuntimeSettings;
   const saved = readSettings(paths.runtimeSettingsPath);
   const mode = options.mode ?? saved.graphRuntimeMode;

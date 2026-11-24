@@ -159,7 +159,8 @@ export async function serveFollowerConsole({ dataDir, port }) {
   // This computer's own runtime, prepared in the background the first time this version starts here
   // (docs/runner-roles-design.md §10): nothing for the person to do, and nothing routed to it yet.
   try { prepareInBackground({ dataDir }); } catch { /* said as not prepared; the next start tries again */ }
-  // The host's `global` copied into this computer's graph while its runtime runs anyway; never started for it.
+  // The host's `global` copied into this computer's graph while its runtime runs anyway, and a copy still owed
+  // left to the preparation (global-sync.js): Neo4j is started for it only once the host answers, never in a loop.
   const sync = startGlobalSync({ dataDir, store, connection });
   let closing = null;
   const close = () => closing ??= served.close().finally(() => {

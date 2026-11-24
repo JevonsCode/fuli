@@ -257,6 +257,16 @@ the host's console is one page application that reads its own absolute paths.
   and never runs `fuli setup` on a runner. `fuli setup` (and the setup `fuli update` runs) on a
   runner sets up its clients and starts the background preparation of its own runtime (above); it
   never starts a second console or writes over the pairing.
+- The commands that would start this computer's own graph runtime as an ordinary FULI's, or write its
+  graph, refuse on a runner before anything is stopped, started or written: `fuli graph import|export|
+  abandon-import`, `fuli graph runtime install|update|rollback|uninstall|recover`, `fuli graph migrate` and
+  `fuli migrate` (`src/cli/follower-graph-refusal.js`). They say that FULI manages this graph (it holds a
+  read-only copy of the host's `global`), that backups and migrations are made on the host, and that
+  `fuli runner leave` stops following it. `recover` points at 「重新准备」 first and at leave when that does not
+  help; `recover --preview` and `fuli graph runtime unlock` are not refused. Any other start of a Provider
+  for this data directory (an import's reconcile, a runtime update's restart) takes `FULI_GLOBAL_REPLICA`
+  from the routes store when its caller does not say (`providerGlobalReplica`), so it never starts as an
+  ordinary FULI's here.
 - **A pairing, not a missing `graph-runtime.json`, is what makes a computer follow a host**
   (`src/runner/runner-mode.js`). A paired computer that a start or `fuli setup` later wrote a
   runtime file for used to stop counting as a runner, and its clients then silently used an empty
@@ -463,13 +473,23 @@ when the host is away and what a project this computer owns will take its habits
   20 seconds 503 `host_provider_slow` (its export goes on and is kept for the next ask). The hello never waits
   for any of it.
 - **When the follower syncs.** Once when the preparation has made its graph under the host's space (Neo4j
-  runs then anyway), before Neo4j stops again. After that only while this computer's own runtime **already
-  runs**: the follower console checks once a minute whether a sync is due, and only then asks its own
-  Provider on loopback whether it runs; never started for a sync. While it runs: once when the console first
-  finds it running, then every 10 minutes (`GLOBAL_SYNC_EVERY_MS`), and sooner after a round the host did not
-  answer, once the console reaches the host again. Each round asks for the digest; the envelope is fetched
-  only when the digest is not the copy's. A follower that owns no project has no running runtime, so today
-  its copy is the one the preparation made; there is no 「现在同步」 button, since that would start Neo4j.
+  runs then anyway), before Neo4j stops again. While a copy is **owed** (none arrived yet, as on a follower
+  prepared by an earlier 0.29.0 beta or one whose first sync failed; or FULI changed since the preparation,
+  `copyCatchUp`), the preparation runs once more at the console's start: it first asks the host's hello and
+  digest with nothing started, and starts Neo4j only when the host answers and would not say the same refusal
+  or version mismatch again; it syncs, then stops Neo4j. After a FULI update that run also lets the Provider
+  bring the graph format up to date; a graph whose format waits for a step a person confirms, holding only the
+  copy, is set aside in `native-runtime/recovered/` (never deleted) and made again, and one holding the
+  person's data is left as it is and said so. A console that runs keeps trying an owed copy only once the
+  host answers, after a minute and then twice as long each time, up to 30 minutes. Once a copy arrived, only
+  while this computer's own runtime **already runs**: once a minute the console reads whether its process
+  record names a running Provider, and only then asks it on loopback; never started for a sync. While it runs:
+  once when the console first finds it running, then every 10 minutes (`GLOBAL_SYNC_EVERY_MS`), and sooner
+  after a round the host did not answer, once the console reaches the host again. Each round asks for the
+  digest; the envelope is fetched only when the digest is not the copy's, or when the round verifies (the
+  preparation's syncs, a running console's first and every sixth): the digest kept is what this computer last
+  imported, not what its graph holds, so a verifying round imports anyway and writes back whatever differs.
+  There is no 「现在同步」 button, since that would start Neo4j.
 - **Before it imports**, in this order, each said in the state when it stops there: `global` is routed to the
   host (`globalIsCopyHere`); the host's hello says its space and versions (else it waits, or the host runs an
   earlier FULI); the host's space ID is this graph's, as the hello and then the export itself say it; both
@@ -480,8 +500,11 @@ when the host is away and what a project this computer owns will take its habits
   and none while a preparation starts or stops the runtime; a round that finds the lock held skips. The
   envelope's bytes go to this computer's Provider as they arrived. A refusal (409, 422) is recorded with its
   code and message as said, and is not tried again while the host's digest, both versions and the space are
-  what they were.
-- **What it records.** Success writes `replica = 1` and `replica_synced_at` on the `global` row of
+  what they were. A refused digest (413, 409: there is no digest to compare) is not asked again while both
+  versions and the space are what they were, for a day.
+- **What it records.** `replica = 1` is written on the `global` row before the import writes anything (so
+  `fuli runner leave` knows a copy may be there even if the process ends mid-way); success writes
+  `replica_synced_at` on the `global` row of
   `runner/routes.sqlite` (the columns were there; no format change), and `runner/global-copy.json` keeps the
   digest, when the copy was last checked and when its content last changed, and how the last round went
   (process state: without it the next sync imports once more, which writes nothing the copy has).
@@ -496,7 +519,10 @@ when the host is away and what a project this computer owns will take its habits
   leave this data directory is a FULI of its own, whose start would write the defaults of `global` under the
   IDs of the host's copies. The next start makes a graph of its own, as a first start does. While a
   preparation or an import holds the runtime, leave says so and changes nothing. A graph no copy ever arrived
-  in is left as it is.
+  in is left as it is. A graph that holds anything of this computer's own (a scope routed here, or a project or
+  a record of `global` besides the copy and the defaults, as its running Provider counts them, else as the last
+  preparation found them) is never moved whole: leave refuses (`local_data_here`) and changes nothing. None can
+  be there today; the step that lets a follower own a scope must set aside only the copy.
 - **No write fallback yet.** Nothing on a follower writes its own graph but this import: the MCP entry, the
   hooks, the console and `fuli whoami` go to the host, and the preparation and `fuli routes follow` only read
   it (docs/runner-roles-design.md §12). Refusing an ordinary write to a copy (`replica_read_only`) comes with

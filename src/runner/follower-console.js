@@ -7,7 +7,8 @@ import { FULI_VERSION } from '../package-metadata.js';
 import { isReachableHostAddress } from '../server/lan-access.js';
 import { listenServer } from '../server/listen.js';
 import { BAND_PATH, BAND_SOURCE, bandTag, SOURCE_HEADER, STATUS_PATH } from './follower-band.js';
-import { localRuntimeLine, prepareInBackground, readLocalRuntime, spaceAwaitsHost } from './follower-local-runtime.js';
+import { localRuntimeLine, PREPARE_RETRY_MOST_MS, PREPARE_RETRY_MS, prepareInBackground, readLocalRuntime, spaceAwaitsHost }
+  from './follower-local-runtime.js';
 import { ADDRESS_PATH, followerConsolePage, outbox as outboxHtml, PREPARE_PATH, SYNC_PATH } from './follower-page.js';
 import { followerLine, followerStatus } from './follower-status.js';
 import { deliverOutbox } from './outbox-delivery.js';
@@ -47,11 +48,6 @@ const HOP_HEADERS = new Set(['connection', 'keep-alive', 'proxy-connection', 'te
   'transfer-encoding', 'host', 'origin', 'referer']);
 // An HTML page is read into memory to add the band; a larger one is passed through as it is.
 const INJECT_LIMIT = 4 * 1024 * 1024;
-// After a preparation started for a host space ID ended with the graph still waiting for it (its own
-// look for the host found nothing, while this console reached it), the next one for that ID waits
-// this long, twice as long each time, up to the most: the page asks for the state every few seconds.
-export const PREPARE_RETRY_MS = 60_000;
-const PREPARE_RETRY_MOST_MS = 30 * 60_000;
 
 
 // Which computer answers a path of this console: `local` (this computer's own

@@ -9,12 +9,12 @@ import { recoverBlockedPorts } from '../system/blocked-port-recovery.js';
 import { managedProviderUrls, readRuntimeSettings } from '../system/runtime-settings.js';
 import { keepDataDirectoryPrivate } from '../system/windows-data-acl.js';
 import { openRoutes } from './call-routes.js';
-import { dropPreparationClaim, holdPreparationLock, readRecord, spaceAwaitsHost, spaceOf, writeRecord }
+import { copyCatchUp, dropPreparationClaim, holdPreparationLock, readRecord, spaceAwaitsHost, spaceOf, writeRecord }
   from './follower-local-runtime.js';
 import { setGraphAside } from './follower-graph-aside.js';
 import { globalIsCopyHere } from './global-copy.js';
 import { askHostSpace } from './host-space.js';
-import { syncFromPreparation } from './global-sync.js';
+import { copyWorthStarting, syncFromPreparation } from './global-sync.js';
 import { localGraphOwnGlobal, localGraphProjects, localGraphSpaceId } from './local-graph-projects.js';
 import { LOCAL_OWNER } from './routes-store.js';
 
@@ -47,7 +47,7 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
   lock = holdPreparationLock, free = diskFree, keepPrivate = keepDataDirectoryPrivate, ensure = ensureGraphRuntime,
   stop = stopGraphProviders, listProjects = localGraphProjects, ownsAnyScope = ownsScopeHere, askHost = askHostSpace,
   health = providerHealth, setAside = setGraphAside, globalReplica = globalIsCopyHere, countOwnGlobal = localGraphOwnGlobal,
-  firstSync = syncFromPreparation, write = () => {} }) {
+  firstSync = syncFromPreparation, owed = copyCatchUp, worthStarting = copyWorthStarting, write = () => {} }) {
   const release = lock(dataDir);
   if (!release) {
     dropPreparationClaim(dataDir);
@@ -56,22 +56,42 @@ export async function prepareFollowerRuntime({ dataDir, env = process.env, now =
   }
   try {
     return await prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-      askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, write });
+      askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, owed, worthStarting, write });
   } finally {
     release();
   }
 }
 
 async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, ensure, stop, listProjects, ownsAnyScope,
-  askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, write }) {
+  askHost, health, setAside, globalReplica, countOwnGlobal, firstSync, owed, worthStarting, write }) {
   const before = readRecord(dataDir);
+  // A runtime prepared under the host's space that still owes the copy of the host's `global`
+  // (no copy arrived yet, or FULI changed since): prepared once more, below, only when the host answers.
+  const catchUp = before?.state === 'ready' ? owed(dataDir, before) : null;
   // Another start's preparation finished while this one waited to be spawned: nothing left to do.
-  if (before?.state === 'existing' || (before?.state === 'ready' && !spaceAwaitsHost({ state: 'ready', space: spaceOf(before) }))) {
+  if (before?.state === 'existing'
+    || (before?.state === 'ready' && !spaceAwaitsHost({ state: 'ready', space: spaceOf(before) }) && !catchUp)) {
     dropPreparationClaim(dataDir);
     write('This computer\'s own runtime was already prepared; nothing was done.');
     return before;
   }
   const paths = resolveSetupPaths({ dataDir, env });
+  // Asked with nothing started (the host's hello and digest only): a host that is away, or one that
+  // would only say the same refusal or version mismatch again, starts no Neo4j; the record stays as it was.
+  let asked = null;
+  if (catchUp) {
+    asked = await worthStarting({ dataDir, why: catchUp, ownFormats: before.formats ?? null,
+      localSpaceId: localGraphSpaceId(paths.graphRuntimeConfigPath), now });
+    if (!asked.start) {
+      dropPreparationClaim(dataDir);
+      write(`The copy of the host's global is owed (${catchUp}) but was not tried now (${asked.outcome}`
+        + `${asked.reason ? `: ${asked.reason}` : asked.code ? `: ${asked.code}` : ''}); nothing was started. The state says why.`);
+      return before;
+    }
+    write(catchUp === 'upgrade' ? 'FULI changed since this computer\'s graph was prepared: its runtime is started once to '
+      + 'bring the graph format up to date and the copy of the host\'s global, then stopped again.'
+      : 'No copy of the host\'s global arrived here yet: this computer\'s runtime is started once for it, then stopped again.');
+  }
   // Kept from an earlier attempt: one that wrote graph-runtime.json and failed later made that graph too.
   const createdHere = typeof before?.createdHere === 'boolean' ? before.createdHere : !existsSync(paths.graphRuntimeConfigPath);
   const at = () => new Date(now()).toISOString();
@@ -91,7 +111,7 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     return ended({ state: 'existing', space: { state: 'different' } });
   }
   // Whose space this graph is made under: the host's, as its hello says (host-space.js).
-  const host = await askHost(dataDir, { ownFormats: before?.formats ?? null });
+  const host = asked?.hostSpace ?? await askHost(dataDir, { ownFormats: before?.formats ?? null });
   const madeSpace = localGraphSpaceId(paths.graphRuntimeConfigPath);
   // A graph an earlier preparation made, or a runtime it installed and checked, and the host does
   // not say its space now: nothing to start (Neo4j is not run again at every start for nothing).
@@ -161,8 +181,27 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
       aside = await setAside(paths, now(), { spaceId: madeSpace, hostSpaceId: host.spaceId });
       write(`This computer's empty graph, made under a space of its own, was set aside (not deleted) in ${aside.folder}.`);
     }
-    await start(madeSpace === host.spaceId ? {} : { personalSpace: { id: host.spaceId, providerId: host.providerId } });
-    const projects = await projectsHere();
+    const underHostSpace = { personalSpace: { id: host.spaceId, providerId: host.providerId } };
+    await start(madeSpace === host.spaceId ? {} : underHostSpace);
+    let projects = await projectsHere();
+    // A graph whose format waits for a step the person confirms (graph_format.py) stays read-only,
+    // and a follower has no place to confirm it: a graph holding nothing of the person's (only the
+    // copy, which the host gives again) is set aside, never deleted, and made again in the current
+    // format; one holding the person's data is left as it is and said so.
+    if (await formatWaits(paths, health)) {
+      const ownGlobal = await ownGlobalHere();
+      await halt();
+      if (projects.length || ownGlobal > 0) {
+        write('This computer\'s graph waits for a data format step a person confirms, and holds data of the person\'s; it was left as it is.');
+        return ended({ state: 'failed', code: 'graph_format_waits', message: FORMAT_WAITS });
+      }
+      aside = await setAside(paths, now(), { spaceId: host.spaceId, hostSpaceId: host.spaceId, kind: 'follower-format-behind',
+        why: FORMAT_BEHIND_WHY });
+      write(`This computer's graph waited for a data format step a person confirms and held only the host's copy; `
+        + `it was set aside (not deleted) in ${aside.folder} and made again.`);
+      await start(underHostSpace);
+      projects = await projectsHere();
+    }
     const formats = await ownFormats(paths, health, { replica });
     // Neo4j runs now anyway: the first copy of the host's `global` comes in before it stops again
     // (global-sync.js). One that does not succeed is said in the state; the preparation goes on.
@@ -176,8 +215,10 @@ async function prepareHoldingLock({ dataDir, env, now, pid, free, keepPrivate, e
     if (!running) await halt();
     write(running ? 'This computer\'s own runtime is prepared and keeps running: a scope is this computer\'s.'
       : 'This computer\'s own runtime is prepared, checked and stopped again: no scope is this computer\'s yet.');
+    // setAside names only the empty graph of this computer's own space (follower-local-runtime.js localSpaceLine).
+    const ownSpaceAside = aside && madeSpace && madeSpace !== host.spaceId;
     return ended({ state: 'ready', running, projects, formats,
-      space: { state: 'same', id: host.spaceId, ...(aside ? { setAside: aside.folder } : {}) } });
+      space: { state: 'same', id: host.spaceId, ...(ownSpaceAside ? { setAside: aside.folder } : {}) } });
   } catch (error) {
     // Whatever was started is stopped again; a stop that fails too is in the log.
     await Promise.resolve().then(halt).catch(() => {});
@@ -202,6 +243,22 @@ async function ownFormats(paths, health, { replica = false } = {}) {
   }
   return answer ? { graph: answer.data_format?.supported_version ?? null, replicaProtocol: answer.replicaProtocol ?? null } : null;
 }
+
+// Whether the graph's format waits for a step a person confirms (graph_format.py, said in /health).
+async function formatWaits(paths, health) {
+  const answer = await health(managedProviderUrls(readRuntimeSettings(paths.runtimeSettingsPath)).personal).catch(() => null);
+  return answer?.data_format?.state === 'pending_confirmation';
+}
+
+const FORMAT_WAITS = 'This computer\'s graph waits for a data format step a person confirms, and it holds data of the '
+  + 'person\'s, so it was not set aside. 这台电脑的图谱在等一个要人确认的数据格式步骤，里面有你的数据，所以没有挪开。'
+  + 'A follower has no place to confirm it: `fuli runner leave` makes this a FULI of its own, where `fuli migrate preview` '
+  + 'shows the step. 从机上没有确认的地方：`fuli runner leave` 让这台电脑成为自己的 FULI，再用 `fuli migrate preview` 查看这一步。';
+const FORMAT_BEHIND_WHY = 'This computer followed another FULI; this graph held only a read-only copy of that computer\'s '
+  + 'global, and its data format waited for a step a person confirms, which a follower has no place to confirm. Set aside, '
+  + 'not deleted; a graph in the current format was made in its place and the copy brought again from the host. '
+  + '这台电脑跟随另一台 FULI；这个图谱里只有那台电脑全局的只读副本，它的数据格式在等一个要人确认的步骤，而从机上没有确认的地方。'
+  + '挪到这里，没有删除；原位置用当前格式重建，副本从主机重新取来。';
 
 async function providerHealth(url) {
   const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });

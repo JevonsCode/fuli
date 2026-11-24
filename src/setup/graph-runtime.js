@@ -66,6 +66,7 @@ import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/
 import { consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from '../local-runtime/unresponsive-console.js';
 import { isManagedWorkspace, PROVIDER_READY_TIMEOUT_MS, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
 import { parseProviderEnv } from './provider-env.js';
+import { providerGlobalReplica } from '../runner/global-copy.js';
 
 const CONSOLE_READY_TIMEOUT_MS = 60_000;
 const CONSOLE_READY_INTERVAL_MS = 250;
@@ -178,8 +179,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       // The native start waits for Neo4j and the Provider itself and says so.
       onStage: stage,
       ...(input.env ? { env: input.env } : {}),
-      // A follower's graph, whose `global` is the host's copy (follower-runtime-prepare.js).
-      ...(input.globalReplica === true ? { globalReplica: true } : {})
+      // A follower's graph, whose `global` is the host's copy (follower-runtime-prepare.js); unsaid, the start asks.
+      ...(typeof input.globalReplica === 'boolean' ? { globalReplica: input.globalReplica } : {})
     });
   } else {
     deps.startProviders(input.paths, input.paths.graphEnvPath, {
@@ -243,7 +244,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   // confirmation happens in the console this start brings up: skip the upgrade
   // then; the next start after the confirmation runs it. A follower's `global`
   // is its host's: the roles come with the host's copy, never made here.
-  if (input.globalReplica !== true) await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
+  if (!(input.globalReplica ?? providerGlobalReplica(input.paths.dataDir))) await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
     personal_space_id: config.personal.spaceId
   })}`, { token: config.personal.accessToken, fetchImpl: deps.fetch }).catch(error => {
     if (error.code !== 'data_format_read_only') throw error;
@@ -692,7 +693,7 @@ function graphDependencies(overrides) {
       paths,
       runtimeDescriptor: options.nativeRuntime,
       personalOnly: options.personalOnly,
-      globalReplica: options.globalReplica === true,
+      ...(typeof options.globalReplica === 'boolean' ? { globalReplica: options.globalReplica } : {}),
       env: options.env,
       onStage: options.onStage
     }).start({ endOrphans: options.endOrphanedServices === true }),
