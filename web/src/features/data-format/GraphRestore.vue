@@ -55,11 +55,12 @@ onMounted(async () => {
       {{ t('dataFormat.graphRestore.refused') }}
       <template v-if="backup"> {{ t('dataFormat.graphRestore.backup', { time: time(backup.createdAt), size: formatBytes(backup.bytes) }) }}</template>
       <template v-else> {{ t('dataFormat.graphRestore.none') }}</template>
+      <span data-graph-restore-older> {{ t('dataFormat.graphRestore.older') }}</span>
       <template #actions>
         <Button v-if="backup" variant="outline" size="sm" data-graph-restore-open @click="confirming = true">
           {{ t('dataFormat.graphRestore.open') }}
         </Button>
-        <Button v-else as-child variant="outline" size="sm">
+        <Button as-child variant="outline" size="sm">
           <RouterLink to="/settings#storage" data-graph-restore-others>{{ t('dataFormat.graphRestore.others') }}</RouterLink>
         </Button>
       </template>

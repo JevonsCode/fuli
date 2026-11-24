@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { ApplicationError } from '../app/application-error.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { detachedJob } from './detached-job.js';
 
 // The console operations that stop and start FULI, each a detached job
@@ -22,10 +23,19 @@ const RUNNING = Object.freeze({
   graph_restore_running: 'The graph is being restored'
 });
 
-// The code of the job of this kind that runs now, or null.
-export function runningJob(dataDir, kind) {
+// The code of the job of this kind that runs now, or null. A journal that
+// cannot be read does not hold every other job back: it counts as not
+// running, and the diagnostics log says so.
+export function runningJob(dataDir, kind, { log = diagnosticEventLog(dataDir) } = {}) {
   const { journal, running } = RESTARTING_JOBS[kind];
-  const job = detachedJob(join(dataDir, journal), { running }).read();
+  let job;
+  try {
+    job = detachedJob(join(dataDir, journal), { running }).read();
+  } catch {
+    log.record({ component: 'http', operation: `console.${kind}.journal`, outcome: 'failed', code: 'job_journal_unreadable',
+      reason: `the ${kind} job's journal could not be read; it is taken as not running` });
+    return null;
+  }
   if (!running.has(job?.status)) return null;
   return kind === 'graph' ? `graph_${job.action}_running` : kind === 'update' ? 'update_running' : 'format_restore_running';
 }

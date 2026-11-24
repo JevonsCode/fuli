@@ -3,7 +3,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { restartingJobError, runningJob } from '../system/restarting-jobs.js';
 import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js';
 import { pruneFormatRetention } from './format-retention.js';
-import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
+import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations, waitingGraphVersion } from './migration-plan.js';
 import { findApplyReceipt, recordApplyReceipt } from './apply-receipts.js';
 import { readFormatOperations, recordFormatOperations } from './operations-log.js';
 import { dismissAppliedFormatNotices, listAppliedFormatNotices } from './notice-delivery.js';
@@ -186,29 +186,43 @@ export function dataFormatMigrations(dataDir, { graph, restore = null, graphBack
   };
   // A graph backup is the one from before the confirmation only if the graph
   // step waits when it starts and is neither confirmed nor undone until it is
-  // done. In this console: a confirmation or undo under way refuses a backup,
-  // and a backup or graph restore starting or running refuses both.
+  // done (its worker checks again once FULI is back). In this console: a
+  // confirmation or undo under way refuses a graph backup or restore, and one
+  // starting or running refuses both.
   let changes = 0;
-  let backupStarting = false;
+  let starting = null;
   async function changeFormat(operation) {
-    const running = backupStarting ? 'graph_backup_running' : runningJob(dataDir, 'graph');
+    const running = starting ?? runningJob(dataDir, 'graph');
     if (running) throw restartingJobError(running, 'confirm or undo');
     changes += 1;
     try { return await operation(); } finally { changes -= 1; }
   }
-  const backup = graphBackup && { ...graphBackup, async startBackup({ version }) {
-    if (backupStarting) throw restartingJobError('graph_backup_running', 'start this');
-    backupStarting = true;
-    try {
-      const { stores } = await previewMigrations({ dataDir, graph });
-      const waiting = stores.find((store) => store.label === GRAPH_LABEL)?.step?.toVersion;
-      if (changes || waiting !== version) {
-        throw new ApplicationError('graph_backup_not_waiting', `The graph step to data format ${version} no longer waits for `
-          + 'a confirmation, so a backup now would not hold the graph from before it. Nothing was stopped.', { status: 409 });
-      }
-      return await graphBackup.startBackup({ version });
-    } finally { backupStarting = false; }
-  } };
+  async function startGraphJob(code, start) {
+    if (starting) throw restartingJobError(starting, 'start this');
+    if (changes) {
+      throw new ApplicationError('graph_format_changing', 'A data format step is being confirmed or undone; look again once '
+        + 'it is done. Nothing was stopped.', { status: 409 });
+    }
+    starting = code;
+    try { return await start(); } finally { starting = null; }
+  }
+  async function refuseUnlessWaiting(version) {
+    let waiting;
+    try { waiting = await waitingGraphVersion(graph); } catch {
+      throw new ApplicationError('graph_format_unreadable', 'The graph\'s data format state cannot be read now, so nothing '
+        + 'was backed up. Nothing was stopped.', { status: 409 });
+    }
+    if (waiting !== version) {
+      throw new ApplicationError('graph_backup_confirmed', `The graph step to data format ${version} no longer waits for `
+        + 'a confirmation, so a backup now would not hold the graph from before it. Nothing was stopped.', { status: 409 });
+    }
+  }
+  const backup = graphBackup && { ...graphBackup,
+    startBackup: ({ version }) => startGraphJob('graph_backup_running', async () => {
+      await refuseUnlessWaiting(version);
+      return graphBackup.startBackup({ version });
+    }),
+    startRestore: (body) => startGraphJob('graph_restore_running', () => graphBackup.startRestore(body)) };
   return {
     // With the retention budget, so the console says the one `fuli migrate prune` uses.
     preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull(), notice: notice() }),

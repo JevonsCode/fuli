@@ -94,14 +94,17 @@ test('the worker exports with FULI stopped, records each step, starts FULI again
   const log = [];
   const steps = [];
   const journal = join(root, 'format-graph-backup.json');
-  await runConsoleGraphBackup(paths, id, { control: control(log), graphData: exportCommand(async (graph, to) => {
+  await runConsoleGraphBackup(paths, id, { control: control(log), waitingVersion: async () => {
+    steps.push(JSON.parse(readFileSync(journal, 'utf8')).step);
+    return 23;
+  }, graphData: exportCommand(async (graph, to) => {
     steps.push(JSON.parse(readFileSync(journal, 'utf8')).step);
     writeFileSync(to, `dump:${graph}`);
   }) });
-  assert.deepEqual(steps, ['exporting', 'exporting']);
+  assert.deepEqual(steps, ['exporting', 'exporting', 'checking'], 'the step is read again once FULI is back');
   assert.deepEqual(log, ['stop', 'start']);
   const done = backup.status();
-  assert.deepEqual([done.status, done.started, done.error], ['done', true, null]);
+  assert.deepEqual([done.status, done.started, done.error, done.beforeConfirmation], ['done', true, null, true]);
   assert.ok(existsSync(join(paths.graphBackupDir, NAME, 'manifest.json')));
   assert.deepEqual(JSON.parse(readFileSync(join(paths.graphBackupDir, NAME, 'format-step.json'), 'utf8')),
     { formatVersion: 23, beforeConfirmation: true }, 'the backup says which waiting step it was taken before; the manifest is untouched');
@@ -138,12 +141,18 @@ test('a restore takes only a backup this page lists, runs the same import, and a
   writeFileSync(join(folder, 'manifest.json'), JSON.stringify({ format: 'fuli-neo4j-backup', version: 1, createdAt: '2026-11-24T08:00:00.000Z',
     sourceMode: 'native', instances: [{ id: 'personal', file: 'personal.dump', sha256: 'a'.repeat(64) }] }));
   const revealed = [];
+  // A folder whose note is not JSON leaves out only itself.
+  const broken = join(paths.graphBackupDir, 'before-format-23-2026-11-25T08-00-00-000Z');
+  mkdirSync(broken, { recursive: true });
+  writeFileSync(join(broken, 'manifest.json'), readFileSync(join(folder, 'manifest.json')));
+  writeFileSync(join(broken, 'format-step.json'), '{ not json');
   // Without the note the worker leaves once a backup taken while the step waited is whole, it is not offered.
   await assert.rejects(port(root).startRestore({ version: 23, name: NAME }), error => error.code === 'graph_backup_unknown');
   assert.equal((await port(root).read(23)).latest, null);
   writeFileSync(join(folder, 'format-step.json'), JSON.stringify({ formatVersion: 22, beforeConfirmation: true }));
   assert.equal((await port(root).read(23)).latest, null, 'a note for another version does not count');
   writeFileSync(join(folder, 'format-step.json'), JSON.stringify({ formatVersion: 23, beforeConfirmation: true }));
+  assert.equal((await port(root).read(23)).latest.name, NAME, 'the newer folder with a broken note is left out, the rest is listed');
   const backup = port(root, { spawnWorker: fakeWorker([]), reveal: async path => { revealed.push(path); return { revealed: true }; } });
   await assert.rejects(backup.startRestore({ version: 23, name: 'before-import-2026-11-24T08-00-00-000Z-a' }), error => error.code === 'graph_backup_unknown');
   await assert.rejects(backup.startRestore({ version: 23, name: '../elsewhere' }), error => error.code === 'graph_backup_unknown');
@@ -177,9 +186,14 @@ test('a backup starts only while the graph step waits for that version, and noth
   // Confirmed in another window, or a page left open on another version: refused, nothing stopped.
   graph = waitingGraph(null);
   await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }),
-    error => error.code === 'graph_backup_not_waiting' && error.status === 409 && /no longer waits/.test(error.message));
+    error => error.code === 'graph_backup_confirmed' && error.status === 409 && /no longer waits/.test(error.message));
   graph = waitingGraph(24);
-  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_backup_not_waiting');
+  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_backup_confirmed');
+  // The graph's state cannot be read: said as that, not as confirmed.
+  graph = { preview: async () => { throw new Error('Provider down'); } };
+  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_format_unreadable' && error.status === 409);
+  graph = { preview: async () => ({ plan: { store: 'graph', kind: 'neo4j', action: 'blocked', steps: [] }, undoable: [] }) };
+  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_format_unreadable');
   assert.equal(spawned.length, 0);
 
   graph = waitingGraph(23);
@@ -193,7 +207,7 @@ test('a backup starts only while the graph step waits for that version, and noth
     error => error.code === 'graph_backup_running');
 });
 
-test('a confirmation under way refuses a backup that would start beside it', async (t) => {
+test('a confirmation under way refuses a graph backup or restore that would start beside it', async (t) => {
   const { root } = dataDir(t);
   const spawned = [];
   let release;
@@ -203,7 +217,9 @@ test('a confirmation under way refuses a backup that would start beside it', asy
   const graph = { preview: async () => { previews += 1; if (previews === 1) await held; return waitingGraph(23).preview(); } };
   const port_ = dataFormatMigrations(root, { graph, graphBackup: port(root, { spawnWorker: fakeWorker(spawned) }) });
   const applying = port_.apply({ digest: 'e'.repeat(64), actor: { entrypoint: 'http' } }).catch(error => error);
-  await assert.rejects(port_.graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_backup_not_waiting');
+  await assert.rejects(port_.graphBackup.startBackup({ version: 23 }),
+    error => error.code === 'graph_format_changing' && /being confirmed or undone; look again once it is done/.test(error.message));
+  await assert.rejects(port_.graphBackup.startRestore({ version: 23, name: NAME }), error => error.code === 'graph_format_changing');
   release();
   await applying;
   assert.equal(spawned.length, 0);
@@ -234,4 +250,40 @@ test('a second backup asked for while one runs follows it; a restore, a store re
   writeFileSync(join(root, 'console-update.json'), JSON.stringify({ ...pid, status: 'updating' }));
   await assert.rejects(backup.startBackup({ version: 23 }), error => error.code === 'update_running' && /FULI is being updated/.test(error.message));
   assert.equal(spawned.length, 1);
+});
+
+test('a backup whose step was confirmed meanwhile, or could not be checked, is kept but never offered as the one from before', async (t) => {
+  const run = async (options) => {
+    const { root, paths } = dataDir(t);
+    const backup = port(root, { spawnWorker: fakeWorker([]) });
+    const { id } = await backup.startBackup({ version: 23 });
+    await runConsoleGraphBackup(paths, id, { control: control([]), graphData: exportCommand(async (graph, to) => writeFileSync(to, `dump:${graph}`)),
+      ...options });
+    return { backup, folder: join(paths.graphBackupDir, NAME) };
+  };
+  // `fuli migrate apply` in a terminal while the graph was exported: the step no longer waits.
+  const confirmed = await run({ waitingVersion: async () => null });
+  assert.deepEqual([confirmed.backup.status().status, confirmed.backup.status().beforeConfirmation], ['done', false]);
+  assert.ok(existsSync(join(confirmed.folder, 'manifest.json')), 'the backup itself is kept among the old data');
+  assert.equal(existsSync(join(confirmed.folder, 'format-step.json')), false);
+  assert.equal((await confirmed.backup.read(23)).latest, null);
+
+  // The Provider never answered: asked again a while, then said as unchecked.
+  const pauses = [];
+  const unread = await run({ waitingVersion: async () => { throw new Error('Provider down'); }, pause: async ms => { pauses.push(ms); } });
+  assert.deepEqual([unread.backup.status().beforeConfirmation, pauses.length, existsSync(join(unread.folder, 'format-step.json'))], [null, 11, false]);
+
+  // FULI did not start again: nothing is checked, nothing is noted.
+  const checks = [];
+  const down = await run({ waitingVersion: async () => { checks.push(1); return 23; },
+    control: { consoleRunning: async () => false, stop: async () => ({ status: 'stopped' }), start: async () => { throw new Error('refused'); } } });
+  assert.deepEqual([down.backup.status().started, down.backup.status().beforeConfirmation, checks.length], [false, null, 0]);
+});
+
+test('a job journal that cannot be read holds no other job back, and the diagnostics log says so', async (t) => {
+  const { root } = dataDir(t);
+  writeFileSync(join(root, 'console-update.json'), '{ not json');
+  const started = await port(root, { spawnWorker: fakeWorker([]) }).startBackup({ version: 23 });
+  assert.equal(started.status, 'running');
+  assert.match(readFileSync(join(root, 'diagnostics', 'events.jsonl'), 'utf8'), /job_journal_unreadable/);
 });

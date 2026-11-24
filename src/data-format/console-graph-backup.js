@@ -1,11 +1,14 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { ApplicationError } from '../app/application-error.js';
 import { exportGraphData, importGraphData, readGraphBackupManifest } from '../backup/graph-backup.js';
 import { unfinishedImportError } from '../backup/unfinished-import.js';
 import { runGraphDataCommand } from '../cli/graph-data-command.js';
+import { personalGraphFormat } from './graph-format-client.js';
+import { waitingGraphVersion } from './migration-plan.js';
 import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { revealPath } from '../desktop/reveal-path.js';
 import { readLock } from '../native-runtime/neo4j-lifecycle-lock.js';
@@ -36,12 +39,16 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 // for while one runs follows that one.
 //
 // Only a backup taken while the step waited is the one from before the
-// confirmation (the console's port checks that it waits and keeps the step
-// from being confirmed meanwhile: migration-operations.js). Once the export is
-// whole the worker leaves a note in its folder (format-step.json:
-// { formatVersion, beforeConfirmation: true }). Only a backup with that note
-// for the version is listed and restored; the graph export's own manifest
-// stays as it is.
+// confirmation. The console's port checks that it waits and keeps this
+// console from confirming meanwhile (migration-operations.js); a terminal's
+// `fuli migrate apply` it cannot hold back, so once FULI is back the worker
+// reads the step again. Only if it still waits for the same version does it
+// leave a note in the backup's folder (format-step.json: { formatVersion,
+// beforeConfirmation: true }); otherwise the job says the backup is not one
+// from before the confirmation (false), or that this could not be checked
+// (null), and it stays among the old data. Only a backup with that note for
+// the version is listed and restored; the graph export's own manifest stays
+// as it is. A note may only be missing, never wrong.
 
 const { journal: JOURNAL, running: RUNNING } = RESTARTING_JOBS.graph;
 const WORKER = fileURLToPath(new URL('./console-graph-backup-worker.js', import.meta.url));
@@ -57,7 +64,7 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
     const current = job.read();
     return current && { id: current.id, action: current.action, status: current.status, step: current.step ?? null,
       version: current.version, backup: current.name ? described(current.name) : null, error: current.error ?? null,
-      started: current.started ?? null };
+      started: current.started ?? null, beforeConfirmation: current.beforeConfirmation ?? null };
   }
 
   // A backup this page took before [version] was confirmed, newest first, once its manifest reads.
@@ -69,9 +76,14 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
     return readable.filter(Boolean).map(described);
   }
 
+  // A note that cannot be read leaves out only its own backup.
   function takenBefore(name, version) {
-    const note = readJsonFile(join(paths.graphBackupDir, name, NOTE), null);
-    return note?.formatVersion === version && note.beforeConfirmation === true;
+    try {
+      const note = readJsonFile(join(paths.graphBackupDir, name, NOTE), null);
+      return note?.formatVersion === version && note.beforeConfirmation === true;
+    } catch {
+      return false;
+    }
   }
 
   function described(name) {
@@ -140,12 +152,18 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
   };
 }
 
+// The Provider may answer a while after FULI is back: the step is read again this often, this many times.
+const CHECK_EVERY_MS = 5000;
+const CHECKS = 12;
+
 // The worker: the same command a terminal runs, its stop and start recorded
 // as steps, then FULI started again if it is not running. An import that
 // left a graph half written keeps FULI from starting (graph-data-command.js);
-// the desktop window then offers the way back.
+// the desktop window then offers the way back. A backup's outcome is
+// recorded only once it is checked against the step (see above).
 export async function runConsoleGraphBackup(paths, id, { graphData = runGraphDataCommand,
-  control = localRuntimeControl(paths, process.env, () => {}) } = {}) {
+  control = localRuntimeControl(paths, process.env, () => {}),
+  waitingVersion = () => waitingGraphVersion(personalGraphFormat(paths.dataDir)), pause = delay } = {}) {
   const claimed = claimDetachedJob(join(paths.dataDir, JOURNAL), id, 'running');
   if (!claimed) return;
   const { job, record } = claimed;
@@ -156,20 +174,42 @@ export async function runConsoleGraphBackup(paths, id, { graphData = runGraphDat
     start: () => { record({ step: 'starting' }); return control.start(); }
   };
   const step = (name, operation) => options => { record({ step: name }); return operation(options); };
+  let outcome = { status: 'done' };
   try {
     if (job.action === 'backup') {
       await graphData('export', ['--output', folder, '--data-dir', paths.dataDir],
         { runtime, write: () => {}, exportData: step('exporting', exportGraphData) });
-      writeJsonFileAtomic(join(folder, NOTE), { formatVersion: job.version, beforeConfirmation: true });
     } else {
       await graphData('import', ['--input', folder, '--data-dir', paths.dataDir, '--yes'],
         { runtime, write: () => {}, importData: step('restoring', importGraphData) });
     }
-    record({ status: 'done' });
   } catch (error) {
-    record({ status: 'failed', error: String(error?.message ?? error).split('\n')[0].slice(0, 600) });
+    outcome = { status: 'failed', error: String(error?.message ?? error).split('\n')[0].slice(0, 600) };
   }
   const started = await control.consoleRunning().then(running => running || runtime.start().then(() => true))
     .catch(() => false);
-  record({ started, step: null });
+  if (job.action === 'backup' && outcome.status === 'done') {
+    record({ step: 'checking' });
+    const before = started ? await stillWaiting(job.version, waitingVersion, pause) : null;
+    outcome.beforeConfirmation = before && noted(folder, job.version);
+  }
+  record({ ...outcome, started, step: null });
+}
+
+// true: the step still waits for this version; false: it no longer does; null: it could not be read.
+async function stillWaiting(version, waitingVersion, pause) {
+  for (let check = 1; check <= CHECKS; check += 1) {
+    try { return await waitingVersion() === version; } catch { if (check < CHECKS) await pause(CHECK_EVERY_MS); }
+  }
+  return null;
+}
+
+// true once the note is written; null when it could not be.
+function noted(folder, version) {
+  try {
+    writeJsonFileAtomic(join(folder, NOTE), { formatVersion: version, beforeConfirmation: true });
+    return true;
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,7 @@ const revealError = ref('')
 const job = useGraphBackupJob(() => props.version, () => { void load() })
 const { running, outcome, notBack, joined, refusal } = job
 watch(running, value => emit('busy', value !== null), { immediate: true })
-watch(refusal, value => { if (value?.code === 'graph_backup_not_waiting') emit('confirmed') })
+watch(refusal, value => { if (value?.code === 'graph_backup_confirmed') emit('confirmed') })
 onBeforeUnmount(() => emit('busy', false))
 
 const latest = computed(() => view.value?.latest ?? null)
@@ -81,7 +82,16 @@ onMounted(load)
       </Button>
     </div>
 
-    <UiNotice v-if="outcome?.status === 'done' && outcome.backup" tone="success" data-graph-backup-done>
+    <UiNotice v-if="outcome?.status === 'done' && outcome.backup && outcome.beforeConfirmation !== true" tone="warning" data-graph-backup-not-before>
+      {{ t('dataFormat.graphBackup.done', { path: outcome.backup.path, size: formatBytes(outcome.backup.bytes) }) }}
+      {{ outcome.beforeConfirmation === false ? t('dataFormat.graphBackup.notBefore') : t('dataFormat.graphBackup.unchecked') }}
+      <template #actions>
+        <Button as-child variant="outline" size="sm">
+          <RouterLink to="/settings#storage" data-graph-backup-old-data>{{ t('dataFormat.graphRestore.others') }}</RouterLink>
+        </Button>
+      </template>
+    </UiNotice>
+    <UiNotice v-else-if="outcome?.status === 'done' && outcome.backup" tone="success" data-graph-backup-done>
       {{ t('dataFormat.graphBackup.done', { path: outcome.backup.path, size: formatBytes(outcome.backup.bytes) }) }}
       <template #actions>
         <Button variant="ghost" size="sm" @click="reveal(outcome)">{{ t('dataFormat.graphBackup.reveal') }}</Button>

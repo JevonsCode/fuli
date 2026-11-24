@@ -228,7 +228,7 @@ export function restoreFinished(status: RestoreStatus | null, id: string): boole
 // import a terminal runs. FULI stops while either runs, so the page asks for
 // the job's outcome until the console answers again.
 export interface GraphBackupCopy { name: string; path: string; createdAt: string; bytes: number }
-export type GraphBackupStep = 'stopping' | 'exporting' | 'restoring' | 'starting'
+export type GraphBackupStep = 'stopping' | 'exporting' | 'restoring' | 'starting' | 'checking'
 export interface GraphBackupJob {
   id: string
   action: 'backup' | 'restore'
@@ -238,6 +238,8 @@ export interface GraphBackupJob {
   backup: GraphBackupCopy | null
   error: string | null
   started: boolean | null
+  // A finished backup: from before the confirmation (true), the step was confirmed meanwhile (false), or not checked (null).
+  beforeConfirmation?: boolean | null
   // A backup asked for while this one ran: the page follows this one.
   joined?: boolean
 }
