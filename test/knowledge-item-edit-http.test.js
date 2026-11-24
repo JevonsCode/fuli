@@ -10,6 +10,7 @@ import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-rou
 import { knowledgeScopeConsole } from '../src/knowledge-scope/console-port.js';
 import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
+import { DELEGATION_HEADER, encodeDelegation } from '../src/agent-delegation/delegation-header.js';
 
 // rec#20 quick edit through the local console's HTTP routes. Synthetic
 // Provider: it records what the console sent and answers like the Provider.
@@ -42,18 +43,18 @@ function application(reply = () => ({ status: 200, body: { ok: true } })) {
   return { app, calls };
 }
 
-function request(method, body, remoteAddress) {
+function request(method, body, remoteAddress, headers = {}) {
   const stream = Readable.from(body ? [Buffer.from(JSON.stringify(body))] : []);
-  return Object.assign(stream, { method, headers: { 'content-type': 'application/json' }, socket: { remoteAddress } });
+  return Object.assign(stream, { method, headers: { 'content-type': 'application/json', ...headers }, socket: { remoteAddress } });
 }
 
-async function api(app, method, path, body, remoteAddress = '127.0.0.1') {
+async function api(app, method, path, body, remoteAddress = '127.0.0.1', headers = {}) {
   const sent = {};
   const response = { setHeader() {}, writeHead(status) { sent.status = status; },
     end(text) { sent.body = text ? JSON.parse(text) : null; } };
   try {
     const url = new URL(`http://127.0.0.1${path}`);
-    const incoming = request(method, body, remoteAddress);
+    const incoming = request(method, body, remoteAddress, headers);
     const handled = await handleKnowledgeScopeRequest({ request: incoming, response, url, app, scopeConsole: app.scopeConsole })
       || await handleGraphApiRequest({ request: incoming, response, url, app, ownerReads: app.ownerReads });
     return { handled, ...sent };
@@ -252,4 +253,27 @@ test('the person\'s revision, batch confirmation and move leave on the human-rev
     targetProjectId: 'project-b', reason: 'r' }, app.ownerReads);
   assert.deepEqual(calls.map(call => [call.review, call.body.operation_actor]), [[undefined, 'agent'], [undefined, 'agent']],
     'an Agent\'s change never takes the console\'s proof, even where the port is at hand');
+});
+
+// #1104 follow-up: when a habit applies is the person's own call, made in the
+// console or relayed in their words. Synthetic habit and words.
+test('setting when a habit applies is the person\'s in-place edit; a case meaning every task clears it', async () => {
+  const { app, calls } = application(() => ({ status: 200, body: { action: 'update' } }));
+  const put = (body, headers) => api(app, 'PUT', '/api/knowledge/entity/habit%2F1/applies-when',
+    { personalSpaceId: 'personal-space', reason: 'Only for decks', ...body }, '127.0.0.1', headers);
+  const relay = { [DELEGATION_HEADER]: encodeDelegation({ actor: { agentId: 'fla-synthetic' }, reason: 'Asked in chat',
+    bodyFields: ['appliesWhen'], relayed: { words: '演示那条只在做演示时适用', messageRef: { source: 'current_turn' } } }) };
+  assert.equal((await put({ appliesWhen: ' 做演示文稿时 ' }, relay)).status, 200);
+  assert.equal((await put({ appliesWhen: '所有任务' })).status, 200);
+  assert.equal((await put({ appliesWhen: 'always' })).status, 200);
+  assert.equal((await put({ appliesWhen: null })).status, 200);
+  assert.deepEqual(calls.map(({ path, method, review }) => [path, method, review]),
+    Array(4).fill(['/v1/knowledge/items/habit%2F1', 'PATCH', true]));
+  assert.deepEqual(calls.map(({ body }) => body.applies_when), ['做演示文稿时', '', '', '']);
+  assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: null, item_kind: 'entity',
+    action: 'update', reason: 'Only for decks（由 fla-synthetic 转达：「演示那条只在做演示时适用」）', name: null, summary: null,
+    fact: null, basis_meaning: null, operation_actor: 'human', applies_when: '做演示文稿时' });
+  assert.equal(calls[1].body.reason, 'Only for decks');
+  for (const appliesWhen of [42, 'x'.repeat(201)]) assert.equal((await put({ appliesWhen })).status, 400);
+  assert.equal(calls.length, 4);
 });

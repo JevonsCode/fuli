@@ -113,6 +113,8 @@ const RELAYED_DECISIONS = new Set([
   'POST /api/agent-attention/respond',
   'POST /api/preference-conflicts/:conflictId/complete',
   'POST /api/knowledge/:itemKind/:itemId/preference-scope',
+  // When a habit applies: only the person states a case (#1104).
+  'PUT /api/knowledge/:itemKind/:itemId/applies-when',
   'POST /api/knowledge/batch-confirmation',
   'POST /api/knowledge/reply-echoes/drop',
   'POST /api/knowledge/reply-echoes/restore',
@@ -180,7 +182,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [61, 17, 20, 44]);
+    catalog.coverage.localUserOnly], [61, 17, 21, 44]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {

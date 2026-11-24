@@ -185,6 +185,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('projects', 'POST /api/knowledge-tags/governance', 'Apply the governance undo of that change.'),
   agent('POST /api/knowledge/:itemKind/:itemId/assignment', 'reassign_personal_knowledge'),
   relayed('POST /api/knowledge/:itemKind/:itemId/preference-scope', 'Set the earlier visibility again.'),
+  relayed('PUT /api/knowledge/:itemKind/:itemId/applies-when', 'Set the earlier case again, or an empty one.'),
   delegable('projects', 'POST /api/knowledge/:itemKind/:itemId/scope', 'Set the earlier scope again.'),
   delegable('projects', 'POST /api/knowledge/session-migration', 'Set each moved item\'s scope back with POST /api/knowledge/:itemKind/:itemId/scope.'),
   agent('POST /api/knowledge/entity/:itemId/project-action/preview', 'preview_personal_project_action'),

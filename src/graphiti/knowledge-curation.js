@@ -4,6 +4,8 @@ import {
 } from './knowledge-provider-mapping.js';
 import { assertActivePersonalSpace } from './active-personal-space.js';
 import { assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
+import { InvalidInputError } from '../app/application-error.js';
+import { preferenceCondition } from '../conversations/preference-conditions.js';
 
 export async function recordKnowledgeUsage(application, {
   personalSpaceId,
@@ -82,7 +84,31 @@ export async function reviseKnowledgeItem(application, input, ownerReads = null)
   if (input.replacementItemKind !== undefined) {
     body.replacement_item_kind = input.replacementItemKind;
   }
+  if (input.appliesWhen !== undefined) {
+    body.applies_when = input.appliesWhen;
+  }
   return changeChannel(application, input, ownerReads).reviseKnowledgeItem(input.itemId, body);
+}
+
+// When a habit applies (appliesWhen, #1104), set or cleared: the person's own
+// decision, made in the console or relayed in their words (`relay`, quoted
+// in the revision's reason). The habit keeps its text, its confirmation and
+// its version; the revision keeps the case it had. A case that means every
+// task (「总是」「所有任务」, preference-conditions.js) is no case, so it clears.
+const CASE_CHARS = 200;
+
+export async function setPreferenceAppliesWhen(application, input, ownerReads = null, relay = null) {
+  const said = input.appliesWhen ?? '';
+  if (typeof said !== 'string' || said.length > CASE_CHARS) {
+    throw new InvalidInputError(`appliesWhen is the case in a few words, at most ${CASE_CHARS} characters, or empty to clear it`);
+  }
+  const stated = preferenceCondition({ preference_qualifiers: { appliesWhen: said } }) ? said.trim() : '';
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+  return reviseKnowledgeItem(application, {
+    personalSpaceId: input.personalSpaceId, itemKind: input.itemKind, itemId: input.itemId, action: 'update',
+    appliesWhen: stated, operationActor: input.operationActor,
+    reason: relay ? `${reason}（由 ${relay.relayedBy ?? 'FLA'} 转达：「${relay.personWords}」）` : reason
+  }, ownerReads);
 }
 
 export async function confirmKnowledgeBatch(application, input, ownerReads = null) {

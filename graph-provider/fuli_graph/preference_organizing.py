@@ -21,6 +21,7 @@ from .knowledge_semantic import item_text
 from .knowledge_visibility import fla_relationship_visible_cypher, fla_visible_cypher, knowledge_reader, \
     reader_parameter
 from .model_base import StrictModel
+from .provider_values import json_object
 
 # A preference is one sentence or two; a longer text is cut, its id reads the rest.
 TEXT_CHARS = 300
@@ -28,7 +29,7 @@ MAX_DUPLICATE_GROUPS = 100
 
 _PLACE = '''item.fuli_profile_aspect AS aspect, coalesce(item.fuli_preference_scope, 'global') AS scope,
        item.fuli_preference_project_id AS project_id, coalesce(item.fuli_preference_project_ids, []) AS project_ids,
-       item.fuli_preference_agent_id AS agent_id'''
+       item.fuli_preference_agent_id AS agent_id, item.fuli_attributes_json AS attributes_json'''
 _SCANS = {
     'entity': f'''
         MATCH (item:Entity {{group_id: $group_id}})
@@ -61,6 +62,11 @@ class OrganizingPreference(StrictModel):
     project_id: str | None = None
     status: str
     text: str
+    # What the person stated of when it applies and whether it is a hard rule,
+    # read with the item: the organizing tool says from them which habits state
+    # no case (src/project-organizing/agent-tool.js).
+    applies_when: str | None = None
+    hard: bool | None = None
 
 
 class DuplicateCopy(StrictModel):
@@ -149,10 +155,16 @@ def _comparable(item_kind: str, record: dict) -> dict:
 def _preference(item_kind: str, record: dict) -> OrganizingPreference:
     item = record['item']
     text = item_text(item_kind, item)
+    attributes = json_object(record.get('attributes_json'))
+    # As preference_task_scope.item_qualifiers reads them: the attributes' own win over nested ones.
+    qualifiers = {**json_object(attributes.get('preference_qualifiers')), **attributes}
+    applies_when = qualifiers.get('appliesWhen')
     return OrganizingPreference(
         item_kind=item_kind, item_id=item['item_id'], aspect=record['aspect'], scope=record['scope'],
         project_id=record['project_id'], status=item['confirmation_status'],
-        text=text if len(text) <= TEXT_CHARS else text[:TEXT_CHARS - 1] + '…')
+        text=text if len(text) <= TEXT_CHARS else text[:TEXT_CHARS - 1] + '…',
+        applies_when=applies_when.strip() if isinstance(applies_when, str) and applies_when.strip() else None,
+        hard=True if qualifiers.get('constraint') == 'hard' else None)
 
 
 def register_preference_organizing_routes(application, store, Actor) -> None:

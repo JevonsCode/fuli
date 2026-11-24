@@ -131,7 +131,8 @@ test('整理我的偏好 reads the person\'s preferences in any folder; the firs
   // Across the person's projects, not around one of them.
   assert.deepEqual(first.repeated_preference_check.arguments, { personalSpaceId: 'synthetic-space', personalProjectIds: ['alpha', 'beta'] });
   // A later page is the provider's page alone (no duplicates, no guidance), and no project's coverage is touched.
-  assert.deepEqual(await call(app, { action: 'preferences', offset: 50 }), later);
+  assert.deepEqual(await call(app, { action: 'preferences', offset: 50 }),
+    { ...later, preferences: later.preferences.map(item => ({ ...item, when: null })) });
   assert.deepEqual(reads, [{ personalSpaceId: 'synthetic-space', offset: 0 }, { personalSpaceId: 'synthetic-space', offset: 50 }]);
   // An odd offset gets a clear answer before anything is read.
   for (const offset of [-1, 1.5, '50']) {
@@ -145,6 +146,35 @@ test('整理我的偏好 reads the person\'s preferences in any folder; the firs
   const alone = await call(app, { action: 'preferences' });
   assert.equal(alone.repeated_preference_check, undefined);
   assert.doesNotMatch(alone.guidance, /repeated_preference_check/);
+});
+
+test('整理我的偏好 says of each preference the case it states, as an entry judges it, or none', async (t) => {
+  const app = application(t, { project: null });
+  const item = (item_id, text, fields = {}) => ({ item_kind: 'entity', item_id, aspect: 'judgment_preference', scope: 'global',
+    status: 'confirmed', text, ...fields });
+  const preferences = [
+    // Written by the person; a case that means every task is none.
+    item('qualified', 'Decks\nHand every deck to the deck helper.', { applies_when: 'making slide decks', hard: true }),
+    item('always', 'Tone\nAnswer briefly.', { applies_when: '所有任务' }),
+    // Stated in the instruction's opening, not in its name.
+    item('opening', 'Timesheets\n仅适用于填写工时：按项目拆分。'),
+    { item_kind: 'relationship', item_id: 'fact', aspect: 'taste', scope: 'global', status: 'confirmed',
+      text: 'Applies only to spreadsheet work: freeze the header row.' },
+    // A hard rule limited by 「仅限…」 is a rule for every task; so is one that only seems to be about one thing.
+    item('hard-only-for', 'Screens\n仅限内部使用，不要外发截图。', { hard: true }),
+    item('silent', 'Demos\nHand every demo to the demo helper.', { hard: true }),
+    item('name-only', 'Short replies'),
+  ];
+  app.personal = { readPreferenceOrganizing: async () => ({ total: preferences.length, pending: 0, preferences }),
+    listPersonalProjects: async () => [] };
+  const page = await call(app, { action: 'preferences' });
+  assert.deepEqual(page.preferences.map(({ item_id, when, hard }) => [item_id, when, hard ?? false]), [
+    ['qualified', 'making slide decks', true], ['always', null, false], ['opening', '填写工时', false],
+    ['fact', 'spreadsheet work', false], ['hard-only-for', null, true], ['silent', null, true], ['name-only', null, false]]);
+  // The raw case is not repeated beside it.
+  assert.equal(page.preferences.some(preference => 'applies_when' in preference), false);
+  assert.match(page.guidance, /applies-when/);
+  assert.match(page.guidance, /null: none/);
 });
 
 test('a model is placed only when its family leaves no doubt', () => {
