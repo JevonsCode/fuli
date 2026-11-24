@@ -57,7 +57,10 @@ export async function acquireNeo4jLifecycleLock(root, { operation, identify = cu
   await removeLeftovers(root);
   const owner = join(path, 'owner');
   async function assertHeld() { if (await readFile(owner, 'utf8') !== token) throw new Error('Neo4j lifecycle lock ownership changed.'); }
-  return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); } };
+  return { token, assertHeld, async release() { await assertHeld(); await rm(path, { recursive: true }); },
+    // Adds [patch] to what the lock records (holder.json, replaced whole or not
+    // at all); throws when it could not be recorded.
+    async record(patch) { if (!await claimLock(root, token, { identify, patch })) throw new Error('Neo4j lifecycle lock ownership changed.'); } };
 }
 
 // The lock as it stands, or null when there is none: since when, its token and
@@ -181,7 +184,9 @@ export async function releaseAbandonedNeo4jLifecycleLock(root, identity = PROCES
 export async function neo4jLifecycleLockError(root, identity = PROCESS_IDENTITY) {
   const lock = readLock(root);
   const facts = { since: lock?.since.toISOString() ?? null, operation: lock?.holder?.operation ?? null,
-    pid: lock?.holder?.pid ?? null, lockPath: lockPath(root) };
+    pid: lock?.holder?.pid ?? null, lockPath: lockPath(root),
+    // An import that finished and stopped only before releasing its lock (graph-backup.js).
+    ...(lock?.holder?.completed === true ? { completed: true } : {}) };
   if (existsSync(journalPath(root))) {
     // Which switch it was and how far it got (neo4j-lifecycle.js writes it before
     // changing anything): 'switching' an update or rollback, 'removing-assets' an uninstall.

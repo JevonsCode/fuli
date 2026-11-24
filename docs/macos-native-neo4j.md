@@ -99,6 +99,68 @@ import).
   knowledge data but may leave a half-installed `neo4j-assets/jvs-a-*`
   directory; a dump only reads; a load overwrites the database and may leave it
   half written. `fuli graph runtime recover` (below) deals with these.
+- An import (`fuli graph import`, and the native side of `graph migrate`) takes
+  one `load` lock right after it copied the graphs it replaces to
+  `backups/graph/before-import-*`, and holds it until every graph is whole
+  again: all its loads, and after a failure its own rollback, run under that
+  lock's token (`createNativeGraphServices().hold`). Each graph's state goes
+  into the lock's `graphStates` before that graph is written (once its dump is
+  staged, right before neo4j-admin writes), and again once it
+  is written, failed or back (`src/backup/graph-import-states.js`); the
+  rollback brings back only the graphs the import wrote, from the copy, and
+  empties again one that was empty before by moving its database and
+  transaction logs into `recovered/<time>/` (nothing is deleted). The lock goes,
+  and the services that ran before start again, only when the import succeeded
+  or its rollback brought every graph it wrote back (recorded first as
+  `restored: true`). A successful import records `completed: true` once every
+  graph holds its new data and the identity is reconciled, before it releases
+  the lock: a recovery of one killed in between only checks the start and
+  releases the lock (`finish_load`), and never takes it back. Otherwise — a
+  rollback that failed (why is recorded as `restoreFailed`, as a recovery's own
+  failed restore records it; a graph empty before that could not be emptied
+  again as `setAsideFailed`), or a state
+  that could not be written into the lock (a full disk: nothing more is written
+  then) — the lock stays, nothing starts, and the error says so and points to
+  `fuli graph runtime recover`; the CLI does not start the console again
+  either. A full disk is said first: free at least twice the copy's size. A
+  lease that cannot be released after a failed import is reported together
+  with why the import failed. A kill at any step leaves the lock and the states
+  as they were, which recovery and abandoning read (the load rows below).
+  `graph migrate` whose import keeps this lock does not stop the native runtime
+  (that would need the lock this process holds; the import already stopped it):
+  it switches back to container mode, which does not touch the native runtime,
+  and says to run the recovery before moving again.
+- Container mode, and native mode outside macOS, have no lifecycle lock. An
+  import there keeps a marker instead (`<data>/graph-import-unfinished-<mode>.json`,
+  `src/backup/unfinished-import.js`): written before the first graph is written,
+  rewritten with each graph's state, removed only when the import succeeded or
+  its rollback brought every graph back. While it is there, every start in that
+  mode is refused (`graph_import_unfinished`, checked in `ensureGraphRuntime`)
+  with the import that is the way back; the import is not refused, does not copy
+  a graph the marker says may be half written, keeps the first unfinished
+  import's copy as the way back, and refuses a backup that lacks such a graph.
+  Such a graph keeps its half-written state in the marker (`importFailed`)
+  until this import has written it whole, so a second import that fails, or is
+  killed, before writing it keeps the marker and the refused start; its words
+  name the marker's way back, not its own copy. A graph empty before a failed
+  import is emptied by `setAside`: native moves its stores into
+  `native-runtime/recovered/<time>/`, containers move `databases/neo4j` and
+  `transactions/neo4j` inside the volume into `/data/recovered-<time>/`
+  through a helper container (`<time>` is when the unfinished import began,
+  so a rerun after a move that failed part way uses the same folder, and the
+  failure says what already moved; the move-back command first moves a new
+  empty database in the way into `/data/recovered-<time>-replaced/`). `fuli graph abandon-import --target-mode <mode>`
+  (`src/backup/abandon-import.js`) gives the import up the same way, only in
+  a terminal (`--yes` skips the question, never the terminal), and looks
+  before it asks or stops anything (on macOS native it names
+  `fuli graph runtime recover --abandon-import` when a lock is there): it sets
+  aside each graph the marker says may be half written and clears the marker;
+  one it cannot move keeps the marker, and the words name its holders (by the
+  processes naming a graph directory) and, as the last way out, the marker's
+  path and how to move it away by hand. A marker that cannot be read is
+  named by its path with that move and the newest copy's import.
+  It does none of the recovery above: it only keeps a start off a half-written
+  graph and says how to get back to before the import.
 - A lock that names no holder (taken before FULI recorded one) is released only
   on request: 「解除这把锁并启动」 in the desktop window, or
   `fuli graph runtime unlock`. Both run the same checks and keep the lock, saying
@@ -155,14 +217,15 @@ killed after it archived the journal is planned as `finish_recovery`.
 | A switch, descriptor already the newer one | Finish: the newer Neo4j starts once under the lock's token, answers the health check and stops, the store format must still be the one in the journal; then the journal moves aside. Back out (`--back-out`, or the window's second button): offered only when the journal has the older programs' fingerprint and they still match; it checks the store format, records `backingOut: true` in the journal, writes the older descriptor, starts the older Neo4j once and checks it, and writes the newer descriptor back if it does not start. A check that fails keeps the journal and the lock |
 | A back-out killed after it wrote the older descriptor (`backingOut` in the journal) | Continue it, never undo: the newer Neo4j already opened the store, so the older one is started and checked, and the newer descriptor is written back if it does not start. Killed after the update's programs already moved into this recovery's folder (they move only after that check passed): the check is not made again, and a descriptor is never written back naming programs that are no longer in place |
 | A journal whose lock is gone or names no token | The recovery takes a lock of its own (`operation: recover`) and runs the plan under its token; killed after the journal moved, that lock alone is released next time |
-| A switch, descriptor already the newer one, that finishing does not get to start (or whose store format changed), when going back is not possible (`alternativeRefused`: no fingerprint, programs changed, store format changed, or the store format cannot be read — it is read with the programs and Java now in place, so broken ones block going back too), or was tried and wrote the newer descriptor back (`backingOut`), or was tried and stopped at the store format or fingerprint check (`backOutFailed`, recorded in the journal by that step) | Finish without a start check (`--keep-newer`, or 「完成更新并解除这把锁…」 inside the window's recovery dialog, shown only when the plan says `keepable`): the journal moves aside and the lock is released. The descriptor and the programs it names agree, so what follows is an ordinary failed start; the confirmation says the other side is out of reach afterwards, and names the backup from before an upgrade and the `fuli graph import` command for it. While going back is still possible it is refused (`back_out_available`) and points to `--back-out` |
+| A switch, descriptor already the newer one, that finishing does not get to start (or whose store format changed), when going back is not possible (`alternativeRefused`: no fingerprint, programs changed, store format changed, or the store format cannot be read — it is read with the programs and Java now in place, so broken ones block going back too), or was tried and wrote the newer descriptor back (`backingOut`), or was tried and stopped at the store format or fingerprint check (`backOutFailed`, recorded in the journal by that step; it stops counting once that check passes at plan time — the fingerprint always, the store format when nothing runs) | Finish without a start check (`--keep-newer`, or 「完成更新并解除这把锁…」 inside the window's recovery dialog, shown only when the plan says `keepable`): the journal moves aside and the lock is released. The descriptor and the programs it names agree, so what follows is an ordinary failed start; the confirmation says the other side is out of reach afterwards, and names the backup from before an upgrade and the `fuli graph import` command for it. While going back is still possible it is refused (`back_out_available`) and points to `--back-out` |
 | A switch, descriptor neither | Refused (`manifest_changed`); the words give the manual way out with the paths filled in (move the journal and the lock into `recovered/`, start, import a backup) |
 | An uninstall (`removing-assets`) | Only when the descriptor is the journal's `previous`, or that with `status: uninstalled`: each remaining program directory, checked to be one FULI manages (`assertManagedNeo4jHome`, or a `jvs-a-*` with FULI's receipt, or one whose receipt the killed removal already took and that holds only that version's programs), moves aside. Runs again after being killed at any step |
 | An update, rollback or uninstall before its journal | The programs in use must still match their fingerprint (skipped when the descriptor says `uninstalled`: the lock alone is released); unused `jvs-a-*` directories with FULI's receipt, or an update's own candidate made while its lock was held and killed before its receipt, move aside (anything else: refused, `unknown_assets`); unfinished `backups/graph/before-neo4j-*.partial-*` is renamed `.incomplete` |
 | A dump | Release the lock |
-| A load | The import records in the lock which copy it took before loading (`restorePoint`: `backups/graph/before-import-*`, the instances it holds, the instances being loaded). Recovery loads that very copy back under the lock's token, moves aside the stores of instances that were empty before the import (no copy: a first import, or `graph migrate` into a new runtime), records `restored: true` in the lock once the copy is back (a recovery run again does not import it again), starts Neo4j once, then releases the lock either way: the graph is back, so the lock protects nothing. A start that fails is reported in the result (the start's own reason, such as who holds the port, its message, and the instances' `logs/` folders) and is then an ordinary failed start. A lock without that record, or a copy that is missing, damaged or fails its checksums, is refused (`restore_point_unknown`, `restore_point_damaged`); FULI never picks another copy. What the import was bringing in is not kept |
+| A load that finished (`completed: true`) | Every graph holds the import's new data and the identity is reconciled: start Neo4j once and release the lock either way (`finish_load`); nothing is taken back, and abandoning is refused (`no_import`) |
+| A load | The import records in its one lock which copy it took before loading (`restorePoint`: `backups/graph/before-import-*`, the instances it holds, the instances being loaded). Recovery loads that very copy back under the lock's token, moves aside the stores of instances that were empty before the import (no copy: a first import, or `graph migrate` into a new runtime), records `restored: true` in the lock once the copy is back (a recovery run again does not import it again), starts Neo4j once, then releases the lock either way: the graph is back, so the lock protects nothing. A start that fails is reported in the result (the start's own reason, such as who holds the port, its message, and the instances' `logs/` folders) and is then an ordinary failed start. A lock without that record, or a copy that is missing, damaged or fails its checksums, is refused (`restore_point_unknown`, `restore_point_damaged`); FULI never picks another copy. What the import was bringing in is not kept |
 | A load whose good copy would not go back (`restore_failed`) | The failed restore records in the lock why, as far as FULI can see (`restoreFailed`: the error, free space beside at least twice the copy's size, and the PID and program name of processes whose command names a graph instance's directory, never their command line). Each graph's state goes into the lock's `graphStates` before it is restored (`restoring`), and once it is back (`restored`) or failed (`restoreFailed`), so a retry overwrites what an earlier attempt recorded. The refusal says so (with a process holding the store, how to end it: the start's 「结束它并启动」 cannot run while the lock holds); the next plan tries the restore again and says abandoning is open; abandoning then keeps that copy listed and says it is good and how to import it once the cause is fixed |
-| A load whose copy cannot be used (or would not go back), abandoned on request | `--abandon-import` in a terminal (typing `abandon`; `--yes` is refused), or 「放弃这次导入…」 in the window (a secondary button; the confirmation's button is red). Every load's lock carries where the import stands with each graph (`graphStates`, `src/backup/graph-import-states.js`): `untouched`, `writing`, `imported`, `importFailed`, `restoring`, `restored`, `restoreFailed`, the graph about to be written already marked, so the lock that holds back the next start says it before neo4j-admin writes; the import's own rollback and a recovery's restore update it the same way. Abandoning reads only that: `writing`, `importFailed`, `restoring`, `restoreFailed` may be half written and move aside; `imported` holds this import's new data and stays, said as such (abandoning does not take it back; the confirmation says how, when a copy can); `untouched` and `restored` hold the data from before and stay. A graph the lock names no state for (every one in an older FULI's lock) is judged by file times instead (anything changed since that load took its lock, 2 s of slack; an instance with a store already in this recovery's folder follows whole); one whose times cannot be read moves aside too, said as "cannot be told, moved to be safe". The confirmation says that afterwards a recovery only finishes abandoning and never brings the copy back by itself; the listed import commands do. The judgement is recorded in the lock (`abandoning`) before anything moves; killed part way, a rerun finishes the same plan into the same folder, whichever recovery is asked for. The plan lists each graph, where each store goes and the `mv` command that moves it back (after quitting FULI), and the `backups/graph/before-import-*` copies with their time, size and `fuli graph import` command (or that there are none). The CLI then says to run `fuli start` to check |
+| A load whose copy cannot be used (or would not go back), abandoned on request | `--abandon-import` in a terminal (typing `abandon`; `--yes` is refused), or 「放弃这次导入…」 in the window (a secondary button; the confirmation's button is red). The import's lock carries where it stands with each graph (`graphStates`, `src/backup/graph-import-states.js`): `untouched`, `writing`, `imported`, `importFailed`, `restoring`, `restored`, `restoreFailed`, each graph marked before it is written, so the lock that holds back the next start says it before neo4j-admin writes; the import's own rollback and a recovery's restore update it the same way. Abandoning reads only that: `writing`, `importFailed`, `restoring`, `restoreFailed` may be half written and move aside; `imported` holds this import's new data and stays, said as such (abandoning does not take it back; the confirmation says how, when a copy can); `untouched` and `restored` hold the data from before and stay. A graph the lock names no state for (every one in an older FULI's lock) is judged by file times instead (anything changed since that load took its lock, 2 s of slack; an instance with a store already in this recovery's folder follows whole); one whose times cannot be read moves aside too, said as "cannot be told, moved to be safe". The confirmation says that afterwards a recovery only finishes abandoning and never brings the copy back by itself; the listed import commands do. The judgement is recorded in the lock (`abandoning`) before anything moves; killed part way, a rerun finishes the same plan into the same folder, whichever recovery is asked for. The plan lists each graph, where each store goes and the `mv` command that moves it back (after quitting FULI), and the `backups/graph/before-import-*` copies with their time, size and `fuli graph import` command (or that there are none). The CLI then says to run `fuli start` to check |
 
 The lock stays until its step, so a start is refused while a recovery is
 incomplete, and a recovery killed part way is planned and finished again.

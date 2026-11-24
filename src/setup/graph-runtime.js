@@ -26,6 +26,7 @@ import {
   lanConsoleUrls
 } from '../server/lan-access.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { unfinishedImportError } from '../backup/unfinished-import.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { GRAPH_RUNTIME_CONFIG_FORMAT } from '../graphiti/runtime-config.js';
 import { writeVersionedJsonFileAtomic } from '../storage/json-format.js';
@@ -115,6 +116,11 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   if (lan && lanAddresses.length === 0) {
     throw new Error('No private IPv4 LAN address is available, so LAN mode cannot start.');
   }
+  // An import into this mode that never finished leaves a marker on a runtime
+  // with no lifecycle lock (backup/unfinished-import.js): nothing starts on
+  // the graph it may have left half written, and the error says the way back.
+  const unfinished = deps.unfinishedImport(input.paths, runtimeMode);
+  if (unfinished) throw unfinished;
   stage('graph_runtime');
   const selectedGraphRuntime = runtimeMode === 'native'
     ? await deps.ensureNativeRuntime({
@@ -667,6 +673,7 @@ function graphDependencies(overrides) {
     writeState: writeJsonFileAtomic,
     ensureContainerRuntime,
     ensureNativeRuntime,
+    unfinishedImport: unfinishedImportError,
     startProviders: startGraphProviders,
     startNativeProviders: (paths, _envPath, options) => createNativeGraphServices({
       paths,

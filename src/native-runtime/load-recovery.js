@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { readGraphBackupManifest, readVerifiedGraphBackup } from '../backup/graph-backup.js';
 import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from '../backup/graph-import-states.js';
 import { commandName, lockStartedAt, processList } from './neo4j-lifecycle-lock.js';
-import { diskSize, GRAPH_STORE_DIRS, listNames, recoveryFolder, recoveryStamp } from './recovered-dir.js';
+import { diskFree, diskSize, instanceGraphStores, listNames, recoveryFolder, recoveryStamp } from './recovered-dir.js';
 import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } from './recovery-plan.js';
 
 // The recovery of a load (an import) killed part way (neo4j-recovery.js plans
@@ -17,6 +17,8 @@ import { inside, moveAside, planned, readJsonOrNull, readManifest, refused } fro
 // (graphStates, graph-import-states.js), written before each graph is
 // written; a recovery adds that the copy is back (restored), why bringing it
 // back failed (restoreFailed), and how abandoning judged each graph (abandoning).
+// The import itself adds that it finished (completed), or why its rollback
+// could not empty a graph that was empty before (setAsideFailed).
 
 // File times may be truncated to the second (and a little more on some disks):
 // a store counts as written by an import when anything in it changed this
@@ -40,6 +42,13 @@ export async function planLoad(context, abandonImport) {
   // Abandoning was confirmed and recorded before anything moved: a run killed
   // part way is finished the same way, whichever recovery is asked for.
   if (lock.holder.abandoning) return planAbandon(context, point, null);
+  // The import itself finished (graph-backup.js records it once every graph
+  // holds its new data and the identity is reconciled): nothing goes back,
+  // nothing is abandoned; what is left is the start check and the lock.
+  if (lock.holder.completed === true) {
+    if (abandonImport) return refused('no_import', facts);
+    return planned('finish_load', [...stop, { do: 'check-start', version: readManifest(paths)?.neo4jVersion ?? null, afterImport: true }, ...end], facts);
+  }
   // The copy is already back (mark-restored): the lock protects nothing any
   // more; what is left is emptying, the start check and the lock.
   if (lock.holder.restored === true) {
@@ -53,6 +62,8 @@ export async function planLoad(context, abandonImport) {
   // stays good, and the plan says so and how to bring it back later.
   const copy = await restoreCopy(paths, point, { verify: abandonImport });
   const failed = lock.holder.restoreFailed ?? null;
+  // A graph empty before the import that the import's own rollback could not empty again (graph-backup.js).
+  const setAsideFailed = lock.holder.setAsideFailed && typeof lock.holder.setAsideFailed === 'object' ? { setAsideFailed: lock.holder.setAsideFailed } : {};
   if (abandonImport) {
     if (copy.unusable) return planAbandon(context, point, copy.unusable);
     if (failed && copy.path) return planAbandon(context, point, { why: 'restore_failed', backupPath: copy.path, restoreFailed: failed });
@@ -68,12 +79,12 @@ export async function planLoad(context, abandonImport) {
   steps.push({ do: 'check-start', version: readManifest(paths)?.neo4jVersion ?? null, afterRestore: true });
   return planned('restore_load', [...steps, ...end], { ...facts, backupPath: copy.path ?? null,
     restorePoint: copy.path ? { path: copy.path, createdAt: copy.createdAt, instances: copy.instances } : null, emptied: emptiedOf(point),
-    ...(failed ? { restoreFailed: failed } : {}) });
+    ...(failed ? { restoreFailed: failed } : {}), ...setAsideFailed });
 }
 
 // The instances that were empty before the import, and their stores still to set aside.
 const emptiedOf = point => Array.isArray(point?.loading) && Array.isArray(point.instances) ? point.loading.filter(id => !point.instances.includes(id)) : [];
-const emptiedStores = (paths, point) => emptiedOf(point).flatMap(id => storesOf(paths, id).filter(store => existsSync(store)).map(moveAside));
+const emptiedStores = (paths, point) => emptiedOf(point).flatMap(id => instanceGraphStores(paths, id).filter(store => existsSync(store)).map(moveAside));
 
 // The copy a load's lock names: { path, createdAt, instances }, { path: null }
 // when every instance was empty before, or { unusable: { reason, why, backupPath } }.
@@ -108,7 +119,7 @@ function planAbandon({ paths, lock, stop, end }, point, problem) {
   const recorded = lock.holder.abandoning;
   const judged = recorded ?? judge(paths, lock, point, problem);
   const moving = [...judged.halfWritten ?? [], ...judged.restoreUnfinished ?? [], ...judged.written ?? [], ...judged.unsure ?? []];
-  const moved = moving.flatMap(id => storesOf(paths, id).filter(store => existsSync(store)));
+  const moved = moving.flatMap(id => instanceGraphStores(paths, id).filter(store => existsSync(store)));
   const folder = abandonFolder(paths, lock);
   return planned('abandon_load', [...stop, ...(recorded ? [] : [{ do: 'mark-abandoning', abandoning: judged }]), ...moved.map(moveAside), ...end],
     { operation: 'load', ...judged, instances: moving, dataDir: paths.dataDir, folder,
@@ -134,7 +145,7 @@ function judge(paths, lock, point, problem) {
   const judged = { halfWritten: [], restoreUnfinished: [], imported: [], beforeImport: [] };
   const unrecorded = [];
   for (const id of [...new Set(point.loading)]) {
-    if (!storesOf(paths, id).some(store => existsSync(store))) continue;
+    if (!instanceGraphStores(paths, id).some(store => existsSync(store))) continue;
     const holds = graphStateHolds(states[id]);
     if (holds === 'partial') judged[[GRAPH_STATE.restoring, GRAPH_STATE.restoreFailed].includes(states[id]) ? 'restoreUnfinished' : 'halfWritten'].push(id);
     else if (holds === 'new') judged.imported.push(id);
@@ -156,7 +167,7 @@ function judgeByTimes(paths, lock, ids) {
   const folder = abandonFolder(paths, lock);
   const written = [], unsure = [], untouched = [];
   for (const id of ids) {
-    const all = storesOf(paths, id);
+    const all = instanceGraphStores(paths, id);
     const stores = all.filter(store => existsSync(store));
     if (!stores.length) continue;
     const partly = all.some(store => existsSync(join(folder, relative(paths.nativeRuntimeDir, store))));
@@ -182,11 +193,6 @@ function writtenSince(paths, since) {
   return unknown ? null : false;
 }
 
-// An instance's database and its transaction logs (recovered-dir.js GRAPH_STORE_DIRS).
-function storesOf(paths, id) {
-  const instance = id === 'personal' ? paths.nativePersonalDir : paths.nativeWorkspaceDir;
-  return GRAPH_STORE_DIRS.map(parts => join(instance, ...parts, 'neo4j'));
-}
 
 // The copies earlier imports took before they started (backups/graph/before-import-*),
 // newest first, except [unusable]; each one `fuli graph import` can load back.
@@ -208,12 +214,18 @@ function importCopies(paths, unusable) {
 // the database from it, which takes more than the compressed dump: at least
 // twice the copy), and the processes still naming a graph instance's
 // directory (an orphaned Neo4j holding the store), by PID and program name only.
-export async function restoreFailure(paths, from, error, { diskFree, listProcesses = processList } = {}) {
+export async function restoreFailure(paths, from, error, { diskFree: free = diskFree, listProcesses = processList } = {}) {
   let freeBytes = null;
-  try { freeBytes = await diskFree(paths.dataDir); } catch { /* unknown */ }
+  try { freeBytes = await free(paths.dataDir); } catch { /* unknown */ }
+  return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders: await graphHolders(paths, listProcesses) };
+}
+
+// The processes (other than this one) whose command line names a graph
+// instance's directory, by PID and program name only: what may hold a store
+// FULI could not move or write (an orphaned Neo4j; on Windows, a file in use).
+export async function graphHolders(paths, listProcesses = processList) {
   const dirs = [paths.nativePersonalDir, paths.nativeWorkspaceDir].filter(Boolean);
   const processes = await listProcesses().catch(() => null) ?? [];
-  const holders = processes.filter(({ pid, command }) => pid !== process.pid && dirs.some(dir => command.includes(dir)))
+  return processes.filter(({ pid, command }) => pid !== process.pid && dirs.some(dir => command.includes(dir)))
     .map(({ pid, command }) => ({ pid, name: commandName(command) }));
-  return { detail: String(error?.message ?? error), freeBytes, leastBytes: 2 * diskSize(from), holders };
 }

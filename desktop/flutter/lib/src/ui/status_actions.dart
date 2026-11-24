@@ -45,8 +45,17 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
+          // After a start an unfinished import refused, its way out is typed in
+          // Terminal: the commands with their real paths, to copy, are a click here.
+          if (!snapshot.running && controller.pending == null && controller.unfinishedImportCommands.isNotEmpty)
+            TextButton.icon(
+              key: const Key('unfinished-import-commands'),
+              onPressed: () => _showUnfinishedImport(context),
+              icon: const Icon(Icons.terminal_rounded, size: 16),
+              label: Text(strings.showCommands),
+            )
           // After a start that failed, the start's log is a click here.
-          if (_startupLog case final folder?)
+          else if (_startupLog case final folder?)
             TextButton.icon(
               key: const Key('notice-action'),
               onPressed: () => opener.open(Uri.directory(folder)),
@@ -294,6 +303,39 @@ class StatusActions extends StatelessWidget {
       ),
     );
   }
+
+  // An unfinished import's way out (src/backup/unfinished-import.js): why the
+  // start was refused, then each command the CLI wrote for this computer's
+  // terminal, with its real paths, each with its own copy button.
+  Future<void> _showUnfinishedImport(BuildContext context) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(strings.unfinishedImportTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (controller.notice case final notice?) SelectableText(notice.text),
+                for (final (index, entry) in controller.unfinishedImportCommands.indexed) ...[
+                  const SizedBox(height: FuliSpace.space4),
+                  Text(entry.label, style: TypeScale.secondary),
+                  SelectableText(entry.command, key: ValueKey('unfinished-import-command $index')),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      key: ValueKey('copy-unfinished-import-command $index'),
+                      onPressed: () => Clipboard.setData(ClipboardData(text: entry.command)),
+                      child: Text(strings.copyCommand),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.of(dialogContext).pop(), child: Text(strings.close))],
+        ),
+      );
 
   // Giving up the import: what happens to which graphs and how to import back
   // come first; its button says it empties them.

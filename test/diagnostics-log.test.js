@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { moveCommand } from '../src/text/terminal-command.js';
+
 import { ApplicationError, InvalidInputError } from '../src/app/application-error.js';
 import { runAsRunnerCall } from '../src/app/agent-request-context.js';
 import { DELEGATION_HEADER } from '../src/agent-delegation/delegation-header.js';
@@ -316,7 +318,7 @@ test('fuli diagnostics reads the data directory without the console', async (t) 
   await runDiagnosticsCommand(['--data-dir', directory], { env: {}, write: (text) => { printed += text; } });
   assert.match(printed, /recovered 文件夹里有挪开的图谱数据，自动清理不会删它们/);
   assert.match(printed, /2026-11-02T00-00-00-000Z · 0 KB · workspace/);
-  assert.ok(printed.includes(`mv "${moved}" "${join(directory, 'native-runtime', 'workspace', 'data', 'databases', 'neo4j')}"`));
+  assert.ok(printed.includes(moveCommand(moved, join(directory, 'native-runtime', 'workspace', 'data', 'databases', 'neo4j'))));
 });
 
 test('migrate status lists the diagnostics log as absent until a failure is recorded', async (t) => {
