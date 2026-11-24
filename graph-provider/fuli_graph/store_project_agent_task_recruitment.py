@@ -25,6 +25,7 @@ from .project_agent_task_models import (
     ProjectAgentRoutingDecisionRecord,
 )
 from .provider_values import now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
 from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
@@ -50,6 +51,8 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         if request.occupation and request.occupation.role == 'assistant':
             raise HTTPException(422, 'use the fixed global assistant; assistants cannot be recruited')
         self._require_personal()
+        if request.decision != 'cancel':
+            refuse_global_write(self, 'hiring an FLA')
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
             self,

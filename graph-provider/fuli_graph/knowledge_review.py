@@ -20,6 +20,7 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
+from .replica_write_guard import refuse_global_write, refuse_if_copy
 from .tonborg_confirmation import basis_json, tonborg_confirmation_basis, withdrawn_tonborg_basis
 from .knowledge_visibility import (
     PLAIN_SESSION,
@@ -56,6 +57,8 @@ async def start_knowledge_review(
         await authorize_personal_project(
             store, actor, space, request.personal_project_id
         )
+    else:
+        refuse_global_write(store, 'a review of global knowledge')
     scope_key = _scope_key(request.scope, request.personal_project_id)
     if request.reviewer == 'tonborg':
         scope_key += ':tonborg'
@@ -364,6 +367,8 @@ async def _record_ai_review_progress(
         if not current_records:
             raise HTTPException(status_code=404, detail='review candidate not found')
         current = dict(current_records[0])
+        # An assessment is written on the item: another computer's copy is assessed there.
+        refuse_if_copy(current, request.candidate_key)
         normalized = _normalize_item_row(current)
         # Never a candidate, so answered like one that does not exist.
         if not fla_visible(normalized, PLAIN_SESSION):
@@ -1040,6 +1045,7 @@ WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uu
 WITH item, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
+       item.fuli_replica_owner AS fuli_replica_owner,
        'entity' AS item_kind,
        item.name AS title,
        coalesce(item.summary, '') AS content,
@@ -1110,6 +1116,7 @@ WHERE (preference.left_item_id = item.uuid OR preference.right_item_id = item.uu
 WITH item, endpoints_visible, project_ids, episode_project_agent_ids, knowledge_conflicts,
      collect(DISTINCT preference.id) AS preference_conflicts
 RETURN item.uuid AS item_id,
+       item.fuli_replica_owner AS fuli_replica_owner,
        'relationship' AS item_kind,
        endpoints_visible,
        coalesce(item.name, 'RELATES_TO') AS title,

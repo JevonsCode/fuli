@@ -57,6 +57,7 @@ from .knowledge_hard_delete_traces import all_hard_deletions, hard_deletion_reco
 from .knowledge_management import _read_item
 from .knowledge_versions import item_revisions, lock_knowledge, version_chain, version_status
 from .provider_values import native_datetime, now_utc, sha256_text, stable_uuid
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 
 # What the person may type to confirm, besides the item's own title.
@@ -426,8 +427,12 @@ async def _person_space(store, actor, space_id):
 
 async def _plan(store, space, item_kind, item_id, *, lock=False) -> dict:
     await require_not_hard_deleted(store, space, item_id)
-    if await _read_item(store, space, item_id, item_kind) is None:
+    current = await _read_item(store, space, item_id, item_kind)
+    if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    if lock:
+        # The delete itself (a preview reads): another computer's copy is deleted there.
+        refuse_if_copy(current, f'{item_kind}:{item_id}')
     versions = [version['item_id'] for version in await version_chain(store, space, item_kind, item_id)]
     targets = {'entity': [], 'relationship': []}
     targets[item_kind] = sorted(set(versions) | {item_id})

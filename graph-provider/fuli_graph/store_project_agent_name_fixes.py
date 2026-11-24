@@ -22,6 +22,7 @@ from .project_agent_name_fixes import NameHolder, called_by, name_fix_plan, shar
 from .project_agent_name_history import name_history, recent_change
 from .project_agent_names import is_generated_nickname, profile_shown_name
 from .provider_values import now_utc, stored_epoch
+from .replica_write_guard import refuse_global_write
 from .store_project_agent_naming import lost_name_race, working_projects
 from .store_project_agent_rename import renamed_row, write_agent_names
 from .temporary_project_scope import is_temporary_project
@@ -74,6 +75,7 @@ class StoreProjectAgentNameFixes:
         """Renames exactly the FLAs the person agreed to, to the names they saw,
         all at once; anything changed since they looked refuses the whole apply."""
         self._require_personal()
+        refuse_global_write(self, "FLAs' names")
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         stored = {}
         holders, taken = await self._name_holders(request.personal_space_id, stored)

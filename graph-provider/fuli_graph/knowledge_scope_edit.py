@@ -28,6 +28,7 @@ from .knowledge_weight import effective_confirmation_status
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .provider_values import stable_uuid
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 
 _WIDENING = ('This preference already applies; widening where it applies needs the reviewed '
@@ -106,6 +107,7 @@ async def _editable_item(scoped, space, item_id, item_kind, expected_version) ->
     current = await _read_item(scoped, space, item_id, item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    refuse_if_copy(current, f'{item_kind}:{item_id}')
     await require_edit_revision(scoped, space, item_kind, item_id, expected_version)
     if current.get('invalid_at'):
         raise HTTPException(status_code=409, detail='historical knowledge keeps the scope it had')

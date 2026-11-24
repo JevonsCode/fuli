@@ -17,6 +17,7 @@ from .project_agent_memory_models import (
 )
 from .provider_values import now_utc, stable_uuid
 from .project_agent_work_log import read_employee_work_log
+from .replica_write_guard import refuse_global_write
 from .system_hr_identity import LEGACY_HR_AGENT_ID, SYSTEM_HR_AGENT_ID, resolve_hr_alias
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
@@ -76,6 +77,8 @@ class StoreProjectAgentMemory:
 
     async def _write_project_agent_memory(self, actor, request):
         self._require_personal()
+        if request.personal_project_id is None:
+            refuse_global_write(self, "an FLA's global memory")
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent = await authorize_project_agent(
             self, actor, space, request.personal_project_id, request.agent_id,

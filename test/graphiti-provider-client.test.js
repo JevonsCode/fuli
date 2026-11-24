@@ -6,6 +6,7 @@ import {
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
+import { errorToolResult } from '../src/mcp/tool-result.js';
 
 test('hard-deletion watermark uses ordinary auth and sends only the personal space', async () => {
   const calls = [];
@@ -544,6 +545,24 @@ test('provider client rejects invalid timeout configuration', () => {
     }),
     /timeout/
   );
+});
+
+test('a write the Provider refused on a read-only copy is a controlled error that says where to make it', async () => {
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => jsonResponse(409, { detail: {
+      code: 'replica_read_only', record: 'Entity:synthetic-habit', scopes: ['global'], owner: 'a'.repeat(64),
+      message: 'Entity:synthetic-habit is part of global, which another computer owns.' } }) });
+  const error = await client.reviseKnowledgeItem('synthetic-habit', { personal_space_id: 'synthetic-space' })
+    .then(() => assert.fail('refused'), refused => refused);
+  assert.ok(error instanceof ProviderRequestError);
+  assert.equal(error.code, 'replica_read_only');
+  assert.equal(error.status, 409);
+  assert.match(error.message, /^Entity:synthetic-habit belongs to the computer this one follows/);
+  assert.match(error.message, /在主机上改，或等这台电脑连上主机/);
+  const result = errorToolResult(error);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.error.code, 'replica_read_only', 'never internal_error');
+  assert.match(result.content[0].text, /Make this change on that computer/);
 });
 
 function jsonResponse(status, payload) {

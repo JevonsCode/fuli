@@ -30,6 +30,9 @@ class StoreIdentity:
             # and whether this graph's `global` is another computer's (config.global_replica).
             'replicaProtocol': REPLICA_PROTOCOL,
             'globalReplica': self.settings.global_replica,
+            # The read-only copies this graph holds and whether every write is checked
+            # against them (replica_write_guard.py).
+            'replicaWriteGuard': self.runtime.driver.replica_guard.status(),
         }
 
     async def bootstrap(self, principal_name: str) -> tuple[str, str]:

@@ -20,6 +20,7 @@ from .project_agent_dismissal_models import (
 from .project_agent_employee_numbers import employee_number_label
 from .project_agent_models import ProjectAgentRecord
 from .provider_values import native_datetime, now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 from .system_agents import (
     LEGACY_COORDINATOR_AGENT_ID,
     SYSTEM_ASSISTANT_AGENT_ID,
@@ -96,6 +97,7 @@ class StoreProjectAgentDismissal:
         """Archive one identity and keep its reason, lessons and handoff together."""
 
         self._require_personal()
+        refuse_global_write(self, 'dismissing an FLA')
         _refuse_system_role(agent_id)
         await self.authorize(actor, request.personal_space_id, 'maintainer')
         records, _, _ = await self.runtime.driver.execute_query(

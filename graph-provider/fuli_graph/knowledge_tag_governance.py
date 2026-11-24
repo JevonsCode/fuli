@@ -61,6 +61,7 @@ from .knowledge_tags import (
 )
 from .name_identity import identity_key
 from .provider_values import now_utc, sha256_text, stable_uuid
+from .replica_write_guard import refuse_global_write
 
 # What a change may set on a tag, and so what its undo restores.
 GOVERNED_FIELDS = ('status', 'merged_into_id', 'aliases', 'alias_keys', 'alias_statuses',
@@ -111,6 +112,9 @@ async def apply_governance(store, actor: dict, request: KnowledgeTagGovernanceAp
     any other caller of the function as well."""
     if actor.get('_human_review_verified') is not True:
         raise HTTPException(status_code=403, detail='independent human review proof required')
+    if not request.personal_project_id or request.include_all_projects:
+        # The personal vocabulary is `global`.
+        refuse_global_write(store, 'the personal tag vocabulary')
     space, namespaces = await visible_tag_scope(store, actor, request, 'maintainer',
                                                 all_projects=request.include_all_projects)
     async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:

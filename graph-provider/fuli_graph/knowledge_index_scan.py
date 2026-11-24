@@ -42,7 +42,8 @@ _TEXT = {
 }
 _DERIVED = '''item.fuli_retrieval_terms AS retrieval_terms, item.fuli_retrieval_context AS retrieval_context,
                item.fuli_retrieval_hash AS retrieval_hash,
-               item.fuli_semantic_model AS semantic_model, item.fuli_semantic_hash AS semantic_hash'''
+               item.fuli_semantic_model AS semantic_model, item.fuli_semantic_hash AS semantic_hash,
+               item.fuli_replica_owner AS replica_owner'''
 
 
 def scan_query(item_kind: str) -> str:
@@ -110,12 +111,12 @@ _LOCKED_TEXT = {
     'entity': '''
         MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
         SET item._index_lock = true REMOVE item._index_lock
-        RETURN item.name AS name, item.summary AS summary,
+        RETURN item.name AS name, item.summary AS summary, item.fuli_replica_owner AS replica_owner,
                item.fuli_retrieval_terms AS retrieval_terms, item.fuli_retrieval_context AS retrieval_context''',
     'relationship': '''
         MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
         SET item._index_lock = true REMOVE item._index_lock
-        RETURN item.fact AS fact,
+        RETURN item.fact AS fact, item.fuli_replica_owner AS replica_owner,
                item.fuli_retrieval_terms AS retrieval_terms, item.fuli_retrieval_context AS retrieval_context''',
 }
 

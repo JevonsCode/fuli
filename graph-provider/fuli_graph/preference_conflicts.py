@@ -24,6 +24,7 @@ from .knowledge_visibility import (
     request_reader,
 )
 from .provider_values import native_datetime as _native_datetime
+from .replica_write_guard import refuse_if_copy
 
 
 def _item_match(item_kind: str, variable: str, id_parameter: str) -> str:
@@ -261,6 +262,9 @@ async def resolve_preference_conflict(
         conflict.right_item_id,
         conflict.right_item_kind,
     )
+    # Every resolution writes both habits (merged, one ended, or rescoped).
+    refuse_if_copy(left, f'{conflict.left_item_kind}:{conflict.left_item_id}')
+    refuse_if_copy(right, f'{conflict.right_item_kind}:{conflict.right_item_id}')
 
     if request.resolution == 'merge':
         await _merge_items(store, actor, space, conflict, left, right, request)

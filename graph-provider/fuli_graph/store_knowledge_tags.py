@@ -20,6 +20,7 @@ from .knowledge_project_scope import knowledge_project_ids
 from .knowledge_tag_models import LIVE_STATUSES
 from .knowledge_versions import lock_knowledge
 from .provider_values import native_datetime
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 
 VISIBLE_STATUSES = list(LIVE_STATUSES)
@@ -61,6 +62,8 @@ class Neo4jKnowledgeTagVocabulary:
         current = await _read_item(self._store, space, item_id, item_kind)
         if current is None:
             return None
+        # Read only to attach or detach a tag, which writes the item's scope.
+        refuse_if_copy(current, f'{item_kind}:{item_id}')
         if current.get('preference_scope') not in (None, 'global') and current.get('preference_project_id'):
             return 'projects', list(current.get('preference_project_ids') or [current['preference_project_id']])
         if not current.get('profile_aspect'):

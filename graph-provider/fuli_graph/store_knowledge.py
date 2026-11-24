@@ -26,6 +26,7 @@ from .preference_versions import restated_preferences
 from .project_agent_access import authorize_project_agent
 from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities, restated_relationships
 from .provider_values import now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 from .store_transactions import query_store_transaction
 from .workflow_candidates import materialize_workflow_candidates
 
@@ -58,6 +59,8 @@ class StoreKnowledge:
         space = await self.authorize(actor, request.space_id, 'maintainer')
         if space['kind'] != 'personal':
             raise HTTPException(status_code=422, detail='direct commits are personal-only')
+        if not request.personal_project_id:
+            refuse_global_write(self, 'a capture of global knowledge')
         if request.personal_project_id:
             await authorize_personal_project(
                 self, actor, space, request.personal_project_id
@@ -87,6 +90,8 @@ class StoreKnowledge:
                 status_code=422,
                 detail='workflow observations are personal-only',
             )
+        if not request.personal_project_id:
+            refuse_global_write(self, 'a capture of global knowledge')
         if request.personal_project_id:
             await authorize_personal_project(
                 self, actor, space, request.personal_project_id

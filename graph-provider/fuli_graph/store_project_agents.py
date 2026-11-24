@@ -24,6 +24,7 @@ from .project_agent_models import (
 from .provider_values import native_datetime, now_utc, stable_uuid, stored_epoch
 from .project_agent_names import agent_display_name
 from .project_agent_name_history import former_name, name_history
+from .replica_write_guard import refuse_global_write
 from .store_transactions import query_store_transaction
 from .store_project_agent_naming import (
     UNKEYED, clear_stale_name_keys, keeps_its_name, lost_name_race, name_identity, space_agent_names, with_person_name,
@@ -88,6 +89,7 @@ class StoreProjectAgents:
         recruitment_id: str | None = None,
     ) -> ProjectAgentRecord:
         self._require_personal()
+        refuse_global_write(self, 'an FLA of the roster')
         if request.occupation and request.agent_id in {*BUILTIN_AGENT_OCCUPATIONS, LEGACY_HR_AGENT_ID}:
             occupation_error(409, 'occupation_locked', 'The built-in Agent occupation is locked.')
         if request.occupation and request.occupation.role == 'assistant':

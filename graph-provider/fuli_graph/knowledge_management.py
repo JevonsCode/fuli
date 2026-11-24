@@ -7,6 +7,7 @@ from .knowledge_audit import record_human_change
 from .knowledge_item_version import lock_version, require_edit_revision
 from .knowledge_records import assignment_record
 from .personal_project_access import authorize_personal_project
+from .replica_write_guard import refuse_if_copy
 from .store_transactions import query_store_transaction
 from .models import (
     ConfirmationBasis,
@@ -40,6 +41,7 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
     current = await _read_item(store, space, item_id, request.item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    refuse_if_copy(current, f'{request.item_kind}:{item_id}')
     await require_edit_revision(store, space, request.item_kind, item_id, request.expected_version)
     previous = _snapshot(current, request.item_kind)
     if (
@@ -412,6 +414,7 @@ async def reassign_knowledge_item(
     item = await _read_item(store, space, item_id, request.item_kind)
     if item is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    refuse_if_copy(item, f'{request.item_kind}:{item_id}')
     if item.get('profile_aspect'):
         raise HTTPException(
             status_code=422,
@@ -547,6 +550,7 @@ async def set_preference_scope(
     current = await _read_item(store, space, item_id, request.item_kind)
     if current is None:
         raise HTTPException(status_code=404, detail='knowledge item not found')
+    refuse_if_copy(current, f'{request.item_kind}:{item_id}')
     if not current.get('profile_aspect'):
         raise HTTPException(
             status_code=422,
@@ -699,7 +703,9 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
                item.fuli_unresolved_bases AS unresolved_bases,
                coalesce(item.fuli_ai_review_lock_version, 0)
-                 AS ai_review_lock_version
+                 AS ai_review_lock_version,
+               item.fuli_replica_owner AS fuli_replica_owner,
+               item.fuli_replica_scopes AS fuli_replica_scopes
         '''
     else:
         query = '''
@@ -752,7 +758,9 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
                item.fuli_unresolved_bases AS unresolved_bases,
                coalesce(item.fuli_ai_review_lock_version, 0)
-                 AS ai_review_lock_version
+                 AS ai_review_lock_version,
+               item.fuli_replica_owner AS fuli_replica_owner,
+               item.fuli_replica_scopes AS fuli_replica_scopes
         '''
     records, _, _ = await store.runtime.driver.execute_query(
         query,

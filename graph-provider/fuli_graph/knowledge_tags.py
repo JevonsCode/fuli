@@ -45,6 +45,7 @@ from .knowledge_tag_similarity import (
 from .name_identity import identity_key
 from .personal_project_access import authorize_personal_project
 from .provider_values import now_utc, stable_uuid
+from .replica_write_guard import refuse_global_write
 
 PERSONAL_NAMESPACE = 'personal'
 MAX_TAGS_PER_ITEM = 32
@@ -80,6 +81,8 @@ async def resolve_tags(store, actor: dict, request: KnowledgeTagResolve) -> Know
 async def create_tag(store, actor: dict, request: KnowledgeTagCreate) -> KnowledgeTagCreateResult:
     require_human_proof(actor, request.operation_actor)
     namespace = _new_tag_namespace(request)
+    if namespace != 'project':
+        refuse_global_write(store, 'a personal tag')
     space, visible = await visible_tag_scope(store, actor, request, 'maintainer')
     key = identity_key(request.name)
     acknowledged = set(request.distinct_from)

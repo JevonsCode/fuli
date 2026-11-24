@@ -1136,12 +1136,25 @@ function providerErrorDiagnostic(status, payload) {
     category: typeof payload?.detail?.code === 'string' && /^[a-z][a-z0-9_]{1,79}$/.test(payload.detail.code)
       ? payload.detail.code : category,
     status,
-    detail: sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
+    detail: payload?.detail?.code === 'replica_read_only'
+      ? replicaReadOnlyMessage(payload.detail)
+      : sanitizeProviderDetail(providerErrorMessage(payload, validationErrors)),
     validationErrors,
     // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
     ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {}),
     ...nameTakenFields(payload?.detail)
   };
+}
+
+// A write the Provider refused because its record is a read-only copy of
+// another computer's (graph-provider replica_write_guard.py): what it was, and
+// what the person or the Agent does next.
+function replicaReadOnlyMessage(detail) {
+  // An export ID (`Label:key`): kept to the characters IDs use.
+  const record = String(detail.record ?? '').replace(/[^\w.:@-]/g, '').slice(0, 120) || 'This record';
+  return `${record} belongs to the computer this one follows and is only a read-only copy here; nothing was `
+    + 'written. Make this change on that computer, or try again once this computer reaches it. '
+    + '这是主机的内容：请在主机上改，或等这台电脑连上主机后再试。';
 }
 
 // A refused Agent name says who has it, where, and free names (graph-provider

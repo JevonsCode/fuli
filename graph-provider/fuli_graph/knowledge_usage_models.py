@@ -43,6 +43,8 @@ class KnowledgeUsageItemResult(StrictModel):
     qualified_use_count: int = Field(ge=0)
     distinct_task_count: int = Field(ge=0)
     usage_generation: int = Field(ge=1)
+    # A read-only copy of another computer's item: its use is not recorded here.
+    held_by_owner: bool = False
 
 
 class KnowledgeUsageResult(StrictModel):
@@ -50,3 +52,6 @@ class KnowledgeUsageResult(StrictModel):
     duplicate_count: int = Field(ge=0, le=200)
     promoted_count: int = Field(ge=0, le=200)
     items: list[KnowledgeUsageItemResult] = Field(max_length=200)
+    # Items another computer owns (read-only copies here): their use was not recorded on this computer.
+    held_by_owner_count: int = Field(default=0, ge=0, le=200)
+    held_by_owner_note: str | None = None

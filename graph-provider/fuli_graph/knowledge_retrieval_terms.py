@@ -31,7 +31,11 @@ def _current(item_kind: str, record) -> tuple[str, str, bool]:
 
 
 def _in_project(record, personal_project_id: str | None) -> bool:
-    return personal_project_id is None or record['personal_project_id'] == personal_project_id
+    """An item whose terms this computer makes: in the project asked for, and
+    not a read-only copy of another computer's, whose owner makes its terms and
+    whose next copy brings them (replica_write_guard.py)."""
+    return record.get('replica_owner') is None and (
+        personal_project_id is None or record['personal_project_id'] == personal_project_id)
 
 
 async def retrieval_candidates(store, actor, request: RetrievalCandidatesRequest) -> RetrievalCandidatesPage:
@@ -92,7 +96,8 @@ async def write_retrieval_terms(store, actor, request: RetrievalTermsWrite) -> R
     async with query_store_transaction(store) as scoped:
         for item in request.items:
             record = await locked_item(scoped, space, item.item_kind, item.item_id)
-            if record is None or semantic_hash(item_text(item.item_kind, record)) != item.hash:
+            if (record is None or record.get('replica_owner') is not None
+                    or semantic_hash(item_text(item.item_kind, record)) != item.hash):
                 skipped.append(item.item_id)
                 continue
             await scoped.runtime.driver.execute_query(
