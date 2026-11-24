@@ -176,6 +176,11 @@ test('a process holding a store counts as this data directory\'s Neo4j only when
   assert.deepEqual(await ownGraphDatabase({ ...scope, pid: 801 }), { pid: 801, group: 800, command: 'java' });
   for (const pid of [810, 820, 830, 840]) assert.equal(await ownGraphDatabase({ ...scope, pid }), null, `process ${pid}`);
   assert.equal(await ownGraphDatabase({ ...scope, pid: 841 }), null, 'a Neo4j whose group leader is a shell: the group is not ended');
+  // A Java whose path holds a space is still the program; a shell running one is not.
+  const spaced = jvm('org.neo4j.server.CommunityEntryPoint').replace('/opt/fuli/java/', '/Applications/FULI Helper/java/');
+  const spacedReads = world({ listeners: {}, cwd: { 850: instanceDir, 851: instanceDir }, commands: { 850: spaced, 851: `/bin/zsh -c ${spaced}` } });
+  assert.equal((await ownGraphDatabase({ instanceDirs: [instanceDir], runtimeDir, pid: 850, ...spacedReads }))?.pid, 850);
+  assert.equal(await ownGraphDatabase({ instanceDirs: [instanceDir], runtimeDir, pid: 851, ...spacedReads }), null);
   // The start's own check is unchanged: a sole listener on its port, recognised by where it runs.
   assert.equal((await ownGraphProcess({ instanceDirs: [instanceDir], pid: 810, ...reads }))?.pid, 810);
 });

@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { claimImportRun } from '../backup/import-run.js';
+import { claimImportRun, IMPORT_RUN_LONGEST_MS, importRunningFacts, runningImport } from '../backup/import-run.js';
 import { planUnfinishedImport } from '../backup/unfinished-import-plan.js';
-import { readUnfinishedImport, unfinishedImportError } from '../backup/unfinished-import.js';
+import { unfinishedImportError, unfinishedWayOut } from '../backup/unfinished-import.js';
 import { runGraphDataCommand } from '../cli/graph-data-command.js';
 import { lockReleaseRefusal } from '../local-runtime/startup-failure.js';
 import { readStartupFailure } from '../local-runtime/startup-failure-line.js';
@@ -86,7 +86,7 @@ export async function runTrayAction(action, context, {
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
   onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery,
-  graphData = runGraphDataCommand, platform = process.platform
+  graphData = runGraphDataCommand, importRuns = {}
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -145,13 +145,11 @@ export async function runTrayAction(action, context, {
     // `fuli graph abandon-import` the terminal runs. The person confirmed it in
     // this window, which is the person the CLI's terminal check asks for
     // (graph-data-command.js), so giving the import up runs here without a
-    // terminal; the CLI keeps its check.
-    // Only there: on macOS native the lifecycle lock's recovery is the way,
-    // whatever marker an older run or another computer left.
+    // terminal; the CLI keeps its check. A lifecycle lock's recovery comes
+    // first (unfinishedWayOut, as a start asks): the marker's way once it is done.
     const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
-    const lockless = mode !== 'native' || platform !== 'darwin';
-    const marked = lockless && !choice.keepNewer && readUnfinishedImport(paths, mode) ? mode : null;
-    const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true });
+    const marked = !choice.keepNewer && unfinishedWayOut(paths, mode) === 'marker' ? mode : null;
+    const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true, runs: importRuns });
     if (recovering === 'preview') {
       try { return reply(true, { recoveryPlan: marked ? await markerPlan() : await recovery.plan(paths, choice) }); }
       catch (error) { return unknown(error); }
@@ -163,12 +161,12 @@ export async function runTrayAction(action, context, {
       if (plan.digest !== recoveryDigest) return unknown(new Error('Things changed after the plan was shown.'), { code: 'recovery_refused', reason: 'plan_changed' });
       const abandoning = plan.kind === 'abandon_import';
       // Recorded as running (import-run.js) until it ends: a second click meanwhile is refused, never a second import.
-      const run = await claimImportRun(paths, marked, abandoning ? 'abandon-import' : 'import');
-      if (run.running) {
-        return unknown(new Error('An earlier import is still running.'), { code: 'recovery_refused', reason: 'import_running', mode: marked,
-          pid: run.running.pid, runKind: run.running.kind, runSince: run.running.since });
-      }
-      atStage(abandoning ? 'import_abandon' : 'graph_import');
+      let run;
+      try { run = await claimImportRun(paths, marked, abandoning ? 'abandon-import' : 'import', importRuns); }
+      catch (error) { return unknown(error); }
+      if (run.running) return unknown(new Error('An earlier import is still running.'), { code: 'recovery_refused', ...importRunningFacts(marked, run.running) });
+      // However long it takes, the window waits as long as the run counts as going on.
+      atStage(abandoning ? 'import_abandon' : 'graph_import', { maxSeconds: IMPORT_RUN_LONGEST_MS / 1000 });
       try {
         const done = await graphData(abandoning ? 'abandon-import' : 'import',
           [...(abandoning ? [] : ['--input', plan.from]), '--target-mode', marked, '--data-dir', paths.dataDir, '--yes'],
@@ -218,6 +216,17 @@ export async function runTrayAction(action, context, {
   try {
     if (['start', 'start-open', 'stop', 'change-port', END_ORPHANS_ACTION].includes(action) && !isRunnerDataDirectory(context.dataDir)) {
       assertNativeSelection(context);
+    }
+    // The window's way back or giving up still runs (import-run.js): a start,
+    // like the window opening, says so instead of offering it again.
+    if (['start', 'start-open', 'change-port', END_ORPHANS_ACTION].includes(action)) {
+      const paths = resolveSetupPaths({ dataDir: context.dataDir });
+      const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
+      const running = await runningImport(paths, mode, importRuns);
+      if (running) {
+        throw Object.assign(new Error('An earlier import is still running. / 上一次导回还在进行。'),
+          { startupFailure: { code: 'recovery_refused', ...importRunningFacts(mode, running) } });
+      }
     }
     if (action === 'change-port') {
       if (!existsSync(join(context.dataDir, 'graph-runtime.json'))) {

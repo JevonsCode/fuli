@@ -49,6 +49,14 @@ void main() {
     endless.add(line({'stage': 'import_abandon'}));
     final outlasted = await still;
     expect([outlasted.timedOut, outlasted.importing], [true, true]);
+    // The step's own limit (the controller's maxSeconds) decides over the default.
+    final bounded = StreamController<List<int>>();
+    final boundedRead = readControllerLines(bounded.stream, null, wait: wait);
+    bounded.add(line({'stage': 'graph_import', 'maxSeconds': 1}));
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    bounded.add(line({'ok': true, 'status': 'running'}));
+    await bounded.close();
+    expect((await boundedRead).timedOut, false, reason: 'waited past the default 400 ms, within the step\'s 1 s');
     final report = stillImporting();
     expect([report.failure?.code, report.failure?.text('reason'), report.failure?.facts['timedOut']], ['recovery_refused', 'import_running', true]);
     expect(report.error, isNot(contains('did not answer')));

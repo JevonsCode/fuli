@@ -161,9 +161,12 @@ import).
   named by its path with that move and the newest copy's import.
   The desktop controller offers both as a plan the window confirms
   (`src/backup/unfinished-import-plan.js`, through its `recover-*` and
-  `abandon-import-*` actions when the data's runtime mode has a marker and no
-  lifecycle lock; on macOS native a left-over marker never takes the place of
-  the lock's recovery):
+  `abandon-import-*` actions when the data's runtime mode has a marker). A
+  marker counts on every platform and in every mode, macOS native included (an
+  older run, data copied from Windows): one rule (`unfinishedWayOut`), asked by
+  a start and the controller alike, deals with a lifecycle lock or switch
+  journal first, by its recovery, and with the marker once that is gone; an
+  import under the macOS lock clears such a marker once every graph is whole:
   `import_back` (the marker's copy, or for an unreadable marker the newest
   `before-import-*` copy), `import_again` (the import's own input) and
   `abandon_import`, each with its digest; it then runs the same
@@ -172,13 +175,17 @@ import).
   for; the CLI keeps that check) and starts. While it runs it keeps
   `<data>/graph-import-running-<mode>.json` (`src/backup/import-run.js`: its
   PID, command line and start time, the kind, since when; checked and written
-  under a short file lock beside it), a runtime record like a lock, not data:
-  while that process still runs, both plans are refused (`import_running`)
-  with nothing to click, and the record goes when the run ends, failed or
-  not; one whose process ended without removing it no longer counts. The
-  window waits for these two steps (`graph_import`, `import_abandon`) up to
-  24 hours instead of its usual 10 minutes, and past that says the import
-  still runs in the background, never that the controller did not answer.
+  under a short file lock beside it; on Windows the PID, command line and
+  creation time come from its process table), a runtime record like a lock,
+  not data: while that process still runs, both plans and a start are refused
+  (`import_running`) with nothing to click, and the record goes when the run
+  ends, failed or not. One whose process ended, or whose PID is now another
+  program, no longer counts; nor does one older than 24 hours
+  (`IMPORT_RUN_LONGEST_MS`) whose process cannot be checked. The window waits
+  for these two steps (`graph_import`, `import_abandon`) as long as the step
+  reports (that same limit) instead of its usual 10 minutes, and past that
+  says the import still runs in the background, never that the controller
+  did not answer.
   A refused start adds `wayGone`
   when the way back names a folder that is no longer there, so giving up
   comes first.

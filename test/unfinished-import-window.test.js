@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { abandonUnfinishedImport } from '../src/backup/abandon-import.js';
 import { exportGraphData } from '../src/backup/graph-backup.js';
-import { claimImportRun } from '../src/backup/import-run.js';
+import { claimImportRun, IMPORT_RUN_LONGEST_MS, windowsProcessIdentity } from '../src/backup/import-run.js';
 import { planUnfinishedImport } from '../src/backup/unfinished-import-plan.js';
-import { clearUnfinishedImport, markUnfinishedImport, readUnfinishedImport, unfinishedImportError } from '../src/backup/unfinished-import.js';
+import { clearUnfinishedImport, markUnfinishedImport, readUnfinishedImport, unfinishedImportError, unfinishedImportFirst, unfinishedWayOut } from '../src/backup/unfinished-import.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { DEFAULT_RUNTIME_SETTINGS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
@@ -77,8 +77,7 @@ function tray(paths) {
     if (args[0] === 'status') return { code: 0, stdout: JSON.stringify({ status: running ? 'running' : 'stopped' }), stderr: '' };
     return { code: 0, stdout: '', stderr: '' };
   };
-  // Native mode with a marker is Windows' (no lifecycle lock); containers are anywhere.
-  const options = { runCli, otherConsole: () => null, holdAdoption: () => null, portBlocked: async () => false, platform: 'win32',
+  const options = { runCli, otherConsole: () => null, holdAdoption: () => null, portBlocked: async () => false,
     recovery: { plan: async () => assert.fail('not the macOS recovery'), apply: async () => assert.fail('not the macOS recovery') } };
   return { context, calls, options };
 }
@@ -142,7 +141,7 @@ test('while an earlier way back still runs, the window refuses another, and a re
   assert.equal(preview.recoveryPlan.abandonCommand, undefined, 'nothing to click or copy while it runs');
   const giveUp = await runTrayAction('abandon-import-preview', context, options);
   assert.equal(giveUp.recoveryPlan.reason, 'import_running');
-  const { digest } = await planUnfinishedImport({ paths, mode: 'native', identity: { state: () => 'gone' } });
+  const { digest } = await planUnfinishedImport({ paths, mode: 'native', runs: { identity: { state: () => 'gone' } } });
   const started = await runTrayAction('recover-start', context, { ...options, recoveryDigest: digest, graphData: () => assert.fail('no second import') });
   assert.deepEqual([started.ok, started.failure.reason], [false, 'import_running']);
   run.release();
@@ -196,13 +195,85 @@ test('giving up that stops part way says it was not given up and what already mo
   assert.match(en, /The personal graph is empty now: its half-written database moved to C:\\FULI/);
 });
 
-test('on macOS native mode the lifecycle lock\'s recovery is the way, whatever marker was left', async (t) => {
+// A fake process table for a run's record: [rows] by PID, as Windows' process table reads them.
+const windowsTable = rows => windowsProcessIdentity(async pid => rows[pid] ?? null);
+const writeRun = (paths, record) => writeFileSync(runRecord(paths), JSON.stringify({ kind: 'import', ...record }));
+
+test('on Windows a record whose PID is now another program does not count; one that cannot be checked counts only for a day', async (t) => {
   const { paths } = await marked(t, 'native');
   const { context, options } = tray(paths);
-  const preview = await runTrayAction('recover-preview', context, { ...options, platform: 'darwin',
-    recovery: { plan: async () => ({ kind: 'nothing', steps: [] }), apply: async () => assert.fail('nothing to apply') } });
-  assert.equal(preview.recoveryPlan.kind, 'nothing', 'the lock\'s recovery, not the marker\'s import_back');
-  const container = await marked(t, 'container');
-  const fromContainer = await runTrayAction('recover-preview', tray(container.paths).context, { ...options, platform: 'darwin' });
-  assert.equal(fromContainer.recoveryPlan.kind, 'import_back', 'containers have no lock on macOS either');
+  // A live PID: this test's own process stands for whatever Windows gave it to.
+  const pid = process.pid;
+  const ours = { commandLine: '"C:\\FULI\\node.exe" "C:\\FULI\\src\\desktop\\windows-controller.js" recover-start 0123456789abcdef', createdFileTime: '134080000000000000' };
+  writeRun(paths, { pid, command: ours.commandLine, startedAt: ours.createdFileTime, since: new Date().toISOString() });
+  const preview = runs => runTrayAction('recover-preview', context, { ...options, importRuns: runs });
+  assert.equal((await preview({ identity: windowsTable({ [pid]: ours }) })).recoveryPlan.reason, 'import_running', 'the same process still runs');
+  assert.equal((await preview({ identity: windowsTable({ [pid]: { ...ours, createdFileTime: '134090000000000000' } }) })).recoveryPlan.kind, 'import_back',
+    'the PID was given to another process since');
+  assert.equal((await preview({ identity: windowsTable({ [pid]: { ...ours, commandLine: 'notepad.exe' } }) })).recoveryPlan.kind, 'import_back');
+
+  // The process table cannot be read: the PID being alive counts, but only for as long as a run is waited for.
+  const unreadable = windowsTable({});
+  assert.equal((await preview({ identity: unreadable })).recoveryPlan.reason, 'import_running');
+  writeRun(paths, { pid, command: ours.commandLine, startedAt: ours.createdFileTime, since: new Date(Date.now() - IMPORT_RUN_LONGEST_MS - 60_000).toISOString() });
+  assert.equal((await preview({ identity: unreadable })).recoveryPlan.kind, 'import_back', 'a day on, a record that cannot be checked no longer counts');
+  assert.equal((await preview({ identity: windowsTable({ [pid]: ours }) })).recoveryPlan.reason, 'import_running', 'one that checks out still counts');
+  writeRun(paths, { pid, command: null, startedAt: null, since: new Date(Date.now() - IMPORT_RUN_LONGEST_MS - 60_000).toISOString() });
+  assert.equal((await preview({ identity: windowsTable({ [pid]: ours }) })).recoveryPlan.kind, 'import_back', 'nor one recorded without an identity');
+
+  // What a run records of itself there.
+  const claimed = await claimImportRun(paths, 'container', 'import', { identity: windowsTable({ [pid]: ours }) });
+  const record = JSON.parse(readFileSync(join(paths.dataDir, 'graph-import-running-container.json'), 'utf8'));
+  assert.deepEqual([record.pid, record.command, record.startedAt, record.kind], [pid, ours.commandLine, ours.createdFileTime, 'import']);
+  claimed.release();
+});
+
+test('opening the window, or a start, while the way back still runs says so instead of offering it again', async (t) => {
+  const { paths } = await marked(t, 'native');
+  writeFileSync(join(paths.dataDir, 'graph-runtime.json'), '{}');
+  const { context, calls, options } = tray(paths);
+  const run = await claimImportRun(paths, 'native', 'abandon-import');
+  t.after(() => run.release());
+  const start = await runTrayAction('start-open', context, options);
+  assert.deepEqual([start.ok, start.failure.code, start.failure.reason, start.failure.pid, start.failure.runKind],
+    [false, 'recovery_refused', 'import_running', process.pid, 'abandon-import']);
+  assert.equal(calls.includes('start'), false, 'nothing is started');
+});
+
+test('another controller holding the run\'s lock past the wait is refused in words, never a raw error', async (t) => {
+  const { paths } = await marked(t, 'native');
+  const { context, options } = tray(paths);
+  const { digest } = await planUnfinishedImport({ paths, mode: 'native' });
+  const { acquireFileLock } = await import('../src/storage/file-lock.js');
+  const unlock = acquireFileLock(`${runRecord(paths)}.lock`);
+  t.after(unlock);
+  const result = await runTrayAction('recover-start', context, { ...options, recoveryDigest: digest, graphData: () => assert.fail('no import') });
+  assert.deepEqual([result.ok, result.failure.code, result.failure.reason, result.failure.pid], [false, 'recovery_refused', 'import_running', null]);
+});
+
+// A marker counts everywhere; a lifecycle lock's recovery comes first (macOS native).
+function lockLeft(paths) {
+  mkdirSync(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock'), { recursive: true });
+  return () => rmSync(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock'), { recursive: true, force: true });
+}
+
+test('with a lifecycle lock to recover as well, its recovery comes first, then the marker\'s way back, for the window and a start alike', async (t) => {
+  const { paths, before } = await marked(t, 'native');
+  writeFileSync(join(paths.dataDir, 'graph-runtime.json'), '{}');
+  const unlock = lockLeft(paths);
+  assert.equal(unfinishedWayOut(paths, 'native'), 'lock');
+  assert.equal(unfinishedImportFirst(paths, 'native'), null, 'a start leaves it to the lock\'s own refusal');
+  const { context, options } = tray(paths);
+  const recovered = [];
+  const recovery = { plan: async () => ({ kind: 'restore_load', steps: [], digest: '0123456789abcdef' }),
+    apply: async (_paths, digest) => { recovered.push(digest); unlock(); return { kind: 'restore_load', status: 'recovered' }; } };
+  const first = await runTrayAction('recover-preview', context, { ...options, recovery });
+  assert.equal(first.recoveryPlan.kind, 'restore_load', 'the lock\'s recovery first');
+  await runTrayAction('recover-start', context, { ...options, recovery, recoveryDigest: '0123456789abcdef' });
+  assert.deepEqual(recovered, ['0123456789abcdef']);
+  // The lock is dealt with and the marker is still there: now its way back, and a start is refused by it.
+  assert.equal(unfinishedWayOut(paths, 'native'), 'marker');
+  assert.equal(unfinishedImportFirst(paths, 'native')?.startupFailure.code, 'graph_import_unfinished');
+  const next = await runTrayAction('recover-preview', context, { ...options, recovery });
+  assert.deepEqual([next.recoveryPlan.kind, next.recoveryPlan.from], ['import_back', before]);
 });

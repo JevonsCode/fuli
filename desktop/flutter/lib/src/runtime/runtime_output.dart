@@ -46,7 +46,9 @@ RuntimeReport parseControllerReply(String stdout) {
 const importStages = {'graph_import', 'import_abandon'};
 
 /// How long the window waits for a controller: [usual] for anything, and in
-/// an import step up to [importing] (a whole graph can take hours).
+/// an import step as long as the step says (its maxSeconds: the longest the
+/// controller's run counts as going on, src/backup/import-run.js), or
+/// [importing] when it says none.
 const controllerWait = (usual: Duration(minutes: 10), importing: Duration(hours: 24));
 
 /// What a controller printed, read line by line as it arrives (each step it
@@ -56,17 +58,20 @@ Future<({String output, bool timedOut, bool importing})> readControllerLines(Str
     {({Duration usual, Duration importing}) wait = controllerWait}) async {
   final output = StringBuffer();
   String? stage;
+  int? stageMax;
   final done = stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
     output.writeln(line);
     if (parseStageLine(line) case final step?) {
       stage = step.stage;
+      stageMax = step.maxSeconds;
       onStage?.call(step.stage, step.maxSeconds);
     }
   });
   final waited = Stopwatch()..start();
   while (true) {
     final importing = importStages.contains(stage);
-    final left = (importing ? wait.importing : wait.usual) - waited.elapsed;
+    final limit = !importing ? wait.usual : stageMax != null ? Duration(seconds: stageMax!) : wait.importing;
+    final left = limit - waited.elapsed;
     if (left <= Duration.zero) return (output: output.toString(), timedOut: true, importing: importing);
     try {
       await done.timeout(left);

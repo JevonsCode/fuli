@@ -98,10 +98,13 @@ function createNativeBackupAdapter({ paths, instances, createNativeServices }) {
   // (neo4j-recovery.js). A rollback that could not bring the copy [from] back
   // records why, as a recovery's own failed restore does (restoreFailed).
   // Outside macOS there is no lock: a marker stands for it (unfinished-import.js).
+  // A marker left on macOS anyway (an older run, data copied from Windows)
+  // goes once this import made every graph whole, as it would elsewhere.
   async function holdImport({ inputDir, ...details }) {
     const lease = await services.hold('load', details);
     if (!lease.locked) return markUnfinishedImport(paths, 'native', { ...details, inputDir });
-    return { ...lease, restoreFailed: async (from, error) => lease.record({ restoreFailed: await restoreFailure(paths, from, error) }) };
+    return { ...lease, restoreFailed: async (from, error) => lease.record({ restoreFailed: await restoreFailure(paths, from, error) }),
+      async release() { await lease.release(); clearUnfinishedImport(paths, 'native'); } };
   }
 
   // Empties an instance (one that was empty before the import, or one an

@@ -76,6 +76,12 @@ export function readLock(root) {
   return { path, since, owner, holder: Number.isInteger(holder?.pid) && holder.pid > 0 ? holder : null };
 }
 
+// Whether a lifecycle lock or a switch journal is in [root]: something a
+// recovery (neo4j-recovery.js) deals with before anything else.
+export function lifecycleRecordsLeft(root) {
+  return Boolean(root) && (readLock(root) !== null || existsSync(journalPath(root)));
+}
+
 // When the operation that holds [lock] took it (ms): what its holder recorded,
 // which stays when a recovery claims the lock, or else when the lock appeared.
 export function lockStartedAt(lock) {

@@ -213,6 +213,18 @@ test('a successful import releases its one lock before the services start again'
   assert.deepEqual([s.events.filter(event => event === 'held').length, s.events.at(-1)], [1, 'start (lock gone)']);
 });
 
+// A marker counts on macOS too (unfinished-import.js unfinishedWayOut): an
+// import there runs under the lock, and once every graph is whole the marker goes with it.
+test('on macOS a marker left from elsewhere goes once an import under the lock made every graph whole', async (t) => {
+  const { markUnfinishedImport, readUnfinishedImport } = await import('../src/backup/unfinished-import.js');
+  const s = scene(t);
+  markUnfinishedImport(s.paths, 'native', { restorePoint: null, graphStates: { personal: 'imported', workspace: 'writing' }, inputDir: null });
+  const result = await s.runImport();
+  assert.equal(result.status, 'imported');
+  assert.equal(readUnfinishedImport(s.paths, 'native'), null);
+  assert.equal(s.events.at(-1), 'start (lock gone)', 'the services start again with the marker gone');
+});
+
 test('an import killed after every graph is written: while reconciling, a recovery takes it back; once it recorded that it finished, a recovery only checks the start', async (t) => {
   const reconciling = await killedAt(t, 'reconcile');
   assert.deepEqual(reconciling.holder.graphStates, { personal: 'imported', workspace: 'imported' });

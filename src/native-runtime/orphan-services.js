@@ -70,10 +70,14 @@ export async function ownGraphDatabase({ runtimeDir, commandOf = processCommand,
   return own;
 }
 
+// A program …/bin/java (its path may hold spaces, never " -") followed by its
+// options: `ps` does not quote arguments, so the program is not the first word.
+const JVM = /^"?(?:(?! -)[^"])*\/bin\/java"?\s+-/;
+
 // A command line of a Neo4j JVM run from a managed Neo4j home under [runtimeDir].
 export function managedNeo4jCommand(runtimeDir, command) {
   if (typeof command !== 'string' || typeof runtimeDir !== 'string' || !runtimeDir) return false;
-  if (shortCommand(command) !== 'java' || !/(?:^|\s)org\.neo4j\.[\w.]+(?:\s|$)/.test(command)) return false;
+  if (!JVM.test(command) || !/(?:^|\s)org\.neo4j\.[\w.]+(?:\s|$)/.test(command)) return false;
   return [canonical(runtimeDir), runtimeDir].some(root => root && new RegExp(
     `${escapeRegExp(root)}/(?:neo4j-assets/jvs-a-[a-f0-9-]+/)?neo4j-community-\\d[^/\\s"':]*/`).test(command));
 }

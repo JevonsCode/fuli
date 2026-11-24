@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { lifecycleRecordsLeft } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { moveCommand, quoteTerminalArgument } from '../text/terminal-command.js';
 import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from './graph-import-states.js';
@@ -49,6 +50,22 @@ export function readUnfinishedImport(paths, mode) {
   const partial = marker ? INSTANCES.filter(id => graphStateHolds(states[id]) === 'partial') : INSTANCES;
   return { mode, path, startedAt: text(marker?.startedAt), copy: text(marker?.copy), inputDir: text(marker?.inputDir),
     graphStates: states, partial, readable: Boolean(marker) };
+}
+
+// Which way out of an unfinished operation comes first for [mode], for a
+// start (graph-runtime.js) and the desktop window (desktop-controller.js)
+// alike. A marker counts on every platform and in every mode: a graph may be
+// half written. A native runtime's lifecycle lock or switch journal (macOS)
+// is dealt with first, by its recovery; once it is gone, a marker still
+// there is the way out. 'lock', 'marker', or null.
+export function unfinishedWayOut(paths, mode) {
+  if (mode === 'native' && lifecycleRecordsLeft(paths?.nativeRuntimeDir)) return 'lock';
+  return readUnfinishedImport(paths, mode) ? 'marker' : null;
+}
+
+// A start's refusal while a marker is the way out (unfinishedWayOut), or null.
+export function unfinishedImportFirst(paths, mode) {
+  return unfinishedWayOut(paths, mode) === 'marker' ? unfinishedImportError(paths, mode) : null;
 }
 
 export function clearUnfinishedImport(paths, mode) {
