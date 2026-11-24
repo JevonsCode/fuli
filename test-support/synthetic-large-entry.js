@@ -61,6 +61,10 @@ export function syntheticPreferences(count, { hardEvery = 12, boundaryEvery = 20
 const REAL_SENTENCES = ['提交前先跑相关测试，结果照实写进汇报。', '改动保持最小，不顺手重构无关代码。',
   '合成数据一律不写入真实目录，路径用示例地址。', '界面文案中英文两套都要有，用生活里的词。', '遇到拿不准的决定先列出来再问，不自己拍板。',
   '每次只做一件事，提交信息写清行为变化。', '日志里不要出现个人信息和真实项目名。'];
+// A request that is the case the set's appliesWhen habits state ("只在改动交付
+// 流程时适用"): a test of other mechanics passes it, so no habit is left out
+// for its case (preference-conditions.js). "fix the export bug" is not that case.
+export const REAL_SCALE_CASE_PROMPT = 'fix the export bug in the 改动交付流程';
 export function realScalePreferences({ agent = AGENT } = {}) {
   return Array.from({ length: 70 }, (_, index) => {
     const number = index + 1;
@@ -319,7 +323,8 @@ export function claudeHostEventSession() {
 // and session delivery cache. `turn(entry)` delivers the entry (built with
 // `session.sessionId`) and records what the host would: the whole context, or
 // only a preview when it is longer than Claude Code keeps inline; nothing with
-// `record: false` (not written yet, or lost).
+// `record: false` (not written yet, or lost). `prompt` on a turn is that turn's
+// own request in place of the session's.
 export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-claude-entry-'));
   try {
@@ -329,8 +334,9 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
     const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
       locate: async () => ({ path: host.path, adapter: claudePreferenceEvidence }) });
     const input = { session_id: sessionId, transcript_path: host.path, cwd: directory, prompt };
-    const turn = async (entry, { record = true } = {}) => {
-      const output = await claudeLifecycleOutput('UserPromptSubmit', input, async () => entry, { delivery });
+    const turn = async (entry, { record = true, prompt: own = null } = {}) => {
+      const output = await claudeLifecycleOutput('UserPromptSubmit', own ? { ...input, prompt: own } : input, async () => entry,
+        { delivery });
       const text = output.hookSpecificOutput.additionalContext;
       if (record) await host.inject(text.length > CLAUDE_PREVIEW_CHARS ? `${text.slice(0, PREVIEW_HEAD_CHARS)}\n…[preview]` : text);
       return { text, frame: hookFrame(text) };
@@ -379,9 +385,10 @@ export async function codexEntrySession(fn, { prompt = 'fix the export bug' } = 
     const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
       locate: async () => ({ path: host.path, adapter: codexPreferenceEvidence }) });
     const input = { session_id: sessionId, turn_id: 'synthetic-turn', transcript_path: host.path, cwd: directory, prompt };
-    // `inlineBytes`: the entry's limit on this turn, as the runner gives it (codexEntryBytes).
-    const turn = async (entry, { record = true, inlineBytes } = {}) => {
-      const output = await codexLifecycleOutput('UserPromptSubmit', input, async () => entry,
+    // `inlineBytes`: the entry's limit on this turn, as the runner gives it (codexEntryBytes);
+    // `prompt`: this turn's own request.
+    const turn = async (entry, { record = true, inlineBytes, prompt: own = null } = {}) => {
+      const output = await codexLifecycleOutput('UserPromptSubmit', own ? { ...input, prompt: own } : input, async () => entry,
         { delivery, ...(inlineBytes ? { inlineBytes } : {}) });
       const text = output.hookSpecificOutput.additionalContext;
       if (record) await host.inject(codexRecorded(text));
