@@ -232,12 +232,14 @@ test('the console graph marks each preference with the case it states, as an ent
     node('opening', '仅适用于填写工时：按项目拆分。'),
     node('always', 'Answer briefly.', { preference_qualifiers: { appliesWhen: '所有任务' } }),
     node('silent', 'Hand every demo to the demo helper.', { preference_qualifiers: { constraint: 'hard' } }),
+    // A hard rule whose marker is only nested in its attributes' qualifiers, as an entry reads it.
+    node('nested', 'Hand every review to the review helper.', { attributes: { preference_qualifiers: { constraint: 'hard' } } }),
     { id: 'fact', name: 'fact', summary: '仅适用于填写工时：按项目拆分。', attributes: {}, preference_qualifiers: {} },
   ], edges: [{ id: 'edge', fact: 'Applies only to spreadsheet work: freeze the header row.', profile_aspect: 'taste',
     preference_qualifiers: {} }] };
   const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: true, status: 200, payload: graph }) });
   const read = await consoleGet(app, `/api/graph?spaceId=${SPACE}`, ownerReads);
-  assert.deepEqual([...read.body.nodes, ...read.body.edges].map(item => [item.id, item.stated_case]), [
-    ['qualified', 'making slide decks'], ['opening', '填写工时'], ['always', undefined], ['silent', undefined],
-    ['fact', undefined], ['edge', 'spreadsheet work']]);
+  assert.deepEqual([...read.body.nodes, ...read.body.edges].map(item => [item.id, item.stated_case, item.hard_rule]), [
+    ['qualified', 'making slide decks', undefined], ['opening', '填写工时', undefined], ['always', undefined, undefined],
+    ['silent', undefined, true], ['nested', undefined, true], ['fact', undefined, undefined], ['edge', 'spreadsheet work', undefined]]);
 });

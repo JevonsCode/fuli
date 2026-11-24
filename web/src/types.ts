@@ -922,9 +922,10 @@ export interface KnowledgeNode {
   reasoning_summary?: string
   profile_aspect?: string | null
   preference_scope?: string | null
-  preference_qualifiers?: Record<string, unknown>
   /** The case a preference states it applies in, as an entry judges it; none when absent (console graph read). */
   stated_case?: string
+  /** A hard rule, read as an entry reads it (console graph read). */
+  hard_rule?: boolean
   preference_project_id?: string | null
   inheritance_mode?: KnowledgeInheritanceMode
   inherited_project_ids?: string[]
@@ -981,9 +982,10 @@ export interface KnowledgeEdge {
   reasoning_summary?: string
   profile_aspect?: string | null
   preference_scope?: string | null
-  preference_qualifiers?: Record<string, unknown>
   /** The case a preference states it applies in, as an entry judges it; none when absent (console graph read). */
   stated_case?: string
+  /** A hard rule, read as an entry reads it (console graph read). */
+  hard_rule?: boolean
   preference_project_id?: string | null
   inheritance_mode?: KnowledgeInheritanceMode
   inherited_project_ids?: string[]

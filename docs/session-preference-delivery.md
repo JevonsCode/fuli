@@ -619,16 +619,19 @@ the hard rules' lines with the hard rules.
 **Adding a case to an existing habit.** Only the person states a case; FULI
 never guesses one and writes nothing on its own. `organize_project`
 (`action: preferences`) gives each preference `when`, the case this section
-reads (its `appliesWhen`, or the one its opening states), or `null`, and
-`hard: true` on a hard rule, from the item it already reads. The console's
-偏好 page counts the confirmed habits whose `when` would be `null` (from
-`stated_case` on the graph read it already makes) and hands them to the
+reads (its `appliesWhen`, or the one its opening states), left out where it
+states none, and `hard: true` on a hard rule, from the item it already reads.
+The console's 偏好 page counts the confirmed habits that state no case, and
+the hard rules among them (from `stated_case` and `hard_rule` on the graph
+read it already makes, read as an entry reads them), and hands them to the
 person's AI with `#FLA Astro 整理我的偏好：补上何时适用`. That AI drafts a short
 case for each habit plainly about one kind of thing (skills/operating-fuli,
-Organising preferences), lists them once in its client's multiple-choice
-card, and writes only what the person ticked: `run_delegated_action`
-`PUT /api/knowledge/:itemKind/:itemId/applies-when` with their answer as
-`personWords`. The change is the person's, relayed (`decisions`): it sets or
+Organising preferences), lists them in its client's multiple-choice card, a
+few at a time, and writes only what the person ticked: `run_delegated_action`
+`PUT /api/knowledge/:itemKind/:itemId/applies-when` with the option they
+picked as `personWords`. A relayed case must stand in those words (ignoring
+case and spacing), so a bare 「好的」 or another habit's option sets nothing
+(`person_words_not_found`); clearing one needs their words alone. The change is the person's, relayed (`decisions`): it sets or
 clears `appliesWhen` in place, keeping the habit's text, confirmation and
 version, records a revision with both cases and the quoted words, and raises
 `human_change_version`. A case that means every task (`总是`, `所有任务`) clears it.

@@ -1,7 +1,7 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { modelTier, tierAdvice } from './model-tiers.js';
 import { CONSENT_SOURCES } from './port.js';
-import { preferenceCondition } from '../conversations/preference-conditions.js';
+import { preferenceCondition } from '../conversations/preference-stated-case.js';
 
 // The organize_project Agent tool (rec#114): read how well the project is
 // known and what earlier runs did, or record what this run settled. The
@@ -25,7 +25,7 @@ const PREFERENCES_GUIDANCE = 'Follow skills/operating-fuli (Organising preferenc
   + '(invalidate, then link_replacement to the kept copy; mark_outdated; update). Confirming and moving scope are the person\'s '
   + 'decisions: relay their words with run_delegated_action (POST /api/knowledge/batch-confirmation, '
   + 'POST /api/knowledge/:itemKind/:itemId/preference-scope, PUT /api/knowledge/:itemKind/:itemId/applies-when). '
-  + 'when: the case a preference says it applies in; null: none, so every task carries it (hard: a hard rule). '
+  + 'when: the case a preference says it applies in; without when, every task carries it (hard: a hard rule). '
   + 'Permanent deletion stays in the console.';
 const PREFERENCES_REPEATED_GUIDANCE = ' For a subject listed in several projects, run repeated_preference_check with it as query.';
 // The tool takes at most this many projects.
@@ -63,8 +63,8 @@ async function organizePreferences(application, offset = 0) {
     ...(check ? { repeated_preference_check: check } : {}) };
 }
 
-// A preference with the case it states, as an entry judges it (#1104,
-// preference-conditions.js): `when` is that case in its own words, or null
+// A preference with the case it states, as an entry judges it
+// (preference-stated-case.js): `when` is that case in its own words, left out
 // where it states none or states every task. The page's text is an entity's
 // name, a line break and its summary (the instruction), or a relationship's
 // fact; only the instruction's opening states a case.
@@ -72,7 +72,8 @@ function withCase({ applies_when: appliesWhen = null, ...item }) {
   const text = typeof item.text === 'string' ? item.text : '';
   const instruction = item.item_kind === 'entity' ? text.slice(text.indexOf('\n') + 1) : text;
   const qualifiers = { appliesWhen, ...(item.hard ? { constraint: 'hard' } : {}) };
-  return { ...item, when: preferenceCondition({ instruction, preference_qualifiers: qualifiers })?.text ?? null };
+  const when = preferenceCondition({ instruction, preference_qualifiers: qualifiers })?.text;
+  return when ? { ...item, when } : item;
 }
 
 export async function organizeProject(application, input = {}) {

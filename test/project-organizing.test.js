@@ -23,6 +23,9 @@ function application(t, { project = 'synthetic-project' } = {}) {
 }
 
 const call = (app, input) => organizeProject(app, { taskContextToken: 'turn-1', ...input });
+// organize_project's first page of preferences at its largest (50 long habits, each with a case), in bytes
+// of JSON: 58,038 measured, with a little headroom.
+const PREFERENCES_PAGE_BYTES = 60_000;
 
 test('a project nobody organised yet reads as nine missing areas, with what the model should attempt', async (t) => {
   const app = application(t);
@@ -131,8 +134,7 @@ test('整理我的偏好 reads the person\'s preferences in any folder; the firs
   // Across the person's projects, not around one of them.
   assert.deepEqual(first.repeated_preference_check.arguments, { personalSpaceId: 'synthetic-space', personalProjectIds: ['alpha', 'beta'] });
   // A later page is the provider's page alone (no duplicates, no guidance), and no project's coverage is touched.
-  assert.deepEqual(await call(app, { action: 'preferences', offset: 50 }),
-    { ...later, preferences: later.preferences.map(item => ({ ...item, when: null })) });
+  assert.deepEqual(await call(app, { action: 'preferences', offset: 50 }), later);
   assert.deepEqual(reads, [{ personalSpaceId: 'synthetic-space', offset: 0 }, { personalSpaceId: 'synthetic-space', offset: 50 }]);
   // An odd offset gets a clear answer before anything is read.
   for (const offset of [-1, 1.5, '50']) {
@@ -169,12 +171,30 @@ test('整理我的偏好 says of each preference the case it states, as an entry
     listPersonalProjects: async () => [] };
   const page = await call(app, { action: 'preferences' });
   assert.deepEqual(page.preferences.map(({ item_id, when, hard }) => [item_id, when, hard ?? false]), [
-    ['qualified', 'making slide decks', true], ['always', null, false], ['opening', '填写工时', false],
-    ['fact', 'spreadsheet work', false], ['hard-only-for', null, true], ['silent', null, true], ['name-only', null, false]]);
-  // The raw case is not repeated beside it.
+    ['qualified', 'making slide decks', true], ['always', undefined, false], ['opening', '填写工时', false],
+    ['fact', 'spreadsheet work', false], ['hard-only-for', undefined, true], ['silent', undefined, true], ['name-only', undefined, false]]);
+  // The raw case is not repeated beside it, and a preference without a case carries no `when` at all.
   assert.equal(page.preferences.some(preference => 'applies_when' in preference), false);
+  assert.deepEqual(page.preferences.filter(preference => 'when' in preference).map(preference => preference.item_id),
+    ['qualified', 'opening', 'fact']);
   assert.match(page.guidance, /applies-when/);
-  assert.match(page.guidance, /null: none/);
+  assert.match(page.guidance, /without when, every task carries it/);
+});
+
+test('整理我的偏好\'s first page of 50 long habits stays within its byte budget', async (t) => {
+  const app = application(t, { project: null });
+  // The Provider's page at its largest: 50 preferences, each text cut at 300 characters, every one with a case and a hard mark.
+  const preferences = Array.from({ length: 50 }, (_, index) => ({ item_kind: 'entity', item_id: `synthetic-habit-${index}`,
+    aspect: 'judgment_preference', scope: 'project', project_id: 'synthetic-project', status: 'confirmed',
+    text: `Synthetic habit ${index}\n${'仅在处理合成工单时适用：'.padEnd(299, '按合成模板填写字段并核对。')}…`,
+    applies_when: `处理合成工单第 ${index} 类时`, hard: true }));
+  app.personal = { readPreferenceOrganizing: async () => ({ total: 120, pending: 0, next_offset: 50, preferences,
+    duplicates: [], duplicates_truncated: false }), listPersonalProjects: async () => [] };
+  const page = await call(app, { action: 'preferences' });
+  assert.equal(page.preferences.length, 50);
+  assert.ok(page.preferences.every(preference => preference.when));
+  const bytes = Buffer.byteLength(JSON.stringify(page));
+  assert.ok(bytes <= PREFERENCES_PAGE_BYTES, `${bytes} bytes`);
 });
 
 test('a model is placed only when its family leaves no doubt', () => {

@@ -1127,7 +1127,7 @@ class KnowledgeRevisionCreate(StrictModel):
     # The version the editor read; another current version is a conflict.
     expected_version: int | None = Field(default=None, ge=0)
     basis_meaning: BasisMeaning | None = None
-    # When a preference applies (attributes.appliesWhen, rec #1104), as the
+    # When a preference applies (attributes.appliesWhen), as the
     # person said it; '' clears it. Its own edit: it keeps the version.
     applies_when: str | None = Field(default=None, max_length=200)
 

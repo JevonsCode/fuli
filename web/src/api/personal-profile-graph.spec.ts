@@ -26,11 +26,11 @@ describe('complete profile history', () => {
     expect(getJson).toHaveBeenCalledTimes(1)
   })
   it('checks each page for the lists and the stated case the page counts by', () => {
-    const valid = { nodes: [{ id: 'a', stated_case: 'making decks', preference_qualifiers: { constraint: 'hard' } }],
+    const valid = { nodes: [{ id: 'a', stated_case: 'making decks', hard_rule: true }],
       edges: [{ id: 'b' }], truncated: false }
     expect(graphPageShape.schema.safeParse(valid).success).toBe(true)
     for (const page of [{ nodes: [], truncated: false }, { nodes: [{ id: 'a', stated_case: 3 }], edges: [] },
-      { nodes: [{ id: 'a', preference_qualifiers: 'hard' }], edges: [] }]) {
+      { nodes: [{ id: 'a', hard_rule: 'hard' }], edges: [] }]) {
       expect(graphPageShape.schema.safeParse(page).success).toBe(false)
     }
   })

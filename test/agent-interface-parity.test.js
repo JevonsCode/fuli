@@ -113,7 +113,7 @@ const RELAYED_DECISIONS = new Set([
   'POST /api/agent-attention/respond',
   'POST /api/preference-conflicts/:conflictId/complete',
   'POST /api/knowledge/:itemKind/:itemId/preference-scope',
-  // When a habit applies: only the person states a case (#1104).
+  // When a habit applies: only the person states a case.
   'PUT /api/knowledge/:itemKind/:itemId/applies-when',
   'POST /api/knowledge/batch-confirmation',
   'POST /api/knowledge/reply-echoes/drop',

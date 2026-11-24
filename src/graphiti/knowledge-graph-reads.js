@@ -6,7 +6,8 @@ import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-pr
 import { configuredWorkspace } from './workspace-provider-client.js';
 import { recordAgentViews } from './agent-view-records.js';
 import { resolvePreferenceProject } from './preference-project-resolution.js';
-import { preferenceCondition } from '../conversations/preference-conditions.js';
+import { preferenceCondition } from '../conversations/preference-stated-case.js';
+import { preferenceAlwaysInline } from './preference-task-scope.js';
 
 export function searchKnowledge(application, input) {
   return searchFederatedKnowledge(application, input, {
@@ -26,15 +27,17 @@ export async function searchCurrentProjectKnowledge(application, input) {
 }
 
 // The console's read marks each preference that states when it applies with
-// that case (`stated_case`, as an entry judges it: preference-conditions.js),
-// so the 偏好 page can count the habits that state none. Read-only, derived
-// from what the read returned.
+// that case (`stated_case`) and each hard rule (`hard_rule`), both read as an
+// entry reads them (preference-stated-case.js, preference-task-scope.js:
+// outer, nested and attribute qualifiers alike), so the 偏好 page can count
+// the habits that state none. Read-only, derived from what the read returned.
 function withStatedCases(graph) {
   const cased = (item, instruction) => {
     if (!item.profile_aspect) return item;
-    const condition = preferenceCondition({ instruction, attributes: item.attributes,
-      preference_qualifiers: item.preference_qualifiers });
-    return condition ? { ...item, stated_case: condition.text } : item;
+    const preference = { instruction, attributes: item.attributes, preference_qualifiers: item.preference_qualifiers };
+    const condition = preferenceCondition(preference);
+    return { ...item, ...(condition ? { stated_case: condition.text } : {}),
+      ...(preferenceAlwaysInline(preference) ? { hard_rule: true } : {}) };
   };
   return { ...graph, nodes: graph.nodes.map(node => cased(node, node.summary || node.name)),
     edges: graph.edges.map(edge => cased(edge, edge.fact)) };

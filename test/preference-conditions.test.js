@@ -6,8 +6,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-event.js';
-import { CONDITIONAL_LABEL, conditionLine, judgeable, preferenceCondition, REFERENCES, unmetConditions }
+import { CONDITIONAL_LABEL, conditionLine, judgeable, REFERENCES, unmetConditions }
   from '../src/conversations/preference-conditions.js';
+import { preferenceCondition } from '../src/conversations/preference-stated-case.js';
 import { preferenceAlwaysInline } from '../src/graphiti/preference-task-scope.js';
 import { statedPreferenceScope } from '../src/conversations/preference-index.js';
 import { copyPreferenceScope } from '../src/conversations/preference-snapshot.js';

@@ -5,7 +5,8 @@ import {
 import { assertActivePersonalSpace } from './active-personal-space.js';
 import { assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
 import { InvalidInputError } from '../app/application-error.js';
-import { preferenceCondition } from '../conversations/preference-conditions.js';
+import { preferenceCondition } from '../conversations/preference-stated-case.js';
+import { caseNotInPersonWordsRefusal } from '../agent-delegation/refusals.js';
 
 export async function recordKnowledgeUsage(application, {
   personalSpaceId,
@@ -90,12 +91,16 @@ export async function reviseKnowledgeItem(application, input, ownerReads = null)
   return changeChannel(application, input, ownerReads).reviseKnowledgeItem(input.itemId, body);
 }
 
-// When a habit applies (appliesWhen, #1104), set or cleared: the person's own
+// When a habit applies (appliesWhen), set or cleared: the person's own
 // decision, made in the console or relayed in their words (`relay`, quoted
 // in the revision's reason). The habit keeps its text, its confirmation and
 // its version; the revision keeps the case it had. A case that means every
-// task (「总是」「所有任务」, preference-conditions.js) is no case, so it clears.
+// task (「总是」「所有任务」, preference-stated-case.js) is no case, so it clears.
+// A relayed case must stand in the person's words: words that say yes to
+// something else (「好的」, another habit's choice) never set it.
 const CASE_CHARS = 200;
+// Ignoring spacing at either end, runs of spacing and case.
+const comparable = text => String(text ?? '').trim().replace(/\s+/gu, ' ').toLowerCase();
 
 export async function setPreferenceAppliesWhen(application, input, ownerReads = null, relay = null) {
   const said = input.appliesWhen ?? '';
@@ -103,6 +108,7 @@ export async function setPreferenceAppliesWhen(application, input, ownerReads = 
     throw new InvalidInputError(`appliesWhen is the case in a few words, at most ${CASE_CHARS} characters, or empty to clear it`);
   }
   const stated = preferenceCondition({ preference_qualifiers: { appliesWhen: said } }) ? said.trim() : '';
+  if (relay && stated && !comparable(relay.personWords).includes(comparable(stated))) throw caseNotInPersonWordsRefusal();
   const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
   return reviseKnowledgeItem(application, {
     personalSpaceId: input.personalSpaceId, itemKind: input.itemKind, itemId: input.itemId, action: 'update',

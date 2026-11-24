@@ -42,8 +42,8 @@ describe('habits that never say when they apply', () => {
   it('counts the delivered habits without a stated case, and the hard rules among them', () => {
     const items = [
       habit('plain'),
-      habit('hard', { preference_qualifiers: { constraint: 'hard' } }),
-      habit('stated', { stated_case: 'making slide decks', preference_qualifiers: { constraint: 'hard', appliesWhen: 'making slide decks' } }),
+      habit('hard', { hard_rule: true }),
+      habit('stated', { stated_case: 'making slide decks', hard_rule: true }),
       // Not delivered: waiting for the person, or history.
       habit('pending', { confirmation_status: 'pending', confirmation_state_explicit: false, confirmation_basis: null }),
       habit('retired', { invalid_at: '2026-11-02T00:00:00Z' }),
@@ -59,7 +59,7 @@ describe('habits that never say when they apply', () => {
 
   it('says how many and hands them to a connected client; shows nothing when every habit says it', async () => {
     const wrapper = mount(PreferencesConditionsNotice, { props: { items: [habit('plain'), habit('hard', {
-      preference_qualifiers: { constraint: 'hard' } })], scope: 'global' }, attachTo: document.body })
+      hard_rule: true })], scope: 'global' }, attachTo: document.body })
     mounted.push(wrapper)
     const notice = wrapper.get('[data-preferences-conditions]')
     expect(notice.text()).toContain('没写适用情况的习惯有 2 条（其中硬性规则 1 条）')
@@ -73,14 +73,14 @@ describe('habits that never say when they apply', () => {
     const codex = panel.querySelector<HTMLAnchorElement>('[data-new-session-open="codex"]')!
     expect(codex.href).toBe(`codex://new?prompt=${encodeURIComponent('#FLA Astro 整理我的偏好：补上何时适用，范围：个人全局')}`)
     await wrapper.setProps({ items: [habit('plain'), habit('none-hard')] })
-    expect(wrapper.get('[data-preferences-conditions]').text()).toContain('没写适用情况的习惯有 2 条，每次任务都带全文')
+    expect(wrapper.get('[data-preferences-conditions]').text()).toContain('没写适用情况的习惯有 2 条，每次任务都会带上')
     await wrapper.setProps({ items: [habit('stated', { stated_case: 'making slide decks' })] })
     expect(wrapper.find('[data-preferences-conditions]').exists()).toBe(false)
   })
 
   it('has English words too', async () => {
     setLocale('en-US', { persist: false })
-    const wrapper = mount(PreferencesConditionsNotice, { props: { items: [habit('a', { preference_qualifiers: { constraint: 'hard' } }),
+    const wrapper = mount(PreferencesConditionsNotice, { props: { items: [habit('a', { hard_rule: true }),
       habit('b')], scope: 'all' } })
     mounted.push(wrapper)
     expect(wrapper.text()).toContain('2 habits never say when they apply (1 of them hard rules)')

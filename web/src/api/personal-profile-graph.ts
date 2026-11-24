@@ -6,10 +6,11 @@ import { appendKnowledgeGraphPage } from '@/features/knowledge/model'
 import type { KnowledgeGraph } from '@/types'
 
 // The fields the 偏好 page relies on beyond the items themselves: the case a
-// preference states (stated_case, read-only) and its qualifiers, which count
-// the habits that state none (features/preferences/habit-conditions.ts).
+// preference states and whether it is a hard rule (stated_case, hard_rule,
+// read-only), which count the habits that state none
+// (features/preferences/habit-conditions.ts).
 const preferenceItem = z.looseObject({ id: z.string(), stated_case: z.string().optional(),
-  preference_qualifiers: z.record(z.string(), z.unknown()).optional() })
+  hard_rule: z.boolean().optional() })
 export const graphPageShape = shapeFor<KnowledgeGraph>(z.looseObject({ nodes: z.array(preferenceItem), edges: z.array(preferenceItem) }))
 
 // Profile counts and confirmation actions must see the same complete history.

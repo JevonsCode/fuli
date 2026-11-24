@@ -255,7 +255,7 @@ test('the person\'s revision, batch confirmation and move leave on the human-rev
     'an Agent\'s change never takes the console\'s proof, even where the port is at hand');
 });
 
-// #1104 follow-up: when a habit applies is the person's own call, made in the
+// When a habit applies is the person's own call, made in the
 // console or relayed in their words. Synthetic habit and words.
 test('setting when a habit applies is the person\'s in-place edit; a case meaning every task clears it', async () => {
   const { app, calls } = application(() => ({ status: 200, body: { action: 'update' } }));
@@ -263,17 +263,39 @@ test('setting when a habit applies is the person\'s in-place edit; a case meanin
     { personalSpaceId: 'personal-space', reason: 'Only for decks', ...body }, '127.0.0.1', headers);
   const relay = { [DELEGATION_HEADER]: encodeDelegation({ actor: { agentId: 'fla-synthetic' }, reason: 'Asked in chat',
     bodyFields: ['appliesWhen'], relayed: { words: '演示那条只在做演示时适用', messageRef: { source: 'current_turn' } } }) };
-  assert.equal((await put({ appliesWhen: ' 做演示文稿时 ' }, relay)).status, 200);
+  assert.equal((await put({ appliesWhen: ' 做演示时 ' }, relay)).status, 200);
   assert.equal((await put({ appliesWhen: '所有任务' })).status, 200);
   assert.equal((await put({ appliesWhen: 'always' })).status, 200);
   assert.equal((await put({ appliesWhen: null })).status, 200);
   assert.deepEqual(calls.map(({ path, method, review }) => [path, method, review]),
     Array(4).fill(['/v1/knowledge/items/habit%2F1', 'PATCH', true]));
-  assert.deepEqual(calls.map(({ body }) => body.applies_when), ['做演示文稿时', '', '', '']);
+  assert.deepEqual(calls.map(({ body }) => body.applies_when), ['做演示时', '', '', '']);
   assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: null, item_kind: 'entity',
     action: 'update', reason: 'Only for decks（由 fla-synthetic 转达：「演示那条只在做演示时适用」）', name: null, summary: null,
-    fact: null, basis_meaning: null, operation_actor: 'human', applies_when: '做演示文稿时' });
+    fact: null, basis_meaning: null, operation_actor: 'human', applies_when: '做演示时' });
   assert.equal(calls[1].body.reason, 'Only for decks');
   for (const appliesWhen of [42, 'x'.repeat(201)]) assert.equal((await put({ appliesWhen })).status, 400);
   assert.equal(calls.length, 4);
+});
+
+test('a relayed case is set only where the person\'s words contain it; clearing needs their words alone', async () => {
+  const { app, calls } = application(() => ({ status: 200, body: { action: 'update' } }));
+  const relayed = words => ({ [DELEGATION_HEADER]: encodeDelegation({ actor: { agentId: 'fla-synthetic' }, reason: 'Asked in chat',
+    bodyFields: ['appliesWhen'], relayed: { words, messageRef: { source: 'native_choice' } } }) });
+  const put = (itemId, appliesWhen, words) => api(app, 'PUT', `/api/knowledge/entity/${itemId}/applies-when`,
+    { personalSpaceId: 'personal-space', reason: 'Picked in the card', appliesWhen }, '127.0.0.1', relayed(words));
+  const ticked = '合成习惯 A：幻灯片用深色背景 → 只在做演示文稿时适用';
+  // The card's option for habit A never sets a case on habit B, the person did not tick.
+  const other = await put('habit-b', '写合成周报时', ticked);
+  assert.deepEqual([other.status, other.body.code], [403, 'person_words_not_found']);
+  assert.match(other.body.error, /原话里要包含这句适用情况/u);
+  // A bare yes names no case.
+  assert.equal((await put('habit-a', '做演示文稿时', '好的')).body.code, 'person_words_not_found');
+  assert.equal(calls.length, 0);
+  // The ticked option, and a case the person rewrote in their own words, ignoring case and spacing.
+  assert.equal((await put('habit-a', '做演示文稿时', ticked)).status, 200);
+  assert.equal((await put('habit-a', 'Writing  Synthetic decks', '改成只在 writing synthetic decks 时适用')).status, 200);
+  // Taking the case away puts the habit back on every task: the person's words, no case to contain.
+  assert.equal((await put('habit-a', '', '去掉这条的条件')).status, 200);
+  assert.deepEqual(calls.map(({ body }) => body.applies_when), ['做演示文稿时', 'Writing  Synthetic decks', '']);
 });
