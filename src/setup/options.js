@@ -8,6 +8,10 @@ const VALUE_OPTIONS = Object.freeze({
   '--runtime-mode': 'runtimeMode'
 });
 
+// The personal space a new graph is made with when the person names none
+// (`--personal-space`); a follower's own graph is made with it too.
+export const DEFAULT_PERSONAL_SPACE_NAME = 'Personal';
+
 const BOOLEAN_OPTIONS = Object.freeze({
   '--yes': 'yes',
   '--codex-only': 'codexOnly',
@@ -35,7 +39,7 @@ export function parseUpdateOptions(args = []) {
 function parseSetupLikeOptions(args, command) {
   const result = {
     dataDir: null,
-    personalSpaceName: 'Personal',
+    personalSpaceName: DEFAULT_PERSONAL_SPACE_NAME,
     port: null,
     memoryProfile: null,
     runtimeMode: null,

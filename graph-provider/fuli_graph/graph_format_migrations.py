@@ -217,6 +217,12 @@ GRAPH_MIGRATIONS = (
         'FLAs that already shared a name keep it until the person settles it on the FLAs page',
         rules=AGENT_NAME_RULES,
     ),
+    GraphMigration(
+        'graph/25-replica-marker', 25, 'schema',
+        "a read-only copy of another computer's scope marks each record it writes: the scopes it was "
+        'copied for, the owner computer, when it was last brought up to date and when the owner deleted it',
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

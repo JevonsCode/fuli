@@ -9,7 +9,7 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint } from './routes-store.js';
 // writing one computer's scope into another's:
 //
 // - a scope this computer owns: nothing writes such a route until owning
-//   scopes on a follower is built (step 3; `fuli routes local` refuses it), so
+//   scopes on a follower opens (step 3c; `fuli routes local` refuses it), so
 //   only a store edited by hand or written by a later version gets here;
 // - a scope routed to a host this computer is no longer paired with;
 // - a call under a task another computer entered, which this computer can no

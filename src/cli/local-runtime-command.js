@@ -17,6 +17,7 @@ import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { followerRuntimeHandlers, formatFollowerResult } from '../runner/follower-runtime.js';
 import { isRunnerDataDirectory } from '../runner/runner-mode.js';
+import { forgetFollowerRuntime } from '../runner/follower-local-runtime.js';
 import { reportingStartupFailure } from '../local-runtime/startup-failure.js';
 import { startupStageWriter, withoutStageMarkers } from '../local-runtime/startup-stage.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
@@ -55,6 +56,9 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     write(command === 'status' && options.json ? JSON.stringify(result, null, 2) : formatFollowerResult(command, result));
     return { ...result, exitCode: command === 'status' && result.status !== 'running' ? 1 : result.status === 'partial' ? 1 : 0 };
   }
+  // This data directory's own FULI from now on (after `fuli runner leave`): a
+  // follower's record of what its graph held no longer says so once it runs as one.
+  if (['start', 'restart'].includes(command) && paths.dataDir) (dependencies.forgetFollowerRuntime ?? forgetFollowerRuntime)(paths.dataDir);
   const handlers = {
     start: dependencies.start ?? startLocalRuntime,
     stop: dependencies.stop ?? stopLocalRuntime,
