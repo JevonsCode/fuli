@@ -10,9 +10,12 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './rout
 // computer's own half, local-scope-server.js), or { refused } rather than
 // writing one computer's scope into another's:
 //
-// - a project this computer owns (`fuli routes local`, make-project-local.js),
-//   or a task this computer entered (its token names this computer, or was
-//   remembered as entered here): answered here;
+// - a project routed to this computer by a route of its own (`fuli routes
+//   local`, make-project-local.js), or a task this computer entered (its token
+//   remembered as entered here): answered here. Only such a route says so: a
+//   scope with no route of its own, `default` included, is not this
+//   computer's for want of one, and a token naming this computer whose task
+//   was not remembered here goes as it went before;
 // - `global` or `default` routed to this computer: a follower never owns them
 //   (local-route-refusal.js), so only a store edited by hand gets here;
 // - a scope routed to a host this computer is no longer paired with;
@@ -25,12 +28,15 @@ import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './rout
 export function callDestination({ routes, store, input, issuer = null, ownIssuer = null }) {
   const { scope, owner, byTask } = routeOfCall(routes, input ?? {}, { known: knownProjects(store, routes), issuer });
   const paired = store.host()?.fingerprint?.toLowerCase() ?? null;
+  const routedHere = scope.startsWith(PROJECT_PREFIX) && routes.routedHere(scope);
   if (issuer) {
-    if (ownIssuer && issuer === ownIssuer) return { to: 'local', scope };
+    if (ownIssuer && issuer === ownIssuer && (routedHere || routes.taskOwner(input?.taskContextToken) === LOCAL_OWNER)) {
+      return { to: 'local', scope };
+    }
     return !paired || paired.startsWith(issuer) ? HOST : { refused: failure('task_owner_not_paired', ENTERED_ELSEWHERE) };
   }
   if (owner === LOCAL_OWNER) {
-    if (byTask || scope.startsWith(PROJECT_PREFIX)) return { to: 'local', scope };
+    if (byTask || routedHere) return { to: 'local', scope };
     return { refused: failure('scope_owned_here', `${scope} is routed to this computer, which never owns it while it follows `
       + `a host (docs/runner-roles-design.md D1, D2). Point it at the host again with \`fuli routes follow ${scope} <host>\`; `
       + '`fuli routes list` shows every route.') };

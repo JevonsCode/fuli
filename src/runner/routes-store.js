@@ -81,7 +81,7 @@ export class RoutesStore {
     if (this.#missing()) return [];
     return this.db.prepare('SELECT * FROM routes ORDER BY scope').all()
       .map((row) => ({ scope: row.scope, owner: row.owner, replica: row.replica === 1,
-        replicaSyncedAt: row.replica_synced_at ?? null, updatedAt: row.updated_at }))
+        replicaSyncedAt: row.replica_synced_at ?? null, folder: row.folder ?? null, updatedAt: row.updated_at }))
       .sort((one, other) => order(one.scope) - order(other.scope) || one.scope.localeCompare(other.scope));
   }
 
@@ -108,12 +108,11 @@ export class RoutesStore {
       .run(scope, LOCAL_OWNER, folder, new Date(this.now()).toISOString());
   }
 
-  // Each project this computer owns: { id, scope, folder } (folder null when none was recorded).
-  localProjects() {
-    if (this.#missing()) return [];
-    return this.db.prepare('SELECT scope, folder FROM routes WHERE owner = ? AND scope LIKE ? ORDER BY scope')
-      .all(LOCAL_OWNER, `${PROJECT_PREFIX}%`)
-      .map((row) => ({ id: row.scope.slice(PROJECT_PREFIX.length), scope: row.scope, folder: row.folder ?? null }));
+  // Whether this scope has a route of its own to this computer: what alone makes a
+  // follower answer it here (routed-calls.js), never `default` or no route at all.
+  routedHere(scope) {
+    if (this.#missing()) return false;
+    return this.db.prepare('SELECT owner FROM routes WHERE scope = ?').get(scope)?.owner === LOCAL_OWNER;
   }
 
   // A read-only copy of this scope was brought up to date here (global-sync.js). Only for a
