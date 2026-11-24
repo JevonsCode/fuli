@@ -93,17 +93,42 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
   const startedAt = Date.now();
   const deadlineAt = startedAt + timeoutMs;
   const argv = process.argv.slice(2);
-  // A runner has no FULI of its own (docs/runner.md): its prompt and its turn's
-  // end go to the host, which enters and closes the task for the client's own
-  // session; the other hooks do nothing here.
+  // A follower (docs/runner.md): a hook in a folder of a project routed to this
+  // computer runs here as on any FULI (src/runner/hook-scope.js), never through
+  // the console, which sends its hook route to the host. Anywhere else its
+  // prompt and its turn's end go to the host, which enters and closes the task
+  // for the client's own session; the other hooks do nothing.
   if (runnerRuntimeConfig(argv)) {
     const event = argv[argv.indexOf('--event') + 1];
-    if (RUNNER_FORWARDED_EVENTS.has(event)) {
+    const stdin = await readStdin(process.stdin, Math.min(STDIN_WAIT_MS, timeoutMs));
+    const dataDir = dirname(resolve(argv[argv.indexOf('--runtime-config') + 1]));
+    // Loaded only now.
+    const scope = await import('../runner/hook-scope.js');
+    const destination = stdin.complete ? await scope.hookDestination({ dataDir, stdin: stdin.chunks }) : { here: false };
+    let { refused } = destination;
+    if (destination.here) {
+      const call = { client, argv, env: namedEnvironment(process.env, envNames), cwd: process.cwd(), stdin: stdin.chunks };
+      const events = await import('./lifecycle-events.js');
+      let result = null;
+      try {
+        result = await events.runLifecycleEvent({ ...call, timeoutMs: Math.max(1, deadlineAt - Date.now()) },
+          { baseEnv: process.env });
+      } catch (error) {
+        refused = scope.unavailableHere(error, destination.hostName);
+      }
+      if (result) return finishHook(scope.answeredHere(dataDir, result, { event, hostName: destination.hostName }), deadlineAt);
+    }
+    if (refused) {
+      // Said as it is: which computer answers this folder, why it did not, and what to do.
+      process.stderr.write(`${refused.message}\n`);
+      if (event === 'UserPromptSubmit') {
+        process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
+          additionalContext: `FULI (${refused.code}): ${refused.message}` } })}\n`);
+      }
+    } else if (RUNNER_FORWARDED_EVENTS.has(event)) {
       // Loaded only now (src/runner/hook-forwarding.js).
-      const stdin = await readStdin(process.stdin, Math.min(STDIN_WAIT_MS, timeoutMs));
-      const configPath = argv[argv.indexOf('--runtime-config') + 1];
       const { forwardHookToHost } = await import('../runner/hook-forwarding.js');
-      const answer = stdin.complete ? await forwardHookToHost({ dataDir: dirname(resolve(configPath)), client,
+      const answer = stdin.complete ? await forwardHookToHost({ dataDir, client,
         event, env: namedEnvironment(process.env, envNames), stdin: stdin.chunks,
         deadlineAt: startedAt + runnerTimeoutMs(event) })
         .catch(() => null) : null;
@@ -138,6 +163,10 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
         { baseEnv: process.env })
       : await events.lostLifecycleEvent(call, forwarded.error, { baseEnv: process.env });
   }
+  finishHook(result, deadlineAt);
+}
+
+function finishHook(result, deadlineAt) {
   if (result.stderr) process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;
   process.stdout.write(result.stdout, () => {

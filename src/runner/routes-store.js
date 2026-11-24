@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 
-import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { atCurrentVersion, immediateTransaction, openFormattedDatabase, openReadOnly, sqliteBusy, sqliteFormat }
+  from '../../packages/roundtable/src/storage/database-format.js';
 import { sha256Bytes } from '../security/digest.js';
 
 // Which parts of the person's FULI this computer reads and writes on another
@@ -195,6 +196,34 @@ export class RoutesStore {
     this.database?.close();
     this.database = null;
   }
+}
+
+// The routes for a reader that must neither wait nor change the store: a
+// lifecycle hook (hook-scope.js), which every client start runs while its
+// MCP entry may be migrating the same file. Opened read-only and only at this
+// version, never migrated, backed up or waited on: null when there is no
+// store, it is at another version or has a migration unfinished, or another
+// connection holds it right now (the migration is left to the MCP entry and
+// the console). Its reads may still meet a lock (sqliteBusy) and nothing it
+// gives can write.
+export function routesAsTheyAre(path, options) {
+  if (!existsSync(path)) return null;
+  let database;
+  try {
+    database = openReadOnly(path);
+    database.exec('PRAGMA busy_timeout = 0');
+    if (!atCurrentVersion(database, ROUTES_FORMAT)) {
+      database.close();
+      return null;
+    }
+  } catch (error) {
+    database?.close();
+    if (sqliteBusy(error)) return null;
+    throw error;
+  }
+  const routes = new RoutesStore(path, options);
+  routes.database = database;
+  return routes;
 }
 
 function order(scope) {

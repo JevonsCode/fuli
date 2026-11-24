@@ -1,3 +1,4 @@
+import { sqliteBusy } from '../../packages/roundtable/src/storage/database-format.js';
 import { knownProjects, routeOfCall } from './call-routes.js';
 import { entryToken, failure, isTaskEntry, resultValue } from './offline-calls.js';
 import { hostOwner, LOCAL_OWNER, ownerFingerprint, PROJECT_PREFIX } from './routes-store.js';
@@ -66,10 +67,16 @@ export function rememberTaskOwner({ routes, store, tool, answer, local = false }
 }
 
 // The routes could not be read, so no call can be told where it goes: said as
-// it is, with what to do, instead of the server failing to start.
+// it is, with what to do, instead of the server failing to start. A store
+// another FULI process holds for now (SQLITE_BUSY) only needs another try.
 export function routesUnavailableAnswer(error) {
   const reason = typeof error?.code === 'string' ? error.code : 'routes_unreadable';
   const detail = String(error?.message ?? error).slice(0, 400);
+  if (sqliteBusy(error)) {
+    return failure('routes_unavailable', 'This computer cannot read which parts of your FULI it follows right now '
+      + `(runner/routes.sqlite: ${detail}): another FULI process on this computer is writing it. Nothing was sent `
+      + 'anywhere; try again in a moment.', { reason });
+  }
   return failure('routes_unavailable', 'This computer cannot read which parts of your FULI it follows '
     + `(runner/routes.sqlite: ${detail}), so no call is sent anywhere until that is fixed. If a newer FULI wrote it, `
     + 'update FULI on this computer (`fuli update`); `fuli migrate status` says what the store needs; or end the '
