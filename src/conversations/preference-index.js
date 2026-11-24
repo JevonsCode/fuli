@@ -87,7 +87,21 @@ export function preferenceName(item) {
 // a keys-tier entry by the key alone, which cannot tell two layers apart.
 export function preferenceIndexNames(entry, item) {
   const text = String(entry);
-  return text.includes(SEPARATOR) ? text.split(SEPARATOR)[0] === preferenceName(item) : text === item?.preference_key;
+  return indexEntryIsLine(text) ? text.split(SEPARATOR)[0] === preferenceName(item) : text === item?.preference_key;
+}
+
+// Whether a key is one FULI made from a habit's text (task-remember.js,
+// task-experiences.js: the kind, a dash and 24 hex of a content hash), which
+// names nothing a reader can use. A key a person or Agent chose never has
+// that exact form in practice.
+const GENERATED_KEY = /^(?:remember|experience)-[0-9a-f]{24}$/u;
+export function generatedPreferenceKey(key) {
+  return typeof key === 'string' && GENERATED_KEY.test(key);
+}
+
+// Whether an index entry is a line (key, layer and gist) rather than a key alone.
+export function indexEntryIsLine(entry) {
+  return String(entry).includes(SEPARATOR);
 }
 
 // The index of the items an entry does not list, in the order they were

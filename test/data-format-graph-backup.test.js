@@ -37,7 +37,9 @@ function dataDir(t, mode = 'native') {
 function fakeWorker(spawned) {
   return (command, args) => {
     spawned.push(args);
-    return { pid: 4242, once() {}, unref() {} };
+    // This process, which is alive: a job started at the fixed NOW stays "running" whatever the real
+    // time is (a worker gone ten seconds after its start counts as interrupted: detached-job.js).
+    return { pid: process.pid, once() {}, unref() {} };
   };
 }
 

@@ -105,7 +105,9 @@ test('the index is part of the frame, so the next turn of the same session is st
     assert.equal(third.frame.preferences_omitted.index_unchanged, true);
   }));
 
-test('a changed set sends the index again, so the model never holds a stale one', () =>
+// The changed line is sent on its own (index_added), standing over the one the
+// model holds; the lines that did not change are not sent again.
+test('a changed line of the index is sent again, so the model never holds a stale one', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(30);
     const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
@@ -114,6 +116,23 @@ test('a changed set sends the index again, so the model never holds a stale one'
     const edited = items.map(item => item.preference_key === omittedKey
       ? { ...item, instruction: `SYNTHETIC_EDITED: ${item.instruction}` } : item);
     const second = await session.turn(syntheticLargeEntry({ items: edited, sessionId: session.sessionId, token: 'task-2' }));
-    assert.equal(second.frame.preferences_omitted.index_unchanged, undefined);
-    assert.ok(second.frame.preferences_omitted.index.some(line => line.startsWith(`${omittedKey} — SYNTHETIC_EDITED`)));
+    const omitted = second.frame.preferences_omitted;
+    assert.equal(omitted.index, undefined);
+    assert.equal(omitted.index_unchanged, true);
+    assert.equal(omitted.index_added.length, 1);
+    assert.ok(omitted.index_added[0].startsWith(`${omittedKey} — SYNTHETIC_EDITED`));
+  }));
+
+// A deleted preference the held index names must not stay in the model's
+// index: the whole index is sent again.
+test('an index whose held entry was deleted is sent whole', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(30);
+    const first = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
+    const omittedKey = first.frame.preferences_omitted.index.at(-1).split(' ')[0];
+    const second = await session.turn(syntheticLargeEntry({ items: items.filter(item => item.preference_key !== omittedKey),
+      sessionId: session.sessionId, token: 'task-2' }));
+    const omitted = second.frame.preferences_omitted;
+    assert.equal(omitted.index_unchanged, undefined);
+    assert.equal(omitted.index.some(line => line.startsWith(`${omittedKey} `)), false);
   }));

@@ -4,7 +4,7 @@ import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { TASK_SCENE_VERSION } from '../graphiti/task-scene.js';
 import { preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
-import { preferenceIndexNames, preferenceName } from './preference-index.js';
+import { indexEntryIsLine, preferenceIndexNames, preferenceName } from './preference-index.js';
 
 const SCOPE = Symbol('fuli.authoritativePreferenceScope');
 const IDENTITY = ['preference_key', 'preference_scope', 'preference_project_id',
@@ -148,10 +148,14 @@ export function projectPreferenceDelta(value, baseline, shown, provisional = nul
   // repeat an omission index the base already showed word for word (review of
   // #1070: at 60 preferences the second turn grew from 1329 to 1883 chars by
   // resending it); it says index_unchanged instead.
+  // An index that only grew is sent as what it adds (index_added): resending
+  // it whole at the keys tier, once its lines no longer fit, took back the
+  // lines the model held and gave it less to judge by.
   const { effective_preferences, ...current } = plain;
-  if (sameOmittedIndex(current.preferences_omitted, baseline.omittedIndex)) {
+  const index = omittedIndexChange(current.preferences_omitted?.index, baseline.omittedIndex, whole ?? snapshot, snapshot);
+  if (index) {
     const { index: _index, ...omitted } = current.preferences_omitted;
-    current.preferences_omitted = { ...omitted, index_unchanged: true };
+    current.preferences_omitted = { ...omitted, ...index };
   }
   return smaller({ ...current, preference_updates: updates, preference_delivery: {
     status: 'delta', base_revision: baseline.revision, revision, removed, unchanged: snapshot.preferences.length - updates.length,
@@ -330,19 +334,40 @@ const OWED_HEX = 16;
 export const OWED_ID = /^[0-9a-f]{16}$/;
 
 // The omission index a recorded frame left the model holding: the one it
-// carries, or, for a delta that said index_unchanged, the one its base held.
-// null when it carried none.
+// carries, or, for a delta that said index_unchanged, the one its base held
+// with what it added (index_added; a later entry for the same preference
+// stands over an earlier one). null when it carried none.
 export function frameOmittedIndex(frame, shown) {
   const omitted = frame?.preferences_omitted;
   if (Array.isArray(omitted?.index)) return omitted.index;
   const delivery = frame?.preference_delivery;
   if (omitted?.index_unchanged === true && delivery?.status === 'delta') {
-    return shown.get(delivery.base_revision)?.omittedIndex ?? null;
+    const held = shown.get(delivery.base_revision)?.omittedIndex;
+    if (!Array.isArray(held)) return null;
+    return Array.isArray(omitted.index_added) ? [...held, ...omitted.index_added] : held;
   }
   return null;
 }
 
-function sameOmittedIndex(omitted, held) {
-  return Array.isArray(omitted?.index) && omitted.index.length > 0 && Array.isArray(held)
-    && canonicalJson(omitted.index) === canonicalJson(held);
+// What a delta says of its omission index against the one its base left the
+// model holding (`held`): `index_unchanged` where every entry it would send is
+// held already, with `index_added` for the rest. An entry is held when the
+// same text is, or, for a key alone, when a held entry names that preference
+// (a held line says more than its key). Null where the index is sent whole: an
+// index on neither side, a held entry for a preference that is neither left
+// out nor spelled out now (deleted: the model must not keep it), or where the
+// whole index is no larger. `whole` is the entry's whole snapshot, so a key
+// can be told by its layer; `delivered` is the set this frame spells out.
+function omittedIndexChange(index, held, whole, delivered) {
+  if (!Array.isArray(index) || !index.length || !Array.isArray(held) || !held.length) return null;
+  if (canonicalJson(index) === canonicalJson(held)) return { index_unchanged: true };
+  const identities = Object.values(whole.units).map(item => item.identity);
+  const named = entry => identities.filter(item => preferenceIndexNames(entry, item)).map(unitId);
+  const listed = new Set(index.flatMap(named));
+  if (held.some(entry => !named(entry).some(id => listed.has(id) || Object.hasOwn(delivered.units, id)))) return null;
+  const heldText = new Set(held);
+  const heldIds = new Set(held.flatMap(named));
+  const added = index.filter(entry => !heldText.has(entry) && (indexEntryIsLine(entry) || !named(entry).some(id => heldIds.has(id))));
+  const change = { index_unchanged: true, ...(added.length ? { index_added: added } : {}) };
+  return Buffer.byteLength(JSON.stringify(change)) < Buffer.byteLength(JSON.stringify({ index })) ? change : null;
 }
