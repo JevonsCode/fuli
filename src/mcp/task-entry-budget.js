@@ -22,6 +22,13 @@ import { taskPreferenceRead } from './preference-delivery.js';
 // more bodies (mcp-task-entry-budget.test.js).
 export const MCP_ENTRY_INLINE_CHARS = 18700;
 
+// The limit of an answer whose preferences are unchanged (knownRevision): it
+// repeats only the hard rules and points back at the index, so it needs no
+// room for one, and what the larger limit left free went to the role's memory,
+// the recall and the conversation again (a real-scale working entry answered
+// 15,472 characters where 8,868 did). A hook entry's limit holds it.
+export const MCP_UNCHANGED_INLINE_CHARS = 9000;
+
 // The revision's length, as a frame's own revision (preference-snapshot.js).
 const REVISION_HEX = 12;
 
@@ -50,11 +57,18 @@ export function mcpTaskEntry(view, { knownRevision = null, session = null, proje
     value: unchanged ? { ...lean, preferences_omitted: { ...lean.preferences_omitted, unchanged: true, index_unchanged: true } }
       : view,
     unchanged,
-    fit: inlineEntryFit(MCP_ENTRY_INLINE_CHARS, resultChars, { projectPath }),
+    fit: inlineEntryFit(unchanged ? MCP_UNCHANGED_INLINE_CHARS : MCP_ENTRY_INLINE_CHARS, resultChars, { projectPath }),
     // What the answer adds to the frame the fit chose: the revision to name
     // next time, and what it leaves out in words (a hook says it in its label).
-    notes: projected => withNotes(projected, revision)
+    notes: projected => withNotes(unchanged ? pointingBack(projected) : projected, revision)
   };
+}
+
+// The fit may rebuild what it leaves out: an unchanged answer says so on what
+// the fit chose, and carries no index of its own (the earlier answer's stands).
+function pointingBack(projected) {
+  const { index: _index, index_added: _added, ...omitted } = projected.preferences_omitted ?? {};
+  return { ...projected, preferences_omitted: { ...omitted, unchanged: true, index_unchanged: true } };
 }
 
 function withNotes(projected, revision) {

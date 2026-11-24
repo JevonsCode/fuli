@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
-import { MCP_ENTRY_INLINE_CHARS, UNCHANGED_LABEL } from '../src/mcp/task-entry-budget.js';
+import { MCP_ENTRY_INLINE_CHARS, MCP_UNCHANGED_INLINE_CHARS, UNCHANGED_LABEL } from '../src/mcp/task-entry-budget.js';
 import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
 import { readTaskPreferences } from '../src/graphiti/task-preference-reader.js';
 import { preferenceAlwaysInline } from '../src/graphiti/preference-task-scope.js';
@@ -151,7 +151,7 @@ test('the same revision again repeats only the hard rules, with the read; anothe
     assert.equal(frame.taskContextToken, TOKEN);
     assert.ok(frame.agent_receipt.markdown.includes(`直接带上 ${frame.effective_preferences.length} 条，`));
     // The room the bodies leave goes to this turn's own context (recall, conversation), never past the limit.
-    assert.ok(again.content[0].text.length <= MCP_ENTRY_INLINE_CHARS);
+    assert.ok(again.content[0].text.length <= MCP_UNCHANGED_INLINE_CHARS, `${again.content[0].text.length}`);
     for (const knownRevision of [undefined, 'f'.repeat(12)]) {
       const full = (await enter(mcp, knownRevision ? { knownRevision } : {})).structuredContent;
       assert.deepEqual(full.effective_preferences, first.effective_preferences);
