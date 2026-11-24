@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,45 +15,11 @@ import { createDelegatedConsoleClient } from '../src/agent-delegation/console-cl
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { createRunnerRoutes } from '../src/runner/host-routes.js';
 import { RunnerHostStore } from '../src/runner/host-store.js';
+import { pairedStore, serveRunnerRoutes as serve } from '../test-support/runner-host-routes.js';
 import { CALL_TIMEOUT_MS, RUNNER_ENTRY_META, RUNNER_PATHS } from '../src/runner/protocol.js';
 
 const RUNNER_A = 'a'.repeat(64);
 const RUNNER_B = 'b'.repeat(64);
-
-// The runner routes behind plain HTTP on loopback, the device fingerprint
-// taken from a test header (the TLS listener reads it from the certificate).
-async function serve(t, routes) {
-  const server = createServer((request, response) => {
-    const fingerprint = request.headers['x-test-fingerprint'];
-    const { pathname } = new URL(request.url, 'http://runner.invalid');
-    routes.handle(request, response, { fingerprint, pathname, address: '192.168.1.30' }).then((handled) => {
-      if (!handled) response.writeHead(404).end();
-    });
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => {
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-    await routes.close();
-  });
-  const origin = `http://127.0.0.1:${server.address().port}`;
-  const post = async (fingerprint, path, body) => {
-    const answer = await fetch(`${origin}${path}`, { method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-test-fingerprint': fingerprint }, body: JSON.stringify(body) });
-    return { status: answer.status, body: await answer.json().catch(() => null) };
-  };
-  return { origin, post };
-}
-
-function pairedStore(...fingerprints) {
-  const store = new RunnerHostStore(':memory:');
-  for (const [index, fingerprint] of fingerprints.entries()) {
-    const code = `synthetic-invitation-code-${index}`;
-    store.invite({ code, name: `Runner ${index}` });
-    store.pair({ code, fingerprint, deviceName: `device-${index}` });
-  }
-  return store;
-}
 
 const entry = (id) => ({ id, tool: 'checkpoint_task_knowledge', input: { taskContextToken: 'host-token', disposition: 'retain_nothing' },
   sourceApplication: 'codex', sessionId: 'synthetic-session', offlineTask: null });
@@ -209,4 +174,36 @@ test('a pending entry id is held past the longest call, and freed at once by a h
   assert.equal(claim(first), 'claimed', 'held too long: the process lost it');
 
   assert.equal(claim(restarted), 'claimed', 'a host that started again applies it again at once');
+});
+
+test('a host\'s hello says it applies a follower\'s writes to global', async (t) => {
+  const routes = createRunnerRoutes({ app: {}, store: pairedStore(RUNNER_A), hostName: 'Host', hostFingerprint: 'f'.repeat(64),
+    withLease: (_owner, operation) => operation(), hostSpace: () => ({ space: null }) });
+  const { get } = await serve(t, routes);
+
+  const hello = await get(RUNNER_A, RUNNER_PATHS.hello);
+  assert.equal(hello.status, 200);
+  assert.equal(hello.body.globalWrites, 1);
+});
+
+test('a scope export runs with the graph runtime leased, and a kept export answers without waking it', async (t) => {
+  const leases = [];
+  let exports = 0;
+  const envelope = JSON.stringify({ scope: 'global', spaceId: 'synthetic-space', digest: 'synthetic-digest', complete: true,
+    graphFormat: 1, replicaProtocol: 1 });
+  const app = { config: { personal: { spaceId: 'synthetic-space' } }, personal: { exportScope: async () => {
+    exports += 1;
+    assert.deepEqual(leases, Array(exports).fill('runner-scope-export'), 'the export runs inside its lease');
+    return { text: envelope, ...JSON.parse(envelope), bytes: Buffer.byteLength(envelope) };
+  } } };
+  const routes = createRunnerRoutes({ app, store: pairedStore(RUNNER_A), hostName: 'Host', hostFingerprint: 'f'.repeat(64),
+    withLease: (owner, operation) => { leases.push(owner); return operation(); }, hostSpace: () => ({ space: null }) });
+  const { get } = await serve(t, routes);
+
+  const digest = await get(RUNNER_A, `${RUNNER_PATHS.scope}?scope=global&part=digest`);
+  const again = await get(RUNNER_A, `${RUNNER_PATHS.scope}?scope=global&part=digest`);
+
+  assert.deepEqual([digest.status, digest.body.digest, again.body.digest], [200, 'synthetic-digest', 'synthetic-digest']);
+  assert.equal(exports, 1);
+  assert.deepEqual(leases, ['runner-scope-export']);
 });

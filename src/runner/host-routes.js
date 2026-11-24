@@ -14,10 +14,11 @@ import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
+import { applyGlobalWrites } from './host-global-writes.js';
 import { createScopeExport } from './host-scope-export.js';
 import { hostSpaceReader } from './host-space.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
-import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
+import { displayName, ENTRY_ID, GLOBAL_WRITES_ENTRY, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
   SCOPE_DIGEST_HEADER, SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
 
 // What a runner reaches on its host (docs/runner.md), after the listener
@@ -49,11 +50,12 @@ const MCP_SHUTDOWN_GRACE_MS = 2000;
 const FOLDERS_PER_RUNNER = 64;
 // How often a runner's last-seen time is written.
 const SEEN_EVERY_MS = 60 * 1000;
-// What a runner queues: checkpoints made while its host was away, and what
-// its own Tonborg decided and how each choice did (local-routing.js), which go
-// to this host's Tonborg ledger, never through an Agent tool.
+// What a runner queues: checkpoints made while its host was away, what its own
+// Tonborg decided and how each choice did (local-routing.js), which go to this
+// host's Tonborg ledger, never through an Agent tool, and a follower's writes to
+// global, which this computer owns (host-global-writes.js).
 const ROUTING_ENTRIES = Object.freeze({ [ROUTING_DECISION_ENTRY]: 'decision', [ROUTING_OUTCOME_ENTRY]: 'outcome' });
-const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge', ...Object.keys(ROUTING_ENTRIES)]);
+const REPLAYABLE_TOOLS = new Set(['checkpoint_task_knowledge', GLOBAL_WRITES_ENTRY, ...Object.keys(ROUTING_ENTRIES)]);
 // A task a runner entered while its host was away is entered again here at
 // replay. The request itself never left the runner and is not stored.
 const OFFLINE_TASK_PROMPT = 'A task done on a runner while its FULI host was away; the request is not stored.';
@@ -87,8 +89,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   hostAddresses = () => [],
   // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
   hostSpace = hostSpaceReader(app),
-  // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js).
-  ownsScope = () => true, scopeExport = createScopeExport({ app, ownsScope }) }) {
+  // Whether this computer writes a scope, and its export of one for a follower's copy (host-scope-export.js),
+  // which wakes this computer's graph runtime for the export as any call of a runner does.
+  ownsScope = () => true, scopeExport = createScopeExport({ app, ownsScope, withLease }) }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -159,8 +162,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     } else if (pathname === RUNNER_PATHS.hello) {
       // mcpSessions: how many MCP sessions this runner holds open here, beside all runners' and the limit.
       // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
+      // globalWrites: the version of the global_writes entries this host applies.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint), ...hostSpace() });
+        mcpSessions: sessions.ownerStats(fingerprint), globalWrites: 1, ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));
@@ -254,9 +258,14 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
     const routing = ROUTING_ENTRIES[entry.tool];
     try {
       const outcome = await once(fingerprint, entry.id, entry.tool, async () => {
+        const runnerName = () => store.runners().find((known) => known.fingerprint === fingerprint)?.name ?? null;
         if (routing) {
-          const runner = { fingerprint, name: store.runners().find((known) => known.fingerprint === fingerprint)?.name ?? null };
+          const runner = { fingerprint, name: runnerName() };
           return inWorkspace(fingerprint)(`runner-replay:${entry.tool}`, () => recordRouting(routing, entry.input, runner));
+        }
+        if (entry.tool === GLOBAL_WRITES_ENTRY) {
+          return inWorkspace(fingerprint)(`runner-replay:${entry.tool}`,
+            () => applyGlobalWrites(app, entry.input, { computer: runnerName() }));
         }
         let input = entry.input;
         if (entry.offlineTask) {

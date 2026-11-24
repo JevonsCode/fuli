@@ -901,6 +901,33 @@ export class GraphitiProviderClient {
       method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
+  // What this graph holds as its read-only copy of `global`: how many records,
+  // when they were last synced, and their digest, in the export's own form, so
+  // a follower compares it with its host's without importing again. Read only;
+  // for this computer's own process, no Agent tool.
+  replicaSummary() {
+    return this.#request(`/v1/scopes/replica-summary?${new URLSearchParams({ scope: 'global' })}`);
+  }
+  // Lets go of the read-only copies `owner` (the certificate fingerprint its
+  // pairing pinned) left in this graph when this computer stops following it:
+  // copies this computer's own records point at become its own, the rest go.
+  // One transaction; for this computer's own process, no Agent tool.
+  releaseScope({ owner }) {
+    return this.#request(`/v1/scopes/release?${new URLSearchParams({ owner })}`, {
+      method: 'POST', timeoutMs: 300_000
+    });
+  }
+  // A follower's recruitment for a project it owns, hired here because this
+  // computer owns the FLA roster: creates the FLA under the id the follower
+  // proposed, answers the same one again for a repeated delivery, and never
+  // changes another FLA. `origin` names the follower's computer and project.
+  // For this computer's runner host (runner/host-global-writes.js); no Agent tool.
+  hireForFollowerRecruitment({ personalSpaceId, recruitmentId, agentId, profile, occupation, reason, origin }) {
+    return this.#request('/v1/project-agents/owner-hire', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, recruitment_id: recruitmentId, agent_id: agentId,
+        profile, occupation, reason, origin_computer: origin.computer, origin_project: origin.project }
+    });
+  }
   // How many records of `global` this graph holds besides the defaults its
   // Provider makes by itself, by label: whether a follower's own graph holds
   // anything of the person's (follower-runtime-prepare.js). Read only; no Agent tool.
