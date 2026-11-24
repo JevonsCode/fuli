@@ -347,7 +347,7 @@ describe('AgentManagement', () => {
     expect(wrapper.get('[data-detail-section="assignments"]').text()).not.toContain('当前分配')
   })
 
-  it('shows only reported execution data and loads task/activity evidence on demand', async () => {
+  it('shows only reported execution data and loads task evidence on demand', async () => {
     const { wrapper } = await mountPage()
     await flushPromises()
 
@@ -369,12 +369,6 @@ describe('AgentManagement', () => {
           }],
         }] })
       }
-      if (url.includes('/project-agent-activity?')) {
-        return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [{
-          date: '2026-08-17', completed: 1, failed: 0, cancelled: 0, total: 1,
-          tasks: [{ task_id: 'task-1', title: '活动复盘', status: 'completed', summary: '已完成', occurred_at: '2026-08-17T03:00:00Z', personal_project_id: 'project-a' }],
-        }] })
-      }
       if (url.includes('/executors?')) return Promise.resolve({ executors: [{ executor_id: 'executor-1', provider: 'openai', model: 'model-x', client: 'codex', allowed: true, actual_use: { count: 1, last_used_at: '2026-08-17T03:00:00Z' } }] })
       if (url.includes('/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       return Promise.resolve({ learning_evidence: {} })
@@ -385,9 +379,6 @@ describe('AgentManagement', () => {
     expect(wrapper.get('.project-agent-task-card').text()).toContain('openai')
     expect(wrapper.get('.project-agent-task-card').text()).toContain('model-x')
     expect(wrapper.get('.project-agent-task-card').text()).toContain('Codex')
-    expect(wrapper.find('.project-agent-heatmap').exists()).toBe(true)
-    await wrapper.get('.project-agent-heat-cell').trigger('click')
-    expect(wrapper.get('.project-agent-day-detail').text()).toContain('活动复盘')
   })
 
   it('renders real per-worker execution summaries with worker fallback fields', async () => {
@@ -421,7 +412,6 @@ describe('AgentManagement', () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [task] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
@@ -509,7 +499,6 @@ describe('AgentManagement', () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [task] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
@@ -525,7 +514,6 @@ describe('AgentManagement', () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [{ ...task, execution_summary: undefined }] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
@@ -571,7 +559,6 @@ describe('AgentManagement', () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [task] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
@@ -605,7 +592,6 @@ describe('AgentManagement', () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [task] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
@@ -629,47 +615,16 @@ describe('AgentManagement', () => {
     expect(tech?.textContent).toContain('task-routing-decision')
   })
 
-  it('keeps the public year heatmap scroller inside its layout boundary', async () => {
-    const activityUrls: string[] = []
+  it('no longer reads or shows the activity calendar (removed from the FLA page)', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
-      if (url.includes('/api/project-agent-activity?')) {
-        activityUrls.push(url)
-        return Promise.resolve({
-          agent_id: 'shared-agent', personal_space_id: 'personal-1',
-          from_date: '2026-08-15', to_date: '2026-08-17',
-          days: [{ date: '2026-08-15', completed: 1, failed: 0, cancelled: 0, total: 1, tasks: [] }],
-        })
-      }
       return Promise.resolve([])
     })
     const { wrapper } = await mountPage()
     await flushPromises()
-
-    expect(activityUrls).toHaveLength(1)
-    expect(activityUrls[0]).toMatch(/fromDate=\d{4}-\d{2}-\d{2}/)
-    expect(activityUrls[0]).toMatch(/toDate=\d{4}-\d{2}-\d{2}/)
-    const heatmapViewport = wrapper.get('.project-agent-heatmap-viewport')
-    const heatmap = heatmapViewport.get('.project-agent-heatmap')
-    const cells = wrapper.findAll('.project-agent-heat-cell')
-
-    // Calendar order: oldest first, weeks padded to Monday..Sunday without fake days
-    // (Saturday 8/15 and Sunday 8/16 close one week, Monday 8/17 opens the next).
-    expect(cells).toHaveLength(3)
-    expect(cells[0].attributes('aria-label')).toContain('8月15日')
-    expect(cells[2].attributes('aria-label')).toContain('8月17日')
-    expect(wrapper.findAll('.project-agent-heat-pad')).toHaveLength(11)
-    expect(wrapper.get('[data-activity-total]').text()).toBe('过去一年 1 次贡献')
-    expect(wrapper.get('.project-agent-calendar-months').text()).toBe('8月')
-    expect(wrapper.get('.project-agent-calendar-legend').text()).toContain('少')
-    expect(cells[1].attributes('aria-label')).toContain('0')
-    expect(cells[0].element.tagName).toBe('BUTTON')
-    expect(cells[0].attributes('aria-pressed')).toBe('false')
-    await cells[0].trigger('click')
-    expect(cells[0].attributes('aria-pressed')).toBe('true')
-    expect(heatmap.attributes('role')).toBe('list')
-    expect(heatmap.element.parentElement).toBe(heatmapViewport.element)
+    expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-activity'))).toBe(false)
+    expect(wrapper.find('[data-detail-section="activity"]').exists()).toBe(false)
   })
 
   it('shows a recruitment waiting on the person, by recruited Agent, with its source fields', async () => {
@@ -748,10 +703,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agents?')) return Promise.resolve([...agents, secondAgent])
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
-      if (url.includes('/api/project-agent-activity?')) {
-        const agentId = new URL(url, 'http://local.test').searchParams.get('agentId')
-        return Promise.resolve({ agent_id: agentId, personal_space_id: 'personal-1', days: [] })
-      }
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
@@ -761,22 +712,21 @@ describe('AgentManagement', () => {
     const { wrapper, router } = await mountPage()
     await flushPromises()
 
-    expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-activity?') && String(url).includes('agentId=shared-agent'))).toBe(true)
-    expect(wrapper.get('[data-detail-section="activity"]').text()).toContain('没有已验证的完成、失败或取消历史')
+    expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-assignments?') && String(url).includes('agentId=shared-agent'))).toBe(true)
+    expect(wrapper.get('[data-detail-section="assignments"]').text()).toContain('尚未上报项目分配')
 
     await router.push('/project-agents/manage/personal-1/second-agent')
     await flushPromises()
-    expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-activity?') && String(url).includes('agentId=second-agent'))).toBe(true)
+    expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-assignments?') && String(url).includes('agentId=second-agent'))).toBe(true)
   })
 
   it('keeps each detail section in loading or error state until that source reports', async () => {
-    let resolveActivity!: (value: unknown) => void
-    const activity = new Promise((resolve) => { resolveActivity = resolve })
+    let resolveAssignments!: (value: unknown) => void
+    const assignmentRead = new Promise((resolve) => { resolveAssignments = resolve })
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
-      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
-      if (url.includes('/api/project-agent-activity?')) return activity
+      if (url.includes('/api/project-agent-assignments?')) return assignmentRead
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
@@ -786,21 +736,20 @@ describe('AgentManagement', () => {
     const { wrapper } = await mountPage()
     await flushPromises()
 
-    const loadingActivity = wrapper.get('[data-detail-section="activity"]')
-    expect(loadingActivity.get('[role="status"]').text()).toContain('正在读取')
-    expect(loadingActivity.text()).not.toContain('没有已验证的完成、失败或取消历史')
+    const loading = wrapper.get('[data-detail-section="assignments"]')
+    expect(loading.get('[role="status"]').text()).toContain('正在读取')
+    expect(loading.text()).not.toContain('尚未上报项目分配')
 
-    resolveActivity({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
+    resolveAssignments({ assignments: [] })
     await flushPromises()
-    expect(wrapper.get('[data-detail-section="activity"]').text()).toContain('没有已验证的完成、失败或取消历史')
+    expect(wrapper.get('[data-detail-section="assignments"]').text()).toContain('尚未上报项目分配')
   })
 
   it('shows a partial detail failure instead of a false empty state', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
-      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
-      if (url.includes('/api/project-agent-activity?')) return Promise.reject(new Error('activity unavailable'))
+      if (url.includes('/api/project-agent-assignments?')) return Promise.reject(new Error('assignments unavailable'))
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
@@ -810,9 +759,9 @@ describe('AgentManagement', () => {
     const { wrapper } = await mountPage()
     await flushPromises()
 
-    const activitySection = wrapper.get('[data-detail-section="activity"]')
-    expect(activitySection.get('[role="alert"]').text()).toContain('activity unavailable')
-    expect(activitySection.text()).not.toContain('没有已验证的完成、失败或取消历史')
+    const section = wrapper.get('[data-detail-section="assignments"]')
+    expect(section.get('[role="alert"]').text()).toContain('assignments unavailable')
+    expect(section.text()).not.toContain('尚未上报项目分配')
     expect(wrapper.get('[data-detail-section="tasks"]').text()).toContain('尚无任务历史')
   })
 })

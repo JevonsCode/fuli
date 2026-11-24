@@ -206,7 +206,6 @@ export const projectAgentMessages = {
     sections: {
       assignments: '负责的项目',
       strategy: '谁来执行',
-      activity: '贡献活动',
       routing: '分配规则',
       recruitment: '待确认招聘',
     },
@@ -218,7 +217,6 @@ export const projectAgentMessages = {
       loading: {
         assignments: '正在读取项目分配与历史…',
         tasks: '正在读取任务与协作记录…',
-        activity: '正在读取贡献活动…',
         recruitments: '正在读取招聘事件…',
         executors: '正在读取执行器目录…',
         routingRules: '正在读取路由规则…',
@@ -236,15 +234,6 @@ export const projectAgentMessages = {
       lockedUnavailable: '锁定的执行器都不可用，任务会保持排队。',
       availabilityUnreported: 'availability 未上报',
       actualUnreported: '实际调用未上报',
-    },
-    activity: {
-      aria: '按日贡献活动',
-      total: '过去一年 {count} 次贡献',
-      less: '少',
-      more: '多',
-      legend: '颜色越深，当天贡献越多',
-      empty: '没有已验证的完成、失败或取消历史。',
-      noTasks: '当天没有任务摘要。',
     },
     clients: {
       codex: 'Codex',
@@ -588,7 +577,6 @@ export const projectAgentMessages = {
     sections: {
       assignments: 'Project assignments & history',
       strategy: 'Model strategy & executors',
-      activity: 'Contribution activity',
       routing: 'Routing rules',
       recruitment: 'Recruitment events',
     },
@@ -600,7 +588,6 @@ export const projectAgentMessages = {
       loading: {
         assignments: 'Loading project assignments and history…',
         tasks: 'Loading tasks and collaboration records…',
-        activity: 'Loading contribution activity…',
         recruitments: 'Loading recruitment events…',
         executors: 'Loading the executor directory…',
         routingRules: 'Loading routing rules…',
@@ -618,15 +605,6 @@ export const projectAgentMessages = {
       lockedUnavailable: 'No locked executor is available; tasks stay queued.',
       availabilityUnreported: 'Availability not reported',
       actualUnreported: 'Actual use not reported',
-    },
-    activity: {
-      aria: 'Daily contribution activity',
-      total: '{count} contributions in the last year',
-      less: 'Less',
-      more: 'More',
-      legend: 'Darker means more contributions that day',
-      empty: 'No verified completed, failed, or cancelled history.',
-      noTasks: 'No task summary for this day.',
     },
     clients: {
       codex: 'Codex',
