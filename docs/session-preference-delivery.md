@@ -150,8 +150,11 @@ until the preferences are complete (rec#110 item 6).
    never left out to keep room free (with the half as a cap, the synthetic
    60-preference entry listed 6 bodies and the keys of 54 others in 6,299
    characters; it lists 10 and the keys of 50 in 8,693, as before T3). The
-   generation's first frame chooses the set: the recall and the conversation
-   at the richest level that fits beside the floor, then more preferences.
+   generation's first frame chooses the set as main does: the bodies past the
+   floor are counted beside the leanest context first, and the recall and the
+   conversation then take the richest level that fits beside them, so a first
+   frame never spells out fewer than main's (taking the recall first left a
+   real-scale first frame 4 bodies short of main's 17).
    A later frame of the generation in the same scope never lists fewer than
    its base frame (the acknowledged base, `held`): dropping a body would make
    the frame complete again (a bounded frame never names a removal), while
@@ -176,12 +179,15 @@ until the preferences are complete (rec#110 item 6).
    ten (or four) in each of several turns, spell out no more than that. The
    quota bounds an import, not a person talking: whatever is left of it, the
    new ones a frame sees for the first time (neither owed nor in view before)
-   are given room while there are no more than 3 of them, and count as spent.
+   get room for at least 3 of them (4 said at once: 3 in full, not all only
+   counted), and count as spent. They take that room before the owed ones,
+   which use only what is left of the quota itself.
    "In view" is told by the frame's index, or, where a frame only counts what
    it leaves out, by `known`: short hashes of what the scope's first frame
    had, plus each new one a frame left to rank, kept once for the latest
-   scope (at most 1,024; past that, none, and every unnamed one is new again,
-   within the quota). Missing one the
+   scope (at most 1,024: a first frame past that keeps 1,024 of its set, and a
+   later frame that would pass it adds none, so what was in view is never
+   forgotten whole). Missing one the
    person must follow is worse than sending one more, so the recall gives way
    to the added ones: the level is the richest where the base's bodies and
    every added body fit; where none does, the leanest, with the added ones by
@@ -209,8 +215,8 @@ until the preferences are complete (rec#110 item 6).
    a body beyond that is for ranking by when they apply to decide). The
    synthetic 60-preference entry lists 10 bodies, already its cap, and its
    next turn is the 1,403-character empty delta, as on main; a first frame
-   beside a rich recall listing 6 catches up to 9 on the next lighter turn
-   and stays there. Before the held set, the preferences
+   beside a rich recall lists what main does there, 9, as the recall gives
+   way, and a lighter turn adds none past it. Before the held set, the preferences
    took whatever the rest left, so a longer recall or one more guidance
    sentence listed fewer of them and most prompts of a session were whole
    frames; while the set was held whole, a generation whose first frame came
@@ -231,12 +237,16 @@ until the preferences are complete (rec#110 item 6).
    30 to 45 characters) needs about 5.9k characters for the hard rules and the
    keys, past the 4.5k share: before, it had no floor, and no frame of such a
    session held its set. Measured (`a real-scale working set keeps its floor`,
-   entry-inline-budget.test.js): the first prompt is complete, 8,756
-   characters, 13 in full; five host events one 171-character line each; a
-   prompt with a rich recall a 6,678-character delta, 17 in full; one with a
-   habit added a 3,341-character delta, 18 in full, the added one among them;
-   the next a 6,091-character delta that names the rest by key, as there is
-   room. Only where the hard rules alone exceed half the limit is there no
+   entry-inline-budget.test.js): the first prompt is complete, 8,823
+   characters, 17 in full (main's search on the same entry: 17); five host
+   events one 171-character line each; a prompt with a rich recall a
+   5,300-character delta, 17 in full; one with a habit added a
+   3,341-character delta, 18 in full, the added one among them; the next a
+   3,115-character delta, 18 in full. A later frame never upgrades the
+   floor's index to the keys alone because a delta leaves room: the room is
+   there only because held bodies are not repeated, and keys alone (some
+   2.2k characters here, sent once) give the model nothing to judge by; it
+   takes the lines where they fit, and otherwise keeps the floor's tier. Only where the hard rules alone exceed half the limit is there no
    floor, and then nothing is held: the search below chooses each frame
    afresh, as main does, so such a frame may list fewer than its base and is
    then complete, and it says so in `preferences_not_held` ("hard rules fill
@@ -356,6 +366,32 @@ A bounded entry is still a complete, confirmable frame:
   it and never takes the frame as a provisional base (it can only send more,
   never less), and this FULI reads a record without it as having no
   provisional base.
+
+### The session record, version 4
+
+The record (`preference-session.js`, one file per host session, at most 64
+KiB) is a private cache of hashes; it never holds an instruction. A field
+that is missing reads as below. A field that is malformed or past its limit
+makes the whole record untrusted: the session starts a new generation with
+complete frames, so a bad record only ever sends more, never less.
+
+| Field | What it is | Limit | Missing |
+| --- | --- | --- | --- |
+| `version` | 1 to 4; written as 4 | — | untrusted |
+| `floor` | transcript offset where this generation starts; `null` unknown | integer | the file's start |
+| `fileId`, `generation`, `nativeGeneration` | which transcript and host window the generation belongs to | — | no change detected from them |
+| `pending[]` | frames produced: `scopeHash`, `snapshotHash`, `frameHash` (64 hex), `scene` | 16 items | untrusted (`pending` itself) |
+| `pending[].producedAt` | transcript length when produced; the frame is on its way until the model answers after it (T1) | integer ≥ 0 | never a provisional base |
+| `pending[].authorityHash` | whose task the frame was (64 hex); another FLA's turn is complete (#1063) | — | no hand-over named |
+| `pending[].owed` | 16-hex hashes (key and layer) of the added preferences within the quota the frame did not spell out yet | 64 | owes none |
+| `pending[].spent` | how much of the generation's added-preference quota is spent | 0 to 64 | none spent |
+| `recent` | recent-conversation frames sent (`recent-context.js`) | 8 | none |
+| `tasks` | [token, owner] hashes of tasks a hook delivered (skeleton bases); version 3 `prompts` read as these | 16 | none |
+| `known` | `{ scope, ids }`: 16-hex hashes of what the latest scope already had in view (its first frame's set, plus new ones a frame left to rank) | 1,024 ids | every unnamed preference is new, within the quota |
+
+`producedAt`, `authorityHash`, `owed`, `spent` and `known` came with the held
+set (design T1 and T3) without a new version: a version-4 FULI that predates
+them ignores them and can only send more.
 
 ## Host turns (design T1)
 

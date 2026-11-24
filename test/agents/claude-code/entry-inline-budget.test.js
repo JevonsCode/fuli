@@ -11,7 +11,7 @@ import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '.
 import { compactTaskContext } from '../../../src/conversations/task-context-view.js';
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';
-import { ALWAYS_INLINE_OMITTED_LABEL, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
+import { ALWAYS_INLINE_OMITTED_LABEL, inlineSearchFit, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
 import { claudeEntrySession, hookFrame, realScalePreferences, syntheticIndexRecall, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
   syntheticRecovery } from '../../../test-support/synthetic-large-entry.js';
@@ -21,6 +21,16 @@ const SESSION = '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84';
 const input = { session_id: SESSION, cwd: '/synthetic/project', prompt: 'fix the export bug' };
 const claudeEntry = async entry => (await claudeLifecycleOutput('UserPromptSubmit', input, async () => entry))
   .hookSpecificOutput.additionalContext;
+// The first frame main's search alone gives a new session (inlineSearchFit
+// through the same session delivery): what a session's first frame never
+// spells out fewer bodies than. `build(sessionId)` is the entry.
+const mainFirstFrame = build => claudeEntrySession(async ({ sessionId, delivery, input: hook }) => {
+  const fit = inlineSearchFit(INLINE_CHARS, result => JSON.parse(result.content[0].text).hookSpecificOutput.additionalContext.length,
+    { projectPath: hook.cwd });
+  const output = await claudeLifecycleOutput('UserPromptSubmit', hook, async () => build(sessionId),
+    { delivery: { deliver: (value, origin, format) => delivery.deliver(value, origin, format, fit) } });
+  return hookFrame(output.hookSpecificOutput.additionalContext);
+});
 const keys = items => (items ?? []).map(item => item.preference_key);
 const kind = instruction => /SYNTHETIC_(\w+?)_\d+/.exec(instruction)?.[1];
 // What an omission names as the way to read the rest: the tool, its own
@@ -97,18 +107,14 @@ test('a coding task\'s knowledge index is reduced to a pointer before any prefer
   assert.equal(frame.task_knowledge_recall.read.tool, 'search_current_project_knowledge');
   assert.equal(JSON.stringify(frame).includes('SYNTHETIC indexed rule'), false);
 
-  // With many preferences they keep their floor, half the limit (design T3):
-  // the index is kept beside it, and only bodies past the floor give way to it.
+  // With many preferences the bodies are counted beside the leanest context
+  // first, as on main, so they are the same with or without an index, and the
+  // index gives way to them.
   const many = syntheticPreferences(60);
   const withIndex = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION, recall: syntheticIndexRecall(5) })));
   const without = hookFrame(await claudeEntry(syntheticLargeEntry({ items: many, sessionId: SESSION })));
-  assert.equal(withIndex.task_knowledge_recall.knowledge_index.items.length, 5);
-  const hard = many.filter(item => kind(item.instruction) === 'HARD').map(item => item.preference_key);
-  assert.deepEqual(hard.filter(key => !keys(withIndex.effective_preferences).includes(key)), []);
-  assert.ok(withIndex.effective_preferences.length > hard.length, 'more than the hard rules are listed in full');
-  assert.deepEqual(keys(withIndex.effective_preferences).filter(key => !keys(without.effective_preferences).includes(key)), [],
-    'the index costs only bodies past the floor');
-  assert.ok(withIndex.effective_preferences.length < without.effective_preferences.length);
+  assert.deepEqual(keys(withIndex.effective_preferences), keys(without.effective_preferences));
+  assert.equal(withIndex.task_knowledge_recall.knowledge_index, undefined);
 });
 
 // rec#75: a delivered preference names its item for revise_personal_knowledge;
@@ -221,30 +227,31 @@ test('new preferences are added to the held set as a delta, never by leaving a h
   }));
 
 // Design T3: holding the set means never fewer, not never more. A first frame
-// beside a rich recall spells out about the preferences' floor; a later turn
-// with a light recall catches up, as deltas, to what one complete frame holds
-// beside the leanest context, and no further: a rich recall again takes none
-// back, a light one adds none past it.
-test('a later frame never lists fewer than its base and catches up to one complete frame\'s worth as deltas', () =>
+// beside a rich recall spells out what one complete frame holds beside the
+// leanest context, as main does (the recall gives way to it); a later turn
+// with a light recall adds none past it, and a rich recall again takes none
+// back.
+test('a first frame beside a rich recall lists what main would, and later frames neither take back nor add past it', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
-    const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+    const entry = (token, recall, sessionId = session.sessionId) => syntheticLargeEntry({ items, sessionId, token,
       recall: syntheticRecall(recall, { length: 700 }), conversation: syntheticRecovery(recall ? 4 : 0, { length: 600 }) });
     const first = await session.turn(entry('task-1', 6));
+    const main = await mainFirstFrame(sessionId => entry('task-1', 6, sessionId));
+    assert.ok(first.frame.effective_preferences.length >= main.effective_preferences.length,
+      `${first.frame.effective_preferences.length} in full, main ${main.effective_preferences.length}`);
     const alone = hookFrame(await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION })));
-    assert.ok(first.frame.effective_preferences.length < alone.effective_preferences.length, 'the rich recall took room');
     let listed = new Set(keys(first.frame.effective_preferences));
-    for (const [token, recall, adds] of [['task-2', 1, true], ['task-3', 1, false], ['task-4', 6, false]]) {
-      const { text, frame } = await session.turn(entry(token, recall));
+    for (const token of ['task-2', 'task-3', 'task-4']) {
+      const { text, frame } = await session.turn(entry(token, token === 'task-4' ? 6 : 1));
       assert.ok(text.length <= INLINE_CHARS, `${token}: ${text.length} chars`);
       assert.equal(frame.preference_delivery.status, 'delta', `${token}: never resent whole`);
       assert.deepEqual(frame.preference_delivery.removed, [], token);
       assert.equal(frame.preference_delivery.unchanged, listed.size, `${token}: none taken back`);
-      const added = keys(frame.preference_updates);
-      assert.deepEqual(added.filter(key => listed.has(key)), [], `${token}: only bodies not yet spelled out`);
-      assert.equal(added.length > 0, adds, `${token}: ${added.length} added`);
-      listed = new Set([...listed, ...added]);
+      assert.deepEqual(keys(frame.preference_updates), [], `${token}: none added`);
       assert.equal(frame.preferences_omitted?.count ?? 0, 60 - listed.size, token);
+      listed = new Set([...listed, ...keys(frame.preference_updates)]);
+      await session.host.say('assistant', 'SYNTHETIC reply.');
     }
     assert.ok(listed.size <= alone.effective_preferences.length, 'never past what one complete frame holds');
   }));
@@ -255,16 +262,18 @@ test('a later frame never lists fewer than its base and catches up to one comple
 test('while a frame that spelled out more is on its way, the next one adds none and builds on the recorded base', () =>
   claudeEntrySession(async session => {
     const items = syntheticPreferences(60);
-    const entry = (token, recall = 1) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+    const added = addedBoundaries(1);
+    const entry = (token, list, recall = 1) => syntheticLargeEntry({ items: list, sessionId: session.sessionId, token,
       recall: syntheticRecall(recall, { length: 700 }), conversation: syntheticRecovery(recall > 1 ? 4 : 0, { length: 600 }) });
-    const first = await session.turn(entry('task-1', 6));
-    const lost = await session.turn(entry('task-2'), { record: false });
+    const first = await session.turn(entry('task-1', items, 6));
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const lost = await session.turn(entry('task-2', [...added, ...items]), { record: false });
     assert.ok(lost.frame.preference_updates.length > 0);
-    const next = await session.turn(entry('task-3'));
+    const next = await session.turn(entry('task-3', [...added, ...items]));
     assert.equal(next.frame.preference_delivery.base_revision, first.frame.revision);
     assert.deepEqual([next.frame.preference_updates, next.frame.preference_delivery.removed], [[], []]);
     await session.host.say('assistant', 'SYNTHETIC reply.');
-    const after = await session.turn(entry('task-4'));
+    const after = await session.turn(entry('task-4', [...added, ...items]));
     assert.ok(after.frame.preference_updates.length > 0, 'once answered, it spells out more again');
   }));
 
@@ -358,11 +367,16 @@ test('fifty preferences added at once spell out no more than the quota on top of
   assert.ok(frames.at(-1).task_knowledge_recall.facts.length > 0, 'once the quota is spent, the recall is not kept at its leanest');
 });
 
-test('ten added in each of five turns use the same quota for the generation', async () => {
+// Each turn the person says something new, the first 3 of it get a body
+// whatever is left of the quota (ADDED_QUOTA_MIN); past that the quota bounds
+// the batch.
+const SAID_MIN = 3;
+test('ten added in each of five turns use the same quota for the generation, plus three a turn', async () => {
   const batches = Array.from({ length: 5 }, (_, batch) => addedBoundaries(10).map(item => ({ ...item,
     preference_key: `${item.preference_key}-batch-${batch + 1}` })));
   const { most, listed } = await quotaSession(batches);
-  assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
+  const bound = most + SAID_MIN * batches.length;
+  assert.ok(listed.size <= bound, `${listed.size} bodies, at most ${bound}`);
 });
 
 // The quota bounds an import, not a person talking: once it is spent, a
@@ -374,10 +388,12 @@ test('after an import spent the quota, a habit said one at a time still arrives 
   assert.deepEqual(singles.flat().map(item => item.preference_key).filter(key => !listed.has(key)), []);
 });
 
-test('four added in each of several turns are still bounded by the quota', async () => {
+test('four added in each of several turns are bounded by the quota plus three a turn, and three of each arrive', async () => {
   const batches = [1, 2, 3, 4].map(turn => renamed(addedBoundaries(4), `batch-${turn}`));
   const { most, listed } = await quotaSession(batches);
-  assert.ok(listed.size <= most, `${listed.size} bodies, at most ${most}`);
+  const bound = most + SAID_MIN * batches.length;
+  assert.ok(listed.size <= bound, `${listed.size} bodies, at most ${bound}`);
+  for (const batch of batches) assert.ok(keys(batch).filter(key => listed.has(key)).length >= SAID_MIN, keys(batch)[0]);
 });
 
 test('two preferences added at once both arrive in full', async () => {
@@ -417,12 +433,16 @@ test('an added preference too long to fit is only named, and the recall is not h
 // alone past the hard rules exceed half the limit, so the floor counts the
 // rest rather than naming them (as the real entry frames did), and the set
 // is held. One session: a prompt, five host events, three prompts (the
-// second with a rich recall, the third with one habit added).
+// second with a rich recall, the third with one habit added). Measured: a
+// complete 8,823-character frame, 17 in full (main's search: 17); five
+// 171-character lines; deltas of 5,300 (17 in full), 3,341 (18, the added
+// one) and 3,115 characters (18), none with a keys-only index.
 test('a real-scale working set keeps its floor: host events are one line, later prompts are deltas', async t => {
   const rows = [];
+  let mainFirst = 0;
   await claudeEntrySession(async session => {
     let items = realScalePreferences();
-    const entry = (token, recall) => syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+    const entry = (token, recall, sessionId = session.sessionId) => syntheticLargeEntry({ items, sessionId, token,
       recall: syntheticRecall(recall, { length: 300 + Number(token.split('-')[1]) }), conversation: syntheticRecovery(2, { length: 300 }) });
     const task = { token: 'task-1', sessionId: session.sessionId, sourceApplication: 'claude_code', checkpoint: null };
     const read = async (_name, { taskContextToken }) => {
@@ -438,6 +458,7 @@ test('a real-scale working set keeps its floor: host events are one line, later 
       if (kind === 'delta') held = frame.preference_delivery.unchanged + frame.preference_updates.length;
       rows.push({ turn, kind, chars: text.length, inline: kind === 'line' ? '-' : held, frame });
     };
+    mainFirst = (await mainFirstFrame(sessionId => entry('task-1', 2, sessionId))).effective_preferences.length;
     row('prompt 1', (await session.turn(entry('task-1', 2))).text);
     await session.host.say('assistant', 'SYNTHETIC reply.');
     for (let event = 1; event <= 5; event++) {
@@ -452,16 +473,81 @@ test('a real-scale working set keeps its floor: host events are one line, later 
     await session.host.say('assistant', 'SYNTHETIC reply.');
     row('prompt 4', (await session.turn(entry('task-4', 2))).text);
   });
-  t.diagnostic(rows.map(({ turn, kind, chars, inline }) => `${turn}: ${kind}, ${chars} chars, ${inline} in full`).join('; '));
+  t.diagnostic(rows.map(({ turn, kind, chars, inline }) => `${turn}: ${kind}, ${chars} chars, ${inline} in full`).join('; ')
+    + `; main's first frame: ${mainFirst} in full`);
   assert.deepEqual(rows.map(row => row.kind), ['complete', 'line', 'line', 'line', 'line', 'line', 'delta', 'delta', 'delta']);
   for (const { turn, chars, frame } of rows) {
     assert.ok(chars <= INLINE_CHARS, `${turn}: ${chars} chars`);
     assert.equal(frame?.preferences_not_held, undefined, `${turn}: the set is held`);
   }
   assert.equal(rows[0].frame.preferences_omitted.index, undefined, 'the rest are counted, as real entry frames show');
+  assert.ok(rows[0].inline >= mainFirst, `the first frame spells out ${rows[0].inline}, main ${mainFirst}`);
+  // A later frame has room because the bodies the model holds are not
+  // repeated; keys alone sent for that room tell the model nothing to judge by.
+  for (const { turn, frame } of rows.slice(1)) {
+    assert.equal((frame?.preferences_omitted?.index ?? []).some(entry => !entry.includes(' — ')), false, `${turn}: no keys-only index`);
+  }
   assert.ok(rows.slice(6).every(row => row.frame.preference_delivery.removed.length === 0), 'none taken back');
   assert.ok(keys(rows[7].frame.preference_updates).includes('remember-0123456789abcdef01234567'), 'the added habit arrives');
 });
+
+// The quota bounds an import, not a person talking, also where a frame only
+// counts what it leaves out (`known` tells new from in view): once an import
+// spent it, one habit said gets its body, and so do at least three of four
+// said at once, rather than all of them being only counted from then on.
+test('a real-scale session that only counts the rest: after an import spent the quota, a habit said arrives, and three of four', () =>
+  claudeEntrySession(async session => {
+    let items = realScalePreferences();
+    let turn = 0;
+    const next = async () => {
+      const token = `task-${++turn}`;
+      const { text, frame } = await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token,
+        recall: syntheticRecall(2, { length: 300 + turn }), conversation: syntheticRecovery(2, { length: 300 }) }));
+      assert.ok(text.length <= INLINE_CHARS, `${token}: ${text.length} chars`);
+      await session.host.say('assistant', 'SYNTHETIC reply.');
+      return frame;
+    };
+    const first = await next();
+    assert.equal(first.preferences_omitted.index, undefined, 'the rest are counted');
+    let listed = new Set(keys(first.effective_preferences));
+    const say = async batch => {
+      items = [...batch, ...items];
+      for (let again = 0; again < 3; again++) {
+        const frame = await next();
+        assert.equal(frame.preference_delivery?.status, 'delta', `task-${turn}: never resent whole`);
+        listed = new Set([...listed, ...keys(frame.preference_updates)]);
+      }
+    };
+    const imported = renamed(addedBoundaries(50), 'import');
+    await say(imported);
+    assert.ok(keys(imported).some(key => !listed.has(key)), 'the import spent the quota');
+    const one = renamed(addedBoundaries(1), 'said-one');
+    await say(one);
+    assert.deepEqual(keys(one).filter(key => !listed.has(key)), []);
+    const four = renamed(addedBoundaries(4), 'said-four');
+    await say(four);
+    assert.ok(keys(four).filter(key => listed.has(key)).length >= 3, 'at least three of four said at once');
+  }));
+
+// What a scope had in view is kept up to 1,024 preferences: a first frame past
+// that keeps that many, and a later frame that would pass it adds none, rather
+// than the record forgetting all of them.
+test('past 1,024 preferences the record keeps what the scope\'s first frame had in view, and adds none', () =>
+  claudeEntrySession(async session => {
+    const items = syntheticPreferences(1100, { length: 40, hardEvery: 2000 });
+    const known = async () => {
+      const [file] = (await readdir(session.cache)).filter(name => name.endsWith('.json'));
+      return JSON.parse(await readFile(join(session.cache, file), 'utf8')).known;
+    };
+    await session.turn(syntheticLargeEntry({ items, sessionId: session.sessionId, token: 'task-1' }));
+    await session.host.say('assistant', 'SYNTHETIC reply.');
+    const first = await known();
+    assert.equal(first.ids.length, 1024);
+    const added = syntheticPreferences(3, { length: 40 }).map(item => ({ ...item, preference_key: `${item.preference_key}-added` }));
+    const { frame } = await session.turn(syntheticLargeEntry({ items: [...added, ...items], sessionId: session.sessionId, token: 'task-2' }));
+    assert.equal(frame.preference_delivery?.status, 'delta');
+    assert.deepEqual(await known(), first);
+  }));
 
 // Where the hard rules alone fill half the limit there is no floor: each frame
 // is chosen afresh, as on main, and says so.

@@ -338,7 +338,7 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
       return text;
     };
     // `cache`: the session delivery record's directory, for a test that reads
-    // what the record keeps.
-    return await fn({ sessionId, host, delivery, turn, notify, cache: join(directory, 'cache') });
+    // what the record keeps; `input`: the hook input `turn` sends.
+    return await fn({ sessionId, host, delivery, turn, notify, cache: join(directory, 'cache'), input });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

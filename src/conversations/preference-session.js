@@ -197,12 +197,12 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             next.pending = [...(state.pending ?? []).filter(item => item.frameHash !== pending.frameHash), pending].slice(-MAX_PENDING);
             // A scope's first frame has its whole set in view; a later one adds
             // the new ones it left to rank. One kept once per scope, not per
-            // frame: past MAX_KNOWN none is kept, and every one not spelled
-            // out is new again, within the quota.
+            // frame, of at most MAX_KNOWN: a first frame past it keeps that
+            // many, and a later one that would pass it adds none, so what the
+            // scope had in view is never forgotten whole.
             const ids = held ? [...new Set([...known, ...preferenceIds(value, chosen.added?.declined ?? [])])].sort()
-              : preferenceIds(value);
-            if (ids.length <= MAX_KNOWN) next.known = { scope: snapshot.scopeHash, ids };
-            else delete next.known;
+              : preferenceIds(value).slice(0, MAX_KNOWN);
+            next.known = { scope: snapshot.scopeHash, ids: ids.length <= MAX_KNOWN ? ids : known };
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
           if (frame) next.recent = [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES);

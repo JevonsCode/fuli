@@ -413,8 +413,12 @@ const BASELINE = Object.freeze({
   // while the share was a cap). The second prompt, with a lighter recall, keeps those 16 and spells
   // out 2 more as a delta, up to the 18 one complete frame holds beside the leanest context (it was
   // an empty 3,497-char delta while the set was held whole, and spelled out 17 more for 8,796 chars
-  // while the growth had no cap): 13,085 -> 14,184 chars (18,384 uncapped).
-  claudeHostEventSessionChars: 14184,
+  // while the growth had no cap): 13,085 -> 14,184 chars (18,384 uncapped). The first frame now
+  // counts its bodies beside the leanest context first, as main does, so it is main's own frame
+  // (11 bodies and a line for each of the rest, 8,842 chars; it was 16 bodies and the keys, 8,733,
+  // and on a real-scale set 4 bodies fewer than main), and the second prompt catches up the 7
+  // bodies to the same 18 as a delta (6,146 chars, was 4,596): 14,184 -> 15,843.
+  claudeHostEventSessionChars: 15843,
   claudeHostEventLineChars: 171,
   omittedPreferencesLabelChars: 132,
   // rec#20 per-turn receipt, measured on the receipt a reply copies. A turn that saved nothing
