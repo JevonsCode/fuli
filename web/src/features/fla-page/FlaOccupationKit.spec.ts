@@ -56,6 +56,16 @@ describe('起步包', () => {
     expect(wrapper.get('[data-kit-item="skill-a"]').attributes('aria-pressed')).toBe('true')
   })
 
+  it('stays folded until opened, since it is configuration touched once', async () => {
+    getJson.mockResolvedValue(kit())
+    const wrapper = render()
+    await flushPromises()
+    const fold = wrapper.get('[data-kit-fold]')
+    expect((fold.element as HTMLDetailsElement).open).toBe(false)
+    expect(fold.get('summary').text()).toContain('起步包')
+    expect(fold.get('summary').text()).toContain('qa-expert')
+  })
+
   it('an occupation without a kit shows nothing', async () => {
     getJson.mockResolvedValue({ occupation: 'legal', plugin: null })
     const wrapper = render()

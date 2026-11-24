@@ -111,108 +111,9 @@
   color: var(--color-accent);
 }
 
-.agent-resume-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-5, 20px);
-  padding: var(--space-4, 16px) var(--space-5, 20px);
-}
-
-.agent-resume-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3, 12px);
-  min-width: 0;
-}
-
-.agent-resume-title > [data-agent-name] {
-  flex: 0 1 auto;
-}
-
-/* Who this FLA is folds to one row once the work below is scrolled. */
-.agent-resume-more {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows var(--motion-fast) var(--motion-ease);
-}
-
-.agent-resume-more > div {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.is-compact .agent-resume-more {
-  grid-template-rows: 0fr;
-}
-
-.agent-resume-inline-summary {
-  flex: 1 1 0;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: var(--text-control);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity var(--motion-fast) var(--motion-ease);
-}
-
-.is-compact .agent-resume-inline-summary {
-  visibility: visible;
-  opacity: 1;
-}
-
-.is-compact .agent-resume-header {
-  padding-block: var(--space-2, 8px);
-}
-
-.is-compact .agent-portrait {
-  width: 36px;
-  height: 36px;
-  flex-basis: 36px;
-  border-radius: 10px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-resume-more, .agent-resume-inline-summary { transition: none; }
-}
-:root[data-motion="reduced"] .agent-resume-more, :root[data-motion="reduced"] .agent-resume-inline-summary { transition: none; }
-
-.agent-resume-summary {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
-.agent-resume-intro {
-  min-width: 0;
-}
-
 .agent-profile-membership {
   flex: 0 0 auto;
 }
-
-.agent-resume-intro > p {
-  max-width: var(--measure);
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--color-muted);
-  line-height: 1.65;
-}
-
-.agent-resume-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3, 12px);
-  color: var(--color-muted);
-  font-size: 12px;
-}
-
 .agent-profile-refresh-status,
 .agent-profile-partial {
   margin: var(--space-4, 16px) 0 0;
@@ -264,20 +165,6 @@
   font-size: 12px;
 }
 
-.agent-resume-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.agent-resume-list li {
-  padding: var(--space-3, 12px) 0;
-}
-
-.agent-resume-list li + li {
-  border-top: 1px solid var(--color-border);
-}
-
 .agent-project-link {
   color: var(--color-accent);
   text-decoration: none;
@@ -297,55 +184,8 @@
   font-size: 13px;
 }
 
-.agent-work-timeline .agent-section-heading > span {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.agent-muted,
-.agent-work-timeline small {
+.agent-muted {
   color: var(--color-muted);
-}
-
-.agent-work-timeline {
-  list-style: none;
-  margin: var(--space-5, 20px) 0 0 var(--space-2, 8px);
-  padding: 0 0 0 var(--space-6, 24px);
-  border-left: 1px solid var(--color-border-strong);
-}
-
-.agent-work-timeline > li {
-  position: relative;
-  margin: 0 0 var(--space-6, 24px);
-}
-
-.agent-work-timeline > li::before {
-  position: absolute;
-  top: 5px;
-  left: -29px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  content: "";
-}
-
-.agent-work-timeline .agent-section-heading {
-  margin-bottom: var(--space-2, 8px);
-}
-
-.agent-work-timeline a {
-  color: var(--color-accent);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.agent-work-timeline p {
-  font-size: 14px;
-}
-
-.agent-work-timeline small {
-  font-size: 12px;
 }
 
 .agent-simple-settings,
@@ -408,33 +248,11 @@
   color: var(--color-ink);
 }
 
-@media (max-width: 760px) {
-
-  .agent-resume-header {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .agent-resume-header .agent-profile-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-
-}
-
 @media (max-width: 480px) {
-  .agent-resume-header,
   .agent-resume-section,
   .agent-simple-settings,
   .agent-occupation-editor {
     padding: var(--space-4, 16px);
-  }
-
-  .agent-resume-header {
-    grid-template-columns: 1fr;
-  }
-
-  .agent-resume-header .agent-profile-actions {
-    grid-column: auto;
   }
 
   .agent-portrait {

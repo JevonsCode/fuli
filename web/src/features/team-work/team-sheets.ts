@@ -45,8 +45,10 @@ export const readTeamSheets = (personalSpaceId: string, signal?: AbortSignal) =>
   getJson(`/api/workbenches?${new URLSearchParams({ personalSpaceId })}`, sheetsShape, { signal })
 
 const OPEN = new Set(['queued', 'running', 'blocked', 'paused', 'awaiting_review', 'awaiting_recruitment', 'backlog'])
+/** A task not finished yet: what an FLA has on its hands. */
+export const isOpenSheet = (sheet: { status: string }) => OPEN.has(sheet.status)
 /** Team work: a task two or more FLAs take part in and that is not finished. */
-export const isTeamWork = (sheet: TeamSheet) => sheet.shares.length > 1 && OPEN.has(sheet.status)
+export const isTeamWork = (sheet: TeamSheet) => sheet.shares.length > 1 && isOpenSheet(sheet)
 /** Running team work is what the island shows. */
 export const isRunning = (sheet: TeamSheet) => sheet.status === 'running'
 

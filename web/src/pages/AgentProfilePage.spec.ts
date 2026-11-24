@@ -163,8 +163,8 @@ describe('Agent profile integration', () => {
   })
 
   // Jevons 11-04: one flat page per FLA. No tabs to learn, nothing behind a second click.
-  it('gives an FLA one page with no tabs, its work record on it, and links out to no second page', async () => {
-    const { wrapper } = await setup()
+  it('gives an FLA one page with no tabs, opens a linked task on it, and links out to no second page', async () => {
+    const { wrapper } = await setup('/agents/space-a/alpha?task=done')
     expect(wrapper.find('[role="tablist"]').exists()).toBe(false)
     await vi.dynamicImportSettled(); await flushPromises()
     await vi.waitFor(() => expect(wrapper.find('[data-profile-panel="overview"] .project-agent-manage').exists()).toBe(true))
@@ -302,9 +302,10 @@ describe('Agent profile integration', () => {
 
     const { wrapper } = await setup()
     const overview = wrapper.get('[data-profile-panel="overview"]')
-    // The task sheets come first, then the projects.
+    // The work on its hands comes first, then what it is responsible for.
+    await vi.dynamicImportSettled(); await flushPromises()
     const sheets = overview.get('[data-task-sheets]').element
-    expect(sheets.compareDocumentPosition(overview.get('.agent-projects-section').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sheets.compareDocumentPosition(overview.get('[data-fla-duty]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(overview.findAll('.agent-current-project-list > .agent-project-item')).toHaveLength(4)
     expect(overview.find('.agent-project-overflow').exists()).toBe(true)
     expect(overview.findAll('.agent-project-overflow .agent-project-item')).toHaveLength(3)
@@ -375,7 +376,7 @@ describe('Agent profile integration', () => {
   ])('does not show a profile for %s', async (path, reads) => {
     const { wrapper } = await setup(path)
     expect(pageTitle.value.text).toBe('')
-    expect(wrapper.find('.agent-resume-header').exists()).toBe(false)
+    expect(wrapper.find('[data-fla-head]').exists()).toBe(false)
     // Only the named Agent is read, and a foreign space is not read at all.
     expect(getJson.mock.calls).toEqual(reads)
   })
@@ -383,7 +384,7 @@ describe('Agent profile integration', () => {
   it('rejects a foreign-space identity even if returned in a roster response', async () => {
     getJson.mockResolvedValue({ ...person('alpha'), personalSpaceId: 'space-b' })
     const { wrapper } = await setup()
-    expect(wrapper.find('.agent-resume-header').exists()).toBe(false)
+    expect(wrapper.find('[data-fla-head]').exists()).toBe(false)
     expect(getJson.mock.calls).toHaveLength(1)
   })
 
@@ -413,12 +414,12 @@ describe('Agent profile integration', () => {
 
   it('keeps settings expanded and shows saved values after saving the profile', async () => {
     const { wrapper } = await setup()
-    await wrapper.get('.agent-profile-actions button[aria-expanded]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-profile-settings]').trigger('click'); await flushPromises()
     await wrapper.get('.agent-simple-settings textarea').setValue('Explain verification evidence.')
     await wrapper.get('.agent-simple-settings').trigger('submit'); await flushPromises()
     expect(putJson).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.agent-simple-settings').exists()).toBe(true)
-    expect(wrapper.get('.agent-profile-actions button[aria-expanded]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('[data-profile-settings]').attributes('aria-expanded')).toBe('true')
     expect((wrapper.get('.agent-simple-settings textarea').element as HTMLTextAreaElement).value).toBe('Explain verification evidence.')
   })
 })
@@ -500,5 +501,91 @@ describe('Agent workbench', () => {
     expect(wrapper.findAll('[role="tab"]')[0]!.attributes('data-profile-tab')).toBe('workbench')
     expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workbench')
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(false)
+  })
+})
+
+// docs/fla-page.md: the first screen answers what the FLA is doing now.
+describe('现在 on the FLA page', () => {
+  function serve(record: Partial<ProjectAgentRecord>, tasks: unknown[], sheets: unknown[] = []) {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => {
+      if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), ...record }, person('beta')])
+      if (url.startsWith('/api/project-agent-tasks?')) return Promise.resolve(tasks)
+      if (url.startsWith('/api/project-agents/alpha/workbenches?')) return Promise.resolve({ agentId: 'alpha', partial: false, workbenches: sheets })
+      return normal(url)
+    })
+  }
+
+  it('names the running task, the step it is on and the recorded count, under the name', async () => {
+    serve({ workStatus: 'running', currentTaskId: 'run', currentTaskRunningSince: '2026-09-01T00:00:00Z' },
+      [task('run', 'alpha', 'Synthetic running work', 'running')],
+      [{ taskId: 'run', personalProjectId: 'project-a', title: 'Synthetic running work', objective: null, status: 'running', leadAgentId: 'alpha',
+        updatedAt: null, blocker: null, progress: { completed: 2, total: 5 }, unassignedSteps: 0,
+        steps: [{ id: 's1', title: 'Synthetic step one', status: 'completed', agentId: 'alpha' }, { id: 's2', title: 'Synthetic step two', status: 'in_progress', agentId: 'alpha' }],
+        shares: [{ agentId: 'alpha', role: 'lead', status: 'running', assignment: null, progress: { completed: 2, total: 5 }, currentStepId: 's2' }] }])
+    const { wrapper } = await setup()
+    await flushPromises()
+    const now = wrapper.get('[data-fla-head] [data-now="working"]')
+    expect(now.get('[data-now-task]').text()).toBe('「Synthetic running work」')
+    expect(now.get('[data-now-task]').attributes('href')).toBe('/agents/space-a/alpha?task=run')
+    expect(now.get('[data-now-step]').text()).toBe('现在：Synthetic step two')
+    expect(now.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('2')
+    expect(now.text()).toContain('已经做了')
+    // 现在 and 手上的活 share one read of the sheets.
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(wrapper.find('[data-task-sheets]').exists()).toBe(true)
+    expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-agents/alpha/workbenches?'))).toHaveLength(1)
+  })
+
+  it('says nothing is on its hands and offers the last finished task, never a made-up progress', async () => {
+    serve({ workStatus: 'idle' }, [task('done', 'alpha', 'Synthetic finished work')])
+    const { wrapper } = await setup()
+    await flushPromises()
+    const now = wrapper.get('[data-now="idle"]')
+    expect(now.text()).toContain('现在没活')
+    expect(now.get('[data-now-last]').text()).toBe('「Synthetic finished work」')
+    expect(now.find('[role="progressbar"]').exists()).toBe(false)
+    // The finished task is also in 最近做完, with its recorded result.
+    expect(wrapper.get('[data-recent-task="done"]').text()).toContain('Recorded test evidence.')
+  })
+
+  it('says the status could not be read instead of calling the FLA idle', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => url.startsWith('/api/project-agent-tasks?')
+      ? Promise.reject(new Error('Synthetic outage')) : normal(url))
+    const { wrapper } = await setup()
+    await flushPromises()
+    const now = wrapper.get('[data-now="unknown"]')
+    expect(now.text()).toContain('这次没读到它在做什么')
+    expect(now.text()).not.toContain('现在没活')
+    expect(now.find('[data-now-retry]').exists()).toBe(true)
+  })
+
+  it('sends a decision waiting on the person to its task', async () => {
+    serve({ workStatus: 'awaiting_review', currentTaskId: 'review' }, [task('review', 'alpha', 'Synthetic review', 'awaiting_review')])
+    const { wrapper } = await setup()
+    await flushPromises()
+    const now = wrapper.get('[data-now="waiting"]')
+    expect(now.text()).toContain('等你拍板')
+    expect(now.get('[data-now-handle]').attributes('href')).toBe('/agents/space-a/alpha?task=review')
+  })
+
+  it('shows the responsibility once, in 负责什么, and offers handing over work instead of a #FLA string', async () => {
+    const { wrapper } = await setup()
+    await flushPromises()
+    expect(wrapper.text().split('Synthetic alpha role')).toHaveLength(2)
+    expect(wrapper.get('[data-fla-responsibility]').text()).toBe('Synthetic alpha role')
+    expect(wrapper.find('[data-agent-mention-copy]').exists()).toBe(false)
+    expect(wrapper.get('[data-hand-off]').text()).toContain('交给它一件事')
+  })
+
+  it('copies the FLA number with one click', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    serve({ employeeNumber: '000042' }, [])
+    const { wrapper } = await setup()
+    await wrapper.get('[data-fla-number]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('FLA 000042')
   })
 })

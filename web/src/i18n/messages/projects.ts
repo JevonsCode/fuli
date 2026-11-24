@@ -307,7 +307,6 @@ export const projectMessages = {
         failed: '没改成，请再试一次。',
       },
       ledger: '工作线账本',
-      ledgerHint: '哪个项目、哪条线、谁负责、做到哪一步；改动在项目页',
     },
     organizing: {
       title: '整理',
@@ -659,7 +658,6 @@ export const projectMessages = {
         failed: 'That did not work. Please try again.',
       },
       ledger: 'Workstream ledger',
-      ledgerHint: 'Which project, which line, who and how far; changes live on the project page',
     },
     organizing: {
       title: 'Organising',

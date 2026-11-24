@@ -68,10 +68,8 @@ function progress(line: ProjectWorkstream) {
 <template>
   <section v-if="showLoading || failed || groups.length" class="workstream-ledger"
     data-workstream-ledger aria-labelledby="workstream-ledger-heading">
-    <header class="workstream-ledger-header">
-      <h3 id="workstream-ledger-heading">{{ t('projects.workstreams.ledger') }}</h3>
-      <span class="ui-meta">{{ t('projects.workstreams.ledgerHint') }}</span>
-    </header>
+    <!-- The same section label as the rest of the FLA page's column; changing a line is one click away, on the project page. -->
+    <h2 id="workstream-ledger-heading" class="workstream-ledger-label">{{ t('projects.workstreams.ledger') }}</h2>
 
     <GrowthLoading v-if="showLoading" variant="compact" :label="t('projects.workstreams.loading')" />
     <UiNotice v-else-if="failed === 'local_only'" tone="info" data-ledger-local-only
@@ -83,7 +81,7 @@ function progress(line: ProjectWorkstream) {
       <template #actions><Button size="sm" variant="ghost" @click="load">{{ t('projects.overview.retry') }}</Button></template>
     </UiNotice>
 
-    <ul v-else class="workstream-ledger-list">
+    <ul v-else class="workstream-ledger-list workstream-ledger-surface">
       <li v-for="group in groups" :key="group.projectId" class="workstream-ledger-group"
         :data-ledger-project="group.projectId">
         <RouterLink v-if="spaceId" class="workstream-ledger-project"
@@ -104,12 +102,10 @@ function progress(line: ProjectWorkstream) {
 </template>
 
 <style scoped>
-.workstream-ledger-header {
-  align-items: baseline;
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-}
+.workstream-ledger { display: grid; gap: 8px; }
+.workstream-ledger-label { margin: 0; color: var(--color-ink-soft); font-size: var(--text-control); font-weight: var(--weight-strong); }
+/* One white surface, like every block of the FLA page's column. */
+.workstream-ledger-list.workstream-ledger-surface { padding: 4px 20px 12px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); }
 
 .workstream-ledger-list,
 .workstream-ledger-lines {

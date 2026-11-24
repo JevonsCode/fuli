@@ -11,7 +11,7 @@ import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employ
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import { activityWeeks } from '@/features/project-agents/activity-calendar'
-import { assignmentsFor, currentAssignmentsFor, dedupeById, NON_TERMINAL_TASK_STATUSES } from '@/features/project-agents/agent-roster-records'
+import { assignmentsFor, currentAssignmentsFor, dedupeById } from '@/features/project-agents/agent-roster-records'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
@@ -39,7 +39,7 @@ import type {
 // A link that names a task (?task=, ?project=) reveals that task, finished or not.
 export type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution'
 
-const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[]; finishedOnly?: boolean }>(), {
+const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[]; linkedOnly?: boolean }>(), {
   sections: () => ['activity', 'work', 'projects', 'recruitment', 'execution'],
 })
 const shows = (section: ManageSection) => props.sections.includes(section)
@@ -89,9 +89,8 @@ const employeeProjects = computed(() => responsibleProjects.value
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived'))
 // A finished recruitment is Bole's record; here only what waits on the person.
 const recruitments = computed(() => (agent.value?.recruitments ?? []).filter(({ status }) => status === 'awaiting_confirmation'))
-// Open work is on the page already, in the FLA's task sheets.
-const shownTasks = computed(() => (agent.value?.tasks ?? []).filter(task => !props.finishedOnly
-  || !NON_TERMINAL_TASK_STATUSES.has(task.status) || task.taskId === linkedTask.value))
+// On an FLA's page the work is in its own sections; this shows only the task a link names (?task=).
+const shownTasks = computed(() => (agent.value?.tasks ?? []).filter(task => !props.linkedOnly || task.taskId === linkedTask.value))
 
 // Each new task link (a new ?task= or ?project= scope) is located once, as
 // soon as its task list is read and its card is on the page. A refresh or a

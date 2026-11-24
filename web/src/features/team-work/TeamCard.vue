@@ -88,7 +88,7 @@ const total = computed(() => fill(props.sheet.progress))
                 <span v-else class="team-status" :data-tone="statusTone(share.status)">{{ statusLabel(share.status) }}</span>
               </span>
             </div>
-            <p v-if="share.assignment" class="team-share-assignment">{{ share.assignment }}</p>
+            <p v-if="share.assignment" class="team-share-assignment" :title="share.assignment">{{ share.assignment }}</p>
             <ul v-if="stepsOf(sheet, share.agentId).length" class="team-steps">
               <li v-for="step in stepsOf(sheet, share.agentId)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id) }" :data-step-status="step.status">
                 <span class="team-check" aria-hidden="true"><UiIcon v-if="step.status === 'completed'" name="check" :size="11" /></span>
@@ -150,7 +150,8 @@ const total = computed(() => fill(props.sheet.progress))
 .team-share-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .team-share-role { color: var(--color-muted); font-size: var(--text-meta); }
 .team-share-state { margin-left: auto; }
-.team-share-assignment { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
+/* Two lines at most; the whole assignment is on hover (docs/fla-page.md). */
+.team-share-assignment { display: -webkit-box; margin: 0; overflow: hidden; color: var(--color-muted); font-size: var(--text-meta); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
 .team-step { display: flex; align-items: center; gap: 8px; color: var(--color-ink-soft); font-size: var(--text-control); }
 .team-check { display: grid; flex: none; width: 16px; height: 16px; place-items: center; border-radius: 50%; color: var(--color-on-accent); box-shadow: inset 0 0 0 1.5px var(--color-control-border); }

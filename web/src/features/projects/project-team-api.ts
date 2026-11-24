@@ -89,9 +89,10 @@ const projectTeamShape = shapeFor<ProjectTeam>(z.object({
   peers: z.array(person),
 }))
 
-const workstreamLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
+// Loose: a line also carries ownerName, latestTask and progressUnreadable, which the ledger shows.
+const workstreamLine = z.looseObject({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
   ownerAgentId: z.string(), ownerOnProject: z.boolean(), revision: z.number() })
-const closedLine = z.object({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
+const closedLine = z.looseObject({ assignmentId: z.string(), name: z.string(), terms: z.array(z.string()),
   ownerAgentId: z.string(), endedAt: z.string() })
 const projectWorkstreamsShape = shapeFor<{ personalProjectId: string; workstreams: ProjectWorkstream[];
   closed?: ClosedWorkstream[] }>(z.object({ personalProjectId: z.string(), workstreams: z.array(workstreamLine),

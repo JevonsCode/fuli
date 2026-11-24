@@ -32,7 +32,7 @@ Nothing is drawn that FULI cannot report. Checked line by line against the code:
 
 | Shown | Comes from | Missing data reads as |
 | --- | --- | --- |
-| Current state (正在做 / 等你拍板 / 被阻塞 / 空闲) | `agentWorkbenchEntry()` over `agent.workStatus` or this FLA's own task page (`GET /api/project-agent-tasks?agentId=`) | 「没有上报状态」, never 「空闲」 |
+| Current state (正在做 / 等你拍板 / 被卡住了 / 现在没活) | `agentWorkbenchEntry()` over `agent.workStatus` or this FLA's own task page (`GET /api/project-agent-tasks?agentId=`) | 「没有上报状态」 or, when the read failed, 「这次没读到它在做什么」 with 再读一次 — never 「现在没活」 |
 | Current task and its step | `GET /api/project-agents/{id}/workbenches` → `progress`, `steps`, `currentStepId` | the step line is left out |
 | Progress 5/8 | the same `progress {completed, total}` | the status word instead of a bar — never a guessed percentage |
 | Which clients the work runs in | `sessions` on the task list (`taskSessions()`, 3 clients at most) | no marks |
@@ -41,11 +41,12 @@ Nothing is drawn that FULI cannot report. Checked line by line against the code:
 | Finished work and its result | the same task read, `resultSummary` / `failureReason` / `completedAt` | the task without a result line |
 | Responsibility, occupation, projects | `profile.responsibility`, `occupation`, `assignments[].responsibility` | 「还没定职业」 |
 | Handoff phrase | `mentionPhrasings()` | the FLA alone, no pair phrasing |
-| Where it worked, on which model, how much | **not recorded yet** (`JVS/fla-work-locations`) | an empty state naming what will go there |
-| Which workstream it leads | **not recorded yet** (`JVS/workstream-flas`) | the same |
+| Where it worked, on which model, how much | `GET /api/project-agent-work-locations` (widget `fla-work-locations`) | `-` with the reason, never 0 |
+| Which workstream it leads or owns | `GET /api/workstreams?agentId=` (widget `workstream-ledger`) | the section is left out |
+| What it learned | `GET /api/project-agents/{id}/growth` (widget `fla-growth`) | the section is left out |
 
-Two rows are honest gaps, so they are drawn as reserved positions with an
-empty state rather than invented numbers (see [Reserved positions](#reserved-positions)).
+The two rows this page first drew as reserved positions are recorded now, so
+their real widgets sit there (see [Widgets in the column](#widgets-in-the-column)).
 
 ## Before and after
 
@@ -81,21 +82,26 @@ One surface, two rows separated by a hairline. No card inside a card.
 - 现在 has four shapes, and every one of them carries somewhere to go:
   - **正在做** — task title (opens the task), the current step, the recorded bar, the client marks, how long.
   - **等你拍板 / 被阻塞 / 暂停** — the reason in the FLA's own words, then 去处理, which opens that task.
-  - **空闲** — 「现在没活」 and nothing else; the primary button is already in the row above.
-  - **没有上报状态** — says so, and offers 去看它的会话. A limitation never ends the sentence.
+  - **现在没活** — says so, then the last finished task (title, when), which opens it. The primary button is already in the row above.
+  - **没有上报状态** — says so, and offers 去看它的会话 (scrolls to 在哪干的活). A read that failed says 「这次没读到它在做什么」 and offers 再读一次. A limitation never ends the sentence.
+- A task opens on this same page: a link that names one (`?task=`, from 现在, 手上的活, 最近做完 or the action panel) shows that task's full card at the top of the column.
 
 ### Scrolling region
 
 One column, `PageStack` width (960px, centred), in this order:
 
 1. **被阻塞的任务** — only when there are any; each row keeps its 解除阻塞 action.
-2. **手上的活 n** — the task sheets, the FLA's own share first, the first one open.
-3. **最近做完 n** — finished tasks, newest first: title, one line of result, when.
-4. **在哪干的活** — reserved (see below).
-5. **这条工作线** — reserved (see below).
-6. **负责什么** — the full responsibility, once; occupation; the projects it is on with each project's own responsibility; earlier projects and how it was recruited, folded.
-7. **学会了** — the experiences it kept, 保留 / 不要 in one click.
-8. **起步包** — the occupation kit: source, licence, counts, Skill and MCP toggles. Folded by default, because it is configuration.
+2. **手上的活 n** — the unfinished task sheets, the FLA's own share first, the first one open. Finished sheets are 最近做完's.
+3. Its workflows waiting on the person, only when there are any.
+4. **最近做完 n** — finished and failed tasks, newest first: title, one line of the recorded result (a failed one says 没做成 in words), project and when; five, then 查看全部.
+5. **在哪干的活** — clients, models, segments (`fla-work-locations`).
+6. **工作线账本** — the lines it leads or owns, only when there are any (`workstream-ledger`).
+7. **负责什么** — the full responsibility, once; the projects it is on with each project's own responsibility; earlier projects and how it was recruited, folded; why it left, if it did. The occupation is in the header line and not repeated here.
+8. **学会了** — the experiences it kept, 保留 / 不要 in one click.
+9. **起步包** — the occupation kit: source, licence, counts, Skill and MCP toggles. Folded by default, because it is configuration.
+
+The activity calendar the old page showed under its work record is not on this
+page: 最近做完 and 在哪干的活 answer the same question with the work itself.
 
 At 1100px and up the page itself does not scroll: the fixed region stays and
 only this column scrolls, so 现在 is always on screen. Below 1100px the whole
@@ -109,31 +115,38 @@ act and the old page blurred them:
 
 1. **新开一段对话** — the handoff phrases from `mentionPhrasings()`, each shown
    in full (`#FLA 名字 在这里继续`) and copied on click. You see what you are
-   about to paste.
+   about to paste. Below them, when FULI has one, 「把『最近这件工作』带到别的
+   客户端」: the opening prompt from the work-locations read (`continuation`),
+   which opens a new session and leaves the original where it is.
 2. **继续 FULI 里的一项工作** — one row per open task: its title and state.
    Clicking opens that task. No typing, no id.
 3. **打开它正在用的会话** — one row per client the task reports. A client with
    a session link opens it. A client without one says which of the two reasons
-   applies — 「这个客户端只能打开自己」 or 「还没有配会话打开方式」 — and the
-   second carries 去设置, which lands on that setting.
+   applies — 「还没有配会话打开方式」 (with 去设置会话打开方式, which lands on
+   that setting), 「这个客户端只能打开自己，打不开某一次会话」, or 「没记下是哪一次会话」.
+
+A group with nothing in it is left out; an FLA with nothing to hand over (an
+archived one) has no button.
 
 Everything else folds: 设置 is a quiet outline button, and the old
 「复制 #FLA」 is now the first row of group 1, named in words.
 
-## Reserved positions
+## Widgets in the column
 
-Two colleagues are building the data these need. Their place, their size and
-their empty state exist now, so landing the real widget is one line in
-`web/src/widgets/registry.ts`:
+The column has three widget places, in reading order, with the page's own
+sections between them (`web/src/widgets/layout.ts`):
 
-| Widget id | Section | Size | Owner |
-| --- | --- | --- | --- |
-| `fla-locations` | 在哪干的活 | full column width; a row of counts plus a list of at most 5 clients, ≤ 220px tall. Not a chart that grows with the data. | `JVS/fla-work-locations`, `JVS/fla-continuity` |
-| `fla-ledger` | 这条工作线 | full column width; at most 5 rows, then 查看全部. Shown only when this FLA leads a workstream. | `JVS/workstream-flas` |
+| Place | Widgets | Then the page's own |
+| --- | --- | --- |
+| `fla.overview` | `fla-blocked`, `fla-sheets` | workflows, 最近做完 |
+| `fla.history` | `fla-work-locations`, `workstream-ledger` | 负责什么 |
+| `fla.profile` | `fla-growth`, `fla-kit` | — |
 
-Both take the slot's four context keys (`spaceId`, `agentId`, `agentName`,
-`projectName`) like every other `fla.overview` widget, so the real component
-drops straight in.
+Every widget takes the slot's four context keys (`spaceId`, `agentId`,
+`agentName`, `projectName`). The work-locations read and the task-sheet read are
+each made once per FLA and shared (`web/src/lib/shared-read.ts`): 现在 and
+手上的活 read the same sheets, the count and the action panel the same work
+locations.
 
 ## Widths
 
@@ -183,8 +196,8 @@ Inspectable choices, all from the existing tokens — no new visual system.
 
 - Every section is a landmark with its own heading; the column is one reading
   order that matches the visual one at all widths.
-- The primary panel is a native popover: Esc closes it, focus returns to the
-  button, arrow keys move between the rows.
+- The primary panel is the shared dropdown menu: Esc closes it, focus returns to the
+  button, arrow keys move between the rows, and a row that cannot open says why.
 - The progress bar carries `role="progressbar"` with the real numbers; the
   client marks carry the client's name and what clicking does; the breathing dot
   is decorative and hidden from the reader.
