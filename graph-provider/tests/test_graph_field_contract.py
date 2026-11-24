@@ -151,6 +151,9 @@ def test_every_declared_property_is_still_named_by_the_provider():
 # keys it names.
 MAP_WRITES = {
     ('publication_submission.py', 'draft', '+='),
+    ('scope_import.py', 'link', '='),
+    ('scope_import.py', 'node', '='),
+    ('scope_import.py', 'session', '='),
     ('knowledge_versions.py', 'item', '='),
     ('knowledge_versions.py', 'link', '+='),
     ('store_conversation_triage.py', 't', '+='),

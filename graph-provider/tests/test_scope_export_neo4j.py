@@ -97,7 +97,7 @@ async def seed_knowledge(driver, space, group):
         CREATE (space)-[:HAS_PREFERENCE_CONFLICT]->(:FuliPreferenceConflict {id: $space + '-conflict',
                 personal_space_id: $space, left_item_kind: 'entity', left_item_id: $space + '-habit',
                 right_item_kind: 'entity', right_item_id: $space + '-habit-alpha', preference_key: 'answers',
-                preference_scope: 'project', preference_project_id: 'alpha', status: 'open',
+                preference_scope: 'project', preference_project_id: 'alpha', status: 'ai_pending',
                 reason: 'Synthetic', requested_by: 'synthetic', deferred_at: datetime(), updated_at: datetime()})
     ''', space=space, group=group)
 
@@ -243,8 +243,8 @@ async def assert_deterministic(client, driver, space, exports):
 
 @pytest.mark.asyncio
 async def test_scope_export_counts_what_it_cannot_carry():
-    """A node without its key, labels and a relationship type in no rule: the
-    envelope says so, never names a node by this computer's element ID, and is
+    """A node without its key, two nodes under one key, labels and a
+    relationship type in no rule: the envelope says so, never names a node by this computer's element ID, and is
     not complete."""
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
@@ -259,6 +259,8 @@ async def test_scope_export_counts_what_it_cannot_carry():
                 CREATE (space)-[:HAS_KNOWLEDGE_ASSIGNMENT]->(keyless:FuliKnowledgeAssignment {space_id: $space,
                         item_kind: 'entity', item_id: 'gone', reason: 'Synthetic early record'})
                 CREATE (fact:Entity {uuid: $space + '-fact', group_id: $group, name: 'Synthetic fact'})
+                CREATE (:Entity {uuid: $space + '-twice', group_id: $group, name: 'Synthetic twin one'})
+                CREATE (:Entity {uuid: $space + '-twice', group_id: $group, name: 'Synthetic twin two'})
                 CREATE (:ScopeTestLoose {space_id: $space, note: 'no relationship at all'})
                 CREATE (:ScopeTestLinked {marker: $space})-[:SCOPE_TEST_LINK]->(fact)
                 CREATE (fact)-[:SCOPE_TEST_LINK]->(:ScopeTestTarget {marker: $space})
@@ -268,7 +270,9 @@ async def test_scope_export_counts_what_it_cannot_carry():
             envelope = await export(client, space, 'global')
             text = json.dumps(envelope)
             assert keyless not in text and ':element:' not in text
-            assert envelope['unidentifiedNodes'] == {'FuliKnowledgeAssignment': 1}
+            # Two records under one key: neither has an identity another computer shares.
+            assert envelope['unidentifiedNodes'] == {'Entity': 2, 'FuliKnowledgeAssignment': 1}
+            assert f'Entity:{space}-twice' not in envelope['ids']['nodes']
             assert envelope['unidentifiedRelationships'] == {'HAS_KNOWLEDGE_ASSIGNMENT': 1}
             assert not any('FuliKnowledgeAssignment' in node['labels'] for node in envelope['nodes'])
             assert envelope['unclassifiedLabels'] == {'ScopeTestLinked': 1, 'ScopeTestLoose': 1,

@@ -209,6 +209,27 @@ async def test_a_newer_graph_is_refused_before_any_schema_change_or_write(graph)
     assert await _version(driver) == GRAPH_FORMAT_VERSION + 1
 
 
+@pytest.mark.asyncio
+async def test_a_graph_24_takes_the_copy_marker_by_itself_and_a_graph_24_fuli_refuses_25(graph, monkeypatch):
+    """graph/25 only extends the field contract: no record changes and no
+    person confirms it. A FULI of graph 24 then refuses the graph, so it never
+    writes over a copy it does not know is one."""
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await _create_rules(driver, {m.id for m in GRAPH_MIGRATIONS if m.to_version <= 24})
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 24")
+
+    async with provider_client(settings, ACCESS_TOKEN) as (client, _):
+        health = (await client.get('/health')).json()['data_format']
+
+    assert (health['access'], health['state'], health['version']) == ('write', 'current', 25)
+    assert [e['status'] for e in await _events(driver) if e['id'] == 'graph/25-replica-marker'] == ['applied']
+    from fuli_graph import graph_format
+    monkeypatch.setattr(graph_format, 'GRAPH_FORMAT_VERSION', 24)
+    older = await graph_format.prepare_graph_format(driver, settings)
+    assert (older.access, older.state, older.version) == ('none', 'newer', 25)
+
+
 async def _seed_started(driver, migration_id, version):
     await driver.execute_query(
         '''

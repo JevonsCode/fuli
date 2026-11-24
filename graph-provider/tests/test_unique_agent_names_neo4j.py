@@ -16,6 +16,7 @@ import json
 
 import pytest
 
+from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION
 from fuli_graph.name_identity import identity_key
 from fuli_graph.project_agent_names import is_generated_nickname
 from fuli_graph.provider_values import stable_uuid
@@ -159,7 +160,7 @@ async def test_the_upgrade_needs_nobody_and_the_person_settles_shared_names_in_o
     async with provider_client(settings, ACCESS_TOKEN) as (client, _):
         health = (await client.get('/health')).json()['data_format']
         assert health['state'] == 'current' and health['access'] == 'write' and health['pending'] == []
-        assert await _version(driver) == 24
+        assert await _version(driver) == GRAPH_FORMAT_VERSION
         # Nobody was renamed, and the built-in role holds its name.
         assert {agent_id: item['name'] for agent_id, item in (await _names(driver)).items() if agent_id in before} \
             == {agent_id: item['name'] for agent_id, item in before.items()}
@@ -286,7 +287,7 @@ async def test_the_name_rule_waits_behind_a_confirmed_step_and_stays_when_that_s
                                     json={'digest': plan['digest'], 'entrypoint': 'cli'})
         assert applied.status_code == 200, applied.text
         assert applied.json()['data_format']['state'] == 'current'
-        assert await _version(driver) == 24 and len(await _rows(driver, rule)) == 1
+        assert await _version(driver) == GRAPH_FORMAT_VERSION and len(await _rows(driver, rule)) == 1
 
         undone = await client.post('/v1/data-format/rollback', headers=REVIEW, json=step)
         assert undone.status_code == 200, undone.text
@@ -298,7 +299,7 @@ async def test_the_name_rule_waits_behind_a_confirmed_step_and_stays_when_that_s
         reapplied = await client.post('/v1/data-format/apply', headers=REVIEW,
                                       json={'digest': again['digest'], 'entrypoint': 'cli'})
         assert reapplied.status_code == 200, reapplied.text
-        assert await _version(driver) == 24
+        assert await _version(driver) == GRAPH_FORMAT_VERSION
 
 
 async def _add_agent(driver, settings, agent_id, display_name, key=None):
