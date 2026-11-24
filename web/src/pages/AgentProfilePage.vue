@@ -5,36 +5,46 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
 import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
-import { headerFolds } from "@/features/agent-profile/header-fold";
-import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch, type Component } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onMounted, ref, watch, type Component } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
+import { shapeOf } from "@/api/response-shape";
+import { z } from "zod";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
 import Breadcrumb from "@/components/Breadcrumb.vue";
 import PageOutline from "@/components/PageOutline.vue";
+import PageStack from "@/components/PageStack.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
-import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEditor.vue";
 import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
+import OccupationChip from "@/features/occupations/OccupationChip.vue";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
 import EmployeeWorkHistory from "@/features/project-agents/EmployeeWorkHistory.vue";
 import WidgetSlot from "@/widgets/WidgetSlot.vue";
 import {
   agentDisplayName,
   agentProfilePath,
-  agentResponsibility,
   collaboratorsFor,
   mentionPartner,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
-import AgentMentionCopy from "@/features/agent-profile/AgentMentionCopy.vue";
-import AgentHeaderTags from "@/features/agent-profile/AgentHeaderTags.vue";
 import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
 import { mentionKind } from "@/features/agent-profile/fla-mention";
-import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
+import { isAgentTaskDataComplete, summarizeAgentTasks, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
+import { agentUpdateTimes, agentWorkbenchEntry, indexWorkbenchTasks } from "@/features/agent-profile/agent-workbench";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
+import { useNow } from "@/composables/useNow";
+import FlaAttention from "@/features/fla-page/FlaAttention.vue";
+import FlaHandOff from "@/features/fla-page/FlaHandOff.vue";
+import FlaNow from "@/features/fla-page/FlaNow.vue";
+import FlaRecentWork from "@/features/fla-page/FlaRecentWork.vue";
+import FlaResponsibility from "@/features/fla-page/FlaResponsibility.vue";
+import { useAgentGrowth } from "@/features/fla-page/agent-growth";
+import { useAgentSheets } from "@/features/fla-page/agent-sheets";
+import { useFlaKit } from "@/features/fla-page/kit-read";
+import { finishedWork, nowLine } from "@/features/fla-page/fla-now";
 import {
   arrayOf,
   normalizeAssignment,
@@ -47,14 +57,16 @@ import type {
   ProjectAgentRecord,
   ProjectAgentTaskRecord,
 } from "@/types";
-import { personalProjectsPath } from "@/router/paths";
 import { usePageTitle } from "@/layouts/page-title";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 import { usePageRefresh } from "@/layouts/page-refresh";
-import { hasTemporaryOrigin, pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
+import { pickerOrder, hasTemporaryOrigin, projectDisplayName } from '@/features/projects/project-origin'
 
-// The Workbench and the management sections load only when their tab opens (rec#60 D-78).
+// The one task a built-in role's roster names: an object, normalized like a list item.
+const NAMED_TASK = shapeOf(z.looseObject({}));
+
+// The Workbench and the management sections load only when they are shown (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
   loader,
   loadingComponent: defineComponent(() => () => h(GrowthLoading, { variant: "compact", label: t(label) })),
@@ -90,6 +102,9 @@ const projectName = (id: string) => {
 };
 
 const tasks = ref<ProjectAgentTaskRecord[]>([]);
+// The task page as read: 现在 summarises it the way the FLAs list does.
+const taskPage = ref<unknown>(null);
+const taskRead = ref<"loading" | "ready" | "incomplete" | "error">("loading");
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
 const workflows = ref<AgentWorkflow[]>([]);
 const detailsLoading = ref(false);
@@ -119,26 +134,15 @@ const activeTab = computed<ProfileTab>({
     void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab }, hash: route.hash });
   },
 });
-// A link that names a task opens the work record, where that task is shown.
+// A link that names a task opens that task at the top of the column.
 // Afterwards the tabs are the person's again, though ?task= stays in the URL.
-watch(() => route.query.task, (task) => {
-  if (typeof task === "string" && task && activeTab.value !== "overview") activeTab.value = "overview";
+const linkedTask = computed(() => typeof route.query.task === "string" && route.query.task ? route.query.task : "");
+watch(linkedTask, (task) => {
+  if (task && activeTab.value !== "overview") activeTab.value = "overview";
 }, { immediate: true });
 const settingsOpen = computed(() => activeTab.value === "settings");
 function toggleSettings() { activeTab.value = settingsOpen.value ? defaultTab.value : "settings"; }
-// Scrolling the work down folds the header to one row; back at the top it opens.
-const compactHeader = ref(false);
-const headerSide = ref<HTMLElement>();
 const workColumn = ref<HTMLElement>();
-function onWorkScroll(event: Event) {
-  const work = event.target as HTMLElement;
-  compactHeader.value = headerFolds(compactHeader.value, {
-    scrollTop: work.scrollTop,
-    room: work.scrollHeight - work.clientHeight,
-    headerHeight: headerSide.value?.offsetHeight ?? 0,
-  });
-}
-watch(activeTab, () => { compactHeader.value = false; });
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
 // The header shows the name, where the person can rename the Agent.
@@ -179,120 +183,145 @@ const currentProjects = computed(() =>
 const conversationProjectRecords = computed(() => projects.value.filter((item) => currentProjects.value.includes(item.project_id)));
 const conversationProjects = computed(() => pickerOrder(conversationProjectRecords.value).map((item) => ({
   id: item.project_id, name: projectDisplayName(item), temporary: hasTemporaryOrigin(item) })));
-const visibleCurrentProjects = computed(() => currentProjects.value.slice(0, 4));
-const remainingCurrentProjects = computed(() => currentProjects.value.slice(4));
-const previousProjects = computed(() =>
-  (assignments.value ?? []).filter((item) => item.status !== "active"),
-);
-// Main role first, then tags; each chip opens the duties from the catalog.
+// The quiet line under the name: main occupation, the FLA number, the other tags.
 const occupationKeys = computed(() => {
   const occupation = agent.value?.occupation;
   if (!occupation) return [];
   return [...new Set([...(occupation.role ? [occupation.role] : []), ...occupation.tags])];
 });
 useOccupationCatalog(computed(() => agent.value?.personalSpaceId ?? ""));
-const date = (value?: string | null) =>
-  value && !Number.isNaN(Date.parse(value))
-    ? new Date(value).toLocaleDateString()
-    : t("agentProfiles.timeUnknown");
-const projectResponsibility = (projectId: string) => {
-  const responsibility = assignments.value
-    ?.find(
-      (item) =>
-        item.personalProjectId === projectId && item.status === "active",
-    )
-    ?.responsibility?.trim();
-  const profileResponsibility = agent.value?.profile.responsibility.trim();
-  return responsibility && responsibility !== profileResponsibility
-    ? responsibility
-    : "";
-};
-const projectOverflowLabel = computed(() => {
-  const key = "agentRedesign.projects.more";
-  const translated = t(key, { count: currentProjects.value.length });
-  return translated === key
-    ? `All projects (${currentProjects.value.length})`
-    : translated;
-});
+async function copyNumber(number: string) {
+  try {
+    await navigator.clipboard.writeText(`FLA ${number}`);
+    store.notify(t("flaPage.identity.numberCopied", { number }));
+  } catch (cause) {
+    store.reportError(cause);
+  }
+}
+
+// 现在: the same reading of the FLA's status the FLAs list uses, with the step
+// and bar of the task it is on from its task sheets.
+const agentSpace = computed(() => agent.value?.personalSpaceId ?? "");
+const agentKey = computed(() => agent.value?.agentId ?? "");
+const sheets = useAgentSheets(agentSpace, agentKey);
+// The reads 等你处理 shares with 起步包 and 学会了, so 刷新 renews them too.
+const kitRead = useFlaKit(agentSpace, agentKey);
+const growthRead = useAgentGrowth(agentSpace, agentKey);
+const clock = useNow();
+const taskIndex = computed(() => agent.value ? indexWorkbenchTasks(taskPage.value, agent.value.personalSpaceId) : {});
+const entry = computed(() => agent.value ? agentWorkbenchEntry(agent.value, {
+  summary: summarizeAgentTasks(taskPage.value, agent.value.personalSpaceId)[agent.value.agentId],
+  summaryState: taskRead.value,
+  tasks: taskIndex.value,
+}) : null);
+const now = computed(() => agent.value && entry.value
+  ? nowLine({ entry: entry.value, agentId: agent.value.agentId, sheets: sheets.sheets.value, tasks: tasks.value, now: clock.value }) : null);
+// 手上的活 reads each card by the same recorded change 现在 does, and leaves out
+// the step of the task 现在 already names (widget context for 'fla-sheets').
+const sheetsContext = computed(() => ({
+  progressAt: agent.value ? agentUpdateTimes(taskIndex.value, agent.value.agentId) : {},
+  nowTaskId: now.value?.kind === "working" && now.value.step ? now.value.taskId : null,
+}));
+const finished = computed(() => finishedWork(tasks.value));
+// 等你处理 goes to the section where it is answered: on the work tab, opened.
+async function reveal(sectionId: string) {
+  if (activeTab.value !== "overview") activeTab.value = "overview";
+  await nextTick();
+  const section = document.getElementById(sectionId);
+  const fold = section?.querySelector("details");
+  if (fold) fold.open = true;
+  section?.scrollIntoView({ block: "start" });
+}
 
 let generation = 0;
-watch(
-  () =>
-    agent.value ? `${agent.value.personalSpaceId}/${agent.value.agentId}` : "",
-  async () => {
-    const person = agent.value;
-    const current = ++generation;
+// `keep`: 刷新 reads again over what is shown, instead of emptying the page first.
+async function readDetails(options: { keep?: boolean } = {}) {
+  const person = agent.value;
+  const current = ++generation;
+  if (!options.keep) {
     tasks.value = [];
+    taskPage.value = null;
+    taskRead.value = "loading";
     workflows.value = [];
     assignments.value = undefined;
     partial.value = false;
-    detailsLoading.value = false;
-    if (!person) return;
-    detailsLoading.value = true;
-    assignments.value = person.assignments;
-    const params = new URLSearchParams({
-      personalSpaceId: person.personalSpaceId,
-      agentId: person.agentId,
-    });
-    const assignmentParams = new URLSearchParams({
-      personalSpaceId: person.personalSpaceId,
-      agentId: person.agentId,
-    });
-    const assignmentRead = Promise.allSettled([
-      getJson<unknown>(`/api/project-agent-assignments?${assignmentParams}`),
-    ]);
-    // A built-in role opens on its Workbench, which reads its own work: nothing here waits or competes with it.
-    const builtIn = Boolean(employeeTemplateIdForAgent(person));
-    const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [Promise.resolve([]), Promise.resolve([])] : [
-      getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
-      readAgentWorkflows(person.personalSpaceId, person.agentId),
-    ]);
-    if (current !== generation) return;
-    if (taskResult.status === "fulfilled") {
-      const value = taskResult.value;
-      const record = unknownRecord(value);
-      partial.value = !isAgentTaskDataComplete(value);
-      tasks.value = arrayOf(
-        Array.isArray(value) ? value : (record.tasks ?? record.items),
+  }
+  detailsLoading.value = false;
+  if (!person) return;
+  detailsLoading.value = !options.keep;
+  if (!options.keep) assignments.value = person.assignments;
+  const params = new URLSearchParams({
+    personalSpaceId: person.personalSpaceId,
+    agentId: person.agentId,
+  });
+  const assignmentRead = Promise.allSettled([
+    getJson<unknown>(`/api/project-agent-assignments?${params}`),
+  ]);
+  // A built-in role opens on its Workbench, which reads its own work: nothing here competes with it.
+  // Only the task its roster names is read, so 现在 can say when that last moved; with no status
+  // on the roster, 现在 says none was reported rather than 没活 from a list it never read.
+  const builtIn = Boolean(employeeTemplateIdForAgent(person));
+  const reported = typeof person.workStatus === "string";
+  const named = builtIn && reported ? person.currentTaskId ?? null : null;
+  const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [
+    named ? getJson(`/api/project-agent-tasks/${encodeURIComponent(named)}?${new URLSearchParams({ personalSpaceId: person.personalSpaceId })}`, NAMED_TASK)
+      .then(task => [task]) : Promise.resolve([]),
+    Promise.resolve([]),
+  ] : [
+    getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
+    readAgentWorkflows(person.personalSpaceId, person.agentId),
+  ]);
+  if (current !== generation) return;
+  if (taskResult.status === "fulfilled") {
+    const value = taskResult.value;
+    const record = unknownRecord(value);
+    partial.value = builtIn ? false : !isAgentTaskDataComplete(value);
+    taskPage.value = value;
+    taskRead.value = builtIn ? (reported ? "ready" : "incomplete") : partial.value ? "incomplete" : "ready";
+    tasks.value = arrayOf(
+      Array.isArray(value) ? value : (record.tasks ?? record.items),
+    )
+      .map(normalizeTask)
+      .filter((item): item is ProjectAgentTaskRecord =>
+        Boolean(
+          item &&
+            (!item.personalSpaceId ||
+              item.personalSpaceId === person.personalSpaceId) &&
+            taskHasAgent(item, person.agentId),
+        ),
       )
-        .map(normalizeTask)
-        .filter((item): item is ProjectAgentTaskRecord =>
-          Boolean(
-            item &&
-              (!item.personalSpaceId ||
-                item.personalSpaceId === person.personalSpaceId) &&
-              taskHasAgent(item, person.agentId),
-          ),
-        )
-        .sort((a, b) =>
-          (b.updatedAt ?? b.createdAt ?? "").localeCompare(
-            a.updatedAt ?? a.createdAt ?? "",
-          ),
-        );
-    } else partial.value = true;
-    if (workflowResult.status === "fulfilled") workflows.value = workflowResult.value;
-    else partial.value = true;
-    const [assignmentResult] = await assignmentRead;
-    if (current !== generation) return;
-    if (assignmentResult.status === "fulfilled") {
-      const value = assignmentResult.value;
-      const record = unknownRecord(value);
-      assignments.value = arrayOf(
-        Array.isArray(value) ? value : (record.assignments ?? record.items),
-      )
-        .map((item) => normalizeAssignment(item, person))
-        .filter((item): item is ProjectAgentAssignmentRecord =>
-          Boolean(
-            item &&
-              item.agentId === person.agentId &&
-              item.personalSpaceId === person.personalSpaceId,
-          ),
-        );
-    } else partial.value = true;
-    detailsLoading.value = false;
-  },
-  { immediate: true },
-);
+      .sort((a, b) =>
+        (b.updatedAt ?? b.createdAt ?? "").localeCompare(
+          a.updatedAt ?? a.createdAt ?? "",
+        ),
+      );
+  } else {
+    partial.value = !builtIn;
+    // A failed refresh keeps the tasks it read before.
+    if (!options.keep || taskRead.value === "loading") taskRead.value = "error";
+  }
+  if (workflowResult.status === "fulfilled") workflows.value = workflowResult.value;
+  else partial.value = true;
+  const [assignmentResult] = await assignmentRead;
+  if (current !== generation) return;
+  if (assignmentResult.status === "fulfilled") {
+    const value = assignmentResult.value;
+    const record = unknownRecord(value);
+    assignments.value = arrayOf(
+      Array.isArray(value) ? value : (record.assignments ?? record.items),
+    )
+      .map((item) => normalizeAssignment(item, person))
+      .filter((item): item is ProjectAgentAssignmentRecord =>
+        Boolean(
+          item &&
+            item.agentId === person.agentId &&
+            item.personalSpaceId === person.personalSpaceId,
+        ),
+      );
+  } else partial.value = true;
+  detailsLoading.value = false;
+}
+watch(() => (agent.value ? `${agent.value.personalSpaceId}/${agent.value.agentId}` : ""), () => readDetails(), { immediate: true });
 
 // After the person's decision on a workflow, its current state.
 async function reloadWorkflows() {
@@ -310,8 +339,9 @@ function saved(person: ProjectAgentRecord) {
 onMounted(() => {
   if (store.runtimeStatus === "idle") void store.refresh();
 });
-// The top bar's 刷新 reads this Agent and its workflows again.
-usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
+// The top bar's 刷新 reads this Agent, its tasks, workflows, task sheets, kit and growth again,
+// so 现在 and 最近做完 come from the same moment.
+usePageRefresh(() => Promise.all([load(), readDetails({ keep: true }), sheets.reload(), kitRead.reload(), growthRead.reload()]));
 </script>
 
 <template>
@@ -340,166 +370,104 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
         {{ t("agentProfiles.unavailable") }}
       </p>
       <div v-else class="agent-profile-layout">
-        <!-- Who this FLA is, in one row across the page; its work scrolls below. -->
-        <div ref="headerSide" class="agent-profile-side" :class="{ 'is-compact': compactHeader }">
-          <!-- The header carries the page's H1: the name, renamed where it stands,
-               beside the portrait the person can change. -->
-          <Card as="header" class="agent-resume-header">
-            <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)">
-              <AgentAvatarPicker :agent-id="agent.agentId" :space-id="agent.personalSpaceId" :name="agentDisplayName(agent)" />
-            </span>
-            <div class="agent-resume-intro grid min-w-0 gap-1">
-              <div class="agent-resume-title">
+        <!-- Fixed: who this FLA is and what it is doing now (docs/fla-page.md). -->
+        <PageStack class="agent-profile-side">
+          <header class="fla-head" data-fla-head>
+            <div class="fla-identity">
+              <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)">
+                <AgentAvatarPicker :agent-id="agent.agentId" :space-id="agent.personalSpaceId" :name="agentDisplayName(agent)" />
+              </span>
+              <div class="fla-who">
                 <AgentNameEditor :agent="agent" @saved="saved" />
-                <AgentHeaderTags :agent="agent" :occupation-keys="occupationKeys" />
-                <!-- Folded, the description moves up beside the tags; it is read once, from the line below. -->
-                <p class="agent-resume-inline-summary" aria-hidden="true" :title="agentResponsibility(agent)" data-profile-inline-summary>{{ agentResponsibility(agent) }}</p>
+                <p class="fla-meta" data-profile-occupation>
+                  <span v-if="agent.profile.status !== 'active'" class="ui-badge agent-profile-membership" :class="`is-${agent.profile.status}`">
+                    {{ t(`projectAgents.status.${agent.profile.status}`) }}
+                  </span>
+                  <span v-if="occupationKeys[0]" class="fla-meta-item"><OccupationChip :occupation-key="occupationKeys[0]" :main="Boolean(agent.occupation?.role)" /></span>
+                  <span v-else class="fla-meta-item">{{ t("agentRedesign.occupation.notSet") }}</span>
+                  <span v-if="agent.employeeNumber" class="fla-meta-item">
+                    <Button variant="ghost" size="xs" class="fla-number ui-num" :title="t('flaPage.identity.copyNumber', { number: agent.employeeNumber })"
+                      :aria-label="t('flaPage.identity.copyNumber', { number: agent.employeeNumber })" data-fla-number
+                      @click="copyNumber(agent.employeeNumber)">FLA {{ agent.employeeNumber }}</Button>
+                  </span>
+                  <span v-for="key in occupationKeys.slice(1)" :key="key" class="fla-meta-item"><OccupationChip :occupation-key="key" /></span>
+                  <span v-if="agent.formerName" class="fla-meta-item">{{ t("agentProfiles.name.former", { name: agent.formerName }) }}</span>
+                </p>
               </div>
-              <div class="agent-resume-more">
-                <div>
-                  <p class="agent-resume-summary" :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
-                  <div class="agent-resume-meta">
-                    <span>
-                      {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
-                      · {{ date(agent.recruitedAt || agent.createdAt) }}
-                    </span>
-                  </div>
-                </div>
+              <div class="agent-profile-actions">
+                <FlaHandOff :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :name="agentDisplayName(agent)" :partner="partner"
+                  :kind="mentionKind(agent)" :tasks="tasks" :project-name="projectName" />
+                <Button variant="outline" :aria-expanded="settingsOpen" data-profile-settings @click="toggleSettings">
+                  {{ t("agentProfiles.settings") }}
+                </Button>
               </div>
             </div>
-            <div class="agent-profile-actions">
-              <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
-              <Button variant="outline" :aria-expanded="settingsOpen" data-profile-settings @click="toggleSettings">
-                {{ t("agentProfiles.settings") }}
-              </Button>
+            <div v-if="now && entry" class="fla-now">
+              <FlaNow :line="now" :entry="entry" :sessions-link="!hasWorkbench" @retry="readDetails()" @sessions="reveal('fla-worked-heading')" />
+              <FlaAttention :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :others="'others' in now ? now.others ?? null : null" @reveal="reveal" />
             </div>
-          </Card>
-
+          </header>
           <AgentRenameHint :agent="agent" @saved="saved" />
-        </div>
-        <div ref="workColumn" class="agent-profile-main" @scroll.passive="onWorkScroll">
+        </PageStack>
+
+        <!-- Scrolls on its own from 1100px, so 现在 stays on screen. -->
+        <div ref="workColumn" class="agent-profile-main">
           <PageOutline :content="workColumn" />
-
-          <GrowthLoading
-            v-if="loading || store.runtimeStatus === 'loading'"
-            variant="compact"
-            :label="t('agentProfiles.loading')"
-          />
-          <p v-if="error" class="agent-profile-refresh-status" role="status">
-            {{ error }}
-          </p>
-
-          <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs min-w-0">
-            <TabsList v-if="profileTabs.length > 1" :aria-label="agentDisplayName(agent)">
-              <TabsTrigger v-for="tab in profileTabs" :key="tab.id" :value="tab.id" :data-profile-tab="tab.id">
-                {{ tab.label }}
-              </TabsTrigger>
-            </TabsList>
-
-            <GrowthLoading
-              v-if="detailsLoading"
-              variant="compact"
-              :label="t('agentProfiles.detailLoading')"
-            />
-            <p v-if="partial" class="agent-profile-partial" role="status">
-              {{ t("agentProfiles.partial") }}
+          <PageStack class="fla-column">
+            <p v-if="error" class="agent-profile-refresh-status" role="status">
+              {{ error }}
             </p>
 
-            <TabsContent v-if="hasWorkbench" value="workbench" class="agent-profile-panel" data-profile-panel="workbench">
-              <!-- Mounted only while open, so its board and drag handlers leave with the tab. -->
-              <EmployeeWorkbench v-if="activeTab === 'workbench' && employeeId" :key="employeeId" :template-id="employeeId" />
-            </TabsContent>
+            <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs min-w-0">
+              <TabsList v-if="profileTabs.length > 1" :aria-label="agentDisplayName(agent)">
+                <TabsTrigger v-for="tab in profileTabs" :key="tab.id" :value="tab.id" :data-profile-tab="tab.id">
+                  {{ tab.label }}
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
-              <div class="agent-profile-history-grid">
-                <!-- What sits here is the layout's call (widgets/layout.ts): by default this FLA's task sheets (rec#11 D-82). -->
-                <WidgetSlot place="fla.overview"
-                  :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
+              <p v-if="partial" class="agent-profile-partial" role="status">
+                {{ t("agentProfiles.partial") }}
+              </p>
 
-                <Card as="section" class="agent-resume-section agent-projects-section" aria-labelledby="agent-projects-heading">
-                  <div class="agent-section-heading">
-                    <h2 id="agent-projects-heading">{{ t("agentProfiles.projects") }}</h2>
-                    <span>{{ currentProjects.length }}</span>
-                  </div>
-                  <ul class="agent-resume-list agent-current-project-list">
-                    <li v-for="id in visibleCurrentProjects" :key="id" class="agent-project-item">
-                      <h3>
-                        <RouterLink class="agent-project-link" :to="personalProjectsPath(space, 'overview', id)">
-                          {{ projectName(id) }}
-                        </RouterLink>
-                      </h3>
-                      <p v-if="projectResponsibility(id)" class="agent-project-responsibility">
-                        {{ projectResponsibility(id) }}
-                      </p>
-                    </li>
-                  </ul>
-                  <UiDisclosure
-                    v-if="remainingCurrentProjects.length"
-                    class="agent-project-overflow"
-                    :title="projectOverflowLabel"
-                  >
-                    <ul class="agent-resume-list">
-                      <li v-for="id in remainingCurrentProjects" :key="id" class="agent-project-item">
-                        <h3>
-                          <RouterLink class="agent-project-link" :to="personalProjectsPath(space, 'overview', id)">
-                            {{ projectName(id) }}
-                          </RouterLink>
-                        </h3>
-                        <p v-if="projectResponsibility(id)" class="agent-project-responsibility">
-                          {{ projectResponsibility(id) }}
-                        </p>
-                      </li>
-                    </ul>
-                  </UiDisclosure>
-                  <p v-if="!detailsLoading && !currentProjects.length" class="agent-muted">
-                    {{ t("agentProfiles.noProject") }}
-                  </p>
-                </Card>
-                <Card v-if="hasWorkflows" as="section" class="agent-resume-section">
-                  <AgentWorkflowList :workflows="workflows" @changed="reloadWorkflows" />
-                </Card>
-                <AgentManagement v-if="activeTab === 'overview'" :key="`work-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['activity', 'work']" finished-only />
+              <TabsContent v-if="hasWorkbench" value="workbench" class="agent-profile-panel" data-profile-panel="workbench">
+                <!-- Mounted only while open, so its board and drag handlers leave with the tab. -->
+                <EmployeeWorkbench v-if="activeTab === 'workbench' && employeeId" :key="employeeId" :template-id="employeeId" />
+              </TabsContent>
 
-                <Card v-if="previousProjects.length || agent.archiveReason || agent.recruitedAt || agent.recruitmentReason" as="section" class="agent-resume-section" aria-labelledby="agent-history-record-heading">
-                  <h2 id="agent-history-record-heading">{{ t("agentProfiles.projectHistory") }}</h2>
-                  <ol class="agent-work-timeline">
-                    <li v-if="agent.archiveReason" data-profile-departure>
-                      <h3>{{ t("agentProfiles.departure") }}</h3>
-                      <p>{{ agent.archiveReason }}</p>
-                      <small>{{ date(agent.archivedAt) }}</small>
-                    </li>
-                    <li v-for="item in previousProjects" :key="item.assignmentId">
-                      <h3>
-                        <RouterLink class="agent-project-link" :to="personalProjectsPath(space, 'overview', item.personalProjectId)">
-                          {{ projectName(item.personalProjectId) }}
-                        </RouterLink>
-                      </h3>
-                      <p>{{ item.responsibility }}</p>
-                      <small>{{ date(item.assignedAt) }} – {{ date(item.endedAt) }}</small>
-                    </li>
-                    <li v-if="agent.recruitedAt || agent.recruitmentReason">
-                      <h3>{{ t("agentProfiles.recruitment") }}</h3>
-                      <p v-if="agent.recruitmentReason">{{ agent.recruitmentReason }}</p>
-                      <small>{{ date(agent.recruitedAt) }}</small>
-                    </li>
-                  </ol>
-                </Card>
-              </div>
-            </TabsContent>
+              <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
+                <div class="agent-profile-history-grid">
+                  <!-- A link that names a task (?task=) opens that one task here, above the rest. -->
+                  <AgentManagement v-if="linkedTask && activeTab === 'overview'" :key="`task-${agent.agentId}`" :space-id="agent.personalSpaceId"
+                    :agent-id="agent.agentId" :sections="['work']" linked-only data-fla-linked-task />
+                  <!-- The order is the layout's (widgets/layout.ts); the page's own sections sit between its places. -->
+                  <WidgetSlot place="fla.overview"
+                    :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName, ...sheetsContext }" />
+                  <Card v-if="hasWorkflows" as="section" class="agent-resume-section">
+                    <AgentWorkflowList :workflows="workflows" @changed="reloadWorkflows" />
+                  </Card>
+                  <FlaRecentWork :work="finished" :project-name="projectName" />
+                  <WidgetSlot place="fla.history"
+                    :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
+                  <FlaResponsibility :agent="agent" :assignments="assignments" :loading="detailsLoading" :project-name="projectName" />
+                  <WidgetSlot place="fla.profile"
+                    :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
+                </div>
+              </TabsContent>
 
-            <TabsContent value="settings" class="agent-profile-panel" data-profile-panel="settings">
-              <div v-if="settingsOpen" class="agent-profile-history-grid">
-                <AgentProfileSettings :key="agent.agentId" :agent="agent" @saved="saved" />
-                <AgentOccupationEditor v-if="agent.profile.status !== 'archived'" :key="`occupation-${agent.agentId}`" :agent="agent" @saved="saved" />
-                <Card v-if="agent.memoryScope === 'reviewed_agent'" as="section" class="agent-resume-section" aria-labelledby="agent-memory-settings-heading">
-                  <h2 id="agent-memory-settings-heading">{{ t("agentProfiles.memorySettings") }}</h2>
-                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjectRecords" />
-                  <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
-                </Card>
-                <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution']" />
-              </div>
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="settings" class="agent-profile-panel" data-profile-panel="settings">
+                <div v-if="settingsOpen" class="agent-profile-history-grid">
+                  <AgentProfileSettings :key="agent.agentId" :agent="agent" @saved="saved" />
+                  <AgentOccupationEditor v-if="agent.profile.status !== 'archived'" :key="`occupation-${agent.agentId}`" :agent="agent" @saved="saved" />
+                  <Card v-if="agent.memoryScope === 'reviewed_agent'" as="section" class="agent-resume-section" aria-labelledby="agent-memory-settings-heading">
+                    <h2 id="agent-memory-settings-heading">{{ t("agentProfiles.memorySettings") }}</h2>
+                    <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjectRecords" />
+                    <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
+                  </Card>
+                  <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution']" />
+                </div>
+              </TabsContent>
+            </Tabs>
+          </PageStack>
         </div>
       </div>
     </div>
@@ -517,15 +485,40 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
 .agent-portrait.agent-identity:has(img) {
   box-shadow: 0 0 0 2px var(--agent-identity, transparent);
 }
+/* The fixed region: one surface, identity then 现在 under a hairline. No card inside a card. */
+.fla-head { display: grid; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); }
+.fla-identity { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 16px 20px; }
+/* 44px: the portrait identifies; it is not the subject. */
+.fla-identity .agent-portrait { width: 44px; height: 44px; flex-basis: 44px; border-radius: 13px; font-size: 22px; }
+.fla-who { display: grid; gap: 2px; min-width: 0; }
+.fla-who :deep([data-agent-name]) { font-size: var(--text-title); }
+.fla-meta { display: flex; flex-wrap: wrap; align-items: center; margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
+.fla-meta-item { display: inline-flex; align-items: center; }
+.fla-meta-item + .fla-meta-item::before { content: '·'; margin-inline: 6px; color: var(--color-faint); }
+.fla-meta .agent-profile-membership { margin-right: 8px; }
+/* The occupation names read as words in the line; a click still opens their duties. */
+.fla-meta :deep(.occupation-chip) { height: auto; padding: 0; border: 0; color: inherit; background: none; font: inherit; }
+.fla-meta :deep(.occupation-chip:hover) { color: var(--color-ink); text-decoration: underline; }
+.fla-number { min-height: 0; margin-inline: -4px; padding: 1px 4px; color: inherit; font: inherit; cursor: copy; }
+.fla-meta :deep(.occupation-chip:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
+.fla-now { display: grid; gap: 4px; padding: 12px 20px; border-top: 1px solid var(--color-border); }
 /* Panels stack in one column at every width (rec#38). */
 .agent-profile-history-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 /* One column at every width (Jevons 11-04): who this FLA is runs across the top
    and only its work below scrolls, so the page never does at the client's
    default 1280px window. Narrower windows let the page scroll as before. */
 .agent-profile-layout { display: grid; gap: var(--space-4, 16px); min-width: 0; }
-.agent-profile-side, .agent-profile-main { display: grid; align-content: start; gap: var(--space-4, 16px); min-width: 0; }
+.agent-profile-side, .agent-profile-main { min-width: 0; }
 /* The tabs fill the column, so a workbench can fill the tab. */
 .agent-profile-tabs [data-profile-panel="workbench"][data-state="active"] { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+
+/* Below 860px the identity row stacks: portrait and name, the meta line, then the actions full width. */
+@media (max-width: 859px) {
+  .fla-identity { grid-template-columns: auto minmax(0, 1fr); padding: 12px 16px; }
+  .fla-identity .agent-profile-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .fla-identity .agent-profile-actions > * { flex: 1 1 0; }
+  .fla-now { padding: 10px 16px; }
+}
 
 @media (min-width: 1100px) {
   .agent-profile-page { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px !important; }
@@ -533,6 +526,8 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
   .agent-profile-layout { grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
   /* The column clears the floating dock itself, since the page no longer scrolls. */
   .agent-profile-main { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-bottom: var(--dock-clearance); }
-  .agent-profile-main > .agent-profile-tabs { flex: 1 0 auto; }
+  .agent-profile-main > .fla-column { flex: 1 0 auto; }
+  /* A built-in role's Workbench fills what the column leaves under the tabs. */
+  .fla-column > .agent-profile-tabs { flex: 1 1 auto; min-height: 0; }
 }
 </style>

@@ -1,8 +1,10 @@
+import { computed, type Ref } from 'vue'
 import { z } from 'zod'
 import { getJson, patchJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { verificationSchema } from '@/features/verification/verification'
+import { sharedRead } from '@/lib/shared-read'
 
 // rec#78 slice 1: what an FLA learned by doing. The server lists its reusable
 // experiences, proven-first (used in more tasks); the person keeps one
@@ -41,6 +43,18 @@ export type AgentGrowth = z.infer<typeof growthSchema>
 
 export const readAgentGrowth = (personalSpaceId: string, agentId: string, signal?: AbortSignal) =>
   getJson(`/api/project-agents/${encodeURIComponent(agentId)}/growth?${new URLSearchParams({ personalSpaceId })}`, growthShape, { signal })
+
+// One read per FLA, shared by 学会了 and the 等你处理 line under 现在.
+const growths = sharedRead((key, signal) => readAgentGrowth(key[0]!, key[1]!, signal))
+export const forgetAgentGrowth = growths.forget
+
+export function useAgentGrowth(spaceId: Ref<string>, agentId: Ref<string>) {
+  const read = growths.use(computed(() => [spaceId.value, agentId.value]))
+  return { growth: read.value, state: read.state, set: read.set, reload: read.reload }
+}
+
+/** Experiences proven in several tasks that the person has not kept yet: 等你定留不留. */
+export const waitingCount = (items: readonly GrowthItem[]) => items.filter(item => item.proven && item.status !== 'confirmed').length
 
 const itemPath = (item: GrowthItem) => `/api/knowledge/entity/${encodeURIComponent(item.itemId)}`
 

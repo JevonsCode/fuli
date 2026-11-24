@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FlaOccupationKit from './FlaOccupationKit.vue'
 import type { OccupationKit } from '@/features/occupation-kits/occupation-kits'
+import { forgetFlaKits, kitPending } from './kit-read'
 
 const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, putJson }))
@@ -27,8 +28,8 @@ const render = () => {
   return wrapper
 }
 
-beforeEach(() => { setActivePinia(createPinia()); getJson.mockReset(); putJson.mockReset() })
-afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()) })
+beforeEach(() => { setActivePinia(createPinia()); getJson.mockReset(); putJson.mockReset(); forgetFlaKits() })
+afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); forgetFlaKits() })
 
 describe('起步包', () => {
   it('shows where the kit came from and asks nothing until a recommendation is clicked', async () => {
@@ -54,6 +55,45 @@ describe('起步包', () => {
     expect(putJson.mock.calls[0]).toEqual(['/api/project-agents/fla-1/occupation-kit',
       { personalSpaceId: 'space-a', skills: ['skill-a', 'skill-b'], mcpServers: [] }, expect.anything()])
     expect(wrapper.get('[data-kit-item="skill-a"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('stays open, its summary saying so, while nothing was chosen yet', async () => {
+    getJson.mockResolvedValue(kit())
+    const wrapper = render()
+    await flushPromises()
+    const fold = wrapper.get('[data-kit-fold]')
+    expect((fold.element as HTMLDetailsElement).open).toBe(true)
+    expect(fold.get('summary').text()).toContain('起步包')
+    expect(fold.get('[data-kit-pending]').text()).toBe('还没选用哪些')
+  })
+
+  it('stays open when the kit was updated after the choice', async () => {
+    getJson.mockResolvedValue(kit({ skills: [reference('skill-a', true), reference('skill-b', false)], mcpServers: [reference('mcp-a', false)],
+      choice: { pluginVersion: '0.9.0', at: '2026-11-06T08:00:00Z', outdated: true } }))
+    const wrapper = render()
+    await flushPromises()
+    expect((wrapper.get('[data-kit-fold]').element as HTMLDetailsElement).open).toBe(true)
+    expect(wrapper.get('[data-kit-pending]').text()).toBe('更新了，等你再看一眼')
+  })
+
+  it('folds once answered, since it is configuration touched once', async () => {
+    getJson.mockResolvedValue(kit({ skills: [reference('skill-a', true), reference('skill-b', false)], mcpServers: [reference('mcp-a', false)],
+      choice: { pluginVersion: '1.0.0', at: '2026-11-06T08:00:00Z', outdated: false } }))
+    const wrapper = render()
+    await flushPromises()
+    const fold = wrapper.get('[data-kit-fold]')
+    expect((fold.element as HTMLDetailsElement).open).toBe(false)
+    expect(fold.get('summary').text()).toContain('qa-expert')
+    expect(fold.find('[data-kit-pending]').exists()).toBe(false)
+  })
+
+  it('counts what is still owed: everything before a choice, the unanswered ones after it', () => {
+    expect(kitPending(kit())).toEqual({ count: 3, outdated: false })
+    expect(kitPending(kit({ skills: [reference('skill-a', true), reference('skill-b', null)], mcpServers: [reference('mcp-a', false)],
+      choice: { pluginVersion: '1.0.0', at: '2026-11-06T08:00:00Z', outdated: false } }))).toEqual({ count: 1, outdated: false })
+    expect(kitPending(kit({ skills: [reference('skill-a', true)], mcpServers: [],
+      choice: { pluginVersion: '1.0.0', at: '2026-11-06T08:00:00Z', outdated: false } }))).toBeNull()
+    expect(kitPending({ occupation: 'legal', plugin: null })).toBeNull()
   })
 
   it('an occupation without a kit shows nothing', async () => {

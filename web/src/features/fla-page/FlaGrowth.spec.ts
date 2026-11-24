@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import FlaGrowth from './FlaGrowth.vue'
-import type { GrowthItem } from './agent-growth'
+import { forgetAgentGrowth, type GrowthItem } from './agent-growth'
 
 const { getJson, patchJson } = vi.hoisted(() => ({ getJson: vi.fn(), patchJson: vi.fn() }))
 vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson }))
@@ -24,8 +24,8 @@ const render = () => {
   return wrapper
 }
 
-beforeEach(() => { setActivePinia(createPinia()); getJson.mockReset(); patchJson.mockReset() })
-afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()) })
+beforeEach(() => { setActivePinia(createPinia()); getJson.mockReset(); patchJson.mockReset(); forgetAgentGrowth() })
+afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); forgetAgentGrowth() })
 
 describe('学会了', () => {
   it('shows the proven experiences first with their use counts, three at a time', async () => {

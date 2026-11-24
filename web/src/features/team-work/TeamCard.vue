@@ -4,11 +4,14 @@ import { RouterLink } from 'vue-router'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { agentManagementPath } from '@/features/project-agents/orchestration-filters'
 import { statusTone } from '@/features/project-agents/task-labels'
-import { t } from '@/i18n'
+import { useNow } from '@/composables/useNow'
+import { currentLocale, t } from '@/i18n'
+import { formatElapsed } from '@/lib/elapsed-time'
 import { Button } from '@/components/ui/button'
 import { UiIcon } from '@/ui'
 import TeamFaces from './TeamFaces.vue'
-import { currentStepOf, fill, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
+import { currentStepOf, fill, sharesFor, stepsAround, stepsOf, type TeamShare, type TeamSheet } from './team-sheets'
+import { progressOf, type Progress } from './work-freshness'
 
 // 团队卡片: one task several FLAs do together. Folded, it shows who is on it
 // (rings = each share's recorded progress), what is happening now and the
@@ -22,32 +25,78 @@ const props = defineProps<{
   /** The FLA whose page shows this card: its share comes first. */
   viewerAgentId?: string | null
   defaultOpen?: boolean
+  /**
+   * On that FLA's own page, where 现在 already names it (docs/fla-page.md): the
+   * head says its current step without its name, and an open card lists each
+   * share's current step with one either side, the whole list one click away.
+   * Opened from the start (a link named the task), it lists every step.
+   */
+  focused?: boolean
+  /**
+   * The viewer's last recorded change on this task, where the page knows it
+   * (null: none recorded). Its step then reads by the same freshness as 现在:
+   * 正在做 with a live dot only within STALE_AFTER_MS, else 停在 and a quiet dot.
+   * Left out, the card cannot tell and reads its step as before.
+   */
+  progressAt?: string | null
+  /** 现在 above already names this task's step: the folded head leaves it out. */
+  stepShownAbove?: boolean
 }>()
 const open = ref(Boolean(props.defaultOpen))
+const allSteps = ref(!props.focused || Boolean(props.defaultOpen))
 const bodyId = useId()
 
+const clock = useNow()
 const shares = computed(() => sharesFor(props.sheet, props.viewerAgentId ?? null))
+// Only the viewer's progress is known; anyone else's step reads as before.
+const progressOfShare = (agentId: string): Progress | null =>
+  agentId === props.viewerAgentId && props.progressAt !== undefined ? progressOf(props.progressAt, clock.value) : null
+const stopped = (share: TeamShare) => (progressOfShare(share.agentId)?.state ?? 'fresh') !== 'fresh'
 // Whose task page opens the task; a sheet with no lead and no shares has none.
 const ownerId = computed(() => props.sheet.leadAgentId ?? shares.value[0]?.agentId)
 const faces = computed(() => shares.value.map(share => ({
   agentId: share.agentId,
   lead: share.agentId === props.sheet.leadAgentId,
   fill: fill(share.progress),
-  working: Boolean(currentStepOf(props.sheet, share)),
+  working: Boolean(currentStepOf(props.sheet, share)) && !stopped(share),
 })))
-// What is happening now: the first share with a step in progress.
+// What is happening now: the first share with a step in progress. On the FLA's
+// own page, its own step, without its name; left out when 现在 already says it.
+const stepLine = (share: TeamShare, step: string, self: boolean) => {
+  const progress = progressOfShare(share.agentId)
+  const name = props.nameOf(share.agentId)
+  if (!progress || progress.state === 'fresh') {
+    return { text: self ? t('teamWork.card.nowSelf', { step }) : t('teamWork.card.now', { name, step }), progress: progress?.state ?? null }
+  }
+  if (progress.state === 'unrecorded') {
+    return { text: t(self ? 'teamWork.card.stoppedSelfUnrecorded' : 'teamWork.card.stoppedUnrecorded', { name, step }), progress: progress.state }
+  }
+  const duration = formatElapsed(progress.at, currentLocale(), clock.value) ?? ''
+  return { text: t(self ? 'teamWork.card.stoppedSelf' : 'teamWork.card.stopped', { name, step, duration }), progress: progress.state }
+}
 const now = computed(() => {
+  if (props.focused) {
+    const own = shares.value.find(share => share.agentId === props.viewerAgentId)
+    const step = own ? currentStepOf(props.sheet, own) : null
+    if (step) return props.stepShownAbove ? null : stepLine(own!, step.title, true)
+  }
   for (const share of shares.value) {
     const step = currentStepOf(props.sheet, share)
-    if (step) return t('teamWork.card.now', { name: props.nameOf(share.agentId), step: step.title })
+    if (step) return stepLine(share, step.title, false)
   }
-  return ''
+  return null
 })
 const currentIds = computed(() => new Set(shares.value.map(share => currentStepOf(props.sheet, share)?.id).filter(Boolean)))
 const known = (key: string, fallback: string) => { const label = t(key); return label === key ? fallback : label }
 const statusLabel = (status: string) => known(`projectAgents.taskStatus.${status}`, status)
 const roleLabel = (role: string | null | undefined) => (role ? known(`teamWork.card.roles.${role}`, '') : '')
 const total = computed(() => fill(props.sheet.progress))
+// Every step of a share, or (focused, until 全部 is asked for) the ones around its current step.
+const shownSteps = (share: TeamShare) => {
+  const steps = stepsOf(props.sheet, share.agentId)
+  return allSteps.value ? steps : stepsAround(steps, currentStepOf(props.sheet, share)?.id)
+}
+const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.sheet, share.agentId).length
 </script>
 
 <template>
@@ -59,7 +108,8 @@ const total = computed(() => fill(props.sheet.progress))
         <span class="team-meta">
           <template v-if="sheet.personalProjectId">{{ projectName(sheet.personalProjectId) }} · </template>{{ t('teamWork.card.flas', { count: sheet.shares.length }) }}
         </span>
-        <span v-if="now || sheet.blocker" class="team-now" :data-tone="sheet.blocker ? statusTone('blocked') : undefined"><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now }}</span>
+        <span v-if="now || sheet.blocker" class="team-now" :data-tone="sheet.blocker ? statusTone('blocked') : undefined" :data-progress="sheet.blocker ? undefined : now?.progress ?? undefined"
+          ><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now?.text }}</span>
       </span>
       <span class="team-total">
         <template v-if="total !== null">
@@ -88,14 +138,16 @@ const total = computed(() => fill(props.sheet.progress))
                 <span v-else class="team-status" :data-tone="statusTone(share.status)">{{ statusLabel(share.status) }}</span>
               </span>
             </div>
-            <p v-if="share.assignment" class="team-share-assignment">{{ share.assignment }}</p>
-            <ul v-if="stepsOf(sheet, share.agentId).length" class="team-steps">
-              <li v-for="step in stepsOf(sheet, share.agentId)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id) }" :data-step-status="step.status">
+            <p v-if="share.assignment" class="team-share-assignment" :title="share.assignment">{{ share.assignment }}</p>
+            <ul v-if="shownSteps(share).length" class="team-steps">
+              <li v-for="step in shownSteps(share)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id), 'is-stopped': stopped(share) }" :data-step-status="step.status">
                 <span class="team-check" aria-hidden="true"><UiIcon v-if="step.status === 'completed'" name="check" :size="11" /></span>
                 <span class="team-step-title">{{ step.title }}</span>
                 <span class="ui-sr-only">{{ statusLabel(step.status) }}</span>
               </li>
             </ul>
+            <Button v-if="trimmed(share)" variant="link" size="sm" class="team-all" data-team-all-steps @click="allSteps = true">
+              {{ t('teamWork.card.allSteps', { count: stepsOf(sheet, share.agentId).length }) }}</Button>
           </li>
         </ol>
         <p v-if="sheet.unassignedSteps" class="team-note">{{ t('teamWork.card.unassigned', { count: sheet.unassignedSteps }) }}</p>
@@ -124,6 +176,8 @@ const total = computed(() => fill(props.sheet.progress))
 .team-now-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
 .team-now[data-tone="danger"] { color: var(--color-danger); }
 .team-now[data-tone="danger"] .team-now-dot { background: var(--color-danger); animation: none; }
+/* Not going on (no recorded change for a while, or none recorded): a quiet grey dot that stays still, as 现在 shows it. */
+.team-now[data-progress="stale"] .team-now-dot, .team-now[data-progress="unrecorded"] .team-now-dot { background: var(--color-faint); animation: none; }
 @keyframes team-dot { 50% { opacity: .35; transform: scale(.8); } }
 .team-total, .team-share-state { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .team-bar { position: relative; width: 72px; height: 5px; overflow: hidden; border-radius: 5px; background: var(--color-surface-hover); }
@@ -143,15 +197,17 @@ const total = computed(() => fill(props.sheet.progress))
 .team-shares { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .team-share { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--radius-control); }
 .team-share + .team-share { box-shadow: 0 -1px 0 var(--color-border); }
-.team-share.is-self { background: var(--color-surface-subtle); box-shadow: none; }
-.team-share.is-self + .team-share { box-shadow: none; }
 .team-share-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .team-share-name { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); text-decoration: none; -webkit-user-select: none; user-select: none; }
 .team-share-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* The viewer's share is not a card inside the card: same surface, its name a little stronger. */
+.team-share.is-self .team-share-name { font-weight: var(--weight-strong); }
 .team-share-role { color: var(--color-muted); font-size: var(--text-meta); }
 .team-share-state { margin-left: auto; }
-.team-share-assignment { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
-.team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
+/* Two lines at most; the whole assignment is on hover (docs/fla-page.md). */
+.team-share-assignment { display: -webkit-box; margin: 0; overflow: hidden; color: var(--color-muted); font-size: var(--text-meta); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0 0 0 2px; list-style: none; }
+.team-all { justify-self: start; height: auto; padding: 2px 0 0 24px; user-select: none; }
 .team-step { display: flex; align-items: center; gap: 8px; color: var(--color-ink-soft); font-size: var(--text-control); }
 .team-check { display: grid; flex: none; width: 16px; height: 16px; place-items: center; border-radius: 50%; color: var(--color-on-accent); box-shadow: inset 0 0 0 1.5px var(--color-control-border); }
 /* A finished step: the ink check pops in on the spring. */
@@ -161,6 +217,9 @@ const total = computed(() => fill(props.sheet.progress))
 /* The step being done now: a gold ring with a dot inside that breathes. */
 .team-step.is-current .team-check { box-shadow: inset 0 0 0 1.5px var(--color-gold); }
 .team-step.is-current .team-check::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
+/* The viewer's current step with no recent recorded change: the same ring and dot, grey and still. */
+.team-step.is-current.is-stopped .team-check { box-shadow: inset 0 0 0 1.5px var(--color-faint); }
+.team-step.is-current.is-stopped .team-check::after { background: var(--color-faint); animation: none; }
 .team-step.is-current .team-step-title { color: var(--color-ink); font-weight: var(--weight-medium); }
 .team-note { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .team-open { display: inline-flex; align-items: center; gap: 2px; justify-self: end; color: var(--color-link); font-size: var(--text-control); text-decoration: none; -webkit-user-select: none; user-select: none; }

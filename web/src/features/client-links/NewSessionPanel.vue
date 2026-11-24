@@ -1,22 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { z } from 'zod'
+import { onMounted, ref, toRef } from 'vue'
 
-import { getJson } from '@/api/client'
-import { shapeOf } from '@/api/response-shape'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import UiIcon from '@/ui/UiIcon.vue'
 
-import { useClientLinks } from './client-links-store'
-import { loadTerminalWays, newSessionWay, openInTerminal, type NewSessionWay, type TerminalWays } from './new-session'
+import { openInTerminal, type NewSessionWay } from './new-session'
+import { useNewSessionClients } from './new-session-clients'
 
 // The inside of a floating panel that hands the person's AI one sentence
 // (「让 Tonborg 给你解释」, 项目的「整理」): one row per client with FULI in
-// it, as 设置 › 客户端接入 lists them, at most MAX_ROWS (11-08). That is a
-// client the page shows as connected or needing an update (FULI's entry is
-// there, an older one), and a CLI found in WSL, whose configuration the page
-// cannot read. Each row opens a new session there with `ask`, the way
+// it (new-session-clients.ts: connected or needing an update, and a CLI found
+// in WSL, at most MAX_ROWS). Each row opens a new session there with `ask`, the way
 // new-session.ts says: a documented new-chat link fills it in (never sent); a
 // CLI installed here opens in a new terminal and sends it. Any other row
 // copies the sentence and says where to paste it. Copying `copyText` (the
@@ -36,45 +31,13 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ done: [notice: string] }>()
 
-// Only what this panel reads of /api/system/client-connection/status: the built-in clients in the
-// page's order, then the ones the person described by hand.
-const statusClient = z.looseObject({ id: z.string(), label: z.string(), status: z.string(), sourceApplication: z.string().nullish() })
-const statusShape = shapeOf(z.looseObject({ clients: z.array(statusClient), customClients: z.array(statusClient).optional() }))
-type StatusClient = z.infer<typeof statusClient>
-const links = useClientLinks()
-const listed = ref<StatusClient[]>([])
-const terminals = ref<TerminalWays>({})
+const { rows, load } = useNewSessionClients(toRef(props, 'ask'), toRef(props, 'models'))
 // The row whose terminal is being opened.
 const launching = ref<string | null>(null)
 // The text the clipboard refused, shown to copy by hand.
 const failed = ref<string | null>(null)
-const MAX_ROWS = 7
-// Statuses that mean FULI's entry is in the client's configuration.
-const WITH_FULI = new Set(['connected', 'changed'])
 
-const connected = computed(() => listed.value
-  .filter(client => WITH_FULI.has(client.status) || terminals.value[client.id]?.environment === 'wsl'))
-const rows = computed(() => connected.value.slice(0, MAX_ROWS).map((client) => {
-  const choice = props.models?.[client.sourceApplication ?? '']
-  const way = newSessionWay(links.state?.manifest, terminals.value, client, { prompt: props.ask, model: choice?.model })
-  // The model's name shows only when the link really carries it.
-  // A client whose FULI entry is an older one still opens (FULI is in it), and its row says so:
-  // listed beside 设置 › 客户端's 「已接入 0」 without a word, it read as connected (rec issue 118).
-  const stale = client.status === 'changed' ? t('clientLinks.newSession.staleTag') : ''
-  const tags = (own: string) => [stale, own].filter(Boolean).join(' · ')
-  return { id: client.id, name: client.label, way, tags,
-    model: tags(way?.kind === 'link' && way.carriesModel && choice ? choice.label : '') }
-}))
-
-onMounted(() => {
-  // Either read may fail; copying still works without them.
-  void links.load().catch(() => {})
-  void getJson('/api/system/client-connection/status', statusShape).then((value) => {
-    listed.value = [...value.clients, ...(value.customClients ?? [])]
-    // Every client is asked: a CLI in WSL is listed although the page cannot see FULI in it.
-    return loadTerminalWays(listed.value.map(client => client.id)).then((ways) => { terminals.value = ways })
-  }).catch(() => {})
-})
+onMounted(() => { void load() })
 
 async function copy(text: string, notice: string) {
   try {

@@ -1,9 +1,10 @@
-import { computed, effectScope, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
+import { computed, type Ref } from 'vue'
 import { z } from 'zod'
 import { getJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
+import { sharedRead } from '@/lib/shared-read'
 
 // Where one FLA worked: which clients, which models, how many segments of work
 // each (rec issue 147). The server counts the conversation session records
@@ -66,68 +67,23 @@ export type WorkRow = z.infer<typeof rowSchema>
 export type WorkSegment = z.infer<typeof segmentSchema>
 export type WorkGap = z.infer<typeof gapSchema>
 export type WorkLocations = z.infer<typeof workLocationsSchema>
-export type WorkLocationsState = 'loading' | 'ready' | 'failed'
 
 export function readWorkLocations(personalSpaceId: string, agentId: string, signal?: AbortSignal): Promise<WorkLocations> {
   return getJson(`/api/project-agent-work-locations?${new URLSearchParams({ personalSpaceId, agentId })}`,
     workLocationsShape, { signal })
 }
 
-// One read per FLA, shared by every widget that shows it (the count and the
-// continue-elsewhere card): the read stops when the last one goes away.
-interface Source { value: Ref<WorkLocations | null>, state: Ref<WorkLocationsState>, users: number, stop: () => void }
-const sources = new Map<string, Source>()
-const keyOf = (spaceId: string, agentId: string) => `${spaceId}\u0000${agentId}`
-
-function open(spaceId: string, agentId: string): Source {
-  const key = keyOf(spaceId, agentId)
-  const existing = sources.get(key)
-  if (existing) { existing.users += 1; return existing }
-  const scope = effectScope(true)
-  const controller = new AbortController()
-  const source = scope.run(() => {
-    const value = ref<WorkLocations | null>(null)
-    const state = ref<WorkLocationsState>('loading')
-    readWorkLocations(spaceId, agentId, controller.signal)
-      .then((result) => { value.value = result; state.value = 'ready' })
-      .catch(() => { if (!controller.signal.aborted) state.value = 'failed' })
-    return { value, state }
-  })!
-  const opened: Source = { ...source, users: 1, stop: () => { controller.abort(); scope.stop() } }
-  sources.set(key, opened)
-  return opened
-}
-
-function close(spaceId: string, agentId: string) {
-  const key = keyOf(spaceId, agentId)
-  const source = sources.get(key)
-  if (!source) return
-  source.users -= 1
-  if (source.users > 0) return
-  source.stop()
-  sources.delete(key)
-}
+// One read per FLA, shared by every piece that shows it (the count on the
+// page and the continuation in the hand-off panel).
+const locations = sharedRead((key, signal) => readWorkLocations(key[0]!, key[1]!, signal))
 
 export function useWorkLocations(spaceId: Ref<string>, agentId: Ref<string>) {
-  const current = shallowRef<Source | null>(null)
-  let opened: [string, string] | null = null
-  watch(() => [spaceId.value, agentId.value] as const, ([space, agent]) => {
-    if (opened) close(...opened)
-    opened = space && agent ? [space, agent] : null
-    current.value = opened ? open(...opened) : null
-  }, { immediate: true })
-  onScopeDispose(() => { if (opened) close(...opened) })
-  return {
-    located: computed(() => current.value?.value.value ?? null),
-    state: computed<WorkLocationsState>(() => current.value?.state.value ?? 'loading'),
-  }
+  const { value, state } = locations.use(computed(() => [spaceId.value, agentId.value]))
+  return { located: value, state }
 }
 
 /** Tests start from no shared reads. */
-export function forgetWorkLocations() {
-  for (const source of sources.values()) source.stop()
-  sources.clear()
-}
+export const forgetWorkLocations = locations.forget
 
 /** The model column: the model as recorded, or UNREPORTED. */
 export function modelText(row: { model: string | null }): string {

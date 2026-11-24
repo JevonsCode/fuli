@@ -11,7 +11,7 @@ import TeamCard from './TeamCard.vue'
 import TeamIslandCapsule from './TeamIslandCapsule.vue'
 import TeamIslandDocked from './TeamIslandDocked.vue'
 import TeamOrbit from './TeamOrbit.vue'
-import { currentStepOf } from './team-sheets'
+import { currentStepOf, type TeamSheet } from './team-sheets'
 import { useTeamPeople } from './useTeamPeople'
 import { useTeamWork } from './useTeamWork'
 
@@ -28,11 +28,19 @@ import { useTeamWork } from './useTeamWork'
 // capsules slide out of and back into the button instead of cutting. On a
 // narrow screen there is no row over the page: TeamIslandDocked.vue puts one
 // button beside the dock and the tasks in a sheet from the bottom.
+// On an FLA's own page the shell passes that FLA here: its own tasks are already the page's
+// subject (现在, 手上的活), so the island leaves them out there and nowhere else.
+const props = defineProps<{ excludeAgentId?: string }>()
 const narrow = useMediaQuery('(max-width: 720px)')
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const team = useTeamWork(spaceId)
-const people = useTeamPeople(spaceId, team.running)
+const running = computed<TeamSheet[]>(() => {
+  const excluded = props.excludeAgentId
+  return excluded ? team.running.value.filter(sheet => sheet.leadAgentId !== excluded && !sheet.shares.some(share => share.agentId === excluded))
+    : team.running.value
+})
+const people = useTeamPeople(spaceId, running)
 
 const FOLDED_KEY = 'fuli.teamIsland.folded'
 const folded = ref(readFolded())
@@ -50,16 +58,16 @@ const openId = ref<string | null>(null)
 const panelId = useId()
 // The FLAs working right now across the running tasks, at most six, for the folded button.
 const ORBIT_LIMIT = 6
-const working = computed(() => [...new Set(team.running.value.flatMap(sheet => sheet.shares
+const working = computed(() => [...new Set(running.value.flatMap(sheet => sheet.shares
   .filter(share => share.status === 'running' || currentStepOf(sheet, share))
   .map(share => share.agentId)))].slice(0, ORBIT_LIMIT))
 // Capsules slide in one after another from the fold button and back into it.
-const capsules = computed(() => folded.value ? [] : team.running.value)
+const capsules = computed(() => folded.value ? [] : running.value)
 const SLIDE_IN = { opacity: 0, x: -14, scale: 0.96 }
 const slideOut = (index: number) => ({ ...SLIDE_IN, transition: { duration: 0.16, delay: index * 0.03 } })
 const slideIn = (index: number) => ({ opacity: 1, x: 0, scale: 1, transition: { ...SPRING, delay: index * 0.04 } })
 const root = ref<HTMLElement | null>(null)
-const openSheet = computed(() => team.running.value.find(sheet => sheet.taskId === openId.value) ?? null)
+const openSheet = computed(() => running.value.find(sheet => sheet.taskId === openId.value) ?? null)
 function toggle(taskId: string) { openId.value = openId.value === taskId ? null : taskId }
 function close() { openId.value = null }
 function outside(event: PointerEvent) { if (root.value && !root.value.contains(event.target as Node)) close() }
@@ -68,14 +76,14 @@ watch(openId, (id) => {
   else document.removeEventListener('pointerdown', outside)
 })
 // A task that stops running takes its open card with it.
-watch(() => team.running.value.map(sheet => sheet.taskId), (ids) => { if (openId.value && !ids.includes(openId.value)) close() })
+watch(() => running.value.map(sheet => sheet.taskId), (ids) => { if (openId.value && !ids.includes(openId.value)) close() })
 onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 </script>
 
 <template>
-  <TeamIslandDocked v-if="narrow && team.running.value.length" :sheets="team.running.value" :working="working" :space-id="spaceId"
+  <TeamIslandDocked v-if="narrow && running.length" :sheets="running" :working="working" :space-id="spaceId"
     :name-of="people.nameOf" :project-name="people.projectName" />
-  <div v-else-if="team.running.value.length" ref="root" class="team-islands" role="region"
+  <div v-else-if="running.length" ref="root" class="team-islands" role="region"
     :aria-label="t('teamWork.island.region')" data-widget="team-island" data-term="work.island" @keydown.esc="close">
     <AnimatePresence>
       <motion.div v-if="openSheet" :id="panelId" :key="openSheet.taskId" class="island-card" :initial="{ opacity: 0, y: 8 }"
@@ -83,13 +91,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
         <TeamCard :sheet="openSheet" :space-id="spaceId" :name-of="people.nameOf" :project-name="people.projectName" default-open />
       </motion.div>
     </AnimatePresence>
-    <Button variant="ghost" class="island-fold" :aria-expanded="!folded" :aria-label="t(folded ? 'teamWork.island.unfold' : 'teamWork.island.fold', { count: team.running.value.length })"
+    <Button variant="ghost" class="island-fold" :aria-expanded="!folded" :aria-label="t(folded ? 'teamWork.island.unfold' : 'teamWork.island.fold', { count: running.length })"
       data-team-island-fold @click="toggleFolded">
       <AnimatePresence mode="wait" :initial="false">
         <motion.span :key="folded ? 'count' : 'chevron'" class="island-fold-face" :initial="{ opacity: 0, scale: 0.6 }"
           :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }">
-          <TeamOrbit v-if="folded && working.length" :agent-ids="working" :count="team.running.value.length" />
-          <span v-else-if="folded" class="island-fold-count ui-num">{{ team.running.value.length }}</span>
+          <TeamOrbit v-if="folded && working.length" :agent-ids="working" :count="running.length" />
+          <span v-else-if="folded" class="island-fold-count ui-num">{{ running.length }}</span>
           <UiIcon v-else name="chevron-left" :size="16" />
         </motion.span>
       </AnimatePresence>

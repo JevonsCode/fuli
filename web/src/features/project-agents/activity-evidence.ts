@@ -6,13 +6,6 @@ import {
   normalizeWorkerRuntime, stringArrayOf, stringOf, unknownRecord, valueOf,
 } from './task-evidence'
 
-export function activityRange() {
-  const to = new Date()
-  const from = new Date(to)
-  from.setUTCFullYear(from.getUTCFullYear() - 1)
-  return { fromDate: toIsoDate(from), toDate: toIsoDate(to) }
-}
-function toIsoDate(value: Date) { return value.toISOString().slice(0, 10) }
 export function normalizeActivity(
   value: unknown, fallback: { agentId: string; personalSpaceId: string },
 ): ProjectAgentActivityResult | null {
@@ -37,6 +30,7 @@ export function normalizeActivity(
   return { agentId: stringOf(record, 'agentId', 'agent_id') ?? fallback.agentId, personalSpaceId: stringOf(record, 'personalSpaceId', 'personal_space_id') ?? fallback.personalSpaceId, fromDate, toDate, days }
 }
 
+function toIsoDate(value: Date) { return value.toISOString().slice(0, 10) }
 function fillActivityCalendar(reportedDays: ProjectAgentActivityDay[], fromDate: string, toDate: string) {
   const byDate = new Map(reportedDays.map((day) => [day.date, day]))
   const from = new Date(`${fromDate}T00:00:00Z`)
