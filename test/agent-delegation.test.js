@@ -420,3 +420,19 @@ test('rec#80: only the newest messages are read for a relayed decision', async (
   await verifiedPersonWords(app, {}, '可以');
   assert.equal(asked, 5);
 });
+
+test('when a habit applies is set only with the person\'s words, relayed through the console gate', async (t) => {
+  const sent = [];
+  const { app } = relayApp(async (input) => { sent.push(input); return { result: {}, operationId: 'op-case' }; },
+    ['演示那条只在做演示时适用']);
+  const call = (input) => callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'PUT /api/knowledge/:itemKind/:itemId/applies-when', params: { itemKind: 'entity', itemId: 'habit-a' },
+    body: { personalSpaceId: 'space-a', appliesWhen: '做演示时', reason: 'The person ticked it' }, reason: 'Asked in chat', ...input });
+  await assert.rejects(call({}), { code: 'person_words_required' });
+  await assert.rejects(call({ personWords: '都加上吧' }), { code: 'person_words_not_found' });
+  assert.deepEqual(sent, []);
+  const result = await call({ personWords: '演示那条只在做演示时适用' });
+  assert.deepEqual([sent[0].method, sent[0].path, result.category], ['PUT', '/api/knowledge/entity/habit-a/applies-when', 'decisions']);
+  const bare = await gate(delegation(t), 'PUT', '/api/knowledge/entity/habit-a/applies-when');
+  assert.deepEqual([bare.ran, bare.sent.statusCode, bare.sent.body.code], [false, 400, 'person_words_required']);
+});

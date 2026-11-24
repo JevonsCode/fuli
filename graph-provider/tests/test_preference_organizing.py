@@ -3,6 +3,7 @@ preferences and, on the first page, the copies the duplicate pair rules call
 one, compared within one aspect and one scope (a relationship also within one
 relation type and the same endpoints), proposed and never merged. Synthetic
 preferences and a scripted driver; needs no graph."""
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -15,11 +16,12 @@ SAME_WORDS = ('Reply tone', 'Answer in short plain sentences.')
 
 
 def preference(item_id, name, summary=None, *, aspect='taste', scope='global', project=None, status='pending',
-               minutes=0, fact=None):
+               minutes=0, fact=None, attributes=None):
     item = {'item_id': item_id, 'name': name, 'summary': summary, 'fact': fact,
             'created_at': T0 + timedelta(minutes=minutes), 'confirmation_status': status, 'blocked': False,
             'scope': ['', [], '', ''], 'said_at': None}
-    return {'item': item, 'aspect': aspect, 'scope': scope, 'project_id': project, 'project_ids': [], 'agent_id': None}
+    return {'item': item, 'aspect': aspect, 'scope': scope, 'project_id': project, 'project_ids': [], 'agent_id': None,
+            'attributes_json': json.dumps(attributes) if attributes is not None else None}
 
 
 def relationship(item_id, fact, *, relation='PREFERS', source='person', target='layout', current=True, minutes=0):
@@ -137,6 +139,26 @@ async def test_a_long_preference_is_cut_and_a_team_space_is_refused():
         await read_preference_organizing(Store(ScanDriver([]), kind='team'), {},
                                          PreferenceOrganizingRead(personal_space_id='space-synthetic'))
     assert refused.value.status_code == 422
+
+
+async def test_each_preference_carries_the_case_it_states_and_whether_it_is_a_hard_rule():
+    page = await read(ScanDriver([
+        preference('plain', 'Reply tone', 'Answer in short plain sentences.'),
+        preference('stated', 'Decks', 'Hand decks to the deck helper.',
+                   attributes={'appliesWhen': ' making slide decks ', 'constraint': 'hard'}),
+        # Read as an entry reads them: the attributes' own case wins over a nested one; an empty case is none.
+        preference('nested', 'Sheets', 'Freeze the header row.',
+                   attributes={'preference_qualifiers': json.dumps({'appliesWhen': 'spreadsheet work'})}),
+        preference('both', 'Charts', 'Label every axis.',
+                   attributes={'appliesWhen': 'chart work', 'preference_qualifiers': {'appliesWhen': 'old'}}),
+        preference('blank', 'Naming', 'Name functions by meaning.', attributes={'appliesWhen': '  ', 'constraint': 'soft'}),
+    ]))
+    stated = {item.item_id: (item.applies_when, item.hard) for item in page.preferences}
+    assert stated == {'plain': (None, None), 'stated': ('making slide decks', True), 'nested': ('spreadsheet work', None),
+                      'both': ('chart work', None), 'blank': (None, None)}
+    # Only what is stated goes into the answer.
+    plain = next(item for item in page.preferences if item.item_id == 'plain').model_dump(exclude_none=True)
+    assert 'hard' not in plain and 'applies_when' not in plain
 
 
 def test_the_provider_serves_the_read_as_a_post_query_without_empty_fields(monkeypatch):

@@ -11,7 +11,8 @@ import { describe, expect, it } from 'vitest'
 // the knowledge quick edit, the permanent delete and the conflict policy got theirs.
 // 2026-11-13: 114 after the LAN roundtable card's status answers got theirs (rec issue 127).
 // 2026-11-23: 113 after the project team read got its shape (docs/workstreams.md).
-const UNCHECKED_BASELINE = 113
+// 2026-11-25: 112 after the 偏好 page's graph read got its shape (habits that never say when they apply).
+const UNCHECKED_BASELINE = 112
 const sources = import.meta.glob<string>(['../**/*.ts', '../**/*.vue', '!../**/*.spec.ts', '!./client.ts'], { query: '?raw', import: 'default', eager: true })
 const UNCHECKED_CAST = /\b(?:get|post|put|patch|delete)Json</g
 

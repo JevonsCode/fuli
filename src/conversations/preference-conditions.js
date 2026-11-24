@@ -6,11 +6,9 @@
 //
 // Missing a habit the person must follow costs more than sending one more, and
 // a hard rule most of all, so the judgment leans one way throughout:
-// - A hard rule is conditional only by an `appliesWhen` or an opening that
-//   says it *applies* only there; 「仅限…」 / "Only for…" limit an action, for
-//   every task (preference-index.js statedScope).
-// - A case that means every task (「总是」「默认」「所有任务」「always」「by
-//   default」) is no case: the habit is unconditional.
+// - Whether a habit states a case at all, and which, is
+//   preference-stated-case.js: a hard rule only by an `appliesWhen` or an
+//   opening that says it *applies* only there; a case meaning every task is none.
 // - Unknown counts as met: a request too short to judge by (fewer than 8
 //   Chinese characters or 3 Latin words once filler is out), one that points
 //   back at earlier words (REFERENCES: 「按上面说的继续做」), no request at all
@@ -28,8 +26,9 @@
 // can tell it touches. The judgment is a rule, never a model call.
 import { basename } from 'node:path';
 import { singleLine } from '../text/single-line.js';
-import { distinctiveUnits, preferenceName, statedScope, withoutFiller } from './preference-index.js';
-import { preferenceAlwaysInline, preferenceAppliesWhen } from '../graphiti/preference-task-scope.js';
+import { distinctiveUnits, preferenceName, withoutFiller } from './preference-index.js';
+import { preferenceAlwaysInline } from '../graphiti/preference-task-scope.js';
+import { preferenceCondition } from './preference-stated-case.js';
 import { entryPreferenceScene } from './preference-snapshot.js';
 import { taskPreferenceRead } from '../mcp/preference-delivery.js';
 
@@ -48,8 +47,6 @@ export const CONDITIONAL_FOLDED = Symbol('conditional habits counted without a l
 // All habits an entry's frame leaves out because this task is not the case they state.
 export const conditionalOmitted = value => (value?.preferences_omitted?.conditional?.length ?? 0) + (value?.[CONDITIONAL_FOLDED] ?? 0);
 
-// A case is shown whole in its own words up to this; past it, cut.
-const CONDITION_CHARS = 120;
 // What a hard rule's line adds of what it says: its first sentence, cut at a
 // word end to this many columns (a Chinese character counts two: 40 of them,
 // or 80 Latin characters).
@@ -69,31 +66,6 @@ const REFERENCE = new RegExp(REFERENCES.map(word => /^[a-z]/u.test(word) ? `\\b$
 const RECENT_MESSAGES = 4;
 // Chinese words that carry no meaning of their own in a request, beyond filler.
 const HAN_FUNCTION = /[了吗呢吧啊呀把被请帮我你他她它们一下看]/gu;
-// A case that means every task: one of these words, and nothing else of
-// substance once these and generic nouns are out.
-const UNIVERSAL = /总是|始终|一直|默认|全部|所有|任何|任意|每次|每个|一切|\b(?:always|any|every|all|default|everywhere|anytime|whenever)\b/iu;
-const GENERIC = /总是|始终|一直|默认|全部|所有|任何|任意|每次|每个|一切|任务|工作|时候|情况|场景|项目|对话|会话|类型|种类|事情|都|时|\b(?:always|any|every|all|by|default|everywhere|anytime|whenever|in|on|at|of|the|a|an|kinds?|types?|tasks?|work|cases?|situations?|projects?|times?|sessions?|conversations?)\b/giu;
-
-// The case a habit states, as { text, units, end }, or null for a habit
-// without one. `appliesWhen` (free text a person or Agent wrote) wins over a
-// case the instruction states in its opening words; a habit that states
-// neither, or states every task, is unconditional, whatever its words seem to
-// be about. `end`: where an opening that states the case ends in the
-// instruction (0 where it opens with the rule itself).
-export function preferenceCondition(item) {
-  const instruction = typeof item?.instruction === 'string' ? item.instruction : '';
-  const opening = statedScope(instruction, { explicitOnly: preferenceAlwaysInline(item) });
-  const appliesWhen = preferenceAppliesWhen(item);
-  const phrase = appliesWhen ?? opening?.phrase;
-  if (!phrase || universal(phrase)) return null;
-  const flat = singleLine(phrase).replace(/\s+/gu, ' ');
-  const text = [...flat].length > CONDITION_CHARS ? `${[...flat].slice(0, CONDITION_CHARS - 1).join('').trimEnd()}…` : flat;
-  return { text, units: distinctiveUnits(phrase), end: opening?.end ?? 0 };
-}
-
-function universal(phrase) {
-  return UNIVERSAL.test(phrase) && !distinctiveUnits(phrase.replace(GENERIC, ' ')).length;
-}
 
 // One line for a habit left out because its case is not this task's: its key
 // and layer, whether it is a hard rule, and the case in its own words; a hard
