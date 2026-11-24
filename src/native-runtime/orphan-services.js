@@ -78,8 +78,9 @@ const JVM = /^"?(?:(?! -)[^"])*\/bin\/java"?\s+-/;
 export function managedNeo4jCommand(runtimeDir, command) {
   if (typeof command !== 'string' || typeof runtimeDir !== 'string' || !runtimeDir) return false;
   if (!JVM.test(command) || !/(?:^|\s)org\.neo4j\.[\w.]+(?:\s|$)/.test(command)) return false;
+  // Either separator: the folder is joined with the platform's own.
   return [canonical(runtimeDir), runtimeDir].some(root => root && new RegExp(
-    `${escapeRegExp(root)}/(?:neo4j-assets/jvs-a-[a-f0-9-]+/)?neo4j-community-\\d[^/\\s"':]*/`).test(command));
+    `${escapeRegExp(root)}[\\\\/](?:neo4j-assets[\\\\/]jvs-a-[a-f0-9-]+[\\\\/])?neo4j-community-\\d[^/\\\\\\s"':]*[\\\\/]`).test(command));
 }
 
 // Ends what findOrphanedServices found, each process group once, gracefully

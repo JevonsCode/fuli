@@ -246,8 +246,10 @@ test('another controller holding the run\'s lock past the wait is refused in wor
   const { digest } = await planUnfinishedImport({ paths, mode: 'native' });
   const { acquireFileLock } = await import('../src/storage/file-lock.js');
   const unlock = acquireFileLock(`${runRecord(paths)}.lock`);
-  t.after(unlock);
-  const result = await runTrayAction('recover-start', context, { ...options, recoveryDigest: digest, graphData: () => assert.fail('no import') });
+  // Released before the test's folder is removed: Windows keeps a folder whose lock file is still open.
+  let result;
+  try { result = await runTrayAction('recover-start', context, { ...options, recoveryDigest: digest, graphData: () => assert.fail('no import') }); }
+  finally { unlock(); }
   assert.deepEqual([result.ok, result.failure.code, result.failure.reason, result.failure.pid], [false, 'recovery_refused', 'import_running', null]);
 });
 
