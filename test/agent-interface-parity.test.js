@@ -127,6 +127,8 @@ const RELAYED_DECISIONS = new Set([
   'PUT /api/project-agents/:agentId/occupation-kit',
   // rec#123: the person completes or cancels a task themself.
   'POST /api/project-agent-tasks/:taskId/close',
+  // Settling names FLAs share renames FLAs the person knows: an Agent proposes, the person decides.
+  'POST /api/project-agent-name-fixes/apply',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -178,7 +180,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [60, 17, 19, 41]);
+    catalog.coverage.localUserOnly], [61, 17, 20, 41]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {

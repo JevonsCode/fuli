@@ -75,6 +75,10 @@ export function projectAgentRecord(value) {
     Object.hasOwn(profile, 'display_name'));
   copyOptional(result, 'nameSuggestion', value.name_suggestion,
     Object.hasOwn(value, 'name_suggestion'));
+  // The names it was called before and, for 30 days after a rename, the latest one.
+  copyOptional(result, 'formerName', value.former_name, Object.hasOwn(value, 'former_name'));
+  copyOptional(result, 'nameHistory', (value.name_history ?? []).map(projectAgentNameChange),
+    Object.hasOwn(value, 'name_history'));
   copyOptional(result, 'legacyAgentIds', value.legacy_agent_ids,
     Object.hasOwn(value, 'legacy_agent_ids'));
   copyOptional(result, 'employeeNumber', value.employee_number,
@@ -1256,4 +1260,17 @@ function withoutUndefined(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined)
   );
+}
+
+// One name an Agent was called until `until` (project_agent_name_history.py).
+// A project an Agent works in (graph-provider WorkingProject): a temporary one
+// stores no name, so the console words it by its number in its own language.
+export function workingProject(project) {
+  return { projectId: String(project?.project_id ?? ''), name: String(project?.name ?? '').slice(0, 160),
+    scopeType: project?.scope_type === 'temporary' ? 'temporary' : 'registered' };
+}
+
+export function projectAgentNameChange(change) {
+  return { name: change.name, until: change.until, reason: change.reason,
+    keptByAgentId: change.kept_by_agent_id ?? null, gaveWay: change.gave_way ?? null };
 }

@@ -16,9 +16,11 @@ const agent = (agentId = 'agent-synthetic', name = 'Iris Vale', displayName: str
   createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z',
 }) as unknown as ProjectAgentRecord
 
+// The refusal as the console API sends it (src/http/error-mapping.js): the
+// sentence for Agents, and who has the name and free names as fields.
 const taken = new ApiError('409', 409, JSON.stringify({
-  error: 'agent_name_taken: another Agent in this personal space already uses this name; free names: Nora Lin, Theo Hart. Choose one or propose another.',
-  code: 'provider_error',
+  error: 'agent_name_taken — another Agent in this personal space already uses this name; free names — Nora Lin, Theo Hart. Choose one or propose another.',
+  code: 'agent_name_taken', usedBy: [], freeNames: ['Nora Lin', 'Theo Hart'],
 }))
 
 beforeEach(() => putJson.mockReset())
@@ -68,6 +70,34 @@ describe('AgentNameEditor', () => {
     await flushPromises()
     expect(putJson).toHaveBeenLastCalledWith('/api/project-agents/agent-synthetic/name', { personalSpaceId: 'space-a', displayName: 'Theo Hart' }, SHAPE)
     expect(wrapper.find('[data-agent-name-free]').exists()).toBe(false)
+  })
+
+  it('says who already has the name and where, and shows 原名 after a recent rename', async () => {
+    // A name with brackets and a project name with separators are shown as they are.
+    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
+      error: 'agent_name_taken — another Agent uses this name', freeNames: ['Nora Lin'],
+      usedBy: [{ agentId: 'agent-x', name: 'Morgan (Vale)', projects: [
+        { projectId: 'p-a', name: 'Saturn | A; free names: B', scopeType: 'registered' },
+        { projectId: `temporary-${'c0'.repeat(32)}`, name: '', scopeType: 'temporary' }] }] })))
+    const wrapper = mount(AgentNameEditor, { props: { agent: { ...agent(), formerName: 'Morgan Vale' } } })
+    expect(wrapper.get('[data-agent-former-name]').text()).toBe('原名 Morgan Vale')
+    await edit(wrapper, 'morgan vale')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('「morgan vale」已经是 Morgan (Vale)（Saturn | A; free names: B、临时项目 #c0c0c0c0）的名字')
+    expect(wrapper.findAll('[data-agent-name-free] button').map(button => button.text())).toEqual(['Nora Lin'])
+    expect(mount(AgentNameEditor, { props: { agent: agent() } }).find('[data-agent-former-name]').exists()).toBe(false)
+  })
+
+  it('says when a name that is still another FLA\'s 原名 becomes free', async () => {
+    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
+      error: 'agent_name_taken', freeNames: ['Nora Lin'],
+      usedBy: [{ agentId: 'agent-x', name: 'Wren Hill', projects: [], formerName: 'Morgan Vale', freeFrom: '2026-12-21' }] })))
+    const wrapper = mount(AgentNameEditor, { props: { agent: agent() } })
+    await edit(wrapper, 'Morgan Vale')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('「Morgan Vale」是 Wren Hill 的原名，2026-12-21 之后可以用')
   })
 
   it('gives a renamed built-in role its own name back; other Agents have no such button', async () => {
