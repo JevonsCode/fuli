@@ -420,17 +420,23 @@ test('a listener move that cannot listen anywhere says why', { timeout: 30_000 }
   } finally { await laptop.close(); }
 });
 
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
 // A listener that never finishes closing (a connection holding it, say) used to hold the move forever, and
 // every move after it, the person's 「重新监听」 too. The move now gives up after its limit and says why.
 test('a listener that does not stop in time ends the move with a reason and leaves 重新监听 working', { timeout: 30_000 }, async () => {
   const listener = recordedListener();
   let stuck = false;
-  // The first listener closes its socket but never says it is done.
+  // The first listener closes its socket but does not say it is done until the test lets it: the stop that
+  // waits for it then closes the coordinator's database too, which Windows needs before the test's folder
+  // can be removed (an open coordinator.sqlite-shm is EBUSY there).
+  const done = Promise.withResolvers();
+  let closing = null;
   const startServer = async (options) => {
     const server = await listener.startServer(options);
     if (stuck) return server;
     stuck = true;
-    return { ...server, close: async () => { await server.close(); await new Promise(() => {}); } };
+    return { ...server, close: () => (closing = server.close().then(() => done.promise)) };
   };
   const laptop = await device('laptop', { runtimeOptions: { nearbyListenHost: '0.0.0.0', interfaces: () => LAN,
     startServer, moveStopMs: 50 } });
@@ -448,7 +454,13 @@ test('a listener that does not stop in time ends the move with a reason and leav
     const again = await Promise.race([laptop.runtime.reopenListener(), delay(5_000, null)]);
     assert.ok(again, 'the person\'s 重新监听 is not held behind the stuck stop');
     assert.deepEqual([again.coordinator.listening, again.coordinator.listenFailure, listenerHost(laptop)], [true, null, '127.0.0.1']);
-  } finally { await laptop.close(); }
+  } finally {
+    // The late stop ends: it closes the first coordinator's database in the turn after its close answers.
+    done.resolve();
+    await closing;
+    await tick();
+    await laptop.close();
+  }
 });
 
 test('a device that leaves by itself ends the coordinator\'s waiting share for it, as a revoke does', { timeout: 30_000 }, async () => {
