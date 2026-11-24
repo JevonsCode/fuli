@@ -1049,8 +1049,8 @@ class StoreProjectAgentExecutors(
         """Archive only explicitly marked test identities; never delete them."""
 
         self._require_personal()
-        refuse_global_write(self, 'FLAs of the roster')
         await self.authorize(actor, personal_space_id, 'maintainer')
+        refuse_global_write(self, 'FLAs of the roster')
         if not test_source.strip():
             raise HTTPException(status_code=422, detail='test source is required')
         records, _, _ = await self.runtime.driver.execute_query(

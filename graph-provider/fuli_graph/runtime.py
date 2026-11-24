@@ -227,8 +227,9 @@ class ManagedNeo4jDriver(Neo4jDriver):
     @asynccontextmanager
     async def replica_import_transaction(self):
         """The one write a read-only copy lets through: its import
-        (scope_import.py, the only caller). The copies' digests are taken
-        again once it committed; writes meanwhile compare with those."""
+        (scope_import.py), and the release of copies when this computer stops
+        keeping them (scope_release.py), the only callers. The copies' digests
+        are taken again once it committed; writes meanwhile compare with those."""
         guard = self.replica_guard
         async with guard.held_for_import():
             async with self._fenced_transaction(copies_checked=False) as transaction:

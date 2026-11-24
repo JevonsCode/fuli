@@ -21,6 +21,17 @@ from .provider_values import stable_uuid
 # The relationships the defaults are hung on the space by, and handed over with them.
 DEFAULT_LINKS = frozenset({'HAS_PROJECT_AGENT_IDENTITY', 'HAS_PROJECT_AGENT_RECRUITMENT_POLICY'})
 
+# A recruitment of this computer's project whose FLA the owner of `global` makes
+# (the roster is its): status 'blocked' with this reason_code until the copy brings
+# the FLA (replica_recruitment_completion.py). Only a graph whose `global` is a copy
+# writes it; the routing reason the recruitment had is the task's routing_reason.
+RECRUITMENT_ON_OWNER = 'recruitment_on_owner'
+
+
+def waits_for_owner(recruitment) -> bool:
+    """A recruitment (ProjectAgentRecruitmentRecord) waiting for the owner of `global` to make its FLA."""
+    return recruitment.status == 'blocked' and recruitment.reason_code == RECRUITMENT_ON_OWNER
+
 
 def is_system_default(label: str, properties: dict, space_id: str, provider_id: str) -> bool:
     """A record only the Provider itself makes, under an ID it derives:

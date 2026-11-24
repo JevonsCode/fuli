@@ -97,8 +97,8 @@ class StoreOccupationCatalog:
 
     async def create_occupation(self, actor, request):
         self._require_personal()
-        refuse_global_write(self, 'an occupation of the catalog')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'an occupation of the catalog')
         async with query_store_transaction(self) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)
             key = f'custom_{uuid4().hex}'
@@ -119,8 +119,8 @@ class StoreOccupationCatalog:
 
     async def update_occupation(self, actor, key, request, *, delete=False):
         self._require_personal()
-        refuse_global_write(self, 'an occupation of the catalog')
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'an occupation of the catalog')
         async with query_store_transaction(self) as scoped:
             await scoped._ensure_occupation_catalog(request.personal_space_id)
             entries = await scoped._occupation_entries(request.personal_space_id, key, include_archived=delete)

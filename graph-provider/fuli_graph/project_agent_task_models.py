@@ -76,6 +76,9 @@ ProjectAgentRoutingReason = Literal[
     'explicit_unassigned',
     'hr_unavailable',
 ]
+# A recruitment's reason: its routing reason, or, while the owner of `global`
+# makes its FLA, that wait (global_replica.RECRUITMENT_ON_OWNER).
+ProjectAgentRecruitmentReason = ProjectAgentRoutingReason | Literal['recruitment_on_owner']
 ProjectAgentPositionKind = Literal['durable', 'temporary']
 ProjectAgentRecruitmentStatus = Literal[
     'awaiting_confirmation',
@@ -822,7 +825,7 @@ class ProjectAgentRecruitmentRecord(StrictModel):
     position_kind: ProjectAgentPositionKind
     work_kind: str
     required_capabilities: list[str]
-    reason_code: ProjectAgentRoutingReason
+    reason_code: ProjectAgentRecruitmentReason
     reason: str
     status: ProjectAgentRecruitmentStatus
     confirmation_mode: ProjectAgentRecruitmentConfirmationMode

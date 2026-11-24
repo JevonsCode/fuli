@@ -92,13 +92,15 @@ async def snapshot(driver, space):
     return sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in records)
 
 
-async def host_global(settings):
-    """The host: a space of its own with people, work and habits; started again, as a host's
-    Provider is at every start of FULI, so its defaults are all there (fixed roles, recruitment
-    policy); its global export; then removed from this graph."""
+async def host_global(settings, seed=None):
+    """The host: a space of its own with people, work and habits (and what `seed(client, space)`
+    adds); started again, as a host's Provider is at every start of FULI, so its defaults are all
+    there (fixed roles, recruitment policy); its global export; then removed from this graph."""
     async with provider_client(settings) as (client, _):
         await no_personal_space(client)
         driver, space, group = await scenario(client)
+        if seed:
+            await seed(client, space)
     async with provider_client(settings) as (client, _):
         try:
             envelope = await export(client, space, 'global')
