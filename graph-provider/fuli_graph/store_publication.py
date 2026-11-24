@@ -16,6 +16,7 @@ from .knowledge_versions import lock_knowledge
 from .store_transactions import query_store_transaction
 from .publication_submission import decide_submission
 from .publication_submission_models import PublicationSubmissionDecision
+from .replica_write_guard import refuse_global_write
 
 # An FLA's own knowledge stays in the personal graph; Node refuses to queue it
 # for a team project and so does the Provider (0.20.1).
@@ -46,6 +47,7 @@ class StorePublication:
         """Internal submission protocol; every transition serializes with erasure."""
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'maintainer')
+        refuse_global_write(self, 'a publication draft')
         await self._refuse_project_agent_draft(actor, space, draft_id, decision.decision)
         refusal = None
         async with query_store_transaction(self) as scoped:
@@ -67,6 +69,7 @@ class StorePublication:
     ) -> PublicationDraftRecord:
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'a publication draft')
         draft_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -198,6 +201,7 @@ class StorePublication:
             return await self.decide_publication_submission(actor, personal_space_id, draft_id, decision)
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'maintainer')
+        refuse_global_write(self, 'a publication draft')
         await self._refuse_project_agent_draft(actor, space, draft_id, decision.decision)
         records, _, _ = await self.runtime.driver.execute_query(
             '''
@@ -245,6 +249,7 @@ class StorePublication:
     ) -> SubscriptionRecord:
         self._require_personal()
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'a subscription')
         subscription_id = stable_uuid(
             self.settings.provider_id,
             request.personal_space_id,
@@ -303,6 +308,7 @@ class StorePublication:
     ) -> SubscriptionDeleteResult:
         self._require_personal()
         await self.authorize(actor, personal_space_id, 'maintainer')
+        refuse_global_write(self, 'a subscription')
         records, _, _ = await self.runtime.driver.execute_query(
             '''
             MATCH (:FuliSpace {id: $personal_space_id})-[:SUBSCRIBES_TO]->

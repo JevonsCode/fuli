@@ -70,6 +70,8 @@ class StoreProjectAgentMemory:
         self._require_personal()
         async with query_store_transaction(self) as scoped:
             space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            if request.personal_project_id is None:
+                refuse_global_write(scoped, "an FLA's global memory")
             await lock_knowledge(scoped, space)
             await require_source_available(scoped, space, source_application=request.source_application,
                                            session_id=request.source_session_id)
@@ -77,8 +79,6 @@ class StoreProjectAgentMemory:
 
     async def _write_project_agent_memory(self, actor, request):
         self._require_personal()
-        if request.personal_project_id is None:
-            refuse_global_write(self, "an FLA's global memory")
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         agent = await authorize_project_agent(
             self, actor, space, request.personal_project_id, request.agent_id,

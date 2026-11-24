@@ -169,7 +169,8 @@ def test_entry_refusals_name_the_owner():
 
 
 def test_only_the_import_writes_past_the_guard():
-    """The exemption is a driver method only scope_import.py calls: no other
+    """The exemption is a driver method only the import and the release of copies
+    (scope_import.py, scope_release.py) call: no other
     module can borrow it, nor run a write without the guard's check."""
     callers, unchecked = set(), set()
     for path in sorted(PACKAGE.glob('*.py')):
@@ -178,5 +179,5 @@ def test_only_the_import_writes_past_the_guard():
                 callers.add(path.name)
             if isinstance(node, ast.keyword) and node.arg == 'copies_checked':
                 unchecked.add(path.name)
-    assert callers == {'scope_import.py'}
+    assert callers == {'scope_import.py', 'scope_release.py'}
     assert unchecked == {'runtime.py'}

@@ -20,8 +20,8 @@ MAX_GUARDED_RECORDS copies it does not, and the status says so. Tests turn it
 on for every write (`STRICT`), so a write path that changes a copy fails there.
 
 The import is the one writer it lets through (replica_import_transaction in
-runtime.py, which only scope_import.py calls; tests/test_replica_write_guard.py
-keeps it so). A format backfill runs before the digests are taken (at start, and
+runtime.py, which only scope_import.py calls, and scope_release.py when this
+computer stops keeping copies; tests/test_replica_write_guard.py keeps it so). A format backfill runs before the digests are taken (at start, and
 again after a person's confirmed migration), so an automatic migration that
 only adds fields may shape copies as it shapes every record.
 """
