@@ -148,6 +148,10 @@ void main() {
     expect(input, contains('重新运行那次导入（/exports/fuli-1）'));
     expect(input, isNot(contains('<')));
     expect(zh.unfinishedImportCommands(again).first.label, '重新运行那次导入');
+    // Without the path (the CLI line leaves local paths out), the words never show "null"; the command holds it.
+    final pathless = StartupFailure('graph_import_unfinished', {...again.facts}..remove('wayPath'));
+    expect(zh.startFailedBecause(pathless), allOf(contains('重新运行那次导入。'), isNot(contains('null'))));
+    expect(en.startFailedBecause(pathless), allOf(contains('Run that import again.'), isNot(contains('null'))));
     // A marker that cannot be read: its file, and moving it away by hand as the last way out.
     const damaged = StartupFailure('graph_import_unfinished', {'mode': 'native', 'graphs': ['personal', 'workspace'], 'readable': false,
       'markerPath': '/fuli-data/graph-import-unfinished-native.json', 'latestCopy': '/fuli-data/backups/graph/before-import-2',

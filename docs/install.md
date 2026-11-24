@@ -320,7 +320,8 @@ second import while the marker is there keeps the first one's copy as the way ba
 marker says may be half written stays so until that import has written it whole: when it fails, even
 before writing anything, the marker and the refused start stay. When importing back does not work (the
 backup cannot be read, a file is held), give the import up with
-`fuli graph abandon-import --target-mode <mode>`: it asks first, moves each graph that may be half
+`fuli graph abandon-import --target-mode <mode>` in your own terminal (it is refused without one; `--yes` only
+skips the question there, and on macOS native it points to `fuli graph runtime recover --abandon-import`): it asks first, moves each graph that may be half
 written aside (native: `native-runtime/recovered/<time>/`; containers: `recovered-<time>/` inside the
 graph's Docker volume; never deleted, and the output says how to move it back), clears the marker, and
 FULI starts with that graph empty. A graph that was empty before a failed import is emptied the same

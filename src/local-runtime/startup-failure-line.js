@@ -9,11 +9,21 @@
 const PREFIX = 'FULI_STARTUP_FAILURE ';
 const MAX_LINE = 4096;
 
+// A line that would be too long (long paths, several commands) drops its
+// longest fields first, but never the code or a command to copy: the paths
+// beside them only repeat what the commands already hold.
 export function startupFailureLine(error) {
   const failure = error?.startupFailure;
   if (!failure || typeof failure.code !== 'string') return null;
-  const line = `${PREFIX}${JSON.stringify(failure)}`;
-  return line.length <= MAX_LINE ? line : null;
+  const facts = { ...failure };
+  for (;;) {
+    const line = `${PREFIX}${JSON.stringify(facts)}`;
+    if (line.length <= MAX_LINE) return line;
+    const longest = Object.keys(facts).filter(key => key !== 'code' && !/command$/i.test(key))
+      .sort((a, b) => JSON.stringify(facts[b]).length - JSON.stringify(facts[a]).length)[0];
+    if (!longest) return null;
+    delete facts[longest];
+  }
 }
 
 // The reason a failed CLI run printed, and its stderr without that line.

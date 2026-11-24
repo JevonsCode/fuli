@@ -1158,9 +1158,9 @@ test('an unfinished rollback is worded as a rollback, with the versions and prog
   assert.doesNotMatch(back, /新版本|旧版本|\bnewer\b|\bolder\b/, back);
   // Without an install time each side still says which copy it is, then its directory.
   const untimed = formatRecoveryPlan({ ...plan, fromInstalledAt: null, toInstalledAt: null });
-  assert.match(untimed, /改用 5\.26\.28（更新前保留的那一份程序，neo4j-assets\/jvs-a-1111\/neo4j-community-5\.26\.28）/);
-  assert.match(untimed, /留在 5\.26\.28（回退前在用的那一份程序，neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28）/);
-  assert.match(untimed, /stay on 5\.26\.28 \(the programs in use before the rollback, neo4j-assets\/jvs-a-2222\/neo4j-community-5\.26\.28\)/);
+  assert.match(untimed, /改用 5\.26\.28（更新前保留的那一份程序，neo4j-assets[\\/]jvs-a-1111[\\/]neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /留在 5\.26\.28（回退前在用的那一份程序，neo4j-assets[\\/]jvs-a-2222[\\/]neo4j-community-5\.26\.28）/);
+  assert.match(untimed, /stay on 5\.26\.28 \(the programs in use before the rollback, neo4j-assets[\\/]jvs-a-2222[\\/]neo4j-community-5\.26\.28\)/);
   // An update says update.
   const update = await newerInPlace(t);
   assert.match(formatRecoveryPlan(await planNativeRecovery({ paths: update.paths, dependencies: deps().dependencies })), /完成这次没做完的更新，改用 5\.26\.28：/);

@@ -378,3 +378,18 @@ test('FULI\'s own processes count as running only as this user\'s', async () => 
   assert.equal(isOwnProcessRunning(process.pid), true);
   assert.equal(isOwnProcessRunning(-1), false);
 });
+
+test('a failure line that would be too long drops its longest fields first, never the code or a command to copy', () => {
+  const long = `/data/${'x'.repeat(1500)}`;
+  const failure = { code: 'graph_import_unfinished', mode: 'container', way: 'copy', copyName: long, latestCopy: long,
+    command: `fuli graph import --input '${long}' --target-mode container --yes`, abandonCommand: 'fuli graph abandon-import --target-mode container' };
+  const line = startupFailureLine({ startupFailure: failure });
+  assert.ok(line && line.length <= 4096);
+  const { failure: read } = readStartupFailure(line);
+  // One long path goes, just enough for the line to fit; the short facts stay.
+  assert.deepEqual(Object.keys(read).sort(), ['abandonCommand', 'code', 'command', 'latestCopy', 'mode', 'way']);
+  assert.equal(read.command, failure.command);
+  // Short enough as it is: nothing is dropped. Commands alone too long: no line.
+  assert.deepEqual(readStartupFailure(startupFailureLine({ startupFailure: { code: 'port_taken', port: 7687 } })).failure, { code: 'port_taken', port: 7687 });
+  assert.equal(startupFailureLine({ startupFailure: { code: 'graph_import_unfinished', command: 'x'.repeat(5000) } }), null);
+});

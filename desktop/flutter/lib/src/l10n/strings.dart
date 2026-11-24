@@ -271,10 +271,12 @@ class Strings {
             'FULI did not start: an earlier graph import into the $mode runtime$at wrote all of its new data but did not finish its last step (reconciling the graph identity).')
         : _t('没有启动：上次向$modeZh的图谱导入数据$at没有完成，${_names(graphs)}可能只写入了一半。',
             'FULI did not start: an earlier graph import into the $mode runtime$at did not finish, so ${_names(graphs)} may be only half written.');
+    // The path can be left out of a line that would be too long (startup-failure-line.js); the command keeps it.
     final path = failure.text('wayPath');
+    final (inParens, inParensEn) = path == null ? ('', '') : ('（$path）', ' ($path)');
     final next = switch (failure.text('way')) {
-      'copy' => _t('把导入前的副本（$path）导回。', 'Bring back the copy from before the import ($path).'),
-      'input' => _t('重新运行那次导入（$path）。', 'Run that import again ($path).'),
+      'copy' => _t('把导入前的副本$inParens导回。', 'Bring back the copy from before the import$inParensEn.'),
+      'input' => _t('重新运行那次导入$inParens。', 'Run that import again$inParensEn.'),
       _ => _t('用 FULI 数据文件夹 backups/graph 里导入前留下的副本（before-import-…）导回。', 'Bring back a copy from before an import (before-import-… in the FULI data folder\'s backups/graph).'),
     };
     final giveUp = _t('导回走不通时，可以放弃这次导入：可能只写了一半的图谱会被挪开（不删除），之后它是空的。',

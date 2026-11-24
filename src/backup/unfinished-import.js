@@ -15,10 +15,13 @@ import { GRAPH_STATE, graphStateHolds, recordedGraphStates } from './graph-impor
 // not, since importing the copy back is the way out, and its success clears it.
 //
 // It records the copy the first unfinished import took before it (`copy`,
-// null when every graph was empty then), what that import was loading
-// (`inputDir`), when it began, and each graph's state. An import that starts
-// while a marker is there keeps the first import's copy and input: the data
-// from before that one is what a person goes back to. It keeps the graphs the
+// null when every graph was empty then), when it began, what the latest
+// import was loading (`inputDir`), and each graph's state. An import that
+// starts while a marker is there keeps the first import's copy and time: the
+// data from before that one is what a person goes back to. Its own input
+// replaces the earlier one: it holds every graph the marker says may be half
+// written (graph-backup.js refuses one that does not), and running it again
+// never overwrites what it already wrote with older data. It keeps the graphs the
 // marker says may be half written that way too, until it writes them whole
 // (imported): a new import that fails before it gets to one never makes it
 // look whole, so the marker stays and the start stays refused.
@@ -59,7 +62,7 @@ export function markUnfinishedImport(paths, mode, { restorePoint, graphStates, i
   const path = markerPath(paths, mode);
   const earlier = readUnfinishedImport(paths, mode);
   const first = earlier?.readable
-    ? { startedAt: earlier.startedAt, copy: earlier.copy, inputDir: earlier.inputDir }
+    ? { startedAt: earlier.startedAt, copy: earlier.copy, inputDir: inputDir ?? earlier.inputDir }
     : { startedAt: now().toISOString(), copy: restorePoint?.path ?? null, inputDir: inputDir ?? null };
   // A graph the earlier marker says may be half written stays so until this import writes it whole.
   const halfWritten = earlier?.partial ?? [];
@@ -122,10 +125,14 @@ function copyInstances(copy) {
 
 // The newest copy an import took before it (backups/graph/before-import-*)
 // that names its graphs, or null: the way back when the marker cannot be read.
+// One that holds every graph comes first, since a marker that cannot be read
+// counts every graph as maybe half written and an import of a copy that lacks
+// one is refused (graph-backup.js).
 export function latestImportCopy(paths) {
   let names = [];
   try { names = readdirSync(paths.graphBackupDir).filter(name => name.startsWith('before-import-')).sort().reverse(); } catch { /* none */ }
-  return names.map(name => join(paths.graphBackupDir, name)).find(copy => copyInstances(copy)) ?? null;
+  const copies = names.map(name => join(paths.graphBackupDir, name)).filter(copy => copyInstances(copy));
+  return copies.find(copy => INSTANCES.every(id => copyInstances(copy).includes(id))) ?? copies[0] ?? null;
 }
 
 // Why a start into [mode] is refused, with the facts a person needs: the

@@ -273,3 +273,14 @@ test('credential reconciliation failure rolls imported graph data back', async (
 
   assert.deepEqual(loaded, ['new graph', 'old graph']);
 });
+
+test('an import that fails before it takes over an earlier unfinished import starts nothing while that one\'s marker is there', async () => {
+  for (const marked of [true, false]) {
+    const scene = await importScene('fuli-graph-marker-stays-');
+    // The copy step fails, before the import holds anything; the earlier marker (or none) is what decides the start.
+    scene.adapter.dump = async () => { throw new Error('dump failed'); };
+    scene.adapter.unfinishedImport = async () => marked ? { readable: true, partial: [], graphStates: {} } : null;
+    await assert.rejects(scene.run(), /dump failed/);
+    assert.equal(scene.events.includes('start'), !marked, marked ? 'a marker keeps the start off' : 'without one, what ran before starts again');
+  }
+});

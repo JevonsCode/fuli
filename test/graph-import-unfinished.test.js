@@ -30,7 +30,8 @@ const ENVIRONMENT = ['FULI_PERSONAL_NEO4J_PASSWORD=personal-password', 'FULI_WOR
   'FULI_PERSONAL_BOOTSTRAP_TOKEN=personal-bootstrap-token-1234', 'FULI_WORKSPACE_BOOTSTRAP_TOKEN=workspace-bootstrap-token-12'].join('\n');
 const never = () => new Promise(() => {});
 
-function scene(t, mode, { admin = async () => {}, killAt = () => false, beforeLoad = async () => {}, cpFails = () => false, empty = [], asideFails = () => false } = {}) {
+function scene(t, mode, { admin = async () => {}, killAt = () => false, beforeLoad = async () => {}, cpFails = () => false, empty = [], asideFails = () => false, logsFail = () => false, reconcileFails = () => false } = {}) {
+  const asideFolders = [];
   const dataDir = mkdtempSync(join(tmpdir(), `fuli-import-unfinished-${mode}-`));
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const paths = resolveSetupPaths({ dataDir, packageRoot: '/package' });
@@ -73,7 +74,7 @@ function scene(t, mode, { admin = async () => {}, killAt = () => false, beforeLo
       hasData: async id => existsSync(store(id)),
       stop: async () => ({ ...await real.stop(), resume: true }),
       start: async () => { events.push('start'); },
-      reconcile: async () => { await checkpoint('reconcile'); } };
+      reconcile: async () => { await checkpoint('reconcile'); if (reconcileFails()) throw new Error('identity reconciliation failed'); } };
   }
   // docker: a helper container per graph whose /backup/neo4j.dump stands apart from the store.
   function docker() {
@@ -87,13 +88,16 @@ function scene(t, mode, { admin = async () => {}, killAt = () => false, beforeLo
         else writeFileSync(to, helpers.get(from.split(':')[0]).dump);
         return '';
       }
-      // The set-aside script: the store moves inside the volume, into the folder it names.
+      // The set-aside script: the store moves inside the volume, into the folder it names, and it says
+      // where; [logsFail] then fails moving the transaction logs.
       if (args[0] === 'exec' && args.includes('-c')) {
         const helper = helpers.get(args[1]);
         if (asideFails()) throw new Error('Cannot connect to the Docker daemon');
-        if (!existsSync(store(helper.id))) return '';
+        asideFolders.push(args.at(-1));
+        const failed = logsFail() ? 'failed transactions/neo4j mv: cannot move: Permission denied\n' : '';
+        if (!existsSync(store(helper.id))) return failed;
         renameSync(store(helper.id), join(dataDir, 'stores', `${helper.id}${args.at(-1).replace('/data/', '@')}`));
-        return 'databases/neo4j\n';
+        return `moved databases/neo4j ${args.at(-1)}/databases/neo4j\n${failed}`;
       }
       if (args[0] === 'exec' && args.includes('neo4j-admin')) {
         const helper = helpers.get(args[1]);
@@ -122,7 +126,7 @@ function scene(t, mode, { admin = async () => {}, killAt = () => false, beforeLo
   const copies = () => existsSync(paths.graphBackupDir) ? readdirSync(paths.graphBackupDir).filter(name => name.startsWith('before-import-')) : [];
   const abandon = async () => abandonUnfinishedImport({ adapter: await adapter(), targetMode: mode, paths });
   const asides = () => readdirSync(join(dataDir, 'stores')).filter(name => name.includes('@recovered-'));
-  return { paths, events, kill, killed: () => killed, runImport, bundle, holds, start, copies, abandon, asides, marker: () => readUnfinishedImport(paths, mode) };
+  return { paths, events, kill, killed: () => killed, runImport, bundle, holds, start, copies, abandon, asides, asideFolders, marker: () => readUnfinishedImport(paths, mode) };
 }
 
 const failWorkspace = (id, body) => { if (id === 'workspace' && body.startsWith('new:')) throw new Error('neo4j-admin failed'); };
@@ -197,21 +201,29 @@ for (const mode of ['native', 'container']) {
   });
 }
 
-test('a marker that cannot be read still refuses the start, names its file, the newest copy and the move by hand; giving up refuses too', async (t) => {
+test('a marker that cannot be read still refuses the start, names its file, the newest whole copy and the move by hand, in that order; giving up refuses too', async (t) => {
   const s = scene(t, 'container');
   await s.runImport();
   const newest = join(s.paths.graphBackupDir, s.copies()[0]);
+  // A newer copy that lacks a graph: importing it would be refused, so the whole one comes first.
+  const partial = join(s.paths.graphBackupDir, 'before-import-9999-personal-only');
+  mkdirSync(partial);
+  writeFileSync(join(partial, 'manifest.json'), JSON.stringify({ instances: [{ id: 'personal', file: 'personal.dump' }] }));
   const marker = join(s.paths.dataDir, 'graph-import-unfinished-container.json');
   writeFileSync(marker, '{ not json');
+  const move = moveCommand(marker, `${marker}.abandoned`);
   await assert.rejects(s.start(), (error) => {
     assert.ok(error.message.includes(`没有启动：记录上次向容器模式的图谱导入数据的文件 ${marker} 坏了，读不出来：那次导入没有完成，FULI 不知道哪个图谱可能只写了一半，所以不敢启动`));
     assert.ok(error.message.includes(`先用最近一份导入前的副本导回（${newest}）：${graphImportCommand(newest, 'container')}`));
-    assert.ok(error.message.includes(`最后的办法是把这个文件挪走：${moveCommand(marker, `${marker}.abandoned`)}。这样 FULI 会启动，但不保证图谱完整，所以能导回的话先导回。`));
+    assert.ok(error.message.includes(`最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整，所以能导回的话先导回。命令是 ${move}。`));
     return true;
   });
   await assert.rejects(s.abandon(), (error) => {
     assert.ok(error.message.includes(`没有放弃那次导入：记录它的文件 ${marker} 坏了`));
-    assert.ok(error.message.includes(moveCommand(marker, `${marker}.abandoned`)) && /不保证图谱完整/.test(error.message));
+    // The copy back first (it clears the record), then what moving the record means, then the move.
+    const [back, means, command] = [graphImportCommand(newest, 'container'), '不保证图谱完整', move].map(part => error.message.indexOf(part));
+    assert.ok(back >= 0 && back < means && means < command, error.message);
+    assert.match(error.message, /导回成功后这条记录会自动清掉/);
     return true;
   });
   assert.equal(s.marker().readable, false, 'nothing was given up');
@@ -239,6 +251,10 @@ test('the import command takes its path literally in PowerShell and in a POSIX s
   assert.equal(graphImportCommand('C:\\Users\\a$b\\backups\\graph\\before-import-1', 'native', 'win32'),
     "fuli graph import --input 'C:\\Users\\a$b\\backups\\graph\\before-import-1' --target-mode native --yes");
   assert.equal(graphImportCommand("C:\\it's", 'container', 'win32'), "fuli graph import --input 'C:\\it''s' --target-mode container --yes");
+  // PowerShell takes the curly single quotes for ' too: each is doubled the same way.
+  assert.equal(graphImportCommand('C:\\a\u2018b\u2019c\u201Ad\u201Be', 'native', 'win32'),
+    "fuli graph import --input 'C:\\a\u2018\u2018b\u2019\u2019c\u201A\u201Ad\u201B\u201Be' --target-mode native --yes");
+  assert.equal(graphImportCommand('/a\u2019b', 'native', 'linux'), "fuli graph import --input '/a\u2019b' --target-mode native --yes");
   assert.equal(graphImportCommand('/data/backups/graph/x', 'native', 'darwin'), "fuli graph import --input '/data/backups/graph/x' --target-mode native --yes");
   assert.equal(graphImportCommand('/data/a $HOME `id` "q" it\'s/x', 'container', 'linux'),
     "fuli graph import --input '/data/a $HOME `id` \"q\" it'\\''s/x' --target-mode container --yes");
@@ -316,7 +332,9 @@ test('container: a graph empty before an import of a backup neo4j-admin cannot r
   const s = scene(t, 'container', { empty: ['workspace'], admin: async (id, body) => { if (id === 'workspace' && body.startsWith('new:')) throw new Error('neo4j-admin: unsupported store format'); } });
   await assert.rejects(s.runImport(), (error) => {
     assert.match(error.message, /每个图谱都已退回导入前的数据。图谱 workspace 导入前是空的，已经重新清空：它写了一半的库挪到了 \/data\/recovered-[0-9TZ-]+（容器 workspace-neo4j 的 Docker 数据卷里），没有删除/);
-    assert.match(error.message, /要搬回去：先退出 FULI（fuli stop），原位置已经有新建的空库时先把它改名挪开，再运行 docker compose --env-file '.+' -f '.+' run --rm --no-deps -T workspace-neo4j sh -c 'mv \/data\/recovered-[0-9TZ-]+\/databases\/neo4j \/data\/databases\/neo4j'。/);
+    // The move back first sets a new empty database in the way aside itself, into another recovered- folder.
+    assert.match(error.message, /要搬回去：先退出 FULI（fuli stop），再运行 docker compose --env-file '.+' -f '.+' run --rm --no-deps -T workspace-neo4j sh -c 'if \[ -e \/data\/databases\/neo4j \]; then mkdir -p (\/data\/recovered-[0-9TZ-]+)-replaced\/databases && mv \/data\/databases\/neo4j \1-replaced\/databases\/neo4j; fi && mkdir -p \/data\/databases && mv \1\/databases\/neo4j \/data\/databases\/neo4j'；原位置已经有新建的空库时，这条命令先把它挪进 \/data\/recovered-[0-9TZ-]+-replaced（不删除）。/);
+    assert.match(error.message, /if a new empty database is already there, the command first moves it into \/data\/recovered-[0-9TZ-]+-replaced \(not deleted\)\./);
     return true;
   });
   assert.deepEqual([s.holds('personal'), s.holds('workspace'), s.marker()], ['old:personal', null, null]);
@@ -339,7 +357,7 @@ test('container: a graph that cannot be emptied again keeps the marker and says 
   await assert.rejects(s.abandon(), (error) => {
     const path = join(s.paths.dataDir, 'graph-import-unfinished-container.json');
     assert.match(error.message, /没有放弃那次导入：图谱 workspace 没能挪开（Cannot connect to the Docker daemon）。这条记录还在，FULI 仍然不会启动。处理好之后再运行 fuli graph abandon-import --target-mode container。/);
-    assert.ok(error.message.includes(`最后的办法是手动把这条记录挪走（标记文件是 ${path}）：${moveCommand(path, `${path}.abandoned`)}。这样 FULI 就会启动，但不保证图谱完整`));
+    assert.ok(error.message.includes(`最后的办法是手动把这条记录挪走（标记文件是 ${path}）：这样 FULI 就会启动，但不保证图谱完整。命令是 ${moveCommand(path, `${path}.abandoned`)}。`));
     return true;
   });
   assert.deepEqual(s.marker().partial, ['workspace']);
@@ -389,4 +407,59 @@ test('native without a lock: giving the import up moves the half-written graph i
   assert.match(given.words, /导入前的副本还在 .+before-import-/);
   assert.equal(s.marker(), null);
   await assert.rejects(s.start(), /reached the runtime/);
+});
+
+for (const mode of ['native', 'container']) {
+  test(`${mode} without a lock: a second import killed while finishing names its own input to run again, never the first one's`, async (t) => {
+    let firstKill = true;
+    let atReconcile;
+    const reconciling = new Promise(resolve => { atReconcile = resolve; });
+    const s = scene(t, mode, { killAt: name => {
+      if (firstKill && name === 'half new:workspace') { firstKill = false; return true; }
+      if (name === 'reconcile') { atReconcile(); return true; }
+      return false;
+    } });
+    const first = await killedWhileWritingWorkspace(s);
+    const firstInput = join(s.paths.dataDir, 'bundle');
+    const second = await s.bundle('second');
+    s.runImport(second).catch(() => {});
+    await reconciling;
+    const marker = s.marker();
+    assert.deepEqual([marker.partial, marker.copy, marker.inputDir], [[], first, second], 'the first copy stays; the input is this import\'s');
+    await assert.rejects(s.start(), (error) => {
+      assert.ok(error.message.includes(`重新运行那次导入，把收尾做完：${graphImportCommand(second, mode)}。`));
+      assert.ok(!error.message.includes(graphImportCommand(firstInput, mode)), 'the first import\'s input would overwrite what the second wrote');
+      const facts = JSON.parse(startupFailureLine(error).slice('FULI_STARTUP_FAILURE '.length));
+      assert.deepEqual([facts.way, facts.command], ['input', graphImportCommand(second, mode)]);
+      return true;
+    });
+  });
+
+  test(`${mode} without a lock: a second import that writes the half-written graph whole and then rolls back says the first import's copy is still kept`, async (t) => {
+    let failReconcile = false;
+    const s = scene(t, mode, { killAt: name => name === 'half new:workspace' && !failReconcile, reconcileFails: () => failReconcile });
+    const first = await killedWhileWritingWorkspace(s);
+    failReconcile = true;
+    await assert.rejects(s.runImport(await s.bundle('second')), (error) => {
+      assert.match(error.message, /图谱 workspace 被上次没完成的导入只写了一半，这次已经把它完整导入/);
+      assert.ok(error.message.includes(`上次没完成的那次导入之前的副本还留着：${first}，用不着时可以自己删掉。`));
+      assert.ok(error.message.includes(`The copy taken before the earlier unfinished import is still kept at ${first}`));
+      return true;
+    });
+    assert.equal(s.marker(), null);
+  });
+}
+
+test('container: moving the transaction logs aside fails after the database moved: the words say where it went, and a rerun uses the same folder', async (t) => {
+  let logsFail = true;
+  const s = scene(t, 'container', { killAt: name => name === 'half new:workspace', logsFail: () => logsFail });
+  await killedWhileWritingWorkspace(s);
+  await assert.rejects(s.abandon(), (error) => {
+    assert.match(error.message, /图谱 workspace 没能挪开（moving transactions\/neo4j into (\/data\/recovered-[0-9TZ-]+) failed \(mv: cannot move: Permission denied\); already moved, not deleted: \/data\/databases\/neo4j to \1\/databases\/neo4j \(in the volume of the workspace-neo4j container\); running it again moves the rest into the same folder）/);
+    return true;
+  });
+  assert.equal(s.marker().partial.length, 1, 'the marker stays');
+  logsFail = false;
+  assert.equal((await s.abandon()).status, 'abandoned');
+  assert.equal(new Set(s.asideFolders).size, 1, 'one folder for one unfinished import');
 });

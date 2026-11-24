@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 
-import { abandonUnfinishedImport } from '../backup/abandon-import.js';
+import { abandonUnfinishedImport, importToAbandon } from '../backup/abandon-import.js';
 import { exportGraphData, importGraphData } from '../backup/graph-backup.js';
 import { createGraphBackupAdapter } from '../backup/runtime-adapters.js';
 import { resolveSetupPaths } from '../setup/paths.js';
@@ -16,6 +16,22 @@ export async function runGraphDataCommand(action, args, dependencies = {}) {
   const saved = readSettings(paths.runtimeSettingsPath);
   const mode = options.mode ?? saved.graphRuntimeMode;
   const write = dependencies.write ?? writeLine;
+
+  // Giving an import up looks first: with nothing to give up, nothing is
+  // asked or stopped. It moves graphs aside, so a person runs it in a
+  // terminal (no Agent shell, no MCP tool); --yes only skips the question there.
+  if (action === 'abandon-import') {
+    const found = (dependencies.importToAbandon ?? importToAbandon)({ paths, mode, platform: dependencies.platform });
+    if (found === 'nothing') {
+      write(nothingToAbandon(mode));
+      return { status: 'nothing', targetMode: mode };
+    }
+    if (!(dependencies.interactive ?? process.stdin.isTTY === true)) {
+      throw Object.assign(new Error('放弃导入会挪开图谱，要你自己在终端里运行这条命令；没有终端时不做，--yes 只是在终端里省掉确认。'
+        + ' / Giving an import up moves graphs aside, so run this command yourself in an interactive terminal; without one nothing is done, and --yes only skips the question there.'),
+      { code: 'needs_person' });
+    }
+  }
 
   if (action !== 'export' && !options.yes) {
     const confirm = dependencies.confirm ?? (action === 'import' ? confirmImport : confirmAbandon);
@@ -70,9 +86,7 @@ async function transferGraphData({ action, options, paths, mode, write, dependen
   if (action === 'abandon-import') {
     const abandon = dependencies.abandonImport ?? abandonUnfinishedImport;
     const result = await abandon({ adapter, targetMode: mode, paths });
-    write(result.status === 'nothing'
-      ? `没有没完成的导入要放弃（${mode} 模式）。 / No unfinished import into the ${mode} runtime to give up.`
-      : result.words);
+    write(result.status === 'nothing' ? nothingToAbandon(mode) : result.words);
     return result;
   }
   if (action === 'export') {
@@ -147,6 +161,8 @@ export function parseGraphDataOptions(action, args = []) {
   }
   return result;
 }
+
+const nothingToAbandon = mode => `没有没完成的导入要放弃（${mode} 模式）。 / No unfinished import into the ${mode} runtime to give up.`;
 
 function confirmImport(mode) {
   return confirmed(`Import will replace the current ${mode} graph after making a rollback backup. Continue? [y/N] `);

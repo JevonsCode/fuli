@@ -68,8 +68,8 @@ const FAILURES = Object.freeze({
         const [back, backEn] = f.command
           ? [`先用最近一份导入前的副本导回（${f.latestCopy}）：${f.command}，导回成功后这条记录会清掉。`, `First bring back the newest copy taken before an import (${f.latestCopy}): \`${f.command}\`; once it is back, the record is cleared. `]
           : ['', ''];
-        return [`${back}最后的办法是把这个文件挪走：${f.moveMarkerCommand}。这样 FULI 会启动，但不保证图谱完整，所以能导回的话先导回。`,
-          `${backEn}The last way out is to move that file away: \`${f.moveMarkerCommand}\`. FULI then starts, but the graph is not known to be whole, so bring a copy back first if you can.`];
+        return [`${back}最后的办法是把这个文件挪走：这样 FULI 会启动，但不保证图谱完整，所以能导回的话先导回。命令是 ${f.moveMarkerCommand}。`,
+          `${backEn}The last way out is to move that file away: FULI then starts, but the graph is not known to be whole, so bring a copy back first if you can. The command is \`${f.moveMarkerCommand}\`.`];
       }
       const command = f.command ?? (f.wayPath ? graphImportCommand(f.wayPath, f.mode) : null);
       const abandon = f.abandonCommand ?? `fuli graph abandon-import --target-mode ${f.mode}`;

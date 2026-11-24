@@ -254,7 +254,7 @@ export async function importGraphData({
           unrecorded ??= caught;
         }
       }
-      if (!unrecorded && !rollbackError) throw rolledBack(error, { asides, wholeNow });
+      if (!unrecorded && !rollbackError) throw rolledBack(error, { asides, wholeNow, earlierCopy: earlier?.copy ?? null });
       kept = true;
       if (!unrecorded && restoreError) await lease.restoreFailed?.(rollbackRoot, restoreError).catch(() => {});
       // Why an emptied graph could not be emptied again, for the recovery's words.
@@ -292,7 +292,12 @@ export async function importGraphData({
         if (!failure) throw releaseError;
         throw new AggregateError([failure, releaseError], `${failure.message} The import's lease could not be released either: ${releaseError.message}`, { cause: failure });
       }
-      if (lifecycle?.resume === true) await adapter.start(lifecycle);
+      // A marker still there (an earlier unfinished import this one failed
+      // before it took over) keeps this start off too: elsewhere a start is
+      // refused while it is there, and here the container start is a plain compose up.
+      const unfinished = typeof adapter.unfinishedImport === 'function'
+        ? await Promise.resolve(adapter.unfinishedImport()).catch(() => true) : null;
+      if (lifecycle?.resume === true && !unfinished) await adapter.start(lifecycle);
     }
   }
 }
@@ -317,23 +322,34 @@ async function spaceNeeded(copy, near, freeSpace) {
 // its copy, or emptied again ([asides]: where the half-written database went,
 // never deleted, and how to move it back); a graph an earlier unfinished
 // import left half written and this one wrote whole keeps that data ([wholeNow]).
-function rolledBack(error, { asides = [], wholeNow = [] } = {}) {
+function rolledBack(error, { asides = [], wholeNow = [], earlierCopy = null } = {}) {
   const detail = error?.message ?? String(error);
   const [back, backEn] = wholeNow.length
     ? [`图谱 ${wholeNow.join('、')} 被上次没完成的导入只写了一半，这次已经把它完整导入，留着这次的新数据；其余图谱都已退回导入前的数据。`,
       ` The ${wholeNow.join(' and ')} graph, which an earlier unfinished import left half written, now holds this import's data whole and keeps it; every other graph is back to its data from before the import.`]
     : ['每个图谱都已退回导入前的数据。', ' Every graph is back to its data from before the import.'];
   const moved = asideWords(asides, '导入前是空的，已经重新清空', 'was empty before the import and is empty again');
-  return new Error(`导入没有成功：${detail}。${back}${moved.map(([zh]) => zh).join('')}`
-    + ` / Graph import failed: ${detail}.${backEn}${moved.map(([, en]) => en).join('')}`, { cause: error });
+  // The earlier unfinished import's record is gone now, and with it the only mention of the copy taken before it.
+  const [kept, keptEn] = earlierCopy
+    ? [`上次没完成的那次导入之前的副本还留着：${earlierCopy}，用不着时可以自己删掉。`,
+      ` The copy taken before the earlier unfinished import is still kept at ${earlierCopy}; delete it yourself once it is not needed.`]
+    : ['', ''];
+  return new Error(`导入没有成功：${detail}。${back}${moved.map(([zh]) => zh).join('')}${kept}`
+    + ` / Graph import failed: ${detail}.${backEn}${moved.map(([, en]) => en).join('')}${keptEn}`, { cause: error });
 }
 
 // Where each graph set aside went ([asides]: adapter.setAside), never
 // deleted, and how to move it back, after [zhState] / [enState] saying why.
 export function asideWords(asides, zhState, enState) {
-  return asides.filter(aside => aside.where).map(({ graph, where, moveBack = [], volume }) => [
-    `图谱 ${graph} ${zhState}：它写了一半的库挪到了 ${where}${volume ? `（容器 ${graph}-neo4j 的 Docker 数据卷里）` : ''}，没有删除，用不着时可以自己删掉。${moveBack.length ? `要搬回去：先退出 FULI（fuli stop），原位置已经有新建的空库时先把它改名挪开，再运行 ${moveBack.join('；')}。` : ''}`,
-    ` The ${graph} graph ${enState}: its half-written database moved to ${where}${volume ? ` (in the Docker volume of the ${graph}-neo4j container)` : ''}, not deleted; delete it yourself once it is not needed.${moveBack.length ? ` To move it back: quit FULI (\`fuli stop\`); if a new empty database is already there, rename it out of the way; then run \`${moveBack.join('`; `')}\`.` : ''}`]);
+// A container's move back sets a new empty database in the way aside itself ([replaced]).
+  return asides.filter(aside => aside.where).map(({ graph, where, moveBack = [], volume, replaced }) => {
+    const [empty, emptyEn] = replaced
+      ? [`；原位置已经有新建的空库时，这条命令先把它挪进 ${replaced}（不删除）`, `; if a new empty database is already there, the command first moves it into ${replaced} (not deleted)`]
+      : ['', ''];
+    return [
+      `图谱 ${graph} ${zhState}：它写了一半的库挪到了 ${where}${volume ? `（容器 ${graph}-neo4j 的 Docker 数据卷里）` : ''}，没有删除，用不着时可以自己删掉。${moveBack.length ? `要搬回去：先退出 FULI（fuli stop），${replaced ? '' : '原位置已经有新建的空库时先把它改名挪开，'}再运行 ${moveBack.join('；')}${empty}。` : ''}`,
+      ` The ${graph} graph ${enState}: its half-written database moved to ${where}${volume ? ` (in the Docker volume of the ${graph}-neo4j container)` : ''}, not deleted; delete it yourself once it is not needed.${moveBack.length ? ` To move it back: quit FULI (\`fuli stop\`); ${replaced ? '' : 'if a new empty database is already there, rename it out of the way; '}then run \`${moveBack.join('`; `')}\`${emptyEn}.` : ''}`];
+  });
 }
 
 // An import that failed and left a graph that may be half written: its

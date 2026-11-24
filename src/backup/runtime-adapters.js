@@ -225,15 +225,33 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
   // Empties an instance as the native runtime does (setAside there): a
   // helper container moves its database and transaction logs, inside the
   // instance's volume, into /data/recovered-<time>/, never deleting them.
-  // Answers where they went and the command that moves them back.
+  // <time> is when the unfinished import began (its marker), so a rerun after
+  // a move that failed part way uses the same folder, beside what is already
+  // there. Answers where they went and the command that moves them back,
+  // which first moves a new empty database in their place into
+  // /data/recovered-<time>-replaced/ (moved, not deleted). A move that fails
+  // part way says what already moved, and where.
   async function setAside(instance) {
-    const folder = `/data/recovered-${recoveryStamp(Date.now())}`;
-    const moved = String(await withBackupHelper(instance, helper => docker(['exec', helper, 'sh', '-c', SET_ASIDE_SCRIPT, 'sh', folder])))
-      .split(/\r?\n/).map(line => line.trim()).filter(store => CONTAINER_STORES.includes(store));
-    const back = moved.map(store => `mv ${folder}/${store} /data/${store}`).join(' && ');
+    const startedAt = Date.parse(readUnfinishedImport(paths, 'container')?.startedAt ?? '');
+    const folder = `/data/recovered-${recoveryStamp(Number.isFinite(startedAt) ? startedAt : Date.now())}`;
+    const lines = String(await withBackupHelper(instance, helper => docker(['exec', helper, 'sh', '-c', SET_ASIDE_SCRIPT, 'sh', folder])))
+      .split(/\r?\n/).map(line => line.trim().split(' ')).filter(([, store]) => CONTAINER_STORES.includes(store));
+    const moved = lines.filter(([state]) => state === 'moved').map(([, store, to]) => ({ store, to }));
+    const failed = lines.find(([state]) => state === 'failed');
+    if (failed) {
+      throw new Error(`moving ${failed[1]} into ${folder} failed (${failed.slice(2).join(' ')})`
+        + `${moved.length ? `; already moved, not deleted: ${moved.map(({ store, to }) => `/data/${store} to ${to}`).join(', ')} (in the volume of the ${instance}-neo4j container)` : ''}`
+        + '; running it again moves the rest into the same folder');
+    }
+    const replaced = `${folder}-replaced`;
+    const back = moved.map(({ store, to }) => {
+      const parent = store.split('/')[0];
+      return `if [ -e /data/${store} ]; then mkdir -p ${replaced}/${parent} && mv /data/${store} ${replaced}/${store}; fi && mkdir -p /data/${parent} && mv ${to} /data/${store}`;
+    }).join(' && ');
     return {
       where: moved.length ? folder : null,
       volume: true,
+      replaced: moved.length ? replaced : null,
       moveBack: back ? [`docker ${[...composePrefix.map(arg => arg.startsWith('-') || arg === 'compose' ? arg : quoteTerminalArgument(arg)),
         'run', '--rm', '--no-deps', '-T', `${instance}-neo4j`, 'sh', '-c', `'${back}'`].join(' ')}`] : []
     };
@@ -333,9 +351,12 @@ function createContainerBackupAdapter({ paths, instances, runtime, run, wait }) 
 }
 
 // A container graph's database and transaction logs, relative to its /data
-// volume, and the script that moves the ones there into the folder $1 (printing each).
+// volume, and the script that moves the ones there into the folder $1, beside
+// (never into) one an earlier run put there. It prints `moved <store> <to>`
+// for each, or `failed <store> <why>` and stops, so what moved is always said.
 const CONTAINER_STORES = ['databases/neo4j', 'transactions/neo4j'];
-const SET_ASIDE_SCRIPT = `set -e; for store in ${CONTAINER_STORES.join(' ')}; do if [ -e "/data/$store" ]; then mkdir -p "$1/$(dirname "$store")"; mv "/data/$store" "$1/$store"; echo "$store"; fi; done`;
+const SET_ASIDE_SCRIPT = `for store in ${CONTAINER_STORES.join(' ')}; do if [ -e "/data/$store" ]; then to="$1/$store"; if [ -e "$to" ]; then to="$to-$(date +%s)"; fi; `
+  + 'if why=$(mkdir -p "$(dirname "$to")" 2>&1 && mv "/data/$store" "$to" 2>&1); then echo "moved $store $to"; else echo "failed $store $why" | tr "\\n" " "; echo; exit 0; fi; fi; done';
 
 function nativeInstanceDir(paths, instance) {
   if (instance === 'personal') return paths.nativePersonalDir;

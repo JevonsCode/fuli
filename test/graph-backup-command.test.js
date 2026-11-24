@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   parseGraphDataOptions,
   runGraphDataCommand
 } from '../src/cli/graph-data-command.js';
+import { resolveSetupPaths } from '../src/setup/paths.js';
 
 test('graph data command parses explicit portable export and import targets', () => {
   assert.deepEqual(parseGraphDataOptions('export', [
@@ -142,6 +146,7 @@ test('graph abandon-import asks first, gives the import up through the adapter, 
     { action: 'abandon-import', outputDir: null, inputDir: null, mode: 'container', dataDir: null, yes: true });
   assert.throws(() => parseGraphDataOptions('abandon-import', ['--input', '/portable']), /Unknown graph abandon-import option: --input/);
   const common = { resolvePaths: () => ({ runtimeSettingsPath: '/data/runtime-settings.json' }), readSettings: () => ({ graphRuntimeMode: 'native' }),
+    importToAbandon: () => 'unfinished', interactive: true,
     runtime: { consoleRunning: async () => false }, createAdapter: async () => ({ instances: ['personal'] }) };
   let asked = 0;
   const cancelled = await runGraphDataCommand('abandon-import', [], { ...common, confirm: async () => { asked += 1; return false; },
@@ -199,4 +204,57 @@ test('graph copy leaves a stopped console stopped', async () => {
     write: () => {}
   });
   assert.deepEqual(events, []);
+});
+
+// Nothing of the runtime may be touched: no question, no stop, no adapter, nothing given up.
+const untouched = {
+  confirm: async () => assert.fail('nothing is asked'),
+  runtime: { consoleRunning: async () => assert.fail('nothing is stopped'), stop: async () => assert.fail('nothing is stopped') },
+  createAdapter: async () => assert.fail('no adapter is made'),
+  abandonImport: async () => assert.fail('nothing is given up')
+};
+
+test('graph abandon-import without a terminal is refused even with --yes, and touches nothing', async () => {
+  await assert.rejects(runGraphDataCommand('abandon-import', ['--target-mode', 'container', '--yes'], {
+    ...untouched, resolvePaths: () => ({ runtimeSettingsPath: '/data/runtime-settings.json' }), readSettings: () => ({}),
+    importToAbandon: () => 'unfinished', interactive: false, write: () => {}
+  }), (error) => {
+    assert.equal(error.code, 'needs_person');
+    assert.match(error.message, /要你自己在终端里运行这条命令/);
+    assert.match(error.message, /--yes only skips the question there/);
+    return true;
+  });
+});
+
+test('graph abandon-import looks before it asks or stops anything: macOS native names the recovery, and nothing unfinished is said as such', async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-abandon-check-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const paths = resolveSetupPaths({ dataDir, packageRoot: '/package' });
+  mkdirSync(paths.nativeRuntimeDir, { recursive: true });
+  const run = (mode, platform) => {
+    const output = [];
+    return runGraphDataCommand('abandon-import', ['--target-mode', mode], { ...untouched, resolvePaths: () => paths, readSettings: () => ({}),
+      platform, interactive: true, write: line => output.push(line) }).then(result => ({ result, output }));
+  };
+  // macOS native without a lock, and a container without a marker: nothing to give up, said before anything is asked.
+  for (const [mode, platform] of [['native', 'darwin'], ['container', 'darwin'], ['native', 'win32']]) {
+    const { result, output } = await run(mode, platform);
+    assert.equal(result.status, 'nothing');
+    assert.deepEqual(output, [`没有没完成的导入要放弃（${mode} 模式）。 / No unfinished import into the ${mode} runtime to give up.`]);
+  }
+  // macOS native with an import's lock: refused, naming the recovery that gives it up.
+  const lock = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  mkdirSync(lock);
+  writeFileSync(join(lock, 'holder.json'), JSON.stringify({ pid: 4242, operation: 'load', at: '2026-01-01T00:00:00.000Z' }));
+  await assert.rejects(run('native', 'darwin'), (error) => {
+    assert.equal(error.code, 'abandon_import_locked');
+    assert.match(error.message, /macOS 原生模式下，没完成的操作留下的是数据库维护锁.+运行 fuli graph runtime recover --abandon-import/);
+    return true;
+  });
+  // A lock some other operation left names the recovery itself.
+  writeFileSync(join(lock, 'holder.json'), JSON.stringify({ pid: 4242, operation: 'update', at: '2026-01-01T00:00:00.000Z' }));
+  await assert.rejects(run('native', 'darwin'), (error) => {
+    assert.match(error.message, /运行 fuli graph runtime recover，/);
+    return true;
+  });
 });

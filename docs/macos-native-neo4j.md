@@ -146,8 +146,14 @@ import).
   import is emptied by `setAside`: native moves its stores into
   `native-runtime/recovered/<time>/`, containers move `databases/neo4j` and
   `transactions/neo4j` inside the volume into `/data/recovered-<time>/`
-  through a helper container. `fuli graph abandon-import --target-mode <mode>`
-  (`src/backup/abandon-import.js`) gives the import up the same way: it sets
+  through a helper container (`<time>` is when the unfinished import began,
+  so a rerun after a move that failed part way uses the same folder, and the
+  failure says what already moved; the move-back command first moves a new
+  empty database in the way into `/data/recovered-<time>-replaced/`). `fuli graph abandon-import --target-mode <mode>`
+  (`src/backup/abandon-import.js`) gives the import up the same way, only in
+  a terminal (`--yes` skips the question, never the terminal), and looks
+  before it asks or stops anything (on macOS native it names
+  `fuli graph runtime recover --abandon-import` when a lock is there): it sets
   aside each graph the marker says may be half written and clears the marker;
   one it cannot move keeps the marker, and the words name its holders (by the
   processes naming a graph directory) and, as the last way out, the marker's

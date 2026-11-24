@@ -2,12 +2,13 @@
 // in PowerShell on Windows. A path always goes in single quotes, so nothing in
 // it expands (`$`, a backtick, `"`): a POSIX shell takes everything literally
 // up to the next `'` (a `'` itself is written '\''), PowerShell likewise (it
-// is written ''). Windows PowerShell 5.1 has neither `&&` nor `mkdir -p`, and
-// stops several processes only as one comma-separated list.
+// is written ''; it takes the curly single quotes ‘ ’ ‚ ‛ for ' too, so each
+// of them is doubled the same way). Windows PowerShell 5.1 has neither `&&`
+// nor `mkdir -p`, and stops several processes only as one comma-separated list.
 
 export function quoteTerminalArgument(value, platform = process.platform) {
   const text = String(value);
-  return platform === 'win32' ? `'${text.replaceAll("'", "''")}'` : `'${text.replaceAll("'", "'\\''")}'`;
+  return platform === 'win32' ? `'${text.replace(/['‘’‚‛]/g, quote => quote + quote)}'` : `'${text.replaceAll("'", "'\\''")}'`;
 }
 
 // Moves [path] into [folder], making the folder first.

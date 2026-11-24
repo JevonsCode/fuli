@@ -1,11 +1,29 @@
+import { readLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { killCommand } from '../text/terminal-command.js';
 import { asideWords } from './graph-backup.js';
 import {
   abandonImportCommand,
   graphImportCommand,
   latestImportCopy,
-  markerMoveCommand
+  markerMoveCommand,
+  readUnfinishedImport
 } from './unfinished-import.js';
+
+// Whether there is an unfinished import into [mode] to give up, asked before
+// anything is confirmed, stopped or moved: 'unfinished' or 'nothing'. On
+// macOS native an import keeps the lifecycle lock instead of a marker, so a
+// lock there is refused with the command that handles it.
+export function importToAbandon({ paths, mode, platform = process.platform }) {
+  if (mode === 'native' && platform === 'darwin') {
+    const lock = readLock(paths.nativeRuntimeDir);
+    if (!lock) return 'nothing';
+    const command = lock.holder?.operation === 'load' ? 'fuli graph runtime recover --abandon-import' : 'fuli graph runtime recover';
+    throw Object.assign(new Error(`macOS 原生模式下，没完成的操作留下的是数据库维护锁，不是这条命令处理的记录：运行 ${command}，它先说明要做什么，确认后再做。`
+      + ` / On macOS native, an unfinished operation leaves the maintenance lock, not the record this command handles: run \`${command}\`; it says what it does and does it once you confirm.`),
+    { code: 'abandon_import_locked' });
+  }
+  return readUnfinishedImport(paths, mode) ? 'unfinished' : 'nothing';
+}
 
 // Giving up an unfinished import into a runtime with no lifecycle lock
 // (`fuli graph abandon-import`): the last way out when importing the graph
@@ -50,11 +68,16 @@ function abandonedWords(graphs, asides, marker, mode) {
     + ` / The unfinished import was given up and its record cleared; FULI can start again.${stateEn}${moved.map(([, en]) => en).join('')}${copyEn}`;
 }
 
-// The last way out, said whenever FULI cannot give the import up itself.
+// The last way out, said whenever FULI cannot give the import up itself:
+// bringing the copy back first (its success clears the record), then what
+// moving the record by hand means, and only then the command.
 function byHand(marker, mode, back) {
   const move = markerMoveCommand(marker);
-  return [`最后的办法是手动把这条记录挪走（标记文件是 ${marker.path}）：${move}。这样 FULI 就会启动，但不保证图谱完整${back ? `，所以先用导入前的副本导回：${back}` : ''}。`,
-    ` The very last way out is to move this record away by hand (the marker file is ${marker.path}): \`${move}\`. FULI then starts, but the graph is not known to be whole${back ? `, so bring the copy from before the import back first: ${back}` : ''}.`];
+  const [first, firstEn] = back
+    ? [`先用导入前的副本导回：${back}，导回成功后这条记录会自动清掉。`, ` First bring the copy from before the import back: \`${back}\`; once it is back, the record is cleared by itself.`]
+    : ['', ''];
+  return [`${first}最后的办法是手动把这条记录挪走（标记文件是 ${marker.path}）：这样 FULI 就会启动，但不保证图谱完整。命令是 ${move}。`,
+    `${firstEn} The very last way out is to move this record away by hand (the marker file is ${marker.path}): FULI then starts, but the graph is not known to be whole. The command is \`${move}\`.`];
 }
 
 function notAbandoned(failures, marker, mode, asides) {

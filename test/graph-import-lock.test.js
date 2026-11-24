@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -172,19 +172,20 @@ test('an import whose second graph fails is rolled back under the same lock, whi
 test('an import whose rollback cannot copy the dump back keeps its lock, starts nothing, and says why', async (t) => {
   const s = scene(t, { admin: async (id, body) => { if (id === 'workspace' && body.startsWith('new:')) throw new Error('neo4j-admin failed'); },
     // The copy cannot be read once the import has failed (as when the disk is full while copying it to the staging folder).
-    record: async (patch) => { if (patch.graphStates?.workspace === 'importFailed') chmodSync(join(copyOf(s), 'personal.dump'), 0o000); } });
+    // It is moved away rather than made unreadable: Windows ignores POSIX permission bits.
+    record: async (patch) => { if (patch.graphStates?.workspace === 'importFailed' && existsSync(join(copyOf(s), 'personal.dump'))) renameSync(join(copyOf(s), 'personal.dump'), join(copyOf(s), 'personal.dump.away')); } });
   await assert.rejects(s.runImport(), (error) => {
     assert.equal(error.code, 'graph_import_incomplete');
-    assert.match(error.message, /自动退回没有做完（.*EACCES.*）。维护锁留着，FULI 不会在写了一半的图谱上启动。运行 fuli graph runtime recover/s);
+    assert.match(error.message, /自动退回没有做完（.*ENOENT.*）。维护锁留着，FULI 不会在写了一半的图谱上启动。运行 fuli graph runtime recover/s);
     assert.match(error.message, /The maintenance lock is kept/);
     return true;
   });
   const holder = lockOf(s);
   assert.deepEqual(holder.graphStates, { personal: 'restoreFailed', workspace: 'restored' });
-  assert.match(holder.restoreFailed.detail, /EACCES/, 'why is recorded for the recovery\'s words');
+  assert.match(holder.restoreFailed.detail, /ENOENT/, 'why is recorded for the recovery\'s words');
   assert.equal(s.events.some(event => event.startsWith('start')), false, 'nothing starts on a half-written graph');
   // What #1084's recovery already knows: retry the restore, or abandon (the copy is good) and move the failed graph aside.
-  chmodSync(join(copyOf(s), 'personal.dump'), 0o600);
+  renameSync(join(copyOf(s), 'personal.dump.away'), join(copyOf(s), 'personal.dump'));
   const retry = await plan(s);
   assert.deepEqual([retry.kind, retry.restoreFailed.detail], ['restore_load', holder.restoreFailed.detail]);
   const abandon = await plan(s, { abandonImport: true });
