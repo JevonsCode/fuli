@@ -1127,9 +1127,16 @@ class KnowledgeRevisionCreate(StrictModel):
     # The version the editor read; another current version is a conflict.
     expected_version: int | None = Field(default=None, ge=0)
     basis_meaning: BasisMeaning | None = None
+    # When a preference applies (attributes.appliesWhen), as the
+    # person said it; '' clears it. Its own edit: it keeps the version.
+    applies_when: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode='after')
     def validate_update_fields(self):
+        if self.applies_when is not None and (
+            self.action != 'update' or any(value is not None for value in (self.name, self.summary, self.fact))
+        ):
+            raise ValueError('when a preference applies is changed by an update of its own')
         has_replacement_id = self.replacement_item_id is not None
         has_replacement_kind = self.replacement_item_kind is not None
         if has_replacement_id != has_replacement_kind:
@@ -1195,10 +1202,12 @@ class KnowledgeRevisionCreate(StrictModel):
                 self.item_kind == 'entity'
                 and self.name is None
                 and self.summary is None
+                and self.applies_when is None
                 and not taxonomy_changed
             ):
                 raise ValueError('entity update requires content or epistemic metadata')
-            if self.item_kind == 'relationship' and self.fact is None and not taxonomy_changed:
+            if (self.item_kind == 'relationship' and self.fact is None and self.applies_when is None
+                    and not taxonomy_changed):
                 raise ValueError('relationship update requires content or epistemic metadata')
         if self.confirmation_status is not None:
             if self.confirmation_status == 'agent_confirmed':

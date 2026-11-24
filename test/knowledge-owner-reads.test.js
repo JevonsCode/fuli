@@ -222,3 +222,24 @@ test('a validation refusal on the human-review channel keeps its fields and reas
   const conflict = providerRefusal(409, { detail: { code: 'stale_version', message: 'knowledge changed since it was read' } });
   assert.deepEqual([conflict.code, conflict.message], ['stale_version', 'knowledge changed since it was read']);
 });
+
+test('the console graph marks each preference with the case it states, as an entry judges it', async () => {
+  const { app } = application();
+  const node = (id, summary, fields = {}) => ({ id, name: id, summary, profile_aspect: 'judgment_preference',
+    attributes: {}, preference_qualifiers: {}, ...fields });
+  const graph = { ...GRAPH, nodes: [
+    node('qualified', 'Hand decks to the deck helper.', { preference_qualifiers: { appliesWhen: 'making slide decks' } }),
+    node('opening', '仅适用于填写工时：按项目拆分。'),
+    node('always', 'Answer briefly.', { preference_qualifiers: { appliesWhen: '所有任务' } }),
+    node('silent', 'Hand every demo to the demo helper.', { preference_qualifiers: { constraint: 'hard' } }),
+    // A hard rule whose marker is only nested in its attributes' qualifiers, as an entry reads it.
+    node('nested', 'Hand every review to the review helper.', { attributes: { preference_qualifiers: { constraint: 'hard' } } }),
+    { id: 'fact', name: 'fact', summary: '仅适用于填写工时：按项目拆分。', attributes: {}, preference_qualifiers: {} },
+  ], edges: [{ id: 'edge', fact: 'Applies only to spreadsheet work: freeze the header row.', profile_aspect: 'taste',
+    preference_qualifiers: {} }] };
+  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: true, status: 200, payload: graph }) });
+  const read = await consoleGet(app, `/api/graph?spaceId=${SPACE}`, ownerReads);
+  assert.deepEqual([...read.body.nodes, ...read.body.edges].map(item => [item.id, item.stated_case, item.hard_rule]), [
+    ['qualified', 'making slide decks', undefined], ['opening', '填写工时', undefined], ['always', undefined, undefined],
+    ['silent', undefined, true], ['nested', undefined, true], ['fact', undefined, undefined], ['edge', 'spreadsheet work', undefined]]);
+});

@@ -16,6 +16,8 @@ const ACCESS_OFF = 'Agent 使用已关闭：在 设置 › AI 能做什么 › A
 const settingsLink = (consoleUrl) => (consoleUrl ? ` ${consoleUrl}/settings?tab=ai` : '');
 const WORDS_NOT_FOUND = '在你这个会话最近的消息里没有找到这句话：FLA 要先在对话里问你，再原样转达你的话。 / '
   + 'These are not whole sentences from your recent messages of this session; the FLA asks you in chat first and passes your exact words.';
+const CASE_NOT_IN_WORDS = '你的原话里没有这句适用情况：原话里要包含这句适用情况，FLA 要转达你勾选或写下的那一项原文。 / '
+  + 'Your words do not contain this case: they must include it, so the FLA passes the exact option you picked or wrote.';
 const WORDS_REQUIRED = '这是你本人的决定：FLA 要先在对话里问你，再把你的原话作为 personWords 转达。 / '
   + 'This is your own decision; the FLA asks you in chat first and passes your exact words as personWords.';
 
@@ -47,6 +49,11 @@ export function personWordsRequiredRefusal() {
 
 export function personWordsNotFoundRefusal() {
   return new ApplicationError('person_words_not_found', WORDS_NOT_FOUND, { status: 403 });
+}
+
+// A relayed case for a habit (appliesWhen) that the person's words do not contain.
+export function caseNotInPersonWordsRefusal() {
+  return new ApplicationError('person_words_not_found', CASE_NOT_IN_WORDS, { status: 403 });
 }
 
 export function agentAccessOffRefusal(consoleUrl = null) {

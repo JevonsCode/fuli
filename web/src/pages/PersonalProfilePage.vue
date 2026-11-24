@@ -15,6 +15,7 @@ import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
 import PreferencesOrganizeStart from '@/features/preferences/PreferencesOrganizeStart.vue'
+import PreferencesConditionsNotice from '@/features/preferences/PreferencesConditionsNotice.vue'
 import AdvancedOnly from '@/features/advanced-areas/AdvancedOnly.vue'
 import PersonHomeHeader from '@/features/person-home/PersonHomeHeader.vue'
 import {
@@ -135,6 +136,8 @@ const PAGE = 100
 const shownLimit = ref(PAGE)
 const shownItems = computed(() => visibleItems.value.slice(0, shownLimit.value))
 watch([activeAspect, activeScope, activeReviewState, conflictsOnly], () => { shownLimit.value = PAGE })
+// The range 范围 names, the one the tidy sentence carries.
+const scopedItems = computed(() => items.value.filter(matchesActiveScope))
 const visibleConflicts = computed(() =>
   conflicts.value.filter(
     ({ left, right }) => matchesActiveFilters(left) || matchesActiveFilters(right),
@@ -419,6 +422,10 @@ function knownScope(item: KnowledgeItem) {
 
 function matchesActiveFilters(item: KnowledgeItem) {
   if (activeAspect.value !== 'all' && item.profileAspect !== activeAspect.value) return false
+  return matchesActiveScope(item)
+}
+
+function matchesActiveScope(item: KnowledgeItem) {
   if (activeScope.value === 'global' && (!knownScope(item) || item.preferenceScope !== 'global')) return false
   if (activeScope.value.startsWith('project:')) {
     const projectId = activeScope.value.slice('project:'.length)
@@ -568,6 +575,7 @@ usePageRefresh(() => load())
         <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
       </template>
     </UiToolbar>
+    <AdvancedOnly v-if="graph" area="tidy"><PreferencesConditionsNotice :items="scopedItems" :scope="activeScope" /></AdvancedOnly>
 
     <p v-if="loadFailed" class="preference-read-error" role="alert" data-profile-read-error>
       {{ graph ? t('preferences.detail.stale') : t('preferences.detail.loadFailed') }}

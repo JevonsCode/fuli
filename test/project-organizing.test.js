@@ -23,6 +23,9 @@ function application(t, { project = 'synthetic-project' } = {}) {
 }
 
 const call = (app, input) => organizeProject(app, { taskContextToken: 'turn-1', ...input });
+// organize_project's first page of preferences at its largest (50 long habits, each with a case), in bytes
+// of JSON: 58,038 measured, with a little headroom.
+const PREFERENCES_PAGE_BYTES = 60_000;
 
 test('a project nobody organised yet reads as nine missing areas, with what the model should attempt', async (t) => {
   const app = application(t);
@@ -145,6 +148,53 @@ test('整理我的偏好 reads the person\'s preferences in any folder; the firs
   const alone = await call(app, { action: 'preferences' });
   assert.equal(alone.repeated_preference_check, undefined);
   assert.doesNotMatch(alone.guidance, /repeated_preference_check/);
+});
+
+test('整理我的偏好 says of each preference the case it states, as an entry judges it, or none', async (t) => {
+  const app = application(t, { project: null });
+  const item = (item_id, text, fields = {}) => ({ item_kind: 'entity', item_id, aspect: 'judgment_preference', scope: 'global',
+    status: 'confirmed', text, ...fields });
+  const preferences = [
+    // Written by the person; a case that means every task is none.
+    item('qualified', 'Decks\nHand every deck to the deck helper.', { applies_when: 'making slide decks', hard: true }),
+    item('always', 'Tone\nAnswer briefly.', { applies_when: '所有任务' }),
+    // Stated in the instruction's opening, not in its name.
+    item('opening', 'Timesheets\n仅适用于填写工时：按项目拆分。'),
+    { item_kind: 'relationship', item_id: 'fact', aspect: 'taste', scope: 'global', status: 'confirmed',
+      text: 'Applies only to spreadsheet work: freeze the header row.' },
+    // A hard rule limited by 「仅限…」 is a rule for every task; so is one that only seems to be about one thing.
+    item('hard-only-for', 'Screens\n仅限内部使用，不要外发截图。', { hard: true }),
+    item('silent', 'Demos\nHand every demo to the demo helper.', { hard: true }),
+    item('name-only', 'Short replies'),
+  ];
+  app.personal = { readPreferenceOrganizing: async () => ({ total: preferences.length, pending: 0, preferences }),
+    listPersonalProjects: async () => [] };
+  const page = await call(app, { action: 'preferences' });
+  assert.deepEqual(page.preferences.map(({ item_id, when, hard }) => [item_id, when, hard ?? false]), [
+    ['qualified', 'making slide decks', true], ['always', undefined, false], ['opening', '填写工时', false],
+    ['fact', 'spreadsheet work', false], ['hard-only-for', undefined, true], ['silent', undefined, true], ['name-only', undefined, false]]);
+  // The raw case is not repeated beside it, and a preference without a case carries no `when` at all.
+  assert.equal(page.preferences.some(preference => 'applies_when' in preference), false);
+  assert.deepEqual(page.preferences.filter(preference => 'when' in preference).map(preference => preference.item_id),
+    ['qualified', 'opening', 'fact']);
+  assert.match(page.guidance, /applies-when/);
+  assert.match(page.guidance, /without when, every task carries it/);
+});
+
+test('整理我的偏好\'s first page of 50 long habits stays within its byte budget', async (t) => {
+  const app = application(t, { project: null });
+  // The Provider's page at its largest: 50 preferences, each text cut at 300 characters, every one with a case and a hard mark.
+  const preferences = Array.from({ length: 50 }, (_, index) => ({ item_kind: 'entity', item_id: `synthetic-habit-${index}`,
+    aspect: 'judgment_preference', scope: 'project', project_id: 'synthetic-project', status: 'confirmed',
+    text: `Synthetic habit ${index}\n${'仅在处理合成工单时适用：'.padEnd(299, '按合成模板填写字段并核对。')}…`,
+    applies_when: `处理合成工单第 ${index} 类时`, hard: true }));
+  app.personal = { readPreferenceOrganizing: async () => ({ total: 120, pending: 0, next_offset: 50, preferences,
+    duplicates: [], duplicates_truncated: false }), listPersonalProjects: async () => [] };
+  const page = await call(app, { action: 'preferences' });
+  assert.equal(page.preferences.length, 50);
+  assert.ok(page.preferences.every(preference => preference.when));
+  const bytes = Buffer.byteLength(JSON.stringify(page));
+  assert.ok(bytes <= PREFERENCES_PAGE_BYTES, `${bytes} bytes`);
 });
 
 test('a model is placed only when its family leaves no doubt', () => {

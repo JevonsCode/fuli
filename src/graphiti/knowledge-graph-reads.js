@@ -6,6 +6,8 @@ import { mergeExternalKnowledgeProjection } from '../external-knowledge/graph-pr
 import { configuredWorkspace } from './workspace-provider-client.js';
 import { recordAgentViews } from './agent-view-records.js';
 import { resolvePreferenceProject } from './preference-project-resolution.js';
+import { preferenceCondition } from '../conversations/preference-stated-case.js';
+import { preferenceAlwaysInline } from './preference-task-scope.js';
 
 export function searchKnowledge(application, input) {
   return searchFederatedKnowledge(application, input, {
@@ -22,6 +24,23 @@ export async function searchCurrentProjectKnowledge(application, input) {
     projectPath: input.projectPath
   });
   return searchCurrentProjectKnowledgeWorkflow(application, resolution, input);
+}
+
+// The console's read marks each preference that states when it applies with
+// that case (`stated_case`) and each hard rule (`hard_rule`), both read as an
+// entry reads them (preference-stated-case.js, preference-task-scope.js:
+// outer, nested and attribute qualifiers alike), so the 偏好 page can count
+// the habits that state none. Read-only, derived from what the read returned.
+function withStatedCases(graph) {
+  const cased = (item, instruction) => {
+    if (!item.profile_aspect) return item;
+    const preference = { instruction, attributes: item.attributes, preference_qualifiers: item.preference_qualifiers };
+    const condition = preferenceCondition(preference);
+    return { ...item, ...(condition ? { stated_case: condition.text } : {}),
+      ...(preferenceAlwaysInline(preference) ? { hard_rule: true } : {}) };
+  };
+  return { ...graph, nodes: graph.nodes.map(node => cased(node, node.summary || node.name)),
+    edges: graph.edges.map(edge => cased(edge, edge.fact)) };
 }
 
 // An Agent reads as its FLA (projectAgentId) or a plain session: no other FLA's knowledge. Only the
@@ -52,7 +71,7 @@ export async function getKnowledgeGraph(application, {
       ], agentToolName, { sourceApplication, personalProjectId });
     }
     return mergeExternalKnowledgeProjection(
-      application.externalKnowledge, result, spaceId, personalProjectId
+      application.externalKnowledge, ownerReads ? withStatedCases(result) : result, spaceId, personalProjectId
     );
   }
   if (personalProjectId) {

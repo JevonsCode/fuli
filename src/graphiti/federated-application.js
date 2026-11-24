@@ -82,7 +82,8 @@ import {
   reassignKnowledgeItem,
   recordKnowledgeUsage,
   reviseKnowledgeItem,
-  setPersonalPreferenceScope
+  setPersonalPreferenceScope,
+  setPreferenceAppliesWhen
 } from './knowledge-curation.js';
 import {
   completePreferenceConflict,
@@ -377,6 +378,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async reassignKnowledgeItem(input, ownerReads) {
     return reassignKnowledgeItem(this, input, ownerReads);
+  }
+
+  async setPreferenceAppliesWhen(input, ownerReads, relay) {
+    return setPreferenceAppliesWhen(this, input, ownerReads, relay);
   }
 
   async setPersonalPreferenceScope(input) {

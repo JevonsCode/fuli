@@ -77,6 +77,14 @@ export const preferenceMessages = {
         opened: '已在 {client} 打开，发送后开始整理',
         copied: '已复制，粘贴给你的 AI 发送就开始整理',
       },
+      // Habits that never say when they apply (PR 1104): the AI drafts a case for each, the person ticks.
+      conditions: {
+        count: '没写适用情况的习惯有 {count} 条，每次任务都会带上；让 AI 拟好「只在…时适用」，你勾了才写上。',
+        countHard: '没写适用情况的习惯有 {count} 条（其中硬性规则 {hard} 条），每次任务都会带上；让 AI 拟好「只在…时适用」，你勾了才写上。',
+        area: '补上习惯何时适用',
+        title: '让 AI 补上何时适用',
+        lead: "@:{'roleNames.astro'} 给只讲某一类事的习惯拟一句「只在…时适用」，一次列给你勾，你勾了才写",
+      },
       summaryAria: '协作偏好状态',
       summary: {
         confirmedAria: '查看 {count} 条已确认偏好',
@@ -283,6 +291,13 @@ export const preferenceMessages = {
         lead: "@:{'roleNames.astro'} finds duplicates, wrong scopes and stale ones; nothing changes until you say yes",
         opened: 'Opened in {client}; send it to start tidying',
         copied: 'Copied; paste it into your AI and send to start tidying',
+      },
+      conditions: {
+        count: '{count} habit never says when it applies, so every task carries it. Your AI drafts an "only when …" and writes it only if you tick it. | {count} habits never say when they apply, so every task carries them. Your AI drafts an "only when …" for each and writes only what you tick.',
+        countHard: '{count} habit never says when it applies (a hard rule), so every task carries it. Your AI drafts an "only when …" and writes it only if you tick it. | {count} habits never say when they apply ({hard} of them hard rules), so every task carries them. Your AI drafts an "only when …" for each and writes only what you tick.',
+        area: 'say when habits apply',
+        title: 'Let AI say when habits apply',
+        lead: "@:{'roleNames.astro'} drafts an \"only when …\" for habits about one kind of work and lists them once; only what you tick is written",
       },
       summaryAria: 'Collaboration preference status',
       summary: {

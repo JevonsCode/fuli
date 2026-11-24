@@ -1,6 +1,17 @@
+import { z } from 'zod'
+
 import { getJson } from './client'
+import { shapeFor } from './response-shape'
 import { appendKnowledgeGraphPage } from '@/features/knowledge/model'
 import type { KnowledgeGraph } from '@/types'
+
+// The fields the 偏好 page relies on beyond the items themselves: the case a
+// preference states and whether it is a hard rule (stated_case, hard_rule,
+// read-only), which count the habits that state none
+// (features/preferences/habit-conditions.ts).
+const preferenceItem = z.looseObject({ id: z.string(), stated_case: z.string().optional(),
+  hard_rule: z.boolean().optional() })
+export const graphPageShape = shapeFor<KnowledgeGraph>(z.looseObject({ nodes: z.array(preferenceItem), edges: z.array(preferenceItem) }))
 
 // Profile counts and confirmation actions must see the same complete history.
 export async function readPersonalProfileGraph(spaceId: string, signal?: AbortSignal): Promise<KnowledgeGraph> {
@@ -9,8 +20,7 @@ export async function readPersonalProfileGraph(spaceId: string, signal?: AbortSi
   let graph: KnowledgeGraph | null = null
   const visited = new Set<number>([0])
   for (let page = 0; page < 20; page++) {
-    const result = await getJson<KnowledgeGraph>(`/api/graph?${query}`, { signal })
-    if (!Array.isArray(result?.nodes) || !Array.isArray(result?.edges)) throw new Error('Invalid personal profile history')
+    const result = await getJson(`/api/graph?${query}`, graphPageShape, { signal })
     graph = appendKnowledgeGraphPage(graph, result)
     if (!result.truncated) return graph
     const offset = result.next_offset

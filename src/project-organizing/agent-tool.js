@@ -1,6 +1,7 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { modelTier, tierAdvice } from './model-tiers.js';
 import { CONSENT_SOURCES } from './port.js';
+import { preferenceCondition } from '../conversations/preference-stated-case.js';
 
 // The organize_project Agent tool (rec#114): read how well the project is
 // known and what earlier runs did, or record what this run settled. The
@@ -23,7 +24,9 @@ const PREFERENCES_GUIDANCE = 'Follow skills/operating-fuli (Organising preferenc
   + 'Change only what the person says yes to in this chat: retire or reword with revise_personal_knowledge '
   + '(invalidate, then link_replacement to the kept copy; mark_outdated; update). Confirming and moving scope are the person\'s '
   + 'decisions: relay their words with run_delegated_action (POST /api/knowledge/batch-confirmation, '
-  + 'POST /api/knowledge/:itemKind/:itemId/preference-scope). Permanent deletion stays in the console.';
+  + 'POST /api/knowledge/:itemKind/:itemId/preference-scope, PUT /api/knowledge/:itemKind/:itemId/applies-when). '
+  + 'when: the case a preference says it applies in; without when, every task carries it (hard: a hard rule). '
+  + 'Permanent deletion stays in the console.';
 const PREFERENCES_REPEATED_GUIDANCE = ' For a subject listed in several projects, run repeated_preference_check with it as query.';
 // The tool takes at most this many projects.
 const MAX_CHECKED_PROJECTS = 32;
@@ -52,11 +55,25 @@ async function organizePreferences(application, offset = 0) {
     throw new InvalidInputError('offset is a whole number of 0 or more: pass the next_offset of the page before');
   }
   const spaceId = application.config.personal.spaceId;
-  const page = await application.personal.readPreferenceOrganizing({ personalSpaceId: spaceId, offset });
+  const read = await application.personal.readPreferenceOrganizing({ personalSpaceId: spaceId, offset });
+  const page = { ...read, preferences: (read.preferences ?? []).map(withCase) };
   if (offset) return page;
   const check = await repeatedPreferenceCheck(application, spaceId);
   return { ...page, guidance: PREFERENCES_GUIDANCE + (check ? PREFERENCES_REPEATED_GUIDANCE : ''),
     ...(check ? { repeated_preference_check: check } : {}) };
+}
+
+// A preference with the case it states, as an entry judges it
+// (preference-stated-case.js): `when` is that case in its own words, left out
+// where it states none or states every task. The page's text is an entity's
+// name, a line break and its summary (the instruction), or a relationship's
+// fact; only the instruction's opening states a case.
+function withCase({ applies_when: appliesWhen = null, ...item }) {
+  const text = typeof item.text === 'string' ? item.text : '';
+  const instruction = item.item_kind === 'entity' ? text.slice(text.indexOf('\n') + 1) : text;
+  const qualifiers = { appliesWhen, ...(item.hard ? { constraint: 'hard' } : {}) };
+  const when = preferenceCondition({ instruction, preference_qualifiers: qualifiers })?.text;
+  return when ? { ...item, when } : item;
 }
 
 export async function organizeProject(application, input = {}) {
