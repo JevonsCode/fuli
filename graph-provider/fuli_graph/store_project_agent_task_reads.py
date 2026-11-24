@@ -567,12 +567,16 @@ class StoreProjectAgentTaskReads:
             SET agent._task_lifecycle_lock = true
             REMOVE agent._task_lifecycle_lock
             WITH space, task, agent
-            SET agent.status = 'archived',
-                agent.archive_reason = coalesce(
-                  agent.archive_reason,
-                  'temporary task reached terminal state'),
-                agent.archived_at = coalesce(agent.archived_at, $updated_at),
-                agent.updated_at = $updated_at
+            // A copy of another computer's FLA (its owner made it for this task) is
+            // its owner's to archive; this computer ends only its own assignment.
+            FOREACH (_ IN CASE WHEN agent.fuli_replica_owner IS NULL THEN [1] ELSE [] END |
+              SET agent.status = 'archived',
+                  agent.archive_reason = coalesce(
+                    agent.archive_reason,
+                    'temporary task reached terminal state'),
+                  agent.archived_at = coalesce(agent.archived_at, $updated_at),
+                  agent.updated_at = $updated_at
+            )
             WITH space, agent
             MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)-
                   [:HAS_PROJECT_AGENT_ASSIGNMENT]->

@@ -204,3 +204,90 @@ async def test_a_graph_whose_global_is_its_own_makes_the_same_writes(alone, stri
                 'personal_space_id': space}))).count('Synthetic renamed') == 1
         finally:
             await cleanup(driver, space, group)
+
+
+async def personal_tag(client, space):
+    """A tag of the host's personal vocabulary, so the follower's copy has one."""
+    return (await checked(await client.post('/v1/knowledge-tags/create', json={
+        'personal_space_id': space, 'name': 'Synthetic language', 'namespace': 'personal',
+        'reason': 'Synthetic tag.'})))['tag']['id']
+
+
+@pytest.mark.asyncio
+async def test_a_follower_refuses_the_other_writes_of_global_and_aliases_its_own_project_tags(alone, strict):  # noqa: F811
+    """A topic's decline, publication drafts, subscriptions and an alias of a personal tag are
+    `global` by their nature: refused up front, nothing written. A tag of the follower's own
+    project takes an alias as before."""
+    settings = fixture_settings()
+    space_id, envelope = await host_global(settings, seed=personal_tag)
+    group = graphiti_group_id(settings.provider_id, 'personal', space_id)
+    tag_id = next(entry['properties']['id'] for entry in envelope['nodes'] if entry['id'].startswith('FuliKnowledgeTag:')
+                  and entry['properties'].get('namespace_kind') == 'personal')
+    async with provider_client(follower_settings()) as (client, _):
+        driver = await no_personal_space(client)
+        try:
+            await take_space(client, space_id, settings.provider_id)
+            await import_envelope(client, envelope)
+            await checked(await client.put('/v1/personal-projects', json={
+                'personal_space_id': space_id, 'project_id': LOCAL,
+                'profile': {'name': 'Synthetic local', 'lifecycle': 'active', 'purpose': 'A project of the follower.'}}))
+            digest = (await held(client, space_id, 'global'))['digest']
+            for what, response in {
+                'decline a conversation topic': await client.post('/v1/conversation-triage/decline', json={
+                    'personal_space_id': space_id, 'topic': 'Synthetic topic'}),
+                'draft a publication': await client.post('/v1/publication-drafts', json={
+                    'personal_space_id': space_id, 'target_project_id': 'synthetic-team',
+                    'provider_url': 'https://provider.example.test', 'episode': episode('publication')}),
+                'subscribe': await client.post('/v1/subscriptions', json={
+                    'personal_space_id': space_id, 'project_id': 'synthetic-team',
+                    'provider_url': 'https://provider.example.test', 'project_name': 'Synthetic team'}),
+                'unsubscribe': await client.delete('/v1/subscriptions/synthetic-team', params={
+                    'personal_space_id': space_id, 'provider_url': 'https://provider.example.test'}),
+                'alias a personal tag': await client.post('/v1/knowledge-tags/aliases', json={
+                    'personal_space_id': space_id, 'tag_id': tag_id, 'alias': 'Synthetic tongue',
+                    'reason': 'Synthetic alias.'}),
+            }.items():
+                assert response.status_code == 409, (what, response.text)
+                assert response.json()['detail']['code'] == 'replica_read_only', what
+                assert (await held(client, space_id, 'global'))['digest'] == digest, what
+            records, _, _ = await driver.execute_query('''
+                RETURN COUNT { (:FuliConversationTopicDecline {space_id: $space}) } AS declines,
+                       COUNT { (:FuliPublicationDraft {personal_space_id: $space}) } AS drafts,
+                       COUNT { (:FuliSpace {id: $space})-[:SUBSCRIBES_TO]->() } AS subscriptions''', space=space_id)
+            assert dict(records[0]) == {'declines': 0, 'drafts': 0, 'subscriptions': 0}
+            project_tag = (await checked(await client.post('/v1/knowledge-tags/create', json={
+                'personal_space_id': space_id, 'personal_project_id': LOCAL, 'name': 'Synthetic module',
+                'namespace': 'project', 'reason': 'Synthetic tag.'})))['tag']
+            aliased = await checked(await client.post('/v1/knowledge-tags/aliases', json={
+                'personal_space_id': space_id, 'personal_project_id': LOCAL, 'tag_id': project_tag['id'],
+                'alias': 'Synthetic component', 'reason': 'Synthetic alias.'}))
+            assert aliased['outcome'] in {'added', 'proposed'}
+            assert (await held(client, space_id, 'global'))['digest'] == digest
+        finally:
+            await cleanup(driver.maintenance(), space_id, group)
+
+
+@pytest.mark.asyncio
+async def test_a_graph_whose_global_is_its_own_declines_drafts_subscribes_and_aliases(alone, strict):  # noqa: F811
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        await no_personal_space(client)
+        driver, space, group = await scenario(client)
+        try:
+            tag_id = await personal_tag(client, space)
+            for what, response in {
+                'subscribe': await client.post('/v1/subscriptions', json={
+                    'personal_space_id': space, 'project_id': 'synthetic-team',
+                    'provider_url': 'https://provider.example.test', 'project_name': 'Synthetic team'}),
+                'unsubscribe': await client.delete('/v1/subscriptions/synthetic-team', params={
+                    'personal_space_id': space, 'provider_url': 'https://provider.example.test'}),
+                'alias a personal tag': await client.post('/v1/knowledge-tags/aliases', json={
+                    'personal_space_id': space, 'tag_id': tag_id, 'alias': 'Synthetic tongue',
+                    'reason': 'Synthetic alias.'}),
+            }.items():
+                assert response.status_code == 200, (what, response.text)
+            declined = await client.post('/v1/conversation-triage/decline', json={
+                'personal_space_id': space, 'topic': 'Synthetic topic'})
+            assert declined.status_code == 404, 'no such open topic: past the refusal, as before'
+        finally:
+            await cleanup(driver, space, group)

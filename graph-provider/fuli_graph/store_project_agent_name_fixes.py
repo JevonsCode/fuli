@@ -75,8 +75,8 @@ class StoreProjectAgentNameFixes:
         """Renames exactly the FLAs the person agreed to, to the names they saw,
         all at once; anything changed since they looked refuses the whole apply."""
         self._require_personal()
-        refuse_global_write(self, "FLAs' names")
         await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, "FLAs' names")
         stored = {}
         holders, taken = await self._name_holders(request.personal_space_id, stored)
         groups = name_fix_plan(holders, frozenset(request.keep), taken)

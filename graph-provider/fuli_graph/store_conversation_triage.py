@@ -4,6 +4,7 @@ from .conversation_scope import conversation_scope_id
 from .graph_field_contract import stored_fields
 from .knowledge_versions import lock_knowledge
 from .provider_values import now_utc
+from .replica_write_guard import refuse_global_write
 from .store_transactions import query_store_transaction
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
 from .topic_knowledge_migration import move_topic_knowledge, return_topic_knowledge
@@ -83,6 +84,8 @@ class StoreConversationTriage:
         """A person said not yet; remember how many conversations the topic had then."""
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        # A decline is the person's, kept with the topics of `global`.
+        refuse_global_write(self, 'a conversation topic declined')
         key = topic_key(request.topic)
         count = await self._topic_count(space['id'], key)
         if not count:

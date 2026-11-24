@@ -89,7 +89,6 @@ class StoreProjectAgents:
         recruitment_id: str | None = None,
     ) -> ProjectAgentRecord:
         self._require_personal()
-        refuse_global_write(self, 'an FLA of the roster')
         if request.occupation and request.agent_id in {*BUILTIN_AGENT_OCCUPATIONS, LEGACY_HR_AGENT_ID}:
             occupation_error(409, 'occupation_locked', 'The built-in Agent occupation is locked.')
         if request.occupation and request.occupation.role == 'assistant':
@@ -143,6 +142,7 @@ class StoreProjectAgents:
                 detail='the fixed roles must remain active',
             )
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
+        refuse_global_write(self, 'an FLA of the roster')
         if request.personal_project_id:
             await authorize_personal_project(
                 self,
