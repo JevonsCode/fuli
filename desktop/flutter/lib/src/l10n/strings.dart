@@ -23,6 +23,8 @@ class Strings {
   String statusNeedsPerson(int count) =>
       _t('有 $count 件事需要你', count == 1 ? '1 thing needs you' : '$count things need you');
   String get statusDegraded => _t('FULI 现在不能正常使用', 'FULI cannot work properly right now');
+  // The console holds its port but has not answered in time: a busy computer, not a broken FULI.
+  String get statusBusy => _t('电脑现在很忙，FULI 应答慢，正在等', 'Your computer is busy, so FULI is slow to answer; waiting');
   String get statusNotRunning => _t('FULI 没有运行', 'FULI is not running');
   String get statusNotFound => _t('没有找到 FULI', 'FULI was not found');
   String installedVersion(String version) => _t('已安装 v$version', 'Installed v$version');

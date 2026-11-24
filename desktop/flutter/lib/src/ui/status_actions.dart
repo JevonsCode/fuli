@@ -155,7 +155,9 @@ class StatusActions extends StatelessWidget {
         child: Text(strings.releaseLockAndStart),
       );
     }
-    // Running without an answering console: restarting is what fixes it.
+    // A busy computer: FULI waits for its console, and restarting would only add to the load.
+    if (snapshot.condition == FuliCondition.busy) return const SizedBox.shrink();
+    // Running without an answering console for long: restarting is what fixes it.
     if (snapshot.running && !snapshot.reached) {
       return FilledButton(onPressed: busy ? null : controller.restart, child: Text(strings.restartFuli));
     }

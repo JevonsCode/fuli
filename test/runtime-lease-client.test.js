@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -6,6 +9,8 @@ import {
   createRuntimeLeaseClient
 } from '../src/adaptive-runtime/lease-client.js';
 import { DEFAULT_ADAPTIVE_RUNTIME_SETTINGS } from '../src/adaptive-runtime/settings.js';
+import { recordPersonStop } from '../src/local-runtime/console-autostart-record.js';
+import { errorToolResult } from '../src/mcp/tool-result.js';
 
 const PATHS = Object.freeze({
   adaptiveRuntimeSettingsPath: '/data/adaptive-settings.json',
@@ -369,4 +374,30 @@ test('a console that refuses the lease connection is fuli_not_running, and nothi
     setHeartbeat: () => ({ unref() {} }), clearHeartbeat: () => {}
   });
   await assert.rejects(other.withGraphLease('mcp:test', async () => {}), error => error.code !== 'fuli_not_running');
+});
+
+test('a refused lease says what the Agent may do in this data directory', async t => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-lease-guidance-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const refused = Object.assign(new TypeError('fetch failed'),
+    { cause: Object.assign(new Error('synthetic refusal'), { code: 'ECONNREFUSED', syscall: 'connect' }) });
+  const client = createRuntimeLeaseClient({
+    runtimeConfigPath: join(dataDir, 'graph-runtime.json'), paths: { ...PATHS, dataDir },
+    readSettings: () => ({ ...DEFAULT_ADAPTIVE_RUNTIME_SETTINGS, enabled: true }),
+    readJson: () => ({ url: 'http://127.0.0.1:2727' }),
+    fetchImpl: async () => { throw refused; },
+    setHeartbeat: () => ({ unref() {} }), clearHeartbeat: () => {}
+  });
+  const failure = async () => {
+    try { await client.withGraphLease('mcp:test', async () => {}); } catch (error) { return errorToolResult(error).structuredContent.error; }
+    throw new Error('the lease was not refused');
+  };
+  const notRunning = await failure();
+  assert.equal(notRunning.code, 'fuli_not_running');
+  assert.match(notRunning.next, /^FULI is not running\. Run `fuli start`, then `fuli status` to confirm\./);
+  // A live PID recorded for the console is no busy console when its address refuses the connection.
+  writeFileSync(join(dataDir, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: process.pid, url: 'http://127.0.0.1:1' }));
+  assert.doesNotMatch((await failure()).next, /busy|Do not restart|电脑很忙/);
+  recordPersonStop(dataDir);
+  assert.match((await failure()).next, /The person stopped FULI\..*I started it again/);
 });

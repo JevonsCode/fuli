@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { refusedConnection } from '../app/fuli-not-running.js';
 import { inspectLocalStores } from '../data-format/local-stores.js';
-import { holdDataDirectory } from '../data-format/maintenance-lock.js';
+import { maintenanceHoldsData } from '../data-format/maintenance-lock.js';
 import { readJsonFile } from '../storage/json-file.js';
-import { checkLocalConsoleHealth } from './console-health.js';
+import { consoleHealthAnswer } from './console-health.js';
 import { acquireConsoleStartLock, readConsoleAutostart, updateConsoleAutostart } from './console-autostart-record.js';
 import { installedConsoleLauncher } from './installed-console-launcher.js';
 import { isOwnProcessRunning } from './processes.js';
@@ -15,11 +16,13 @@ import { isOwnProcessRunning } from './processes.js';
 // directory shares one lock and one record (console-autostart-record.js), so
 // only one of them starts it. It never starts a console the person stopped
 // on purpose, one whose data waits for the person's format confirmation, or a
-// whole-store restore's data; and after 3 starts within 10 minutes it stops
+// whole-store restore's data, nor one a start or restart is bringing up (it
+// holds the start lock); and after 3 starts within 10 minutes it stops
 // trying until the person starts FULI. A console whose process stays alive
-// without answering (rec#94: a shutdown that never finished) counts as down
-// once it has not answered for stuckMs; the start then replaces it
-// (unresponsive-console.js).
+// without answering counts as down once it has not answered for stuckMs, or
+// for refusedMs when nothing even listens at its address (rec#94: a shutdown
+// that closed its port and never finished, or its PID taken by another
+// program); the start then replaces it (unresponsive-console.js).
 
 export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   starts: 3,
@@ -28,9 +31,14 @@ export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   startingMs: 2 * 60_000,
   checkEveryMs: 15_000,
   firstCheckMs: 1_000,
-  // A busy console answers within a few checks; one that has not answered
-  // for this long is not coming back.
-  stuckMs: 40_000
+  // A console on a busy computer answers between long silences (11-24: load
+  // 14-22, its health still answered every 1-3 minutes while the doctor
+  // timed out); one that has not answered once for this long is not coming
+  // back. Replacing a busy one only adds a start to the load.
+  stuckMs: 5 * 60_000,
+  // A busy console still listens: a refused connection is a console that
+  // stopped listening, which load does not explain.
+  refusedMs: 40_000
 });
 const CONSOLE_HEALTH_CHECK_MS = 5_000;
 const CONSOLE_AUTOSTART_ENV = 'FULI_CONSOLE_AUTOSTART';
@@ -40,7 +48,7 @@ const WAITING_STORE_STATES = new Set(['pending_confirmation', 'half_applied', 'n
 // check() → running | unanswered | stopped_by_person | not_configured
 //   | unreadable | busy | starting | gave_up | needs_person | started. It reads
 // small files, asks the recorded console's health and spawns at most one
-// detached process. consoleState() → ready | unanswered | down.
+// detached process. consoleState() → ready | unanswered | refused | down.
 export function consoleAutostart({ dataDir, launcher, now = Date.now, limits = CONSOLE_AUTOSTART_LIMITS,
   consoleState = () => recordedConsoleState(dataDir), configured = () => existsSync(join(dataDir, 'graph-runtime.json')),
   lock = () => acquireConsoleStartLock(dataDir), waitsForPerson = () => dataWaitsForPerson(dataDir) }) {
@@ -49,9 +57,9 @@ export function consoleAutostart({ dataDir, launcher, now = Date.now, limits = C
     async check() {
       const state = await consoleState();
       if (state === 'ready') { unansweredSince = null; return 'running'; }
-      if (state === 'unanswered') {
+      if (state === 'unanswered' || state === 'refused') {
         unansweredSince ??= now();
-        if (now() - unansweredSince < limits.stuckMs) return 'unanswered';
+        if (now() - unansweredSince < (state === 'refused' ? limits.refusedMs : limits.stuckMs)) return 'unanswered';
       } else unansweredSince = null;
       const seen = readConsoleAutostart(dataDir);
       if (seen.unreadable) return 'unreadable';
@@ -126,18 +134,22 @@ async function recordedConsoleState(dataDir) {
   try { state = readJsonFile(join(dataDir, 'graph-runtime-state.json'), null); } catch { return 'down'; }
   if (!Number.isInteger(state?.pid) || !isOwnProcessRunning(state.pid)) return 'down';
   if (typeof state.url !== 'string') return 'unanswered';
-  return await checkLocalConsoleHealth(state.url, state.pid, state.version, CONSOLE_HEALTH_CHECK_MS) ? 'ready' : 'unanswered';
+  try {
+    return await consoleHealthAnswer(state.url, state.pid, state.version, CONSOLE_HEALTH_CHECK_MS);
+  } catch (error) {
+    return refusedConnection(error) ? 'refused' : 'unanswered';
+  }
 }
 
-// A whole-store restore holding the data directory, or a local store whose
-// format step waits for the person: the console stays for the person to start.
-// Whether a whole-store restore holds the data or a format step waits for the person;
-// the desktop app also waits before taking it over (npm-adoption.js).
+// Whether a whole-store restore holds the data or a format step waits for the person:
+// the console stays for the person to start. The desktop app also waits before
+// taking it over (npm-adoption.js).
 export function dataWaitsForPerson(dataDir) {
-  try { holdDataDirectory(dataDir)(); } catch { return true; }
+  if (maintenanceHoldsData(dataDir)) return true;
   try {
     return inspectLocalStores(dataDir).some(store => WAITING_STORE_STATES.has(store.state));
   } catch {
     return true;
   }
 }
+

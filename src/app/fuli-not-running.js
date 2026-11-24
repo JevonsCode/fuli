@@ -17,8 +17,12 @@ export function refusedConnection(error) {
 }
 
 // The error a caller of FULI's own console raises when that console refused
-// the connection: before anything was sent, so nothing was done.
-export function fuliNotRunning() {
-  return new ApplicationError('fuli_not_running',
+// the connection: before anything was sent, so nothing was done. next: what
+// the Agent may do about it in this data directory (unavailable-guidance.js),
+// shown instead of the general next step.
+export function fuliNotRunning(next = '') {
+  const error = new ApplicationError('fuli_not_running',
     'FULI did not answer on this computer (connection refused): it is not running, so nothing was done.');
+  if (next) error.next = next;
+  return error;
 }

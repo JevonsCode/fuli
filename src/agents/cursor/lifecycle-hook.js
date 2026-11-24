@@ -151,7 +151,7 @@ async function main() {
   } catch (error) {
     // Don't print prompts, transcripts, runtime config, paths or credentials.
     const warning = 'Fuli role context is unavailable; check the Provider connection. Memory recovery is not verified.'
-      + consoleRecoveryNotice(runtimeConfigPathOf(args));
+      + consoleRecoveryNotice(runtimeConfigPathOf(args), error);
     process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt'
       ? { continue: true, user_message: warning }
       : event === 'sessionStart' ? { additional_context: warning } : {})}\n`);

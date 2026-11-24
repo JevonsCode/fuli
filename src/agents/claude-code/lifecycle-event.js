@@ -288,7 +288,7 @@ export function runClaudeLifecycleEvent({ argv, env, cwd, stdin, timeoutMs: rema
   let input = null;
   // No prompt, transcript, path or raw exception is written to diagnostics.
   const runtimeConfigPath = () => runtimeConfigPathOf(args, env, cwd);
-  const recovery = () => consoleRecoveryNotice(runtimeConfigPath());
+  const recovery = (error = null) => consoleRecoveryNotice(runtimeConfigPath(), error);
   return new Promise(resolve => {
     let emitted = false;
     const emit = output => {
@@ -312,7 +312,7 @@ export function runClaudeLifecycleEvent({ argv, env, cwd, stdin, timeoutMs: rema
       readInput: async () => { input = await readHookInput(stdin); return input; } }))
       .then(emit, error => {
         emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget, recovery())
-          : claudeLifecycleUnavailable(event, input, null, '', recovery()));
+          : claudeLifecycleUnavailable(event, input, null, '', recovery(error)));
         recordHookFailure({ runtimeConfigPath: runtimeConfigPath(), client: 'claude_code', event, error,
           sessionId: input?.session_id, startedAt });
       })

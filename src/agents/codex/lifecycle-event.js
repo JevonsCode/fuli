@@ -315,9 +315,10 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     runtimeConfigPath = options?.runtimeConfigPath ?? null;
     return options;
   };
-  const recovery = () => consoleRecoveryNotice(runtimeConfigPath
-    ?? runtimeConfigPathOf(args, dependencies.env, dependencies.cwd));
-  const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause, '', recovery()))}\n`;
+  const recovery = (error = null) => consoleRecoveryNotice(runtimeConfigPath
+    ?? runtimeConfigPathOf(args, dependencies.env, dependencies.cwd), error);
+  const unavailable = (cause, error = null) =>
+    `${JSON.stringify(codexLifecycleUnavailable(event, input, cause, '', recovery(error)))}\n`;
   const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
   let deadline;
@@ -340,7 +341,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
       readInput: async () => { input = await readInput(); return input; },
       onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), (error) => {
       // Never print prompts, transcripts, paths or credentials.
-      write(unavailable(hookFailureCause(error)));
+      write(unavailable(hookFailureCause(error), error));
       recordHookFailure({ runtimeConfigPath, client: 'codex', event, error, sessionId: input?.session_id, startedAt });
       return { timedOut: false };
     });
