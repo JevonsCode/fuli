@@ -474,9 +474,10 @@ it would not fit. It says the rest are among those left out
 Where a session's complete frame cannot hold every hard rule (the fit's
 search finds no level for them all), the first frame tries them one by one in
 rank order and passes over one that does not fit, so a long one never keeps
-the shorter ones after it out. One that does not fit even alone is named in
-`preferences_omitted.too_large`, with a sentence to read it by key before
-acting. The hard rules its confirmed base frame did not spell out are owed.
+the shorter ones after it out. One that does not fit that frame even alone is
+named in `preferences_omitted.too_large`, with a sentence to read it by key
+before acting; the name is about that frame only, and a later delta, which
+carries less around it, may still spell the rule out. The hard rules its confirmed base frame did not spell out are owed.
 Each later frame gives them first, one by one in rank order, while the frame
 the session actually gets stays within the host's limit (one too large even
 then is named, not owed); the

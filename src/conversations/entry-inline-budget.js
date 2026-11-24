@@ -26,8 +26,9 @@ export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferenc
   + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
   + 'they stay in force.';
 
-// Added when a hard rule does not fit this host's entry even on its own
-// (preferences_omitted.too_large): no later frame will spell it out either.
+// Added when a hard rule does not fit this frame even on its own
+// (preferences_omitted.too_large). It says so of this frame only: a later
+// delta, which carries less around it, may still spell the rule out.
 export const TOO_LARGE_LABEL = 'preferences_omitted.too_large names hard rules too long for this entry: read them by key '
   + 'with read_task_preferences before acting; they stay in force.';
 
