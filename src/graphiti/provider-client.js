@@ -907,9 +907,11 @@ export class GraphitiProviderClient {
   // changes another FLA. `origin` names the follower's computer (its paired
   // name and the start of its fingerprint) and project.
   // For this computer's runner host (runner/host-global-writes.js); no Agent tool.
-  hireForFollowerRecruitment({ personalSpaceId, recruitmentId, agentId, profile, occupation, reason, origin }) {
+  hireForFollowerRecruitment({ personalSpaceId, recruitmentId, agentId, taskId, recruitmentSourceApplication,
+    profile, occupation, reason, origin }) {
     return this.#request('/v1/project-agents/owner-hire', {
       method: 'POST', body: { personal_space_id: personalSpaceId, recruitment_id: recruitmentId, agent_id: agentId,
+        task_id: taskId, recruitment_source_application: recruitmentSourceApplication,
         profile, occupation, reason, origin_computer: origin.computer, origin_fingerprint: origin.fingerprint,
         origin_project: origin.project }
     });

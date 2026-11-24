@@ -151,6 +151,7 @@ test('a hire for a follower\'s recruitment and an item\'s view reach their Provi
       return jsonResponse(200, { status: 'synthetic' }); } });
   await client.hireForFollowerRecruitment({ personalSpaceId: 'synthetic-space', recruitmentId: 'synthetic-recruitment',
     agentId: 'synthetic-agent', profile: { name: 'Synthetic Lead' }, occupation: { role: 'synthetic_role', tags: [] },
+    taskId: 'synthetic-task', recruitmentSourceApplication: 'kiro',
     reason: 'Synthetic reason', origin: { computer: 'Synthetic computer', fingerprint: 'a'.repeat(64),
       project: 'Synthetic project' } });
   await client.readKnowledgeItemView({ personalSpaceId: 'synthetic-space', itemKind: 'entity', itemId: 'synthetic-item' });
@@ -158,6 +159,7 @@ test('a hire for a follower\'s recruitment and an item\'s view reach their Provi
     { url: 'http://provider.test/v1/project-agents/owner-hire', method: 'POST', body: { personal_space_id: 'synthetic-space',
       recruitment_id: 'synthetic-recruitment', agent_id: 'synthetic-agent', profile: { name: 'Synthetic Lead' },
       occupation: { role: 'synthetic_role', tags: [] }, reason: 'Synthetic reason',
+      task_id: 'synthetic-task', recruitment_source_application: 'kiro',
       origin_computer: 'Synthetic computer', origin_fingerprint: 'a'.repeat(64), origin_project: 'Synthetic project' } },
     { url: 'http://provider.test/v1/knowledge/item-views', method: 'POST',
       body: { personal_space_id: 'synthetic-space', item_kind: 'entity', item_id: 'synthetic-item' } }]);

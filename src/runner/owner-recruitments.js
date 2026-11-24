@@ -72,7 +72,8 @@ function recruitInput(recruitment, projectName) {
   const occupation = recruitment.occupation;
   if (!validId(recruitmentId) || !validId(proposedAgentId) || !reason || !project || !recruitment.proposed_profile
     || typeof occupation?.role !== 'string') return null;
-  return { recruitmentId, proposedAgentId, profile: recruitment.proposed_profile,
+  return { recruitmentId, proposedAgentId, taskId: recruitment.task_id,
+    recruitmentSourceApplication: recruitment.trigger_source_application, profile: recruitment.proposed_profile,
     occupation: { role: occupation.role, tags: Array.isArray(occupation.tags) ? occupation.tags : [] },
     reason, projectName: project };
 }
