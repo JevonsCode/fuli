@@ -1,7 +1,7 @@
 import { ApplicationError } from '../app/application-error.js';
 import { assertTestToolsEnabled } from '../app/test-tools.js';
 import { activeTestToolsEnabled } from '../app/agent-request-context.js';
-import { agentInterfaceCatalog } from './interface-catalog.js';
+import { agentInterfaceView } from './interface-catalog-views.js';
 import { captureDecision, captureDisabled, describeCapture } from '../graphiti/capture-decision.js';
 import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
@@ -75,7 +75,7 @@ const HANDLERS = Object.freeze({
   list_agent_attention: (app, input) => app.listAgentAttention(input),
   cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),
   list_preference_conflicts: (app, input) => app.listPreferenceConflicts(input),
-  list_agent_interfaces: () => agentInterfaceCatalog(),
+  list_agent_interfaces: (_app, input) => agentInterfaceView(input),
   get_capture_policy: async (app, input) => describeCapture(app, await taskBoundScope(app, input, {
     sourceApplication: input?.sourceApplication, personalProjectId: input?.personalProjectId ?? null,
     projectPath: input?.projectPath ?? null, sessionId: input?.sessionId ?? null })),

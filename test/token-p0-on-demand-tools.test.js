@@ -48,8 +48,8 @@ test('chat directory omits schemas and calls require exact discovery and origina
   let calls = 0;
   await connected({ getProjectAgentMemory: async () => { calls++; } }, async client => {
     const directory = await client.callTool({ name: 'list_agent_interfaces', arguments: {} });
-    assert.ok(directory.structuredContent.tools.length > 20);
-    assert.ok(directory.structuredContent.tools.every(t => !t.inputSchema && !t.description));
+    assert.ok(directory.structuredContent.otherTools.length > 20);
+    assert.ok(directory.structuredContent.otherTools.every(name => typeof name === 'string'));
     assert.equal((await client.callTool({ name: 'get_project_agent_memory', arguments: {} })).isError, true);
     assert.equal((await client.callTool({ name: 'list_agent_interfaces', arguments: { toolName: 'unknown-tool' } })).isError, true);
     await client.callTool({ name: 'list_agent_interfaces', arguments: { toolName: 'get_project_agent_memory' } });

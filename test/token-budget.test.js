@@ -261,7 +261,9 @@ const BASELINE = Object.freeze({
   // takes the caller's taskContextToken so the app's owner is the task's FLA, never an argument:
   // 192,751 -> 191,758 B (-993 B), measured. Chat, instructions and entry are unchanged.
   // Both together: 191,752 B, measured on the merge.
-  fullToolSchemaBytes: 191752,
+  // list_agent_interfaces takes domain, area or route for one part of the catalog it no longer
+  // returns whole (its description is unchanged): 191,752 -> 191,921 B (+169 B), measured.
+  fullToolSchemaBytes: 191921,
   // docs/workstreams.md: a divided project's entry names its lines and owners
   // (two lines: +91 chars, measured); only its lead's also refers to the
   // dividing rule (+169 chars, measured). A project without lines adds nothing.
@@ -294,7 +296,9 @@ const BASELINE = Object.freeze({
   // shows: 7,343 -> 7,333 B (-10 B), measured from the real tools/list.
   // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
   // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
-  chatToolSchemaBytes: 7330,
+  // The same three list_agent_interfaces arguments, no description or bounds listed: 7,330 -> 7,408 B
+  // (+78 B), measured from the real tools/list; its directory answer shrinks by 56,395 B (interfaceIndexBytes).
+  chatToolSchemaBytes: 7408,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
@@ -446,7 +450,17 @@ const BASELINE = Object.freeze({
   flaGrowthNoneChars: 0,
   flaGrowthRepeatedChars: 258,
   flaGrowthWorkflowsMaxChars: 888,
-  repeatGuidanceChars: 513
+  repeatGuidanceChars: 513,
+  // list_agent_interfaces without arguments returned the whole Agent interface catalog (every
+  // console change with its reason or undo, every domain with its guidance, every tool's title):
+  // 63,848 B, 848 B under its 64 KB cap. It is now an index (domains with their tools, route
+  // groups with their counts by access, tools named nowhere else) and the details come one
+  // domain, route group or route at a time: 63,848 -> 7,453 B, measured through the chat MCP.
+  // Its cap is 8 KB, each detail's 16 KB; the largest domain (policy-and-health) is 1,300 B
+  // and the largest route group (system) 3,189 B.
+  interfaceIndexBytes: 7453,
+  interfaceDomainMaxBytes: 1300,
+  interfaceAreaMaxBytes: 3189
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -547,6 +561,29 @@ async function listedChatBytes() {
     ({ name, title, description, inputSchema }))));
 }
 
+// What list_agent_interfaces answers through the chat MCP: the index, and its largest domain and route group.
+async function interfaceCatalogBytes() {
+  const server = createMcpServer({}, { env: {}, toolProfile: 'chat', registerResources: false });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'budget', version: '1.0.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const bytes = async args => {
+    const result = await client.callTool({ name: 'list_agent_interfaces', arguments: args });
+    assert.equal(result.isError, undefined, JSON.stringify(args));
+    return Buffer.byteLength(result.content[0].text);
+  };
+  const largest = async (key, names) => Math.max(...await Promise.all(names.map(name => bytes({ [key]: name }))));
+  try {
+    const index = JSON.parse((await client.callTool({ name: 'list_agent_interfaces', arguments: {} })).content[0].text);
+    return { interfaceIndexBytes: await bytes({}),
+      interfaceDomainMaxBytes: await largest('domain', Object.keys(index.domains)),
+      interfaceAreaMaxBytes: await largest('area', Object.keys(index.areas)) };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 async function measure() {
   const all = listAgentTools();
   return { fullToolSchemaBytes: schemaBytes(all),
@@ -561,7 +598,8 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars(), ...workstreamEntryChars(), ...flaGrowthChars(),
+    ...await interfaceCatalogBytes() };
 }
 
 // docs/workstreams.md: what a divided project's entry adds to its team block,
@@ -679,6 +717,12 @@ async function turnReceiptChars() {
   return { turnReceiptNoChangeChars: unchanged.length - plain.length,
     turnReceiptHeadingChars: heading.length, turnReceiptEntryChars: line.length };
 }
+
+test('the Agent interface baselines stay under the caps the MCP answer enforces', () => {
+  // A baseline raised past these would only fail at runtime, as tool_catalog_too_large.
+  assert.ok(BASELINE.interfaceIndexBytes <= 8 * 1024);
+  assert.ok(Math.max(BASELINE.interfaceDomainMaxBytes, BASELINE.interfaceAreaMaxBytes) <= 16 * 1024);
+});
 
 test('per-session token cost never grows past the recorded baseline', async () => {
   const current = await measure();

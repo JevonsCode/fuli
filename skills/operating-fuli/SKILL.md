@@ -10,14 +10,14 @@ Operate FULI through its structured Agent interfaces. Treat the UI and Agent too
 ## Required workflow
 
 1. Establish the exact scope from the current task. Resolve real `personalSpaceId`, `personalProjectId`, item IDs, and versions through read tools. Never guess an identifier or infer one from a display name.
-2. Call `list_agent_interfaces` before the first mutation. Use its catalog to determine whether the UI capability is `agent` accessible (a named tool), `agent_delegable` / `agent_delegable_off` (made for the person with `run_delegated_action`, see below), `agent_relayed` (the person's own decision, relayed in their exact words with `run_delegated_action`), or intentionally `local_user_only`.
+2. Call `list_agent_interfaces` before the first mutation: its index names each domain's tools and counts each route group's console changes by access. Read only the part you need, `list_agent_interfaces(area)` for a route group, `(route)` for one console route or `(domain)` for one domain, to determine whether the UI capability is `agent` accessible (a named tool), `agent_delegable` / `agent_delegable_off` (made for the person with `run_delegated_action`, see below), `agent_relayed` (the person's own decision, relayed in their exact words with `run_delegated_action`), or intentionally `local_user_only`.
 3. Inspect the exact input schema for the selected tool. Prefer one domain-specific tool over generic HTTP, shell, database, or browser access.
 4. Read the current record immediately before changing it. Before `upsert_personal_project`, call `list_personal_projects` with the exact `projectId` to read its full profile and check that the result is not truncated. Preserve fields the user did not ask to change. Profile text fields a person wrote (`profile.authors` kind `person` or `both`) are never overwritten by an Agent; FULI returns them in `refused_fields`, so report them instead of retrying.
 5. Check the safety boundary below. Stop if the action needs missing user authority or is marked `local_user_only`.
 6. Execute the smallest scoped mutation. Supply `expectedRevision`, `expectedUpdatedAt`, `idempotencyKey`, or request IDs whenever the tool supports them.
 7. Re-read through the corresponding structured read tool. Report the actual resulting scope, version, status, and any partial failure.
 
-If an expected capability is absent from `list_agent_interfaces`, report an Agent-interface parity gap. Do not hide the gap by opening Chrome, clicking the UI, writing storage directly, or searching outside the current repository.
+If an expected capability is absent from `list_agent_interfaces` (no tool in the index, and no entry for its route), report an Agent-interface parity gap. Do not hide the gap by opening Chrome, clicking the UI, writing storage directly, or searching outside the current repository.
 
 ## Safety boundary
 
@@ -36,7 +36,7 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 
 ## Changes made for the person (AI permissions)
 
-Console changes without their own tool are `agent_delegable` (on by default) or `agent_delegable_off` (off until the person turns the category on) in `list_agent_interfaces`. Make one only when the person asks or the task needs it: call `run_delegated_action` with the current `taskContextToken`, the exact catalog `route`, its `params`, the JSON `body` the console page sends and a short `reason`. The console checks the person's switch, runs the change and records who (FLA, task), what and the entry's `undo`; put the returned `delegation_receipt.markdown` in your reply.
+Console changes without their own tool are `agent_delegable` (on by default) or `agent_delegable_off` (off until the person turns the category on) in `list_agent_interfaces(area)` / `(route)`. Make one only when the person asks or the task needs it: call `run_delegated_action` with the current `taskContextToken`, the exact catalog `route`, its `params`, the JSON `body` the console page sends and a short `reason`. The console checks the person's switch, runs the change and records who (FLA, task), what and the entry's `undo`; put the returned `delegation_receipt.markdown` in your reply.
 
 - On by default: settings (runtime settings, recall, session links, one-click update, occupation plugin updates, client connections, doctor repair, confirming capture changes, restoring old data, deleting `#fulidebug` turn records), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
 - Also on by default: built-in Agent and semantic search (语义搜索) model settings (model, egress, budget, 「只给建议」, 测试连接 `POST /api/model-backends/roles/:role/check`). 「交给 Tonborg 确认」 is the person's own decision (below).
@@ -103,7 +103,7 @@ When the person asks what FULI did for them this week, read `read_compounding_st
 
 ## Selecting tools
 
-Start from `list_agent_interfaces`; names and schemas can evolve. With a chat-profile connection, read one tool's schema with `list_agent_interfaces(toolName)` and run it with `fuli_call(toolName, input)`; the listed tools never change during a session, so do not wait for a discovered tool to appear in your tool list. Common workflows and verification pairs are summarized in [workflow-recipes.md](references/workflow-recipes.md). Load that reference only when choosing or sequencing tools is not obvious from the catalog.
+Start from the `list_agent_interfaces` index, then the one domain, area or route you need; names and schemas can evolve. With a chat-profile connection, read one tool's schema with `list_agent_interfaces(toolName)` and run it with `fuli_call(toolName, input)`; the listed tools never change during a session, so do not wait for a discovered tool to appear in your tool list. Common workflows and verification pairs are summarized in [workflow-recipes.md](references/workflow-recipes.md). Load that reference only when choosing or sequencing tools is not obvious from the catalog.
 
 For read-only questions, use the narrowest list/get/search tool and return source and scope information. For writes, keep the user-requested scope explicit and verify after mutation. For multi-step operations, stop on the first failed invariant rather than continuing with a partially stale plan.
 

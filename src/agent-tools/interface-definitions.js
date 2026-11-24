@@ -45,7 +45,7 @@ export const AGENT_INTERFACE_DEFINITIONS = [
     name: 'list_agent_interfaces',
     title: 'READ · List Agent interface parity',
     description: 'Discover FULI tool names and trust boundaries; default directory omits schemas. Pass exact toolName to read its complete executable schema; in chat profile run it with fuli_call(toolName, input), which never changes the listed tools. Never makes local-user-only boundaries Agent-callable.',
-    inputSchema: objectSchema({ toolName: id }),
+    inputSchema: objectSchema({ toolName: id, domain: id, area: id, route: { ...stringSchema(), minLength: 1, maxLength: 1024 } }),
   },
   {
     name: 'get_capture_policy',

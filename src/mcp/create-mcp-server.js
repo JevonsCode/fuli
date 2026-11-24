@@ -62,7 +62,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   resume_agent_conversation: 24 * 1024,
   list_project_agent_tasks: 128 * 1024,
   list_preference_conflicts: 128 * 1024,
-  list_agent_interfaces: 64 * 1024,
+  // One tool's schema, domain, route group or route; the index alone stays under 8 KB.
+  list_agent_interfaces: 16 * 1024,
   list_external_knowledge_connectors: 32 * 1024,
   discover_external_knowledge_sources: 64 * 1024,
   list_external_knowledge_bindings: 64 * 1024,
@@ -408,12 +409,12 @@ async function invokeTool(tool, input, requestContext = null) {
         view => successToolResult(view, { limitBytes }));
     }
     if (tool.definition.name === 'list_agent_interfaces') {
-      return agentToolCatalogResult(value, tool.catalogDefinitions, input.toolName, limitBytes);
+      return agentToolCatalogResult(value, tool.catalogDefinitions, input, limitBytes);
     }
     if (tool.definition.name === 'list_employee_tools') {
       return employeeToolCatalogResult(value, { limitBytes });
     }
-    const itemLimit = ({ list_agent_interfaces: 200, list_project_agent_tasks: 200,
+    const itemLimit = ({ list_project_agent_tasks: 200,
       list_preference_conflicts: 1000, list_external_knowledge_bindings: 200, list_agent_apps: 200,
       get_collaboration_preferences: 1000 })[tool.definition.name];
     const result = successToolResult(value, { limitBytes, itemLimit, preserveHumanInteraction });
