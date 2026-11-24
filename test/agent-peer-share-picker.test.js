@@ -441,6 +441,10 @@ test('a listener that does not stop in time ends the move with a reason and leav
     assert.equal(settled, 'listen_stop_timeout');
     const stalled = await laptop.runtime.status();
     assert.deepEqual([stalled.coordinator.listening, stalled.coordinator.listenFailure?.code], [false, 'STOP_TIMEOUT']);
+    const lines = [];
+    await runPeerControlCommand(['status'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli', notRunning: 'not running',
+      write: (line) => lines.push(line), fetchImpl: async () => new Response(JSON.stringify(stalled)) });
+    assert.ok(lines.some((line) => line.startsWith('Not listening: the previous listener did not stop')), lines.join('\n'));
     const again = await Promise.race([laptop.runtime.reopenListener(), delay(5_000, null)]);
     assert.ok(again, 'the person\'s 重新监听 is not held behind the stuck stop');
     assert.deepEqual([again.coordinator.listening, again.coordinator.listenFailure, listenerHost(laptop)], [true, null, '127.0.0.1']);
