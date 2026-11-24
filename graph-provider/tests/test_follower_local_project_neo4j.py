@@ -113,7 +113,8 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
                 'confirmation': '删除'}, headers=REVIEW))
             await unchanged('hard-delete a project item')
 
-            # A task Jefa (the host's) coordinates, worked by the host's FLA, from queued to completed.
+            # A task Jefa (the host's) coordinates, worked by the host's FLA, from queued to review
+            # (an Agent's own completion waits for a verified revision).
             routed = await checked(await client.post('/v1/project-agent-tasks', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL,
                 'idempotency_key': f'jefa-task-{suffix}', 'title': 'Synthetic ledger check',
@@ -123,12 +124,12 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
             task = routed['task']
             assert task['coordinator_agent_id'] == SYSTEM_COORDINATOR_AGENT_ID
             assert routed['assigned_agent']['agent_id'] == 'scope-lead'
-            for status in ('running', 'completed'):
+            for status in ('running', 'awaiting_review'):
                 task = await checked(await client.post(f"/v1/project-agent-tasks/{task['task_id']}/events", json={
                     'personal_space_id': space_id, 'personal_project_id': LOCAL, 'task_id': task['task_id'],
                     'idempotency_key': f'jefa-task-{suffix}:{status}', 'status': status,
                     'summary': f'Synthetic {status}.', 'agent_id': 'scope-lead', 'source_application': 'codex'}))
-            assert task['status'] == 'completed'
+            assert task['status'] == 'awaiting_review'
             await unchanged('a task Jefa coordinates')
 
             # A task that needs a new FLA waits for the host to make it.
