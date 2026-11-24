@@ -8,7 +8,7 @@ import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import { UiIcon } from '@/ui'
 import TeamFaces from './TeamFaces.vue'
-import { currentStepOf, fill, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
+import { currentStepOf, fill, sharesFor, stepsAround, stepsOf, type TeamShare, type TeamSheet } from './team-sheets'
 
 // 团队卡片: one task several FLAs do together. Folded, it shows who is on it
 // (rings = each share's recorded progress), what is happening now and the
@@ -22,8 +22,16 @@ const props = defineProps<{
   /** The FLA whose page shows this card: its share comes first. */
   viewerAgentId?: string | null
   defaultOpen?: boolean
+  /**
+   * On that FLA's own page, where 现在 already names it (docs/fla-page.md): the
+   * head says its current step without its name, and an open card lists each
+   * share's current step with one either side, the whole list one click away.
+   * Opened from the start (a link named the task), it lists every step.
+   */
+  focused?: boolean
 }>()
 const open = ref(Boolean(props.defaultOpen))
+const allSteps = ref(!props.focused || Boolean(props.defaultOpen))
 const bodyId = useId()
 
 const shares = computed(() => sharesFor(props.sheet, props.viewerAgentId ?? null))
@@ -35,8 +43,14 @@ const faces = computed(() => shares.value.map(share => ({
   fill: fill(share.progress),
   working: Boolean(currentStepOf(props.sheet, share)),
 })))
-// What is happening now: the first share with a step in progress.
+// What is happening now: the first share with a step in progress. On the FLA's
+// own page, its own step, without its name.
 const now = computed(() => {
+  if (props.focused) {
+    const own = shares.value.find(share => share.agentId === props.viewerAgentId)
+    const step = own ? currentStepOf(props.sheet, own) : null
+    if (step) return t('teamWork.card.nowSelf', { step: step.title })
+  }
   for (const share of shares.value) {
     const step = currentStepOf(props.sheet, share)
     if (step) return t('teamWork.card.now', { name: props.nameOf(share.agentId), step: step.title })
@@ -48,6 +62,12 @@ const known = (key: string, fallback: string) => { const label = t(key); return 
 const statusLabel = (status: string) => known(`projectAgents.taskStatus.${status}`, status)
 const roleLabel = (role: string | null | undefined) => (role ? known(`teamWork.card.roles.${role}`, '') : '')
 const total = computed(() => fill(props.sheet.progress))
+// Every step of a share, or (focused, until 全部 is asked for) the ones around its current step.
+const shownSteps = (share: TeamShare) => {
+  const steps = stepsOf(props.sheet, share.agentId)
+  return allSteps.value ? steps : stepsAround(steps, currentStepOf(props.sheet, share)?.id)
+}
+const trimmed = (share: TeamShare) => shownSteps(share).length < stepsOf(props.sheet, share.agentId).length
 </script>
 
 <template>
@@ -89,13 +109,15 @@ const total = computed(() => fill(props.sheet.progress))
               </span>
             </div>
             <p v-if="share.assignment" class="team-share-assignment" :title="share.assignment">{{ share.assignment }}</p>
-            <ul v-if="stepsOf(sheet, share.agentId).length" class="team-steps">
-              <li v-for="step in stepsOf(sheet, share.agentId)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id) }" :data-step-status="step.status">
+            <ul v-if="shownSteps(share).length" class="team-steps">
+              <li v-for="step in shownSteps(share)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id) }" :data-step-status="step.status">
                 <span class="team-check" aria-hidden="true"><UiIcon v-if="step.status === 'completed'" name="check" :size="11" /></span>
                 <span class="team-step-title">{{ step.title }}</span>
                 <span class="ui-sr-only">{{ statusLabel(step.status) }}</span>
               </li>
             </ul>
+            <Button v-if="trimmed(share)" variant="link" size="sm" class="team-all" data-team-all-steps @click="allSteps = true">
+              {{ t('teamWork.card.allSteps', { count: stepsOf(sheet, share.agentId).length }) }}</Button>
           </li>
         </ol>
         <p v-if="sheet.unassignedSteps" class="team-note">{{ t('teamWork.card.unassigned', { count: sheet.unassignedSteps }) }}</p>
@@ -143,8 +165,8 @@ const total = computed(() => fill(props.sheet.progress))
 .team-shares { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .team-share { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--radius-control); }
 .team-share + .team-share { box-shadow: 0 -1px 0 var(--color-border); }
-.team-share.is-self { background: var(--color-surface-subtle); box-shadow: none; }
-.team-share.is-self + .team-share { box-shadow: none; }
+/* The viewer's share is not a card inside the card: same surface, its name a little stronger. */
+.team-share.is-self .team-share-name { font-weight: var(--weight-strong); }
 .team-share-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .team-share-name { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); text-decoration: none; -webkit-user-select: none; user-select: none; }
 .team-share-name:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -152,7 +174,8 @@ const total = computed(() => fill(props.sheet.progress))
 .team-share-state { margin-left: auto; }
 /* Two lines at most; the whole assignment is on hover (docs/fla-page.md). */
 .team-share-assignment { display: -webkit-box; margin: 0; overflow: hidden; color: var(--color-muted); font-size: var(--text-meta); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
+.team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0 0 0 2px; list-style: none; }
+.team-all { justify-self: start; height: auto; padding: 2px 0 0 24px; user-select: none; }
 .team-step { display: flex; align-items: center; gap: 8px; color: var(--color-ink-soft); font-size: var(--text-control); }
 .team-check { display: grid; flex: none; width: 16px; height: 16px; place-items: center; border-radius: 50%; color: var(--color-on-accent); box-shadow: inset 0 0 0 1.5px var(--color-control-border); }
 /* A finished step: the ink check pops in on the spring. */

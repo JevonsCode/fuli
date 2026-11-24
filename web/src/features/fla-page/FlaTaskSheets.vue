@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
+import { useRoute } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
@@ -11,10 +12,14 @@ import { useAgentSheets } from './agent-sheets'
 
 // Widget 'fla-sheets' (手上的活): every unfinished task this FLA takes part in
 // (rec#11 D-82), each as the same 团队卡片 the home page shows, with this FLA's
-// own share first. The first card opens so its own to-do list is in view.
-// Finished work is 最近做完's, further down the page.
+// own share first. Every card starts folded on its current step and count:
+// 现在 above already says what it is doing. A link that names a task
+// (?task=) opens that card with all its steps. Finished work is 最近做完's,
+// further down the page.
 const props = defineProps<{ spaceId: string; agentId: string; agentName: string; projectName: (id: string) => string }>()
 
+const route = useRoute()
+const linked = computed(() => (typeof route.query.task === 'string' ? route.query.task : ''))
 const read = useAgentSheets(toRef(props, 'spaceId'), toRef(props, 'agentId'))
 const sheets = computed(() => read.sheets.value.filter(isOpenSheet))
 const state = read.state
@@ -40,8 +45,8 @@ const nameOf = (agentId: string) => {
     <p v-else-if="state === 'ready' && !sheets.length" class="sheets-empty">{{ t('flaPage.sheets.empty', { name: agentName }) }}</p>
     <p v-if="read.partial.value" class="sheets-note" role="status">{{ t('flaPage.sheets.partial') }}</p>
     <TransitionGroup name="ui-list" tag="div" class="sheets-list">
-      <TeamCard v-for="(sheet, index) in sheets" :key="sheet.taskId" :sheet="sheet" :space-id="spaceId" :name-of="nameOf"
-        :project-name="projectName" :viewer-agent-id="agentId" :default-open="index === 0" />
+      <TeamCard v-for="sheet in sheets" :key="`${sheet.taskId}:${sheet.taskId === linked}`" :sheet="sheet" :space-id="spaceId" :name-of="nameOf"
+        :project-name="projectName" :viewer-agent-id="agentId" :default-open="sheet.taskId === linked" focused />
     </TransitionGroup>
   </section>
 </template>

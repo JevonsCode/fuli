@@ -3,17 +3,8 @@ import { isOpenSheet } from '@/features/team-work/team-sheets'
 import { clientMarks } from '@/features/today/working-clients'
 import type { ConversationLauncherConfiguration, ConversationSourceApplication, ProjectAgentTaskRecord } from '@/types'
 
-// 交给它一件事 (docs/fla-page.md, The one action): what the panel lists
-// besides the phrases to paste. Only open FULI tasks, and only the client
-// sessions those tasks report.
-export interface OpenWork { taskId: string; title: string; status: string }
-
-/** The unfinished tasks to continue, newest change first. */
-export function openWork(tasks: readonly ProjectAgentTaskRecord[]): OpenWork[] {
-  return tasks.filter(isOpenSheet)
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-    .map(({ taskId, title, status }) => ({ taskId, title, status }))
-}
+// 交给它一件事 (docs/fla-page.md, The one action): the client sessions the
+// FLA's open FULI tasks report, and whether each opens.
 
 /**
  * One row per client session an open task reports. A row opens the session
@@ -43,5 +34,19 @@ export function sessionRows(
     if (mark.way === 'session') return [{ ...row, way: 'session', href: mark.href }]
     if (!session.sessionId) return [{ ...row, way: 'unknown' }]
     return [{ ...row, way: mark.way === 'app' ? 'settings' : 'none' }]
+  })
+}
+
+export type ClosedWhy = Exclude<SessionRow['way'], 'session'>
+
+/**
+ * The sessions that cannot open, as one note per reason in a fixed order
+ * (the one 去设置 fixes first): the clients' names, then why. Rows that open
+ * are listed on their own, not here.
+ */
+export function closedSessionNotes(rows: readonly SessionRow[], note: (clients: string, why: ClosedWhy) => string): Array<{ why: ClosedWhy; text: string }> {
+  return (['settings', 'none', 'unknown'] as const).flatMap((key) => {
+    const names = [...new Set(rows.filter(row => row.way === key).map(row => row.name))]
+    return names.length ? [{ why: key, text: note(names.join(' · '), key) }] : []
   })
 }

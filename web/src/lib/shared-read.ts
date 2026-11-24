@@ -77,6 +77,12 @@ export function sharedRead<T>(read: (key: readonly string[], signal: AbortSignal
       state: computed<SharedReadState>(() => current.value?.state.value ?? 'loading'),
       error: computed(() => current.value?.error.value ?? null),
       reload: () => current.value?.reload() ?? Promise.resolve(),
+      /** A change this console made itself (a save's answer): every user of the key sees it. */
+      set: (next: T) => {
+        if (!current.value) return
+        current.value.value.value = next
+        current.value.state.value = 'ready'
+      },
     }
   }
 

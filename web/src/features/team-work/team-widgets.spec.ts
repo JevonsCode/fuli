@@ -69,6 +69,43 @@ describe('团队卡片', () => {
   })
 })
 
+describe('团队卡片 on an FLA’s own page', () => {
+  const long = () => sheet({ progress: { completed: 4, total: 8 },
+    steps: ['Read', 'Split', 'Card', 'Empty', 'Locale', 'Narrow', 'Tests', 'Check'].map((title, index) => ({ id: `s${index + 1}`, title,
+      status: index < 4 ? 'completed' : index === 4 ? 'in_progress' : 'pending', agentId: 'a' })),
+    shares: [{ agentId: 'a', role: 'lead', status: 'running', assignment: null, progress: { completed: 4, total: 8 }, currentStepId: 's5' }] })
+  const mountFocused = (defaultOpen = false) => {
+    const wrapper = mount(TeamCard, { props: { sheet: long(), spaceId: 'space-a', nameOf: (id: string) => names[id]!, projectName: (id: string) => id,
+      viewerAgentId: 'a', focused: true, defaultOpen }, global: { plugins: [router()] } })
+    mounted.push(wrapper)
+    return wrapper
+  }
+
+  it('starts folded on its own current step, without its name, which 现在 already says', () => {
+    const wrapper = mountFocused()
+    expect(wrapper.get('.team-head').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.team-now').text()).toBe('现在：Locale')
+    expect(wrapper.text()).not.toContain('Aster 正在做')
+    expect(wrapper.get('.team-count').text()).toBe('4/8')
+  })
+
+  it('opens on the current step and one either side, with the whole list one click away', async () => {
+    const wrapper = mountFocused()
+    await wrapper.get('.team-head').trigger('click')
+    expect(wrapper.findAll('.team-step-title').map(step => step.text())).toEqual(['Empty', 'Locale', 'Narrow'])
+    await wrapper.get('[data-team-all-steps]').trigger('click')
+    expect(wrapper.findAll('.team-step-title')).toHaveLength(8)
+    expect(wrapper.find('[data-team-all-steps]').exists()).toBe(false)
+  })
+
+  it('shows every step when a link named the task', () => {
+    const wrapper = mountFocused(true)
+    expect(wrapper.get('.team-head').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.findAll('.team-step-title')).toHaveLength(8)
+    expect(wrapper.find('[data-team-all-steps]').exists()).toBe(false)
+  })
+})
+
 describe('悬浮岛', () => {
   const mountIsland = async () => {
     const wrapper = mount(TeamIsland, { attachTo: document.body, global: { plugins: [router()] } })
@@ -104,6 +141,19 @@ describe('悬浮岛', () => {
     await pill.trigger('click')
     await island.get('[data-widget="team-island"]').trigger('keydown', { key: 'Escape' })
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(false)
+  })
+
+  it('on an FLA’s own page leaves out that FLA’s tasks, which the page already shows', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task', leadAgentId: 'c',
+        shares: [{ agentId: 'c', role: 'lead', status: 'running', assignment: null, progress: null }, { agentId: 'd', role: 'collaborator', status: 'running', assignment: null, progress: null }] })] }
+      if (url.startsWith('/api/project-agents/')) return { agentId: url.split('/')[3]!.split('?')[0], profile: { name: 'X' } }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const wrapper = mount(TeamIsland, { attachTo: document.body, props: { excludeAgentId: 'a' }, global: { plugins: [router()] } })
+    mounted.push(wrapper)
+    await flushPromises()
+    expect(wrapper.findAll('[data-team-island]').map(capsule => capsule.attributes('data-team-island'))).toEqual(['task-2'])
   })
 
   // Jevons 11-03: on a narrow screen the row over the page was in the way.

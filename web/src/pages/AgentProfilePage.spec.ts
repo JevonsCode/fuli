@@ -7,6 +7,7 @@ import { useConsoleStore } from '@/stores/console'
 import { employeeTemplates } from '@/features/employees/catalog'
 import type { ProjectAgentRecord } from '@/types'
 import { pageTitle } from '@/layouts/page-title'
+import { reloadPage } from '@/layouts/page-refresh'
 import { SYNTHETIC_OCCUPATIONS } from '@/test-support/occupation-fixtures'
 import { ApiError } from '@/api/client'
 import AgentProfilePage from './AgentProfilePage.vue'
@@ -25,6 +26,7 @@ const assignment = (agentId: string, status = 'active', projectId = 'project-a')
   assignmentId: `${agentId}-${projectId}`, personalSpaceId: 'space-a', personalProjectId: projectId,
   agentId, responsibility: 'Recorded assignment responsibility', status,
 })
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
 const task = (id: string, agentId: string, title: string, status = 'completed') => ({
   taskId: id, personalSpaceId: 'space-a', personalProjectId: 'project-a', title, status,
   resultSummary: 'Recorded test evidence.', updatedAt: '2026-09-01T00:00:00Z',
@@ -137,14 +139,49 @@ describe('Agent profile integration', () => {
     const sheet = wrapper.get('[data-widget="fla-sheets"] [data-team-card="sheet-1"]')
     expect(sheet.text()).toContain('Synthetic shared task')
     expect(sheet.text()).toContain('Synthetic active project')
-    // The first card is open, so this FLA's own list is in view.
-    expect(sheet.get('[aria-expanded]').attributes('aria-expanded')).toBe('true')
+    // Every card starts folded: 现在 already says what it is doing.
+    expect(sheet.get('[aria-expanded]').attributes('aria-expanded')).toBe('false')
+    await sheet.get('[aria-expanded]').trigger('click')
     // Not the lead: its own share comes first, and without a plan count it shows only its status.
     expect(sheet.findAll('[data-team-share]').map(item => item.attributes('data-team-share'))).toEqual(['alpha', 'beta'])
     expect(sheet.get('[data-team-share="alpha"]').find('[role="progressbar"]').exists()).toBe(false)
     expect(sheet.get('[data-team-share="beta"] [role="progressbar"]').attributes('aria-valuenow')).toBe('1')
     expect(sheet.get('[data-team-share="beta"]').text()).toContain('负责人')
     expect(sheet.text()).toContain('还有 1 步没人负责')
+  })
+  it('on a built-in role’s page shows no section it has no data for, and never 没活 from a list it did not read', async () => {
+    const normal = getJson.getMockImplementation()!
+    const templates = () => Promise.resolve({ templates: [{ id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active',
+      workbench: { kind: 'native', view: 'judgment' } }] })
+    // No status on the roster: 现在 says none was reported; the task list is never read.
+    getJson.mockImplementation((url: string) => {
+      if (isAgentRead(url)) return agentRead(url, [builtIn('tonborg')])
+      if (url.startsWith('/api/employee-templates?')) return templates()
+      return normal(url)
+    })
+    const quiet = await setup('/agents/space-a/employee.tonborg')
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(quiet.wrapper.get('[data-now]').attributes('data-now')).toBe('unknown')
+    expect(quiet.wrapper.text()).not.toContain('现在没活')
+    // (The blocked-task section asks for its own: blocked tasks only.)
+    const listRead = () => getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-agent-tasks?') && String(url).includes('limit=200'))
+    expect(listRead()).toBe(false)
+    mounted.splice(0).forEach(wrapper => wrapper.unmount())
+    // Working on a task: that one task is read, for its title and when it last moved.
+    getJson.mockImplementation((url: string) => {
+      if (isAgentRead(url)) return agentRead(url, [{ ...builtIn('tonborg'), workStatus: 'running', currentTaskId: 'judge' }])
+      if (url.startsWith('/api/employee-templates?')) return templates()
+      if (url.startsWith('/api/project-agent-tasks/judge?')) return Promise.resolve({ ...task('judge', 'employee.tonborg', 'Synthetic judgment', 'running'), updatedAt: minutesAgo(5) })
+      return normal(url)
+    })
+    const { wrapper } = await setup('/agents/space-a/employee.tonborg')
+    await vi.dynamicImportSettled(); await flushPromises()
+    const now = wrapper.get('[data-now="working"]')
+    expect(now.get('[data-now-task]').text()).toBe('「Synthetic judgment」')
+    expect(now.get('.now-state').text()).toBe('正在做')
+    expect(wrapper.text()).not.toContain('看这件任务')
+    expect(wrapper.find('[data-fla-recent]').exists()).toBe(false)
+    expect(listRead()).toBe(false)
   })
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
@@ -518,7 +555,7 @@ describe('现在 on the FLA page', () => {
 
   it('names the running task, the step it is on and the recorded count, under the name', async () => {
     serve({ workStatus: 'running', currentTaskId: 'run', currentTaskRunningSince: '2026-09-01T00:00:00Z' },
-      [task('run', 'alpha', 'Synthetic running work', 'running')],
+      [{ ...task('run', 'alpha', 'Synthetic running work', 'running'), updatedAt: minutesAgo(5) }],
       [{ taskId: 'run', personalProjectId: 'project-a', title: 'Synthetic running work', objective: null, status: 'running', leadAgentId: 'alpha',
         updatedAt: null, blocker: null, progress: { completed: 2, total: 5 }, unassignedSteps: 0,
         steps: [{ id: 's1', title: 'Synthetic step one', status: 'completed', agentId: 'alpha' }, { id: 's2', title: 'Synthetic step two', status: 'in_progress', agentId: 'alpha' }],
@@ -535,6 +572,42 @@ describe('现在 on the FLA page', () => {
     await vi.dynamicImportSettled(); await flushPromises()
     expect(wrapper.find('[data-task-sheets]').exists()).toBe(true)
     expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-agents/alpha/workbenches?'))).toHaveLength(1)
+  })
+
+  it('no longer says it is working when the task has not moved for days', async () => {
+    serve({ workStatus: 'running', currentTaskId: 'run', currentTaskRunningSince: '2026-09-01T00:00:00Z' },
+      [{ ...task('run', 'alpha', 'Synthetic running work', 'running'), updatedAt: minutesAgo(3 * 24 * 60) }])
+    const { wrapper } = await setup()
+    await flushPromises()
+    const now = wrapper.get('[data-fla-head] [data-now="working"]')
+    expect(now.get('.now-state').text()).toMatch(/^上次有进展是 3\s?天前$/)
+    expect(now.text()).not.toContain('正在做')
+    expect(now.text()).not.toContain('已经做了')
+    expect(now.get('.now-dot').classes()).not.toContain('is-live')
+  })
+
+  it('keeps a task waiting for the person in view while another one runs', async () => {
+    serve({ workStatus: 'running', currentTaskId: 'run', currentTaskRunningSince: '2026-09-01T00:00:00Z' },
+      [{ ...task('run', 'alpha', 'Synthetic running work', 'running'), updatedAt: minutesAgo(5) }, task('review', 'alpha', 'Synthetic review', 'awaiting_review')])
+    const { wrapper } = await setup()
+    await flushPromises()
+    expect(wrapper.get('[data-fla-head] [data-now="working"] .now-state').text()).toBe('正在做')
+    const row = wrapper.get('[data-fla-head] [data-attention="tasks"]')
+    expect(row.text()).toBe('另有 1 件等你拍板')
+    expect(row.attributes('href')).toBe('/agents/space-a/alpha?task=review')
+  })
+
+  it('reads the tasks again on the top bar’s 刷新, so 现在 and 最近做完 come from the same moment', async () => {
+    serve({ workStatus: 'idle' }, [task('done', 'alpha', 'Synthetic finished work')])
+    const { wrapper } = await setup()
+    await flushPromises()
+    const reads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/project-agent-tasks?')).length
+    const before = reads()
+    serve({ workStatus: 'idle' }, [task('done', 'alpha', 'Synthetic finished work'), { ...task('later', 'alpha', 'Synthetic later work'), updatedAt: '2026-09-02T00:00:00Z' }])
+    await reloadPage()
+    await flushPromises()
+    expect(reads()).toBe(before + 1)
+    expect(wrapper.get('[data-now="idle"] [data-now-last]').text()).toBe('「Synthetic later work」')
   })
 
   it('says nothing is on its hands and offers the last finished task, never a made-up progress', async () => {

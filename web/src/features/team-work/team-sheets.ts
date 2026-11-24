@@ -67,5 +67,19 @@ export function currentStepOf(sheet: TeamSheet, share: TeamShare) {
   if (share.currentStepId !== undefined) return steps.find(step => step.id === share.currentStepId) ?? null
   return steps.find(step => step.status === 'in_progress') ?? null
 }
+/**
+ * The steps around the current one: it and `radius` either side, kept inside
+ * the list (the next unfinished one stands in when none is current, the last
+ * one when all are done). A list that short is returned whole.
+ */
+export function stepsAround<T extends { id: string; status: string }>(steps: readonly T[], currentId: string | null | undefined, radius = 1): T[] {
+  const size = radius * 2 + 1
+  if (steps.length <= size) return [...steps]
+  let index = currentId ? steps.findIndex(step => step.id === currentId) : -1
+  if (index < 0) index = steps.findIndex(step => step.status !== 'completed')
+  if (index < 0) index = steps.length - 1
+  const start = Math.max(0, Math.min(index - radius, steps.length - size))
+  return steps.slice(start, start + size)
+}
 /** 0–1 from a recorded count, or null when nothing is recorded. */
 export const fill = (progress: TeamProgress | null) => (progress && progress.total > 0 ? progress.completed / progress.total : null)

@@ -6,6 +6,8 @@ export const teamWorkMessages = {
     card: {
       flas: '{count} 位 FLA',
       now: '{name} 正在做：{step}',
+      nowSelf: '现在：{step}',
+      allSteps: '全部 {count} 步',
       progress: '完成 {completed} / {total} 步',
       shares: '分工',
       blocked: '这个任务被阻塞了。',
@@ -27,6 +29,8 @@ export const teamWorkMessages = {
     card: {
       flas: '{count} FLAs',
       now: '{name} is on {step}',
+      nowSelf: 'Now: {step}',
+      allSteps: 'All {count} steps',
       progress: '{completed} of {total} steps done',
       shares: 'Shares',
       blocked: 'This task is blocked.',

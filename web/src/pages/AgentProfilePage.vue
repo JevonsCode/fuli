@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
 import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
-import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch, type Component } from "vue";
+import { computed, defineAsyncComponent, defineComponent, h, nextTick, onMounted, ref, watch, type Component } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
@@ -33,11 +33,15 @@ import { mentionKind } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, summarizeAgentTasks, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
 import { agentWorkbenchEntry, indexWorkbenchTasks } from "@/features/agent-profile/agent-workbench";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
+import { useNow } from "@/composables/useNow";
+import FlaAttention from "@/features/fla-page/FlaAttention.vue";
 import FlaHandOff from "@/features/fla-page/FlaHandOff.vue";
 import FlaNow from "@/features/fla-page/FlaNow.vue";
 import FlaRecentWork from "@/features/fla-page/FlaRecentWork.vue";
 import FlaResponsibility from "@/features/fla-page/FlaResponsibility.vue";
+import { useAgentGrowth } from "@/features/fla-page/agent-growth";
 import { useAgentSheets } from "@/features/fla-page/agent-sheets";
+import { useFlaKit } from "@/features/fla-page/kit-read";
 import { finishedWork, nowLine } from "@/features/fla-page/fla-now";
 import {
   arrayOf,
@@ -192,33 +196,48 @@ async function copyNumber(number: string) {
 
 // 现在: the same reading of the FLA's status the FLAs list uses, with the step
 // and bar of the task it is on from its task sheets.
-const sheets = useAgentSheets(computed(() => agent.value?.personalSpaceId ?? ""), computed(() => agent.value?.agentId ?? ""));
+const agentSpace = computed(() => agent.value?.personalSpaceId ?? "");
+const agentKey = computed(() => agent.value?.agentId ?? "");
+const sheets = useAgentSheets(agentSpace, agentKey);
+// The reads 等你处理 shares with 起步包 and 学会了, so 刷新 renews them too.
+const kitRead = useFlaKit(agentSpace, agentKey);
+const growthRead = useAgentGrowth(agentSpace, agentKey);
+const clock = useNow();
 const entry = computed(() => agent.value ? agentWorkbenchEntry(agent.value, {
   summary: summarizeAgentTasks(taskPage.value, agent.value.personalSpaceId)[agent.value.agentId],
   summaryState: taskRead.value,
   tasks: indexWorkbenchTasks(taskPage.value, agent.value.personalSpaceId),
 }) : null);
 const now = computed(() => agent.value && entry.value
-  ? nowLine({ entry: entry.value, agentId: agent.value.agentId, sheets: sheets.sheets.value, tasks: tasks.value }) : null);
+  ? nowLine({ entry: entry.value, agentId: agent.value.agentId, sheets: sheets.sheets.value, tasks: tasks.value, now: clock.value }) : null);
 const finished = computed(() => finishedWork(tasks.value));
-function showSessions() {
-  document.getElementById("fla-worked-heading")?.scrollIntoView({ block: "start" });
+// 等你处理 goes to the section where it is answered: on the work tab, opened.
+async function reveal(sectionId: string) {
+  if (activeTab.value !== "overview") activeTab.value = "overview";
+  await nextTick();
+  const section = document.getElementById(sectionId);
+  const fold = section?.querySelector("details");
+  if (fold) fold.open = true;
+  section?.scrollIntoView({ block: "start" });
 }
 
 let generation = 0;
-async function readDetails() {
+// `keep`: 刷新 reads again over what is shown, instead of emptying the page first.
+async function readDetails(options: { keep?: boolean } = {}) {
   const person = agent.value;
   const current = ++generation;
-  tasks.value = [];
-  taskPage.value = null;
-  taskRead.value = "loading";
-  workflows.value = [];
-  assignments.value = undefined;
-  partial.value = false;
+  if (!options.keep) {
+    tasks.value = [];
+    taskPage.value = null;
+    taskRead.value = "loading";
+    workflows.value = [];
+    assignments.value = undefined;
+    partial.value = false;
+  }
   detailsLoading.value = false;
   if (!person) return;
-  detailsLoading.value = true;
-  assignments.value = person.assignments;
+  detailsLoading.value = !options.keep;
+  if (!options.keep) assignments.value = person.assignments;
   const params = new URLSearchParams({
     personalSpaceId: person.personalSpaceId,
     agentId: person.agentId,
@@ -226,9 +245,17 @@ async function readDetails() {
   const assignmentRead = Promise.allSettled([
     getJson<unknown>(`/api/project-agent-assignments?${params}`),
   ]);
-  // A built-in role opens on its Workbench, which reads its own work: nothing here waits or competes with it.
+  // A built-in role opens on its Workbench, which reads its own work: nothing here competes with it.
+  // Only the task its roster names is read, so 现在 can say when that last moved; with no status
+  // on the roster, 现在 says none was reported rather than 没活 from a list it never read.
   const builtIn = Boolean(employeeTemplateIdForAgent(person));
-  const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [Promise.resolve([]), Promise.resolve([])] : [
+  const reported = typeof person.workStatus === "string";
+  const named = builtIn && reported ? person.currentTaskId ?? null : null;
+  const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [
+    named ? getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(named)}?${new URLSearchParams({ personalSpaceId: person.personalSpaceId })}`)
+      .then(task => [task]) : Promise.resolve([]),
+    Promise.resolve([]),
+  ] : [
     getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
     readAgentWorkflows(person.personalSpaceId, person.agentId),
   ]);
@@ -236,9 +263,9 @@ async function readDetails() {
   if (taskResult.status === "fulfilled") {
     const value = taskResult.value;
     const record = unknownRecord(value);
-    partial.value = !isAgentTaskDataComplete(value);
+    partial.value = builtIn ? false : !isAgentTaskDataComplete(value);
     taskPage.value = value;
-    taskRead.value = partial.value ? "incomplete" : "ready";
+    taskRead.value = builtIn ? (reported ? "ready" : "incomplete") : partial.value ? "incomplete" : "ready";
     tasks.value = arrayOf(
       Array.isArray(value) ? value : (record.tasks ?? record.items),
     )
@@ -257,8 +284,9 @@ async function readDetails() {
         ),
       );
   } else {
-    partial.value = true;
-    taskRead.value = "error";
+    partial.value = !builtIn;
+    // A failed refresh keeps the tasks it read before.
+    if (!options.keep || taskRead.value === "loading") taskRead.value = "error";
   }
   if (workflowResult.status === "fulfilled") workflows.value = workflowResult.value;
   else partial.value = true;
@@ -281,7 +309,7 @@ async function readDetails() {
   } else partial.value = true;
   detailsLoading.value = false;
 }
-watch(() => (agent.value ? `${agent.value.personalSpaceId}/${agent.value.agentId}` : ""), readDetails, { immediate: true });
+watch(() => (agent.value ? `${agent.value.personalSpaceId}/${agent.value.agentId}` : ""), () => readDetails(), { immediate: true });
 
 // After the person's decision on a workflow, its current state.
 async function reloadWorkflows() {
@@ -299,8 +327,9 @@ function saved(person: ProjectAgentRecord) {
 onMounted(() => {
   if (store.runtimeStatus === "idle") void store.refresh();
 });
-// The top bar's 刷新 reads this Agent, its workflows and its task sheets again.
-usePageRefresh(() => Promise.all([load(), reloadWorkflows(), sheets.reload()]));
+// The top bar's 刷新 reads this Agent, its tasks, workflows, task sheets, kit and growth again,
+// so 现在 and 最近做完 come from the same moment.
+usePageRefresh(() => Promise.all([load(), readDetails({ keep: true }), sheets.reload(), kitRead.reload(), growthRead.reload()]));
 </script>
 
 <template>
@@ -361,7 +390,10 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows(), sheets.reload()]));
                 </Button>
               </div>
             </div>
-            <FlaNow v-if="now && entry" class="fla-now" :line="now" :entry="entry" @retry="readDetails" @sessions="showSessions" />
+            <div v-if="now && entry" class="fla-now">
+              <FlaNow :line="now" :entry="entry" :sessions-link="!hasWorkbench" @retry="readDetails()" @sessions="reveal('fla-worked-heading')" />
+              <FlaAttention :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :others="'others' in now ? now.others ?? null : null" @reveal="reveal" />
+            </div>
           </header>
           <AgentRenameHint :agent="agent" @saved="saved" />
         </PageStack>
@@ -457,7 +489,7 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows(), sheets.reload()]));
 .fla-meta :deep(.occupation-chip:hover) { color: var(--color-ink); text-decoration: underline; }
 .fla-number { min-height: 0; margin-inline: -4px; padding: 1px 4px; color: inherit; font: inherit; cursor: copy; }
 .fla-meta :deep(.occupation-chip:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
-.fla-now { padding: 12px 20px; border-top: 1px solid var(--color-border); }
+.fla-now { display: grid; gap: 4px; padding: 12px 20px; border-top: 1px solid var(--color-border); }
 /* Panels stack in one column at every width (rec#38). */
 .agent-profile-history-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 /* One column at every width (Jevons 11-04): who this FLA is runs across the top
@@ -483,5 +515,7 @@ usePageRefresh(() => Promise.all([load(), reloadWorkflows(), sheets.reload()]));
   /* The column clears the floating dock itself, since the page no longer scrolls. */
   .agent-profile-main { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-bottom: var(--dock-clearance); }
   .agent-profile-main > .fla-column { flex: 1 0 auto; }
+  /* A built-in role's Workbench fills what the column leaves under the tabs. */
+  .fla-column > .agent-profile-tabs { flex: 1 1 auto; min-height: 0; }
 }
 </style>

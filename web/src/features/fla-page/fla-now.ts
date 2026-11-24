@@ -9,16 +9,32 @@ import type { ProjectAgentTaskRecord, ProjectAgentTaskSession } from '@/types'
 // without a plan.
 export interface FinishedWork { taskId: string; title: string; at: string | null; failed: boolean; result: string | null; projectId: string | null }
 
-export type NowLine =
+/** Running work with no recorded change for this long is no longer said to be going on. */
+export const STALE_AFTER_MS = 30 * 60_000
+
+/**
+ * How recent the FLA's last recorded change on its running task is: `fresh`
+ * within STALE_AFTER_MS, `stale` past it, `unrecorded` when no change was
+ * recorded. Only `fresh` reads as 正在做 with a live dot.
+ */
+export type Progress = { state: 'fresh' | 'stale'; at: string } | { state: 'unrecorded' }
+
+/** Other tasks of this FLA that wait on the person, besides the one 现在 names. */
+export interface Waiting { review: number; blocked: number; taskId: string | null }
+
+export type NowLine = (
   | { kind: 'loading' }
   | { kind: 'working'; status: 'running' | 'queued' | 'awaiting_recruitment'; taskId: string | null; title: string | null
       step: string | null; progress: TeamProgress | null; sessions: ProjectAgentTaskSession[]
       /** A recorded start (running) or, failing that, the last recorded change. */
-      since: { at: string; started: boolean } | null }
+      since: { at: string; started: boolean } | null
+      /** Running only: how recent its last recorded change is. */
+      lastProgress: Progress | null }
   | { kind: 'waiting'; status: 'awaiting_review' | 'blocked' | 'paused'; taskId: string | null; title: string | null }
   | { kind: 'idle'; last: FinishedWork | null }
   | { kind: 'unknown' }
   | { kind: 'ended' }
+) & { others?: Waiting }
 
 const FINISHED = new Set(['completed', 'failed'])
 
@@ -35,12 +51,41 @@ export function finishedWork(tasks: readonly ProjectAgentTaskRecord[]): Finished
     .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
 }
 
+/** How recent a running task's last recorded change is, at `now`. */
+export function progressOf(lastUpdateAt: string | null, now: number): Progress {
+  const at = lastUpdateAt ? Date.parse(lastUpdateAt) : Number.NaN
+  if (!lastUpdateAt || Number.isNaN(at)) return { state: 'unrecorded' }
+  return { state: now - at <= STALE_AFTER_MS ? 'fresh' : 'stale', at: lastUpdateAt }
+}
+
+/**
+ * The FLA's tasks that wait on the person (等你拍板, 被卡住) other than the one
+ * `shown`: the Provider ranks running first, so a review would otherwise hide
+ * behind the work 现在 names. Null when there are none.
+ */
+export function waitingBesides(tasks: readonly ProjectAgentTaskRecord[], shown: string | null): Waiting | null {
+  const others = tasks.filter(task => task.taskId !== shown)
+  const review = others.filter(task => task.status === 'awaiting_review')
+  const blocked = others.filter(task => task.status === 'blocked')
+  if (!review.length && !blocked.length) return null
+  return { review: review.length, blocked: blocked.length, taskId: (review[0] ?? blocked[0])!.taskId }
+}
+
 export function nowLine(input: {
   entry: AgentWorkbenchEntry
   agentId: string
   sheets: readonly TeamSheet[]
   tasks: readonly ProjectAgentTaskRecord[]
+  /** The clock 现在 reads freshness against. */
+  now: number
 }): NowLine {
+  const line = lineFor(input)
+  if (line.kind === 'loading' || line.kind === 'ended') return line
+  const others = waitingBesides(input.tasks, input.entry.taskId)
+  return others ? { ...line, others } : line
+}
+
+function lineFor(input: Parameters<typeof nowLine>[0]): NowLine {
   const { entry } = input
   switch (entry.status) {
     case 'loading': return { kind: 'loading' }
@@ -61,6 +106,7 @@ export function nowLine(input: {
         progress: share?.progress ?? sheet?.progress ?? null,
         sessions: task?.sessions ?? [],
         since,
+        lastProgress: entry.status === 'running' ? progressOf(entry.lastUpdateAt, input.now) : null,
       }
     }
   }

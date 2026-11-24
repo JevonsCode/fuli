@@ -14,17 +14,31 @@ import type { NowLine } from './fla-now'
 // 现在: the line under the FLA's name (docs/fla-page.md). Each shape ends in
 // somewhere to go: the task itself, 去处理, the last finished task, or where
 // to look when the status was not reported.
-const props = defineProps<{ line: NowLine; entry: AgentWorkbenchEntry }>()
+// `sessionsLink`: whether the page has a 在哪儿干的活 section to send 去看它的会话 to (a built-in role's has none).
+const props = withDefaults(defineProps<{ line: NowLine; entry: AgentWorkbenchEntry; sessionsLink?: boolean }>(), { sessionsLink: true })
 const emit = defineEmits<{ retry: []; sessions: [] }>()
 
 const clock = useNow()
 const taskLink = (taskId: string) => ({ query: { task: taskId } })
 const ago = (at: string | null) => formatRelativeTime(at, currentLocale(), clock.value) ?? ''
+const elapsed = (at: string) => formatElapsed(at, currentLocale(), clock.value) ?? ''
+// Running work reads by its last recorded change: within STALE_AFTER_MS it is
+// 正在做 with a live dot; past it, when that change was; without one, that none
+// was recorded. A start long ago is never shown as work still going on.
+const progress = computed(() => props.line.kind === 'working' ? props.line.lastProgress : null)
+const live = computed(() => progress.value?.state === 'fresh')
+const stateWord = computed(() => {
+  if (props.line.kind !== 'working') return ''
+  return progress.value?.state === 'stale' ? t('flaPage.now.stale', { duration: elapsed(progress.value.at) }) : t(`flaPage.now.${props.line.status}`)
+})
 const since = computed(() => {
-  if (props.line.kind !== 'working' || !props.line.since) return ''
+  if (props.line.kind !== 'working') return ''
+  if (progress.value?.state === 'stale') return ''
+  if (progress.value?.state === 'unrecorded') return t('flaPage.now.noProgress')
+  if (!props.line.since) return ''
   const { at, started } = props.line.since
   return started
-    ? t('flaPage.now.runningFor', { duration: formatElapsed(at, currentLocale(), clock.value) ?? '' })
+    ? t('flaPage.now.runningFor', { duration: elapsed(at) })
     : t('flaPage.now.changed', { time: ago(at) })
 })
 const fill = computed(() => props.line.kind === 'working' && props.line.progress && props.line.progress.total > 0
@@ -34,8 +48,8 @@ const detail = computed(() => workbenchStatusDetail(props.entry))
 
 <template>
   <div class="now" :data-now="line.kind" data-fla-now>
-    <span class="now-dot" :data-tone="line.kind === 'working' ? 'active' : line.kind === 'waiting' ? (line.status === 'awaiting_review' ? 'warning' : 'danger') : 'quiet'"
-      :class="{ 'is-live': line.kind === 'working' && line.status === 'running' }" aria-hidden="true" />
+    <span class="now-dot" :data-tone="line.kind === 'working' ? (progress && !live ? 'quiet' : 'active') : line.kind === 'waiting' ? (line.status === 'awaiting_review' ? 'warning' : 'danger') : 'quiet'"
+      :class="{ 'is-live': live }" aria-hidden="true" />
 
     <template v-if="line.kind === 'loading'">
       <span class="now-quiet">{{ t('flaPage.now.loading') }}</span>
@@ -43,9 +57,9 @@ const detail = computed(() => workbenchStatusDetail(props.entry))
 
     <template v-else-if="line.kind === 'working'">
       <span class="now-main">
-        <span class="now-state">{{ t(`flaPage.now.${line.status}`) }}</span>
-        <RouterLink v-if="line.taskId" class="now-title" :to="taskLink(line.taskId)" :title="line.title ?? undefined" data-now-task>{{ t('flaPage.now.title', { title: line.title ?? t('flaPage.now.untitled') }) }}</RouterLink>
-        <span v-if="line.step" class="now-step" data-now-step>{{ t('flaPage.now.step', { step: line.step }) }}</span>
+        <span class="now-state" :data-progress="progress?.state">{{ stateWord }}</span>
+        <RouterLink v-if="line.taskId" class="now-title" :to="taskLink(line.taskId)" :title="line.title ?? undefined" data-now-task>{{ line.title ? t('flaPage.now.title', { title: line.title }) : t('flaPage.now.openTask') }}</RouterLink>
+        <span v-if="line.step" class="now-step" data-now-step>{{ t(progress?.state === 'stale' ? 'flaPage.now.stoppedAt' : 'flaPage.now.step', { step: line.step }) }}</span>
       </span>
       <span class="now-side">
         <span v-if="fill !== null" class="now-progress">
@@ -54,7 +68,7 @@ const detail = computed(() => workbenchStatusDetail(props.entry))
           <span class="ui-num" aria-hidden="true">{{ line.progress!.completed }}/{{ line.progress!.total }}</span>
         </span>
         <WorkingClients :sessions="line.sessions" />
-        <span v-if="since" class="now-time">{{ since }}</span>
+        <span v-if="since" class="now-time" data-now-since>{{ since }}</span>
       </span>
     </template>
 
@@ -89,7 +103,7 @@ const detail = computed(() => workbenchStatusDetail(props.entry))
       </span>
       <span class="now-side">
         <Button v-if="entry.status === 'unavailable'" size="sm" variant="ghost" data-now-retry @click="emit('retry')">{{ t('flaPage.now.retry') }}</Button>
-        <Button v-else size="sm" variant="ghost" data-now-sessions @click="emit('sessions')">{{ t('flaPage.now.sessions') }}</Button>
+        <Button v-else-if="sessionsLink" size="sm" variant="ghost" data-now-sessions @click="emit('sessions')">{{ t('flaPage.now.sessions') }}</Button>
       </span>
     </template>
 
