@@ -69,8 +69,12 @@ export const preparedHabits = count => `这个新对话为你准备了 ${count} 
 // task may touch it (rec#146 item 6). Their sum is every preference the entry
 // resolved; a later receipt counts its stored row (ids once, at most 100), so
 // it is the same number unless ids are missing, shared or over the cap.
-export const deliveredHabits = (inline, readable) =>
-  `这个新对话为你准备了 ${inline + readable} 条习惯：直接带上 ${inline} 条，另外 ${readable} 条随时可读`;
+// `unneeded`: those of the readable ones left out because this task is not the
+// case they state (preference-conditions.js), so a habit that did not come
+// along is never read as one crowded out.
+export const deliveredHabits = (inline, readable, unneeded = 0) =>
+  `这个新对话为你准备了 ${inline + readable} 条习惯：直接带上 ${inline} 条，另外 ${readable} 条随时可读`
+  + (unneeded ? `（${unneeded} 条这次用不上）` : '');
 
 // A checkpoint, roundtable or pause receipt replaces the entry's, so a task
 // whose entry opened the conversation says it again from its stored row: one

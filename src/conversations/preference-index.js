@@ -26,16 +26,27 @@ const EXCEPTION = /(?:除非|除了|例外|但是?|不过|except|unless|but\b|ot
 const EXCEPTION_MARK = ' (有例外，读全文 / has exceptions, read in full)';
 
 // Only words that say what a rule applies to. "只在…" / "Only when…" / "Only
-// on…" describe when an action may happen ("只在用户确认后才推送到远端" is a
-// rule about pushing, for every task), so they are not scopes (review of
-// #1070).
+// on…" alone describe when an action may happen ("只在用户确认后才推送到远端" is
+// a rule about pushing, for every task), so they are not scopes (review of
+// #1070); one that says it is the rule that applies then ("仅在…时适用",
+// "Applies only when…") is. `explicit`: the opening says the rule *applies*
+// only there. 「仅限…」 / "Only for…" do not: 「仅限内部使用，不要外发截图」 limits
+// what is done, for every task, so a hard rule is never left out on them
+// (review of #1104), and they are read only as a marker on an index line.
+// `head` ends where the case begins; `whole` matches a case that ends in its
+// own words (「仅在 X 时适用」).
 const STATED_SCOPE = [
-  /^(?:仅|只)适用于\s*([^，,。：:；;]{2,40})/u,
-  /^仅限(?:于)?\s*([^，,。：:；;]{2,40})/u,
-  /^Only\s+for\s+([^,.:;]{2,60})/iu,
-  /^Appl(?:ies|y)\s+only\s+to\s+([^,.:;]{2,60})/iu,
-  /^Only\s+applies\s+to\s+([^,.:;]{2,60})/iu
+  { head: /^(?:仅|只)适用于\s*/u, explicit: true },
+  { whole: /^(?:仅|只|只有)(?:在|当)\s*([^。：:；;\n]{2,120}?)\s*(?:时|的时候)?才?适用/u, explicit: true },
+  { head: /^Appl(?:ies|y)\s+only\s+to\s+/iu, explicit: true },
+  { head: /^Only\s+applies\s+to\s+/iu, explicit: true },
+  { head: /^(?:Appl(?:ies|y)\s+only|Only\s+applies)\s+(?:when|while|if)\s+/iu, explicit: true },
+  { head: /^仅限(?:于)?\s*/u, explicit: false },
+  { head: /^Only\s+for\s+/iu, explicit: false }
 ];
+// The longest case read from an opening; a cut one would drop its later cases.
+const CASE_CHARS = 120;
+const OLD_CASE_CHARS = { han: 40, latin: 60 };
 
 // What follows such a word when it names a time or a condition rather than
 // what the rule applies to: 「仅限周五发布，其他时间不要发版」 is a rule about
@@ -46,18 +57,54 @@ const NOT_A_SCOPE = new RegExp('(?:会话|周[一二三四五六日天末]|星�
   + '|早上|今天|明天|每天|每周|每月|\\d+\\s*[点时:：]|之前|之后|以前|以后|时候|期间|确认|同意|批准|允许|通过后|完成后'
   + '|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekday|weekend|morning|afternoon|evening|night'
   + '|today|tomorrow|daily|weekly|before|after|until|unless|once|approv|confirm)', 'iu');
+// After 仅限 / Only for: who may use or see something, a restriction on the
+// action and never a case (「仅限内部使用」「仅限本人查看」「Only for internal use」).
+const RESTRICTION = /^(?:内部|本人|自己|个人|参考|示例)|(?:使用|查看|阅读|访问|自用|内部|参考)$|^(?:internal|personal|private|reference|example)\b|\b(?:use|viewing|eyes|reference)$/iu;
 
-// The scope an instruction states in prose, or null. A session clause is
-// already structured (preference-task-scope.js legacyPreferenceSession), so it
-// is left to that reader rather than repeated here.
-export function statedPreferenceScope(instruction) {
+// The scope an instruction states in prose, in its own words, or null. A
+// session clause is already structured (preference-task-scope.js
+// legacyPreferenceSession), so it is left to that reader rather than repeated
+// here. `explicitOnly`: only an opening that says the rule applies only there.
+export function statedScopePhrase(instruction, options) {
+  return statedScope(instruction, options)?.phrase ?? null;
+}
+
+// The same, with where the opening that states it ends in the instruction
+// (`end`), so a reader can take what the rule says after it. A case that says
+// it applies runs to a colon in the first sentence, so 「仅适用于 A，以及 B：…」
+// keeps both; without a colon, to the first comma.
+export function statedScope(instruction, { explicitOnly = false } = {}) {
   if (typeof instruction !== 'string') return null;
   const text = instruction.trim();
-  for (const pattern of STATED_SCOPE) {
-    const scope = pattern.exec(text)?.[1]?.trim();
-    if (scope && !NOT_A_SCOPE.test(scope)) return singleLineExcerpt(scope, SCOPE_CHARS);
+  for (const { head, whole, explicit } of STATED_SCOPE) {
+    if (explicitOnly && !explicit) continue;
+    const found = whole ? wholeCase(text, whole) : head.exec(text) && headCase(text, head.exec(text)[0].length, explicit);
+    const phrase = found?.phrase.trim();
+    if (!phrase || [...phrase].length < 2 || NOT_A_SCOPE.test(phrase) || (!explicit && RESTRICTION.test(phrase))) continue;
+    return { phrase, end: found.end };
   }
   return null;
+}
+
+function wholeCase(text, pattern) {
+  const match = pattern.exec(text);
+  return match ? { phrase: match[1], end: match.index + match[0].length } : null;
+}
+
+function headCase(text, start, explicit) {
+  const rest = text.slice(start);
+  const sentence = rest.split(/[。；;\n]|\.(?:\s|$)/u)[0];
+  const colon = explicit ? sentence.search(/[：:]/u) : -1;
+  const stop = colon > 0 ? colon : sentence.search(/[，,：:]/u);
+  const raw = stop >= 0 ? sentence.slice(0, stop) : sentence;
+  const limit = explicit ? CASE_CHARS : /\p{Script=Han}/u.test(raw) ? OLD_CASE_CHARS.han : OLD_CASE_CHARS.latin;
+  return { phrase: [...raw].slice(0, limit).join(''), end: start + raw.length };
+}
+
+// The same, cut to fit an index line.
+export function statedPreferenceScope(instruction) {
+  const scope = statedScopePhrase(instruction);
+  return scope ? singleLineExcerpt(scope, SCOPE_CHARS) : null;
 }
 
 // What one omitted preference is about, in one line: its key, its layer where
@@ -123,30 +170,56 @@ export function preferenceIndex(preferences, selected, detail = 'full') {
 // compare against, it counts as met: FULI never pushes an item out on a guess.
 export function statedScopeMeetsProject(item, projectWords = []) {
   const scope = statedPreferenceScope(item?.instruction);
-  const haystack = projectWords.filter(word => typeof word === 'string' && word.trim()).join(' ').toLowerCase();
-  if (!scope || !haystack) return true;
-  return scopeMatches(scope, haystack);
+  const words = projectWords.filter(word => typeof word === 'string' && word.trim());
+  if (!scope || !words.length) return true;
+  return scopeMatches(scope, words);
 }
 
-// At least half of the scope's distinctive units appear: Latin words of
-// three letters or more, and pairs of adjacent Chinese characters, so
-// "合成结算需求" meets "结算需求" without demanding the whole run. Half, not
-// more: where FULI is unsure it gives the rule rather than withholds it.
-function scopeMatches(scope, haystack) {
-  const units = scopeUnits(scope);
+// At least half of the scope's distinctive units appear in the project's
+// words (Latin words of three letters or more, pairs of adjacent Chinese
+// characters), or one of those words stands whole in the scope: so
+// "合成结算需求" meets a project named "结算需求" once the filler is out, while
+// "支付中台" does not meet "数据中台" on the one word the two share (review of
+// #1104). A stated case against a task is read more freely, one unit being
+// enough (preference-conditions.js): there the model still sees the line.
+function scopeMatches(scope, words) {
+  const units = distinctiveUnits(scope);
   if (!units.length) return true;
-  return units.filter(unit => haystack.includes(unit)).length * 2 >= units.length;
+  const haystack = words.join(' ').toLowerCase();
+  if (units.filter(unit => haystack.includes(unit)).length * 2 >= units.length) return true;
+  const stated = withoutFiller(scope);
+  return words.some((word) => {
+    const name = withoutFiller(word).trim();
+    return [...name].length >= 2 && stated.includes(name);
+  });
 }
 
-const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when',
-  '需求', '任务', '工作', '项目']);
-function scopeUnits(scope) {
+// Filler: words that say nothing about a case. Latin ones are dropped as
+// words; Chinese ones are taken out of the whole text before it is cut into
+// pairs, so no pair spans two of them (「所有任务」 used to leave 「有任」, review
+// of #1104).
+const FILLER = new Set(['the', 'this', 'that', 'and', 'for', 'with', 'work', 'task', 'tasks', 'when', 'only', 'applies',
+  'all', 'any', 'every', 'always', 'default']);
+const HAN_FILLER = /需求|任务|工作|项目|所有|任何|当前|相关|时候|情况|场景|以及|或者|的/gu;
+// The words that say a habit is limited, never what it is limited to.
+const LIMITING = /仅|只有|只|适用于|适用|才/gu;
+// The text with filler and limiting words taken out, lowercased: what the
+// units below are cut from, and what a request's length is counted on.
+export function withoutFiller(text) {
+  return String(text).toLowerCase().replace(LIMITING, ' ').replace(HAN_FILLER, ' ');
+}
+
+// The distinctive units of a text: Latin words of three letters or more, and
+// pairs of adjacent Chinese characters, without filler. The same units decide
+// a stated scope against a project and a stated case against a task
+// (preference-conditions.js).
+export function distinctiveUnits(text) {
   const units = [];
-  for (const [run] of scope.toLowerCase().matchAll(/[\p{Script=Han}]+|[a-z][a-z0-9_-]{2,}/gu)) {
+  for (const [run] of withoutFiller(text).matchAll(/[\p{Script=Han}]+|[a-z][a-z0-9_-]{2,}/gu)) {
     if (/^\p{Script=Han}/u.test(run)) {
       if (run.length === 1) continue;
       for (let index = 0; index < run.length - 1; index++) units.push(run.slice(index, index + 2));
-    } else units.push(run);
+    } else if (!FILLER.has(run)) units.push(run);
   }
-  return units.filter(unit => !FILLER.has(unit));
+  return units;
 }

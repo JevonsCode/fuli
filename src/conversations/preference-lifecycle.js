@@ -81,8 +81,11 @@ export function currentTaskStatus(task, input, sourceApplication) {
 // blocked frame keeps the receipt sentence: its agent_receipt is still copied.
 // The turn's prompt (null for a reset) lets a frame of the same task name an
 // earlier frame's skeleton instead of repeating it (entry-skeleton.js).
+// `request`: the person's prompt a task entry was begun for, which a bounded
+// frame reads habits with a stated case against (preference-conditions.js);
+// null for a restore or a host turn, whose frame then leaves none of them out.
 export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
-  { inlineChars = null, inlineBytes = null, boundedLabel = label } = {}) {
+  { inlineChars = null, inlineBytes = null, boundedLabel = label, request = null } = {}) {
   const { task_context_token: _copy, ...rest } = entry;
   const value = copyPreferenceScope(entry, rest);
   const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
@@ -92,7 +95,7 @@ export async function preferenceHookOutput(entry, event, input, delivery, source
   const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
   const measure = inlineBytes ? utf8Bytes : textLength;
   const fit = inlineBytes || inlineChars ? inlineEntryFit(inlineBytes || inlineChars, result => measure(hookContext(result)),
-    { projectPath: input.cwd ?? null, measure }) : WHOLE_ENTRY;
+    { projectPath: input.cwd ?? null, measure, request }) : WHOLE_ENTRY;
   // An entry without a task has nothing for delivery to track (task-entry-read-only.js).
   const result = delivery && typeof entry.taskContextToken === 'string' ? await delivery.deliver(value, { sourceApplication,
     nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,

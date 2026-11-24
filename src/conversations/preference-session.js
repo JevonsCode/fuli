@@ -316,6 +316,7 @@ function acknowledgedSnapshot(value, current, state, proof) {
     // The omission index the model holds with this frame (preference-snapshot.js
     // frameOmittedIndex): its own, or its base's where it said it was unchanged.
     const held = delivered ? { ...delivered, revision, omittedIndex: frameOmittedIndex(frame.value, shown),
+      omittedConditional: frameOmittedIndex(frame.value, shown, 'conditional'),
       owed: expected.owed ?? [], spent: expected.spent ?? 0 } : null;
     shown.set(revision, delivered && known.snapshotHash === delivered.snapshotHash ? held : AMBIGUOUS);
     if (delivered?.authorityHash === current.authorityHash) baseline = held;

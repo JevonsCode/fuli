@@ -6,7 +6,8 @@ import test from 'node:test';
 import { CODEX_CONTEXT_BYTES } from '../../../src/agents/codex/lifecycle-event.js';
 import { TOO_LARGE_LABEL } from '../../../src/conversations/entry-inline-budget.js';
 import { HARD_RULE_ROOM_STEPS } from '../../../src/conversations/entry-hard-rule-room.js';
-import { codexEntrySession, realScalePreferences, syntheticWorkingEntry } from '../../../test-support/synthetic-large-entry.js';
+import { codexEntrySession, REAL_SCALE_CASE_PROMPT, realScalePreferences, syntheticWorkingEntry }
+  from '../../../test-support/synthetic-large-entry.js';
 
 const bytes = text => Buffer.byteLength(text);
 const isHard = item => item.preference_qualifiers?.constraint === 'hard';
@@ -30,7 +31,7 @@ async function turns(items, count) {
       result.push({ text, frame, given: new Set(given) });
     }
     return result;
-  });
+  }, { prompt: REAL_SCALE_CASE_PROMPT });
 }
 
 for (const [where, position] of [['first', 63], ['second', 7], ['last', 55]]) {

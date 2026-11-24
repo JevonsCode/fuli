@@ -166,6 +166,18 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const appliesWhen = url.pathname.match(
+    /^\/api\/knowledge\/(entity|relationship)\/([^/]+)\/applies-when$/
+  );
+  if (appliesWhen && request.method === 'PUT') {
+    sendJson(response, 200, await app.setPreferenceAppliesWhen({
+      ...(await readJson(request)),
+      itemKind: appliesWhen[1],
+      itemId: decodeURIComponent(appliesWhen[2]),
+      operationActor: 'human'
+    }, ownerReads, relayedDecision(request)));
+    return true;
+  }
   const projectAction = url.pathname.match(
     /^\/api\/knowledge\/(entity)\/([^/]+)\/project-action(\/preview)?$/
   );

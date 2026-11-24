@@ -12,6 +12,7 @@ import { compactTaskContext } from '../../../src/conversations/task-context-view
 import { copyPreferenceScope } from '../../../src/conversations/preference-snapshot.js';
 import { preferenceHookOutput } from '../../../src/conversations/preference-lifecycle.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, inlineSearchFit, OMITTED_PREFERENCES_LABEL } from '../../../src/conversations/entry-inline-budget.js';
+import { preferenceAlwaysInline } from '../../../src/graphiti/preference-task-scope.js';
 import { syntheticPreference } from '../../../test-support/synthetic-context-session.js';
 import { claudeEntrySession, hookFrame, realScalePreferences, syntheticIndexRecall, syntheticLargeEntry, syntheticPreferences, syntheticRecall,
   syntheticRecovery } from '../../../test-support/synthetic-large-entry.js';
@@ -32,6 +33,14 @@ const mainFirstFrame = build => claudeEntrySession(async ({ sessionId, delivery,
   return hookFrame(output.hookSpecificOutput.additionalContext);
 });
 const keys = items => (items ?? []).map(item => item.preference_key);
+// The real-scale set's habits with an appliesWhen ("只在改动交付流程时适用"):
+// "fix the export bug" is not that case, so a bounded frame names them by a
+// line instead of a body (preference-conditions.js). Main's search, which does
+// not read cases, spends bodies on them.
+const UNMET = new Set(realScalePreferences().filter(item => item.preference_qualifiers.appliesWhen).map(item => item.preference_key));
+const UNMET_HARD = new Set(realScalePreferences().filter(item => item.preference_qualifiers.appliesWhen && preferenceAlwaysInline(item))
+  .map(item => item.preference_key));
+const needed = items => (items ?? []).filter(item => !UNMET.has(item.preference_key));
 const kind = instruction => /SYNTHETIC_(\w+?)_\d+/.exec(instruction)?.[1];
 // What an omission names as the way to read the rest: the tool, its own
 // arguments, and the one call a chat-profile client can copy (rec#137).
@@ -499,7 +508,7 @@ test('a real-scale working set keeps its floor: host events are one line, later 
       if (kind === 'delta') held = frame.preference_delivery.unchanged + frame.preference_updates.length;
       rows.push({ turn, kind, chars: text.length, inline: kind === 'line' ? '-' : held, frame });
     };
-    mainFirst = (await mainFirstFrame(sessionId => entry('task-1', 2, sessionId))).effective_preferences.length;
+    mainFirst = needed((await mainFirstFrame(sessionId => entry('task-1', 2, sessionId))).effective_preferences).length;
     row('prompt 1', (await session.turn(entry('task-1', 2))).text);
     await session.host.say('assistant', 'SYNTHETIC reply.');
     for (let event = 1; event <= 5; event++) {
@@ -522,7 +531,12 @@ test('a real-scale working set keeps its floor: host events are one line, later 
     assert.equal(frame?.preferences_not_held, undefined, `${turn}: the set is held`);
   }
   assert.equal(rows[0].frame.preferences_omitted.index, undefined, 'the rest are counted, as real entry frames show');
+  // Of the habits this task may need: main also spells out some whose case it is not.
+  assert.equal(needed(rows[0].frame.effective_preferences).length, rows[0].inline, 'no body of a case this task is not');
   assert.ok(rows[0].inline >= mainFirst, `the first frame spells out ${rows[0].inline}, main ${mainFirst}`);
+  // The 3 hard rules among them keep their lines; the other 9 would cost bodies, so they are counted.
+  assert.equal(rows[0].frame.preferences_omitted.conditional.length, UNMET_HARD.size);
+  assert.ok(rows[0].frame.preferences_omitted.conditional.every(line => line.includes(' — hard rule · ')));
   // A later frame has room because the bodies the model holds are not
   // repeated; keys alone sent for that room tell the model nothing to judge by.
   for (const { turn, frame } of rows.slice(1)) {
@@ -555,11 +569,24 @@ test('a real-scale working set keeps its floor: host events are one line, later 
 // nothing, so the room goes to bodies and the rest are counted. Measured: 17
 // in full and the rest counted (before: 11 in full and 59 keys, 2,283
 // characters of them). Keys a person chose (`rule-N`) are still named.
+// The 12 habits whose case this task is not are left out (3 of them hard
+// rules, each named by a line; the other 9 counted, since their lines would
+// cost a body): 17 are in full, every one of them a habit the task may need;
+// main's 17 held 3 bodies of such cases.
 test('without a session record, a keys-only index of generated keys gives way to more bodies', async () => {
   const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items: realScalePreferences(), sessionId: SESSION,
     recall: syntheticRecall(2, { length: 300 }), conversation: syntheticRecovery(2, { length: 300 }) })));
   assert.equal(frame.preferences_omitted.index, undefined);
   assert.equal(frame.effective_preferences.length, 17);
+  assert.equal(needed(frame.effective_preferences).length, 17);
+  assert.deepEqual(new Set(frame.preferences_omitted.conditional.map(line => line.split(' — ')[0].split(' (')[0])), UNMET_HARD);
+  // A task that is not their case still has every such hard rule in the frame, saying what it says.
+  const byKey = new Map(realScalePreferences().map(item => [item.preference_key, item]));
+  for (const line of frame.preferences_omitted.conditional) {
+    const item = byKey.get(line.split(' — ')[0].split(' (')[0]);
+    assert.ok(line.includes(` — hard rule · ${item.preference_qualifiers.appliesWhen.replace(/。$/u, '')}`), line);
+    assert.ok(line.endsWith(` · ${item.instruction.split('。')[0]}`) || line.endsWith('…'), line);
+  }
   const named = hookFrame(await claudeEntry(syntheticLargeEntry({ items: syntheticPreferences(60), sessionId: SESSION })));
   assert.ok(named.preferences_omitted.index.length > 0, 'meaningful keys keep their index');
 });

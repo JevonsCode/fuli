@@ -8,10 +8,12 @@ import test from 'node:test';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { MCP_ENTRY_INLINE_CHARS, MCP_UNCHANGED_INLINE_CHARS, UNCHANGED_LABEL } from '../src/mcp/task-entry-budget.js';
 import { OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
+import { CONDITIONAL_LABEL } from '../src/conversations/preference-conditions.js';
 import { readTaskPreferences } from '../src/graphiti/task-preference-reader.js';
 import { preferenceAlwaysInline } from '../src/graphiti/preference-task-scope.js';
 import { HABITS_LEAD, preparedHabits } from '../src/graphiti/turn-receipt-delivery.js';
-import { realScalePreferences, syntheticLargeEntry, syntheticWorkingEntry } from '../test-support/synthetic-large-entry.js';
+import { REAL_SCALE_CASE_PROMPT, realScalePreferences, syntheticLargeEntry, syntheticWorkingEntry }
+  from '../test-support/synthetic-large-entry.js';
 import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
 
 const SESSION = '019fc6ed-02a5-7832-8821-68e3b03e7c01';
@@ -71,6 +73,12 @@ async function call(mcp, name, args) {
 const enter = (mcp, extra = {}) => call(mcp, 'get_collaboration_preferences',
   { projectPath: '/synthetic/project', taskPrompt: 'why does the config dialog appear', sessionId: SESSION, ...extra });
 const hardKeys = items => items.filter(preferenceAlwaysInline).map(item => item.preference_key).sort();
+// The habits of the real-scale set whose stated case ("只在改动交付流程时适用")
+// a question about a config dialog is not: each is named by a line, not a body
+// (preference-conditions.js). Three of them are hard rules.
+const cased = items => items.filter(item => item.preference_qualifiers.appliesWhen);
+const casedKeys = items => cased(items).map(item => item.preference_key).sort();
+const lineKey = line => line.split(' — ')[0].replace(/ \(\w+\)$/u, '');
 
 test('an MCP entry is bounded to the inline limit with every hard rule, the rest named and readable', async () => {
   const f = fixture();
@@ -80,13 +88,26 @@ test('an MCP entry is bounded to the inline limit with every hard rule, the rest
     const frame = result.structuredContent;
     const all = realScalePreferences();
     assert.ok(result.content[0].text.length <= MCP_ENTRY_INLINE_CHARS, `${result.content[0].text.length}`);
-    // Every hard rule's body, in full.
-    for (const rule of all.filter(preferenceAlwaysInline)) {
+    // Every hard rule's body, in full, but those whose stated case this question is not: those
+    // are named by their case, with the rest of such habits (none of them a body).
+    const unmet = casedKeys(all);
+    for (const rule of all.filter(preferenceAlwaysInline).filter(item => !unmet.includes(item.preference_key))) {
       assert.equal(frame.effective_preferences.find(item => item.preference_key === rule.preference_key)?.instruction,
         rule.instruction);
     }
+    // The 3 hard rules among them keep their lines, saying what each says; the other 9 lines
+    // would cost bodies this question may need, so those are counted (the read serves them).
+    const unmetHard = hardKeys(all).filter(key => unmet.includes(key));
+    assert.deepEqual(frame.preferences_omitted.conditional.map(lineKey).sort(), unmetHard);
+    for (const line of frame.preferences_omitted.conditional) {
+      const item = all.find(each => each.preference_key === lineKey(line));
+      assert.ok(line.includes(' — hard rule · '), line);
+      assert.ok(line.endsWith(` · ${item.instruction.split('。')[0]}`) || line.endsWith('…'), line);
+    }
+    assert.equal(frame.effective_preferences.some(item => unmet.includes(item.preference_key)), false);
+    assert.match(frame.omitted_guidance, /preferences_omitted\.conditional/);
     const listed = frame.effective_preferences.length;
-    assert.ok(listed >= hardKeys(all).length && listed < all.length, `${listed}`);
+    assert.ok(listed >= hardKeys(all).length - 3 && listed < all.length, `${listed}`);
     assert.equal(frame.preferences_omitted.count, all.length - listed);
     assert.deepEqual(frame.preferences_omitted.read.tool, 'read_task_preferences');
     assert.equal(frame.preferences_omitted.read.arguments.taskContextToken, TOKEN);
@@ -95,7 +116,7 @@ test('an MCP entry is bounded to the inline limit with every hard rule, the rest
     assert.equal(frame.next_call, `knownRevision=${frame.preferences_revision}`);
     assert.ok(Buffer.byteLength(`,"next_call":${JSON.stringify(frame.next_call)}`) <= 41);
     // A real-scale working entry names every preference it leaves out with a line and its gist, not a count or keys alone.
-    assert.equal(frame.preferences_omitted.index.length, frame.preferences_omitted.count);
+    assert.equal(frame.preferences_omitted.index.length + unmet.length, frame.preferences_omitted.count);
     const byKey = new Map(all.map(item => [item.preference_key, item]));
     for (const line of frame.preferences_omitted.index) {
       const [name, gist] = line.split(' — ');
@@ -104,7 +125,7 @@ test('an MCP entry is bounded to the inline limit with every hard rule, the rest
       assert.ok(gist && byKey.get(key).instruction.startsWith(gist.replace(/….*$/u, '')), line);
     }
     assert.ok(frame.agent_receipt.markdown.split('\n')[1].startsWith(
-      `${HABITS_LEAD}这个新对话为你准备了 70 条习惯：直接带上 ${listed} 条，另外 ${70 - listed} 条随时可读 · `));
+      `${HABITS_LEAD}这个新对话为你准备了 70 条习惯：直接带上 ${listed} 条，另外 ${70 - listed} 条随时可读（12 条这次用不上） · `));
     // The entry never sees the transport's own argument.
     await enter(mcp, { knownRevision: 'abc' });
     assert.equal(Object.hasOwn(f.entries.at(-1), 'knownRevision'), false);
@@ -135,16 +156,21 @@ test('the same revision again repeats only the hard rules, with the read; anothe
     const first = (await enter(mcp)).structuredContent;
     const again = await enter(mcp, { knownRevision: first.preferences_revision });
     const frame = again.structuredContent;
-    assert.deepEqual(frame.effective_preferences.map(item => item.preference_key).sort(), hardKeys(realScalePreferences()));
+    const all = realScalePreferences();
+    const unmetHard = hardKeys(all).filter(key => casedKeys(all).includes(key));
+    assert.deepEqual(frame.effective_preferences.map(item => item.preference_key).sort(),
+      hardKeys(all).filter(key => !unmetHard.includes(key)));
+    // The hard rules whose case this is not are repeated as their lines.
+    assert.deepEqual(frame.preferences_omitted.conditional.map(lineKey).sort(), unmetHard);
     assert.equal(frame.preferences_revision, first.preferences_revision);
     assert.equal(frame.preferences_omitted.unchanged, true);
-    assert.equal(frame.preferences_omitted.count, 70 - hardKeys(realScalePreferences()).length);
+    assert.equal(frame.preferences_omitted.count, 70 - hardKeys(all).length + unmetHard.length);
     assert.equal(frame.preferences_omitted.index, undefined);
     assert.equal(frame.preferences_omitted.read.arguments.taskContextToken, TOKEN);
     assert.equal(frame.preferences_omitted.index_unchanged, true);
     // The rest still apply: it says to read them, and how to get the index back after a compaction.
-    assert.equal(frame.omitted_guidance, [UNCHANGED_LABEL, OMITTED_PREFERENCES_LABEL, OMITTED_CONFLICTS_LABEL]
-      .slice(0, frame.active_conflicts_omitted ? 3 : 2).join(' '));
+    assert.equal(frame.omitted_guidance, [UNCHANGED_LABEL, OMITTED_PREFERENCES_LABEL, CONDITIONAL_LABEL, OMITTED_CONFLICTS_LABEL]
+      .slice(0, frame.active_conflicts_omitted ? 4 : 3).join(' '));
     assert.match(frame.omitted_guidance, /without knownRevision/);
     assert.equal(frame.next_call, `knownRevision=${first.preferences_revision}`);
     // This turn's own fields still come, its receipt counting what this answer carries.
@@ -197,7 +223,8 @@ test('an entry of preferences alone gives the room a working entry spends on its
     assert.ok(result.content[0].text.length <= MCP_ENTRY_INLINE_CHARS);
     assert.ok(lean.effective_preferences.length > rich.effective_preferences.length,
       `${lean.effective_preferences.length} > ${rich.effective_preferences.length}`);
-    assert.equal(lean.preferences_omitted.index.length, lean.preferences_omitted.count);
+    const unmet = casedKeys(realScalePreferences()).length;
+    assert.equal(lean.preferences_omitted.index.length + unmet, lean.preferences_omitted.count);
   } finally { await working.close(); await alone.close(); }
 });
 
@@ -242,5 +269,30 @@ test('an entry stays whole where what a bound leaves out could not be read', asy
     const frame = (await enter(mcp)).structuredContent;
     assert.equal(frame.effective_preferences.length, 70);
     assert.equal(frame.preferences_revision, undefined);
+  } finally { await mcp.close(); }
+});
+
+// A habit left out because the question is not its stated case: a later
+// question that is that case changes the revision, so its body arrives rather
+// than "unchanged"; read_task_preferences reads it by key at any time.
+test('a question that becomes a habit\'s stated case changes the revision and delivers its body; its key reads it', async () => {
+  const f = fixture();
+  const mcp = server(f.app);
+  try {
+    const all = realScalePreferences();
+    const unmetHard = hardKeys(all).filter(key => casedKeys(all).includes(key));
+    const first = (await enter(mcp)).structuredContent;
+    assert.equal(first.effective_preferences.some(item => unmetHard.includes(item.preference_key)), false);
+    const same = (await enter(mcp, { knownRevision: first.preferences_revision, taskPrompt: 'why does the settings dialog open twice' }))
+      .structuredContent;
+    assert.equal(same.preferences_omitted.unchanged, true, 'still not the case: unchanged');
+    const now = (await enter(mcp, { knownRevision: first.preferences_revision, taskPrompt: REAL_SCALE_CASE_PROMPT })).structuredContent;
+    assert.notEqual(now.preferences_revision, first.preferences_revision);
+    assert.equal(now.preferences_omitted.unchanged, undefined);
+    for (const key of unmetHard) assert.ok(now.effective_preferences.some(item => item.preference_key === key), key);
+    assert.equal(now.preferences_omitted.conditional, undefined);
+    const read = (await call(mcp, 'read_task_preferences', { ...first.preferences_omitted.read.arguments, keys: unmetHard }))
+      .structuredContent;
+    assert.deepEqual(read.effective_preferences.map(item => item.preference_key).sort(), unmetHard);
   } finally { await mcp.close(); }
 });

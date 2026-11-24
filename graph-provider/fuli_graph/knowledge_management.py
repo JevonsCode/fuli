@@ -127,6 +127,8 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
                 status_code=409,
                 detail='knowledge is already confirmed',
             )
+    if request.applies_when is not None and (not previous.get('profileAspect') or previous.get('invalidAt')):
+        raise HTTPException(status_code=409, detail='only a current preference states when it applies')
     created_at = datetime.now(timezone.utc)
     next_value = _next_snapshot(previous, request, created_at)
     embedding = await _updated_embedding(store, previous, next_value, request)
@@ -152,6 +154,8 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
         await _update_item(
             scoped, space, item_id, request.item_kind, next_value, embedding,
             expected_lock_version=lock_version(current),
+            attributes_json=(None if request.applies_when is None
+                             else _with_applies_when(current.get('attributes_json'), next_value.get('appliesWhen'))),
         )
         await _record_revision(
             scoped, actor, space, item_id, request, revision_id,
@@ -702,6 +706,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
                item.fuli_unresolved_bases AS unresolved_bases,
+               item.fuli_attributes_json AS attributes_json,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version,
                item.fuli_replica_owner AS fuli_replica_owner,
@@ -757,6 +762,7 @@ async def _read_item(store, space: dict, item_id: str, item_kind: str):
                item.fuli_replaced_by_item_kind AS replaced_by_item_kind,
                item.fuli_derived_from_item_ids AS derived_from_item_ids,
                item.fuli_unresolved_bases AS unresolved_bases,
+               item.fuli_attributes_json AS attributes_json,
                coalesce(item.fuli_ai_review_lock_version, 0)
                  AS ai_review_lock_version,
                item.fuli_replica_owner AS fuli_replica_owner,
@@ -874,6 +880,8 @@ def _snapshot(value: dict, item_kind: str) -> dict:
         ),
         'replacedByItemId': value.get('replaced_by_item_id'),
         'replacedByItemKind': value.get('replaced_by_item_kind'),
+        # Only where one is stated, so other items' revisions read as before.
+        **({'appliesWhen': applies_when} if (applies_when := _applies_when(value.get('attributes_json'))) else {}),
     }
     if item_kind == 'entity':
         return {
@@ -983,6 +991,10 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             elif not previous.get('profileAspect'):
                 value['preferenceScope'] = 'global'
                 value['preferenceProjectId'] = None
+        if request.applies_when is not None:
+            value.pop('appliesWhen', None)
+            if request.applies_when.strip():
+                value['appliesWhen'] = request.applies_when.strip()
         if request.inheritance_mode is not None:
             value['inheritanceMode'] = request.inheritance_mode
         if request.inherited_project_ids is not None:
@@ -1032,7 +1044,7 @@ async def _updated_embedding(store, previous: dict, current: dict, request):
 
 
 async def _update_item(
-    store, space, item_id, item_kind, value, embedding, *, expected_lock_version,
+    store, space, item_id, item_kind, value, embedding, *, expected_lock_version, attributes_json=None,
 ):
     # Every item writer bumps fuli_ai_review_lock_version. Bumping it first
     # takes Neo4j's write lock before the read, so the WHERE sees the latest
@@ -1072,6 +1084,7 @@ async def _update_item(
             item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
+            item.fuli_attributes_json = coalesce($attributes_json, item.fuli_attributes_json),
             item.name_embedding = coalesce($embedding, item.name_embedding)
         RETURN item.uuid AS item_id
         '''
@@ -1108,6 +1121,7 @@ async def _update_item(
             item.fuli_negative_feedback_block_json = $negative_feedback_block_json,
             item.fuli_replaced_by_item_id = $replaced_by_item_id,
             item.fuli_replaced_by_item_kind = $replaced_by_item_kind,
+            item.fuli_attributes_json = coalesce($attributes_json, item.fuli_attributes_json),
             item.fact_embedding = coalesce($embedding, item.fact_embedding)
         RETURN item.uuid AS item_id
         '''
@@ -1159,6 +1173,7 @@ async def _update_item(
         replaced_by_item_id=value.get('replacedByItemId'),
         replaced_by_item_kind=value.get('replacedByItemKind'),
         embedding=embedding,
+        attributes_json=attributes_json,
         **parameters,
     )
     if not records:
@@ -1166,6 +1181,28 @@ async def _update_item(
             status_code=409,
             detail='knowledge changed while it was being revised; read it again',
         )
+
+
+def _applies_when(attributes_json) -> str | None:
+    """The case a preference states it applies in, as
+    preference_task_scope.item_qualifiers reads it: the attributes' own win
+    over nested qualifiers."""
+    attributes = json_object(attributes_json)
+    value = {**json_object(attributes.get('preference_qualifiers')), **attributes}.get('appliesWhen')
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _with_applies_when(attributes_json, applies_when: str | None) -> str:
+    """The attributes with the case set, or cleared wherever it was stated."""
+    attributes = json_object(attributes_json)
+    nested = json_object(attributes.get('preference_qualifiers'))
+    if 'appliesWhen' in nested:
+        nested.pop('appliesWhen')
+        attributes['preference_qualifiers'] = nested
+    attributes.pop('appliesWhen', None)
+    if applies_when:
+        attributes['appliesWhen'] = applies_when
+    return json.dumps(attributes, ensure_ascii=False, sort_keys=True)
 
 
 def _confirmation_basis(value) -> ConfirmationBasis | None:

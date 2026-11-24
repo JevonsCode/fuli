@@ -912,3 +912,67 @@ class StoreStub:
             'kind': 'personal',
             'group_id': 'personal-group',
         }
+
+
+def _stated_preference(attributes=None, **fields):
+    return {'name': 'Slide decks', 'summary': 'Hand every slide deck to the deck helper.', 'invalid_at': None,
+            'classification_state_explicit': True, 'confirmation_status': 'confirmed',
+            'confirmation_state_explicit': True, 'profile_aspect': 'judgment_preference',
+            'preference_scope': 'global', 'ai_review_lock_version': 3,
+            'attributes_json': json.dumps(attributes) if attributes is not None else None, **fields}
+
+
+def _applies_when_request(applies_when, **fields):
+    return KnowledgeRevisionCreate(personal_space_id='personal-space', item_kind='entity', action='update',
+                                   reason='你说：「只在做演示时适用」', operation_actor='human',
+                                   applies_when=applies_when, **fields)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('attributes,applies_when,stored', [
+    # Set beside what the attributes already hold.
+    ({'constraint': 'hard'}, '做演示文稿时', {'constraint': 'hard', 'appliesWhen': '做演示文稿时'}),
+    # Reworded.
+    ({'appliesWhen': '做网页时'}, ' 做网页演示时 ', {'appliesWhen': '做网页演示时'}),
+    # Cleared, wherever it was stated.
+    ({'appliesWhen': '做网页时', 'preference_qualifiers': {'appliesWhen': '做演示时', 'workKind': 'design'}}, '',
+     {'preference_qualifiers': {'workKind': 'design'}}),
+])
+async def test_when_a_preference_applies_is_the_persons_in_place_edit_with_its_history(attributes, applies_when, stored):
+    driver = SequentialDriver([[_stated_preference(attributes)], [], [{'item_id': 'written'}], [],
+                               [{'human_change_version': 1}]])
+
+    result = await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'entity-1',
+                                         _applies_when_request(applies_when))
+
+    _, update = driver.calls[2]
+    assert json.loads(update['attributes_json']) == stored
+    # The content, its confirmation and its version stay; the revision keeps both cases.
+    assert update['summary'] == 'Hand every slide deck to the deck helper.'
+    assert update['confirmation_status'] == 'confirmed'
+    assert result.version_item_id is None
+    assert result.previous.get('appliesWhen') == attributes.get('appliesWhen')
+    assert result.current.get('appliesWhen') == (applies_when.strip() or None)
+    _, history = driver.calls[3]
+    assert history['action'] == 'update' and '只在做演示时适用' in history['reason']
+    assert 'human_change' in driver.calls[4][0]
+
+
+@pytest.mark.asyncio
+async def test_when_a_preference_applies_is_not_set_on_other_knowledge_or_history():
+    for current in (_stated_preference(profile_aspect=None), _stated_preference(invalid_at='2026-11-01T00:00:00Z')):
+        driver = SequentialDriver([[current]])
+        with pytest.raises(HTTPException) as refused:
+            await revise_knowledge_item(StoreStub(driver), {'id': 'principal-1'}, 'entity-1',
+                                        _applies_when_request('做演示文稿时'))
+        assert refused.value.status_code == 409
+        assert len(driver.calls) == 1
+
+
+def test_when_a_preference_applies_is_an_update_of_its_own():
+    with pytest.raises(ValueError):
+        _applies_when_request('做演示文稿时', summary='Hand decks over.')
+    with pytest.raises(ValueError):
+        KnowledgeRevisionCreate(personal_space_id='personal-space', item_kind='entity', action='mark_outdated',
+                                reason='Stale.', applies_when='做演示文稿时')
+    assert _applies_when_request('').applies_when == ''

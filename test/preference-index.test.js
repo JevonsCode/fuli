@@ -79,6 +79,11 @@ test('a stated scope is read against the session\'s project, not each prompt', (
   assert.equal(statedScopeMeetsProject(scoped, ['synthetic-review', 'Synthetic Review']), false);
   // Pairs of characters, so the whole run is not required.
   assert.equal(statedScopeMeetsProject(scoped, ['synthetic-billing', '结算需求']), true);
+  // One shared generic word is not the project (review of #1104): a habit written for another project ranks after.
+  for (const [scope, name] of [['支付中台项目', '数据中台'], ['电商后台', '内容后台']]) {
+    assert.equal(statedScopeMeetsProject(item('other', `仅限${scope}：只在那里这样做。`), ['synthetic', name]), false, `${scope} / ${name}`);
+  }
+  assert.equal(statedScopeMeetsProject(item('same', '仅限数据中台项目：只在那里这样做。'), ['synthetic', '数据中台']), true);
   const project = item('suite', '仅限合成支付项目：提交前跑全量测试');
   assert.equal(statedScopeMeetsProject(project, ['synthetic-payments', '合成支付', 'payments']), true);
   // At least half of a Latin scope's words: unsure gives the rule rather than withholds it.

@@ -7,9 +7,13 @@
 const PROJECT_SCOPE = 'project:'
 const PLAIN_PROJECT_ID = /^[A-Za-z0-9._:-]{1,128}$/
 
-export function organizePreferencesSentence(scope: string) {
+// The step 补上何时适用 (habit-conditions.ts) asks for only that step of the
+// tidy (skills/operating-fuli, Organising preferences).
+export type OrganizeStep = 'conditions'
+
+export function organizePreferencesSentence(scope: string, step?: OrganizeStep) {
   const projectId = scope.startsWith(PROJECT_SCOPE) ? scope.slice(PROJECT_SCOPE.length) : ''
   const range = scope === 'global' ? '个人全局'
     : PLAIN_PROJECT_ID.test(projectId) ? `项目 ${projectId}` : ''
-  return `#FLA Astro 整理我的偏好${range ? `，范围：${range}` : ''}`
+  return `#FLA Astro 整理我的偏好${step === 'conditions' ? '：补上何时适用' : ''}${range ? `，范围：${range}` : ''}`
 }

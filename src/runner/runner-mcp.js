@@ -83,12 +83,13 @@ class HostRefusal {
 
 // lookUp, retryAfterMs, toolsWaitMs and checkpointWaitMs: how the host is looked
 // for, how soon after it was away, how long a tools/list waits for it, and how
-// long a checkpoint of an offline task waits for its own delivery. modelFetch:
+// long a checkpoint of an offline task waits for its own delivery. endSessionMs:
+// how long closing waits for the host to end this process's session. modelFetch:
 // the fetch of this runner's own Tonborg model (local-routing.js). Without a
 // transport it serves stdio and closes when stdin ends or on SIGINT/SIGTERM,
 // so no socket, timer or open store outlives the client.
 export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolProfile = 'chat', env = process.env,
-  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, modelFetch, preferenceWaitMs }) {
+  transport, lookUp, retryAfterMs, toolsWaitMs, checkpointWaitMs, endSessionMs, modelFetch, preferenceWaitMs }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   // Which scopes this computer reads and writes on the host; a data directory
   // paired by an earlier version gets `global → host` and `default → host` here.
@@ -107,7 +108,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
     ...(preferenceWaitMs === undefined ? {} : { waitMs: preferenceWaitMs }) });
   const { server, endHostSession } = createRunnerServer({ store, routes, routesProblem, connection, routing, record, sourceApplication, sessionId, nativeSession: Boolean(nativeSession), toolProfile,
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(toolsWaitMs === undefined ? {} : { toolsWaitMs }),
-    ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }) });
+    ...(checkpointWaitMs === undefined ? {} : { checkpointWaitMs }), ...(endSessionMs === undefined ? {} : { endSessionMs }) });
   const stdio = !transport;
   let closing = null;
   const close = () => closing ??= (async () => {
@@ -133,7 +134,7 @@ export async function runRunnerMcp({ dataDir, sourceApplication = 'other', toolP
 
 function createRunnerServer({ store, routes = null, routesProblem = null, connection, routing, record = () => false, sourceApplication, sessionId, nativeSession = false, toolProfile = 'chat',
   describe = describeWorkspace, retryAfterMs = RETRY_AFTER_MS, toolsWaitMs = TOOLS_WAIT_MS,
-  checkpointWaitMs = CHECKPOINT_WAIT_MS, now = Date.now }) {
+  checkpointWaitMs = CHECKPOINT_WAIT_MS, endSessionMs = END_SESSION_MS, now = Date.now }) {
   const server = new Server({ name: 'fuli', version: FULI_VERSION }, {
     capabilities: { tools: { listChanged: true }, prompts: {}, resources: {} },
     instructions: toolProfile === 'chat' ? MCP_CHAT_INSTRUCTIONS : MCP_INSTRUCTIONS });
@@ -208,7 +209,7 @@ function createRunnerServer({ store, routes = null, routesProblem = null, connec
   // hold one of the host's sessions until the idle timeout. Bounded: a host
   // that does not answer releases it at that timeout instead.
   async function endHostSession() {
-    if (client) await retire(clientTransport, END_SESSION_MS);
+    if (client) await retire(clientTransport, endSessionMs);
   }
 
   // Ends one session on the host (MCP's DELETE), waiting at most withinMs. A

@@ -406,7 +406,7 @@ async function invokeTool(tool, input, requestContext = null) {
       const native = requestContext?.[NATIVE_CONTEXT];
       // An MCP client's task entry, bounded as a hook's frame is; null where it stays whole.
       const entry = name === 'get_collaboration_preferences' ? mcpTaskEntry(view, { knownRevision,
-        readable: tool.entryReadable, projectPath: callInput.projectPath ?? null,
+        readable: tool.entryReadable, projectPath: callInput.projectPath ?? null, request: callInput.taskPrompt ?? null,
         session: [tool.preferenceOrigin.sourceApplication, native?.nativeSessionId ?? tool.preferenceOrigin.nativeSessionId
           ?? callInput.sessionId ?? tool.hostSessionId] }) : null;
       const format = projected => name === 'read_task_preferences' ? completePreferenceToolResult(projected)
