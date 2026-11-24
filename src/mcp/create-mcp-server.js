@@ -62,7 +62,7 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   resume_agent_conversation: 24 * 1024,
   list_project_agent_tasks: 128 * 1024,
   list_preference_conflicts: 128 * 1024,
-  // One tool's schema, domain, route group or route; the index alone stays under 8 KB.
+  // One tool's schema, domain, route group or route; the index alone stays under 12 KB.
   list_agent_interfaces: 16 * 1024,
   list_external_knowledge_connectors: 32 * 1024,
   discover_external_knowledge_sources: 64 * 1024,

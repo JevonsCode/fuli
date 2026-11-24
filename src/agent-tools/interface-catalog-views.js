@@ -6,8 +6,10 @@ import { agentInterfaceCatalog, interfaceForRequest, interfaceForRoute } from '.
 // first and then the one domain, route group or route it needs. Every view is
 // cut from agentInterfaceCatalog(), the only source; nothing here restates it.
 const DETAILS = 'domains names each domain\'s tools; readRouteDomains also have console read routes. areas counts each '
-  + 'route group\'s console changes in coverage\'s order. Pass domain for one domain in full, area for one group\'s entries '
-  + '(access, reason or undo, category, toolName), or route (as listed, or METHOD /api/... path) for one entry.';
+  + 'route group\'s console changes as [agent, agent_delegable, agent_delegable_off, agent_relayed, local_user_only]; '
+  + 'areaTools names the tools of its agent entries. Pass domain for one domain in full, area for one group\'s entries '
+  + '(access, reason or undo, category, toolName), route (as listed, or METHOD /api/... path) for one entry, or toolName '
+  + 'for one tool\'s schema.';
 // The order of each areas count, the order coverage lists them in.
 const ACCESS_ORDER = ['agent', 'agent_delegable', 'agent_delegable_off', 'agent_relayed', 'local_user_only'];
 
@@ -31,14 +33,20 @@ export function agentInterfaceView({ toolName, domain, area, route } = {}) {
 
 function indexView({ schemaVersion, contract, guidance, coverage, delegationCategories, uiMutationParity, readWorkflows }) {
   const areas = {};
-  for (const { route, access } of uiMutationParity) {
-    const counts = areas[routeArea(route)] ??= ACCESS_ORDER.map(() => 0);
+  const areaTools = {};
+  for (const { route, access, toolName, toolNames } of uiMutationParity) {
+    const area = routeArea(route);
+    const counts = areas[area] ??= ACCESS_ORDER.map(() => 0);
     counts[ACCESS_ORDER.indexOf(access)] += 1;
+    for (const name of toolNames ?? (toolName ? [toolName] : [])) {
+      const names = areaTools[area] ??= [];
+      if (!names.includes(name)) names.push(name);
+    }
   }
   return { schemaVersion, contract, guidance, coverage, delegationCategories,
     domains: Object.fromEntries(readWorkflows.map(({ domain, toolNames }) => [domain, toolNames])),
     readRouteDomains: readWorkflows.filter(({ readRoutes }) => readRoutes).map(({ domain }) => domain),
-    areas, details: DETAILS };
+    areas, areaTools, details: DETAILS };
 }
 
 function domainView({ contract, readWorkflows }, domain) {

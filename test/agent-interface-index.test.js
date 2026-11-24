@@ -17,15 +17,17 @@ async function connected(operation) {
   } finally { await client.close(); await server.close(); }
 }
 
-test('the index names every tool once: in its domain, its area entries or otherTools', async () => {
+test('every tool name in the full catalog and the tool definitions appears in the index', async () => {
   await connected(async list => {
     const index = (await list({})).structuredContent;
     assert.equal(index.uiMutationParity, undefined);
     assert.equal(index.readWorkflows, undefined);
-    const inEntries = agentInterfaceCatalog().uiMutationParity.flatMap(entry => entry.toolNames ?? (entry.toolName ? [entry.toolName] : []));
-    const named = new Set([...Object.values(index.domains).flat(), ...inEntries, ...index.otherTools]);
-    for (const { name } of listAgentTools()) assert.ok(named.has(name), name);
-    for (const name of index.otherTools) assert.equal(inEntries.includes(name), false, name);
+    const { uiMutationParity, readWorkflows } = agentInterfaceCatalog();
+    const named = new Set([...Object.values(index.domains), ...Object.values(index.areaTools), index.otherTools].flat());
+    for (const name of [...listAgentTools().map(tool => tool.name), ...readWorkflows.flatMap(item => item.toolNames),
+      ...uiMutationParity.flatMap(entry => entry.toolNames ?? (entry.toolName ? [entry.toolName] : []))]) {
+      assert.ok(named.has(name), name);
+    }
   });
 });
 
@@ -52,6 +54,9 @@ test('a name that is not there says so and lists the names that are', async () =
       assert.equal(answer.structuredContent.found, false);
       assert.match(answer.structuredContent.message, /No /);
       assert.deepEqual(answer.structuredContent.areas, Object.keys(index.areas));
+    }
+    for (const args of [{ domain: 'synthetic-missing' }, { area: 'synthetic-missing' }, { route: 'GET /api/synthetic-missing' }]) {
+      assert.ok(Buffer.byteLength((await list(args)).content[0].text) <= 16 * 1024);
     }
     const both = await list({ area: 'peer', domain: 'roundtable' });
     assert.equal(both.isError, true);

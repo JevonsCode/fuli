@@ -1,5 +1,4 @@
 import { ApplicationError } from '../app/application-error.js';
-import { agentInterfaceCatalog } from '../agent-tools/interface-catalog.js';
 import { DISPATCH_TOOL, dispatchCall } from './dispatch-call.js';
 
 // inputSchema describes the tool's own arguments. A chat-profile client reaches
@@ -18,19 +17,18 @@ function requiredInput(tool) {
 
 // The directory answer (no toolName, domain, area or route) stays an index;
 // a single tool, domain, route group or route is one complete answer.
-const INDEX_LIMIT_BYTES = 8 * 1024;
+const INDEX_LIMIT_BYTES = 12 * 1024;
 
 // A complete single-tool schema must never pass through result summarization.
 export function agentToolCatalogResult(catalog, definitions, { toolName, domain, area, route } = {}, limitBytes = 16 * 1024) {
   const tools = toolName ? definitions.filter(tool => tool.name === toolName) : definitions;
   if (toolName && !tools.length) throw new ApplicationError('not_found', 'Unknown Fuli tool');
   const detail = [domain, area, route].some(value => value !== undefined);
-  // The index names each tool once: in its domain, in its area's entries, or in otherTools.
-  const named = detail || toolName ? null : new Set([...Object.values(catalog.domains).flat(),
-    ...agentInterfaceCatalog().uiMutationParity.flatMap(entry => entry.toolNames ?? (entry.toolName ? [entry.toolName] : []))]);
+  // The index names every tool: in its domain, its area's agent entries, or otherTools.
+  const named = detail || toolName ? null : new Set([...Object.values(catalog.domains), ...Object.values(catalog.areaTools)].flat());
   const value = toolName ? { tools, invocation: CALL_GUIDANCE, call: dispatchCall(toolName, requiredInput(tools[0])) }
     : detail ? catalog : { ...catalog, otherTools: tools.map(({ name }) => name).filter(name => !named.has(name)),
-      discovery: 'otherTools are the tools no domain or area entry names. Use toolName to read one complete schema, then run '
+      discovery: 'otherTools are the tools no domain or areaTools names. Use toolName to read one complete schema, then run '
         + 'that tool with fuli_call(toolName, input) where it is not listed.' };
   const json = JSON.stringify(value);
   if (Buffer.byteLength(json) > (named ? INDEX_LIMIT_BYTES : limitBytes)) throw new ApplicationError('tool_catalog_too_large',

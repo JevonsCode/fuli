@@ -297,7 +297,7 @@ const BASELINE = Object.freeze({
   // rec#111: search_current_project_knowledge says "max 10" queries and "need the user's OK to
   // expand" for "before any expansion": 7,333 -> 7,330 B (-3 B), measured from the real tools/list.
   // The same three list_agent_interfaces arguments, no description or bounds listed: 7,330 -> 7,408 B
-  // (+78 B), measured from the real tools/list; its directory answer shrinks by 56,395 B (interfaceIndexBytes).
+  // (+78 B), measured from the real tools/list; its directory answer shrinks by 54,152 B (interfaceIndexBytes).
   chatToolSchemaBytes: 7408,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
@@ -454,11 +454,12 @@ const BASELINE = Object.freeze({
   // list_agent_interfaces without arguments returned the whole Agent interface catalog (every
   // console change with its reason or undo, every domain with its guidance, every tool's title):
   // 63,848 B, 848 B under its 64 KB cap. It is now an index (domains with their tools, route
-  // groups with their counts by access, tools named nowhere else) and the details come one
-  // domain, route group or route at a time: 63,848 -> 7,453 B, measured through the chat MCP.
-  // Its cap is 8 KB, each detail's 16 KB; the largest domain (policy-and-health) is 1,300 B
-  // and the largest route group (system) 3,189 B.
-  interfaceIndexBytes: 7453,
+  // groups with their counts by access and the tools of their agent entries, tools named nowhere
+  // else, so every tool name is in it) and the details come one domain, route group or route at
+  // a time: 63,848 -> 9,696 B, measured through the chat MCP. Its cap is 12 KB, each detail's
+  // 16 KB; the largest domain (policy-and-health) is 1,300 B and the largest route group
+  // (system) 3,189 B.
+  interfaceIndexBytes: 9696,
   interfaceDomainMaxBytes: 1300,
   interfaceAreaMaxBytes: 3189
 });
@@ -720,7 +721,7 @@ async function turnReceiptChars() {
 
 test('the Agent interface baselines stay under the caps the MCP answer enforces', () => {
   // A baseline raised past these would only fail at runtime, as tool_catalog_too_large.
-  assert.ok(BASELINE.interfaceIndexBytes <= 8 * 1024);
+  assert.ok(BASELINE.interfaceIndexBytes <= 12 * 1024);
   assert.ok(Math.max(BASELINE.interfaceDomainMaxBytes, BASELINE.interfaceAreaMaxBytes) <= 16 * 1024);
 });
 
