@@ -101,3 +101,21 @@ test('an exact local preference omits default scope fields; real inheritance sta
   assert.equal(view.profile_aspect, 'taste');
   assert.ok(JSON.stringify(local).length - JSON.stringify(preferenceInstructionView(local)).length > 120);
 });
+
+test('a qualifier instruction that repeats the body is sent once; a different one is kept and nothing else changes', async () => {
+  const { preferenceInstructionView } = await import('../src/conversations/preference-view.js');
+  const body = '提交前先跑相关测试，结果照实写进汇报。';
+  const item = (copy, extra = {}) => ({ instruction: body, preference_key: 'synthetic-tests', preference_scope: 'global',
+    confirmation_status: 'confirmed', preference_qualifiers: { constraint: 'hard', ...(copy === null ? {} : { instruction: copy }) },
+    ...extra });
+  const without = preferenceInstructionView(item(null));
+  for (const copy of [body, `  ${body}\n`]) assert.deepEqual(preferenceInstructionView(item(copy)), without, JSON.stringify(copy));
+  // The same copy under the stored attributes is dropped the same way.
+  assert.deepEqual(preferenceInstructionView({ ...item(null), attributes: { preference_qualifiers: { instruction: ` ${body}` } } }),
+    without);
+  const summary = '只在改动交付流程时适用。';
+  const kept = preferenceInstructionView(item(summary));
+  assert.equal(kept.preference_qualifiers.instruction, summary);
+  const { preference_qualifiers: { instruction: _copy, ...qualifiers }, ...rest } = kept;
+  assert.deepEqual({ ...rest, preference_qualifiers: qualifiers }, without, 'only the copy differs');
+});
