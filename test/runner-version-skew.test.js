@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { runnerVersionSkew, runningRunnerVersions, versionSkew, versionSkewLine } from '../src/runner/version-skew.js';
+import { localAnswer } from '../src/runner/local-answer-note.js';
 import { formatFollowerResult } from '../src/runner/follower-runtime.js';
 import { followerStatus } from '../src/runner/follower-status.js';
 
@@ -68,4 +69,19 @@ test('the follower\'s one status carries both versions and the skew, and fuli st
   assert.deepEqual([away.versions.host, away.versions.skew], [null, null]);
   assert.doesNotMatch(formatFollowerResult('status', { status: 'running', url: 'http://127.0.0.1:2727', host: away.host,
     line: { en: 'Following Studio · not reachable' }, versions: away.versions, capabilities: [] }), /versions differ/);
+});
+
+// A project this computer owns is answered by this computer's FULI, which may be older than the host's:
+// a tool the host lists that this version does not have is said as that, with what to do.
+test('a tool this computer\'s older FULI does not have is said as tool_unknown_here, in both languages', () => {
+  const unknown = { isError: true, content: [{ type: 'text', text: 'not_found: Unknown Fuli tool' }],
+    structuredContent: { error: { code: 'not_found', message: 'Unknown Fuli tool' } } };
+  const said = localAnswer('newer_tool', unknown, { hostName: 'Host A' });
+  const { code, message } = JSON.parse(said.content[0].text);
+  assert.equal(code, 'tool_unknown_here');
+  assert.match(message, /newer_tool is not in it yet[\s\S]*fuli update[\s\S]*比 Host A 旧/);
+  // Another not_found (an item gone) is this computer's answer as it is.
+  const gone = { isError: true, content: [{ type: 'text', text: 'not_found: Item not found' }],
+    structuredContent: { error: { code: 'not_found', message: 'Item not found' } } };
+  assert.equal(localAnswer('revise_personal_knowledge', gone, { hostName: 'Host A' }), gone);
 });

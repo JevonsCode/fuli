@@ -111,6 +111,10 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
       // What this hello said, for a caller that wants it (the sessions this
       // runner holds): the search already asked, so nothing asks again.
       candidate.greeting = body ?? null;
+      // What the host runs, kept for this connection: its version, and the version of the
+      // follower's writes to global it applies (0 for a host that applies none).
+      candidate.version = typeof body?.version === 'string' ? body.version : null;
+      candidate.globalWrites = Number.isInteger(body?.globalWrites) ? body.globalWrites : 0;
       return candidate;
     } catch (error) {
       agent.destroy();

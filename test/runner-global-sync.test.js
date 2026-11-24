@@ -150,7 +150,7 @@ test('the host hands the envelope on byte for byte over the paired channel, and 
     try {
       assert.deepEqual(routes.all().find((row) => row.scope === GLOBAL_SCOPE),
         { scope: 'global', owner: `host:${host.fingerprint}`, replica: true, replicaSyncedAt: '2026-11-24T09:00:00.000Z',
-          updatedAt: routes.all()[0].updatedAt });
+          folder: null, updatedAt: routes.all()[0].updatedAt });
     } finally { routes.close(); }
     assert.deepEqual(readGlobalCopyRecord(dataDir), { digest: 'd'.repeat(64), checkedAt: '2026-11-24T09:00:00.000Z',
       changedAt: '2026-11-24T09:00:00.000Z', last: { at: '2026-11-24T09:00:00.000Z', outcome: 'synced', digest: 'd'.repeat(64) } });

@@ -12,8 +12,9 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 // checked against the host and when its content last changed, and how the
 // last try went. Process state, not FULI data: without it the next sync
 // imports once more, which writes nothing the copy already has.
-//   { digest, checkedAt, changedAt,
+//   { digest, checkedAt, changedAt, dueSoon?,
 //     last: { at, outcome, reason?, code?, message?, by?, digest?, host?, own?, spaceId?, bytes?, max? } }
+// dueSoon: when this computer's writes to global were last applied by the host (requestSyncSoon).
 // outcome:
 //   'synced'           brought up to date (digest changed) or checked unchanged
 //   'waiting'          reason: host_unreachable | host_provider_unavailable | host_provider_slow
@@ -47,6 +48,14 @@ export function recordGlobalCopy(dataDir, { last, ...found }) {
 }
 
 export const IMPORT_UNFINISHED = 'own_import_unfinished';
+
+// The host applied writes to global this computer sent (global-writes-outbox.js):
+// the copy is out of date, so the next sync is due now rather than in
+// GLOBAL_SYNC_EVERY_MS. Written by an MCP process; the console's sync, which
+// alone imports, is to read it, and a check after it answers it.
+export function requestSyncSoon(dataDir, { now = Date.now } = {}) {
+  writeJsonFileAtomic(join(dataDir, COPY_FILE), { ...readGlobalCopyRecord(dataDir), dueSoon: new Date(now()).toISOString() });
+}
 
 // 「重新准备」: the person asks for the runtime to be started for the copy once more.
 export function allowImportAgain(dataDir) {
