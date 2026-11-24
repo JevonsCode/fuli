@@ -251,19 +251,22 @@ test('another controller holding the run\'s lock past the wait is refused in wor
   assert.deepEqual([result.ok, result.failure.code, result.failure.reason, result.failure.pid], [false, 'recovery_refused', 'import_running', null]);
 });
 
-// A marker counts everywhere; a lifecycle lock's recovery comes first (macOS native).
-function lockLeft(paths) {
-  mkdirSync(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock'), { recursive: true });
-  return () => rmSync(join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock'), { recursive: true, force: true });
+// A marker counts everywhere; the recovery of a lifecycle lock on the data comes first (macOS native).
+function lockLeft(paths, operation = 'load') {
+  const lock = join(paths.nativeRuntimeDir, '.neo4j-lifecycle.lock');
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, 'holder.json'), JSON.stringify({ pid: 2 ** 22 + 7, command: 'node fuli', startedAt: 'earlier', operation }));
+  return () => rmSync(lock, { recursive: true, force: true });
 }
 
 test('with a lifecycle lock to recover as well, its recovery comes first, then the marker\'s way back, for the window and a start alike', async (t) => {
   const { paths, before } = await marked(t, 'native');
   writeFileSync(join(paths.dataDir, 'graph-runtime.json'), '{}');
   const unlock = lockLeft(paths);
-  assert.equal(unfinishedWayOut(paths, 'native'), 'lock');
-  assert.equal(unfinishedImportFirst(paths, 'native'), null, 'a start leaves it to the lock\'s own refusal');
-  const { context, options } = tray(paths);
+  assert.equal(unfinishedWayOut(paths, 'native', 'darwin'), 'lock');
+  assert.equal(unfinishedImportFirst(paths, 'native', 'darwin'), null, 'a start leaves it to the lock\'s own refusal');
+  const { context, options: plain } = tray(paths);
+  const options = { ...plain, platform: 'darwin' };
   const recovered = [];
   const recovery = { plan: async () => ({ kind: 'restore_load', steps: [], digest: '0123456789abcdef' }),
     apply: async (_paths, digest) => { recovered.push(digest); unlock(); return { kind: 'restore_load', status: 'recovered' }; } };
@@ -272,8 +275,34 @@ test('with a lifecycle lock to recover as well, its recovery comes first, then t
   await runTrayAction('recover-start', context, { ...options, recovery, recoveryDigest: '0123456789abcdef' });
   assert.deepEqual(recovered, ['0123456789abcdef']);
   // The lock is dealt with and the marker is still there: now its way back, and a start is refused by it.
-  assert.equal(unfinishedWayOut(paths, 'native'), 'marker');
-  assert.equal(unfinishedImportFirst(paths, 'native')?.startupFailure.code, 'graph_import_unfinished');
+  assert.equal(unfinishedWayOut(paths, 'native', 'darwin'), 'marker');
+  assert.equal(unfinishedImportFirst(paths, 'native', 'darwin')?.startupFailure.code, 'graph_import_unfinished');
   const next = await runTrayAction('recover-preview', context, { ...options, recovery });
   assert.deepEqual([next.recoveryPlan.kind, next.recoveryPlan.from], ['import_back', before]);
+});
+
+// A start that crashed leaves its lock; the next start takes it over by itself, so it is no recovery
+// that could stand in front of the marker: the half-written graph stays refused.
+test('an abandoned start or stop lock never hides the marker, for a start and the window alike', async (t) => {
+  for (const operation of ['start', 'stop']) {
+    const { paths, before } = await marked(t, 'native');
+    writeFileSync(join(paths.dataDir, 'graph-runtime.json'), '{}');
+    lockLeft(paths, operation);
+    assert.equal(unfinishedWayOut(paths, 'native', 'darwin'), 'marker', operation);
+    assert.equal(unfinishedImportFirst(paths, 'native', 'darwin')?.startupFailure.code, 'graph_import_unfinished', operation);
+    const { context, options } = tray(paths);
+    const recovery = { plan: async () => assert.fail('the lock has no recovery to plan'), apply: async () => assert.fail('nothing to recover') };
+    const plan = await runTrayAction('recover-preview', context, { ...options, platform: 'darwin', recovery });
+    assert.deepEqual([plan.recoveryPlan.kind, plan.recoveryPlan.from], ['import_back', before], operation);
+  }
+});
+
+// Only macOS takes the lifecycle lock: one copied with the data to another platform has no recovery there.
+test('a lifecycle lock folder on a platform that takes none leaves the marker as the way out', async (t) => {
+  const { paths } = await marked(t, 'native');
+  lockLeft(paths);
+  for (const platform of ['win32', 'linux']) {
+    assert.equal(unfinishedWayOut(paths, 'native', platform), 'marker', platform);
+    assert.equal(unfinishedImportFirst(paths, 'native', platform)?.startupFailure.code, 'graph_import_unfinished', platform);
+  }
 });

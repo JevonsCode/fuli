@@ -58,14 +58,14 @@ export function readUnfinishedImport(paths, mode) {
 // half written. A native runtime's lifecycle lock or switch journal (macOS)
 // is dealt with first, by its recovery; once it is gone, a marker still
 // there is the way out. 'lock', 'marker', or null.
-export function unfinishedWayOut(paths, mode) {
-  if (mode === 'native' && lifecycleRecordsLeft(paths?.nativeRuntimeDir)) return 'lock';
+export function unfinishedWayOut(paths, mode, platform = process.platform) {
+  if (mode === 'native' && lifecycleRecordsLeft(paths?.nativeRuntimeDir, platform)) return 'lock';
   return readUnfinishedImport(paths, mode) ? 'marker' : null;
 }
 
 // A start's refusal while a marker is the way out (unfinishedWayOut), or null.
-export function unfinishedImportFirst(paths, mode) {
-  return unfinishedWayOut(paths, mode) === 'marker' ? unfinishedImportError(paths, mode) : null;
+export function unfinishedImportFirst(paths, mode, platform = process.platform) {
+  return unfinishedWayOut(paths, mode, platform) === 'marker' ? unfinishedImportError(paths, mode) : null;
 }
 
 export function clearUnfinishedImport(paths, mode) {

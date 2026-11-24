@@ -86,7 +86,7 @@ export async function runTrayAction(action, context, {
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
   onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery,
-  graphData = runGraphDataCommand, importRuns = {}
+  graphData = runGraphDataCommand, importRuns = {}, platform = process.platform
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -148,7 +148,7 @@ export async function runTrayAction(action, context, {
     // terminal; the CLI keeps its check. A lifecycle lock's recovery comes
     // first (unfinishedWayOut, as a start asks): the marker's way once it is done.
     const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
-    const marked = !choice.keepNewer && unfinishedWayOut(paths, mode) === 'marker' ? mode : null;
+    const marked = !choice.keepNewer && unfinishedWayOut(paths, mode, platform) === 'marker' ? mode : null;
     const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true, runs: importRuns });
     if (recovering === 'preview') {
       try { return reply(true, { recoveryPlan: marked ? await markerPlan() : await recovery.plan(paths, choice) }); }
