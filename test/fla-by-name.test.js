@@ -126,6 +126,11 @@ test('parsing: #FLA only at the start of the message, any case, release, choice 
   assert.deepEqual(parseFlaMention('#FLA'), { explicit: true, query: '' });
   assert.deepEqual(parseFlaMention('#fla 2'), { choice: 2 });
   for (const release of ['#FLA 结束', '#FLA end', '#fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
+  // A request may follow the release; a word that only starts with one is a name.
+  assert.deepEqual(parseFlaMention('#FLA 结束 桌面端那个按钮'), { release: true, query: '结束 桌面端那个按钮' });
+  assert.deepEqual(parseFlaMention('#FLA 结束，看下优惠券'), { release: true, query: '结束，看下优惠券' });
+  assert.deepEqual(parseFlaMention('#FLA 结束者 看看'), { explicit: true, query: '结束者 看看' });
+  assert.deepEqual(parseFlaMention('#FLA Ender 看看'), { explicit: true, query: 'Ender 看看' });
   assert.deepEqual(parseFlaMention('#FLA {Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
   for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
     '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '请让 @Jamie Ash 继续',

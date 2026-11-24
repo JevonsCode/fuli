@@ -93,6 +93,12 @@ record it with `checkpoint_task_knowledge` `remember` before finishing. A stated
 Writing it into a repository file or the host's own memory files does not put it in FULI.
 Broader talk ("I always", "I prefer", 我喜欢, 我总是) adds no guidance.
 
+When the person complains they already asked for it ("I already told you", "as I said",
+"didn't I say", 我已经说过了, 上次就讲过, 不是说过了吗, 说了多少遍, 你又…, or "I already did X,
+why didn't you Y" / 我已经…了，为什么你不/还…, 你为什么不…), that is a keep signal too: task entry
+adds `remember_guidance` and the task is never auto-closed. Follow the rule it names,
+`task_guidance.repeat_signal` (fuli://rules/task-entry/task_guidance); it is not repeated here.
+
 ## Route by Ownership
 
 - Route global personal knowledge to `targetKind: personal` without `personalProjectId`; it is written directly to the local personal graph.

@@ -75,6 +75,28 @@ class ShellCliRuntime implements FuliRuntime {
   Future<RuntimeReport> changePort({StageListener? onStage}) async =>
       const RuntimeReport(RuntimeState.unknown, error: 'Changing the port needs the Windows tray controller.');
 
+  @override
+  Future<RuntimeReport> previewRecovery({bool abandonImport = false, bool keepNewer = false}) async {
+    if (!await locate()) return const RuntimeReport(RuntimeState.notFound);
+    final choice = abandonImport ? ' --abandon-import' : keepNewer ? ' --keep-newer' : '';
+    final result = await _sh(_mode!, 'fuli graph runtime recover --preview --json$choice', _commandTimeout);
+    final plan = parseRecoveryPlan('${result?.stdout ?? ''}'.trim().split('\n').last);
+    final after = await status();
+    return RuntimeReport(after.state, consolePort: after.consolePort, recoveryPlan: plan,
+        error: plan == null ? 'fuli graph runtime recover did not answer.' : null);
+  }
+
+  // The CLI recovers only for a person typing in a terminal
+  // (src/cli/native-runtime-command.js); the FULI app recovers through its own
+  // controller. The window shows this one the command to run there instead of
+  // a confirmation (status_actions.dart), so nothing asks it to recover.
+  @override
+  bool get recoversInTerminal => true;
+
+  @override
+  Future<RuntimeReport> recoverAndStart(String digest, {bool abandonImport = false, bool keepNewer = false, StageListener? onStage}) async =>
+      const RuntimeReport(RuntimeState.unknown, error: 'The fuli CLI recovers only in Terminal.');
+
   // The CLI's own checked release (`fuli graph runtime unlock`), then a start.
   @override
   Future<RuntimeReport> releaseLockAndStart({StageListener? onStage}) async {

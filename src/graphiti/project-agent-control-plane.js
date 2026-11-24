@@ -373,7 +373,10 @@ export class ProjectAgentControlPlaneApplication {
   async getProjectTeam(input) {
     this.#assertSpace(input.personalSpaceId);
     if (!input.personalProjectId) throw new TypeError('personalProjectId is required');
-    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId);
+    // How far each workstream got costs one read per line (docs/workstreams.md),
+    // so only a caller that shows it asks: the Agent tool and the ledger page.
+    return loadProjectTeam(this, input.personalSpaceId, input.personalProjectId,
+      { withProgress: input.withProgress === true });
   }
 
   async updateProjectAgentCoordinationPolicy(input) {

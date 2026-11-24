@@ -59,7 +59,10 @@ test('the entry view keeps the whole recovered window and its latest saved resul
 
 test('a sealed worker without resource access keeps full rule text and its messages', () => {
   const view = compactTaskContext(entry({ worker_run: { run_id: 'run-1' } }));
-  assert.deepEqual(view.task_guidance, entryRules().sections.task_guidance);
+  // All of it but the rules about talking to the person and depositing the FLA's own work:
+  // a worker reports to its lead.
+  const { human_facing_output: _person, repeat_signal: _repeat, self_deposit: _deposit, ...workerRules } = entryRules().sections.task_guidance;
+  assert.deepEqual(view.task_guidance, workerRules);
   assert.equal(view.application_guidance.inheritance, entryRules().sections.application_guidance.inheritance);
   assert.equal(view.project_agent_context.team_guidance, entryRules().sections.team_guidance);
   assert.equal(view.project_agent_context.memory.guidance, entryRules().sections.memory_guidance);

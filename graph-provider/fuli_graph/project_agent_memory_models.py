@@ -92,6 +92,8 @@ class EmployeeWorkLogRecord(StrictModel):
     status: Literal['reported', 'completed', 'incomplete', 'failed', 'no_change', 'unreported', 'running']
     summary: str = Field(min_length=1, max_length=2000)
     memory_updated: bool
+    # The workstream the task belonged to (docs/workstreams.md); None for any other task.
+    workstream_id: str | None = Field(default=None, max_length=200)
 
 
 class ProjectAgentMemoryView(StrictModel):

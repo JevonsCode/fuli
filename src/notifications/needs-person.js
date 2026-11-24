@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 // Tells a local notifier (DingDong, or anything listening on loopback) that
 // a person is needed. Model-free and fire-and-forget: a slow or missing
 // listener never delays or fails the request that a person is needed for.
@@ -6,6 +8,11 @@ const DETAIL_LIMIT = 500;
 const SENT_LIMIT = 500;
 
 export const NEEDS_PERSON_EVENT = 'fuli.needs_person';
+
+// What a notifier shows the person, in the console's words: one table for both
+// (web/src/i18n/messages/attention.ts reads the same file). `kind` stays the
+// machine field; a notifier that printed it raw showed an English enum.
+const KIND_LABELS = JSON.parse(readFileSync(new URL('./attention-kind-labels.json', import.meta.url), 'utf8'))['zh-CN'];
 
 // '' turns notifications off. Only loopback http(s) is accepted: the payload
 // carries project and request text, which never leaves this machine.
@@ -31,6 +38,7 @@ export function needsPersonEvent(record, { consoleUrl = '' } = {}) {
     sound: 'decision',
     source: { kind: 'agent_attention', id: record.requestId, revision: record.revision ?? 0 },
     kind: record.kind,
+    kindLabel: KIND_LABELS[record.kind] ?? null,
     title: record.title,
     question: record.requestedAction,
     detail: typeof record.detail === 'string' ? record.detail.slice(0, DETAIL_LIMIT) : '',

@@ -22,11 +22,13 @@ test('MCP instructions support task identity, hook context and an exact fallback
   assert.match(MCP_INSTRUCTIONS, /projectPath=cwd/i);
   assert.match(MCP_INSTRUCTIONS, /taskPrompt=current user request/i);
   assert.match(MCP_INSTRUCTIONS, /effective_preferences/i);
-  assert.match(MCP_INSTRUCTIONS, /personal-global everywhere/i);
+  // Which preferences apply is resolved by FULI before the entry (application_guidance holds the
+  // inheritance rules), and the chat profile never said it; its bytes now carry the writing rule.
+  assert.doesNotMatch(MCP_INSTRUCTIONS, /personal-global everywhere/i);
   assert.match(MCP_INSTRUCTIONS, /writes?.*actual payload/i);
   assert.match(MCP_INSTRUCTIONS, /final text.*not compliance/i);
-  assert.match(MCP_INSTRUCTIONS, /get_user_taste_skill/);
-  assert.match(MCP_INSTRUCTIONS, /never replaces user Skill/i);
+  // get_user_taste_skill's own description says it never overwrites a user-authored taste Skill.
+  assert.doesNotMatch(MCP_INSTRUCTIONS, /get_user_taste_skill/);
   assert.match(MCP_INSTRUCTIONS, /never guess personalProjectId/i);
   assert.match(MCP_INSTRUCTIONS, /search_current_project_knowledge/i);
   assert.match(MCP_INSTRUCTIONS, /task_knowledge_recall/i);
@@ -62,14 +64,18 @@ test('MCP instructions support task identity, hook context and an exact fallback
   assert.match(MCP_INSTRUCTIONS, /executionSummary:.*Empty: omit/is);
   assert.match(MCP_INSTRUCTIONS, /coordinate_project_agent_task/);
   assert.match(MCP_INSTRUCTIONS, /Fuli never spawns/i);
-  assert.match(MCP_INSTRUCTIONS, /release_runtime_lease.*finally/i);
+  assert.match(MCP_INSTRUCTIONS, /acquire_runtime_lease, release it in finally/i);
   assert.match(MCP_INSTRUCTIONS, /project_management_context: authorized manager\+board/i);
   assert.match(MCP_INSTRUCTIONS, /keep specialist; no excluded projects\/extra model/i);
   assert.match(MCP_INSTRUCTIONS, /current native session, host tool, protect manual titles/i);
   assert.match(MCP_INSTRUCTIONS, /receipt after client result/i);
   assert.match(MCP_INSTRUCTIONS, /all workerStatus terminal/i);
   assert.match(MCP_INSTRUCTIONS, /source-labelled cumulative tokens/i);
-  assert.match(MCP_INSTRUCTIONS, /Missing token usage=-.*never invent\/estimate\/copy totals/i);
+  assert.match(MCP_INSTRUCTIONS, /Missing tokens=-.*never invent\/estimate\/copy totals/i);
+  // Jevons 11-23: how to write for the person, once per session, after the source marker and before the receipt.
+  for (const instructions of [MCP_INSTRUCTIONS, MCP_CHAT_INSTRUCTIONS]) {
+    assert.match(instructions, /sourceMarker\.leadMarkdown.*People: after sourceMarker lead, conclusion\+asks first, short; diagram\/table if clearer; clickable choices not typing; receipt last\./s);
+  }
 });
 
 test('chat instructions name only tools the chat profile lists', () => {

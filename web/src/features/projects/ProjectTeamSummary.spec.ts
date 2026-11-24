@@ -60,7 +60,7 @@ describe('ProjectTeamSummary', () => {
     getJson.mockResolvedValue(team())
     const wrapper = mountSummary()
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/project-team?personalSpaceId=space-1&personalProjectId=project-a')
+    expect(getJson).toHaveBeenCalledWith('/api/project-team?personalSpaceId=space-1&personalProjectId=project-a', expect.anything())
     const lead = wrapper.get('button.project-team-lead')
     expect(lead.text()).toContain('Lead')
     expect(lead.text()).toContain('FLA 000101')

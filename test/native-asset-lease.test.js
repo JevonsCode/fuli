@@ -36,3 +36,16 @@ test('a recovery journal created while acquiring the lease blocks the critical s
   try { await assert.rejects(withNativeAssetOperation(paths, {}, async () => {}), /recovery|transaction/i); }
   finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
 });
+
+test('a lease records what a later recovery needs beside its holder, and the holder\'s own facts win', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'fuli-lease-details-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const { readFile } = await import('node:fs/promises');
+  const restorePoint = { path: '/x/backups/graph/before-import-1', instances: ['personal'], loading: ['personal'] };
+  let holder;
+  await withNativeAssetOperation({ nativeRuntimeDir: root }, {}, async () => {
+    holder = JSON.parse(await readFile(join(root, '.neo4j-lifecycle.lock', 'holder.json'), 'utf8'));
+  }, { operation: 'load', holder: { restorePoint, pid: 1, operation: 'start' } });
+  assert.deepEqual(holder.restorePoint, restorePoint);
+  assert.equal(holder.operation, 'load');
+  assert.equal(holder.pid, process.pid);
+});

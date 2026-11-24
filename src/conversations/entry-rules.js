@@ -4,7 +4,7 @@ import { STOP_HOOK_CHECKPOINT_GUIDANCE, taskKnowledgeGuidance } from '../graphit
 import { GENERIC_SCOPE_GUIDANCE, STATIC_APPLICATION_GUIDANCE } from '../graphiti/collaboration-preference-workflow.js';
 import { CONVERSATION_GUIDANCE } from '../graphiti/agent-conversations.js';
 import { PROJECT_AGENT_CONTINUITY_GUIDANCE } from '../graphiti/project-agent-task-entry.js';
-import { TEAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
+import { TEAM_GUIDANCE, WORKSTREAM_GUIDANCE } from '../graphiti/project-agent-team-context.js';
 import { CONTINUATION_GUIDANCE, RECEIPT_GUIDANCE } from '../agents/identity-receipt.js';
 import { MANAGER_ENTRY_GUIDANCE, MANAGER_ENTRY_SUMMARY } from '../employees/task-entry.js';
 import { AUTO_JUDGMENT_GUIDANCE, AUTO_JUDGMENT_SUMMARY } from '../graphiti/task-entry-preferences.js';
@@ -52,7 +52,7 @@ export function entryRules() {
     const sections = { task_guidance: taskKnowledgeGuidance(),
       application_guidance: { ...STATIC_APPLICATION_GUIDANCE },
       conversation_guidance: CONVERSATION_GUIDANCE, continuity_guidance: PROJECT_AGENT_CONTINUITY_GUIDANCE,
-      team_guidance: TEAM_GUIDANCE, memory_guidance: MEMORY_GUIDANCE,
+      team_guidance: TEAM_GUIDANCE, workstream_guidance: WORKSTREAM_GUIDANCE, memory_guidance: MEMORY_GUIDANCE,
       global_memory_guidance: GLOBAL_MEMORY_GUIDANCE, continuation_guidance: CONTINUATION_GUIDANCE,
       scope_guidance: { ...GENERIC_SCOPE_GUIDANCE }, receipt_guidance: RECEIPT_GUIDANCE,
       details_guidance: DETAILS_GUIDANCE, checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE,

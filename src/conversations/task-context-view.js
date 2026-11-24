@@ -4,6 +4,7 @@ import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-wo
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
+import { withoutLeadOnlyRules } from '../graphiti/task-knowledge-guidance.js';
 
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
@@ -40,6 +41,12 @@ export function compactTaskContext(value) {
       .filter(key => !Object.hasOwn(value.task_guidance, key));
     result.task_guidance = { ...entryRulesReference('task_guidance'),
       ...(omitted.length ? { not_for_this_task: omitted } : {}) };
+  }
+  // A sealed worker reports to its lead, never to the person, and keeps the full
+  // rule text because it cannot read the resource: the rules about talking to
+  // the person and depositing the FLA's own work are not its to follow.
+  if (!share && value.task_guidance && typeof value.task_guidance === 'object') {
+    result.task_guidance = withoutLeadOnlyRules(value.task_guidance);
   }
   if (sharedApplication) {
     const shared = entryRules().sections.application_guidance;
@@ -82,7 +89,8 @@ export function compactTaskContext(value) {
     ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot, { task: Boolean(value.taskContextToken) }) } : {}),
     // rec#88: an FLA's starting preferences are its profile's; the entry names the role.
     ...(share && value.taskContextToken && continuity.role?.initial_preferences ? { role: { ...continuity.role, initial_preferences: undefined } } : {}),
-    team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
+    team: omitTeam ? undefined : withWorkstreams(compactTeamRoster(continuity.team, teamGuidance), continuity.team,
+      guidance => text(guidance, 'workstream_guidance')),
     team_guidance: undefined,
     recent_tasks: undefined,
     guidance: text(continuity.guidance, 'continuity_guidance'),
@@ -337,8 +345,22 @@ function memoryPreview(memory, guidance) {
     view: 'preview', notesTruncated, requiresFullReadBeforeWrite: true, guidance };
 }
 
+// A divided project's lines (docs/workstreams.md): name and owner only, at
+// most WORKSTREAM_PREVIEW of them, and the rule by reference. Nothing for a
+// project without lines.
+function withWorkstreams(view, team, rule) {
+  const lines = Array.isArray(team?.workstreams) ? team.workstreams : [];
+  if (!view || !lines.length) return view;
+  return { ...view, workstreams: lines.slice(0, WORKSTREAM_PREVIEW).map(line => ({ name: line.workstream,
+    owner: line.owner_name ?? line.owner_agent_id })),
+  ...(lines.length > WORKSTREAM_PREVIEW ? { workstreams_total: lines.length } : {}),
+  workstream_guidance: rule(team.workstream_guidance) };
+}
+
 // Staff detail is query-on-demand. Bound the entry and dedupe identities before
 // removing IDs; same-name people remain distinct.
+const WORKSTREAM_PREVIEW = 8;
+
 function compactTeamRoster(team, deliveredGuidance) {
   if (!team) return undefined;
   const people = [...(team.roster ?? []), ...(team.assigned_collaborators ?? []), ...(team.assigned_peers ?? [])];
