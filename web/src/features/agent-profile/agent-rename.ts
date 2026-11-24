@@ -1,4 +1,5 @@
-import { apiErrorReason, putJson } from '@/api/client'
+import { ApiError, apiErrorCode, putJson } from '@/api/client'
+import type { WorkingProject } from '@/features/projects/project-origin'
 import type { ProjectAgentRecord } from '@/types'
 import { projectAgentShape } from './agent-record-shape'
 import { rememberRoleName } from './role-names'
@@ -18,10 +19,29 @@ export async function renameAgent(agent: Pick<ProjectAgentRecord, 'personalSpace
   return record
 }
 
-/** The free names offered when another Agent already uses this one, else null. */
-export function freeNamesOffered(error: unknown): string[] | null {
-  const reason = apiErrorReason(error, '')
-  if (!reason.startsWith('agent_name_taken')) return null
-  const listed = reason.match(/free names:\s*([^.]*)\./)?.[1] ?? ''
-  return listed.split(',').map(name => name.trim()).filter(Boolean)
+/** Why a rename was refused because another Agent already has the name: who
+ * (and the projects each works in, or until when it is their 原名) and free
+ * names, as the console API sends them; null for any other failure. */
+export function nameTaken(error: unknown): {
+  usedBy: { name: string; projects: WorkingProject[]; formerName?: string; freeFrom?: string }[]; freeNames: string[]
+} | null {
+  if (apiErrorCode(error) !== 'agent_name_taken' || !(error instanceof ApiError)) return null
+  try {
+    const body = JSON.parse(error.detail) as { usedBy?: unknown; freeNames?: unknown }
+    const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+    const usedBy = Array.isArray(body.usedBy) ? body.usedBy.filter(item => typeof item?.name === 'string')
+      .map(item => ({ name: item.name as string, projects: workingProjects(item.projects),
+        // Someone's 原名, free from that date on.
+        ...(typeof item.formerName === 'string' && typeof item.freeFrom === 'string'
+          ? { formerName: item.formerName, freeFrom: item.freeFrom } : {}) })) : []
+    return { usedBy, freeNames: strings(body.freeNames) }
+  } catch {
+    return null
+  }
+}
+
+function workingProjects(value: unknown): WorkingProject[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(item => typeof item?.projectId === 'string' && typeof item?.name === 'string')
+    .map(item => ({ projectId: item.projectId, name: item.name, scopeType: item.scopeType === 'temporary' ? 'temporary' : 'registered' }))
 }

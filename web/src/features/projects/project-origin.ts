@@ -52,6 +52,19 @@ export function projectDisplayName(project: ProjectNaming, number?: string) {
   return temporaryProjectName(project, number)
 }
 
+/** A project an Agent works in, as the console API sends it (src/graphiti/project-agent-mapping.js workingProject). */
+export interface WorkingProject {
+  projectId: string
+  name: string
+  scopeType: 'registered' | 'temporary'
+}
+
+/** The projects an Agent works in, each named the way every other console list names it. */
+export function workingProjectNames(projects: readonly WorkingProject[]) {
+  return projects.map(project => projectDisplayName({ project_id: project.projectId, scope_type: project.scopeType,
+    profile: { name: project.name } })).join('、')
+}
+
 /** Projects a person set up first, in their given order; temporary ones after, newest first. */
 export function pickerOrder<T extends PersonalProject>(projects: readonly T[]): T[] {
   const formal = projects.filter(project => !hasTemporaryOrigin(project))

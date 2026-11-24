@@ -168,6 +168,13 @@ test('without agent-installer nothing is claimed about any client', async (t) =>
   assert.equal(existsSync(historyPath), false, 'no history is written from nothing');
 });
 
+test('while another FULI downloads agent-installer the observation says so', async (t) => {
+  const { make } = fixture(t);
+  const result = await make({ installer: { status: async () => ({ status: 'unavailable', reason: 'busy', downloading: true }) } }).observe();
+  assert.equal(result.available, false);
+  assert.equal(result.componentDownloading, true);
+});
+
 test('a connected client says how many open sessions wait for a restart', async (t) => {
   const { make, answer } = fixture(t);
   answer([installerClient('claude-code', { state: 'connected', components: [state('mcp', 'current'), state('skills', 'current')] }),

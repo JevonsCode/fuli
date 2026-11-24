@@ -38,9 +38,9 @@ class RecordingDriver:
         return self.rows, None, None
 
 
-def test_the_step_is_the_next_version_and_changes_records_only_with_a_person():
+def test_the_step_is_version_23_and_changes_records_only_with_a_person():
     step = next(migration for migration in GRAPH_MIGRATIONS if migration.id == STEP)
-    assert step.to_version == GRAPH_FORMAT_VERSION == 23
+    assert step.to_version == 23 <= GRAPH_FORMAT_VERSION
     assert step.kind == 'rewrite' and not step.automatic
     assert step.journal is TEMPORARY_NAME_JOURNAL and TEMPORARY_NAME_JOURNAL.reversible
 

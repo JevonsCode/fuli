@@ -6,6 +6,7 @@ from typing import Annotated, Any, Literal
 from fastapi import FastAPI, HTTPException, Query
 
 from .project_agent_dismissal_routes import register_project_agent_dismissal_routes
+from .project_agent_name_routes import register_project_agent_name_routes
 from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
@@ -76,6 +77,7 @@ def register_project_agent_routes(
 
     register_project_agent_memory_routes(application, store, Actor)
     register_project_agent_dismissal_routes(application, store, Actor)
+    register_project_agent_name_routes(application, store, Actor)
     register_occupation_routes(application, store, Actor)
     register_project_agent_worker_routes(application, store, Actor)
     notify_task_change = register_task_notification_routes(application, store, Actor)

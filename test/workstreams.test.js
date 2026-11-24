@@ -48,8 +48,9 @@ function agentRow(agentId, name, projectId = PROJECT) {
     assignments: [{ personal_project_id: projectId, status: 'active', responsibility: `${name} works here` }] };
 }
 
+// formerNames: an FLA's 原名 within 30 days of a rename, as the Provider lists it.
 function fixture({ seed = [], members = MEMBERS, path = '/synthetic/campaigns', projectOf = () => PROJECT,
-  workLog = {} } = {}) {
+  workLog = {}, formerNames = {} } = {}) {
   const tasks = [];
   const requested = [];
   const memoryReads = [];
@@ -70,7 +71,8 @@ function fixture({ seed = [], members = MEMBERS, path = '/synthetic/campaigns', 
     begin: async input => { const task = { ...input, token: `fuli-task-synthetic-${tasks.length}` };
       tasks.push(task); return task; }
   };
-  const rows = [agentRow(LEAD, 'Mara Quill'), ...Object.entries(members).map(([id, name]) => agentRow(id, name))];
+  const rows = [agentRow(LEAD, 'Mara Quill'), ...Object.entries(members).map(([id, name]) => agentRow(id, name))]
+    .map(row => formerNames[row.agent_id] ? { ...row, former_name: formerNames[row.agent_id] } : row);
   const roster = () => rows;
   Object.assign(app.personal, {
     getProjectAgent: async (_space, _project, agentId) => {
@@ -814,6 +816,25 @@ test('#FLA 结束 with a request releases the name and routes the request by its
   const ender = await named.run({ taskPrompt: '#FLA End Rivers 看看' });
   assert.notEqual(ender.fla?.status, 'released');
   assert.equal(named.tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:fla-end ')), true);
+});
+
+test('#FLA 结束 … that is an FLA\'s 原名 names that FLA; it does not release', async () => {
+  const { run, tasks } = fixture({ seed: [SPRING], members: { ...MEMBERS, 'fla-end': 'Rivers Hale' },
+    formerNames: { 'fla-end': 'End Rivers' } });
+  await run({ taskPrompt: '#FLA Ember Vale 看看' });
+  const ender = await run({ taskPrompt: '#FLA End Rivers 看看' });
+  assert.notEqual(ender.fla?.status, 'released');
+  assert.equal(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:fla-end ')), true);
+});
+
+test('naming a line\'s owner by its 原名 says the 原名 and how to give the session back to the lines, once each', async () => {
+  const { run } = fixture({ seed: [SPRING, COUPON], formerNames: { 'fla-ember': 'Ember Stone' } });
+  const entry = await run({ taskPrompt: '#FLA Ember Stone 春促页 改一下头图' });
+  assert.equal(entry.project_agent_context.project_agent_id, 'fla-ember');
+  assert.equal(entry.fla.notice, '本会话由 Ember Vale（原名 Ember Stone）继续项目 Campaigns 的工作；'
+    + '之后本会话都由它做，不再按工作线分派，发 #FLA 结束 恢复');
+  const later = await run({ taskPrompt: '春促页 再看看' });
+  assert.doesNotMatch(later.agent_receipt.markdown, /原名|发 #FLA 结束/u);
 });
 
 test('one entry reads the project\'s lead once, shared by the routing and the team block', async () => {
