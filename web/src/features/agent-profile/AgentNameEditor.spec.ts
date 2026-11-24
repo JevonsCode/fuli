@@ -89,6 +89,17 @@ describe('AgentNameEditor', () => {
     expect(mount(AgentNameEditor, { props: { agent: agent() } }).find('[data-agent-former-name]').exists()).toBe(false)
   })
 
+  it('says when a name that is still another FLA\'s 原名 becomes free', async () => {
+    putJson.mockRejectedValueOnce(new ApiError('409', 409, JSON.stringify({ code: 'agent_name_taken',
+      error: 'agent_name_taken', freeNames: ['Nora Lin'],
+      usedBy: [{ agentId: 'agent-x', name: 'Wren Hill', projects: [], formerName: 'Morgan Vale', freeFrom: '2026-12-21' }] })))
+    const wrapper = mount(AgentNameEditor, { props: { agent: agent() } })
+    await edit(wrapper, 'Morgan Vale')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('「Morgan Vale」是 Wren Hill 的原名，2026-12-21 之后可以用')
+  })
+
   it('gives a renamed built-in role its own name back; other Agents have no such button', async () => {
     putJson.mockResolvedValue(agent('employee.bole', 'Bole', null))
     const role = mount(AgentNameEditor, { props: { agent: agent('employee.bole', 'Bole', '伯乐') } })

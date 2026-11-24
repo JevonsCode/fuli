@@ -22,6 +22,8 @@ const leftOut = ref(new Set<string>())
 const open = ref(false)
 const busy = ref(false)
 const error = ref('')
+const STATUSES = new Set(['active', 'inactive', 'archived'])
+const statusText = (status: string) => STATUSES.has(status) ? t(`flas.names.status.${status}`) : status
 const renames = computed(() => (plan.value?.groups ?? []).flatMap(group => group.members)
   .filter(member => !member.keeps && !leftOut.value.has(member.agentId)).length)
 
@@ -95,20 +97,22 @@ async function apply() {
       <ul>
         <li v-for="member in group.members" :key="member.agentId" :data-name-fix-member="member.agentId">
           <template v-if="member.keeps">
-            <span class="name-fix-who">{{ member.name }}<small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
+            <span class="name-fix-who">{{ member.name }}<small data-name-fix-status> · {{ statusText(member.status) }}</small><small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
             <span class="name-fix-what">{{ t('flas.names.keeps') }}</span>
           </template>
           <template v-else>
             <label class="name-fix-who">
               <Checkbox :model-value="!leftOut.has(member.agentId)" :disabled="busy" data-name-fix-rename
                 @update:model-value="toggle(member.agentId, $event)" />
-              <span>{{ member.name }}<small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
+              <span>{{ member.name }}<small data-name-fix-status> · {{ statusText(member.status) }}</small><small v-if="member.projects.length"> · {{ workingProjectNames(member.projects) }}</small></span>
             </label>
             <span class="name-fix-what">
               {{ leftOut.has(member.agentId) ? t('flas.names.unchanged') : t('flas.names.becomes', { name: member.newName ?? '' }) }}
               <small>{{ gaveWayText(member.gaveWay, group.members.find(item => item.keeps)?.name ?? group.name) }}</small>
             </span>
-            <Button size="sm" variant="ghost" :disabled="busy" data-name-fix-keep @click="keepThis(member.agentId)">{{ t('flas.names.keepThis') }}</Button>
+            <!-- A built-in role always keeps its name: no other may take it over. -->
+            <Button v-if="member.gaveWay !== 'built_in_role'" size="sm" variant="ghost" :disabled="busy" data-name-fix-keep
+              @click="keepThis(member.agentId)">{{ t('flas.names.keepThis') }}</Button>
           </template>
         </li>
       </ul>

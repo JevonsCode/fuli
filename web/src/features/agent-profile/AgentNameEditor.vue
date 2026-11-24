@@ -65,12 +65,14 @@ async function save(next: string | null) {
     const taken = nameTaken(cause);
     const holder = taken?.usedBy[0];
     freeNames.value = taken?.freeNames ?? [];
-    error.value = holder
-      ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
-        { name: saving.value, holder: holder.name, projects: workingProjectNames(holder.projects) })
-      : taken
-        ? t("agentProfiles.name.taken", { name: saving.value })
-        : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });
+    error.value = holder?.freeFrom
+      ? t("agentProfiles.name.takenFormer", { name: saving.value, holder: holder.name, date: holder.freeFrom })
+      : holder
+        ? t(holder.projects.length ? "agentProfiles.name.takenBy" : "agentProfiles.name.takenByAgent",
+          { name: saving.value, holder: holder.name, projects: workingProjectNames(holder.projects) })
+        : taken
+          ? t("agentProfiles.name.taken", { name: saving.value })
+          : t("agentProfiles.name.failed", { reason: apiErrorReason(cause) });
     if (name === null) editing.value = false;
   } finally {
     saving.value = null;

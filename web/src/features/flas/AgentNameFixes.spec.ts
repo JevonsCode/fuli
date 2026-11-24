@@ -40,10 +40,25 @@ describe('AgentNameFixes', () => {
     await wrapper.get('[data-flas-name-fixes-open]').trigger('click')
     await flushPromises()
     const rows = [...document.querySelectorAll('[data-name-fix-member]')].map(row => row.textContent?.replace(/\s+/g, ' ').trim())
-    expect(rows[0]).toBe('Morgan Vale · Saturn保留名字')
+    expect(rows[0]).toBe('Morgan Vale · 在任 · Saturn保留名字')
     // A temporary project reads as everywhere else in the console, by its number.
-    expect(rows[1]).toContain('Morgan Vale · 临时项目 #c0c0c0c0改为 Nora Hill Morgan Vale 最近更活跃')
+    expect(rows[1]).toContain('Morgan Vale · 在任 · 临时项目 #c0c0c0c0改为 Nora Hill Morgan Vale 最近更活跃')
     expect(document.querySelector('[data-name-fix-apply]')?.textContent?.trim()).toBe('全部处理（2 位改名）')
+  })
+
+  it('says each FLA\'s status, and offers no other keeper where a built-in role keeps the name', async () => {
+    getJson.mockResolvedValue({ renames: 2, groups: [
+      { name: 'Bole', members: [member('employee.bole', 'Bole', 'Saturn', true),
+        { ...member('bole-fla', 'Bole', 'Saturn', false, 'Nova Park', 'built_in_role'), status: 'archived' }] },
+      { name: 'Casey Hayes', members: [member('casey-a', 'Casey Hayes', 'Saturn', true),
+        { ...member('casey-b', 'Casey Hayes', 'Saturn', false, 'Theo Park', 'dismissed'), status: 'archived' }] }] })
+    const wrapper = await show()
+    await wrapper.get('[data-flas-name-fixes-open]').trigger('click')
+    await flushPromises()
+    const status = (agentId: string) => document.querySelector(`[data-name-fix-member="${agentId}"] [data-name-fix-status]`)?.textContent
+    expect([status('casey-a'), status('casey-b')]).toEqual([' · 在任', ' · 已离任'])
+    expect(document.querySelector('[data-name-fix-member="bole-fla"] [data-name-fix-keep]')).toBeNull()
+    expect(document.querySelector('[data-name-fix-member="casey-b"] [data-name-fix-keep]')).not.toBeNull()
   })
 
   it('leaves a rename out, lets another keep a name, and renames the rest in one apply', async () => {

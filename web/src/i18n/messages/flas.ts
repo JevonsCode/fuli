@@ -27,6 +27,7 @@ export const flasMessages = {
       history: '改名记录（{count}）',
       former: '原名 {name}',
       renamedByPerson: '你改的',
+      status: { active: '在任', inactive: '已停用', archived: '已离任' },
       why: {
         built_in_role: '「{kept}」是内置角色的名字',
         dismissed: '已离任，名字留给 {kept}',
@@ -94,6 +95,7 @@ export const flasMessages = {
       history: 'Rename history ({count})',
       former: 'Formerly {name}',
       renamedByPerson: 'renamed by you',
+      status: { active: 'Active', inactive: 'Switched off', archived: 'Dismissed' },
       why: {
         built_in_role: '“{kept}” is a built-in role’s name',
         dismissed: 'Dismissed; {kept} keeps the name',

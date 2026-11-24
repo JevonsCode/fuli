@@ -1087,7 +1087,10 @@ function nameTakenFields(detail) {
   return { nameTaken: {
     usedBy: (Array.isArray(detail.used_by) ? detail.used_by : []).slice(0, 8).map(item => ({
       agentId: text(item?.agent_id), name: text(item?.name),
-      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(workingProject) })),
+      projects: (Array.isArray(item?.projects) ? item.projects : []).slice(0, 8).map(workingProject),
+      // Someone's 原名: taken until free_from (a date).
+      ...(item?.former_name && /^\d{4}-\d{2}-\d{2}$/.test(item?.free_from ?? '')
+        ? { formerName: text(item.former_name), freeFrom: item.free_from } : {}) })),
     freeNames: detail.free_names.slice(0, 8).map(text) } };
 }
 

@@ -92,3 +92,18 @@ test('a refused name reaches the console with who has it and free names as field
   assert.deepEqual(body.freeNames, ['Nora Lin']);
   assert.match(body.error, /^agent_name_taken/u);
 });
+
+test('a name that is still someone\'s 原名 is refused with until when, as fields', async () => {
+  const detail = { code: 'agent_name_taken', message: 'agent_name_taken: another Agent in this personal space already '
+    + 'uses this name; used by: Wren Hill (agent-x), its former name until 2026-12-21; free names: Nora Lin. '
+    + 'Choose one or propose another.',
+  used_by: [{ agent_id: 'agent-x', name: 'Wren Hill', projects: [], former_name: 'Morgan Vale', free_from: '2026-12-21' }],
+  free_names: ['Nora Lin'] };
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => new Response(JSON.stringify({ detail }), { status: 409,
+      headers: { 'content-type': 'application/json' } }) });
+  const refused = await client.renameProjectAgent('agent-y', { personal_space_id: 'space-a', display_name: 'Morgan Vale' })
+    .then(() => null, error => error);
+  assert.deepEqual(mapHttpError(refused).body.usedBy, [{ agentId: 'agent-x', name: 'Wren Hill', projects: [],
+    formerName: 'Morgan Vale', freeFrom: '2026-12-21' }]);
+});
