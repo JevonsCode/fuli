@@ -54,10 +54,15 @@ function follower(t) {
 }
 
 // The setup a first start does, the graph's own answer and the stop, each recorded instead of run.
-function preparation({ free = 50 * 1024 ** 3, fail = null, projects = [] } = {}) {
+// The host says its personal space (host-space.js); its Provider says it started as a follower's.
+const HOST_SPACE = Object.freeze({ known: true, spaceId: '0f0e0d0c-0b0a-4909-8807-060504030201',
+  providerId: 'local-personal', graphFormat: 25, replicaProtocol: 1 });
+function preparation({ free = 50 * 1024 ** 3, fail = null, projects = [], host = HOST_SPACE } = {}) {
   const calls = [];
   return {
     calls,
+    askHost: async () => { calls.push({ step: 'ask' }); return host; },
+    health: async () => ({ globalReplica: true, replicaProtocol: 1, data_format: { supported_version: 25 } }),
     free: async () => free,
     keepPrivate: async (dataDir) => { calls.push({ step: 'private', dataDir }); return true; },
     ensure: async (input, dependencies) => {
@@ -75,8 +80,8 @@ test('the preparation sets up the personal graph without a console, checks it, a
   const steps = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
   assert.equal(record.state, 'ready');
-  const [keptPrivate, ensure, list, stop] = steps.calls;
-  assert.deepEqual([keptPrivate.step, ensure.step, list.step, stop.step], ['private', 'ensure', 'list', 'stop']);
+  const [ask, keptPrivate, ensure, list, stop] = steps.calls;
+  assert.deepEqual([ask.step, keptPrivate.step, ensure.step, list.step, stop.step], ['ask', 'private', 'ensure', 'list', 'stop']);
   assert.equal(keptPrivate.dataDir, dataDir, 'the data directory is kept private before the graph is written, as setup does');
   // The Provider refuses an empty space name (422 at /v1/bootstrap): the graph is made as setup makes it.
   assert.equal(ensure.input.personalSpaceName, DEFAULT_PERSONAL_SPACE_NAME);
@@ -111,7 +116,7 @@ test('too little free disk downloads nothing, and says how much is missing', { t
   const steps = preparation({ free: 1024 ** 3 });
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
   assert.equal(record.state, 'failed');
-  assert.deepEqual(steps.calls, [], 'nothing was set up or started');
+  assert.deepEqual(steps.calls.map((call) => call.step), ['ask'], 'nothing was set up or started');
   const state = readLocalRuntime(dataDir);
   assert.equal(state.code, 'disk_low');
   assert.equal(state.needBytes, LEAST_FREE_BYTES);
@@ -122,7 +127,7 @@ test('a preparation that fails stops what it started and is said as failed, not 
   const dataDir = follower(t);
   const steps = preparation({ fail: 'neo4j_start_failed' });
   await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
-  assert.deepEqual(steps.calls.map((call) => call.step), ['private', 'ensure', 'stop']);
+  assert.deepEqual(steps.calls.map((call) => call.step), ['ask', 'private', 'ensure', 'stop']);
   const state = readLocalRuntime(dataDir);
   assert.equal(state.state, 'failed');
   assert.equal(state.code, 'neo4j_start_failed');
@@ -212,7 +217,8 @@ test('two starts at almost the same moment spawn one preparation', { timeout: 60
 
 test('a preparation spawned after another one finished does nothing again', { timeout: 60_000 }, async (t) => {
   const dataDir = follower(t);
-  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], version: FULI_VERSION });
+  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], version: FULI_VERSION,
+    space: { state: 'same', id: HOST_SPACE.spaceId } });
   const steps = preparation();
   const record = await prepareFollowerRuntime({ dataDir, env: {}, ...steps });
   assert.equal(record.state, 'ready');
@@ -247,7 +253,7 @@ test('the background preparation starts only when it is not done and not under w
   takenOver();
   writeRecord(dataDir, { state: 'preparing', pid: 4242, createdHere: true });
   assert.equal(prepareInBackground({ dataDir, spawnProcess, underWay: () => true }), false);
-  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [] });
+  writeRecord(dataDir, { state: 'ready', createdHere: true, projects: [], space: { state: 'same', id: HOST_SPACE.spaceId } });
   assert.equal(prepareInBackground({ dataDir, spawnProcess }), false);
   const failed = (record) => writeRecord(dataDir, { state: 'failed', createdHere: true, version: FULI_VERSION, ...record });
   failed({ code: 'disk_low' });

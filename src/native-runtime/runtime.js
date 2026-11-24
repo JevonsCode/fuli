@@ -67,6 +67,9 @@ export function createNativeGraphServices({
   env = process.env,
   runtimeDescriptor = null,
   personalOnly = null,
+  // The personal graph's `global` is another computer's (a follower's graph): its Provider
+  // writes no default record of it (graph-provider config.global_replica). Given at each start, never stored.
+  globalReplica = false,
   readText = (path) => readFile(path, 'utf8'),
   writeText = secureWriteText,
   pathExists = existsSync,
@@ -329,6 +332,8 @@ export function createNativeGraphServices({
         FULI_PROVIDER_MODE: spec.providerMode,
         FULI_PROVIDER_ID: spec.providerId,
         FULI_PROVIDER_NAME: spec.providerName,
+        // Said at every start, never inherited from whoever started FULI.
+        FULI_GLOBAL_REPLICA: globalReplica && spec.id === 'personal' ? 'true' : 'false',
         FULI_BOOTSTRAP_TOKEN: spec.bootstrapToken,
         ...(spec.humanReviewToken
           ? { FULI_HUMAN_REVIEW_TOKEN: spec.humanReviewToken }

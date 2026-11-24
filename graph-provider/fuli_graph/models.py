@@ -410,6 +410,12 @@ class SpaceCreate(StrictModel):
     publication_key: str | None = Field(default=None, min_length=8, max_length=256)
     profile: ProjectProfile | None = None
     release: ProjectReleaseCreate | None = None
+    # A follower's graph takes the personal space ID of the computer it
+    # follows, so copies land under the same IDs (docs/runner-roles-design.md
+    # §12): taken only while this graph has no personal space, and only from
+    # a computer with this Provider's provider_id.
+    id: str | None = Field(default=None, pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    provider_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class SpaceRecord(StrictModel):

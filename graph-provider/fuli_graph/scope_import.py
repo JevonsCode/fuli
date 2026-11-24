@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .graph_field_contract import NODE_FIELDS, RELATIONSHIP_FIELDS, REPLICA_FIELDS, StoredFieldError
 from .graph_field_contract import carried_fields, stored_fields
+from .global_replica import DEFAULT_LINKS, is_system_default
 from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .model_base import StrictModel
 from .provider_values import graphiti_group_id, now_utc, stable_uuid
@@ -166,9 +167,10 @@ async def import_scope(store, actor, request: ScopeImportRequest) -> dict:
     async with store.runtime.driver.transaction() as transaction:
         read = await read_space(transaction, space)
         local = _Local(read, space, envelope, request.owner)
+        adopted = local.adopt_defaults(store.settings)
         local.check(plan)
         result = await _Writer(transaction, local, plan, request.owner, now_utc()).run()
-    return result
+    return {**result, 'adoptedDefaults': adopted}
 
 
 async def _local_space(store, actor, envelope: _Envelope) -> dict:
@@ -321,6 +323,8 @@ class _Local:
         # Who writes each project this computer knows: '' this computer, else the copy's owner.
         self.project_owners = {node.properties.get('project_id'): node.properties.get(OWNER) or ''
                                for node in nodes.values() if node.label == 'FuliPersonalProject'}
+        # This computer's defaults the copy takes over (adopt_defaults).
+        self.adopted = set()
 
     def properties(self, element: str) -> dict:
         return self.classification.nodes[element].properties
@@ -331,6 +335,33 @@ class _Local:
             return None
         key = relationship.properties.get(RELATIONSHIP_KEYS.get(relationship.type, ''))
         return f'{relationship.type}:{key}' if key else (relationship.type, start, end)
+
+    def adopt_defaults(self, settings) -> int:
+        """While `global` is a copy here (config.global_replica), the first
+        copy of it takes over the default records this graph made itself
+        before it knew (global_replica.is_system_default), with the links that
+        hang them on the space: from here on they are the owner's copies. One
+        the envelope names gets the owner's properties and the marker in the
+        upsert, and this computer's other edges on it stay; one the owner does
+        not have is released as any copy the owner no longer has (kept and
+        marked while an edge of this computer's points at it). Any other record
+        of this computer's under an ID the envelope names is still refused
+        (_not_owned_here). Answers how many records were taken over."""
+        if not settings.global_replica or self.scope != 'global':
+            return 0
+        classification = self.classification
+        adopted = {element for element, node in classification.nodes.items()
+                   if _here(node.properties)
+                   and is_system_default(node.label, node.properties, self.space['id'], settings.provider_id)}
+        links = [item for item in classification.relationships
+                 if item.type in DEFAULT_LINKS and item.start == classification.space_element_id
+                 and item.end in adopted and _here(item.properties)]
+        self.adopted = adopted
+        # Read as copies from here on; only the write below puts the marker in the graph.
+        for properties in [*(classification.nodes[element].properties for element in adopted),
+                           *(item.properties for item in links)]:
+            properties.update({OWNER: self.owner, SCOPES: [self.scope]})
+        return len(adopted)
 
     def check(self, plan: _Plan) -> None:
         self._not_owned_here(plan)
@@ -446,6 +477,7 @@ class _Writer:
         self.written = {}  # envelope node ID -> element ID here
 
     async def run(self) -> dict:
+        await self._free_adopted_keys()
         await self._nodes()
         kept = await self._relationships()
         await self._task_contexts()
@@ -522,6 +554,34 @@ class _Writer:
                     await _run(self.transaction, f'MATCH (node) WHERE elementId(node) = $element '
                                f'{change} node:{_label_text(labels)}', element=row['element'])
         self.nodes['updated'] += len(updated)
+
+    async def _free_adopted_keys(self) -> None:
+        """Defaults this computer numbered and named itself hold an employee
+        number and a name identity (both unique in the space) that the owner
+        may have given other FLAs. Those the envelope names get the owner's
+        with its properties; theirs go first, so no record of the copy meets
+        them on the way. One the owner does not have keeps its own (it goes, or
+        is kept as the owner's deleted copy: _release), except a key a record
+        of the copy now holds: that one key goes, as two records cannot hold it."""
+        local = self.local
+        named = {record.id for record in self.plan.nodes}
+        agents = [record.content for record in self.plan.nodes if 'FuliProjectAgent' in record.labels]
+        numbers = {item.get('employee_number') for item in agents} - {None}
+        names = {item.get('display_name_key') for item in agents} - {None}
+        number_keys, name_keys = [], []
+        for element in sorted(local.adopted):
+            properties = local.properties(element)
+            replaced = local.ids.get(element) in named
+            if replaced or properties.get('employee_number') in numbers:
+                number_keys.append(element)
+            if replaced or properties.get('display_name_key') in names:
+                name_keys.append(element)
+        for elements, keys in ((number_keys, 'node.employee_number, node.employee_number_space_id'),
+                               (name_keys, 'node.display_name_key, node.display_name_space_id')):
+            for chunk in _batches(elements):
+                await _run(self.transaction, f'''
+                    UNWIND $elements AS element MATCH (node:FuliProjectAgent) WHERE elementId(node) = element
+                    REMOVE {keys}''', elements=chunk)
 
     async def _unread_namesakes(self) -> None:
         """A record of the envelope's key that the space read did not reach
@@ -705,6 +765,13 @@ class _Writer:
                 UNWIND $rows AS row {match} WHERE elementId(item) = row.element
                 SET item.fuli_replica_scopes = row.scopes, item.fuli_replica_synced_at = $now''',
                 rows=chunk, now=self.now)
+        # A default taken over (adopt_defaults) carries its marker only in memory until now: written whole.
+        adopted = [element for element in marked if element in self.local.adopted]
+        for chunk in _batches(adopted):
+            await _run(self.transaction, '''
+                UNWIND $elements AS element MATCH (item) WHERE elementId(item) = element
+                SET item.fuli_replica_owner = $owner, item.fuli_replica_scopes = [$scope],
+                    item.fuli_replica_synced_at = $now''', elements=chunk, owner=self.owner, scope=scope, now=self.now)
         for chunk in _batches(marked):
             await _run(self.transaction, '''
                 UNWIND $elements AS element MATCH (item) WHERE elementId(item) = element

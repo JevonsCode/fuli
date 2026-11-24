@@ -8,10 +8,11 @@ import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { externalOpenInvocation } from '../local-runtime/lifecycle.js';
 import { isOwnProcessRunning, stopProcess, waitForExit } from '../local-runtime/processes.js';
 import { LOCAL_PATH, startFollowerConsole, STATUS_PATH } from './follower-console.js';
-import { localRuntimeLine, localRuntimeStep, prepareInBackground } from './follower-local-runtime.js';
+import { localRuntimeLine, localRuntimeStep, localSpaceLine, prepareInBackground, readRecord } from './follower-local-runtime.js';
 import { followerStatus, SAME_NETWORK_LIMIT } from './follower-status.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createHostConnection } from './host-connection.js';
+import { followerReport } from './host-space.js';
 import { mcpSessionsLine } from './protocol.js';
 import { createRunnerClients } from './runner-clients.js';
 import { versionSkewLine } from './version-skew.js';
@@ -111,6 +112,8 @@ export function ownSideLines({ localRuntime, projects }) {
   const lines = [];
   const runtime = localRuntimeLine(localRuntime);
   if (runtime) lines.push(runtime.en);
+  const space = localSpaceLine(localRuntime);
+  if (space) lines.push(space.en);
   const step = localRuntime ? localRuntimeStep(localRuntime) : null;
   if (step && localRuntime.state !== 'preparing') lines.push(`  ${step}`);
   if (Array.isArray(projects) && projects.length) {
@@ -144,7 +147,8 @@ const OFFLINE_LABEL = { cached: 'offline: the answer kept here', queued: 'offlin
 export async function serveFollowerConsole({ dataDir, port }) {
   const store = new RunnerStore(join(dataDir, RUNNER_FILE));
   const identity = await loadDeviceIdentity(join(dataDir, 'peer'));
-  const connection = createHostConnection({ store, identity });
+  // Its hello says this computer's versions, its graph's as its own Provider last said them (host-space.js).
+  const connection = createHostConnection({ store, identity, report: () => followerReport(readRecord(dataDir)?.formats) });
   const served = await startFollowerConsole({ dataDir, port, store, connection,
     clients: createRunnerClients({ paths: resolveSetupPaths({ dataDir }), status: () => followerStatus({ store, connection, dataDir }) }) });
   // This computer's own runtime, prepared in the background the first time this version starts here

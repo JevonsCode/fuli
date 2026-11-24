@@ -14,6 +14,7 @@ import { createHttpSessionTransport } from '../mcp/http-session-transport.js';
 import { mcpHostSessionId, normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { relayToConsole } from './console-relay.js';
+import { hostSpaceReader } from './host-space.js';
 import { ROUTING_DECISION_ENTRY, ROUTING_OUTCOME_ENTRY } from './routing-setup.js';
 import { displayName, ENTRY_ID, NATIVE_SESSION_HEADER, RUNNER_ENTRY_META, RUNNER_PATHS, RUNNER_SESSION_HEADER,
   SESSION_LIMIT_REASON, SOURCE_APPLICATION_HEADER, TOOL_PROFILE_HEADER } from './protocol.js';
@@ -82,7 +83,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
   recordRouting = (kind, input, runner) => app.judgment.runnerRouting(kind, input, runner),
   maxMcpSessions = MCP_MAX_SESSIONS, maxMcpSessionsPerRunner = MCP_SESSIONS_PER_RUNNER, now = Date.now,
   // This computer's addresses the listener serves now: a runner keeps them to look here after a network change.
-  hostAddresses = () => [] }) {
+  hostAddresses = () => [],
+  // This host's personal space, provider_id and formats, which a follower's own graph takes (host-space.js).
+  hostSpace = hostSpaceReader(app) }) {
   const failedPairs = createFailedBearerLimit({ now });
   const folders = new Map();
   const lastSeen = new Map();
@@ -152,8 +155,9 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
       sendJson(response, answer.status, answer.body);
     } else if (pathname === RUNNER_PATHS.hello) {
       // mcpSessions: how many MCP sessions this runner holds open here, beside all runners' and the limit.
+      // space and formats: what this computer's Provider said before (space: null until it did); never waited for here.
       sendJson(response, 200, { name: hostName, fingerprint: hostFingerprint, version: FULI_VERSION, addresses: hostAddresses(),
-        mcpSessions: sessions.ownerStats(fingerprint) });
+        mcpSessions: sessions.ownerStats(fingerprint), ...hostSpace() });
     } else if (pathname === RUNNER_PATHS.workspace) {
       if (request.method !== 'POST') return void methodNotAllowed(response);
       rememberFolder(fingerprint, parseWorkspaceFacts((await readJson(request))?.facts));

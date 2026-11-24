@@ -177,7 +177,9 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       ...(input.endOrphanedServices === true ? { endOrphanedServices: true } : {}),
       // The native start waits for Neo4j and the Provider itself and says so.
       onStage: stage,
-      ...(input.env ? { env: input.env } : {})
+      ...(input.env ? { env: input.env } : {}),
+      // A follower's graph, whose `global` is the host's copy (follower-runtime-prepare.js).
+      ...(input.globalReplica === true ? { globalReplica: true } : {})
     });
   } else {
     deps.startProviders(input.paths, input.paths.graphEnvPath, {
@@ -192,6 +194,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     : { maxSeconds: (input.personalOnly ? 1 : 2) * PROVIDER_READY_TIMEOUT_MS / 1000 });
   await waitForProviderHealth(urls.personal, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.personal}` });
   if (!input.personalOnly) await waitForProviderHealth(urls.workspace, { fetchImpl: deps.fetch, failureMessage: `Graphiti provider did not become ready: ${urls.workspace}` });
+  // A follower that does not know its host's space yet: installed and checked, the graph made later.
+  if (input.graphSetup === false) return { status: 'installed', url: null, pid: null, ...(portMoves.length ? { portMoves } : {}) };
   stage('graph_setup');
   if (input.paths.adaptiveRuntimeStatePath) {
     deps.writeAdaptiveState(
@@ -209,6 +213,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     config = await bootstrapGraph({
       urls,
       personalSpaceName: input.personalSpaceName,
+      personalSpace: input.personalSpace ?? null,
       secrets,
       personalOnly: input.personalOnly === true,
       fetchImpl: deps.fetch
@@ -236,8 +241,9 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   // Run the idempotent identity upgrade on existing installs as well as first setup.
   // A graph waiting for a format step the person confirms is read-only, and that
   // confirmation happens in the console this start brings up: skip the upgrade
-  // then; the next start after the confirmation runs it.
-  await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
+  // then; the next start after the confirmation runs it. A follower's `global`
+  // is its host's: the roles come with the host's copy, never made here.
+  if (input.globalReplica !== true) await providerRequest(config.personal.providerUrl, `/v1/project-agents/system-hr?${new URLSearchParams({
     personal_space_id: config.personal.spaceId
   })}`, { token: config.personal.accessToken, fetchImpl: deps.fetch }).catch(error => {
     if (error.code !== 'data_format_read_only') throw error;
@@ -394,19 +400,25 @@ function ensureProviderEnvironment(path, settings, requestedMemoryProfile, deps)
   return values;
 }
 
-async function bootstrapGraph({ urls, personalSpaceName, secrets, personalOnly, fetchImpl }) {
+// personalSpace: { id, providerId } of the computer a follower follows, whose
+// personal space ID its graph takes (docs/runner-roles-design.md §12); null
+// makes a space of its own, as every first setup does.
+async function bootstrapGraph({ urls, personalSpaceName, personalSpace: given = null, secrets, personalOnly, fetchImpl }) {
   const personalIdentity = await bootstrapProvider(
     urls.personal,
     secrets.FULI_PERSONAL_BOOTSTRAP_TOKEN,
     personalSpaceName,
     fetchImpl
   );
-  const personalSpace = await findOrCreateSpace(urls.personal, {
-    token: personalIdentity.access_token,
-    name: personalSpaceName,
-    kind: 'personal',
-    fetchImpl
-  });
+  const personalSpace = given
+    ? await providerRequest(urls.personal, '/v1/spaces', { token: personalIdentity.access_token,
+      body: { name: personalSpaceName, kind: 'personal', id: given.id, provider_id: given.providerId }, fetchImpl })
+    : await findOrCreateSpace(urls.personal, {
+      token: personalIdentity.access_token,
+      name: personalSpaceName,
+      kind: 'personal',
+      fetchImpl
+    });
   const config = {
     version: 1,
     personal: {
@@ -680,6 +692,7 @@ function graphDependencies(overrides) {
       paths,
       runtimeDescriptor: options.nativeRuntime,
       personalOnly: options.personalOnly,
+      globalReplica: options.globalReplica === true,
       env: options.env,
       onStage: options.onStage
     }).start({ endOrphans: options.endOrphanedServices === true }),

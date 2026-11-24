@@ -1,3 +1,4 @@
+import { OWN_DATA_SPACE } from './follower-local-runtime.js';
 import { DEFAULT_SCOPE, GLOBAL_SCOPE, PROJECT_PREFIX } from './routes-store.js';
 
 // Why `fuli routes local SCOPE` does not make that scope this computer's yet
@@ -29,6 +30,8 @@ export function localRouteRefusal({ scope, hostName = 'the host', hostProjects =
       `Project ${id} is already on ${hostName}. Moving a project that exists to this computer is a later step `
       + `(docs/runner-roles-design.md §7); it keeps following ${hostName} as it does, with nothing to do.`);
   }
+  // FULI data of this computer's own, under another space than the host's (an `existing` graph among them).
+  if (localRuntime?.space?.state === 'different') return refusal('local_space_differs', OWN_DATA_SPACE.zh, OWN_DATA_SPACE.en);
   if (localRuntime?.state !== 'ready') {
     const missing = RUNTIME_MISSING[localRuntime?.state === 'failed' && localRuntime.code === 'disk_low' ? 'disk_low'
       : localRuntime?.state ?? 'not_prepared'] ?? RUNTIME_MISSING.not_prepared;
@@ -51,10 +54,7 @@ const RUNTIME_MISSING = {
       + 'or run `fuli start` again.' },
   failed: { zh: '上次准备没有成功（原因在数据目录的 logs/runner-local-runtime.log）。在本机控制台点「重新准备」。',
     en: 'the last preparation did not succeed (logs/runner-local-runtime.log in the data directory says why). Press '
-      + '「重新准备 / Prepare again」 on this computer\'s console.' },
-  existing: { zh: '这台电脑已有自己的图谱，准备时没有动它；把它的项目和主机的合在一起是之后的步骤（设计 §7）。什么都没改。',
-    en: 'this computer already has a graph of its own, which the preparation left alone; bringing its projects together '
-      + 'with the host\'s is a later step (docs/runner-roles-design.md §7). Nothing was changed.' }
+      + '「重新准备 / Prepare again」 on this computer\'s console.' }
 };
 
 function refusal(code, zh, en) {

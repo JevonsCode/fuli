@@ -360,7 +360,15 @@ class GraphitiRuntime:
         Not a format migration: the same idempotent defaults are also ensured
         on demand when a space's Project Agents are listed or recruited, and
         this runs only once the graph is writable.
+
+        While `global` is another computer's (config.global_replica), all of
+        it is skipped: the policy, the system Agents (with retiring the old
+        coordinator) and the name-key tidy-up are `global` records, which its
+        owner's copy brings (global_replica.py).
         """
+        if self.settings.global_replica:
+            logger.info('global is a copy of another computer here: its default records are not written')
+            return
         await self.driver.execute_query(
             '''
             MATCH (space:FuliSpace {kind: 'personal'})

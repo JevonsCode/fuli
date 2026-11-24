@@ -205,6 +205,13 @@ docs/runner.md "This computer's own runtime".)
      (`whoAnswers`), which 3c extends by scope. `fuli routes local` stays refused, each time with the
      reason that holds and what to do now. `fuli routes follow` asks this computer's own Provider for
      its projects (it asked the console port, which a follower relays to the host).
+   - **3a′. The follower's graph under the host's space.** — **done**: the host's hello says its personal
+     space ID, `provider_id`, graph format and copy protocol, and a follower's hello its own versions;
+     the preparation makes the follower's graph under the host's space ID (an empty one step 3a made under
+     its own ID is set aside in `native-runtime/recovered/`, never deleted; one with the person's data is
+     left as it is and said so), starts its Provider with `global` a copy, which then writes no default
+     record of `global`, and the first import of `global` takes over the defaults such a graph made
+     before. Nothing copies `global` yet: the graph stays empty, and Neo4j does not stay running.
    - **3b. Global from its owner.** The follower's task entry for a local project reads `global` (habits,
      profile, the FLA roster) from its owner and merges it with the project's own, global first, as one
      FULI does (D2); the task entry's own writes to `global` go to its owner. Open: how — one candidate
@@ -659,18 +666,39 @@ meet these constraints (from the review of the import).
   - a source test: every Cypher statement that writes passes one of the hooks above or is on the
     allow-list.
 
-**A follower adopts the host's space ID, startup defaults included**
+**A follower adopts the host's space ID, startup defaults included** — **done** (step 3a′)
 
 - `provider_id` must be the same on both computers: the `groupId` check and the system FLAs'
   `stable_uuid(provider_id, space_id, …)` depend on it. Either share it or adopt the host's value
-  explicitly.
+  explicitly. *Done:* the host's hello names its `provider_id` beside its space ID, and the follower's
+  Provider takes the space ID only under the same `provider_id` (`space_provider_mismatch`
+  otherwise; every installed FULI's is `local-personal`). Only while its graph has no personal space
+  (`personal_space_exists` otherwise); FULI data a follower already had keeps its own space and is
+  said so (docs/runner.md "This computer's own runtime").
 - Before the first global import, only records with deterministic IDs that are `system_managed`
   defaults (system FLAs, the recruitment policy) are turned into copies: their properties become
   the owner's, and this computer's edges on them stay. Any other local record under the same ID is
-  still refused.
+  still refused. *Done* (`global_replica.is_system_default`, `scope_import._Local.adopt_defaults`), only
+  while `global` is a copy here: a `FuliProjectAgent` whose `agent_id` is one of the four fixed roles,
+  with `system_managed` true and `id = stable_uuid(provider_id, space_id, 'project-agent', agent_id)`
+  (only `ensure_system_identity` sets `system_managed` true; a hired FLA is created with it false), and
+  the space's `FuliProjectAgentRecruitmentPolicy` (only the start's `MERGE` writes one), with the
+  `HAS_PROJECT_AGENT_IDENTITY` / `HAS_PROJECT_AGENT_RECRUITMENT_POLICY` links that hang them on the
+  space. The unique employee number and name identity of those the owner has are cleared first in the
+  import transaction, since the owner may have given them to other FLAs. A default the owner does not
+  have goes as any copy the owner no longer has; one kept because an edge of this computer's points at
+  it keeps its own keys and gets the whole marker (owner, scope, synced and owner-deleted times).
 - While global is a copy, startup and on-demand defaults skip nodes that carry the marker and
   create none that are missing; the import brings them. `_ensure_personal_space_defaults` gets
-  that minimal change and its tests in the same PR.
+  that minimal change and its tests in the same PR. *Done:* Node decides it from the routes store
+  (`global` routed to the host: `src/runner/global-copy.js` `globalIsCopyHere`) when it starts a
+  follower's Provider, and passes it as `FULI_GLOBAL_REPLICA`; the Provider keeps no copy of it, so the
+  two never disagree. Today only the preparation (`follower-runtime-prepare.js`) starts one; every
+  later path that starts a Provider on a follower must take the value from the same function. Then `_ensure_personal_space_defaults` writes nothing (policy,
+  `ensure_system_agents` with `retire_legacy_coordinator`, `clear_stale_name_keys`), and
+  `ensure_system_project_hr` / `_coordinator` (with `merge_legacy_hr`) only read: 409
+  `global_not_synced` until the copy arrived. `clear_stale_name_keys` in rename and hire, and format
+  backfills, are ordinary writes and stay with the write refusal above.
 
 **The sync loop**
 
@@ -683,3 +711,18 @@ meet these constraints (from the review of the import).
   formats differ, both sides stop first.
 - Cap the envelope size: an import holds the whole space and the envelope in the Provider's memory
   at once.
+- Every start of a follower's Provider takes `FULI_GLOBAL_REPLICA` from the routes store
+  (`globalIsCopyHere`), including the path that keeps a Provider running for a scope this computer
+  owns, and the restart after it.
+- After `fuli runner leave`, the `global` copies carrying the host's marker get a clear fate (made
+  this computer's own, or set aside) before an ordinary start writes the defaults again: otherwise
+  the defaults it adds collide with those copies by ID.
+- Before an import, check the graph format and copy protocol both sides said in hello (the
+  follower's request headers, the host's `formats`); when they differ, say so in the state and do
+  not import and fail at every round.
+- A call that meets `global_not_synced` before the first import is said as waiting for the first
+  copy, never as an error.
+- The host's hello never waits for its Provider: it says the space it read before (`space: null`
+  until one read succeeded), reads in the background, and reads again after a few minutes or when
+  its settings name another space ID (`host-space.js` `hostSpaceReader`). A loop must not take an
+  old space ID for the current one either.

@@ -1,5 +1,5 @@
 import { BAND_HEIGHT, BAND_STYLE, STATUS_PATH } from './follower-band.js';
-import { localRuntimeLine } from './follower-local-runtime.js';
+import { localRuntimeLine, localSpaceLine } from './follower-local-runtime.js';
 import { followerLine, keptLine, SAME_NETWORK_LIMIT } from './follower-status.js';
 
 // A follower's own console page (docs/runner-roles-design.md §5): the page
@@ -126,11 +126,14 @@ function addAddress(host, { hidden = false } = {}) {
 // one next step, 「重新准备」, as a button; the same is `fuli start` in a terminal.
 function runtimeSection(state) {
   const line = localRuntimeLine(state);
+  const space = localSpaceLine(state);
   const again = state.state === 'failed' || state.state === 'not_prepared';
   return `<h2>本机运行时 <span class="en">This computer's own runtime</span>
   ${again ? '<button type="button" data-prepare>重新准备 / Prepare again</button>' : ''}</h2>
 <p data-runtime>${escape(line.zh)}</p>
 <p class="note en" data-runtime-en>${escape(line.en)}</p>
+${space ? `<p data-space>${escape(space.zh)}</p>
+<p class="note en">${escape(space.en)}</p>` : ''}
 ${state.state === 'failed' && state.code !== 'disk_low' && state.message
     ? `<p class="note">${escape(state.message)}</p>` : ''}
 <p data-prepare-outcome class="note" hidden></p>`;

@@ -40,8 +40,9 @@ const SEEN_EVERY_MS = 30_000;
 // The host's answer to a runner it does not know (host-routes.js).
 const NOT_PAIRED = 'runner_unknown';
 
+// report(): headers this follower sends with hello about itself (host-space.js followerReport).
 export function createHostConnection({ store, identity, lookUp = lookUpHost, probeMs = PROBE_MS,
-  bindAddresses = () => discoveryAdapters(networkInterfaces) }) {
+  bindAddresses = () => discoveryAdapters(networkInterfaces), report = () => ({}) }) {
   let current = null;
   let finding = null;
   // Whether the last search reached an address whose certificate is not the paired one.
@@ -99,7 +100,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     const candidate = { address, via, origin: `https://${address}:${host.port}`, fetch: seenFetch(pinnedFetch(agent)),
       agent, announced: [], greeting: null };
     try {
-      const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal });
+      const answer = await candidate.fetch(`${candidate.origin}${RUNNER_PATHS.hello}`, { signal, headers: report() });
       const body = [200, 403].includes(answer.status) ? await answer.json().catch(() => null) : await answer.body?.cancel();
       if (body?.error === NOT_PAIRED) store.revoked();
       if (answer.status !== 200) throw new Error(`hello ${answer.status}`);
@@ -175,7 +176,7 @@ export function createHostConnection({ store, identity, lookUp = lookUpHost, pro
     }
     try {
       const answer = await connection.fetch(`${connection.origin}${RUNNER_PATHS.hello}`,
-        { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]) });
+        { signal: AbortSignal.any([AbortSignal.timeout(HELLO_MS), closing.signal]), headers: report() });
       if (answer.status === 200) return await answer.json();
       await answer.body?.cancel();
     } catch { /* not answering on this connection: looked for again below */ }
