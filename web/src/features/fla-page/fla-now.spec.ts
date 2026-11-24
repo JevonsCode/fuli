@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import type { TeamSheet } from '@/features/team-work/team-sheets'
 import type { ProjectAgentTaskRecord } from '@/types'
-import { finishedWork, nowLine, STALE_AFTER_MS } from './fla-now'
+import { STALE_AFTER_MS } from '@/features/team-work/work-freshness'
+import { finishedWork, nowLine } from './fla-now'
 
 // Synthetic tasks only.
 const entry = (status: AgentWorkbenchEntry['status'], extra: Partial<AgentWorkbenchEntry> = {}): AgentWorkbenchEntry => ({

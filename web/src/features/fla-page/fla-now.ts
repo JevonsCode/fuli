@@ -1,5 +1,6 @@
 import type { AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import { currentStepOf, type TeamProgress, type TeamSheet } from '@/features/team-work/team-sheets'
+import { progressOf, type Progress } from '@/features/team-work/work-freshness'
 import type { ProjectAgentTaskRecord, ProjectAgentTaskSession } from '@/types'
 
 // 现在 on an FLA's page (docs/fla-page.md): what it is doing, in one line.
@@ -8,16 +9,6 @@ import type { ProjectAgentTaskRecord, ProjectAgentTaskSession } from '@/types'
 // to be a gap — 没有上报状态 is never shown as 空闲, and there is no bar
 // without a plan.
 export interface FinishedWork { taskId: string; title: string; at: string | null; failed: boolean; result: string | null; projectId: string | null }
-
-/** Running work with no recorded change for this long is no longer said to be going on. */
-export const STALE_AFTER_MS = 30 * 60_000
-
-/**
- * How recent the FLA's last recorded change on its running task is: `fresh`
- * within STALE_AFTER_MS, `stale` past it, `unrecorded` when no change was
- * recorded. Only `fresh` reads as 正在做 with a live dot.
- */
-export type Progress = { state: 'fresh' | 'stale'; at: string } | { state: 'unrecorded' }
 
 /** Other tasks of this FLA that wait on the person, besides the one 现在 names. */
 export interface Waiting { review: number; blocked: number; taskId: string | null }
@@ -49,13 +40,6 @@ export function finishedWork(tasks: readonly ProjectAgentTaskRecord[]): Finished
     .map(task => ({ taskId: task.taskId, title: task.title, at: task.completedAt ?? task.updatedAt ?? null, failed: task.status === 'failed',
       result: (task.status === 'failed' ? task.failureReason : task.resultSummary)?.trim() || null, projectId: task.personalProjectId ?? null }))
     .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
-}
-
-/** How recent a running task's last recorded change is, at `now`. */
-export function progressOf(lastUpdateAt: string | null, now: number): Progress {
-  const at = lastUpdateAt ? Date.parse(lastUpdateAt) : Number.NaN
-  if (!lastUpdateAt || Number.isNaN(at)) return { state: 'unrecorded' }
-  return { state: now - at <= STALE_AFTER_MS ? 'fresh' : 'stale', at: lastUpdateAt }
 }
 
 /**

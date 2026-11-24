@@ -106,6 +106,56 @@ describe('团队卡片 on an FLA’s own page', () => {
   })
 })
 
+describe('团队卡片 reads the viewer’s step as 现在 does', () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+  const one = () => sheet({ progress: { completed: 5, total: 8 },
+    steps: [{ id: 's1', title: 'Check locale branch', status: 'in_progress', agentId: 'a' }],
+    shares: [{ agentId: 'a', role: 'lead', status: 'running', assignment: null, progress: { completed: 5, total: 8 }, currentStepId: 's1' }] })
+  const mountWith = (props: Record<string, unknown>) => {
+    const wrapper = mount(TeamCard, { props: { sheet: one(), spaceId: 'space-a', nameOf: (id: string) => names[id]!, projectName: (id: string) => id,
+      viewerAgentId: 'a', focused: true, ...props }, global: { plugins: [router()] } })
+    mounted.push(wrapper)
+    return wrapper
+  }
+
+  it('progress 5 minutes ago: 现在 with the gold dot that breathes', () => {
+    const now = mountWith({ progressAt: minutesAgo(5) }).get('.team-now')
+    expect(now.text()).toBe('现在：Check locale branch')
+    expect(now.attributes('data-progress')).toBe('fresh')
+  })
+
+  it('progress 3 days ago: 停在 and when, with a still grey dot', async () => {
+    const wrapper = mountWith({ progressAt: minutesAgo(3 * 24 * 60) })
+    const now = wrapper.get('.team-now')
+    expect(now.text()).toMatch(/^停在：Check locale branch · 上次有进展 3\s*天前$/)
+    expect(now.text()).not.toContain('现在')
+    expect(now.attributes('data-progress')).toBe('stale')
+    expect(wrapper.get('.team-face').classes()).not.toContain('is-working')
+    await wrapper.get('.team-head').trigger('click')
+    expect(wrapper.get('.team-step.is-current').classes()).toContain('is-stopped')
+  })
+
+  it('no recorded progress: 停在 without a time, never 现在', () => {
+    const now = mountWith({ progressAt: null }).get('.team-now')
+    expect(now.text()).toBe('停在：Check locale branch')
+    expect(now.attributes('data-progress')).toBe('unrecorded')
+  })
+
+  it('where the page cannot tell, the step reads as before', () => {
+    const now = mountWith({}).get('.team-now')
+    expect(now.text()).toBe('现在：Check locale branch')
+    expect(now.attributes('data-progress')).toBeUndefined()
+  })
+
+  it('the task 现在 already names keeps its bar and count but not its step', () => {
+    const wrapper = mountWith({ progressAt: minutesAgo(5), stepShownAbove: true })
+    expect(wrapper.find('.team-now').exists()).toBe(false)
+    expect(wrapper.get('.team-head').text()).not.toContain('Check locale branch')
+    expect(wrapper.get('.team-count').text()).toBe('5/8')
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(true)
+  })
+})
+
 describe('悬浮岛', () => {
   const mountIsland = async () => {
     const wrapper = mount(TeamIsland, { attachTo: document.body, global: { plugins: [router()] } })

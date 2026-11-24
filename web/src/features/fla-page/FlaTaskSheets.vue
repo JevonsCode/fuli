@@ -15,8 +15,16 @@ import { useAgentSheets } from './agent-sheets'
 // own share first. Every card starts folded on its current step and count:
 // 现在 above already says what it is doing. A link that names a task
 // (?task=) opens that card with all its steps. Finished work is 最近做完's,
-// further down the page.
-const props = defineProps<{ spaceId: string; agentId: string; agentName: string; projectName: (id: string) => string }>()
+// further down the page. Each card reads its step by this FLA's last recorded
+// change on the task (`progressAt`, the same reading 现在 uses); the card of the
+// task 现在 names (`nowTaskId`) leaves its step out, 现在 already says it.
+const props = defineProps<{
+  spaceId: string; agentId: string; agentName: string; projectName: (id: string) => string
+  /** This FLA's last recorded change per task id; a task missing here is not known. */
+  progressAt?: Record<string, string | null>
+  nowTaskId?: string | null
+}>()
+const progressFor = (taskId: string) => (props.progressAt && taskId in props.progressAt ? props.progressAt[taskId]! : undefined)
 
 const route = useRoute()
 const linked = computed(() => (typeof route.query.task === 'string' ? route.query.task : ''))
@@ -46,7 +54,8 @@ const nameOf = (agentId: string) => {
     <p v-if="read.partial.value" class="sheets-note" role="status">{{ t('flaPage.sheets.partial') }}</p>
     <TransitionGroup name="ui-list" tag="div" class="sheets-list">
       <TeamCard v-for="sheet in sheets" :key="`${sheet.taskId}:${sheet.taskId === linked}`" :sheet="sheet" :space-id="spaceId" :name-of="nameOf"
-        :project-name="projectName" :viewer-agent-id="agentId" :default-open="sheet.taskId === linked" focused />
+        :project-name="projectName" :viewer-agent-id="agentId" :default-open="sheet.taskId === linked" focused
+        :progress-at="progressFor(sheet.taskId)" :step-shown-above="Boolean(nowTaskId) && sheet.taskId === nowTaskId" />
     </TransitionGroup>
   </section>
 </template>

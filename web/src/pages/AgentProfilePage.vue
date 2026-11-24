@@ -31,7 +31,7 @@ import {
 import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
 import { mentionKind } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, summarizeAgentTasks, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
-import { agentWorkbenchEntry, indexWorkbenchTasks } from "@/features/agent-profile/agent-workbench";
+import { agentUpdateTimes, agentWorkbenchEntry, indexWorkbenchTasks } from "@/features/agent-profile/agent-workbench";
 import { useAgentRecords } from "@/features/agent-profile/useAgentRecords";
 import { useNow } from "@/composables/useNow";
 import FlaAttention from "@/features/fla-page/FlaAttention.vue";
@@ -203,13 +203,20 @@ const sheets = useAgentSheets(agentSpace, agentKey);
 const kitRead = useFlaKit(agentSpace, agentKey);
 const growthRead = useAgentGrowth(agentSpace, agentKey);
 const clock = useNow();
+const taskIndex = computed(() => agent.value ? indexWorkbenchTasks(taskPage.value, agent.value.personalSpaceId) : {});
 const entry = computed(() => agent.value ? agentWorkbenchEntry(agent.value, {
   summary: summarizeAgentTasks(taskPage.value, agent.value.personalSpaceId)[agent.value.agentId],
   summaryState: taskRead.value,
-  tasks: indexWorkbenchTasks(taskPage.value, agent.value.personalSpaceId),
+  tasks: taskIndex.value,
 }) : null);
 const now = computed(() => agent.value && entry.value
   ? nowLine({ entry: entry.value, agentId: agent.value.agentId, sheets: sheets.sheets.value, tasks: tasks.value, now: clock.value }) : null);
+// 手上的活 reads each card by the same recorded change 现在 does, and leaves out
+// the step of the task 现在 already names (widget context for 'fla-sheets').
+const sheetsContext = computed(() => ({
+  progressAt: agent.value ? agentUpdateTimes(taskIndex.value, agent.value.agentId) : {},
+  nowTaskId: now.value?.kind === "working" && now.value.step ? now.value.taskId : null,
+}));
 const finished = computed(() => finishedWork(tasks.value));
 // 等你处理 goes to the section where it is answered: on the work tab, opened.
 async function reveal(sectionId: string) {
@@ -429,7 +436,7 @@ usePageRefresh(() => Promise.all([load(), readDetails({ keep: true }), sheets.re
                     :agent-id="agent.agentId" :sections="['work']" linked-only data-fla-linked-task />
                   <!-- The order is the layout's (widgets/layout.ts); the page's own sections sit between its places. -->
                   <WidgetSlot place="fla.overview"
-                    :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
+                    :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName, ...sheetsContext }" />
                   <Card v-if="hasWorkflows" as="section" class="agent-resume-section">
                     <AgentWorkflowList :workflows="workflows" @changed="reloadWorkflows" />
                   </Card>
