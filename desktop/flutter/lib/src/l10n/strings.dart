@@ -581,13 +581,33 @@ class Strings {
     final space = free is int && least is int && least > 0
         ? _t('磁盘剩余 ${_size(free)}，导回至少需要 ${_size(least)}。', ' ${_size(free)} is free on the disk; bringing it back needs at least ${_size(least)}.')
         : '';
-    // An orphaned Neo4j holding the store: 「结束它并启动」 is held back by the lock, so the words say how to end it.
-    final using = holders is List && holders.isNotEmpty
-        ? _t('还有进程在用图谱的目录：${[for (final h in holders) if (h is Map) '${h['pid']}（${h['name'] ?? '?'}）'].join('、')}，可能是 FULI 之前没关掉的数据库；先在「活动监视器」里结束它。',
-            ' Processes still use a graph\'s directory: ${[for (final h in holders) if (h is Map) '${h['pid']} (${h['name'] ?? '?'})'].join(', ')}, likely a database FULI did not stop; end it in Activity Monitor first.')
-        : '';
-    return '${failure['detail'] ?? '?'}${_t('。', '.')}$space$using${_t('', ' ')}';
+    // A graph database of this data directory FULI did not stop: 「结束它并重试导回」
+    // ends it (src/native-runtime/load-recovery.js end-holders). One FULI does
+    // not recognise is left to the person, by PID and program name.
+    final all = holders is List ? [for (final h in holders) if (h is Map) h] : const <Map<Object?, Object?>>[];
+    final own = [for (final h in all) if (h['own'] == true) h];
+    final strangers = [for (final h in all) if (h['own'] != true) h];
+    final ours = own.isEmpty
+        ? ''
+        : _t('占着库的进程 ${_processes(own, true)}是本数据目录之前没关掉的图数据库，恢复会先结束它再导回。',
+            ' The process holding the store, ${_processes(own, false)}, is a graph database of this data directory that FULI did not stop; the recovery ends it first, then brings the copy back.');
+    final others = strangers.isEmpty
+        ? ''
+        : _t('还有进程在用图谱的目录：${_processes(strangers, true)}，FULI 认不出它是自己的，没有动它；确认它可以结束后，在「活动监视器」里结束它。',
+            ' Processes still use a graph\'s directory: ${_processes(strangers, false)}; FULI does not recognise them as its own and left them alone. Once you are sure they can go, end them in Activity Monitor.');
+    return '${failure['detail'] ?? '?'}${_t('。', '.')}$space$ours$others${_t('', ' ')}';
   }
+
+  // "77（java）、78（java）" / "77 (java), 78 (java)".
+  String _processes(Object? list, bool zh) => [
+        if (list is List)
+          for (final p in list)
+            if (p is Map) zh ? '${p['pid']}（${p['name'] ?? '?'}）' : '${p['pid']} (${p['name'] ?? '?'})'
+      ].join(zh ? '、' : ', ');
+
+  /// The recovery's confirm button when its plan first ends a graph database
+  /// of this data directory that holds the store (`end-holders`).
+  String get endHoldersAndRetry => _t('结束它并重试导回', 'End it and retry');
 
   /// The recovered folders that hold graph data a recovery moved aside: where,
   /// how big, which graphs, and how to move each store back. The clean-up never
@@ -670,6 +690,8 @@ class Strings {
           'Move ${_movedWhat(path)[1]} (${last(path)}$size) to the recovered folder, not deleted'),
       'rename' => _t('把没写完的备份改名为 ${last(step['to'])}', 'Rename the unfinished backup to ${last(step['to'])}'),
       'archive-journal' => _t('把切换记录移到 recovered 文件夹', 'Move the switch journal to the recovered folder'),
+      'end-holders' => _t('结束占着库的进程 ${_processes(step['processes'], true)}：它是本数据目录之前没关掉的图数据库；结束前再核对一次，已经不在了就跳过',
+          'End the process holding the store, ${_processes(step['processes'], false)}: a graph database of this data directory that FULI did not stop; it is checked again first, and skipped if it is gone'),
       'restore' => _t('从导入前的备份整库恢复 ${_names(step['instances'])}', 'Restore ${_names(step['instances'])} whole from the copy taken before the import'),
       'prune' => _t('解除锁之后永久删除一个旧的恢复文件夹（${last(path)}$size：只有数据库程序和记录，没有图谱数据；超过 ${step['keepDays']} 天，之后又有至少 ${step['keepRuns']} 次恢复；删不掉不影响恢复）',
           'After the lock is released, permanently delete an old recovery folder (${last(path)}$size: only database programs and records, no graph data; over ${step['keepDays']} days old, with at least ${step['keepRuns']} newer recoveries; if it cannot be deleted, the recovery still counts)'),

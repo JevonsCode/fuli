@@ -245,7 +245,9 @@ class StatusActions extends StatelessWidget {
             onPressed: () => Navigator.of(dialogContext).pop(plan),
             child: Text(switching && alternative != null
                 ? (plan.kind == 'finish_switch' ? strings.finishSwitchTo(plan.facts) : strings.cancelSwitch(plan.facts))
-                : strings.recoveryConfirm),
+                : plan.steps.any((step) => step['do'] == 'end-holders')
+                    ? strings.endHoldersAndRetry
+                    : strings.recoveryConfirm),
           ),
         ],
       ),

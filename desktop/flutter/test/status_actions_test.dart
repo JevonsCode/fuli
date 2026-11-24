@@ -254,6 +254,28 @@ void main() {
     expect(runtime.calls, contains('abandon-import-start aaaaaaaaaaaaaaaa'));
   });
 
+  testWidgets('a graph database of this data directory that held the store is ended by the recovery\'s own button, named for it', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'refused',
+        failure: StartupFailure('recovery_refused', {'reason': 'restore_failed', 'detail': 'store is locked', 'backupPath': '/x/b',
+          'holders': [{'pid': 77, 'name': 'java', 'own': true}]})))
+      ..recoveryPlan = const RecoveryPlan('restore_load', [{'do': 'end-holders', 'processes': [{'pid': 77, 'name': 'java'}]},
+        {'do': 'restore', 'from': '/x/b', 'instances': ['personal']}, {'do': 'release-lock'}], '0123456789abcdef', {});
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await controller.start();
+    await tester.pump();
+    expect(find.textContaining('恢复会先结束它再导回'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('recover-start')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('结束占着库的进程 77（java）'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const Key('recover-confirm')), matching: find.text('结束它并重试导回')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('recover-confirm')));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, contains('recover-start 0123456789abcdef'));
+  });
+
   testWidgets('after a recovery that left graph data in the recovered folder, the window says where it is and how to move it back', (tester) async {
     final api = DemoFuliApi()..reachable = false;
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'switch',

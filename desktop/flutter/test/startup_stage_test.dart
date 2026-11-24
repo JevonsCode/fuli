@@ -311,7 +311,13 @@ void main() {
         'holders': [{'pid': 66, 'name': 'java'}]},
       'copies': [{'path': '/x/b', 'createdAt': '2026-11-20T00:00:00.000Z', 'bytes': 2048, 'instances': ['personal']}],
     })).join('\n');
-    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回至少需要 4.0 KB。还有进程在用图谱的目录：66（java），可能是 FULI 之前没关掉的数据库；先在「活动监视器」里结束它'));
+    expect(judged, contains('副本是好的（校验和对得上）：/x/b，但把它导回没有成功：No space left on device。磁盘剩余 1.0 KB，导回至少需要 4.0 KB。还有进程在用图谱的目录：66（java），FULI 认不出它是自己的，没有动它；确认它可以结束后，在「活动监视器」里结束它'));
+    // A graph database of this data directory that held the store: the recovery ends it, and its plan says so as a step.
+    final own = zh.recoveryRefused('restore_failed', const {'detail': 'store is locked', 'backupPath': '/x/b', 'holders': [{'pid': 77, 'name': 'java', 'own': true}]});
+    expect(own, contains('占着库的进程 77（java）是本数据目录之前没关掉的图数据库，恢复会先结束它再导回'));
+    expect(own, isNot(contains('活动监视器')));
+    expect(zh.recoveryPlanWords(const RecoveryPlan('restore_load', [{'do': 'end-holders', 'processes': [{'pid': 77, 'name': 'java'}]}], 'd', {})).last,
+        '· 结束占着库的进程 77（java）：它是本数据目录之前没关掉的图数据库；结束前再核对一次，已经不在了就跳过');
     expect(judged, contains('个人图谱：把它从这次导入前的副本导回时停下了（被打断或没有成功），可能只写了一半。继续的话会变成空的'));
     expect(judged, contains('原因解决后，可以用下面这次导入前的副本把它导回'));
     expect(judged, contains('工作区图谱：这次导入写它的时候停下了（被打断或失败）'));
