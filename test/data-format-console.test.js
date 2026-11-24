@@ -121,13 +121,22 @@ test('apply, undo, prune and restore are refused from another device', async () 
     await handleDataFormatApiRequest({ request: lan('GET'), response, url: new URL(`http://lan/api/data-format/${path}`),
       migrations: migrations(calls) });
   }
-  assert.deepEqual(sent, [403, 403, 403, 403, 403, 403, 403]);
+  // The graph step's backup, its restore and the folder reveal stop FULI or touch this computer: never from another device or a relay.
+  const graphBackup = new Proxy({}, { get: (_, name) => () => calls.push(name) });
+  const relayed = (method) => ({ method, socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-forwarded-for': '192.0.2.4' } });
+  for (const request of [lan('GET'), lan('POST'), relayed('POST')]) {
+    for (const path of ['graph-backup?version=23', 'graph-backup/restore', 'graph-backup/reveal']) {
+      await handleDataFormatApiRequest({ request, response, url: new URL(`http://lan/api/data-format/${path}`),
+        migrations: { ...migrations(calls), graphBackup } });
+    }
+  }
+  assert.deepEqual(sent, Array(16).fill(403));
   assert.deepEqual(calls, []);
 });
 
 test('no MCP or Agent tool module reaches the operations that change data formats', () => {
   const changing = ['src/data-format/migration-operations.js', 'src/data-format/graph-format-client.js',
-    'src/data-format/console-restore.js',
+    'src/data-format/console-restore.js', 'src/data-format/console-graph-backup.js',
     'src/graphiti/human-review-channel.js',
     'src/data-format/backup-retention.js', 'packages/roundtable/src/storage/database-migration.js',
     'src/storage/json-format-migration.js'].map((path) => join(ROOT, path));

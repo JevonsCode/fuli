@@ -89,6 +89,9 @@ function graphExportLeft(name) {
     return { zh: '从 Docker 迁到内置图谱时导出的图谱', en: 'The graph exported when it moved from Docker to the built-in graph' };
   }
   if (name.startsWith('before-import-')) return { zh: '导入图谱前保留的图谱', en: 'The graph kept before a graph import' };
+  // The data format page's 「先备份图谱」 (data-format/console-graph-backup.js).
+  const format = /^before-format-(\d+)-/.exec(name);
+  if (format) return { zh: `确认数据格式 ${format[1]} 前备份的图谱`, en: `The graph backed up before data format ${format[1]} was confirmed` };
   return { zh: '图谱导出', en: 'A graph export' };
 }
 

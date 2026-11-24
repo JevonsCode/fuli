@@ -205,9 +205,12 @@ test('two waiters that both find an abandoned lock download once', async (t) => 
     download: async (_url, destination) => { downloads += 1; file(destination, bytes); },
     wait: async () => { finish.resolve(); await tick(); } });
   await judging.promise;
+  // A never waits before it downloads. Afterwards it may: Windows refuses to move A's lock aside
+  // while B has its holder.json open, and the release tries again a wait later.
+  let taken = false;
   const first = downloadPinnedExecutable(root, asset, { identify, identity: osAnswering({ [DEAD_PID]: 'started-later' }),
-    download: async (_url, destination) => { downloads += 1; started.resolve(); await finish.promise; file(destination, bytes); },
-    wait: async () => { throw new Error('the crashed lock is taken over at once'); } });
+    download: async (_url, destination) => { downloads += 1; taken = true; started.resolve(); await finish.promise; file(destination, bytes); },
+    wait: async () => { if (!taken) throw new Error('the crashed lock is taken over at once'); await tick(); } });
   await started.promise;
   // B's judgment ends: the lock it judged is gone, so it leaves A's alone and waits for A.
   judged.resolve('started-later');

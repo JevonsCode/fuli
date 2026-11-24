@@ -409,10 +409,14 @@ test('for 30 days an FLA answers to its 原名 by the shared-name rules: the fol
   const inProject = project => { const context = fixture({ roster });
     context.app.projectPathResolver = () => ({ ...FOLDER, personalProjectId: project }); return context; };
   // In the renamed FLA's own project its old name reaches it, not the one that kept the name.
-  const there = await inProject('project-c').run('#FLA Jamie Ash 继续刚刚问题');
+  const renamedHome = inProject('project-c');
+  const there = await renamedHome.run('#FLA Jamie Ash 继续刚刚问题');
   assert.deepEqual(owner(there), ['project-c', 'jamie-c']);
-  assert.equal(there.fla.notice,
-    '本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作；同名还有一位在 Beta，这次用的是当前项目的这位');
+  // The name is the keeper's now: the entry says so, and where to call that one, on this turn only.
+  assert.equal(there.fla.notice, '本会话由 Lyra Lane（原名 Jamie Ash）继续项目 Gamma 的工作；Jamie Ash 现在是另一位 FLA（Beta）'
+    + '的名字，这次按当前项目用的是原名为 Jamie Ash 的 Lyra Lane；要找那位，请在 Beta 的项目文件夹里再叫 Jamie Ash');
+  assert.doesNotMatch(there.fla.notice, /同名还有/u);
+  assert.equal((await renamedHome.run('再跑一遍')).fla, undefined);
   // In the keeper's project the name is the keeper's, and the entry says where the other went.
   const kept = await inProject('project-b').run('#FLA Jamie Ash 继续');
   assert.deepEqual(owner(kept), ['project-b', 'jamie']);
@@ -427,6 +431,16 @@ test('for 30 days an FLA answers to its 原名 by the shared-name rules: the fol
   const bound = fixture({ roster });
   assert.deepEqual(owner(await bound.run('#FLA Lyra Lane')), ['project-c', 'jamie-c']);
   assert.deepEqual(owner(await bound.run('#FLA Jamie Ash 接着来')), ['project-c', 'jamie-c']);
+});
+
+test('an FLA called that now in several projects is asked only by project, without the one that left the name', async () => {
+  const keeper = fla('jamie', 'Jamie Ash', '开发', 'project-b');
+  keeper.assignments.push({ personal_project_id: 'project-a', status: 'active', updated_at: '2026-10-01T00:00:00Z' });
+  const renamed = { ...fla('jamie-c', 'Lyra Lane', '测试', 'project-c'), former_name: 'Jamie Ash' };
+  const outside = await fixture({ roster: [ADA, keeper, renamed, JADE] }).run('#FLA Jamie Ash 继续', { projectPath: null });
+  assert.equal(outside.fla.reason, 'same_name');
+  assert.deepEqual(outside.human_interaction.options.map(option => option.replace(/^\d+\. | · 最近：.*/gu, '')).sort(),
+    ['Jamie Ash — Alpha — 开发', 'Jamie Ash — Beta — 开发']);
 });
 
 test('an old name two FLAs answer to is still asked when neither is called that now', async () => {
