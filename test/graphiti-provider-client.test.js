@@ -144,30 +144,30 @@ test('a refused scope import keeps its code', async () => {
     (error) => error.status === 409 && error.code === 'replica_scope_owned_here' && error.message === 'Synthetic.');
 });
 
-test('a follower\'s copy summary, its release and a hire for its recruitment reach their Provider routes', async () => {
+test('a hire for a follower\'s recruitment and an item\'s view reach their Provider routes', async () => {
   const calls = [];
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async (url, options) => { calls.push({ url, method: options.method, body: options.body && JSON.parse(options.body) });
       return jsonResponse(200, { status: 'synthetic' }); } });
-  await client.replicaSummary();
-  await client.releaseScope({ owner: 'b'.repeat(64) });
   await client.hireForFollowerRecruitment({ personalSpaceId: 'synthetic-space', recruitmentId: 'synthetic-recruitment',
     agentId: 'synthetic-agent', profile: { name: 'Synthetic Lead' }, occupation: { role: 'synthetic_role', tags: [] },
-    reason: 'Synthetic reason', origin: { computer: 'Synthetic computer', project: 'Synthetic project' } });
+    reason: 'Synthetic reason', origin: { computer: 'Synthetic computer', fingerprint: 'a'.repeat(16),
+      project: 'Synthetic project' } });
+  await client.readKnowledgeItemView({ personalSpaceId: 'synthetic-space', itemKind: 'entity', itemId: 'synthetic-item' });
   assert.deepEqual(calls, [
-    { url: 'http://provider.test/v1/scopes/replica-summary?scope=global', method: 'GET', body: undefined },
-    { url: `http://provider.test/v1/scopes/release?owner=${'b'.repeat(64)}`, method: 'POST', body: undefined },
     { url: 'http://provider.test/v1/project-agents/owner-hire', method: 'POST', body: { personal_space_id: 'synthetic-space',
       recruitment_id: 'synthetic-recruitment', agent_id: 'synthetic-agent', profile: { name: 'Synthetic Lead' },
       occupation: { role: 'synthetic_role', tags: [] }, reason: 'Synthetic reason',
-      origin_computer: 'Synthetic computer', origin_project: 'Synthetic project' } }]);
+      origin_computer: 'Synthetic computer', origin_fingerprint: 'a'.repeat(16), origin_project: 'Synthetic project' } },
+    { url: 'http://provider.test/v1/knowledge/item-views', method: 'POST',
+      body: { personal_space_id: 'synthetic-space', item_kind: 'entity', item_id: 'synthetic-item' } }]);
 });
 
 test('a hire the Provider refuses keeps its code', async () => {
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async () => jsonResponse(409, { detail: { code: 'agent_id_taken', message: 'Synthetic.' } }) });
   await assert.rejects(client.hireForFollowerRecruitment({ personalSpaceId: 'synthetic-space', recruitmentId: 'synthetic-recruitment',
-    agentId: 'synthetic-agent', profile: {}, occupation: null, reason: null, origin: { computer: null, project: null } }),
+    agentId: 'synthetic-agent', profile: {}, occupation: null, reason: null, origin: { computer: null, fingerprint: null, project: null } }),
   (error) => error.status === 409 && error.code === 'agent_id_taken');
 });
 

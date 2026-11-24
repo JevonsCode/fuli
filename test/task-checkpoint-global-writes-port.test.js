@@ -132,11 +132,12 @@ test('elsewhere, a project task writes its project batch here and hands its glob
   assert.equal(sent[0].ops[0].input.personalProjectId, null);
   assert.deepEqual(sent[0].ops[0].input.entities.map(item => item.key), ['synthetic-preference']);
   // Only the use of the item held as a copy goes to its owner.
-  assert.deepEqual(sent[0].ops[1].input, { taskId: TOKEN, sessionId: 'synthetic-session', items: [knowledgeUsage[0]] });
+  assert.deepEqual(sent[0].ops[1].input, { taskId: TOKEN, sessionId: 'synthetic-session', sourceApplication: 'codex',
+    items: [knowledgeUsage[0]] });
   assert.equal(answer.capture_status, 'committed');
   assert.deepEqual(answer.capture_results.map(item => item.scope), ['current_project']);
   assert.equal(answer.agent_memory.status, 'checkpointed');
-  assert.deepEqual([answer.savedHere, answer.forHost], [2, { delivered: 2, queued: 0, refused: [] }]);
+  assert.deepEqual([answer.saved_here, answer.for_host], [2, { delivered: 2, queued: 0, refused: [] }]);
   const completed = named(calls, 'taskContextRegistry.checkpoint')[0][1];
   assert.deepEqual(completed.captureResults.map(item => item.scope), ['current_project']);
 });
@@ -155,7 +156,7 @@ test('elsewhere, a task without a project asks this Provider for none of its glo
     assert.deepEqual(sent[0].ops[1].input, { agentId: AGENT, expectedRevision: 2, idempotencyKey: `${TOKEN}:memory`,
       memory: agentMemory.memory, sourceApplication: 'codex', sourceSessionId: 'synthetic-session' });
     assert.equal(answer.agent_memory.status, 'for_host');
-    assert.deepEqual([answer.savedHere, answer.forHost], [0, { delivered: 0, queued: 2, refused: [] }]);
+    assert.deepEqual([answer.saved_here, answer.for_host], [0, { delivered: 0, queued: 2, refused: [] }]);
     const completed = named(calls, 'taskContextRegistry.checkpoint')[0][1];
     assert.equal(completed.captureStatus, 'for_host');
     assert.equal(completed.captureResults, undefined);
@@ -168,7 +169,18 @@ test('elsewhere, a task without a project asks this Provider for none of its glo
 test('elsewhere, the owner\'s refusals come back in the answer with their codes', async () => {
   const { port } = ownerPort(() => ({ delivered: 1, queued: 0, refused: [{ kind: 'agent_memory', code: 'memory_revision_conflict' }] }));
   const { answer } = await run('globalUnrouted', { globalWrites: port });
-  assert.deepEqual(answer.forHost.refused, [{ kind: 'agent_memory', code: 'memory_revision_conflict' }]);
+  assert.deepEqual(answer.for_host.refused, [{ kind: 'agent_memory', code: 'memory_revision_conflict' }]);
+});
+
+test('elsewhere, a port that does not say what it delivered, queued and refused fails the checkpoint before it completes', async () => {
+  for (const answer of [undefined, {}, { delivered: 1, queued: 0 }, { delivered: -1, queued: 0, refused: [] },
+    { delivered: 1, queued: 0, refused: [{ kind: 'capture' }] }]) {
+    const { port } = ownerPort(() => answer);
+    const { personalProjectId, request } = SCENARIOS.globalUnrouted;
+    const { app, calls } = fixture({ personalProjectId, globalWrites: port });
+    await assert.rejects(checkpointTaskKnowledge(app, request), TypeError);
+    assert.deepEqual(named(calls, 'taskContextRegistry.checkpoint'), []);
+  }
 });
 
 test('elsewhere, a checkpoint with nothing for global sends nothing and answers as before', async () => {
@@ -178,8 +190,8 @@ test('elsewhere, a checkpoint with nothing for global sends nothing and answers 
   const answer = await checkpointTaskKnowledge(app, { ...request, knowledgeUsage: undefined,
     captureRouting: [{ scope: 'current_project', entityKeys: ['synthetic-preference', 'synthetic-fact'], relationshipKeys: [] }] });
   assert.deepEqual(sent, []);
-  assert.equal(answer.forHost, undefined);
-  assert.equal(answer.savedHere, undefined);
+  assert.equal(answer.for_host, undefined);
+  assert.equal(answer.saved_here, undefined);
   assert.equal(named(calls, 'captureSessionKnowledge').length, 1);
 });
 

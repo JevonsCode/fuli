@@ -265,7 +265,7 @@ export function createRunnerRoutes({ app, store, hostName, hostFingerprint, with
         }
         if (entry.tool === GLOBAL_WRITES_ENTRY) {
           return inWorkspace(fingerprint)(`runner-replay:${entry.tool}`,
-            () => applyGlobalWrites(app, entry.input, { computer: runnerName() }));
+            () => applyGlobalWrites(app, entry.input, { fingerprint, name: runnerName() }));
         }
         let input = entry.input;
         if (entry.offlineTask) {

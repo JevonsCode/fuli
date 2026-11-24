@@ -267,10 +267,11 @@ export async function checkpointTaskKnowledge(application, {
   const usedOwnerItems = globalElsewhere ? ownerItemsUsed(knowledgeUsage, preparedTask.checkpoint?.knowledgeUsageResult) : [];
   if (usedOwnerItems.length) {
     ownerOps.push(globalWrite(GLOBAL_WRITE_KINDS.knowledgeUsage,
-      { taskId: task.token, sessionId: task.sessionId, items: usedOwnerItems }));
+      { taskId: task.token, sessionId: task.sessionId, sourceApplication, items: usedOwnerItems }));
   }
   // One send per checkpoint, under a key its retries share, so the owner applies it once.
-  const forHost = ownerOps.length ? await application.globalWrites.send({ key: `${task.token}:global`, ops: ownerOps }) : null;
+  const forHost = ownerOps.length
+    ? sentToOwner(await application.globalWrites.send({ key: `${task.token}:global`, ops: ownerOps })) : null;
   const completedTask = await application.taskContextRegistry.checkpoint(taskContextToken, {
     ...checkpoint, captureStatus, ...(savedResults ? { captureResults: savedResults } : {})
   }, sourceApplication);
@@ -292,7 +293,8 @@ export async function checkpointTaskKnowledge(application, {
       sourceSessionId: memoryResult.sourceSessionId, createdAt: memoryResult.createdAt
     } : null,
     // What this computer saved, and how its writes to global fared on their way to the owner.
-    ...(forHost ? { savedHere: (savedResults?.length ?? 0) + (memoryResult?.status === 'checkpointed' ? 1 : 0), forHost } : {})
+    ...(forHost ? { saved_here: (savedResults?.length ?? 0) + (memoryResult?.status === 'checkpointed' ? 1 : 0),
+      for_host: forHost } : {})
   }, completedTask, memoryResult?.status === 'checkpointed' && memoryResult.revision > agentMemory.expectedRevision ? memoryResult : null);
 }
 
@@ -309,6 +311,18 @@ function ownerItemsUsed(knowledgeUsage, usageResult) {
   const held = new Set((usageResult?.items ?? []).filter(item => item.held_by_owner)
     .map(item => `${item.item_kind}:${item.item_id}`));
   return (knowledgeUsage ?? []).filter(item => held.has(`${item.itemKind}:${item.itemId}`));
+}
+
+// The port's answer as the checkpoint repeats it, or a TypeError: a port that
+// answered something else would leave the checkpoint saying nothing about them.
+function sentToOwner(answer) {
+  const count = value => Number.isSafeInteger(value) && value >= 0;
+  if (!answer || typeof answer !== 'object' || !count(answer.delivered) || !count(answer.queued)
+    || !Array.isArray(answer.refused) || answer.refused.some(item => typeof item?.kind !== 'string' || typeof item.code !== 'string')) {
+    throw new TypeError('The global writes port did not say what it delivered, queued and refused');
+  }
+  return { delivered: answer.delivered, queued: answer.queued,
+    refused: answer.refused.map(({ kind, code }) => ({ kind, code })) };
 }
 
 function canonicalCheckpoint(value) {

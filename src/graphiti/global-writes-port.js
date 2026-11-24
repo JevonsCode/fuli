@@ -9,7 +9,8 @@
 //   checkpoint's global writes at once, under a key the same for every retry of
 //   the checkpoint, and gets back { delivered, queued, refused: [{ kind, code }] }:
 //   how many reached the owner and were applied, how many wait to be sent, and
-//   which the owner refused, with its code. A follower's runner injects one.
+//   which the owner refused, with its code (the checkpoint answers it as
+//   for_host, and refuses any other answer). A follower's runner injects one.
 //
 // Each op is { kind, v: 1, input }; kind is one of GLOBAL_WRITE_KINDS. The
 // owner applies each on its own and answers for each (runner/host-global-writes.js).
@@ -18,7 +19,7 @@ export const GLOBAL_WRITE_KINDS = Object.freeze({
   capture: 'capture',
   // input: { agentId, expectedRevision, idempotencyKey, memory, sourceApplication, sourceSessionId }.
   agentMemory: 'agent_memory',
-  // input: { taskId, sessionId, items: [{ itemId, itemKind, useKind }] }.
+  // input: { taskId, sessionId, sourceApplication, items: [{ itemId, itemKind, useKind }] }.
   knowledgeUsage: 'knowledge_usage',
   // input: { recruitmentId, proposedAgentId, profile, occupation, reason, projectName }.
   recruit: 'recruit'

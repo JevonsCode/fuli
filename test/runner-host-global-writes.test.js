@@ -13,7 +13,10 @@ const RUNNER = 'a'.repeat(64);
 const STRANGER = 'c'.repeat(64);
 const SPACE = 'synthetic-space';
 
-function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'created' }) } = {}) {
+// Items this host has: one of global, one of a project; any other id is gone.
+const ITEM_SCOPES = { 'synthetic-item': 'global', 'synthetic-project-item': 'projects' };
+
+function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'created' }), capturing = true } = {}) {
   const calls = [];
   const note = (name, answer) => async (input) => {
     calls.push({ name, input, runner: activeRunnerCaller() });
@@ -21,6 +24,7 @@ function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'c
   };
   const app = {
     config: { personal: { spaceId: SPACE } },
+    getCapturePolicy: () => ({ enabled: capturing }),
     captureSessionKnowledge: note('capture', () => ({ route: 'personal', status: 'committed' })),
     checkpointProjectAgentMemory: note('agent_memory', (input) => {
       if (input.expectedRevision !== 4) {
@@ -29,7 +33,11 @@ function hostApp({ hire = async () => ({ agent_id: 'synthetic-agent', status: 'c
       return { status: 'checkpointed' };
     }),
     recordKnowledgeUsage: note('knowledge_usage', () => ({ recorded_count: 1 })),
-    personal: { hireForFollowerRecruitment: note('recruit', hire) }
+    personal: { hireForFollowerRecruitment: note('recruit', hire),
+      readKnowledgeItemView: note('item_view', ({ itemId }) => {
+        if (!ITEM_SCOPES[itemId]) throw new ProviderRequestError('knowledge item not found', { status: 404, code: 'provider_error' });
+        return { item_id: itemId, scope: { kind: ITEM_SCOPES[itemId], projects: [] } };
+      }) }
   };
   return { app, calls };
 }
@@ -49,7 +57,7 @@ const memoryOp = (expectedRevision) => ({ kind: 'agent_memory', v: 1, input: { a
   idempotencyKey: 'synthetic-task:memory', memory: { summary: 'Synthetic memory' }, sourceApplication: 'codex',
   sourceSessionId: 'synthetic-session' } });
 const usageOp = { kind: 'knowledge_usage', v: 1, input: { taskId: 'synthetic-task', sessionId: 'synthetic-session',
-  items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }] } };
+  sourceApplication: 'codex', items: [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' }] } };
 const recruitOp = { kind: 'recruit', v: 1, input: { recruitmentId: 'synthetic-recruitment', proposedAgentId: 'synthetic-agent',
   profile: { name: 'Synthetic Lead', responsibility: 'Leads the synthetic project' },
   occupation: { role: 'synthetic_role', tags: ['synthetic_tag'] }, reason: 'The project needs a lead',
@@ -69,8 +77,8 @@ test('each op is applied as the runner\'s call and answered on its own; a refuse
     { kind: 'agent_memory', outcome: 'refused', code: 'memory_revision_conflict' },
     { kind: 'knowledge_usage', outcome: 'applied', code: null },
     { kind: 'recruit', outcome: 'applied', code: null }]);
-  assert.deepEqual(calls.map(({ name, runner }) => [name, runner]),
-    [['capture', RUNNER], ['agent_memory', RUNNER], ['knowledge_usage', RUNNER], ['recruit', RUNNER]]);
+  assert.deepEqual(calls.map(({ name, runner }) => [name, runner]), [['capture', RUNNER], ['agent_memory', RUNNER],
+    ['item_view', RUNNER], ['knowledge_usage', RUNNER], ['recruit', RUNNER]]);
   assert.deepEqual(leases, [`runner-replay:${GLOBAL_WRITES_ENTRY}`]);
   // Written to this computer's space, never into a project.
   assert.equal(calls[0].input.personalProjectId, null);
@@ -78,7 +86,7 @@ test('each op is applied as the runner\'s call and answered on its own; a refuse
   assert.deepEqual(calls[1].input, { personalSpaceId: SPACE, personalProjectId: null, agentId: 'synthetic-lead',
     expectedRevision: 3, idempotencyKey: 'synthetic-task:memory', memory: { summary: 'Synthetic memory' },
     sourceApplication: 'codex', sourceSessionId: 'synthetic-session' });
-  assert.deepEqual(calls[2].input, { personalSpaceId: SPACE, taskId: 'synthetic-task', sessionId: 'synthetic-session',
+  assert.deepEqual(calls[3].input, { personalSpaceId: SPACE, taskId: 'synthetic-task', sessionId: 'synthetic-session',
     toolName: 'checkpoint_task_knowledge', items: usageOp.input.items });
 });
 
@@ -141,18 +149,74 @@ test('recruit hands the follower\'s proposed FLA, occupation and origin to the h
     async () => ({ agent_id: 'synthetic-agent', status: 'created' }),
     async () => { throw new ProviderRequestError('Not Found', { status: 404, code: 'provider_error' }); },
     async () => { throw new ProviderRequestError('Agent name taken', { status: 409, code: 'agent_name_taken' }); },
-    async () => { throw new ProviderRequestError('Agent id taken', { status: 409, code: 'agent_id_taken' }); }];
+    async () => { throw new ProviderRequestError('Agent id taken', { status: 409, code: 'agent_id_taken' }); },
+    async () => { throw new ProviderRequestError('Space not found', { status: 404, code: 'space_not_found' }); }];
   const { app, calls } = hostApp({ hire: (input) => answers.shift()(input) });
   const { post } = await host(t, app);
 
   const outcomes = [];
-  for (const id of ['recruit-1', 'recruit-2', 'recruit-3', 'recruit-4']) {
+  for (const id of ['recruit-1', 'recruit-2', 'recruit-3', 'recruit-4', 'recruit-5']) {
     outcomes.push((await post(RUNNER, RUNNER_PATHS.replay, entry(id, [recruitOp]))).body.result.ops[0]);
   }
 
   assert.deepEqual(calls[0].input, { personalSpaceId: SPACE, recruitmentId: 'synthetic-recruitment',
     agentId: 'synthetic-agent', profile: recruitOp.input.profile, occupation: recruitOp.input.occupation,
-    reason: 'The project needs a lead', origin: { computer: 'Runner 0', project: 'Synthetic project' } });
+    reason: 'The project needs a lead', origin: { computer: 'Runner 0', fingerprint: RUNNER.slice(0, 16),
+      project: 'Synthetic project' } });
   assert.deepEqual(outcomes.map(({ outcome, code }) => [outcome, code]),
-    [['applied', null], ['refused', 'host_too_old'], ['refused', 'agent_name_taken'], ['refused', 'agent_id_taken']]);
+    [['applied', null], ['refused', 'host_too_old'], ['refused', 'agent_name_taken'], ['refused', 'agent_id_taken'],
+      ['refused', 'space_not_found']]);
+});
+
+test('a use is recorded only for items of global this host still has; the others are named, never counted', async (t) => {
+  const { app, calls } = hostApp();
+  const { post } = await host(t, app);
+  const items = [{ itemId: 'synthetic-item', itemKind: 'entity', useKind: 'applied' },
+    { itemId: 'synthetic-item', itemKind: 'entity', useKind: 'referenced' },
+    { itemId: 'synthetic-project-item', itemKind: 'entity', useKind: 'applied' },
+    { itemId: 'synthetic-gone-item', itemKind: 'relationship', useKind: 'applied' }];
+
+  const mixed = await post(RUNNER, RUNNER_PATHS.replay, entry('usage-1', [{ ...usageOp, input: { ...usageOp.input, items } }]));
+  const none = await post(RUNNER, RUNNER_PATHS.replay, entry('usage-2', [{ ...usageOp, input: { ...usageOp.input,
+    items: items.slice(2) } }]));
+
+  assert.deepEqual(mixed.body.result.ops, [{ kind: 'knowledge_usage', outcome: 'applied', code: null, skipped: [
+    { itemKind: 'entity', itemId: 'synthetic-project-item', reason: 'not_global' },
+    { itemKind: 'relationship', itemId: 'synthetic-gone-item', reason: 'not_found' }] }]);
+  assert.deepEqual(none.body.result.ops, [{ kind: 'knowledge_usage', outcome: 'refused', code: 'no_global_items', skipped: [
+    { itemKind: 'entity', itemId: 'synthetic-project-item', reason: 'not_global' },
+    { itemKind: 'relationship', itemId: 'synthetic-gone-item', reason: 'not_found' }] }]);
+  const recorded = calls.filter(({ name }) => name === 'knowledge_usage');
+  assert.equal(recorded.length, 1);
+  assert.deepEqual(recorded[0].input.items, items.slice(0, 2));
+  // One look per item, however many uses of it were reported.
+  assert.equal(calls.filter(({ name }) => name === 'item_view').length, 5);
+});
+
+test('a use is not recorded while this host records nothing automatically for that client', async (t) => {
+  const { app, calls } = hostApp({ capturing: false });
+  const { post } = await host(t, app);
+
+  const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('usage-3', [usageOp]));
+
+  assert.deepEqual(answer.body.result.ops, [{ kind: 'knowledge_usage', outcome: 'refused', code: 'capture_disabled' }]);
+  assert.deepEqual(calls, []);
+});
+
+test('a recruitment with malformed ids, profile, occupation or text is refused as invalid before the hire', async (t) => {
+  const { app, calls } = hostApp();
+  const { post } = await host(t, app);
+  const bad = [{ recruitmentId: '' }, { proposedAgentId: 'x'.repeat(257) }, { profile: 'Synthetic' },
+    { profile: { notes: 'x'.repeat(17 * 1024) } }, { occupation: ['synthetic_role'] }, { reason: 'x'.repeat(2001) },
+    { projectName: 42 }];
+
+  const answer = await post(RUNNER, RUNNER_PATHS.replay, entry('recruit-bad', [
+    ...bad.map(change => ({ ...recruitOp, input: { ...recruitOp.input, ...change } })),
+    { ...recruitOp, input: { ...recruitOp.input, projectName: 'Synthetic\u0007\nproject', reason: ' The\tproject  needs a lead ' } }]));
+
+  assert.deepEqual(answer.body.result.ops.map(({ outcome, code }) => [outcome, code]),
+    [...bad.map(() => ['refused', 'invalid_input']), ['applied', null]]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.origin.project, 'Synthetic project');
+  assert.equal(calls[0].input.reason, 'The project needs a lead');
 });
