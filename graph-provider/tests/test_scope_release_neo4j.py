@@ -13,8 +13,10 @@ import pytest
 
 from fuli_graph.provider_values import graphiti_group_id
 from test_follower_space_neo4j import (  # noqa: F401
-    alone, follower_settings, host_global, no_personal_space, snapshot, strict, take_space,
+    HABIT, alone, follower_settings, host_global, no_personal_space, snapshot, strict, take_space,
 )
+from test_ai_review_neo4j import _commit_project_entity
+from test_replica_write_guard_neo4j import personal_tag, episode
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_replica_recruitment_owner_neo4j import LOCAL, follower_with_local_project
 from test_scope_export_neo4j import checked, cleanup
@@ -52,7 +54,7 @@ async def own_project(driver, space_id):
 @pytest.mark.asyncio
 async def test_a_release_keeps_the_copies_its_project_points_at_and_lets_the_rest_go(alone, strict):  # noqa: F811
     settings = fixture_settings()
-    space_id, envelope = await host_global(settings)
+    space_id, envelope = await host_global(settings, seed=personal_tag)
     group = graphiti_group_id(settings.provider_id, 'personal', space_id)
     async with provider_client(follower_settings()) as (client, _):
         driver = await no_personal_space(client)
@@ -62,6 +64,26 @@ async def test_a_release_keeps_the_copies_its_project_points_at_and_lets_the_res
                 'personal_space_id': space_id, 'personal_project_id': LOCAL, 'agent_id': 'scope-lead',
                 'idempotency_key': f'assign-{uuid4()}', 'responsibility': 'Keep the sample.',
                 'work_kinds': ['implementation'], 'capabilities': ['coding'], 'reason': 'Synthetic staffing.'}))
+            tag = next(n['properties']['id'] for n in envelope['nodes'] if
+                       n['properties'].get('name') == 'Synthetic language' and 'FuliKnowledgeTag' in n['labels'])
+            scope = {'personal_space_id': space_id, 'personal_project_id': LOCAL}
+            item = await _commit_project_entity(client, space_id, LOCAL, 'release-item',
+                                                name='Synthetic ledger', summary='A project record.')
+            await checked(await client.post('/v1/knowledge-tags/attach', json={
+                **scope, 'tag_id': tag, 'item_kind': 'entity', 'item_id': item}))
+            # A project preference and the inherited global habit it has to
+            # reconcile. Conflict members are named only by kind and UUID.
+            local = episode('project-habit', habit=True)
+            await checked(await client.post('/v1/knowledge/commits', json={
+                'space_id': space_id, 'personal_project_id': LOCAL, 'episode': local}))
+            await driver.execute_query("""
+                MATCH (s:FuliSpace {id: $space}), (p:Entity {group_id: $group, name: $name})
+                CREATE (s)-[:HAS_PREFERENCE_CONFLICT]->(:FuliPreferenceConflict {
+                    id: $id, personal_space_id: $space, preference_project_id: $project,
+                    left_item_kind: 'entity', left_item_id: p.uuid, right_item_kind: 'entity',
+                    right_item_id: $global_item})
+                """, space=space_id, group=group, name=local['entities'][0]['name'], project=LOCAL,
+                id=f'{space_id}-local-conflict', global_item=f'{space_id}-pref-global')
             own = await own_project(driver, space_id)
             assert (await copies(driver))[0] > 0
             released = await release(client, space_id)
@@ -78,6 +100,12 @@ async def test_a_release_keeps_the_copies_its_project_points_at_and_lets_the_res
             assert agents.get('scope-lead') == [], 'the staffed FLA stays, its own now'
             assert 'scope-writer' not in agents, 'a copy nothing here points at goes'
             assert await own_project(driver, space_id) == own
+            prefs = await checked(await client.get('/v1/collaboration-preferences', params=scope))
+            assert HABIT in str(prefs)
+            tags, _, _ = await driver.execute_query(
+                'MATCH (t:FuliKnowledgeTag {id: $tag})-[:TAGS]->(l:FuliKnowledgeTagLink {item_id: $item}) '
+                'RETURN t.name AS name', tag=tag, item=item)
+            assert [row['name'] for row in tags] == ['Synthetic language']
             assigned = await checked(await client.get('/v1/project-agent-assignments', params={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL}))
             assert [item['agent_id'] for item in assigned] == ['scope-lead']

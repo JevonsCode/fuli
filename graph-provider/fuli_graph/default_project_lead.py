@@ -74,7 +74,7 @@ class StoreDefaultProjectLead:
                 status='unassigned',
                 reason=RECRUITMENT_ON_OWNER if waiting else routed.task.routing_reason or 'staffing_unavailable',
             )
-        await close_default_lead_task(self, actor, routed.task, lead, submit.idempotency_key)
+        await close_default_lead_task(self, actor, routed.task, lead, submit.idempotency_key, request.source_application)
         return ProjectAgentContextResolution(
             status='ready', reason='default_project_lead',
             match_basis=['AR hired the project lead for its first task'],
@@ -82,7 +82,7 @@ class StoreDefaultProjectLead:
         )
 
 
-async def close_default_lead_task(store, actor, task, lead, idempotency_key):
+async def close_default_lead_task(store, actor, task, lead, idempotency_key, source_application):
     """The staffing task of a hired default lead is done once the lead is there:
     it runs and completes in the lead's name, so it never waits on the board."""
     for status, summary in (('running', '接任项目负责人'), ('completed', f'{lead.profile.name} 已接任项目负责人')):
@@ -97,7 +97,7 @@ async def close_default_lead_task(store, actor, task, lead, idempotency_key):
                 status=status,
                 summary=summary,
                 agent_id=lead.agent_id,
-                source_application=task.source_application or 'other',
+                source_application=source_application,
             ))
         except HTTPException as error:
             # The hire already succeeded; a closed staffing record is cosmetic.

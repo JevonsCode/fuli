@@ -15,12 +15,15 @@ is called by (the person cancels that recruitment and recruits again). No
 recruitment record is made here: the recruitment is the follower's project's.
 """
 from typing import Literal
+from unicodedata import category
 
 from fastapi import HTTPException
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
 from .model_base import StrictModel
+from .models import SourceApplication
+from .name_identity import display_name
 from .project_agent_employee_numbers import EMPLOYEE_NUMBER_LOCK
 from .project_agent_models import ProjectAgentProfile, ProjectAgentRecord, ProjectAgentUpsert
 from .project_agent_occupation_models import ProjectAgentOccupationInput
@@ -40,6 +43,8 @@ class OwnerHireRequest(StrictModel):
     # The follower's recruitment and the agent_id it proposed (both stable_uuid under the shared provider_id).
     recruitment_id: str = Field(min_length=1, max_length=128)
     agent_id: str = Field(min_length=1, max_length=128)
+    task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    recruitment_source_application: SourceApplication | None = None
     profile: ProjectAgentProfile
     occupation: ProjectAgentOccupationInput
     reason: str = Field(min_length=1, max_length=2048)
@@ -56,7 +61,17 @@ class OwnerHireRequest(StrictModel):
         # The coordinator and HR types belong to the fixed roles alone.
         if profile.agent_type not in ('durable', 'temporary'):
             raise ValueError('a hire is a durable or temporary FLA')
+        if profile.status != 'active' or profile.test_source is not None or profile.cleanup_eligible:
+            raise HTTPException(422, {'code': 'invalid_hire_profile',
+                                      'message': 'An owner hire requires an active, non-test FLA.'})
         return profile
+
+    @model_validator(mode='after')
+    def temporary_task_required(self):
+        if self.profile.agent_type == 'temporary' and not (self.task_id or '').strip():
+            raise HTTPException(422, {'code': 'temporary_task_required',
+                                      'message': 'A temporary FLA needs the task it belongs to.'})
+        return self
 
 
 class OwnerHireResult(StrictModel):
@@ -67,7 +82,8 @@ class OwnerHireResult(StrictModel):
 def _origin(request: OwnerHireRequest) -> str:
     """Where the recruitment came from, kept in the FLA's recruitment reason (no field of its own)."""
     computer = request.origin_computer + (f'（{request.origin_fingerprint}）' if request.origin_fingerprint else ' ')
-    return f'来自 {computer}的项目 {request.origin_project} 的招聘：{request.reason}'[:4096]
+    origin = f'来自 {computer}的项目 {request.origin_project} 的招聘：{request.reason}'
+    return display_name(''.join(' ' if category(char) in {'Cc', 'Cf', 'Cs'} else char for char in origin))[:4096]
 
 
 async def hire_for_owner_recruitment(store, actor, request: OwnerHireRequest) -> OwnerHireResult:
@@ -81,11 +97,14 @@ async def hire_for_owner_recruitment(store, actor, request: OwnerHireRequest) ->
     async with query_store_transaction(store) as scoped:
         held = await _held_agent(scoped, request)
         if held is not None:
-            if held != request.recruitment_id:
+            if held['recruitment_id'] != request.recruitment_id:
                 raise HTTPException(409, {
                     'code': 'agent_id_taken',
                     'message': f'Another FLA already has agent_id {request.agent_id}; this recruitment cannot '
                                'make it. Nothing was written. 这个 agent_id 已属于另一位 FLA，没有建。'})
+            if held['status'] == 'archived':
+                raise HTTPException(409, {'code': 'agent_archived',
+                                          'message': 'The FLA made for this recruitment has been archived.'})
             created = False
         else:
             await require_active_occupations(scoped, request.personal_space_id,
@@ -114,8 +133,8 @@ async def _authorized(store, actor, personal_space_id) -> None:
         raise HTTPException(error.status_code, {'code': code, 'message': str(error.detail)}) from None
 
 
-async def _held_agent(scoped, request) -> str | None:
-    """None when no FLA holds the agent_id yet, else the recruitment it was made for ('' for none).
+async def _held_agent(scoped, request) -> dict | None:
+    """None when no FLA holds the agent_id yet, else its recruitment and current status.
     Under the space's employee-number lock, which every FLA's creation takes, so two
     hires of one agent_id never both find it free."""
     records, _, _ = await scoped.runtime.driver.execute_query(
@@ -123,18 +142,18 @@ async def _held_agent(scoped, request) -> str | None:
         MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
         ''' + EMPLOYEE_NUMBER_LOCK + '''
         OPTIONAL MATCH (agent:FuliProjectAgent {id: $id})
-        RETURN agent IS NOT NULL AS found, coalesce(agent.recruitment_id, '') AS recruitment_id
+        RETURN agent IS NOT NULL AS found, agent.status AS status, coalesce(agent.recruitment_id, '') AS recruitment_id
         ''',
         personal_space_id=request.personal_space_id,
         id=stable_uuid(scoped.settings.provider_id, request.personal_space_id, 'project-agent', request.agent_id),
     )
-    return records[0]['recruitment_id'] if records[0]['found'] else None
+    return dict(records[0]) if records[0]['found'] else None
 
 
 async def _record_hire(scoped, request) -> None:
     """What a single computer writes on its FLA when it finishes a hire
     (store_recruitment_fulfillment.py), written by the owner as it makes the FLA.
-    The client and the task of the recruitment are the follower's: not named here."""
+    A temporary FLA keeps the task binding it needs on the follower."""
     await scoped.runtime.driver.execute_query(
         '''
         MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-[:HAS_PROJECT_AGENT_IDENTITY]->
@@ -145,12 +164,15 @@ async def _record_hire(scoped, request) -> None:
             agent.occupation_recruitment_id = $recruitment_id,
             agent.recruitment_id = $recruitment_id,
             agent.recruited_at = $updated_at,
-            agent.recruitment_reason = $recruitment_reason
+            agent.recruitment_reason = $recruitment_reason,
+            agent.recruitment_source_application = $source_application,
+            agent.temporary_task_id = $temporary_task_id
         ''',
         personal_space_id=request.personal_space_id, agent_id=request.agent_id,
         occupation_role=request.occupation.role, occupation_tags=request.occupation.tags,
         recruitment_id=request.recruitment_id, recruitment_reason=_origin(request),
-        updated_at=now_utc(),
+        updated_at=now_utc(), source_application=request.recruitment_source_application,
+        temporary_task_id=request.task_id if request.profile.agent_type == 'temporary' else None,
     )
 
 

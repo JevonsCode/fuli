@@ -21,7 +21,7 @@ from test_follower_space_neo4j import (  # noqa: F401
 )
 from test_project_agent_memory_neo4j import fixture_settings, provider_client
 from test_replica_recruitment_owner_neo4j import (
-    LOCAL, ON_OWNER, copy_digest, follower_with_local_project, staff_lead,
+    LOCAL, ON_OWNER, copy_digest, follower_with_local_project, staff_lead, verify_and_finish,
 )
 from test_replica_write_guard_neo4j import REVIEW, episode, personal_tag
 from test_scope_export_neo4j import checked, cleanup
@@ -130,10 +130,11 @@ async def test_a_followers_own_project_works_and_its_copy_of_global_stays(alone,
                     'idempotency_key': f'jefa-task-{suffix}:{status}', 'status': status,
                     'summary': f'Synthetic {status}.', 'agent_id': 'scope-lead', 'source_application': 'codex'}))
             assert task['status'] == 'awaiting_review'
-            await unchanged('a task Jefa coordinates')
+            await verify_and_finish(client, {'personal_space_id': space_id, 'personal_project_id': LOCAL}, task)
+            await unchanged('a verified and completed task Jefa coordinates')
 
             # A task that needs a new FLA waits for the host to make it.
-            hire =await checked(await client.post('/v1/project-agent-tasks', json={
+            hire = await checked(await client.post('/v1/project-agent-tasks', json={
                 'personal_space_id': space_id, 'personal_project_id': LOCAL,
                 'idempotency_key': f'hire-{suffix}', 'title': 'Synthetic new specialist',
                 'objective': 'Hire a specialist for the sample.', 'work_kind': 'verification',

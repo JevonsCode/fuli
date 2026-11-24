@@ -46,13 +46,22 @@ async def test_the_owner_makes_the_fla_once_with_where_its_recruitment_came_from
         await no_personal_space(client)
         driver, space, group = await scenario(client)
         try:
-            made = await checked(await client.post('/v1/project-agents/owner-hire', json=hire(space)))
+            profile = {**hire(space)['profile'], 'agent_type': 'temporary'}
+            payload = hire(space, profile=profile, task_id='synthetic-task', recruitment_source_application='codex',
+                           origin_computer='Synthetic\n\x00laptop')
+            await refused(client, hire(space, profile=profile), 422, 'temporary_task_required')
+            for invalid in ({'status': 'archived'}, {'test_source': 'fixture'}, {'cleanup_eligible': True}):
+                await refused(client, hire(space, profile={**hire(space)['profile'], **invalid}),
+                              422, 'invalid_hire_profile')
+            made = await checked(await client.post('/v1/project-agents/owner-hire', json=payload))
             assert made['outcome'] == 'created'
             agent = made['agent']
             assert agent['agent_id'] == PROPOSED and agent['profile']['status'] == 'active'
             records, _, _ = await driver.execute_query(
                 'MATCH (a:FuliProjectAgent {agent_id: $id}) RETURN properties(a) AS p', id=PROPOSED)
             stored = records[0]['p']
+            assert stored['temporary_task_id'] == 'synthetic-task'
+            assert stored['recruitment_source_application'] == 'codex'
             assert stored['system_managed'] is False
             assert (stored['recruitment_id'], stored['occupation_recruitment_id']) == ('synthetic-recruitment',) * 2
             assert stored['occupation_role'] == 'engineering' and stored['recruited_at'] is not None
@@ -84,6 +93,8 @@ async def test_the_owner_makes_the_fla_once_with_where_its_recruitment_came_from
                 'agent_name_taken')
             await refused(client, hire(space, agent_id='synthetic-unknown', recruitment_id='r5',
                                        occupation={'role': 'custom_missing', 'tags': []}), 422, None)
+            await driver.execute_query("MATCH (a:FuliProjectAgent {id: $id}) SET a.status = 'archived'", id=stored['id'])
+            await refused(client, payload, 409, 'agent_archived')
             for agent_id in ('synthetic-namesake', 'synthetic-unknown', 'synthetic-coordinator'):
                 response = await client.get(f'/v1/project-agents/{agent_id}', params={'personal_space_id': space})
                 assert response.status_code == 404, agent_id

@@ -41,6 +41,18 @@ async def release_copies(store, actor, personal_space_id: str, owner: str) -> di
                 'message': f'This computer keeps no copy of computer {owner[:16]}; nothing to release. '
                            '这台电脑没有那台电脑的副本，没有可释放的。'})
         kept = await held_here(transaction, nodes)
+        # An audit, tag link or preference conflict can name a knowledge item
+        # by its property ID alone. Use the same lookup the export uses for
+        # external references. A referenced fact also needs both of its ends.
+        named = set()
+        for element, node in classification.nodes.items():
+            if not node.properties.get(OWNER):
+                classification.node_scopes(element)
+                named.update(classification.references.get(element, ()))
+        kept.update(named & nodes)
+        for relationship in classification.relationships:
+            if relationship.element_id in named:
+                kept.update(nodes.intersection((relationship.start, relationship.end)))
         gone = nodes - kept
         kept_links = [element for element, start, end in links if start not in gone and end not in gone]
         await _each(transaction, f'MATCH (item) WHERE elementId(item) = element REMOVE {_MARKER}', kept)
