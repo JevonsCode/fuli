@@ -1,4 +1,6 @@
 import { DataFormatError } from '../../packages/roundtable/src/storage/data-format-error.js';
+import { ApplicationError } from '../app/application-error.js';
+import { restartingJobError, runningJob } from '../system/restarting-jobs.js';
 import { backupRetentionPolicy, pruneFormatBackups } from './backup-retention.js';
 import { pruneFormatRetention } from './format-retention.js';
 import { GRAPH_LABEL, localStore, localStoresWithEngines, previewMigrations } from './migration-plan.js';
@@ -182,6 +184,31 @@ export function dataFormatMigrations(dataDir, { graph, restore = null, graphBack
     try { return { active: listAppliedFormatNotices(dataDir, readFormatOperations(dataDir), now().getTime()) }; }
     catch { return { active: [], unavailable: true }; }
   };
+  // A graph backup is the one from before the confirmation only if the graph
+  // step waits when it starts and is neither confirmed nor undone until it is
+  // done. In this console: a confirmation or undo under way refuses a backup,
+  // and a backup or graph restore starting or running refuses both.
+  let changes = 0;
+  let backupStarting = false;
+  async function changeFormat(operation) {
+    const running = backupStarting ? 'graph_backup_running' : runningJob(dataDir, 'graph');
+    if (running) throw restartingJobError(running, 'confirm or undo');
+    changes += 1;
+    try { return await operation(); } finally { changes -= 1; }
+  }
+  const backup = graphBackup && { ...graphBackup, async startBackup({ version }) {
+    if (backupStarting) throw restartingJobError('graph_backup_running', 'start this');
+    backupStarting = true;
+    try {
+      const { stores } = await previewMigrations({ dataDir, graph });
+      const waiting = stores.find((store) => store.label === GRAPH_LABEL)?.step?.toVersion;
+      if (changes || waiting !== version) {
+        throw new ApplicationError('graph_backup_not_waiting', `The graph step to data format ${version} no longer waits for `
+          + 'a confirmation, so a backup now would not hold the graph from before it. Nothing was stopped.', { status: 409 });
+      }
+      return await graphBackup.startBackup({ version });
+    } finally { backupStarting = false; }
+  } };
   return {
     // With the retention budget, so the console says the one `fuli migrate prune` uses.
     preview: async () => ({ ...await previewMigrations({ dataDir, graph }), retention: retentionPolicyOrNull(), notice: notice() }),
@@ -189,13 +216,13 @@ export function dataFormatMigrations(dataDir, { graph, restore = null, graphBack
       dismissAppliedFormatNotices(dataDir, readFormatOperations(dataDir), ids, now().getTime());
       return { notice: notice() };
     },
-    apply: ({ digest, actor }) => applyMigrations({ dataDir, digest, actor, graph }),
-    rollback: ({ label, migrationId, actor }) => rollbackMigration({ dataDir, label, migrationId, actor, graph }),
+    apply: ({ digest, actor }) => changeFormat(() => applyMigrations({ dataDir, digest, actor, graph })),
+    rollback: ({ label, migrationId, actor }) => changeFormat(() => rollbackMigration({ dataDir, label, migrationId, actor, graph })),
     // The person's check of a graph prune whose answer never came: the same
     // prune `fuli migrate prune` runs, within the same budget.
     retain: () => retainQuietly(pruneFormatRetention, dataDir, graph, now),
     restore,
-    graphBackup,
+    graphBackup: backup,
     // When the console starts: resolve interrupted changes, keep backups within the policy.
     prune: () => {
       try {

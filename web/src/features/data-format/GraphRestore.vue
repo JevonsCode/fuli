@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -21,7 +21,8 @@ import { useGraphBackupJob } from './useGraphBackupJob'
 // `fuli graph import` runs (it keeps a copy of the graph as it is first).
 const props = defineProps<{ version: number }>()
 // restored: what to say once it is back; the page reads its plan again, which drops this entry.
-const emit = defineEmits<{ restored: [message: string] }>()
+// busy: FULI is stopped for it, so the page holds the undo back.
+const emit = defineEmits<{ restored: [message: string]; busy: [running: boolean] }>()
 const backup = ref<GraphBackupCopy | null>(null)
 const loaded = ref(false)
 const confirming = ref(false)
@@ -31,6 +32,8 @@ const job = useGraphBackupJob(() => props.version, (finished) => {
   if (finished.status === 'done') emit('restored', t('dataFormat.graphRestore.done', { time: time(finished.backup?.createdAt ?? '') }))
 })
 const { running, outcome, notBack, refusal } = job
+watch(running, value => emit('busy', value !== null), { immediate: true })
+onBeforeUnmount(() => emit('busy', false))
 const refused = computed(() => refusal.value && graphRefusal(refusal.value, 'graphRestore'))
 
 function restore() {
@@ -66,6 +69,7 @@ onMounted(async () => {
         <Checkbox id="graph-restore-understood" v-model="understood" />
         <Label for="graph-restore-understood">{{ t('dataFormat.graphRestore.understand', { time: time(backup.createdAt) }) }}</Label>
       </div>
+      <p class="graph-restore-local" data-graph-restore-local>{{ t('dataFormat.graphRestore.local') }}</p>
       <div class="graph-restore-actions">
         <Button variant="destructive" size="sm" :disabled="!understood" data-graph-restore-start @click="restore">
           {{ t('dataFormat.graphRestore.confirm') }}
@@ -101,6 +105,7 @@ onMounted(async () => {
 <style scoped>
 .graph-restore { display: grid; gap: 8px; flex-basis: 100%; justify-items: start; }
 .graph-restore-confirm { display: grid; gap: 8px; }
+.graph-restore-local { margin: 0; color: var(--color-muted); font-size: 14px; line-height: 1.6; }
 .graph-restore-check { display: flex; align-items: flex-start; gap: 10px; }
 .graph-restore-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 </style>

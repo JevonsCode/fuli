@@ -9,7 +9,8 @@ export function graphJobLabel(job: GraphBackupJob): string {
   return t(`dataFormat.${area}.steps.${job.step ?? 'preparing'}`)
 }
 
-const REFUSALS = new Set(['graph_import_unfinished', 'graph_lifecycle_locked', 'graph_backup_no_space', 'graph_backup_unknown'])
+const REFUSALS = new Set(['graph_import_unfinished', 'graph_lifecycle_locked', 'graph_backup_no_space', 'graph_backup_unknown',
+  'graph_backup_not_waiting', 'graph_backup_running', 'graph_restore_running', 'format_restore_running', 'update_running'])
 
 // A start the server refused: from another computer (where to do it instead),
 // for a reason the page words, or the server's own text.

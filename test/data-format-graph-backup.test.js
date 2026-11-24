@@ -7,6 +7,9 @@ import test from 'node:test';
 import { markUnfinishedImport } from '../src/backup/unfinished-import.js';
 import { runGraphDataCommand } from '../src/cli/graph-data-command.js';
 import { consoleGraphBackup, runConsoleGraphBackup } from '../src/data-format/console-graph-backup.js';
+import { consoleRestore } from '../src/data-format/console-restore.js';
+import { dataFormatMigrations } from '../src/data-format/migration-operations.js';
+import { consoleUpdate } from '../src/system/console-update.js';
 import { acquireNeo4jLifecycleLock } from '../src/native-runtime/neo4j-lifecycle-lock.js';
 import { resolveSetupPaths } from '../src/setup/paths.js';
 import { DEFAULT_RUNTIME_SETTINGS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
@@ -100,6 +103,8 @@ test('the worker exports with FULI stopped, records each step, starts FULI again
   const done = backup.status();
   assert.deepEqual([done.status, done.started, done.error], ['done', true, null]);
   assert.ok(existsSync(join(paths.graphBackupDir, NAME, 'manifest.json')));
+  assert.deepEqual(JSON.parse(readFileSync(join(paths.graphBackupDir, NAME, 'format-step.json'), 'utf8')),
+    { formatVersion: 23, beforeConfirmation: true }, 'the backup says which waiting step it was taken before; the manifest is untouched');
   const view = await backup.read(23);
   assert.deepEqual([view.latest.name, view.latest.createdAt], [NAME, '2026-11-24T08:00:00.000Z']);
   assert.ok(view.latest.bytes > 0);
@@ -133,6 +138,12 @@ test('a restore takes only a backup this page lists, runs the same import, and a
   writeFileSync(join(folder, 'manifest.json'), JSON.stringify({ format: 'fuli-neo4j-backup', version: 1, createdAt: '2026-11-24T08:00:00.000Z',
     sourceMode: 'native', instances: [{ id: 'personal', file: 'personal.dump', sha256: 'a'.repeat(64) }] }));
   const revealed = [];
+  // Without the note the worker leaves once a backup taken while the step waited is whole, it is not offered.
+  await assert.rejects(port(root).startRestore({ version: 23, name: NAME }), error => error.code === 'graph_backup_unknown');
+  assert.equal((await port(root).read(23)).latest, null);
+  writeFileSync(join(folder, 'format-step.json'), JSON.stringify({ formatVersion: 22, beforeConfirmation: true }));
+  assert.equal((await port(root).read(23)).latest, null, 'a note for another version does not count');
+  writeFileSync(join(folder, 'format-step.json'), JSON.stringify({ formatVersion: 23, beforeConfirmation: true }));
   const backup = port(root, { spawnWorker: fakeWorker([]), reveal: async path => { revealed.push(path); return { revealed: true }; } });
   await assert.rejects(backup.startRestore({ version: 23, name: 'before-import-2026-11-24T08-00-00-000Z-a' }), error => error.code === 'graph_backup_unknown');
   await assert.rejects(backup.startRestore({ version: 23, name: '../elsewhere' }), error => error.code === 'graph_backup_unknown');
@@ -150,4 +161,77 @@ test('a restore takes only a backup this page lists, runs the same import, and a
   } });
   assert.deepEqual(run, [['import', ['--input', folder, '--data-dir', root, '--yes']]]);
   assert.equal(backup.status().status, 'done');
+});
+
+// The console's port: the graph step as previewed, and FULI's stop and start never reached.
+const waitingGraph = (toVersion) => ({ preview: async () => ({ undoable: [], plan: toVersion === null ? null
+  : { store: 'graph', kind: 'neo4j', action: 'apply', digest: 'd'.repeat(64), step: { id: `graph/${toVersion}-x`, toVersion } } }) });
+
+test('a backup starts only while the graph step waits for that version, and nothing confirms or undoes while it runs', async (t) => {
+  const { root } = dataDir(t);
+  const spawned = [];
+  const graphBackup = port(root, { spawnWorker: fakeWorker(spawned) });
+  let graph = waitingGraph(23);
+  const migrations = () => dataFormatMigrations(root, { graph: { preview: () => graph.preview() }, graphBackup });
+
+  // Confirmed in another window, or a page left open on another version: refused, nothing stopped.
+  graph = waitingGraph(null);
+  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }),
+    error => error.code === 'graph_backup_not_waiting' && error.status === 409 && /no longer waits/.test(error.message));
+  graph = waitingGraph(24);
+  await assert.rejects(migrations().graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_backup_not_waiting');
+  assert.equal(spawned.length, 0);
+
+  graph = waitingGraph(23);
+  const port_ = migrations();
+  const started = await port_.graphBackup.startBackup({ version: 23 });
+  assert.equal(started.status, 'running');
+  // Within the worker's grace second, or from another window: the confirmation and the undo wait for it.
+  await assert.rejects(port_.apply({ digest: 'd'.repeat(64), actor: { entrypoint: 'http' } }),
+    error => error.code === 'graph_backup_running' && error.status === 409 && /confirm or undo once it is done/.test(error.message));
+  await assert.rejects(port_.rollback({ label: 'graph (personal)', migrationId: 'graph/23-x', actor: { entrypoint: 'http' } }),
+    error => error.code === 'graph_backup_running');
+});
+
+test('a confirmation under way refuses a backup that would start beside it', async (t) => {
+  const { root } = dataDir(t);
+  const spawned = [];
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  let previews = 0;
+  // The first preview is the apply's own: it holds the apply open while the backup is asked for.
+  const graph = { preview: async () => { previews += 1; if (previews === 1) await held; return waitingGraph(23).preview(); } };
+  const port_ = dataFormatMigrations(root, { graph, graphBackup: port(root, { spawnWorker: fakeWorker(spawned) }) });
+  const applying = port_.apply({ digest: 'e'.repeat(64), actor: { entrypoint: 'http' } }).catch(error => error);
+  await assert.rejects(port_.graphBackup.startBackup({ version: 23 }), error => error.code === 'graph_backup_not_waiting');
+  release();
+  await applying;
+  assert.equal(spawned.length, 0);
+});
+
+test('a second backup asked for while one runs follows it; a restore, a store restore or an update waits for it, and it for them', async (t) => {
+  const { root } = dataDir(t);
+  const spawned = [];
+  const backup = port(root, { spawnWorker: fakeWorker(spawned) });
+  const first = await backup.startBackup({ version: 23 });
+  const second = await backup.startBackup({ version: 23 });
+  assert.deepEqual([second.id, second.joined, spawned.length], [first.id, true, 1], 'the later tab follows the same job');
+  const journal = join(root, 'format-graph-backup.json');
+  const running = JSON.parse(readFileSync(journal, 'utf8'));
+  writeFileSync(journal, JSON.stringify({ ...running, workerPid: process.pid }));
+
+  // The jobs that already stopped and started FULI wait for the graph's.
+  await assert.rejects(Promise.resolve().then(() => consoleRestore(root, { stores: () => [] }).start({ label: 'x', backupRef: 'y', currentDigest: null })),
+    error => error.code === 'graph_backup_running' && error.status === 409 && /The graph is being backed up/.test(error.message));
+  assert.throws(() => consoleUpdate(root, { platform: 'linux' }).start(), error => error.code === 'graph_backup_running');
+
+  // And the graph's waits for them, naming the one that runs.
+  rmSync(journal);
+  const pid = { workerPid: process.pid, startedAt: NOW, id: 'other' };
+  writeFileSync(join(root, 'format-restore.json'), JSON.stringify({ ...pid, status: 'restoring' }));
+  await assert.rejects(backup.startBackup({ version: 23 }), error => error.code === 'format_restore_running' && /A store is being restored/.test(error.message));
+  rmSync(join(root, 'format-restore.json'));
+  writeFileSync(join(root, 'console-update.json'), JSON.stringify({ ...pid, status: 'updating' }));
+  await assert.rejects(backup.startBackup({ version: 23 }), error => error.code === 'update_running' && /FULI is being updated/.test(error.message));
+  assert.equal(spawned.length, 1);
 });

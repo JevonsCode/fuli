@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
   applyMigrationPlan, dismissMigrationNotices, moreRecords, pruneAgain, pruneAuditError, pruneCheckOutcome, pruneUnverified, readMigrationPlan, refusalCode,
-  refusalMessage, sampleChips, shortDigest, undoMigration, UNDO_NEEDS_RESTORE, type ApplyOutcome, type MigrationPlan, type MigrationResult,
+  GRAPH_JOB_RUNNING, refusalMessage, sampleChips, shortDigest, undoMigration, UNDO_NEEDS_RESTORE, type ApplyOutcome, type MigrationPlan, type MigrationResult,
   type UndoableMigration,
 } from '@/features/data-format/model'
 import GraphBackup from '@/features/data-format/GraphBackup.vue'
@@ -31,7 +31,8 @@ const loading = ref(true)
 const loadError = ref('')
 const reviewed = ref(false)
 const applying = ref(false)
-const stale = ref(false)
+// Why the plan was read again: it changed under a confirmation, or the graph step was confirmed elsewhere.
+const stale = ref<false | 'apply' | 'backup'>(false)
 const applyError = ref('')
 const outcome = ref<ApplyOutcome | null>(null)
 const dismissingNotice = ref<string | null>(null)
@@ -61,6 +62,12 @@ const warnings = computed(() => stores.value.filter(store => store.warning))
 // undo of a graph step offers restoring that backup (GraphRestore).
 const graphStep = computed(() => stores.value.find(store => store.kind === 'neo4j')?.step ?? null)
 const restoreFor = ref<UndoableMigration | null>(null)
+// A graph backup or restore stops FULI: nothing is confirmed or undone until it is done.
+const backingUp = ref(false)
+const restoring = ref(false)
+const graphBusy = computed(() => backingUp.value || restoring.value)
+// A confirmation or undo the server refused because a graph backup or restore runs, in the page's words.
+const refusedText = (cause: unknown) => GRAPH_JOB_RUNNING.has(refusalCode(cause) ?? '') ? t('dataFormat.graphBusy') : refusalMessage(cause)
 const retention = computed(() => {
   const policy = plan.value?.retention
   return policy ? { keep: policy.keep, megabytes: Math.round(policy.maxBytes / (1024 * 1024)) } : null
@@ -98,10 +105,10 @@ async function apply() {
     await load()
   } catch (cause) {
     if (refusalCode(cause) === 'data_format_stale_preview') {
-      stale.value = true
+      stale.value = 'apply'
       await load()
     } else {
-      applyError.value = refusalMessage(cause)
+      applyError.value = refusedText(cause)
     }
   } finally {
     applying.value = false
@@ -151,10 +158,16 @@ async function confirmUndo(entry: UndoableMigration) {
     if (entry.store === 'graph' && UNDO_NEEDS_RESTORE.has(refusalCode(cause) ?? '')) {
       restoreFor.value = entry
       undoTarget.value = null
-    } else undoError.value = refusalMessage(cause)
+    } else undoError.value = refusedText(cause)
   } finally {
     undoing.value = null
   }
+}
+
+// The graph step was confirmed in another window: the plan is read again, and its backup is no longer offered.
+function confirmedElsewhere() {
+  stale.value = 'backup'
+  void load()
 }
 
 // The graph is back to before the confirmation, so its step waits again: the plan is read again.
@@ -223,7 +236,7 @@ const stepDescription = (step: { id: string, summary: string }) =>
             <Button variant="ghost" @click="load">{{ t('dataFormat.retry') }}</Button>
           </template>
         </UiNotice>
-        <UiNotice v-if="stale" tone="error">{{ t('dataFormat.stale') }}</UiNotice>
+        <UiNotice v-if="stale" tone="error">{{ stale === 'backup' ? t('dataFormat.graphBackup.confirmedElsewhere') : t('dataFormat.stale') }}</UiNotice>
         <section v-if="outcome" class="data-format-results" :aria-label="t('dataFormat.results')" role="status">
           <p v-for="result in outcome.results" :key="result.label" :data-result="result.status">
             <strong>{{ result.label }}</strong> {{ resultText(result) }}
@@ -305,7 +318,7 @@ const stepDescription = (step: { id: string, summary: string }) =>
             <code :title="plan.digest" data-plan-digest>{{ shortDigest(plan.digest) }}…</code>
           </p>
           <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
-          <GraphBackup v-if="graphStep" :version="graphStep.toVersion" />
+          <GraphBackup v-if="graphStep" :version="graphStep.toVersion" @busy="backingUp = $event" @confirmed="confirmedElsewhere" />
           <div class="data-format-check">
             <Checkbox id="data-format-reviewed" v-model="reviewed" :disabled="applying" />
             <Label for="data-format-reviewed">{{ t('dataFormat.reviewed') }}</Label>
@@ -313,7 +326,7 @@ const stepDescription = (step: { id: string, summary: string }) =>
           <p class="data-format-presence">{{ t('dataFormat.presence') }}</p>
           <p v-if="applyError" class="data-format-error" role="alert">{{ applyError }}</p>
           <div class="data-format-actions">
-            <Button data-apply :disabled="!reviewed" :loading="applying" :loading-label="t('dataFormat.applying')"
+            <Button data-apply :disabled="!reviewed || graphBusy" :loading="applying" :loading-label="t('dataFormat.applying')"
               @click="apply">
               {{ t('dataFormat.apply') }}
             </Button>
@@ -336,18 +349,18 @@ const stepDescription = (step: { id: string, summary: string }) =>
               </span>
               <span v-if="entry.reversible === false">{{ t('dataFormat.undoRestoreOnly') }}</span>
               <span v-else-if="undoTarget === entry" class="data-format-actions">
-                <Button variant="destructive" data-confirm-undo :loading="undoing === entry"
+                <Button variant="destructive" data-confirm-undo :disabled="graphBusy" :loading="undoing === entry"
                   :loading-label="t('dataFormat.undoing', { id: entry.migrationId })" @click="confirmUndo(entry)">
                   {{ t('dataFormat.undoConfirm') }}
                 </Button>
                 <Button variant="ghost" data-cancel-undo :disabled="undoing === entry" @click="undoTarget = null">{{ t('dataFormat.undoCancel') }}</Button>
               </span>
-              <Button v-else variant="outline" data-undo @click="undoTarget = entry">{{ t('dataFormat.undo') }}</Button>
+              <Button v-else variant="outline" data-undo :disabled="graphBusy" @click="undoTarget = entry">{{ t('dataFormat.undo') }}</Button>
               <div v-if="undoTarget === entry" class="data-format-undo-details" data-undo-details>
                 <p>{{ t('dataFormat.undoVersions', { from: entry.toVersion, to: entry.fromVersion }) }}</p>
                 <p>{{ t('dataFormat.undoLede') }}</p>
               </div>
-              <GraphRestore v-if="restoreFor === entry" :version="entry.toVersion" @restored="restored" />
+              <GraphRestore v-if="restoreFor === entry" :version="entry.toVersion" @restored="restored" @busy="restoring = $event" />
             </li>
           </ul>
           <p v-if="undoMessage" role="status">{{ undoMessage }}</p>

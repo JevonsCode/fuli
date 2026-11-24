@@ -15,6 +15,8 @@ export function useGraphBackupJob(version: () => number, onFinished: (job: Graph
   const running = ref<GraphBackupJob | null>(null)
   const outcome = ref<GraphBackupJob | null>(null)
   const notBack = ref(false)
+  // Another tab had started the same backup: this page follows that one.
+  const joined = ref(false)
   // Why it did not start: the server's code (worded by the page) and its own text.
   const refusal = ref<{ code: string | null; hostOnly: boolean; message: string } | null>(null)
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -25,6 +27,7 @@ export function useGraphBackupJob(version: () => number, onFinished: (job: Graph
     refusal.value = null
     outcome.value = null
     notBack.value = false
+    joined.value = false
     let started: GraphBackupJob
     try {
       started = await begin()
@@ -33,6 +36,7 @@ export function useGraphBackupJob(version: () => number, onFinished: (job: Graph
         message: refusalMessage(cause) }
       return
     }
+    joined.value = started.joined === true
     follow(started)
   }
 
@@ -72,5 +76,5 @@ export function useGraphBackupJob(version: () => number, onFinished: (job: Graph
   // After it gave up: ask again for the job it followed last.
   const resume = () => { if (last) follow(last) }
 
-  return { running, outcome, notBack, refusal, start, follow, resume }
+  return { running, outcome, notBack, joined, refusal, start, follow, resume }
 }

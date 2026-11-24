@@ -287,7 +287,10 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],
   ['src/system/settings-apply.js', 'the settings operation journal, and the graph runtime config restored exactly as it was read'],
   ['src/system/detached-job.js', 'the journal of a console operation that restarts FULI (a restore, an update), read back afterwards'],
-  ['src/system/graph-migration.js', 'the journal of the one-click Docker graph migration, which restarts FULI, read back afterwards'],
+  ['src/data-format/console-graph-backup.js', 'the note a graph backup from the data format page keeps in its own folder (format-step.json: '
+    + 'the format version it was taken before, while that step waited), read back only to choose the backup a restore offers; '
+    + 'a backup without a readable note is never offered, so it carries no version'],
+  ['src/system/graph-migration.js','the journal of the one-click Docker graph migration, which restarts FULI, read back afterwards'],
   ['src/graphiti/capture-policy.js',
     'its plain writes of the settings and their generation run only inside updateVersionedJsonFileAtomic, under the format lock and guard'],
   ['src/graphiti/capture-session-pause.js',

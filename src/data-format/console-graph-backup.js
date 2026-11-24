@@ -12,7 +12,9 @@ import { readLock } from '../native-runtime/neo4j-lifecycle-lock.js';
 import { diskFree, diskSize } from '../native-runtime/recovered-dir.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { claimDetachedJob, detachedJob } from '../system/detached-job.js';
+import { RESTARTING_JOBS, refuseWhileRestarting, restartingJobError, runningJob } from '../system/restarting-jobs.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 
 // The data format page's 「先备份图谱」 and, when an undo is refused, its
 // 「用这份备份恢复」 (rec#17 graph/23): the same `fuli graph export` and
@@ -29,11 +31,21 @@ import { readRuntimeSettings } from '../system/runtime-settings.js';
 //
 // Before anything stops it refuses what the commands would refuse later: an
 // unfinished import's marker or a held lifecycle lock (FULI could not start
-// again on either), and a disk that cannot hold the export.
+// again on either), a disk that cannot hold the export, and another job that
+// stops and starts FULI (system/restarting-jobs.js). A second backup asked
+// for while one runs follows that one.
+//
+// Only a backup taken while the step waited is the one from before the
+// confirmation (the console's port checks that it waits and keeps the step
+// from being confirmed meanwhile: migration-operations.js). Once the export is
+// whole the worker leaves a note in its folder (format-step.json:
+// { formatVersion, beforeConfirmation: true }). Only a backup with that note
+// for the version is listed and restored; the graph export's own manifest
+// stays as it is.
 
-const JOURNAL = 'format-graph-backup.json';
+const { journal: JOURNAL, running: RUNNING } = RESTARTING_JOBS.graph;
 const WORKER = fileURLToPath(new URL('./console-graph-backup-worker.js', import.meta.url));
-const RUNNING = new Set(['running']);
+const NOTE = 'format-step.json';
 const NAME = /^before-format-(\d{1,4})-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDir }), spawnWorker, now = Date.now,
@@ -48,13 +60,18 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
       started: current.started ?? null };
   }
 
-  // A backup this page took before [version], newest first, once its manifest reads.
+  // A backup this page took before [version] was confirmed, newest first, once its manifest reads.
   async function backups(version) {
     let names = [];
     try { names = readdirSync(paths.graphBackupDir); } catch { /* none yet */ }
-    const own = names.filter(name => NAME.exec(name)?.[1] === String(version)).sort().reverse();
+    const own = names.filter(name => NAME.exec(name)?.[1] === String(version) && takenBefore(name, version)).sort().reverse();
     const readable = await Promise.all(own.map(name => readGraphBackupManifest(join(paths.graphBackupDir, name)).then(() => name, () => null)));
     return readable.filter(Boolean).map(described);
+  }
+
+  function takenBefore(name, version) {
+    const note = readJsonFile(join(paths.graphBackupDir, name, NOTE), null);
+    return note?.formatVersion === version && note.beforeConfirmation === true;
   }
 
   function described(name) {
@@ -83,6 +100,18 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
     }
   }
 
+  // Synchronous from here to job.start, so a second start in this console sees the first.
+  function begin(fields, failure) {
+    const current = job.read();
+    if (RUNNING.has(current?.status)) {
+      if (fields.action === 'backup' && current.action === 'backup' && current.version === fields.version) return { ...status(), joined: true };
+      throw restartingJobError(runningJob(dataDir, 'graph'), 'start this');
+    }
+    refuseWhileRestarting(dataDir, 'graph');
+    job.start(dataDir, { status: 'running', ...fields }, failure);
+    return status();
+  }
+
   async function backupOf(version, name) {
     const found = (await backups(version)).find(backup => backup.name === name);
     if (!found) throw new ApplicationError('graph_backup_unknown', 'Choose one of the backups this page lists.', { status: 409 });
@@ -100,14 +129,12 @@ export function consoleGraphBackup(dataDir, { paths = resolveSetupPaths({ dataDi
         throw new ApplicationError('graph_backup_no_space', 'The disk cannot hold the graph export; nothing was stopped.', { status: 409 });
       }
       const name = `before-format-${version}-${new Date(now()).toISOString().replace(/[:.]/g, '-')}`;
-      job.start(dataDir, { status: 'running', action: 'backup', version, name }, 'The backup could not start. Nothing was changed.');
-      return status();
+      return begin({ action: 'backup', version, name }, 'The backup could not start. Nothing was changed.');
     },
     async startRestore({ version, name }) {
       await backupOf(version, name);
       refuseBlocked();
-      job.start(dataDir, { status: 'running', action: 'restore', version, name }, 'The restore could not start. Nothing was changed.');
-      return status();
+      return begin({ action: 'restore', version, name }, 'The restore could not start. Nothing was changed.');
     },
     reveal: async ({ version, name }) => reveal((await backupOf(version, name)).path)
   };
@@ -133,6 +160,7 @@ export async function runConsoleGraphBackup(paths, id, { graphData = runGraphDat
     if (job.action === 'backup') {
       await graphData('export', ['--output', folder, '--data-dir', paths.dataDir],
         { runtime, write: () => {}, exportData: step('exporting', exportGraphData) });
+      writeJsonFileAtomic(join(folder, NOTE), { formatVersion: job.version, beforeConfirmation: true });
     } else {
       await graphData('import', ['--input', folder, '--data-dir', paths.dataDir, '--yes'],
         { runtime, write: () => {}, importData: step('restoring', importGraphData) });

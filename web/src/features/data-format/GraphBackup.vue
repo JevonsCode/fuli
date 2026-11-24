@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -17,10 +17,16 @@ import { useGraphBackupJob } from './useGraphBackupJob'
 // it is worth it, the room it needs, each real step while it runs, then
 // where the backup is and how big; a refusal or failure says why and what next.
 const props = defineProps<{ version: number }>()
+// busy: FULI is stopped for it, so the page holds the confirmation back;
+// confirmed: the step no longer waits (confirmed elsewhere), so this backup is no longer offered.
+const emit = defineEmits<{ busy: [running: boolean]; confirmed: [] }>()
 const view = ref<GraphBackupView | null>(null)
 const revealError = ref('')
 const job = useGraphBackupJob(() => props.version, () => { void load() })
-const { running, outcome, notBack, refusal } = job
+const { running, outcome, notBack, joined, refusal } = job
+watch(running, value => emit('busy', value !== null), { immediate: true })
+watch(refusal, value => { if (value?.code === 'graph_backup_not_waiting') emit('confirmed') })
+onBeforeUnmount(() => emit('busy', false))
 
 const latest = computed(() => view.value?.latest ?? null)
 const room = computed(() => {
@@ -64,6 +70,7 @@ onMounted(load)
     </p>
     <p>{{ room }}{{ t('dataFormat.graphBackup.pause') }}</p>
     <GrowthLoading v-if="running" variant="inline" :label="graphJobLabel(running)" data-graph-backup-running />
+    <p v-if="running && joined" data-graph-backup-joined>{{ t('dataFormat.graphBackup.joined') }}</p>
     <div v-else class="graph-backup-actions">
       <Button :variant="latest ? 'outline' : 'default'" size="sm" data-graph-backup-start
         @click="job.start(() => startGraphBackup(version))">

@@ -238,6 +238,8 @@ export interface GraphBackupJob {
   backup: GraphBackupCopy | null
   error: string | null
   started: boolean | null
+  // A backup asked for while this one ran: the page follows this one.
+  joined?: boolean
 }
 export interface GraphBackupView {
   latest: GraphBackupCopy | null
@@ -269,6 +271,9 @@ export const revealGraphBackup = (version: number, name: string) =>
 export function graphBackupFinished(job: GraphBackupJob | null, id: string): job is GraphBackupJob {
   return job?.id === id && job.status !== 'running'
 }
+
+// A confirmation or undo refused while a graph backup or restore stops and starts FULI.
+export const GRAPH_JOB_RUNNING = new Set(['graph_backup_running', 'graph_restore_running'])
 
 // An undo of the graph step refused because records changed since: only a whole-graph restore goes back.
 export const UNDO_NEEDS_RESTORE = new Set(['data_format_changed_since', 'data_format_undo_blocked'])
