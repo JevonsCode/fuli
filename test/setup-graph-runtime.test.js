@@ -121,6 +121,44 @@ test('native setup bypasses Docker and starts the native graph runtime', async (
   }]);
 });
 
+// A follower's graph (follower-runtime-prepare.js): under the host's space, its Provider started as a follower's,
+// no fixed role made here; or, before the host says its space, installed and checked with no graph made.
+test('a follower\'s graph takes the host\'s space and makes no `global` default; or waits with no graph made', async () => {
+  const settings = { version: 1, graphRuntimeMode: 'native', ports: { console: 2727, personalProvider: 8787,
+    personalNeo4jHttp: 8060, personalNeo4jBolt: 7687, workspaceProvider: 8788, workspaceNeo4jHttp: 7475,
+    workspaceNeo4jBolt: 7688 }, lanAccess: false, resourceRefreshSeconds: 5, conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS };
+  const run = async (extra) => {
+    const started = [];
+    const requests = [];
+    const result = await ensureGraphRuntime({ paths: PATHS, personalSpaceName: '我', personalOnly: true, runtimeMode: 'native',
+      runtimeSettings: settings, noStart: true, globalReplica: true, ...extra }, dependencies({
+      ensureContainerRuntime() { throw new Error('Docker must not be inspected in native mode'); },
+      async ensureNativeRuntime() { return { status: 'ready', mode: 'native' }; },
+      startNativeProviders(_paths, _envPath, { onStage: _onStage, nativeRuntime: _runtime, ...options }) { started.push(options); },
+      async fetch(url, options = {}) {
+        requests.push({ url, body: options.body ? JSON.parse(options.body) : null });
+        if (url.endsWith('/health')) return response({ status: 'ready' });
+        if (url.endsWith('/v1/bootstrap')) return response({ access_token: 'personal-token', principal_id: 'personal-user' });
+        if (url.endsWith('/v1/spaces') && options.method === 'POST') {
+          return response({ id: '0f0e0d0c-0b0a-4909-8807-060504030201', name: '我', kind: 'personal' });
+        }
+        throw new Error(`Unexpected Provider request: ${url}`);
+      }
+    }));
+    return { started, requests, result };
+  };
+  const made = await run({ personalSpace: { id: '0f0e0d0c-0b0a-4909-8807-060504030201', providerId: 'local-personal' } });
+  assert.deepEqual(made.started, [{ personalOnly: true, globalReplica: true }]);
+  const created = made.requests.find(({ url }) => url.endsWith('/v1/spaces'));
+  assert.deepEqual(created.body, { name: '我', kind: 'personal', id: '0f0e0d0c-0b0a-4909-8807-060504030201',
+    provider_id: 'local-personal' });
+  assert.ok(!made.requests.some(({ url }) => url.includes('/v1/project-agents/system-hr')), 'no fixed role is made here');
+
+  const waiting = await run({ graphSetup: false });
+  assert.equal(waiting.result.status, 'installed');
+  assert.deepEqual(waiting.requests.map(({ url }) => new URL(url).pathname), ['/health'], 'checked, nothing bootstrapped');
+});
+
 test('switching modes preserves each graph credential profile and bootstraps a fresh target',
   async () => {
     const previous = configuredGraph();

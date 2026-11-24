@@ -744,6 +744,7 @@ class StoreStub(StoreProjectAgents):
         self.settings = SimpleNamespace(
             provider_mode='personal',
             provider_id='provider-1',
+            global_replica=False,
         )
 
     def _require_personal(self):
@@ -818,3 +819,32 @@ def raw_assignment(assignment_id='assignment-a'):
         'assigned_at': timestamp,
         'updated_at': timestamp,
     }
+
+
+@pytest.mark.asyncio
+async def test_while_global_is_a_copy_the_fixed_roles_are_read_never_made():
+    """A follower's graph (config.global_replica): before the host's copy arrived a call
+    that needs Bole is told global is not synced yet, with nothing written; after it, the
+    copied Bole is read as it is (global_replica.py)."""
+    from fastapi import HTTPException
+
+    missing = SequentialDriver([[{'roles': 0}]])
+    store = StoreStub(missing)
+    store.settings.global_replica = True
+    with pytest.raises(HTTPException) as refused:
+        await store.ensure_system_project_hr({'id': 'principal-1'}, 'personal-space')
+    assert refused.value.status_code == 409
+    assert refused.value.detail['code'] == 'global_not_synced'
+    assert '还没从它同步过来' in refused.value.detail['message']
+    assert len(missing.calls) == 1 and "routing_" in str(missing.calls[0][1]), 'one read, no write'
+
+    bole_profile = ProjectAgentProfile(name='Bole', occupation_emoji='🔎', responsibility='Synthetic copied Bole.',
+                                       agent_type='hr', status='active')
+    bole = {**raw_agent(bole_profile), 'agent_id': SYSTEM_HR_AGENT_ID}
+    copied = SequentialDriver([[{'roles': 4}], [{'agent': bole, 'assignment_rows': [], 'task_rows': [],
+                                                  'observed_clients': []}]])
+    store = StoreStub(copied)
+    store.settings.global_replica = True
+    result = await store.ensure_system_project_hr({'id': 'principal-1'}, 'personal-space')
+    assert result.profile.responsibility == 'Synthetic copied Bole.'
+    assert not any(keyword in query for query, _ in copied.calls for keyword in ('MERGE', 'SET ', 'CREATE'))

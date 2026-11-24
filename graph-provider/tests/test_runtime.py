@@ -134,7 +134,7 @@ async def test_a_failed_name_key_tidy_up_still_gives_every_space_its_defaults(mo
     monkeypatch.setattr(store_project_agent_naming, 'clear_stale_name_keys', failing_clear)
     monkeypatch.setattr(system_agents, 'ensure_system_agents', ensure)
     runtime = object.__new__(GraphitiRuntime)
-    runtime.settings = types.SimpleNamespace(provider_id='provider')
+    runtime.settings = types.SimpleNamespace(provider_id='provider', global_replica=False)
     runtime.graphiti = types.SimpleNamespace(driver=Driver())
 
     with caplog.at_level(logging.WARNING, logger='fuli_graph.runtime'):
@@ -145,3 +145,26 @@ async def test_a_failed_name_key_tidy_up_still_gives_every_space_its_defaults(mo
     assert len(logged) == 2
     assert 'space-a' in logged[0] and 'RuntimeError' in logged[0]
     assert all('nova park' not in message for message in logged)
+
+
+@pytest.mark.asyncio
+async def test_a_graph_whose_global_is_a_copy_writes_none_of_its_defaults_at_start():
+    """docs/runner-roles-design.md §12: on a follower `global` is the host's; the start
+    writes no policy, no system Agent, no tidy-up of them (global_replica.py). The usual
+    start is the test above, unchanged."""
+    import types
+
+    from fuli_graph.runtime import GraphitiRuntime
+
+    queries = []
+
+    class Driver:
+        async def execute_query(self, query, **_params):
+            queries.append(query)
+            return [{'space_id': 'space-a'}], None, None
+
+    runtime = object.__new__(GraphitiRuntime)
+    runtime.settings = types.SimpleNamespace(provider_id='provider', global_replica=True)
+    runtime.graphiti = types.SimpleNamespace(driver=Driver())
+    await runtime._ensure_personal_space_defaults()
+    assert queries == []

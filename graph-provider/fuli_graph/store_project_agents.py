@@ -31,6 +31,7 @@ from .store_project_agent_naming import (
 )
 from .store_project_agent_occupation import occupation_from_agent_node
 from .fixed_roles import SYSTEM_ROLE_AGENT_IDS
+from .global_replica import require_synced_global
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS
 from .store_occupation_catalog import active_occupation_predicate, occupation_error, require_active_occupations
 from .system_agents import (
@@ -69,6 +70,10 @@ class StoreProjectAgents:
     async def _ensure_system_agents(self, actor, personal_space_id):
         self._require_personal()
         await self.authorize(actor, personal_space_id, 'maintainer')
+        # The fixed roles of a copied `global` are its owner's: read, never made or upgraded here.
+        if self.settings.global_replica:
+            await require_synced_global(self, personal_space_id)
+            return
         async with query_store_transaction(self) as scoped:
             await ensure_system_agents(
                 scoped.runtime.driver, scoped.settings.provider_id, personal_space_id,
