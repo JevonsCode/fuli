@@ -873,6 +873,15 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, scope, vectors }, timeoutMs: 120_000
     });
   }
+  // The import half: an envelope from the owner computer (`owner`, the
+  // certificate fingerprint its pairing pinned) brought into this graph as a
+  // read-only copy under the same IDs; refused whole, with a code, or written
+  // whole. For this computer's own process; no Agent tool. No caller yet.
+  importScope({ envelope, owner }) {
+    return this.#request('/v1/scopes/import', {
+      method: 'POST', body: { envelope, owner }, timeoutMs: 300_000
+    });
+  }
   // rec#92: retrieval terms for old knowledge. Node asks a model for the other
   // ways someone would ask for each item and stores them beside it; ordinary
   // access token, no version and nothing a person confirms.

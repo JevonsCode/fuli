@@ -91,6 +91,27 @@ test('a scope export sends the space, scope and vector choice with ordinary auth
   }
 });
 
+test('a scope import sends the envelope and its owner with ordinary auth and returns what it wrote', async () => {
+  const calls = [];
+  const result = { scope: 'global', nodes: { created: 1 }, dangling: { count: 0, relationships: [] } };
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, result); } });
+  const envelope = { replicaProtocol: 1, scope: 'global', nodes: [], digest: 'a'.repeat(64) };
+  assert.deepEqual(await client.importScope({ envelope, owner: 'b'.repeat(64) }), result);
+  assert.equal(calls[0].url, 'http://provider.test/v1/scopes/import');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { envelope, owner: 'b'.repeat(64) });
+  assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
+  assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
+});
+
+test('a refused scope import keeps its code', async () => {
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async () => jsonResponse(409, { detail: { code: 'replica_scope_owned_here', message: 'Synthetic.' } }) });
+  await assert.rejects(client.importScope({ envelope: {}, owner: 'b'.repeat(64) }),
+    (error) => error.status === 409 && error.code === 'replica_scope_owned_here' && error.message === 'Synthetic.');
+});
+
 test('conversation triage reaches every Provider operation, decline and reopen included', async () => {
   const urls = [];
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',

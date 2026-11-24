@@ -24,8 +24,12 @@ Each label is one streamed query (the driver pulls its records in batches) and
 nodes found under a parent are asked for in chunks of parents. Derived
 properties (vectors) are left in Neo4j by the first read; an export with
 vectors reads them again for the scope's own records only. scope_classifier.py
-decides what belongs where; nothing here imports, and nothing calls this but
-the Provider route below.
+decides what belongs where; nothing calls this but the Provider route below
+and scope_import.py, which reads the importing computer's space the same way.
+
+A record this computer keeps as a read-only copy (scope_import.py) is exported
+as the scope it is a copy of, without the copy marker, and never as another
+scope: a computer passes on only what it holds of the scope asked for.
 """
 import json
 from collections import Counter, defaultdict
@@ -38,6 +42,7 @@ from fastapi.responses import Response
 from neo4j.time import Date, DateTime, Duration, Time
 from pydantic import Field
 
+from .graph_field_contract import REPLICA_FIELDS
 from .graph_format_migrations import GRAPH_FORMAT_VERSION
 from .model_base import StrictModel
 from .provider_values import now_utc, sha256_text
@@ -49,6 +54,8 @@ from .scope_classifier import (
 )
 
 REPLICA_PROTOCOL = 1
+# What an envelope's digest does not cover: when it was made, and this computer's own records.
+_NOT_DIGESTED = frozenset({'exportedAt', 'localOnlyCount', 'digest'})
 # How many parents (or relationship starts) one query names.
 ELEMENT_CHUNK = 1000
 _TEMPORAL = ((DateTime, 'datetime'), (Date, 'date'), (Time, 'time'), (Duration, 'duration'))
@@ -68,7 +75,7 @@ async def export_scope(store, actor, request: ScopeExportRequest) -> dict:
     if space['kind'] != 'personal':
         raise HTTPException(status_code=422, detail='a scope export needs a personal space')
     async with store.runtime.driver.read_transaction() as transaction:
-        read = await _read_space(transaction, space)
+        read = await read_space(transaction, space)
         if (request.scope != GLOBAL
                 and request.scope.removeprefix(PROJECT_PREFIX) not in read.classification.project_ids):
             raise HTTPException(status_code=404, detail={'code': 'scope_not_found',
@@ -131,7 +138,7 @@ def _needs(label) -> tuple[str, ...]:
     return _CONVERSATION_SOURCES if found[0] == 'conversation' else ()
 
 
-async def _read_space(transaction, space) -> SpaceRead:
+async def read_space(transaction, space) -> SpaceRead:
     space_row = await _rows(transaction, "MATCH (space:FuliSpace {id: $id, kind: 'personal'}) "
                                          'RETURN elementId(space) AS element_id', id=space['id'])
     space_element = space_row[0]['element_id']
@@ -243,23 +250,39 @@ async def _add_derived(transaction, selection) -> None:
 
 # The envelope ------------------------------------------------------------------
 
-def _value(value):
+def encoded_value(value):
     """A property as JSON: a graph time keeps its type, a list its order."""
     for kind, name in _TEMPORAL:
         if isinstance(value, kind):
             return {'$' + name: value.iso_format()}
     if isinstance(value, (list, tuple)):
-        return [_value(item) for item in value]
+        return [encoded_value(item) for item in value]
     if isinstance(value, float) and not isfinite(value):
         return {'$float': repr(value)}
     return value
 
 
-def _properties(properties: dict) -> dict:
-    return {key: _value(properties[key]) for key in sorted(properties)}
+def encoded_properties(properties: dict) -> dict:
+    return {key: encoded_value(properties[key]) for key in sorted(properties)}
 
 
-def _node_id(node: GraphNode) -> str | None:
+def exported_properties(properties: dict) -> dict:
+    """A record's properties as its owner has them: without this computer's
+    copy marker (scope_import.py), so a copy exports what its owner does."""
+    return encoded_properties({key: value for key, value in properties.items() if key not in REPLICA_FIELDS})
+
+
+def is_copy_of_another(properties: dict, scope: str) -> bool:
+    """A record this computer keeps as a copy of a scope other than this one,
+    or one whose owner deleted it: not this computer's to export as `scope`.
+    A copy is exported only as the scope it is a copy of."""
+    if properties.get('fuli_replica_owner') is None:
+        return False
+    return (properties.get('fuli_replica_owner_deleted_at') is not None
+            or scope not in (properties.get('fuli_replica_scopes') or ()))
+
+
+def node_id(node: GraphNode) -> str | None:
     """Its key values, or None: a node without its key (an early record) has
     no identity another computer shares, so it is counted, never named."""
     values = [node.properties.get(key) for key in NODE_RULES[node.label].key]
@@ -283,7 +306,7 @@ def _relationship_ids(relationships, node_ids) -> dict[str, str]:
         if len(group) == 1:
             ids[group[0].element_id] = base
             continue
-        group.sort(key=lambda item: _canonical(_properties(item.properties)))
+        group.sort(key=lambda item: canonical(exported_properties(item.properties)))
         for index, relationship in enumerate(group):
             ids[relationship.element_id] = f'{base}#{index}'
     return ids
@@ -294,7 +317,7 @@ def _home(scopes) -> str:
     return GLOBAL if GLOBAL in scopes else min(scopes)
 
 
-def _canonical(value) -> str:
+def canonical(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
 
@@ -307,11 +330,14 @@ class Selection:
 
 
 def _select(classification: ScopeClassification, scope) -> Selection:
+    nodes = classification.nodes
     return Selection(
         classification,
-        {element for element in classification.nodes if scope in classification.node_scopes(element)},
+        {element for element in nodes if scope in classification.node_scopes(element)
+         and not is_copy_of_another(nodes[element].properties, scope)},
         [relationship for relationship in classification.relationships
-         if scope in classification.relationship_scopes(relationship)])
+         if scope in classification.relationship_scopes(relationship)
+         and not is_copy_of_another(relationship.properties, scope)])
 
 
 def _left_out(read: SpaceRead) -> tuple[dict, dict]:
@@ -334,7 +360,10 @@ def _left_out(read: SpaceRead) -> tuple[dict, dict]:
 def _envelope(space, scope, read: SpaceRead, selection: Selection, *, vectors, embedding_model) -> dict:
     classification = read.classification
     nodes = classification.nodes
-    node_ids = {element: _node_id(node) for element, node in nodes.items()}
+    node_ids = {element: node_id(node) for element, node in nodes.items()}
+    # Two records under one ID (a key without a uniqueness constraint): neither has an identity to copy.
+    shared = {value for value, count in Counter(node_ids.values()).items() if value and count > 1}
+    node_ids = {element: None if value in shared else value for element, value in node_ids.items()}
     node_ids[classification.space_element_id] = f'{SPACE_LABEL}:{space["id"]}'
     named = [relationship for relationship in classification.relationships
              if node_ids.get(relationship.start) and node_ids.get(relationship.end)]
@@ -369,13 +398,13 @@ def _envelope(space, scope, read: SpaceRead, selection: Selection, *, vectors, e
     node_entries = sorted(({
         'id': node_ids[element], 'labels': list(nodes[element].labels),
         'scopes': sorted(classification.node_scopes(element)),
-        'properties': _properties(nodes[element].properties),
+        'properties': exported_properties(nodes[element].properties),
     } for element in in_scope - unidentified), key=lambda entry: entry['id'])
     relationship_entries = sorted(({
         'id': relationship_ids[relationship.element_id], 'type': relationship.type,
         'start': node_ids[relationship.start], 'end': node_ids[relationship.end],
         'scopes': sorted(relationship_scopes[relationship.element_id]),
-        'properties': _properties(relationship.properties),
+        'properties': exported_properties(relationship.properties),
     } for relationship in chosen), key=lambda entry: entry['id'])
     unclassified_labels, local_only = _left_out(read)
     left_out = {
@@ -395,7 +424,12 @@ def _envelope(space, scope, read: SpaceRead, selection: Selection, *, vectors, e
         **left_out, 'complete': not any(left_out.values()),
     }
     return {**body, 'localOnlyCount': local_only, 'exportedAt': now_utc().isoformat(),
-            'digest': sha256_text(_canonical(body))}
+            'digest': envelope_digest(body)}
+
+
+def envelope_digest(envelope: dict) -> str:
+    """The SHA-256 of everything but what the digest does not cover."""
+    return sha256_text(canonical({key: value for key, value in envelope.items() if key not in _NOT_DIGESTED}))
 
 
 def register_scope_export_route(application, store, Actor) -> None:
@@ -404,4 +438,4 @@ def register_scope_export_route(application, store, Actor) -> None:
     @application.post('/v1/scopes/export')
     async def scope_export(request: ScopeExportRequest, actor: Actor) -> Response:
         envelope = await export_scope(store, actor, request)
-        return Response(content=_canonical(envelope), media_type='application/json')
+        return Response(content=canonical(envelope), media_type='application/json')

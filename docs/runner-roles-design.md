@@ -209,8 +209,8 @@ whenever the host does not answer.
 
 Read-only copies (§3) and moving a scope (§7) share one building block: export every record of a
 scope as one envelope, and import it on another computer under the same IDs. This section is the
-export half and the rules it rests on; importing (upsert, the copy marker, refusing writes to a
-copy, format upgrades) is the next step and not built yet. Nothing calls the export today.
+export, the rules it rests on, and the import ("Import", below). Refusing ordinary writes to a copy
+is not built yet, and nothing calls the export or the import today.
 
 - **One classifier.** `graph-provider/fuli_graph/scope_classifier.py` says, as data, which scope
   every node label and relationship type of a personal space belongs to and how that is decided.
@@ -436,6 +436,11 @@ suffix changes when those properties change, so an importer must not treat it as
   item. An importer uses a vector only when its model matches its own, else drops it and computes it
   again. `vectors: false` leaves all three out, with `fuli_semantic_model` and `fuli_semantic_hash`
   (an item must not look indexed without its vector), and sets `embeddingModel` to null.
+- **A copy is passed on only as itself.** A record this computer keeps as a read-only copy is
+  exported as the scope it is a copy of, without the copy marker, and never as another scope (an
+  episode copied for a project that is also evidence for this computer's global habit stays out of
+  its global export); a record its owner deleted is not exported. Two records under one ID (a key
+  without a uniqueness constraint) are both unidentified.
 - **Deterministic.** Nodes and relationships are sorted by ID, properties by key. `digest` is the
   SHA-256 of the canonical JSON (sorted keys, no spaces, UTF-8) of everything but `exportedAt`,
   `localOnlyCount` and `digest`. Unchanged data gives the same bytes but for `exportedAt`; a change in one scope changes
@@ -495,3 +500,97 @@ The export is the first half. The import PR must:
     evidence episodes of global habits, records of project IDs without a project node, dismissal
     handovers.
 13. **Stores outside the graph** (above) need their own step.
+
+### Import
+
+`POST /v1/scopes/import` (`scope_import.py`; `GraphitiProviderClient.importScope`) brings one
+envelope into this graph as a read-only copy of a scope another computer owns. It takes the envelope
+and `owner`, the certificate fingerprint the pairing pinned for the owner computer. Like the export
+it uses the Provider's ordinary access token, is called by this computer's own process only, and is
+not an Agent tool. It is the only path that writes a copy.
+
+**Refused whole, nothing written.** In this order:
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `replica_protocol_unknown` | 422 | `replicaProtocol` is not this FULI's |
+| `replica_digest_mismatch` | 422 | the digest does not match the content |
+| `replica_envelope_incomplete` | 422 | `complete` is false; `leftOut` names the non-empty counts |
+| `replica_format_mismatch` | 409 | `graphFormat` is not this graph's: a copy is never upgraded here, both FULIs move to one version |
+| `replica_envelope_invalid` | 422 | not an export: a label this FULI does not copy, a node ID named twice, a property map that is no typed value |
+| `replica_field_contract` | 422 | a declared property of the wrong type (`graph_field_contract.py`) |
+| `replica_space_mismatch` | 409 | this computer has no personal space with the envelope's `spaceId`, or `graphiti_group_id(<own provider_id>, 'personal', spaceId)` is not its `groupId` |
+| `replica_scope_owned_here` | 409 | one of this computer's own records has an ID the envelope names, or belongs to the scope alone (its project node, a global habit or FLA it wrote); `count` and the first `records` |
+| `replica_cross_owner_record` | 409 | a record is also in a project this computer writes, or another owner's copy of it is in another scope |
+| `replica_related_project_owner` | 409 | a `PERSONAL_PROJECT_RELATION` reaches a project another computer writes |
+| `replica_record_conflict` | 409 | a node of a key the envelope names exists outside this personal space |
+
+A record in global and in this project is not refused for that: per D4 the global owner and a
+project's owner may differ. A project the importer has never seen has no known owner and is not
+refused; its record is checked again whenever that project's copy arrives.
+
+**The copy marker** (graph/25, automatic: it only extends the field contract) is on every node and
+relationship an import writes: `fuli_replica_scopes` (each scope it was copied for: one habit copied
+with two projects names both), `fuli_replica_owner`, `fuli_replica_synced_at` (when an import last
+wrote this record; a copy's last sync as a whole is what the import returns, kept by the routes
+store), and `fuli_replica_owner_deleted_at`. No index is added: the import reads the whole space for
+its checks anyway, so the copy's records of a scope come from that read.
+
+**Upsert, never delete-then-insert.** Nodes are matched by their export ID (the label's key) and
+replaced whole with the owner's properties plus the marker, so edges this computer hung on them
+stay. Relationships: a type with its own key (`RELATES_TO`, `MENTIONS`, `PERSONAL_PROJECT_RELATION`,
+`PROJECT_MEMORY_ACCESS`, `FULI_PROJECT_RELATION`) by that key, whose ends may move; any other type
+by **the group** of that type between the same two nodes: the owner's group replaces the copy's
+group when they differ, and the `#n` suffix is never read. This computer's own relationships in such
+a group are not touched. A record already as the owner has it is not written (`unchanged`), so
+importing the same envelope twice changes nothing.
+
+**Typed values** (`$datetime`, `$date`, `$time`, `$duration`, `$float`) are restored to graph types.
+Every record is checked against the field contract; a property the contract does not declare (an
+older FULI's) is carried as it is and counted in `undeclaredProperties`, as `carried_fields` copies a
+stored record.
+
+**Vectors.** When `vectors` is false or `embeddingModel` is not this Provider's, `name_embedding` and
+`fact_embedding` are computed here from the same text by this Provider's own embedder, as its write
+path does. `fuli_semantic_*` names its model on the item and is kept; the meaning index
+(`knowledge_semantic_index.py`) already recomputes an item whose model or text hash is not this
+computer's, and an envelope without vectors leaves the one this computer computed in place.
+Full-text and range indexes are Neo4j's own and follow the records.
+
+**`externalRefs`** are looked up, never created: a relationship whose end this computer does not
+have is not written and is counted in `dangling` (with the first 50 IDs). It is written by the next
+import of this scope after the other scope's copy has arrived; nothing else retries it.
+
+**What the owner no longer has**, after every upsert: a copy of this scope whose ID is not in the
+envelope loses this scope; one still copied for another scope stays. Otherwise a node that one of
+this computer's own relationships still reaches stays, marked `fuli_replica_owner_deleted_at` (a
+dismissed FLA this computer's project is staffed with, for example), and is deleted by a later
+import once nothing of this computer's points at it; anything else is deleted. Only records with this
+scope in their marker are ever released; this computer's own records never are.
+
+**Task contexts.** Imported contexts hang under one `FuliTaskContextSession` per owner
+(`fuli_replica_owner` set, no current token), created by the import and deleted when it has no
+context left. Readers that reach contexts through sessions (recent sessions, recent working FLAs)
+see them as finished history; `get_task_context` needs the session's current token, so an imported
+token is never resumed here. A new reader by `personal_space_id` was the other choice; it would
+change every reader.
+
+**`working_directory`** of a copied `FuliConversationSession` is the other computer's path. Nothing
+tells a project by it (it is shown in a conversation's details only); the marker says which
+computer it came from.
+
+**One transaction.** The import reads, checks, upserts and releases in one write transaction ending
+with the writer fence, so it lands whole or not at all, and a failure midway leaves the graph as it
+was; running it again converges. Measured on a development Mac (Neo4j 5.26, 1 GB heap): global of
+480 nodes and 320 relationships (1.6 MB) 0.3 s the first time, 1.1 s unchanged; a project of 2,000
+knowledge items, 6,001 nodes and 4,001 relationships with vectors (19.8 MB) 2.4 s, 3.5 s unchanged.
+A scope far larger would need batches; then the release must still run only after every batch
+succeeded.
+
+**Not built yet.** Refusing ordinary writes to a copy (`replica_read_only`): every Provider write
+passes the writer fence, but in Neo4j Community a transaction cannot see which nodes it changed (no
+triggers, no change capture, no per-label privileges), and there are about 250 write statements in
+70 modules. The next step checks the copy marker where writes resolve their record
+(`authorize_personal_project`, `authorize_project_agent`, the knowledge lock), each with a write
+flag, behind the router that already sends a routed scope's writes to its owner. Until then the
+import overwrites a local change to a copy with the owner's version at the next sync.

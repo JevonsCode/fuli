@@ -19,6 +19,8 @@ from datetime import date, datetime
 
 from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
+from .scope_classifier import LOCAL_ONLY, NODE_RULES, RELATIONSHIP_RULES, exported
+
 # CONTRACT DATA
 NODE_FIELDS = {
     'Entity': {
@@ -720,6 +722,24 @@ RELATIONSHIP_FIELDS = {
         'reference_time': 'datetime?', 'uuid': 'string', 'valid_at': 'datetime?',
     },
 }
+
+# graph/25: a read-only copy of another computer's scope (scope_import.py)
+# marks every record it writes: the scopes it was copied for, the owner
+# computer (the certificate fingerprint its pairing pinned), when the import
+# last wrote it, and when the owner deleted it while a record of this
+# computer still pointed at it. Every exported label and relationship type
+# may carry it, and the one finished session per owner that imported task
+# contexts hang under.
+REPLICA_FIELDS = {
+    'fuli_replica_owner': 'string?', 'fuli_replica_owner_deleted_at': 'datetime?',
+    'fuli_replica_scopes': 'string[]?', 'fuli_replica_synced_at': 'datetime?',
+}
+for _label, _rule in NODE_RULES.items():
+    if exported(_rule) or _label == 'FuliTaskContextSession':
+        NODE_FIELDS[_label].update(REPLICA_FIELDS)
+for _type, (_rule, _) in RELATIONSHIP_RULES.items():
+    if _rule != LOCAL_ONLY:
+        RELATIONSHIP_FIELDS.setdefault(_type, {}).update(REPLICA_FIELDS)
 
 ENUMS = {
     'memory_state': ('present', 'scrubbed'),
