@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
 import { preferenceHookOutput } from '../src/conversations/preference-lifecycle.js';
 import { withPreferenceScope } from '../src/conversations/preference-snapshot.js';
-import { SKELETON_UNCHANGED_LABEL } from '../src/conversations/entry-skeleton.js';
+import { SKELETON_SHORT_LABEL, SKELETON_UNCHANGED_LABEL } from '../src/conversations/entry-skeleton.js';
 import { claudePreferenceEvidence } from '../src/agents/claude-code/preference-evidence.js';
 import { syntheticHost } from '../test-support/synthetic-context-session.js';
 
@@ -66,6 +66,14 @@ test('a recorded complete frame lets the same task name its skeleton; an unrecor
   assert.equal(third.text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
 }));
 
+test('a lost legend is repeated until the host records it', () => fixture(async f => {
+  await f.turn(entry(f.sessionId, 'task-a'), 'First request');
+  const next = record => f.turn(entry(f.sessionId, 'task-b'), 'Next request', { record });
+  assert.equal((await next(false)).text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
+  assert.equal((await next(true)).text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
+  assert.equal((await next(true)).text.split('\n')[0], SKELETON_SHORT_LABEL);
+}));
+
 // rec#88: every prompt of a session is a new task; its skeleton is the one
 // the session already shows, so only another project or Agent starts whole.
 test('a new task of the same owner names the skeleton; another project or a changed part gets that part whole', () => fixture(async f => {
@@ -77,7 +85,7 @@ test('a new task of the same owner names the skeleton; another project or a chan
   assert.equal(repeat.frame.skeleton_revision, undefined);
   assert.equal(other.frame.skeleton_unchanged, first.frame.skeleton_revision, 'a new prompt names the frame that showed it');
   assert.equal(other.frame.taskContextToken, 'task-c');
-  assert.equal(other.text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
+  assert.equal(other.text.split('\n')[0], SKELETON_SHORT_LABEL);
   const moved = await f.turn(entry(f.sessionId, 'task-d', { project: 'project-b' }), 'Do the thing');
   assert.equal(moved.frame.skeleton_unchanged, undefined, 'another project');
   assert.equal(moved.text.split('\n')[0], LABEL);
@@ -145,7 +153,7 @@ test('a session of new prompts sends the skeleton once and then only the fields 
   assert.equal(sent[0].frame.skeleton_unchanged, undefined, 'the first prompt carries the whole skeleton');
   for (const [index, turn] of sent.entries()) {
     if (!index) continue;
-    assert.equal(turn.text.split('\n')[0], SKELETON_UNCHANGED_LABEL, `turn ${index + 1} names the label`);
+    assert.equal(turn.text.split('\n')[0], index === 1 ? SKELETON_UNCHANGED_LABEL : SKELETON_SHORT_LABEL, `turn ${index + 1} names the label`);
     assert.equal(typeof turn.frame.skeleton_unchanged, 'string', `turn ${index + 1} names its bases by revision`);
     assert.equal(turn.frame.taskContextToken, `task-${index}`);
     assert.ok(bytes[index] < bytes[0] * 0.4, `turn ${index + 1}: ${bytes[index]} B against ${bytes[0]} B`);
@@ -169,6 +177,8 @@ test('a session of new prompts sends the skeleton once and then only the fields 
   assert.equal(after.frame.skeleton_unchanged, undefined);
   assert.equal(after.frame.agent_receipt.markdown, 'Synthetic owner');
   assert.equal(after.frame.project_agent_context.role.name, 'Synthetic Lead');
+  const delta = await f.turn(realistic('task-7', ['topic'], 7), 'Synthetic prompt 7');
+  assert.equal(delta.text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
 }));
 
 // A record written before rec#88 kept [token, prompt, owner]; its owner still lets a new task name the frame.

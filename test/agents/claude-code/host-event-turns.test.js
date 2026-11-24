@@ -1,7 +1,3 @@
-// Design T1: a session's context is given once. A host event turn (a
-// background task's notification) is told so in one line instead of being
-// given the current task again; only a context generation that has given the
-// session nothing yet (after a compaction, a lost frame) gets it whole.
 // Synthetic sessions, transcripts and preferences only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -10,16 +6,13 @@ import { copyPreferenceScope } from '../../../src/conversations/preference-snaps
 import { claudeEntrySession, claudeHostEventSession, hookFrame, syntheticLargeEntry, syntheticPreferences }
   from '../../../test-support/synthetic-large-entry.js';
 
-const HOST_LINE = 'FULI：本轮是宿主事件，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 '
-  + 'FULI: a host event, not a person\'s message; the current task and given context still apply: no get_collaboration_preferences call.';
 const bodies = text => text.match(/SYNTHETIC_[A-Z]+_\d+: [^"]{20}/g) ?? [];
 
-test('host event turns of a session are one line each and no preference body is sent twice', async () => {
+test('host event turns of a session are silent and no preference body is sent twice', async () => {
   const frames = await claudeHostEventSession();
-  assert.deepEqual(frames.map(frame => frame.origin), ['person', ...Array(5).fill('host_event'), 'person']);
+  assert.deepEqual(frames.map(frame => frame.origin), ['person', ...Array(10).fill('host_event'), 'person']);
   for (const { origin, text } of frames.filter(frame => frame.origin === 'host_event')) {
-    assert.equal(text, HOST_LINE, origin);
-    assert.ok(text.length <= 200 && !text.includes('\n'));
+    assert.equal(text, '', origin);
   }
   const sent = frames.flatMap(frame => bodies(frame.text));
   assert.ok(sent.length > 0);
@@ -53,7 +46,7 @@ function hostEventFixture(session) {
   return { entry, task, read, reads };
 }
 
-test('the first host event after a compaction gets the whole context, and the one after it one line', () =>
+test('notifications after compaction stay silent until the next human entry', () =>
   claudeEntrySession(async session => {
     const f = hostEventFixture(session);
     await session.turn(f.entry('task-1'));
@@ -63,15 +56,14 @@ test('the first host event after a compaction gets the whole context, and the on
       { delivery: session.delivery });
     await session.host.compact();
     const first = await session.notify(f.task, f.read);
-    assert.deepEqual(f.reads, ['read_task_preferences']);
-    assert.equal(hookFrame(first).taskContextToken, 'task-1');
-    assert.equal(hookFrame(first).effective_preferences.length, 20);
-    await session.host.say('assistant', 'SYNTHETIC reply.');
-    assert.equal(await session.notify(f.task, f.read), HOST_LINE);
-    assert.equal(f.reads.length, 1);
+    assert.equal(first, '');
+    assert.equal(await session.notify(f.task, f.read), '');
+    assert.deepEqual(f.reads, []);
+    const next = await session.turn(f.entry('task-2'));
+    assert.equal(next.frame.effective_preferences.length, 20);
   }));
 
-test('a frame the transcript never records was lost: the next host event and the next prompt get it whole', () =>
+test('a frame the transcript never records was lost: notifications stay silent and the next prompt gets it whole', () =>
   claudeEntrySession(async session => {
     const f = hostEventFixture(session);
     // Delivered, but the host never records it before the model answers.
@@ -81,18 +73,11 @@ test('a frame the transcript never records was lost: the next host event and the
     assert.equal(hookFrame(lost).effective_preferences.length, 20);
     await session.host.say('assistant', 'SYNTHETIC reply.');
     const event = await session.notify(f.task, f.read);
-    assert.equal(hookFrame(event).effective_preferences.length, 20);
+    assert.equal(event, '');
     await session.host.say('assistant', 'SYNTHETIC reply.');
-    // That one was recorded, so the next host event is one line.
-    assert.equal(await session.notify(f.task, f.read), HOST_LINE);
-    // A prompt whose base was lost is whole again too.
-    const fresh = await claudeEntrySession(async other => {
-      const g = hostEventFixture(other);
-      await claudeLifecycleOutput('UserPromptSubmit', { session_id: other.sessionId, transcript_path: other.host.path,
-        cwd: '/synthetic/project', prompt: 'fix the export bug' }, async () => g.entry('task-1'), { delivery: other.delivery });
-      await other.host.say('assistant', 'SYNTHETIC reply.');
-      return other.turn(g.entry('task-2'));
-    });
+    assert.equal(await session.notify(f.task, f.read), '');
+    assert.deepEqual(f.reads, []);
+    const fresh = await session.turn(f.entry('task-2'));
     assert.equal(fresh.frame.preference_delivery, undefined);
     assert.equal(fresh.frame.effective_preferences.length, 20);
   }));
@@ -165,7 +150,7 @@ test('a repeat candidate after a host event: its guidance rides a delta, and the
     const f = hostEventFixture(session);
     const first = await session.turn(f.entry('task-1'));
     await session.host.say('assistant', 'SYNTHETIC reply.');
-    assert.equal(await session.notify(f.task, f.read), HOST_LINE);
+    assert.equal(await session.notify(f.task, f.read), '');
     await session.host.say('assistant', 'SYNTHETIC reply.');
     const value = f.entry('task-2');
     const { text, frame } = await session.turn(copyPreferenceScope(value, { ...value, ...decision(repeating),

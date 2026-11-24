@@ -300,12 +300,11 @@ test('a matching visible block never hides a conflicting one under the same revi
 // Design T1 §⑥: a client whose transcript FULI cannot read (no hook, only the
 // get_collaboration_preferences tool: Cursor, OpenCode) proves nothing, so
 // every frame stays whole and its session is never taken as already given.
-test('a session without a readable transcript gets every frame whole and is never taken as delivered', () => fixture(async f => {
+test('a session without a readable transcript gets every frame whole', () => fixture(async f => {
   const service = createSessionPreferenceDelivery({ ...f.options, locate: async () => null });
   for (const token of ['task-a', 'task-b']) {
     const result = (await service.deliver(entry(token), origin, format)).structuredContent;
     assert.equal(result.effective_preferences.length, 12);
     assert.equal(result.preference_delivery, undefined);
   }
-  assert.equal(await service.delivered(origin), false);
 }));

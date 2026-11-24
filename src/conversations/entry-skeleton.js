@@ -26,15 +26,17 @@ const FIELD_PARTS = new Set(['project_agent_context', 'task_knowledge_recall']);
 export const SKELETON_LABEL = 'label';
 export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts not repeated here, as earlier FULI frames gave them, by skeleton_revision '
   + '(later wins, this frame\'s own first; a map lists parts; null = no longer present; label = text above the JSON).';
+export const SKELETON_SHORT_LABEL = 'skeleton_unchanged';
 const HASH = /^[a-f0-9]{64}$/;
 const MAX_SKELETON_TASKS = 16;
 const NO_BASES = Object.freeze({ bases: Object.freeze([]) });
 
 // The instructions shown above a frame: the hook's label, or only the
 // skeleton sentence when the frame names an earlier one for it.
-export function skeletonFrameLabel(label, frame) {
+export function skeletonFrameLabel(label, frame, explained = false) {
   if (!frame?.skeleton_unchanged) return label;
-  return namesLabel(frame) ? SKELETON_UNCHANGED_LABEL : `${label} ${SKELETON_UNCHANGED_LABEL}`;
+  const legend = explained ? SKELETON_SHORT_LABEL : SKELETON_UNCHANGED_LABEL;
+  return namesLabel(frame) ? legend : `${label} ${legend}`;
 }
 
 // Revisions whose parts all apply always include the label; a map names it.
@@ -48,8 +50,7 @@ function namesLabel(frame) {
 // this generation is a base only when the host recorded it, its own
 // skeleton_revision matches what it shows (fields, label and the frames it
 // names), whatever it names resolves to a base before it, and it belongs to
-// this owner: the same token (a host notification refreshed in place; a
-// task never changes project or Agent) or any task this session began in the
+// this owner: the same token, or any task this session began in the
 // same project for the same Agent (rec#88: every prompt of a session is a new
 // task, and its skeleton is mostly the one already shown). Another project or
 // Agent, or anything after a compaction or reset (floor), has no base and
@@ -71,7 +72,11 @@ export function skeletonEvidence(proof, value, { floor, tasks, prompt }) {
     if (!given.has(visible.skeleton_revision)) given.set(visible.skeleton_revision, parts);
     if (sameOwner(visible.taskContextToken)) bases.push({ revision: visible.skeleton_revision, parts });
   }
-  return { bases };
+  // Only a complete native hook record of this generation proves the model
+  // saw the instructions. A pending, lost or compacted frame never does.
+  const explained = proof.frames.some(({ confirms, offset, visible, label }) => confirms && offset >= floor
+    && visible?.skeleton_unchanged && (label === SKELETON_UNCHANGED_LABEL || label?.endsWith(` ${SKELETON_UNCHANGED_LABEL}`)));
+  return { bases, explained };
 }
 
 // What a frame's skeleton_unchanged gives, from the frames before it, or null
@@ -185,9 +190,12 @@ function withRevision(frame, label) {
 // The hook's own label of a recorded frame: its text without the skeleton
 // sentence, or null when it names an earlier frame's label or has none.
 function labelPart(text) {
-  if (typeof text !== 'string' || text === SKELETON_UNCHANGED_LABEL) return null;
-  const suffix = ` ${SKELETON_UNCHANGED_LABEL}`;
-  return text.endsWith(suffix) ? text.slice(0, -suffix.length) : text;
+  if (typeof text !== 'string') return null;
+  for (const legend of [SKELETON_UNCHANGED_LABEL, SKELETON_SHORT_LABEL]) {
+    if (text === legend) return null;
+    if (text.endsWith(` ${legend}`)) return text.slice(0, -legend.length - 1);
+  }
+  return text;
 }
 
 function skeletonRevision(frame, label) {

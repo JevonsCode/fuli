@@ -193,14 +193,15 @@ test('explicit resume is reused only after a complete visible result, in both fi
 
 // rec#76: once a repeated prompt has a recorded frame of its task to name, it
 // sends neither the skeleton nor the hook's instructions again; a notification
-// of a session that holds its context is one line (design T1).
-test('repeated prompts name the skeleton they already showed and notifications are one line', async () => {
+// contributes no bytes.
+test('repeated prompts name the skeleton they already showed and notifications add zero bytes', async () => {
   for (const { variant, scenarios } of await variants()) {
     // The first repeat still shows the conversation's first saved result once.
     for (const [name, steady, shown] of [['notifications', 2, 'none'], ['repeated_prompt', 2, 'unchanged']]) {
-      const turns = scenarios.find(item => item.scenario === name).detail.slice(steady);
+      const turns = scenarios.find(item => item.scenario === name).detail.slice(steady, 11);
       assert.equal(turns.length, 11 - steady, `${variant} ${name}`);
       for (const [index, turn] of turns.entries()) {
+        if (name === 'notifications') assert.equal(turn.produced_bytes, 0);
         assert.equal(turn.skeleton_delivery, shown, describe(variant, name, turn, index + steady));
         assert.equal(turn.skeleton_revision_field_bytes, 0, describe(variant, name, turn, index + steady));
         assert.ok(turn.produced_bytes <= 0.35 * turn.no_cache_bytes, describe(variant, name, turn, index + steady));

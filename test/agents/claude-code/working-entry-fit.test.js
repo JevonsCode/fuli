@@ -261,10 +261,10 @@ const assertBoundedRecovery = text => {
   }
 };
 
-test('a host-notification turn refreshes the current task within the inline limit and claims no complete set', async () => {
+test('a host notification contributes zero characters even with a large current task', async () => {
   const notification = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
   const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: notification }, recovered, { currentTask });
-  assertBoundedRecovery(output.hookSpecificOutput.additionalContext);
+  assert.deepEqual(output, {});
 });
 
 test('a compaction restore delivers the current task within the inline limit and claims no full result', async () => {
@@ -275,8 +275,7 @@ test('a compaction restore delivers the current task within the inline limit and
   assert.match(label(text), /restored current mandatory preferences for the same owned task, bounded/);
 });
 
-// rec#128: the restore after a compaction and the refresh a host notification
-// starts list part of 39 preferences; what they list and what they count add
+// The restore after compaction lists part of 39 preferences; listed and omitted add
 // up, and the read they name is the session's own task's (its token, as the
 // reader verifies it: task-preference-reader.test.js).
 const recovered39 = async (name, parameters) => {
@@ -285,23 +284,17 @@ const recovered39 = async (name, parameters) => {
     project_agent_context: { ...entry.project_agent_context, wake_mode: 'preference_recovery' },
     preference_delivery: { status: 'complete' }, preferences_complete: true, same_task_recovery_available: true, truncated: false });
 };
-const NOTIFICATION = '<task-notification>\n<task-id>bsynth02x</task-id>\n<status>completed</status>\n</task-notification>';
-
-for (const [path, run] of [
-  ['compaction restore', () => claudeLifecycleOutput('SessionStart', { session_id: SESSION, source: 'compact' }, recovered39, { currentTask })],
-  ['notification refresh', () => claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: NOTIFICATION }, recovered39, { currentTask })]
-]) {
-  test(`a ${path} of 39 preferences lists and counts all 39, hard rules listed, and names the task's own read`, async () => {
-    const text = (await run()).hookSpecificOutput.additionalContext;
-    assertBoundedRecovery(text);
-    const frame = hookFrame(text);
-    const listed = keys(frame.effective_preferences);
-    assert.ok(listed.length > 0);
-    assert.equal(listed.length + frame.preferences_omitted.count, 39);
-    assert.deepEqual(hardRules(items39()).filter(key => !listed.includes(key)), [], 'every hard rule');
-    assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-current'));
-  });
-}
+test("a compaction restore of 39 preferences counts all 39, lists hard rules, and names the task's own read", async () => {
+  const output = await claudeLifecycleOutput('SessionStart', { session_id: SESSION, source: 'compact' }, recovered39, { currentTask });
+  const text = output.hookSpecificOutput.additionalContext;
+  assertBoundedRecovery(text);
+  const frame = hookFrame(text);
+  const listed = keys(frame.effective_preferences);
+  assert.ok(listed.length > 0);
+  assert.equal(listed.length + frame.preferences_omitted.count, 39);
+  assert.deepEqual(hardRules(items39()).filter(key => !listed.includes(key)), [], 'every hard rule');
+  assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-current'));
+});
 
 test('an entry whose task the reader cannot serve counts what it leaves out without pointing at the reader', async () => {
   // No task Agent: read_task_preferences refuses such a task.

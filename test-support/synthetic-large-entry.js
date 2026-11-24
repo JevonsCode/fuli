@@ -278,7 +278,7 @@ export const hookFrame = text => JSON.parse(text.split('\n').at(-1));
 const HOST_NOTIFICATION = '<task-notification>\n<task-id>bsynth01x</task-id>\n<status>completed</status>\n</task-notification>';
 
 // One Claude Code session as the host runs it (design T1, T3): a person's
-// turn, five background-task notifications (the second and third queued, so
+// turn, ten background-task notifications (the second and third queued, so
 // the third's hook runs before the second's context is recorded), then the
 // person's next turn. That turn has another recall and asks FULI to keep
 // something (remember_guidance), so all but the preferences differ from the
@@ -308,9 +308,9 @@ export function claudeHostEventSession() {
     await reply();
     const queued = [add('host_event', await session.notify(task, read, { record: false })),
       add('host_event', await session.notify(task, read, { record: false }))];
-    for (const text of queued) await session.host.inject(text);
+    for (const text of queued.filter(Boolean)) await session.host.inject(text);
     await reply();
-    for (let index = 0; index < 2; index++) {
+    for (let index = 0; index < 7; index++) {
       add('host_event', await session.notify(task, read));
       await reply();
     }
@@ -348,8 +348,8 @@ export async function claudeEntrySession(fn, { prompt = 'fix the export bug' } =
     const notify = async (task, read, { record = true } = {}) => {
       const output = await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: HOST_NOTIFICATION }, read,
         { delivery, currentTask: async () => task });
-      const text = output.hookSpecificOutput.additionalContext;
-      if (record) await host.inject(text);
+      const text = output.hookSpecificOutput?.additionalContext ?? '';
+      if (record && text) await host.inject(text);
       return text;
     };
     // `cache`: the session delivery record's directory, for a test that reads

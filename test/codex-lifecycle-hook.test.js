@@ -9,123 +9,37 @@ import { transcriptDigest } from '../src/conversations/transcript-guard.js';
 
 // rec#28. In the source at openai/codex deede7201da2 (codex-rs/hooks/src/schema.rs
 // 566-584) Codex's hook input has no isMeta or is_meta, so a turn marked that
-// way has an unprovable source: it refreshes the current task in place, is
+// way has an unprovable source: it contributes no task context, is
 // held as unresolved, and never enters, switches or settles a task.
 // Synthetic sessions, Provider doubles and transcripts only.
 
 const input = { session_id: 'synthetic-codex-session', turn_id: 'synthetic-turn', cwd: '/synthetic/project',
   prompt: 'Synthetic hook verification.', transcript_path: null, model: 'synthetic-model', permission_mode: 'default' };
-const UNCONFIRMED = /本轮输入带有 isMeta 标记.*FULI: this turn carries an isMeta mark, but FULI cannot prove the Codex host set it/;
-// Codex has no continuation evidence, so its guidance must say a checkpoint does not resolve the turn (dot, #276).
-const CODEX_RESOLUTION = /在 Codex 中，用这个 token 调用 checkpoint_task_knowledge 不会解除本轮的未确认状态.*In Codex, a checkpoint_task_knowledge with that token does not resolve this turn: the turn stays unconfirmed and is not recorded under that task\. The turn is resolved only when another task becomes current/;
-const CLAUDE_RESOLUTION = 'This turn becomes that task\'s only by a successful checkpoint_task_knowledge';
-
-// A synthetic Codex session whose current task the fake reader re-reads in place.
-function refreshFixture({ task = { token: 'fuli-task-a', sessionId: input.session_id, sourceApplication: 'codex', checkpoint: null },
-  read } = {}) {
+function submitFixture() {
   const calls = [];
-  let revision = 1;
-  const invoke = async (name, parameters) => {
-    calls.push([name, parameters]);
-    if (name === 'begin_task_context') return { taskContextToken: 'fuli-task-new-entry' };
-    assert.equal(name, 'read_task_preferences');
-    if (read) return read(parameters);
-    return { taskContextToken: parameters.taskContextToken, checkpoint_required: revision > 1,
-      effective_preferences: [{ instruction: `Synthetic preference, revision ${revision}.` }],
-      active_conflicts: revision > 1 ? [{ id: 'synthetic-conflict' }] : [] };
+  const invoke = async name => {
+    calls.push(name);
+    assert.equal(name, 'begin_task_context');
+    return { taskContextToken: 'fuli-task-new-entry' };
   };
-  const submit = (extra = {}, options = {}) => codexLifecycleOutput('UserPromptSubmit', { ...input, ...extra }, invoke,
-    { currentTask: async (sessionId, source) => { calls.push(['current', sessionId, source]); return task; }, ...options });
-  return { calls, invoke, submit, change: () => { revision = 2; } };
+  return { calls, submit: extra => codexLifecycleOutput('UserPromptSubmit', { ...input, ...extra }, invoke) };
 }
 
-test('Codex isMeta and is_meta turns refresh the current task in place; every other prompt enters', async () => {
+test('Codex isMeta and is_meta turns stay quiet; every other prompt enters', async () => {
   for (const mark of [{ isMeta: true }, { is_meta: true }]) {
-    const f = refreshFixture();
+    const f = submitFixture();
     const output = await f.submit({ prompt: 'Any text marked as a system delivery.', ...mark });
-    assert.deepEqual(f.calls.map(([name]) => name), ['current', 'read_task_preferences'], JSON.stringify(mark));
-    assert.deepEqual(f.calls[0].slice(1), [input.session_id, 'codex']);
-    assert.deepEqual(f.calls[1][1], { taskContextToken: 'fuli-task-a', sourceApplication: 'codex',
-      sourceSessionId: input.session_id, sourceSessionVerified: true });
-    const context = output.hookSpecificOutput.additionalContext;
-    assert.match(context, UNCONFIRMED);
-    assert.match(context, /no task was created or switched/);
-    assert.match(context, /is not this turn's confirmed task/);
-    assert.match(context, CODEX_RESOLUTION);
-    assert.ok(!context.includes(CLAUDE_RESOLUTION), 'Codex never promises a resolution its Stop does not perform');
-    assert.match(context, /start a task explicitly with get_collaboration_preferences/);
-    assert.match(context, /"taskContextToken":"fuli-task-a"/);
-    // The old trusted shortcut is gone: no "keep the current task" without a read.
-    assert.doesNotMatch(context, /not a new user task|Keep the current task context|fuli-task-new-entry|Pass taskContextToken to every FULI call/);
+    assert.deepEqual(output, {}, JSON.stringify(mark));
+    assert.deepEqual(f.calls, []);
   }
   // Codex has no notification envelopes: shaped text, or a mark that is not exactly true, enters as a prompt.
   for (const extra of [{ prompt: '<task-notification>\n<task-id>bsynth01x</task-id>\n</task-notification>' },
     { prompt: '<teammate-message>quoted by the user</teammate-message>' }, { isMeta: 'true' }, { isMeta: false }, { is_meta: 1 }]) {
-    const f = refreshFixture();
+    const f = submitFixture();
     const output = await f.submit(extra);
-    assert.deepEqual(f.calls.map(([name]) => name), ['begin_task_context'], JSON.stringify(extra));
+    assert.deepEqual(f.calls, ['begin_task_context'], JSON.stringify(extra));
     assert.match(output.hookSpecificOutput.additionalContext, /fuli-task-new-entry/);
   }
-});
-
-// Design T1: an isMeta turn is a host system turn. Once the session holds a
-// delivered context it gets one line; nothing is read, scoped or delivered.
-test('a Codex isMeta turn of a session already given its context is one line and reads nothing', async () => {
-  const f = refreshFixture();
-  const origins = [];
-  const delivery = { delivered: async origin => { origins.push(origin); return true; },
-    deliver: async () => assert.fail('a host turn delivers nothing') };
-  const context = (await f.submit({ isMeta: true }, { delivery })).hookSpecificOutput.additionalContext;
-  assert.equal(context, 'FULI：本轮是宿主系统消息，非人发消息；当前任务和已下发的上下文仍有效，不必再取。 '
-    + 'FULI: a host system message, not a person\'s message; the current task and given context still apply: no get_collaboration_preferences call.');
-  assert.deepEqual(f.calls.map(([name]) => name), ['current']);
-  assert.deepEqual(origins, [{ sourceApplication: 'codex', nativeSessionId: input.session_id, transcriptPath: input.transcript_path }]);
-});
-
-test('Codex refresh turns deliver a mid-run preference, conflict or checkpoint change on the next turn', async () => {
-  const f = refreshFixture();
-  for (let index = 0; index < 6; index += 1) {
-    if (index === 3) f.change();
-    const context = (await f.submit({ isMeta: true })).hookSpecificOutput.additionalContext;
-    assert.match(context, new RegExp(`revision ${index < 3 ? 1 : 2}`));
-    if (index >= 3) {
-      assert.match(context, /synthetic-conflict/);
-      assert.match(context, /"checkpoint_required":true/);
-    } else assert.doesNotMatch(context, /synthetic-conflict/);
-  }
-  assert.ok(f.calls.every(([name]) => name !== 'begin_task_context'));
-});
-
-test('Codex refresh turns with nothing valid to re-read say so and start no task', async () => {
-  const owned = { token: 'fuli-task-a', sessionId: input.session_id, sourceApplication: 'codex', checkpoint: null };
-  const cases = [
-    ['no current task', { task: null }, /本会话没有当前任务.*\(this session has no current task\)/],
-    ['closed task', { task: { ...owned, checkpoint: { phase: 'complete' } } }, /\(the current task of this session is closed\)/],
-    ['another session', { task: { ...owned, sessionId: 'another-session' } }, /\(the current task belongs to another session\)/],
-    ['another Agent', { task: { ...owned, sourceApplication: 'claude_code' } }, /\(the current task belongs to another session\)/],
-    ['missing Agent or scope', { task: owned, read: () => { throw Object.assign(new Error('Recovery requires the task Agent identity.'),
-      { code: 'preference_recovery_blocked' }); } }, /\(the current task's ownership or scope could not be confirmed: Recovery requires the task Agent identity\.\)/],
-    ['unknown token', { task: owned, read: () => { throw Object.assign(new Error('private Provider detail'), { code: 'not_found' }); } },
-      /\(the current task's ownership or scope could not be confirmed\); no task/],
-    ['FULI stopped since the task began', { task: owned, read: () => ({ status: 'fuli_off' }) }, /\(FULI is off for this session\)/]
-  ];
-  for (const [label, options, expected] of cases) {
-    const f = refreshFixture(options);
-    const context = (await f.submit({ isMeta: true })).hookSpecificOutput.additionalContext;
-    assert.match(context, expected, label);
-    assert.match(context, /FULI：本轮没有建立有效的任务上下文.*FULI: no valid task context is established for this turn/, label);
-    assert.doesNotMatch(context, /fuli-task-a|private Provider detail/, label);
-    assert.ok(f.calls.every(([name]) => name !== 'begin_task_context'), label);
-  }
-});
-
-test('Codex session off is checked before a refresh: nothing is read or injected', async () => {
-  const f = refreshFixture();
-  const off = await f.submit({ isMeta: true }, { entryRefusal: async () => ({ allowed: false, reason: 'session_stopped' }) });
-  assert.deepEqual(f.calls, [], 'no current task lookup and no preference read');
-  const context = off.hookSpecificOutput.additionalContext;
-  assert.match(context, /FULI is stopped for this session by the person\. No FULI memory, preferences or task token this turn/);
-  assert.doesNotMatch(context, /fuli-task-a|current task context|taskContextToken/);
 });
 
 test('Codex installed hook: a session FULI is off for gets no refresh, and the turn is still held', async t => {
@@ -134,7 +48,7 @@ test('Codex installed hook: a session FULI is off for gets no refresh, and the t
   s.app.hasStoppedSession = () => true;
   s.app.pinSessionFuliDefault = () => {};
   const output = await s.hook('UserPromptSubmit', { prompt: 'Marked delivery.', isMeta: true });
-  assert.match(output.hookSpecificOutput.additionalContext, /FULI is stopped for this session by the person/);
+  assert.deepEqual(output, {});
   assert.doesNotMatch(JSON.stringify(output), /fuli-task-synthetic-a|current task context/);
   assert.deepEqual(s.calls, [], 'no Provider read');
   assert.deepEqual(s.lookups, [], 'no current task lookup');
@@ -218,15 +132,14 @@ async function codexSession(t) {
     said: () => state.appended.filter(event => !/^\[Not recorded/.test(event.content)) };
 }
 
-test('Codex installed hook holds a marked turn, refreshes in place and claims no transcript boundary', async t => {
+test('Codex installed hook holds a marked turn, stays silent and claims no transcript boundary', async t => {
   const s = await codexSession(t);
   const output = await s.markedTurn();
-  assert.deepEqual(s.calls, [['read_task_preferences', 'fuli-task-synthetic-a']]);
-  assert.match(output.hookSpecificOutput.additionalContext, UNCONFIRMED);
-  assert.match(output.hookSpecificOutput.additionalContext, /"taskContextToken":"fuli-task-synthetic-a"/);
+  assert.deepEqual(s.calls, []);
+  assert.deepEqual(output, {});
   const [held] = s.ledger.heldTurns().turns;
   assert.equal(held.owner, transcriptDigest('fuli-task-synthetic-a'), 'the turn names the task it was current for');
-  assert.equal(s.state.cursor, 0, 'a refresh imports nothing');
+  assert.equal(s.state.cursor, 0, 'the notification imports nothing');
 });
 
 test('Codex unresolved turns never settle A or record under it; A can still checkpoint; B gets its own token', async t => {
@@ -234,11 +147,9 @@ test('Codex unresolved turns never settle A or record under it; A can still chec
   await s.markedTurn();
   await s.quietStop('marked turn');
   await s.quietStop('marked turn, repeated Stop');
-  // A mid-run change reaches the next marked turn.
+  // A preference change is left for the next human entry.
   s.state.revision = 2;
-  const next = await s.markedTurn('SYNTHETIC_SECOND_REPLY');
-  assert.match(next.hookSpecificOutput.additionalContext, /revision 2/);
-  assert.match(next.hookSpecificOutput.additionalContext, /"checkpoint_required":true/);
+  assert.deepEqual(await s.markedTurn('SYNTHETIC_SECOND_REPLY'), {});
   await s.quietStop('second marked turn');
   assert.doesNotMatch(JSON.stringify(s.said()), /SYNTHETIC_UNKNOWN_TURN_REPLY|SYNTHETIC_SECOND_REPLY|SYNTHETIC_MARKED_PROMPT/);
   assert.ok(s.state.appended.some(event => /task ownership was not confirmed/.test(event.content)), 'skipped with a reason');
@@ -253,7 +164,7 @@ test('Codex unresolved turns never settle A or record under it; A can still chec
   const entered = await s.hook('UserPromptSubmit', { prompt: 'Synthetic task B.' });
   await s.host('user', 'Synthetic task B.');
   assert.match(entered.hookSpecificOutput.additionalContext, /fuli-task-synthetic-b/);
-  assert.doesNotMatch(entered.hookSpecificOutput.additionalContext, UNCONFIRMED);
+  assert.ok(entered.hookSpecificOutput.additionalContext);
   assert.deepEqual(s.ledger.heldTurns().turns, []);
   await s.host('assistant', 'SYNTHETIC_TASK_B_REPLY');
   s.calls.length = 0;
@@ -356,8 +267,6 @@ test('Codex marked turn with a session-less or unavailable runtime never asks th
       resolveRuntimeOptions: () => ({ runtimeConfigPath: join(directory, 'runtime.json') }),
       openApplication: () => { throw new Error('synthetic runtime outage'); }
     });
-    const context = JSON.parse(output).hookSpecificOutput.additionalContext;
-    assert.match(context, /start a task explicitly with get_collaboration_preferences/);
-    assert.doesNotMatch(context, /First call get_collaboration_preferences|synthetic runtime outage/);
+    assert.deepEqual(JSON.parse(output), {});
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

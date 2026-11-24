@@ -8,4 +8,5 @@ import { runThinLifecycleHook } from '../lifecycle-forwarder.js';
 import { CLAUDE_HOOK_ENV, claudeHookTimeoutMs } from './hook-contract.js';
 
 await runThinLifecycleHook({ client: 'claude-code', envNames: CLAUDE_HOOK_ENV,
+  isHostPrompt: async input => (await import('./host-notification.js')).claudeTurnOrigin(input) !== 'person',
   timeoutMs: claudeHookTimeoutMs(process.argv.slice(2)) });

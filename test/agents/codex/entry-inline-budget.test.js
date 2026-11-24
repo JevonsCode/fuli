@@ -116,20 +116,15 @@ const recovered = async (_name, parameters) => {
     preference_delivery: { status: 'complete' }, preferences_complete: true, same_task_recovery_available: true, truncated: false });
 };
 
-for (const [path, run] of [
-  ['compaction restore', () => codexLifecycleOutput('SessionStart', { session_id: SESSION, source: 'compact' }, recovered,
-    { currentTask })],
-  ['host turn refresh', () => codexLifecycleOutput('UserPromptSubmit', { ...input, isMeta: true }, recovered, { currentTask })]
-]) {
-  test(`a ${path} is bounded in bytes and names the task's own read`, async () => {
-    const text = (await run()).hookSpecificOutput.additionalContext;
-    assert.ok(bytes(text) <= CODEX_ENTRY_INLINE_BYTES, `${bytes(text)} bytes`);
-    const frame = hookFrame(text);
-    assert.equal(frame.effective_preferences.length + frame.preferences_omitted.count, 70);
-    assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-current'));
-    assert.equal(Object.hasOwn(frame, 'preferences_complete'), false, 'a bounded frame claims no complete set');
-  });
-}
+test("a compaction restore is bounded in bytes and names the task's own read", async () => {
+  const output = await codexLifecycleOutput('SessionStart', { session_id: SESSION, source: 'compact' }, recovered, { currentTask });
+  const text = output.hookSpecificOutput.additionalContext;
+  assert.ok(bytes(text) <= CODEX_ENTRY_INLINE_BYTES, `${bytes(text)} bytes`);
+  const frame = hookFrame(text);
+  assert.equal(frame.effective_preferences.length + frame.preferences_omitted.count, 70);
+  assert.deepEqual(frame.preferences_omitted.read, omittedRead('task-current'));
+  assert.equal(Object.hasOwn(frame, 'preferences_complete'), false, 'a bounded frame claims no complete set');
+});
 
 // #1102: the hard rules a first frame could not spell out are owed. The next
 // frames give them first; until every one was given, memory, recall and the
@@ -212,8 +207,8 @@ test('every Codex context with the longest appended notices stays under what Cod
       return copyPreferenceScope(value, { ...value, preference_delivery: { status: 'complete' }, preferences_complete: true,
         same_task_recovery_available: true, truncated: false });
     };
-    contexts.hostLine = delivered(await codexLifecycleOutput('UserPromptSubmit', { ...session.input, isMeta: true }, read,
-      { delivery: session.delivery, currentTask: task, inlineBytes }));
+    assert.deepEqual(await codexLifecycleOutput('UserPromptSubmit', { ...session.input, isMeta: true }, read,
+      { delivery: session.delivery, currentTask: task, inlineBytes }), {});
     // A compaction restore has nothing appended after it.
     contexts.restore = (await codexLifecycleOutput('SessionStart', { session_id: session.sessionId, source: 'compact',
       transcript_path: session.input.transcript_path }, read, { currentTask: task })).hookSpecificOutput.additionalContext;

@@ -12,7 +12,7 @@
 // - Unknown counts as met: a request too short to judge by (fewer than 8
 //   Chinese characters or 3 Latin words once filler is out), one that points
 //   back at earlier words (REFERENCES: 「按上面说的继续做」), no request at all
-//   (a restore after compaction, a host turn), or a case with no word left
+//   (a restore after compaction), or a case with no word left
 //   once filler is out (「相关工作」).
 // - Met: a distinctive word of its case appears in what the task shows of
 //   itself: the person's request, the project's ID, name and brief, the

@@ -89,7 +89,7 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]']);
 // The process entry: stdin in, the answer out, this process's exit code.
 // runnerTimeoutMs(event): how long a runner's forwarded hook waits for the
 // host, which runs it under its own deadline (src/runner/hook-forwarding.js).
-export async function runThinLifecycleHook({ client, envNames, timeoutMs, runnerTimeoutMs = () => timeoutMs }) {
+export async function runThinLifecycleHook({ client, envNames, timeoutMs, isHostPrompt, runnerTimeoutMs = () => timeoutMs }) {
   const startedAt = Date.now();
   const deadlineAt = startedAt + timeoutMs;
   const argv = process.argv.slice(2);
@@ -104,7 +104,9 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
     const dataDir = dirname(resolve(argv[argv.indexOf('--runtime-config') + 1]));
     // Loaded only now.
     const scope = await import('../runner/hook-scope.js');
-    const destination = stdin.complete ? await scope.hookDestination({ dataDir, stdin: stdin.chunks }) : { here: false };
+    const input = stdin.complete ? scope.runnerHookInput(stdin.chunks) : null;
+    const destination = await scope.hookDestination({ dataDir, input });
+    const hostTurn = event === 'UserPromptSubmit' && input && await isHostPrompt(input);
     let { refused } = destination;
     if (destination.here) {
       const call = { client, argv, env: namedEnvironment(process.env, envNames), cwd: process.cwd(), stdin: stdin.chunks };
@@ -121,7 +123,7 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
     if (refused) {
       // Said as it is: which computer answers this folder, why it did not, and what to do.
       process.stderr.write(`${refused.message}\n`);
-      if (event === 'UserPromptSubmit') {
+      if (event === 'UserPromptSubmit' && !hostTurn) {
         process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
           additionalContext: `FULI (${refused.code}): ${refused.message}` } })}\n`);
       }
@@ -133,8 +135,8 @@ export async function runThinLifecycleHook({ client, envNames, timeoutMs, runner
         deadlineAt: startedAt + runnerTimeoutMs(event) })
         .catch(() => null) : null;
       // Without the host a prompt says how to enter the task through MCP; a turn's end says nothing.
-      if (answer) process.stdout.write(answer.stdout);
-      else if (event === 'UserPromptSubmit') {
+      if (answer) process.stdout.write(hostTurn ? scope.quietForwardedOutput(answer.stdout) : answer.stdout);
+      else if (event === 'UserPromptSubmit' && !hostTurn) {
         process.stdout.write(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
           additionalContext: RUNNER_HOOK_CONTEXT } })}\n`);
       }

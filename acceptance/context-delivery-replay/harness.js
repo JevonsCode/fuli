@@ -8,8 +8,7 @@
 // frame an active task would receive at once. Every entry carries a synthetic
 // skeleton shaped like a real one (rec#76): receipt, rule references, the
 // project Agent, the managers and the judgment policy. A notification turn runs
-// the real host turn: one line once the session holds a frame (design T1), or
-// the in-place refresh with read_task_preferences when it holds none.
+// the real hook without delivering a frame or changing the model view.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,7 +24,7 @@ import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
 import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
 import { entryRules } from '../../src/conversations/entry-rules.js';
-import { SKELETON_LABEL, SKELETON_UNCHANGED_LABEL, skeletonParts } from '../../src/conversations/entry-skeleton.js';
+import { SKELETON_LABEL, SKELETON_SHORT_LABEL, SKELETON_UNCHANGED_LABEL, skeletonParts } from '../../src/conversations/entry-skeleton.js';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 import { approxTokens } from '../../src/text/token-estimate.js';
 
@@ -43,7 +42,7 @@ const HOOKS = { codex: codexLifecycleOutput, claude_code: claudeLifecycleOutput 
 const REPLAYED_SESSION_STARTS = { codex: [], claude_code: CLAUDE_REPLAYED_SOURCES };
 const bytes = text => Buffer.byteLength(text, 'utf8');
 const sha = text => createHash('sha256').update(text).digest('hex');
-const frameOf = text => JSON.parse(text.split('\n').at(-1));
+const frameOf = text => text ? JSON.parse(text.split('\n').at(-1)) : {};
 const READS = ['session', 'context', 'list', 'preferences'];
 
 // The Provider's conversation journal and preference store, in memory. Every
@@ -124,7 +123,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     const own = createSessionPreferenceDelivery({ directory: join(directory, `first-${index}`), locate: async source =>
       ({ path: join(directory, `first-${index}.jsonl`), adapter: source === 'codex' ? codexPreferenceEvidence : claudePreferenceEvidence }) });
     return (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry, { delivery: own, currentTask }))
-      .hookSpecificOutput.additionalContext;
+      .hookSpecificOutput?.additionalContext ?? '';
   };
   const app = { config: { personal: { spaceId: SPACE } }, getCapturePolicy: () => ({ enabled: true }),
     personal: { conversation: provider.conversation },
@@ -195,12 +194,14 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       await resetHook('PreCompact');
       await host.compact();
       view = model();
+      session.expected = {};
       session.generation++;
     };
     session.sessionStart = async source => {
       await resetHook('SessionStart', { source });
       if (REPLAYED_SESSION_STARTS[client].includes(source)) return;
       view = model();
+      session.expected = {};
       session.generation++;
     };
     // Exercise the real MCP result path and record what the native host exposes.
@@ -232,8 +233,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     // output before the host records it; `preview` records only a head/tail
     // preview, as a host does with an oversized hook output.
     // `project: 'other'` runs the prompt in another project's folder. A
-    // prompt that is one host-notification envelope is refreshed in place by
-    // the hook: the same task re-read with read_task_preferences, never a new one.
+    // notification envelope produces no model-facing frame.
     session.turn = async (prompt, { record = true, preview = false, note = '', project = 'this' } = {}) => {
       const before = { ...provider.calls };
       let context, scene;
@@ -251,12 +251,12 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       };
       const prompted = input({ prompt, cwd: projectFolder[project] });
       const text = (await HOOKS[client]('UserPromptSubmit', prompted, invoke, { delivery, currentTask }))
-        .hookSpecificOutput.additionalContext;
+        .hookSpecificOutput?.additionalContext ?? '';
       const retrieval = Object.fromEntries(READS.map(name => [name, provider.calls[name] - before[name]]));
-      // A host turn of a session that holds its context read nothing; its
-      // baseline is the refresh it would otherwise have been given.
-      const hostLine = context === undefined;
-      if (hostLine) context = readTask(session.token);
+      // For a silent turn the oracle compares the preferences the model already holds.
+      const silentTurn = context === undefined;
+      if (silentTurn) context = session.lastEntry ?? {};
+      else session.lastEntry = context;
       // The same entry through the same hook with no session cache. It reuses
       // this turn's Provider snapshot: a fair serialization comparison, not an
       // independent second retrieval. The copy keeps the entry's private
@@ -264,7 +264,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       // inline budget then ranked without the task's scene, so the comparison
       // listed other bodies than any session would (not a missed delivery).
       const uncached = async (entry, options = {}) => (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry,
-        { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }), ...options })).hookSpecificOutput.additionalContext;
+        { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }), ...options })).hookSpecificOutput?.additionalContext ?? '';
       const baseline = await uncached(copyPreferenceScope(context, structuredClone(context)));
       // The recovery window a turn is checked against: the same uncached entry
       // with no inline limit, so a window the host's limit cut short does not
@@ -273,29 +273,29 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       // `baseline` stays the window one full frame holds under that limit.
       const unbounded = await uncached(copyPreferenceScope(context, structuredClone(context)), { inlineBytes: null });
       // The preferences this turn should leave the model holding at least: a
-      // new session's first frame for this entry. A host line sends nothing by
+      // new session's first frame for this entry. A notification sends nothing by
       // design (T1), so the model keeps what its entry turn gave it: the
-      // expectation of that turn, not of a refresh with more room.
+      // expectation of that turn, not of a different working set.
       const current = new Map((context.effective_preferences ?? []).map(item => [item.preference_key, item.instruction]));
-      if (!hostLine) {
+      if (!silentTurn) {
         session.expected = frameOf(await firstFrame(client, prompted, copyPreferenceScope(context, structuredClone(context)),
           async () => ({ ...tasks.get(context.taskContextToken) })));
       }
       // Diagnostic only (D-29.8): the same entry with no preference and no
       // message, uncached. The cache cannot remove these bytes.
       const skeleton = await uncached(skeletonEntry(context));
-      const frame = hostLine ? {} : frameOf(text);
+      const frame = silentTurn ? {} : frameOf(text);
       const delivered = record && !preview;
       // What the host recorded, and so what the model could see: nothing when
       // the output was lost, only the preview when it was spilled.
       const visible = !record ? '' : preview ? `${text.slice(0, 40)}\n…[preview]…\n${text.slice(-40)}` : text;
-      if (record) await host.inject(visible);
+      if (record && visible) await host.inject(visible);
       const turn = measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt,
-        scene, hostLine });
-      if (delivered && !hostLine) applyFrame(view, frame, text);
-      // A host line shows no skeleton: the model keeps the one its task entry showed.
+        scene, silentTurn });
+      if (delivered && !silentTurn) applyFrame(view, frame, text);
+      // A silent turn shows no skeleton: the model keeps the one its task entry showed.
       turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}, labelOf(baseline),
-        { skeleton: !hostLine, preferences: session.expected, current }) : null;
+        { skeleton: !silentTurn, preferences: session.expected, current }) : null;
       // A delta or scene switch whose base the model cannot locate by the
       // delivery rules: it must call read_task_preferences (entry-rules.js).
       turn.rereads_required = delivered && view.unlocated ? 1 : 0;
@@ -330,7 +330,7 @@ const preferenceItems = frame => frame.effective_preferences ?? frame.preference
 // takes it in. produced_bytes is the additionalContext the hook returned;
 // host_visible_bytes is what the host recorded for the model (0 when lost,
 // the preview when spilled). No other context cost is inferred.
-function measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt, scene, hostLine }) {
+function measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt, scene, silentTurn }) {
   const recovery = recoveryOf(frame);
   const omitted = recovery?.messages_omitted ?? 0;
   const bucket = frame.preference_delivery || omitted > 0 ? 'incremental'
@@ -345,7 +345,7 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
   for (const [key] of items) view.sent.add(key);
   const pointer = frame.conversation?.recent_conversation;
   return { session: session.label, client: session.client, generation: session.generation, note, scene,
-    prompt, bucket, delivered, preference_delivery: hostLine ? 'host_line' : frame.preference_delivery?.status ?? 'full',
+    prompt, bucket, delivered, preference_delivery: silentTurn ? 'silent' : frame.preference_delivery?.status ?? 'full',
     produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline), skeleton_bytes: bytes(skeleton),
     // A reading-cost hint beside the bytes (src/text/token-estimate.js), never a budget.
     produced_tokens: approxTokens(text), no_cache_tokens: approxTokens(baseline),
@@ -358,7 +358,7 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
     revision_field_bytes: frame.revision ? bytes(`,"revision":${JSON.stringify(frame.revision)}`) : 0,
     skeleton_revision_field_bytes: frame.skeleton_revision
       ? bytes(`,"skeleton_revision":${JSON.stringify(frame.skeleton_revision)}`) : 0,
-    skeleton_delivery: hostLine ? 'none' : frame.skeleton_unchanged ? 'unchanged' : 'full',
+    skeleton_delivery: silentTurn ? 'none' : frame.skeleton_unchanged ? 'unchanged' : 'full',
     skeleton_fields_omitted: typeof frame.skeleton_unchanged === 'string' || Array.isArray(frame.skeleton_unchanged) ? 'all'
       : Object.values(frame.skeleton_unchanged ?? {}).flat().length,
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
@@ -418,8 +418,11 @@ const labelOf = text => {
   return lines.slice(0, lines.findIndex(line => line.startsWith('{'))).join('\n');
 };
 function ownLabel(label) {
-  if (label === SKELETON_UNCHANGED_LABEL) return null;
-  return label.endsWith(` ${SKELETON_UNCHANGED_LABEL}`) ? label.slice(0, -SKELETON_UNCHANGED_LABEL.length - 1) : label;
+  for (const legend of [SKELETON_SHORT_LABEL, SKELETON_UNCHANGED_LABEL]) {
+    if (label === legend) return null;
+    if (label.endsWith(` ${legend}`)) return label.slice(0, -legend.length - 1);
+  }
+  return label;
 }
 
 // A skeleton shaped like a real entry's (task-context-view.js, rec#76), all

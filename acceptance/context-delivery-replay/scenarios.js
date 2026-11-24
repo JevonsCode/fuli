@@ -265,7 +265,7 @@ export const SCENARIOS = {
   },
 
   // rec#76, design T1: ten host notifications after one task entry. The
-  // session already holds that entry, so each is one line.
+  // next human entry must still resolve its original base.
   async notifications(world) {
     world.recall = true;
     const { general, spacing } = world.fixture;
@@ -276,8 +276,10 @@ export const SCENARIOS = {
     world.check('the task entry carries the whole skeleton', entry.skeleton_delivery === 'full');
     const turns = [];
     for (const [index, prompt] of NOTIFICATIONS.entries()) turns.push(await h.turn(prompt, { note: `notification ${index + 1}` }));
-    world.check('every notification is one line', turns.every(turn => turn.preference_delivery === 'host_line'
-      && turn.skeleton_delivery === 'none'));
+    world.check('notifications deliver nothing and read nothing', turns.every(turn => turn.preference_delivery === 'silent'
+      && turn.skeleton_delivery === 'none' && turn.produced_bytes === 0 && turn.retrieval_calls === 0));
+    const next = await h.turn(WORK, { note: 'next human entry' });
+    world.check('the next human entry keeps its preference base', next.preference_delivery === 'delta' && next.correctness.ok);
   },
 
   // rec#76: the same prompt ten times (a scheduled prompt). Each is a new task
@@ -305,12 +307,14 @@ export const SCENARIOS = {
     const full = turn => turn.skeleton_delivery === 'full' && turn.skeleton_revision_field_bytes > 0;
     // rec#88: a new prompt of the same owner names what the session already shows.
     world.check('a new task of the same owner names the skeleton', (await h.turn(FRONTEND, { note: 'new task' })).skeleton_delivery === 'unchanged');
-    world.check('a notification of that task is one line', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'none');
+    world.check('a notification of that task stays silent', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'none');
     world.check('another project gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'project switch', project: 'other' })));
     world.check('another FLA gets the whole skeleton', full(await h.turn(`#FLA reviewer ${FRONTEND}`, { note: 'FLA switch' })));
     await h.compact();
-    world.check('the first turn after compaction gets the whole skeleton', full(await h.turn(ciEvent(2), { note: 'after compaction' })));
-    world.check('the next notification is one line again', (await h.turn(ciEvent(3), { note: 'notification' }))
+    world.check('a notification after compaction cannot establish a new base',
+      (await h.turn(ciEvent(2), { note: 'notification after compaction' })).produced_bytes === 0);
+    world.check('the first human prompt after compaction gets the whole skeleton', full(await h.turn(WORK, { note: 'after compaction' })));
+    world.check('the next notification is silent', (await h.turn(ciEvent(3), { note: 'notification' }))
       .skeleton_delivery === 'none');
   },
 

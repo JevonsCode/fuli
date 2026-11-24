@@ -65,7 +65,7 @@ export async function currentTaskPreferences(input, { sourceApplication, current
 
 // Why the session's current task cannot be read in place, or null when it can:
 // no_task, task_closed or other_session.
-export function currentTaskStatus(task, input, sourceApplication) {
+function currentTaskStatus(task, input, sourceApplication) {
   if (!task) return 'no_task';
   if (task.checkpoint?.phase === 'complete') return 'task_closed';
   return task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication ? 'other_session' : null;
@@ -83,14 +83,14 @@ export function currentTaskStatus(task, input, sourceApplication) {
 // earlier frame's skeleton instead of repeating it (entry-skeleton.js).
 // `request`: the person's prompt a task entry was begun for, which a bounded
 // frame reads habits with a stated case against (preference-conditions.js);
-// null for a restore or a host turn, whose frame then leaves none of them out.
+// null for a restore, whose frame then leaves none of them out.
 export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
   { inlineChars = null, inlineBytes = null, boundedLabel = label, request = null } = {}) {
   const { task_context_token: _copy, ...rest } = entry;
   const value = copyPreferenceScope(entry, rest);
   const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
-  const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
-    label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
+  const format = (projected, explained) => hookAdditionalContextToolResult(projected, { hookEventName: event,
+    label: skeletonFrameLabel(frameLabel(projected), projected, explained), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedNote: taskReceiptInstruction(value) });
   const taskPrompt = typeof input.prompt === 'string' ? input.prompt : null;
   const measure = inlineBytes ? utf8Bytes : textLength;
