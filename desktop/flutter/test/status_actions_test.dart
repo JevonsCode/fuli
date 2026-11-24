@@ -9,6 +9,7 @@ import 'package:fuli_desktop/src/app/fuli_controller.dart';
 import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
 import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
+import 'package:fuli_desktop/src/runtime/runtime_output.dart' show stillImporting;
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
 import 'package:fuli_desktop/src/ui/theme.dart';
 
@@ -500,5 +501,34 @@ void main() {
     await tester.pump();
     expect(runtime.calls.where((call) => call != 'status'), ['end-orphans-start']);
     expect(find.byKey(const Key('end-orphans-start')), findsNothing, reason: 'gone once FULI started');
+  });
+
+  testWidgets('while a way back still runs, or the window stopped waiting for one, it says so and offers nothing that starts another', (tester) async {
+    for (final (report, words) in [
+      (const RuntimeReport(RuntimeState.stopped, error: 'running',
+          failure: StartupFailure('recovery_refused', {'reason': 'import_running', 'pid': 4321, 'runKind': 'import'})), '上一次导回还在进行（进程 4321），这次什么都没做'),
+      (stillImporting(), '导入仍在后台进行，完成前不要再点'),
+    ]) {
+      final api = DemoFuliApi()..reachable = false;
+      final runtime = FixedRuntime(report);
+      final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+      await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+      await controller.refresh();
+      await controller.start();
+      await tester.pump();
+      expect(controller.notice?.text, contains(words));
+      expect(find.byKey(const Key('recover-start')), findsNothing);
+      expect(find.byKey(const Key('abandon-import')), findsNothing);
+      expect(find.byKey(const Key('unfinished-import-commands')), findsNothing);
+    }
+    const en = Strings(chinese: false);
+    expect(en.startFailedBecause(stillImporting().failure!), contains('The import is still running in the background; do not click again until it is done.'));
+    expect(en.startFailedBecause(const StartupFailure('recovery_refused', {'reason': 'import_running', 'runKind': 'abandon-import'})),
+        contains('The last giving up of the import is still running'));
+    // Giving up that stopped part way says so in its own words, with what it already moved, never "did not bring it back".
+    final partway = zh.startFailedBecause(StartupFailure('graph_import_unfinished', {...unfinished.facts, 'attemptKind': 'abandon',
+      'attemptError': '没有放弃那次导入：图谱 workspace 没能挪开（EBUSY）。图谱 personal 已经清空：它写了一半的库挪到了 /x/recovered / The import was not given up'}))!;
+    expect(partway, startsWith('没有放弃那次导入：图谱 workspace 没能挪开（EBUSY）。图谱 personal 已经清空：它写了一半的库挪到了 /x/recovered。'));
+    expect(partway, isNot(contains('这次没有导回')));
   });
 }

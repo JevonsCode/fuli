@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { readGraphBackupManifest } from './graph-backup.js';
+import { runningImport } from './import-run.js';
 import { containerAsideFolder } from './runtime-adapters.js';
 import { latestImportCopy, readUnfinishedImport, unfinishedImportError, unfinishedImportWayBack } from './unfinished-import.js';
 import { diskSize } from '../native-runtime/recovered-dir.js';
@@ -22,9 +23,12 @@ import { planned, refused } from '../native-runtime/recovery-plan.js';
 // Each is the same command the terminal runs (`fuli graph import --input …`,
 // `fuli graph abandon-import`); the plan only fixes which input and which
 // graphs the person saw. A refusal carries the marker's own facts, with the
-// commands for a terminal, for the window to keep offering them.
+// commands for a terminal, for the window to keep offering them; while an
+// earlier one still runs (import-run.js), it is refused with nothing to offer.
 
-export async function planUnfinishedImport({ paths, mode, abandon = false }) {
+export async function planUnfinishedImport({ paths, mode, abandon = false, identity }) {
+  const running = await runningImport(paths, mode, identity);
+  if (running) return refused('import_running', { mode, pid: running.pid, runKind: running.kind, runSince: running.since });
   const marker = readUnfinishedImport(paths, mode);
   if (!marker) return planned('nothing', []);
   const facts = { mode, since: marker.startedAt, graphs: marker.partial, readable: marker.readable };

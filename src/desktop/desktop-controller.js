@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { claimImportRun } from '../backup/import-run.js';
 import { planUnfinishedImport } from '../backup/unfinished-import-plan.js';
 import { readUnfinishedImport, unfinishedImportError } from '../backup/unfinished-import.js';
 import { runGraphDataCommand } from '../cli/graph-data-command.js';
@@ -74,8 +75,9 @@ const nativeRecovery = {
   apply: (paths, digest, choice = {}) => applyNativeRecovery({ paths, digest, ...choice, dependencies: nativeRecoveryServices({ paths }) })
 };
 
-// The first line of a failed import's words, for the window to put before its own.
-const firstLine = error => String(error?.message ?? error).split('\n')[0].slice(0, 600);
+// The first line of a failed import's words, for the window to put before its
+// own: whole enough to keep both languages and what a failed abandon already moved.
+const firstLine = error => String(error?.message ?? error).split('\n')[0].slice(0, 4000);
 
 // A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
@@ -84,7 +86,7 @@ export async function runTrayAction(action, context, {
   cliPath = runCli === executeCli ? ensureCliPath : () => null,
   dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold,
   onStage = () => {}, releaseLock = releaseStaleNeo4jLifecycleLock, recoveryDigest = null, recovery = nativeRecovery,
-  graphData = runGraphDataCommand
+  graphData = runGraphDataCommand, platform = process.platform
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   // The step running now, reported as it starts and kept for a failure, so the
@@ -144,8 +146,11 @@ export async function runTrayAction(action, context, {
     // this window, which is the person the CLI's terminal check asks for
     // (graph-data-command.js), so giving the import up runs here without a
     // terminal; the CLI keeps its check.
+    // Only there: on macOS native the lifecycle lock's recovery is the way,
+    // whatever marker an older run or another computer left.
     const mode = readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode;
-    const marked = !choice.keepNewer && readUnfinishedImport(paths, mode) ? mode : null;
+    const lockless = mode !== 'native' || platform !== 'darwin';
+    const marked = lockless && !choice.keepNewer && readUnfinishedImport(paths, mode) ? mode : null;
     const markerPlan = () => planUnfinishedImport({ paths, mode: marked, abandon: choice.abandonImport === true });
     if (recovering === 'preview') {
       try { return reply(true, { recoveryPlan: marked ? await markerPlan() : await recovery.plan(paths, choice) }); }
@@ -157,6 +162,12 @@ export async function runTrayAction(action, context, {
       if (!plan.digest) return unknown(new Error(`The import was not brought back (${plan.reason ?? plan.kind}).`), { code: 'recovery_refused', ...plan });
       if (plan.digest !== recoveryDigest) return unknown(new Error('Things changed after the plan was shown.'), { code: 'recovery_refused', reason: 'plan_changed' });
       const abandoning = plan.kind === 'abandon_import';
+      // Recorded as running (import-run.js) until it ends: a second click meanwhile is refused, never a second import.
+      const run = await claimImportRun(paths, marked, abandoning ? 'abandon-import' : 'import');
+      if (run.running) {
+        return unknown(new Error('An earlier import is still running.'), { code: 'recovery_refused', reason: 'import_running', mode: marked,
+          pid: run.running.pid, runKind: run.running.kind, runSince: run.running.since });
+      }
       atStage(abandoning ? 'import_abandon' : 'graph_import');
       try {
         const done = await graphData(abandoning ? 'abandon-import' : 'import',
@@ -167,7 +178,9 @@ export async function runTrayAction(action, context, {
       } catch (error) {
         // The marker that is still there, as a start would report it, with why this attempt failed.
         const left = unfinishedImportError(paths, marked)?.startupFailure;
-        return unknown(error, left ? { ...left, attemptError: firstLine(error) } : null);
+        return unknown(error, left ? { ...left, attemptError: firstLine(error), attemptKind: abandoning ? 'abandon' : 'import' } : null);
+      } finally {
+        run.release();
       }
     }
     if (!marked) {

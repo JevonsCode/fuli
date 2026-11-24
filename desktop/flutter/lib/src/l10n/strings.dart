@@ -260,7 +260,13 @@ class Strings {
     final graphs = failure.facts['graphs'] is List ? failure.facts['graphs'] as List : const [];
     final at = failure.text('since') == null ? '' : _t('（$since 开始）', ' (begun $since)');
     final attempt = failure.text('attemptError');
-    final tried = attempt == null ? '' : _t('这次没有导回：${half(attempt)}${half(attempt).endsWith('。') ? '' : '。'}', 'This attempt did not bring it back: ${half(attempt)} ');
+    // Giving the import up says itself that it did not, and what it already moved.
+    final abandoning = failure.text('attemptKind') == 'abandon';
+    final tried = attempt == null
+        ? ''
+        : abandoning
+            ? _t('${half(attempt)}${half(attempt).endsWith('。') ? '' : '。'}', '${half(attempt)} ')
+            : _t('这次没有导回：${half(attempt)}${half(attempt).endsWith('。') ? '' : '。'}', 'This attempt did not bring it back: ${half(attempt)} ');
     final way = unfinishedImportWay(failure);
     if (failure.facts['readable'] == false) {
       final marker = failure.text('markerPath') ?? 'graph-import-unfinished-$mode.json';
@@ -879,6 +885,13 @@ class Strings {
       'marker_unreadable' => _t('没有放弃：记录这次导入的文件坏了，FULI 不知道哪个图谱可能只写了一半，不替你挪动图谱。最后的办法是把这条记录挪走（不保证图谱完整），命令在「查看命令」里。',
           'Not abandoned: the file recording the import is damaged, so FULI cannot tell which graph may be half written and moves none for you. The last way out is to move the record away (the graph is not known to be whole then); the command is under Show commands.'),
       'lock_changed' => _t('没有恢复：锁在恢复途中变了。$retry', 'Not recovered: the lock changed during the recovery; $retry'),
+      // An earlier way back (or giving up) still runs in the background
+      // (src/backup/import-run.js); nothing is offered until it ends.
+      'import_running' => facts['timedOut'] == true
+          ? _t('导入仍在后台进行，完成前不要再点。做完后 FULI 会自己启动；之后窗口没有变化的话，再点「启动 FULI」。',
+              'The import is still running in the background; do not click again until it is done. FULI starts by itself once it is; if the window does not change after that, choose Start FULI.')
+          : _t('上一次${facts['runKind'] == 'abandon-import' ? '放弃导入' : '导回'}还在进行${pid == null ? '' : '（进程 $pid）'}，这次什么都没做。等它做完，完成前不要再点。',
+              'The last ${facts['runKind'] == 'abandon-import' ? 'giving up of the import' : 'way back'} is still running${pid == null ? '' : ' (process $pid)'}, so nothing was done. Wait for it to finish, and do not click again until then.'),
       'recovery_running' => _t('没有恢复：另一个恢复（进程 $pid）正在进行，这次什么都没做。等它结束后$retry',
           'Not recovered: another recovery (process $pid) is in progress, so nothing was done. Wait for it to end, $retry'),
       'keep_newer_unavailable' => _t('没有解锁：现在没有已经生效、还没做完的更新或回退，没有要完成的。点「恢复并启动」看要做什么。',

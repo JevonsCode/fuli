@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'fuli_runtime.dart';
@@ -38,6 +39,50 @@ RuntimeReport parseControllerReply(String stdout) {
     importAbandoned: reply['importAbandoned'] is String ? reply['importAbandoned'] as String : null,
   );
 }
+
+/// The steps in which a controller imports a graph or gives an import up
+/// (src/desktop/desktop-controller.js): it goes on in the background however
+/// long it takes, so the window does not give up on it after the usual wait.
+const importStages = {'graph_import', 'import_abandon'};
+
+/// How long the window waits for a controller: [usual] for anything, and in
+/// an import step up to [importing] (a whole graph can take hours).
+const controllerWait = (usual: Duration(minutes: 10), importing: Duration(hours: 24));
+
+/// What a controller printed, read line by line as it arrives (each step it
+/// reports goes to [onStage]), until it ends or the wait for its current step
+/// runs out: [timedOut], and [importing] when that step was an import.
+Future<({String output, bool timedOut, bool importing})> readControllerLines(Stream<List<int>> stdout, StageListener? onStage,
+    {({Duration usual, Duration importing}) wait = controllerWait}) async {
+  final output = StringBuffer();
+  String? stage;
+  final done = stdout.transform(utf8.decoder).transform(const LineSplitter()).forEach((line) {
+    output.writeln(line);
+    if (parseStageLine(line) case final step?) {
+      stage = step.stage;
+      onStage?.call(step.stage, step.maxSeconds);
+    }
+  });
+  final waited = Stopwatch()..start();
+  while (true) {
+    final importing = importStages.contains(stage);
+    final left = (importing ? wait.importing : wait.usual) - waited.elapsed;
+    if (left <= Duration.zero) return (output: output.toString(), timedOut: true, importing: importing);
+    try {
+      await done.timeout(left);
+      return (output: output.toString(), timedOut: false, importing: false);
+    } on TimeoutException {
+      // The step may have become an import meanwhile: its own wait decides.
+    }
+  }
+}
+
+/// A controller that is still importing when the window stops waiting: no
+/// "did not answer", and nothing offered that would start a second import
+/// (the strings word `import_running` with `timedOut`).
+RuntimeReport stillImporting() => const RuntimeReport(RuntimeState.unknown,
+    error: '导入仍在后台进行，完成前不要再点。 / The import is still running in the background; do not click again until it is done.',
+    failure: StartupFailure('recovery_refused', {'code': 'recovery_refused', 'reason': 'import_running', 'timedOut': true}));
 
 /// The controller action a recovery choice runs (src/desktop/desktop-controller.js), without its -preview / -start.
 String recoveryAction({bool abandonImport = false, bool keepNewer = false}) =>
