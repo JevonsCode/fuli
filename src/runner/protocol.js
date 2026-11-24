@@ -44,6 +44,10 @@ export const SAME_ORIGIN_HEADER = 'x-fuli-runner-same-origin';
 // same id in its outbox when that call's outcome is unknown; the host applies
 // one id once (host-store.js claimReplay).
 export const RUNNER_ENTRY_META = 'fuli/runner-entry';
+// An outbox entry of a follower's writes to global, which its host owns and
+// applies op by op (host-global-writes.js). A host that applies it says
+// `globalWrites: 1` in its hello; an older one refuses the entry as invalid.
+export const GLOBAL_WRITES_ENTRY = 'global_writes';
 export const ENTRY_ID = /^[A-Za-z0-9._:-]{1,200}$/;
 // How long a runner waits for the host to answer one replayed entry before it
 // gives up for this round; the host holds an id it is applying longer than this.

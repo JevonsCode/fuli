@@ -901,6 +901,27 @@ export class GraphitiProviderClient {
       method: 'POST', body: envelope, rawBody: true, timeoutMs: 300_000
     });
   }
+  // A follower's recruitment for a project it owns, hired here because this
+  // computer owns the FLA roster: creates the FLA under the id the follower
+  // proposed, answers the same one again for a repeated delivery, and never
+  // changes another FLA. `origin` names the follower's computer (its paired
+  // name and the start of its fingerprint) and project.
+  // For this computer's runner host (runner/host-global-writes.js); no Agent tool.
+  hireForFollowerRecruitment({ personalSpaceId, recruitmentId, agentId, profile, occupation, reason, origin }) {
+    return this.#request('/v1/project-agents/owner-hire', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, recruitment_id: recruitmentId, agent_id: agentId,
+        profile, occupation, reason, origin_computer: origin.computer, origin_fingerprint: origin.fingerprint,
+        origin_project: origin.project }
+    });
+  }
+  // One knowledge item as an Agent's plain session may see it, with its scope
+  // (global, projects, agent, temporary): whether a follower's reported use is
+  // of an item of global (runner/host-global-writes.js). Read only.
+  readKnowledgeItemView({ personalSpaceId, itemKind, itemId }) {
+    return this.#request('/v1/knowledge/item-views', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, item_kind: itemKind, item_id: itemId }
+    });
+  }
   // How many records of `global` this graph holds besides the defaults its
   // Provider makes by itself, by label: whether a follower's own graph holds
   // anything of the person's (follower-runtime-prepare.js). Read only; no Agent tool.
